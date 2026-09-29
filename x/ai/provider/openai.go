@@ -25,12 +25,15 @@ type OpenAIProvider struct {
 	tokenizer  tokenizer.Tokenizer
 }
 
-// NewOpenAIProvider creates a new OpenAI provider.
+// NewOpenAIProvider creates a new OpenAI provider. Without WithOpenAIHTTPClient
+// it uses a client that bounds connection and response-header waits; the
+// overall request lifetime is governed by the context passed to
+// Complete/CompleteStream.
 func NewOpenAIProvider(apiKey string, opts ...OpenAIOption) *OpenAIProvider {
 	p := &OpenAIProvider{
 		apiKey:     apiKey,
 		baseURL:    openaiAPIBaseURL,
-		httpClient: &http.Client{},
+		httpClient: defaultHTTPClient(),
 		tokenizer:  tokenizer.NewGPTTokenizer("gpt-4"),
 	}
 

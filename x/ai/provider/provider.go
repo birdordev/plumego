@@ -7,9 +7,36 @@ package provider
 import (
 	"context"
 	"io"
+	"net"
+	"net/http"
+	"time"
 
 	"github.com/spcent/plumego/x/ai/tokenizer"
 )
+
+// defaultHTTPClient returns the HTTP client used when the caller does not
+// supply one via the provider's WithXxxHTTPClient option. It bounds connection
+// setup and the wait for response headers, but deliberately sets no total
+// Timeout: completion requests and SSE streams can legitimately run for
+// minutes, so the overall request lifetime is governed by the caller's
+// context. Callers needing a hard cap should pass their own client.
+func defaultHTTPClient() *http.Client {
+	return &http.Client{
+		Transport: &http.Transport{
+			Proxy: http.ProxyFromEnvironment,
+			DialContext: (&net.Dialer{
+				Timeout:   10 * time.Second,
+				KeepAlive: 30 * time.Second,
+			}).DialContext,
+			TLSHandshakeTimeout:   10 * time.Second,
+			ResponseHeaderTimeout: 30 * time.Second,
+			ExpectContinueTimeout: 1 * time.Second,
+			IdleConnTimeout:       90 * time.Second,
+			MaxIdleConns:          100,
+			MaxIdleConnsPerHost:   10,
+		},
+	}
+}
 
 // Provider is the unified interface for LLM providers.
 type Provider interface {

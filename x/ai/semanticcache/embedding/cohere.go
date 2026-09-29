@@ -7,7 +7,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"time"
 )
@@ -57,7 +56,7 @@ func NewCohereProvider(config CohereConfig) (*CohereProvider, error) {
 	}
 
 	if config.BaseURL == "" {
-		config.BaseURL = "https://api.cohere.x/ai/v1"
+		config.BaseURL = "https://api.cohere.com/v1"
 	}
 
 	// Set default dimensions based on model
@@ -234,9 +233,9 @@ func (p *CohereProvider) makeRequest(ctx context.Context, jsonData []byte) (*coh
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := readResponseBody(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read response: %w", err)
+		return nil, err
 	}
 
 	if resp.StatusCode != http.StatusOK {

@@ -26,12 +26,15 @@ type ClaudeProvider struct {
 	tokenizer  tokenizer.Tokenizer
 }
 
-// NewClaudeProvider creates a new Claude provider.
+// NewClaudeProvider creates a new Claude provider. Without WithClaudeHTTPClient
+// it uses a client that bounds connection and response-header waits; the
+// overall request lifetime is governed by the context passed to
+// Complete/CompleteStream.
 func NewClaudeProvider(apiKey string, opts ...ClaudeOption) *ClaudeProvider {
 	p := &ClaudeProvider{
 		apiKey:     apiKey,
 		baseURL:    claudeAPIBaseURL,
-		httpClient: &http.Client{},
+		httpClient: defaultHTTPClient(),
 		tokenizer:  tokenizer.NewClaudeTokenizer("claude-3"),
 	}
 

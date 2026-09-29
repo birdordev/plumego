@@ -5,8 +5,77 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
+	"net/http"
+	"net/http/httptest"
 	"testing"
+	"time"
 )
+
+func TestDefaultHTTPClient_BoundsHandshakeButNotStream(t *testing.T) {
+	client := defaultHTTPClient()
+	if client.Timeout != 0 {
+		t.Errorf("defaultHTTPClient() total Timeout = %v, want 0 so SSE streams stay ctx-driven", client.Timeout)
+	}
+	transport, ok := client.Transport.(*http.Transport)
+	if !ok {
+		t.Fatalf("defaultHTTPClient() Transport = %T, want *http.Transport", client.Transport)
+	}
+	if transport.ResponseHeaderTimeout <= 0 {
+		t.Error("defaultHTTPClient() ResponseHeaderTimeout must be positive to fail hung peers")
+	}
+	if transport.TLSHandshakeTimeout <= 0 {
+		t.Error("defaultHTTPClient() TLSHandshakeTimeout must be positive")
+	}
+}
+
+func TestDefaultProviders_ShareTimeoutContract(t *testing.T) {
+	openai := NewOpenAIProvider("key")
+	claude := NewClaudeProvider("key")
+	if openai.httpClient == nil || claude.httpClient == nil {
+		t.Fatal("providers must default to a non-nil client")
+	}
+	if openai.httpClient.Timeout != 0 || claude.httpClient.Timeout != 0 {
+		t.Error("default clients must not set a total Timeout (would kill SSE streams)")
+	}
+}
+
+func TestProvider_ResponseHeaderTimeoutFailsFast(t *testing.T) {
+	// A server that delays headers beyond the client's ResponseHeaderTimeout
+	// must fail the request fast instead of blocking forever. The handler
+	// delay is bounded so httptest.Server.Close cannot hang. Uses a custom
+	// client with a tiny timeout to exercise the same mechanism the default
+	// client configures with 30s.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(300 * time.Millisecond)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"late","choices":[]}`))
+	}))
+	defer srv.Close()
+
+	client := &http.Client{
+		Transport: &http.Transport{ResponseHeaderTimeout: 50 * time.Millisecond},
+	}
+	p := NewOpenAIProvider("key", WithOpenAIBaseURL(srv.URL), WithOpenAIHTTPClient(client))
+
+	start := time.Now()
+	_, err := p.Complete(context.Background(), &CompletionRequest{
+		Model:    "gpt-4",
+		Messages: []Message{NewTextMessage(RoleUser, "hi")},
+	})
+	elapsed := time.Since(start)
+
+	if err == nil {
+		t.Fatal("Complete() expected timeout error from slow server")
+	}
+	var netErr net.Error
+	if !errors.As(err, &netErr) || !netErr.Timeout() {
+		t.Errorf("Complete() error = %v, want a network timeout", err)
+	}
+	if elapsed >= 300*time.Millisecond {
+		t.Errorf("Complete() took %v, want failure before the server's 300ms header delay", elapsed)
+	}
+}
 
 func TestNewTextMessage(t *testing.T) {
 	msg := NewTextMessage(RoleUser, "Hello")
