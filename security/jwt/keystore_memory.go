@@ -2,7 +2,6 @@ package jwt
 
 import (
 	"context"
-	"errors"
 	"sync"
 	"time"
 )
@@ -34,8 +33,8 @@ func NewInMemoryKeyStore() *InMemoryKeyStore {
 	return &InMemoryKeyStore{entries: make(map[string]memEntry)}
 }
 
-// GetContext retrieves the value for key. It returns an error if the key does
-// not exist or has expired.
+// GetContext retrieves the value for key. It returns ErrUnknownKey if the key
+// does not exist and ErrKeyExpired if the key exists but has expired.
 func (s *InMemoryKeyStore) GetContext(ctx context.Context, key string) ([]byte, error) {
 	if err := contextErr(ctx); err != nil {
 		return nil, err
@@ -44,10 +43,10 @@ func (s *InMemoryKeyStore) GetContext(ctx context.Context, key string) ([]byte, 
 	e, ok := s.entries[key]
 	s.mu.RUnlock()
 	if !ok {
-		return nil, errors.New("jwt: key not found")
+		return nil, ErrUnknownKey
 	}
 	if !e.expiry.IsZero() && time.Now().After(e.expiry) {
-		return nil, errors.New("jwt: key expired")
+		return nil, ErrKeyExpired
 	}
 	return append([]byte(nil), e.value...), nil
 }

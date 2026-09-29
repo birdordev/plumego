@@ -120,6 +120,7 @@ symbol	github.com/spcent/plumego/security/jwt	type	TokenType	type TokenType stri
 symbol	github.com/spcent/plumego/security/jwt	var	ErrInvalidAudience	var ErrInvalidAudience = errors.New("invalid audience")
 symbol	github.com/spcent/plumego/security/jwt	var	ErrInvalidIssuer	var ErrInvalidIssuer = errors.New("invalid issuer")
 symbol	github.com/spcent/plumego/security/jwt	var	ErrInvalidToken	var ErrInvalidToken = authn.ErrInvalidToken
+symbol	github.com/spcent/plumego/security/jwt	var	ErrKeyExpired	var ErrKeyExpired = errors.New("signing key expired")
 symbol	github.com/spcent/plumego/security/jwt	var	ErrMissingSubject	var ErrMissingSubject = errors.New("subject is required")
 symbol	github.com/spcent/plumego/security/jwt	var	ErrTokenExpired	var ErrTokenExpired = authn.ErrExpiredToken
 symbol	github.com/spcent/plumego/security/jwt	var	ErrTokenNotYetValid	var ErrTokenNotYetValid = errors.New("token not yet valid")
