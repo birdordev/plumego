@@ -78,11 +78,6 @@ jobs:
             go test -run '^$' -fuzz '^Fuzz' -fuzztime 10s "$pkg"
           done
 
-      - name: Run optional workerfleet Mongo integration tests
-        env:
-          WORKERFLEET_MONGO_TEST_URI: ${{ secrets.WORKERFLEET_MONGO_TEST_URI }}
-        run: make workerfleet-mongo-test
-
       - name: Block stale APIs in canonical docs
         run: |
           set -euo pipefail

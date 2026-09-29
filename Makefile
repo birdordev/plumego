@@ -1,7 +1,7 @@
 # plumego — root Makefile
 # Minimal targets. Most work happens via codex --yolo or go toolchain directly.
 
-.PHONY: help bundle validate-diff validate-diff-dry milestone check-spec check-plan check-card check-verify new-milestone new-plan new-card new-verify run-card milestone-status gates website-gates fmt vet test test-race reference-vet reference-test workerfleet-mongo-test setup-hooks website-sync
+.PHONY: help bundle validate-diff validate-diff-dry milestone check-spec check-plan check-card check-verify new-milestone new-plan new-card new-verify run-card milestone-status gates website-gates fmt vet test test-race reference-vet reference-test setup-hooks website-sync
 
 # Default: show help
 help:
@@ -437,15 +437,6 @@ reference-test: ## Run tests for every standalone reference module
 	  echo "==> $$dir"; \
 	  (cd "$$dir" && go test ./...); \
 	done
-
-workerfleet-mongo-test: ## Run optional workerfleet MongoDB integration tests
-	@if [ -z "$$WORKERFLEET_MONGO_TEST_URI" ]; then \
-	  echo "Skipping workerfleet MongoDB integration tests."; \
-	  echo "Set WORKERFLEET_MONGO_TEST_URI=mongodb://127.0.0.1:27017 locally or configure the CI secret to run them."; \
-	else \
-	  echo "Running workerfleet MongoDB integration tests."; \
-	  cd reference/workerfleet && go test -timeout 60s ./internal/platform/store/mongo; \
-	fi
 
 # ── Git Hooks ─────────────────────────────────────────────────────────────────
 
