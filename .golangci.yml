@@ -1,0 +1,52 @@
+# golangci-lint configuration for plumego.
+#
+# Scope: the default ("standard") linter set — errcheck, govet, ineffassign,
+# staticcheck, unused. The repository treats these as a zero-finding gate:
+# CI runs `golangci-lint run` and any finding fails the build.
+#
+# Exclusion policy:
+#   - Production code: zero exclusions. Findings are fixed in code, not
+#     configured away. An intentional exception needs a //nolint comment
+#     with a reason (see store/cache/memory.go for the lock-barrier case).
+#   - Test code: two narrow, documented exemptions (below) for idioms that
+#     have no failure semantics in tests — blanket-annotating ~1,500 of them
+#     with `_ =` would be noise, not signal.
+#
+# Deliberate non-goals:
+#   - No extra linters yet (revive, gocritic, ...): enabling more linters is
+#     a separate, dedicated change with its own finding cleanup.
+#
+# Version note: the config schema below is the v2 format; CI installs
+# golangci-lint v2.x (see .github/workflows/quality-gates.yml).
+version: "2"
+
+run:
+  timeout: 5m
+
+linters:
+  default: standard
+  exclusions:
+    rules:
+      # Test teardown/setup idioms whose errors have no actionable meaning in
+      # tests: Close on in-memory brokers/servers/recorders, Write on
+      # httptest.ResponseRecorder, fmt.Fprint* into buffers, metrics
+      # Inc/Observe/Add, test-env setup (Setenv/Chdir/MkdirAll/WriteFile),
+      # and happy-path Publish/Subscribe/Enqueue on in-memory brokers.
+      # Production code keeps full errcheck coverage.
+      - path: _test\.go
+        linters:
+          - errcheck
+        text: 'Error return value of .*?(Close|Write|WriteString|Fprintf|Fprintln|Fprint|RemoveAll|Register|Set|Encode|Flush|Sync|Cancel|Stop|Shutdown|CloseWrite|Remove|MkdirAll|WriteFile|Unmarshal|Marshal|Seed|Add|Observe|Inc|Track|Reserve|Enqueue|Publish|Subscribe|CancelFunc|Setenv|Chdir)[` ]'
+      # Contract tests deliberately pass a nil context to verify documented
+      # nil-tolerance (test names carry "Nil"); SA1012's advice to use
+      # context.TODO() would erase the property under test.
+      - path: _test\.go
+        linters:
+          - staticcheck
+        text: 'SA1012'
+
+issues:
+  # Report every finding: the default caps (50 per linter, 3 identical) hide
+  # the true debt size when bringing a new tree into compliance.
+  max-issues-per-linter: 0
+  max-same-issues: 0

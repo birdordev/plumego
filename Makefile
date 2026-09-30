@@ -384,11 +384,11 @@ gates: ## Run all required quality gates (mirrors CI)
 	$(MAKE) reference-vet
 	go test -race -timeout 60s ./...
 	$(MAKE) reference-test
-	go test -coverprofile=/tmp/plumego-stable.cover ./core ./router ./middleware/... ./contract ./security/... ./store/... >/tmp/plumego-stable-cover.log
+	go test -coverprofile=/tmp/plumego-stable.cover ./core ./router ./middleware/... ./contract ./security/... ./store/... ./health ./log ./metrics >/tmp/plumego-stable-cover.log
 	@TOTAL=$$(go tool cover -func=/tmp/plumego-stable.cover | awk '/^total:/ {gsub("%","",$$3); print $$3}'); \
 	echo "Stable-module total coverage: $$TOTAL%"; \
-	awk -v total="$$TOTAL" -v min="70.0" 'BEGIN { if (total+0 < min+0) exit 1 }' || { \
-	  echo "Coverage gate failed: expected >= 70.0%, got $$TOTAL%"; \
+	awk -v total="$$TOTAL" -v min="90.0" 'BEGIN { if (total+0 < min+0) exit 1 }' || { \
+	  echo "Coverage gate failed: expected >= 90.0%, got $$TOTAL%"; \
 	  tail -n 50 /tmp/plumego-stable-cover.log || true; \
 	  exit 1; \
 	}
@@ -415,6 +415,9 @@ fmt: ## Format all Go source files in-place
 
 vet: ## Run go vet on all packages
 	go vet ./...
+
+lint: ## Run golangci-lint (zero-finding gate; requires golangci-lint v2 on PATH)
+	golangci-lint run ./...
 
 reference-vet: ## Run go vet for every standalone reference module
 	@set -e; \

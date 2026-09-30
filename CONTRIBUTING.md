@@ -51,12 +51,13 @@ Run checks in this order; stop at the first failure.
 
 ```bash
 make fmt             # gofmt -w (run first)
+make lint            # golangci-lint, zero-finding gate (needs golangci-lint v2 on PATH)
 
 # Preferred for a focused diff: selects the minimal gate profile
 make validate-diff
 
 # Full gate suite (mirrors CI): boundary checks, vet, race tests,
-# reference-module tests, coverage >= 70% on stable roots
+# reference-module tests, coverage >= 90% on stable roots
 make gates
 
 # Only when you touched website/ or sources that feed website/src/generated/
@@ -111,11 +112,12 @@ Keep the subject under ~72 characters; put the "why" in the body.
 - Fill in [`.github/pull_request_template.md`](.github/pull_request_template.md);
   its scope/boundary and verification sections are not optional boilerplate —
   the boundary checkers and reviewers use them.
-- CI runs the same gates as `make gates` plus fuzz smoke tests
+- CI runs the same gates as `make gates` plus a zero-finding golangci-lint
+  check, fuzz smoke tests
   (`contract`, `security/jwt`, `security/password`, `router`, `x/websocket`),
   cross-platform build/vet checks (macOS and Windows, with the full test
   suite on macOS), CodeQL analysis, and the website build. A green local
-  `make gates` is the strongest signal your PR will pass.
+  `make gates` plus `make lint` is the strongest signal your PR will pass.
 - Dependency updates for GitHub Actions, `cmd/plumego`, the reference
   modules with third-party requirements, and the website are automated via
   [Dependabot](.github/dependabot.yml).

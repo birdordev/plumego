@@ -63,6 +63,17 @@ jobs:
       - name: Run go vet
         run: go vet ./...
 
+      - name: Install golangci-lint
+        run: |
+          set -euo pipefail
+          # Pinned version for reproducible gates; Dependabot tracks the
+          # install script via the github-actions ecosystem only for actions,
+          # so bump this version deliberately alongside a local lint run.
+          curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/HEAD/install.sh | sh -s -- -b "$(go env GOPATH)/bin" v2.14.0
+
+      - name: Run golangci-lint
+        run: "$(go env GOPATH)/bin/golangci-lint run ./..."
+
       - name: Run race tests
         run: go test -race -timeout 60s ./...
 
@@ -138,7 +149,7 @@ jobs:
           go test -coverprofile=/tmp/plumego-stable.cover ./core ./router ./middleware/... ./contract ./security/... ./store/... ./health ./log ./metrics >/tmp/stable-cover.log
           total="$(go tool cover -func=/tmp/plumego-stable.cover | awk '/^total:/ {gsub("%","",$3); print $3}')"
           echo "Stable-module total coverage: ${total}%"
-          min=70.0
+          min=90.0
           awk -v total="$total" -v min="$min" 'BEGIN { if (total+0 < min+0) exit 1 }' || {
             echo "Coverage gate failed: expected >= ${min}%, got ${total}%"
             echo "--- stable cover log tail ---"
@@ -205,6 +216,15 @@ jobs:
             /tmp/coverage-func.txt
             /tmp/coverage.html
           retention-days: 30
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          files: /tmp/plumego-full.cover
+          # The local 90% stable-root gate above is authoritative; Codecov is
+          # informational (trend dashboard + badge), so its outages must not
+          # fail the pipeline.
+          fail_ci_if_error: false
 
       - name: Comment coverage summary on PR
         if: github.event_name == 'pull_request'
