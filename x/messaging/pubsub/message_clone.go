@@ -217,7 +217,7 @@ func cloneValue(v reflect.Value, depth int) (reflect.Value, bool) {
 		out.Set(v.Elem())
 		return out, true
 
-	case reflect.Ptr:
+	case reflect.Pointer:
 		if v.IsNil() {
 			return v, true
 		}

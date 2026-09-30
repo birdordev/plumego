@@ -12,14 +12,14 @@ import (
 func TestKVPersistenceBasic(t *testing.T) {
 	// Create temporary directory for test
 	tmpDir := filepath.Join(os.TempDir(), "mq-persistence-test")
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	// Create persistence backend
 	backend, err := NewKVPersistence(tmpDir)
 	if err != nil {
 		t.Fatalf("failed to create persistence backend: %v", err)
 	}
-	defer backend.Close()
+	defer func() { _ = backend.Close() }()
 
 	ctx := t.Context()
 
@@ -60,13 +60,13 @@ func TestKVPersistenceBasic(t *testing.T) {
 
 func TestKVPersistenceMultipleMessages(t *testing.T) {
 	tmpDir := filepath.Join(os.TempDir(), "mq-persistence-multi-test")
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	backend, err := NewKVPersistence(tmpDir)
 	if err != nil {
 		t.Fatalf("failed to create persistence backend: %v", err)
 	}
-	defer backend.Close()
+	defer func() { _ = backend.Close() }()
 
 	ctx := t.Context()
 
@@ -102,20 +102,54 @@ func TestKVPersistenceMultipleMessages(t *testing.T) {
 	}
 }
 
-// Note: Subscription persistence is complex because SubOptions contains
-// function fields (Filter func) that cannot be serialized.
-// This would require a custom serialization strategy or storing only
-// serializable fields. Skipping subscription persistence tests for now.
-
-func TestKVPersistenceAckState(t *testing.T) {
-	tmpDir := filepath.Join(os.TempDir(), "mq-persistence-ack-test")
-	defer os.RemoveAll(tmpDir)
+// SubOptions.Filter is tagged json:"-" — a runtime-only predicate — so a
+// subscription with a Filter set must persist successfully, with the Filter
+// dropped from the snapshot.
+func TestKVPersistenceSubscriptionWithFilter(t *testing.T) {
+	tmpDir := filepath.Join(os.TempDir(), "mq-persistence-sub-filter-test")
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	backend, err := NewKVPersistence(tmpDir)
 	if err != nil {
 		t.Fatalf("failed to create persistence backend: %v", err)
 	}
-	defer backend.Close()
+	defer func() { _ = backend.Close() }()
+
+	ctx := t.Context()
+	opts := SubOptions{
+		BufferSize: 32,
+		Policy:     pubsub.DropNewest,
+		Filter:     func(msg pubsub.Message) bool { return msg.Type != "skip" },
+	}
+	if err := backend.SaveSubscription(ctx, "test-topic", "sub-1", opts); err != nil {
+		t.Fatalf("SaveSubscription with Filter error: %v", err)
+	}
+
+	got, err := backend.GetSubscriptions(ctx, "test-topic")
+	if err != nil {
+		t.Fatalf("GetSubscriptions error: %v", err)
+	}
+	restored, ok := got["sub-1"]
+	if !ok {
+		t.Fatal("subscription was not restored")
+	}
+	if restored.BufferSize != 32 || restored.Policy != pubsub.DropNewest {
+		t.Fatalf("unexpected restored options: %+v", restored)
+	}
+	if restored.Filter != nil {
+		t.Fatal("Filter must not survive persistence")
+	}
+}
+
+func TestKVPersistenceAckState(t *testing.T) {
+	tmpDir := filepath.Join(os.TempDir(), "mq-persistence-ack-test")
+	defer func() { _ = os.RemoveAll(tmpDir) }()
+
+	backend, err := NewKVPersistence(tmpDir)
+	if err != nil {
+		t.Fatalf("failed to create persistence backend: %v", err)
+	}
+	defer func() { _ = backend.Close() }()
 
 	ctx := t.Context()
 
@@ -161,7 +195,7 @@ func TestKVPersistenceAckState(t *testing.T) {
 
 func TestBrokerPersistence(t *testing.T) {
 	tmpDir := filepath.Join(os.TempDir(), "mq-broker-persistence-test")
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	// Create broker with persistence
 	cfg := DefaultConfig()
@@ -171,7 +205,7 @@ func TestBrokerPersistence(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer broker.Close()
+	defer func() { _ = broker.Close() }()
 
 	if broker.persistenceManager == nil {
 		t.Fatal("persistenceManager should be initialized when persistence is enabled")
@@ -201,7 +235,7 @@ func TestBrokerPersistence(t *testing.T) {
 
 func TestBrokerPersistenceReplay(t *testing.T) {
 	tmpDir := filepath.Join(os.TempDir(), "mq-broker-replay-test")
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	// Create first broker instance and publish messages
 	cfg := DefaultConfig()
@@ -227,14 +261,14 @@ func TestBrokerPersistenceReplay(t *testing.T) {
 	}
 
 	// Close first broker
-	broker1.Close()
+	_ = broker1.Close()
 
 	// Create second broker instance (simulating restart)
 	broker2, err := NewInProcBroker(pubsub.New(), WithConfig(cfg))
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer broker2.Close()
+	defer func() { _ = broker2.Close() }()
 
 	// Subscribe to topic
 	sub, err := broker2.Subscribe(ctx, "test-topic", SubOptions{BufferSize: 10})
@@ -271,7 +305,7 @@ func TestPersistenceDisabled(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer broker.Close()
+	defer func() { _ = broker.Close() }()
 
 	ctx := t.Context()
 
@@ -290,7 +324,7 @@ func TestPersistenceDisabled(t *testing.T) {
 
 func TestPersistenceBatch(t *testing.T) {
 	tmpDir := filepath.Join(os.TempDir(), "mq-persistence-batch-test")
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	cfg := DefaultConfig()
 	cfg.EnablePersistence = true
@@ -299,7 +333,7 @@ func TestPersistenceBatch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer broker.Close()
+	defer func() { _ = broker.Close() }()
 
 	ctx := t.Context()
 
@@ -327,7 +361,7 @@ func TestPersistenceBatch(t *testing.T) {
 
 func TestPersistenceClose(t *testing.T) {
 	tmpDir := filepath.Join(os.TempDir(), "mq-persistence-close-test")
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	cfg := DefaultConfig()
 	cfg.EnablePersistence = true
@@ -347,7 +381,7 @@ func TestPersistenceClose(t *testing.T) {
 	}
 
 	// Close broker
-	broker.Close()
+	_ = broker.Close()
 
 	// Try to use persistence after close
 	_, err = broker.RecoverMessages(ctx, "test-topic", 10)

@@ -111,13 +111,17 @@ func TestSetConfigDefaults(t *testing.T) {
 
 func TestOptionsBackwardCompatibility(t *testing.T) {
 	// Options is now an alias for Config
-	var opts Options = Options{
+	opts := Options{
 		DataDir:     "/tmp/test",
 		MaxEntries:  100,
 		MaxMemoryMB: 10,
 	}
 
-	var cfg Config = opts // Should compile: Options is alias for Config
+	// The explicit Config declaration is the point of this test: a value of
+	// the deprecated Options alias must assign into a Config-typed variable.
+	//nolint:staticcheck // S1021: the standalone typed declaration is the assertion under test
+	var cfg Config
+	cfg = opts
 
 	if cfg.DataDir != opts.DataDir {
 		t.Error("Options and Config should be interchangeable")

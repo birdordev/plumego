@@ -902,11 +902,10 @@ func TestCloneReflectValueNilTypedSlice(t *testing.T) {
 		Build()
 
 	got := err.Details()
-	// A nil []uint should survive the clone (either as nil or passthrough).
-	if _, ok := got["s"]; !ok {
-		// key may be omitted since nil slice maps to nil — acceptable
-	}
-	// The call must not panic regardless.
+	// A nil []uint should survive the clone (either as nil or passthrough);
+	// the key may be omitted since a nil slice maps to nil — both are
+	// acceptable. The call must not panic regardless.
+	_, _ = got["s"]
 }
 
 func TestCloneReflectValueNilTypedMap(t *testing.T) {

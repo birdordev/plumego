@@ -18,6 +18,7 @@ import (
 )
 
 func TestMiddlewareTypeShape(t *testing.T) {
+	//nolint:staticcheck // QF1011: the explicit type is the compile-time assertion itself
 	var _ middleware.Middleware = fixtureNoOpMiddleware()
 }
 

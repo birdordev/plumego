@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -150,7 +151,7 @@ func TestConsul_Resolve_ServiceName(t *testing.T) {
 
 	addr := strings.TrimPrefix(server.URL, "http://")
 	c, _ := NewConsul(addr, ConsulConfig{})
-	c.Resolve(t.Context(), "user-service")
+	_, _ = c.Resolve(t.Context(), "user-service")
 
 	expected := "/v1/health/service/user-service"
 	if receivedPath != expected {
@@ -173,7 +174,7 @@ func TestConsul_Resolve_QueryParams(t *testing.T) {
 		Tag: "primary",
 	})
 
-	c.Resolve(t.Context(), "svc")
+	_, _ = c.Resolve(t.Context(), "svc")
 
 	assertQueryContains(t, receivedQuery, "dc=dc1", "passing=true", "tag=primary")
 }
@@ -191,7 +192,7 @@ func TestConsul_Resolve_IncludeUnhealthy(t *testing.T) {
 	addr := strings.TrimPrefix(server.URL, "http://")
 	c, _ := NewConsul(addr, ConsulConfig{IncludeUnhealthy: true})
 
-	c.Resolve(t.Context(), "svc")
+	_, _ = c.Resolve(t.Context(), "svc")
 
 	assertQueryOmits(t, receivedQuery, "passing=true")
 }
@@ -229,7 +230,7 @@ func TestConsul_Resolve_Namespace(t *testing.T) {
 	addr := strings.TrimPrefix(server.URL, "http://")
 	c, _ := NewConsul(addr, ConsulConfig{Namespace: "production"})
 
-	c.Resolve(t.Context(), "svc")
+	_, _ = c.Resolve(t.Context(), "svc")
 
 	if receivedNS != "production" {
 		t.Errorf("ns = %q, want %q", receivedNS, "production")
@@ -249,7 +250,7 @@ func TestConsul_Resolve_NoNamespace(t *testing.T) {
 	addr := strings.TrimPrefix(server.URL, "http://")
 	c, _ := NewConsul(addr, ConsulConfig{})
 
-	c.Resolve(t.Context(), "svc")
+	_, _ = c.Resolve(t.Context(), "svc")
 
 	if receivedNS != "" {
 		t.Errorf("ns = %q, want empty (no namespace filter)", receivedNS)
@@ -269,7 +270,7 @@ func TestConsul_Resolve_ACLToken(t *testing.T) {
 	addr := strings.TrimPrefix(server.URL, "http://")
 	c, _ := NewConsul(addr, ConsulConfig{Token: "my-secret-token"})
 
-	c.Resolve(t.Context(), "svc")
+	_, _ = c.Resolve(t.Context(), "svc")
 
 	if receivedToken != "my-secret-token" {
 		t.Errorf("token = %q, want %q", receivedToken, "my-secret-token")
@@ -289,7 +290,7 @@ func TestConsul_Resolve_NoToken(t *testing.T) {
 	addr := strings.TrimPrefix(server.URL, "http://")
 	c, _ := NewConsul(addr, ConsulConfig{})
 
-	c.Resolve(t.Context(), "svc")
+	_, _ = c.Resolve(t.Context(), "svc")
 
 	if receivedToken != "" {
 		t.Errorf("token = %q, want empty", receivedToken)
@@ -439,7 +440,7 @@ func TestConsul_Register_Success(t *testing.T) {
 		receivedPath = r.URL.Path
 		receivedContentType = r.Header.Get("Content-Type")
 		receivedToken = r.Header.Get("X-Consul-Token")
-		json.NewDecoder(r.Body).Decode(&receivedBody)
+		_ = json.NewDecoder(r.Body).Decode(&receivedBody)
 		w.WriteHeader(http.StatusOK)
 	})
 	defer server.Close()
@@ -630,8 +631,8 @@ func TestConsul_Close_ClearsWatchers(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
-	c.Watch(ctx, "svc-a")
-	c.Watch(ctx, "svc-b")
+	_, _ = c.Watch(ctx, "svc-a")
+	_, _ = c.Watch(ctx, "svc-b")
 
 	c.mu.RLock()
 	count := len(c.watchers)
@@ -701,8 +702,8 @@ func TestConsul_Watch_ReusesWatcher(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
-	c.Watch(ctx, "svc")
-	c.Watch(ctx, "svc")
+	_, _ = c.Watch(ctx, "svc")
+	_, _ = c.Watch(ctx, "svc")
 
 	c.mu.RLock()
 	count := len(c.watchers)
@@ -812,7 +813,7 @@ func TestConsul_Resolve_ConcurrentAccess(t *testing.T) {
 		go func(n int) {
 			defer wg.Done()
 			svc := fmt.Sprintf("svc-%d", n%5)
-			c.Resolve(t.Context(), svc)
+			_, _ = c.Resolve(t.Context(), svc)
 		}(i)
 	}
 	wg.Wait()
@@ -831,7 +832,7 @@ func TestConsul_Resolve_Datacenter(t *testing.T) {
 	addr := strings.TrimPrefix(server.URL, "http://")
 	c, _ := NewConsul(addr, ConsulConfig{Datacenter: "us-west-2"})
 
-	c.Resolve(t.Context(), "svc")
+	_, _ = c.Resolve(t.Context(), "svc")
 
 	if receivedDC != "us-west-2" {
 		t.Errorf("dc = %q, want %q", receivedDC, "us-west-2")
@@ -851,7 +852,7 @@ func TestConsul_Resolve_NoTag(t *testing.T) {
 	addr := strings.TrimPrefix(server.URL, "http://")
 	c, _ := NewConsul(addr, ConsulConfig{})
 
-	c.Resolve(t.Context(), "svc")
+	_, _ = c.Resolve(t.Context(), "svc")
 
 	if receivedTag != "" {
 		t.Errorf("tag = %q, want empty (no tag filter)", receivedTag)
@@ -980,11 +981,10 @@ func TestConsul_Register_NilTagsAndMeta(t *testing.T) {
 	var receivedBody []byte
 	server := newTestConsulServer(func(w http.ResponseWriter, r *http.Request) {
 		var err error
-		receivedBody, err = json.Marshal(json.NewDecoder(r.Body))
-		_ = err
-		// Re-read for proper check
-		var reg consulRegistration
-		json.NewDecoder(r.Body).Decode(&reg)
+		receivedBody, err = io.ReadAll(r.Body)
+		if err != nil {
+			t.Errorf("read request body: %v", err)
+		}
 		w.WriteHeader(http.StatusOK)
 	})
 	defer server.Close()
@@ -1004,7 +1004,18 @@ func TestConsul_Register_NilTagsAndMeta(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Register() error = %v", err)
 	}
-	_ = receivedBody
+
+	// The registration body must decode cleanly and carry no tags/meta.
+	var reg consulRegistration
+	if err := json.Unmarshal(receivedBody, &reg); err != nil {
+		t.Fatalf("decode registration body: %v", err)
+	}
+	if reg.Tags != nil {
+		t.Errorf("Tags = %v, want nil", reg.Tags)
+	}
+	if reg.Meta != nil {
+		t.Errorf("Meta = %v, want nil", reg.Meta)
+	}
 }
 
 func TestConsulConfig_Defaults(t *testing.T) {

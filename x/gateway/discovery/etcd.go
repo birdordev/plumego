@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-	"sync"
 	"time"
 )
 
@@ -34,7 +33,6 @@ type Etcd struct {
 	endpoints []string
 	config    EtcdConfig
 	client    *http.Client
-	mu        sync.RWMutex
 }
 
 // EtcdConfig holds etcd-specific configuration.
@@ -153,7 +151,7 @@ func (e *Etcd) rangeGet(ctx context.Context, endpoint, prefix string) ([][]byte,
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("etcd returned status %d", resp.StatusCode)
@@ -212,7 +210,7 @@ func (e *Etcd) Register(ctx context.Context, instance Instance) error {
 			lastErr = err
 			continue
 		}
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		if resp.StatusCode != http.StatusOK {
 			lastErr = fmt.Errorf("etcd returned status %d", resp.StatusCode)
 			continue
@@ -241,7 +239,7 @@ func (e *Etcd) Deregister(ctx context.Context, serviceID string) error {
 			lastErr = err
 			continue
 		}
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		if resp.StatusCode != http.StatusOK {
 			lastErr = fmt.Errorf("etcd returned status %d", resp.StatusCode)
 			continue
@@ -272,7 +270,7 @@ func (e *Etcd) Health(ctx context.Context, serviceID string, healthy bool) error
 			lastErr = err
 			continue
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 		if resp.StatusCode != http.StatusOK {
 			lastErr = fmt.Errorf("etcd returned status %d", resp.StatusCode)
 			continue

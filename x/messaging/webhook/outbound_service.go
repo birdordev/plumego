@@ -230,9 +230,6 @@ func (s *Service) CreateTarget(ctx context.Context, t Target) (Target, error) {
 	if t.Headers == nil {
 		t.Headers = map[string]string{}
 	}
-	if t.Enabled == false {
-		// ok
-	}
 	// defaults
 	if t.TimeoutMs == 0 {
 		t.TimeoutMs = int(s.cfg.DefaultTimeout / time.Millisecond)

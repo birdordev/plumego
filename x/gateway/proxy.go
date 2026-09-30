@@ -66,8 +66,6 @@ type Proxy struct {
 
 	// For least-connections balancer
 	lcBalancer *LeastConnectionsBalancer
-
-	mu sync.RWMutex
 }
 
 // New creates a new reverse proxy handler and returns an error for invalid
@@ -248,7 +246,7 @@ func (p *Proxy) proxyRequest(w http.ResponseWriter, r *http.Request, backend *Ba
 	if err != nil {
 		return proxyRequestResult{err: err}
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	// Apply response modifications
 	if p.config.ModifyResponse != nil {

@@ -563,7 +563,7 @@ func (m *Manager) Close() error {
 // reflection-based population lock-free to minimise lock contention.
 func (m *Manager) Unmarshal(dst any) error {
 	val := reflect.ValueOf(dst)
-	if val.Kind() != reflect.Ptr || val.IsNil() {
+	if val.Kind() != reflect.Pointer || val.IsNil() {
 		return fmt.Errorf("dst must be a non-nil pointer")
 	}
 
@@ -603,7 +603,7 @@ func unmarshalValue(data map[string]any, val reflect.Value) error {
 			continue
 		}
 
-		if fieldValue.Kind() == reflect.Ptr &&
+		if fieldValue.Kind() == reflect.Pointer &&
 			fieldValue.Type().Elem().Kind() == reflect.Struct &&
 			fieldValue.Type().Elem() != timeType {
 			if fieldValue.IsNil() {

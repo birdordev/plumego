@@ -9,6 +9,7 @@ package main
 
 import (
 	"fmt"
+	"go/ast"
 	"go/parser"
 	"go/token"
 	"os"
@@ -110,46 +111,74 @@ func checkModule(repoRoot, dir string, forbidden []string) ([]violation, error) 
 	var violations []violation
 
 	fset := token.NewFileSet()
-	pkgs, err := parser.ParseDir(fset, dir, func(fi os.FileInfo) bool {
-		return !strings.HasSuffix(fi.Name(), "_test.go")
-	}, parser.ImportsOnly)
+	files, err := parseNonTestGoFiles(fset, dir, parser.ImportsOnly)
 	if err != nil {
 		// Non-Go dirs or parse errors — skip gracefully.
 		return nil, nil
 	}
 
-	for _, pkg := range pkgs {
-		for filename, file := range pkg.Files {
-			relFile, err := filepath.Rel(repoRoot, filename)
-			if err != nil {
-				relFile = filename
-			}
-			relFile = filepath.ToSlash(relFile)
+	for filename, file := range files {
+		relFile, err := filepath.Rel(repoRoot, filename)
+		if err != nil {
+			relFile = filename
+		}
+		relFile = filepath.ToSlash(relFile)
 
-			for _, imp := range file.Imports {
-				if imp.Path == nil {
-					continue
-				}
-				importPath := strings.Trim(imp.Path.Value, `"`)
-				if !strings.HasPrefix(importPath, modulePath+"/") {
-					continue
-				}
-				// Relative import path within the module, e.g. "x/ai/session".
-				relImport := strings.TrimPrefix(importPath, modulePath+"/")
-				for _, pattern := range forbidden {
-					if matchPattern(relImport, pattern) {
-						violations = append(violations, violation{
-							file:       relFile,
-							importPath: importPath,
-							pattern:    pattern,
-						})
-						break
-					}
+		for _, imp := range file.Imports {
+			if imp.Path == nil {
+				continue
+			}
+			importPath := strings.Trim(imp.Path.Value, `"`)
+			if !strings.HasPrefix(importPath, modulePath+"/") {
+				continue
+			}
+			// Relative import path within the module, e.g. "x/ai/session".
+			relImport := strings.TrimPrefix(importPath, modulePath+"/")
+			for _, pattern := range forbidden {
+				if matchPattern(relImport, pattern) {
+					violations = append(violations, violation{
+						file:       relFile,
+						importPath: importPath,
+						pattern:    pattern,
+					})
+					break
 				}
 			}
 		}
 	}
 	return violations, nil
+}
+
+// parseNonTestGoFiles parses all non-test Go source files directly in dir
+// (not recursing into subdirectories) and returns them keyed by absolute
+// file path. It replaces the deprecated go/parser.ParseDir with the stdlib
+// primitives it was a thin wrapper over.
+func parseNonTestGoFiles(fset *token.FileSet, dir string, mode parser.Mode) (map[string]*ast.File, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, err
+	}
+
+	files := make(map[string]*ast.File)
+	for _, entry := range entries {
+		name := entry.Name()
+		if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		if strings.HasPrefix(name, ".") || strings.HasPrefix(name, "_") {
+			continue
+		}
+		path := filepath.Join(dir, name)
+		file, err := parser.ParseFile(fset, path, nil, mode)
+		if err != nil {
+			return nil, err
+		}
+		files[path] = file
+	}
+	if len(files) == 0 {
+		return nil, fmt.Errorf("no buildable Go source files in %s", dir)
+	}
+	return files, nil
 }
 
 // readForbiddenImports extracts the forbidden_imports list from a module.yaml

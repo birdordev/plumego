@@ -74,7 +74,11 @@ func TestBuilderTypeStatusAndCategoryRemainCanonical(t *testing.T) {
 }
 
 func TestErrorTypeMetaIsNameable(t *testing.T) {
-	var meta ErrorTypeMeta = TypeNotFound.Meta()
+	// The explicit ErrorTypeMeta declaration is the point of this test:
+	// Meta() results must be assignable to a named ErrorTypeMeta variable.
+	//nolint:staticcheck // S1021: the standalone typed declaration is the assertion under test
+	var meta ErrorTypeMeta
+	meta = TypeNotFound.Meta()
 	if meta.Status != http.StatusNotFound {
 		t.Fatalf("status=%d, want %d", meta.Status, http.StatusNotFound)
 	}
@@ -325,7 +329,7 @@ func TestErrorResponseWriting(t *testing.T) {
 		details:  map[string]any{"field": "email"},
 	}
 
-	WriteError(recorder, req, err)
+	_ = WriteError(recorder, req, err)
 
 	if recorder.Code != http.StatusBadRequest {
 		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, recorder.Code)
@@ -358,7 +362,7 @@ func TestErrorResponseWithRequestID(t *testing.T) {
 		category: CategoryServer,
 	}
 
-	WriteError(recorder, req, err)
+	_ = WriteError(recorder, req, err)
 
 	var response errorResponse
 	if err := json.NewDecoder(recorder.Body).Decode(&response); err != nil {
@@ -384,7 +388,7 @@ func TestWriteErrorPreservesRequestID(t *testing.T) {
 		requestID: "explicit-req-id",
 	}
 
-	WriteError(recorder, req, err)
+	_ = WriteError(recorder, req, err)
 
 	var response errorResponse
 	if decodeErr := json.NewDecoder(recorder.Body).Decode(&response); decodeErr != nil {
@@ -411,7 +415,7 @@ func TestWriteErrorNormalizesExplicitRequestID(t *testing.T) {
 			recorder := httptest.NewRecorder()
 			req := httptest.NewRequest(http.MethodGet, "/", nil)
 
-			WriteError(recorder, req, APIError{
+			_ = WriteError(recorder, req, APIError{
 				status:    http.StatusBadRequest,
 				code:      CodeValidationError,
 				message:   "validation failed",
@@ -449,14 +453,14 @@ func TestWriteErrorDefaults(t *testing.T) {
 	// Test with minimal error (no status, code, or category)
 	err := APIError{message: "test message"}
 
-	WriteError(recorder, req, err)
+	_ = WriteError(recorder, req, err)
 
 	if recorder.Code != http.StatusInternalServerError {
 		t.Fatalf("expected default status to be internal server error")
 	}
 
 	var response errorResponse
-	json.NewDecoder(recorder.Body).Decode(&response)
+	_ = json.NewDecoder(recorder.Body).Decode(&response)
 
 	if response.Error.Code != CodeInternalError {
 		t.Fatalf("expected default code %q, got %q", CodeInternalError, response.Error.Code)
@@ -471,7 +475,7 @@ func TestWriteErrorDefaultsMessage(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 
-	WriteError(recorder, req, APIError{})
+	_ = WriteError(recorder, req, APIError{})
 
 	var response errorResponse
 	if err := json.NewDecoder(recorder.Body).Decode(&response); err != nil {

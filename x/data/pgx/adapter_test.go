@@ -241,7 +241,7 @@ func scanValues(dest []any, values []any) error {
 	}
 	for i, value := range values {
 		target := reflect.ValueOf(dest[i])
-		if target.Kind() != reflect.Ptr || target.IsNil() {
+		if target.Kind() != reflect.Pointer || target.IsNil() {
 			return fmt.Errorf("destination %d is not a non-nil pointer", i)
 		}
 		source := reflect.ValueOf(value)

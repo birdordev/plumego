@@ -88,8 +88,12 @@ func TestPrincipalFromContextNil(t *testing.T) {
 	}
 }
 
+// foreignCtxKey simulates a context key owned by another package: it must
+// never collide with this package's unexported principal key.
+type foreignCtxKey struct{}
+
 func TestPrincipalFromContextWrongType(t *testing.T) {
-	ctx := context.WithValue(t.Context(), struct{}{}, "not-a-principal")
+	ctx := context.WithValue(t.Context(), foreignCtxKey{}, "not-a-principal")
 	got := PrincipalFromContext(ctx)
 	if got != nil {
 		t.Fatalf("expected nil for missing principal, got %+v", got)

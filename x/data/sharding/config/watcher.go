@@ -177,7 +177,6 @@ func (w *ConfigWatcher) AddOnChange(fn func(*ShardingConfig)) {
 // ConfigReloader manages hot reloading of sharding configuration
 type ConfigReloader struct {
 	watcher *ConfigWatcher
-	mu      sync.RWMutex
 }
 
 // NewConfigReloader creates a new configuration reloader

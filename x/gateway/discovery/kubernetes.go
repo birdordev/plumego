@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"sync"
 	"time"
 )
 
@@ -39,7 +38,6 @@ import (
 type Kubernetes struct {
 	config KubernetesConfig
 	client *http.Client
-	mu     sync.RWMutex
 	stopCh chan struct{}
 }
 
@@ -162,7 +160,7 @@ func (k *Kubernetes) Resolve(ctx context.Context, serviceName string) ([]string,
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode == http.StatusNotFound {
 		return nil, ErrServiceNotFound

@@ -314,10 +314,10 @@ func TestAttachRouteContextAndServeWithNilResultIsNoop(t *testing.T) {
 	r := NewRouter()
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	// Should not panic.
+	// Should not panic and must not write a status.
 	r.attachRouteContextAndServe(rec, req, nil)
 	if rec.Code != http.StatusOK {
-		// No status was written, default is 200.
+		t.Fatalf("nil result should leave the default status; got %d, want %d", rec.Code, http.StatusOK)
 	}
 }
 

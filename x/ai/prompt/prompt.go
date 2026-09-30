@@ -9,6 +9,7 @@ import (
 	"sync"
 	"text/template"
 	"time"
+	"unicode"
 )
 
 // Template represents a prompt template.
@@ -41,7 +42,6 @@ type Engine struct {
 	storage Storage
 	cache   *templateCache
 	funcs   template.FuncMap
-	mu      sync.RWMutex
 }
 
 // NewEngine creates a new prompt engine.
@@ -266,7 +266,7 @@ func defaultFuncMap() template.FuncMap {
 	return template.FuncMap{
 		"upper": strings.ToUpper,
 		"lower": strings.ToLower,
-		"title": strings.Title,
+		"title": titleString,
 		"trim":  strings.TrimSpace,
 		"join": func(sep string, items []string) string {
 			return strings.Join(items, sep)
@@ -278,6 +278,45 @@ func defaultFuncMap() template.FuncMap {
 			return val
 		},
 	}
+}
+
+// titleString mirrors the semantics of the deprecated strings.Title: it
+// title-cases the first letter of each word, where a word boundary is any
+// ASCII character that is not a letter, digit, or underscore, or any
+// non-ASCII Unicode space. Kept local so the "title" template function
+// retains its documented behavior without the deprecated stdlib symbol.
+func titleString(s string) string {
+	prev := ' '
+	return strings.Map(func(r rune) rune {
+		if isTitleSeparator(prev) {
+			prev = r
+			return unicode.ToTitle(r)
+		}
+		prev = r
+		return r
+	}, s)
+}
+
+// isTitleSeparator reports whether r separates words for titleString,
+// matching strings.Title's rules.
+func isTitleSeparator(r rune) bool {
+	if r <= 0x7F {
+		switch {
+		case '0' <= r && r <= '9':
+			return false
+		case 'a' <= r && r <= 'z':
+			return false
+		case 'A' <= r && r <= 'Z':
+			return false
+		case r == '_':
+			return false
+		}
+		return true
+	}
+	if unicode.IsLetter(r) || unicode.IsDigit(r) {
+		return false
+	}
+	return unicode.IsSpace(r)
 }
 
 // generateID generates a template ID.

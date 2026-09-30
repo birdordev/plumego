@@ -7,7 +7,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"math/rand"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -221,8 +220,8 @@ func TestShouldRetryAndBackoff(t *testing.T) {
 		t.Fatalf("max attempts reached")
 	}
 
-	// deterministic jitter
-	rand.Seed(1)
+	// Jitter bounds hold for any seed; the global rand source is auto-seeded
+	// since Go 1.20, so no deterministic seeding is needed here.
 
 	now := time.Now()
 	next := NextBackoff(now, 2, 10*time.Millisecond, 40*time.Millisecond)
@@ -290,11 +289,11 @@ func TestServiceHandleTaskSuccessAndRetry(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("X-Webhook-Id") == "t1" {
 			w.WriteHeader(http.StatusOK)
-			w.Write([]byte("ok"))
+			_, _ = w.Write([]byte("ok"))
 			return
 		}
 		w.WriteHeader(http.StatusInternalServerError)
-		w.Write([]byte("fail"))
+		_, _ = w.Write([]byte("fail"))
 	}))
 	defer srv.Close()
 
@@ -721,7 +720,7 @@ func TestReplayDeliveryErrors(t *testing.T) {
 	}
 
 	d := Delivery{ID: "no_payload", TargetID: "t", EventType: "evt"}
-	service.store.CreateDelivery(ctx, d)
+	_, _ = service.store.CreateDelivery(ctx, d)
 	if _, err := service.ReplayDelivery(ctx, d.ID); err == nil {
 		t.Fatalf("expected payload error on replay")
 	}
@@ -736,9 +735,9 @@ func TestHandleTaskFailureNoRetry(t *testing.T) {
 	defer srv.Close()
 
 	target := Target{ID: "nf", Name: "nf", URL: srv.URL, Secret: "abcdefgh", Events: []string{"evt"}, Enabled: true, RetryOn429: boolPtr(false), MaxRetries: 1}
-	store.CreateTarget(ctx, target)
+	_, _ = store.CreateTarget(ctx, target)
 	delivery := Delivery{ID: "nf1", TargetID: target.ID, EventType: "evt", PayloadJSON: []byte(`{"y":1}`), Status: DeliveryPending}
-	store.CreateDelivery(ctx, delivery)
+	_, _ = store.CreateDelivery(ctx, delivery)
 
 	service := NewService(store, cfg)
 	service.handleTask(ctx, Task{DeliveryID: delivery.ID})

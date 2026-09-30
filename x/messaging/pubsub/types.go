@@ -105,7 +105,11 @@ type SubOptions struct {
 	// Filter is an optional predicate applied before delivery.
 	// Return false to skip the message for this subscriber.
 	// Filter is called under the subscriber's delivery lock — keep it fast.
-	Filter func(msg Message) bool
+	//
+	// Filter is a runtime-only predicate: it cannot be serialized, so
+	// persistence snapshots silently drop it and restored subscriptions
+	// deliver unfiltered until the caller re-subscribes with a Filter.
+	Filter func(msg Message) bool `json:"-"`
 
 	// UseRingBuffer enables O(1) ring-buffer delivery for DropOldest policy.
 	// Only effective when Policy is DropOldest.
