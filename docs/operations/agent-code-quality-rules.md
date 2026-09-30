@@ -82,6 +82,27 @@ authoritative list.
 | Panic-only constructors | Forces callers to recover or crash; prefer `New(...) (*T, error)` |
 | Compatibility wrappers without removal plan | Dead code that agents must read and reason about indefinitely |
 
+### Test synchronization
+
+`time.Sleep` must not be used to synchronize with asynchronous state in
+new tests (background goroutines, timers, cleanup loops). Sleep-based
+synchronization both slows the suite and flakes under CI load. Instead:
+
+- Poll a condition with `internal/testutil/wait` (`ForCondition`,
+  `ForValue`) — it returns as soon as the condition holds and fails with a
+  descriptive message on timeout.
+- Prefer direct synchronization (channels, `sync.WaitGroup`, done signals)
+  when the code under test exposes one.
+- Treat timeout values as failure budgets, not expected durations: pick
+  5–10x the worst case, since polling returns immediately once satisfied.
+
+`time.Sleep` remains acceptable only when the test's subject is wall-clock
+behavior itself (e.g. asserting a rate limiter's window or a token's expiry)
+and no observable condition exists to poll.
+
+Legacy sleep-based tests are migrated opportunistically when a test file is
+touched for other reasons; do not expand their use.
+
 ## 5. Review Output Contract
 
 Use findings-first output for reviews:

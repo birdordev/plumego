@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/spcent/plumego/internal/testutil/wait"
 	"github.com/spcent/plumego/x/messaging/pubsub"
 )
 
@@ -16,7 +17,7 @@ func TestTTLTrackerBasic(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer broker.Close()
+	defer func() { _ = broker.Close() }()
 
 	if broker.ttlTracker == nil {
 		t.Fatal("ttlTracker should be initialized when MessageTTL is configured")
@@ -46,6 +47,9 @@ func TestTTLTrackerBasic(t *testing.T) {
 	if tracked != 0 {
 		t.Fatalf("expected 0 tracked messages after removal, got %d", tracked)
 	}
+	if expired != 0 {
+		t.Fatalf("expected 0 expired messages after removal, got %d", expired)
+	}
 }
 
 func TestTTLTrackerExpiration(t *testing.T) {
@@ -55,7 +59,7 @@ func TestTTLTrackerExpiration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer broker.Close()
+	defer func() { _ = broker.Close() }()
 
 	// Track message that expires soon
 	expiresAt := time.Now().Add(50 * time.Millisecond)
@@ -89,7 +93,7 @@ func TestTTLTrackerCleanup(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer broker.Close()
+	defer func() { _ = broker.Close() }()
 
 	// Track message that expires soon
 	expiresAt := time.Now().Add(50 * time.Millisecond)
@@ -103,14 +107,11 @@ func TestTTLTrackerCleanup(t *testing.T) {
 		t.Fatalf("expected 1 tracked message, got %d", tracked)
 	}
 
-	// Wait for cleanup goroutine to run (runs every second, plus expiration time)
-	time.Sleep(1500 * time.Millisecond)
-
-	// Message should be cleaned up
-	tracked, _ = broker.ttlTracker.stats()
-	if tracked != 0 {
-		t.Fatalf("expected 0 tracked messages after cleanup, got %d", tracked)
-	}
+	// Poll for the cleanup goroutine (runs every second) instead of sleeping.
+	wait.ForValue(t, 5*time.Second, "tracked message cleanup", func() int {
+		tracked, _ := broker.ttlTracker.stats()
+		return tracked
+	}, 0)
 }
 
 func TestPublishTTLSuccess(t *testing.T) {
@@ -120,7 +121,7 @@ func TestPublishTTLSuccess(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer broker.Close()
+	defer func() { _ = broker.Close() }()
 
 	ctx := t.Context()
 
@@ -166,7 +167,7 @@ func TestPublishTTLExpired(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer broker.Close()
+	defer func() { _ = broker.Close() }()
 
 	ctx := t.Context()
 
@@ -192,7 +193,7 @@ func TestPublishTTLNoExpiration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer broker.Close()
+	defer func() { _ = broker.Close() }()
 
 	ctx := t.Context()
 
@@ -221,7 +222,7 @@ func TestPublishPriorityTTL(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer broker.Close()
+	defer func() { _ = broker.Close() }()
 
 	ctx := t.Context()
 
@@ -269,7 +270,7 @@ func TestPublishWithAckTTL(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer broker.Close()
+	defer func() { _ = broker.Close() }()
 
 	ctx := t.Context()
 
@@ -343,7 +344,7 @@ func TestTTLTrackerClose(t *testing.T) {
 	}
 
 	// Close the broker
-	broker.Close()
+	_ = broker.Close()
 
 	// Try to track after close
 	err = broker.ttlTracker.track("msg-2", "test-topic", expiresAt)
@@ -364,7 +365,7 @@ func TestTTLDisabled(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer broker.Close()
+	defer func() { _ = broker.Close() }()
 
 	if broker.ttlTracker != nil {
 		t.Fatal("ttlTracker should be nil when TTL is disabled")
@@ -389,7 +390,7 @@ func TestValidateTTL(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer broker.Close()
+	defer func() { _ = broker.Close() }()
 
 	tests := []struct {
 		name      string
@@ -433,7 +434,7 @@ func TestTTLTrackerConcurrent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer broker.Close()
+	defer func() { _ = broker.Close() }()
 
 	ctx := t.Context()
 	const numMessages = 100

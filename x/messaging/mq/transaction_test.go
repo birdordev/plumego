@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/spcent/plumego/internal/testutil/wait"
 	"github.com/spcent/plumego/x/messaging/pubsub"
 )
 
@@ -15,7 +16,7 @@ func TestTransactionManagerBasic(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer broker.Close()
+	defer func() { _ = broker.Close() }()
 
 	if broker.txManager == nil {
 		t.Fatal("txManager should be initialized when transactions are enabled")
@@ -73,6 +74,9 @@ func TestTransactionManagerBasic(t *testing.T) {
 	if active != 0 {
 		t.Fatalf("expected 0 active transactions after commit, got %d", active)
 	}
+	if totalMessages != 0 {
+		t.Fatalf("expected 0 buffered messages after commit, got %d", totalMessages)
+	}
 
 	// Verify messages are delivered
 	received := 0
@@ -97,7 +101,7 @@ func TestTransactionRollback(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer broker.Close()
+	defer func() { _ = broker.Close() }()
 
 	ctx := t.Context()
 
@@ -155,7 +159,7 @@ func TestTransactionTimeout(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer broker.Close()
+	defer func() { _ = broker.Close() }()
 
 	ctx := t.Context()
 
@@ -168,8 +172,12 @@ func TestTransactionTimeout(t *testing.T) {
 		t.Fatalf("PublishWithTransaction error: %v", err)
 	}
 
-	// Wait for timeout
-	time.Sleep(200 * time.Millisecond)
+	// Poll for the transaction timeout (100ms) to clear the transaction
+	// instead of sleeping a fixed duration.
+	wait.ForValue(t, 5*time.Second, "timed-out transaction cleanup", func() int {
+		active, _ := broker.txManager.stats()
+		return active
+	}, 0)
 
 	// Verify transaction is cleared after timeout
 	active, totalMessages := broker.txManager.stats()
@@ -197,7 +205,7 @@ func TestTransactionNotFound(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer broker.Close()
+	defer func() { _ = broker.Close() }()
 
 	ctx := t.Context()
 
@@ -227,7 +235,7 @@ func TestTransactionDoubleCommit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer broker.Close()
+	defer func() { _ = broker.Close() }()
 
 	ctx := t.Context()
 
@@ -262,7 +270,7 @@ func TestTransactionDisabled(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer broker.Close()
+	defer func() { _ = broker.Close() }()
 
 	ctx := t.Context()
 
@@ -302,7 +310,7 @@ func TestTransactionConcurrent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer broker.Close()
+	defer func() { _ = broker.Close() }()
 
 	ctx := t.Context()
 
@@ -372,7 +380,7 @@ func TestTransactionClose(t *testing.T) {
 	}
 
 	// Close broker
-	broker.Close()
+	_ = broker.Close()
 
 	// Try to add message after close
 	err = broker.PublishWithTransaction(ctx, "test-topic", msg, txID)
