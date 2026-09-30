@@ -193,7 +193,7 @@ func (p *Proxy) handleHTTP(w http.ResponseWriter, r *http.Request) {
 
 		// Backoff before retry
 		if p.config.RetryBackoff > 0 {
-			timer := time.NewTimer(p.config.RetryBackoff * time.Duration(attempt + 1))
+			timer := time.NewTimer(p.config.RetryBackoff * time.Duration(attempt+1))
 			select {
 			case <-r.Context().Done():
 				timer.Stop()
@@ -385,7 +385,7 @@ func (p *Proxy) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 
 		// Backoff before retry
 		if p.config.RetryBackoff > 0 {
-			timer := time.NewTimer(p.config.RetryBackoff * time.Duration(attempt + 1))
+			timer := time.NewTimer(p.config.RetryBackoff * time.Duration(attempt+1))
 			select {
 			case <-r.Context().Done():
 				timer.Stop()
