@@ -11,7 +11,7 @@ import (
 
 func newKV(t *testing.T) *kvstore.KVStore {
 	t.Helper()
-	store, err := kvstore.NewKVStore(kvstore.Options{DataDir: t.TempDir()})
+	store, err := kvstore.NewKVStore(kvstore.Config{DataDir: t.TempDir()})
 	if err != nil {
 		t.Fatalf("open kv: %v", err)
 	}

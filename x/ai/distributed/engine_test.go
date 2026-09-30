@@ -22,7 +22,7 @@ func TestDistributedEngine_ExecuteAsync(t *testing.T) {
 	defer broker.Close()
 
 	tmpDir := t.TempDir()
-	store, _ := kv.NewKVStore(kv.Options{DataDir: filepath.Join(tmpDir, "test")})
+	store, _ := kv.NewKVStore(kv.Config{DataDir: filepath.Join(tmpDir, "test")})
 	defer store.Close()
 
 	persistence := NewKVPersistence(store)
@@ -81,7 +81,7 @@ func TestDistributedEngine_ExecuteSync(t *testing.T) {
 	defer broker.Close()
 
 	tmpDir := t.TempDir()
-	store, _ := kv.NewKVStore(kv.Options{DataDir: filepath.Join(tmpDir, "test")})
+	store, _ := kv.NewKVStore(kv.Config{DataDir: filepath.Join(tmpDir, "test")})
 	defer store.Close()
 
 	persistence := NewKVPersistence(store)
@@ -122,7 +122,7 @@ func TestDistributedEngine_GetExecutionStatus(t *testing.T) {
 	defer broker.Close()
 
 	tmpDir := t.TempDir()
-	store, _ := kv.NewKVStore(kv.Options{DataDir: filepath.Join(tmpDir, "test")})
+	store, _ := kv.NewKVStore(kv.Config{DataDir: filepath.Join(tmpDir, "test")})
 	defer store.Close()
 
 	persistence := NewKVPersistence(store)
@@ -177,7 +177,7 @@ func TestDistributedEngine_Pause(t *testing.T) {
 	defer broker.Close()
 
 	tmpDir := t.TempDir()
-	store, _ := kv.NewKVStore(kv.Options{DataDir: filepath.Join(tmpDir, "test")})
+	store, _ := kv.NewKVStore(kv.Config{DataDir: filepath.Join(tmpDir, "test")})
 	defer store.Close()
 
 	persistence := NewKVPersistence(store)
@@ -276,7 +276,7 @@ func TestDistributedEngine_Close(t *testing.T) {
 	defer broker.Close()
 
 	tmpDir := t.TempDir()
-	store, _ := kv.NewKVStore(kv.Options{DataDir: filepath.Join(tmpDir, "test")})
+	store, _ := kv.NewKVStore(kv.Config{DataDir: filepath.Join(tmpDir, "test")})
 	defer store.Close()
 
 	persistence := NewKVPersistence(store)

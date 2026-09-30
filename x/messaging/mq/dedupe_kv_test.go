@@ -15,7 +15,7 @@ func TestKVDeduperLifecycle(t *testing.T) {
 	}
 	defer os.RemoveAll(dir)
 
-	kv, err := kvstore.NewKVStore(kvstore.Options{DataDir: dir})
+	kv, err := kvstore.NewKVStore(kvstore.Config{DataDir: dir})
 	if err != nil {
 		t.Fatalf("kv store: %v", err)
 	}

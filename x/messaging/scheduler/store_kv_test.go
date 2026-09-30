@@ -9,7 +9,7 @@ import (
 )
 
 func TestKVStorePersistence(t *testing.T) {
-	kv, err := kvstore.NewKVStore(kvstore.Options{DataDir: t.TempDir()})
+	kv, err := kvstore.NewKVStore(kvstore.Config{DataDir: t.TempDir()})
 	if err != nil {
 		t.Fatalf("kv store: %v", err)
 	}

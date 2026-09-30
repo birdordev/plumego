@@ -19,7 +19,7 @@ func newTestInstrumentedEngine(t *testing.T) (*InstrumentedDistributedEngine, fu
 		t.Fatal(err)
 	}
 	tmpDir := t.TempDir()
-	store, err := kv.NewKVStore(kv.Options{DataDir: filepath.Join(tmpDir, "inst")})
+	store, err := kv.NewKVStore(kv.Config{DataDir: filepath.Join(tmpDir, "inst")})
 	if err != nil {
 		t.Fatalf("NewKVStore: %v", err)
 	}
@@ -68,7 +68,7 @@ func TestInstrumentedEngine_ExecuteAsync_RegisteredWorkflow(t *testing.T) {
 	defer broker.Close()
 
 	tmpDir := t.TempDir()
-	store, _ := kv.NewKVStore(kv.Options{DataDir: filepath.Join(tmpDir, "inst2")})
+	store, _ := kv.NewKVStore(kv.Config{DataDir: filepath.Join(tmpDir, "inst2")})
 	defer store.Close()
 
 	persistence := NewKVPersistence(store)
@@ -99,7 +99,7 @@ func TestInstrumentedEngine_GetExecutionStatus(t *testing.T) {
 	defer broker.Close()
 
 	tmpDir := t.TempDir()
-	store, _ := kv.NewKVStore(kv.Options{DataDir: filepath.Join(tmpDir, "inst3")})
+	store, _ := kv.NewKVStore(kv.Config{DataDir: filepath.Join(tmpDir, "inst3")})
 	defer store.Close()
 
 	persistence := NewKVPersistence(store)

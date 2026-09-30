@@ -309,7 +309,7 @@ func TestMQTaskQueue_Enqueue(t *testing.T) {
 	defer broker.Close()
 
 	tmpDir := t.TempDir()
-	store, _ := kv.NewKVStore(kv.Options{DataDir: filepath.Join(tmpDir, "test")})
+	store, _ := kv.NewKVStore(kv.Config{DataDir: filepath.Join(tmpDir, "test")})
 	defer store.Close()
 	persistence := NewKVPersistence(store)
 
@@ -367,7 +367,7 @@ func TestMQTaskQueue_Subscribe(t *testing.T) {
 	defer broker.Close()
 
 	tmpDir := t.TempDir()
-	store, _ := kv.NewKVStore(kv.Options{DataDir: filepath.Join(tmpDir, "test")})
+	store, _ := kv.NewKVStore(kv.Config{DataDir: filepath.Join(tmpDir, "test")})
 	defer store.Close()
 	persistence := NewKVPersistence(store)
 
@@ -449,7 +449,7 @@ func TestMQTaskQueue_TaskStatus(t *testing.T) {
 	defer broker.Close()
 
 	tmpDir := t.TempDir()
-	store, _ := kv.NewKVStore(kv.Options{DataDir: filepath.Join(tmpDir, "test")})
+	store, _ := kv.NewKVStore(kv.Config{DataDir: filepath.Join(tmpDir, "test")})
 	defer store.Close()
 	persistence := NewKVPersistence(store)
 
@@ -491,7 +491,7 @@ func TestMQTaskQueue_Results(t *testing.T) {
 	defer broker.Close()
 
 	tmpDir := t.TempDir()
-	store, _ := kv.NewKVStore(kv.Options{DataDir: filepath.Join(tmpDir, "test")})
+	store, _ := kv.NewKVStore(kv.Config{DataDir: filepath.Join(tmpDir, "test")})
 	defer store.Close()
 	persistence := NewKVPersistence(store)
 

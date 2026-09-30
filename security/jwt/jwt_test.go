@@ -17,7 +17,7 @@ import (
 
 func newTestStore(t *testing.T) *kvstore.KVStore {
 	t.Helper()
-	store, err := kvstore.NewKVStore(kvstore.Options{DataDir: t.TempDir()})
+	store, err := kvstore.NewKVStore(kvstore.Config{DataDir: t.TempDir()})
 	if err != nil {
 		t.Fatalf("failed to create kv store: %v", err)
 	}
@@ -189,7 +189,7 @@ func TestMissingSubject(t *testing.T) {
 // ========== Performance Test ==========
 
 func BenchmarkGenerateTokenPair(b *testing.B) {
-	store, _ := kvstore.NewKVStore(kvstore.Options{DataDir: b.TempDir()})
+	store, _ := kvstore.NewKVStore(kvstore.Config{DataDir: b.TempDir()})
 	cfg := DefaultJWTConfig()
 	mgr, _ := NewJWTManager(store, cfg)
 
@@ -203,7 +203,7 @@ func BenchmarkGenerateTokenPair(b *testing.B) {
 }
 
 func BenchmarkVerifyToken(b *testing.B) {
-	store, _ := kvstore.NewKVStore(kvstore.Options{DataDir: b.TempDir()})
+	store, _ := kvstore.NewKVStore(kvstore.Config{DataDir: b.TempDir()})
 	cfg := DefaultJWTConfig()
 	mgr, _ := NewJWTManager(store, cfg)
 
@@ -217,7 +217,7 @@ func BenchmarkVerifyToken(b *testing.B) {
 }
 
 func BenchmarkGenerateTokenPairEdDSA(b *testing.B) {
-	store, _ := kvstore.NewKVStore(kvstore.Options{DataDir: b.TempDir()})
+	store, _ := kvstore.NewKVStore(kvstore.Config{DataDir: b.TempDir()})
 	cfg := DefaultJWTConfig()
 	cfg.Algorithm = AlgorithmEdDSA
 	mgr, _ := NewJWTManager(store, cfg)

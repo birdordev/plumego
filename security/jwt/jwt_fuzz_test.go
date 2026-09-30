@@ -25,7 +25,7 @@ func FuzzJWTVerifyTokenFailsClosed(f *testing.F) {
 		f.Add(s)
 	}
 
-	store, err := kvstore.NewKVStore(kvstore.Options{DataDir: f.TempDir()})
+	store, err := kvstore.NewKVStore(kvstore.Config{DataDir: f.TempDir()})
 	if err != nil {
 		f.Fatalf("create key store: %v", err)
 	}
