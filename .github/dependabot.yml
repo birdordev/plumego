@@ -1,0 +1,73 @@
+# Dependabot configuration for automated dependency updates.
+#
+# The root module is intentionally stdlib-only (zero runtime dependencies),
+# so it is not listed here. Only modules that actually carry third-party
+# requirements are covered.
+
+version: 2
+
+updates:
+  # Keep workflow actions current (checkout, setup-go, codeql-action, ...).
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: wednesday
+      time: "03:17"
+    groups:
+      actions:
+        patterns:
+          - "*"
+
+  # CLI module: gopkg.in/yaml.v3.
+  - package-ecosystem: gomod
+    directory: /cmd/plumego
+    schedule:
+      interval: weekly
+      day: wednesday
+      time: "03:17"
+    groups:
+      gomod:
+        patterns:
+          - "*"
+
+  # Reference applications with external dependencies. They use local
+  # `replace github.com/spcent/plumego => ../..` directives, which
+  # dependabot preserves; updates touch only third-party requirements.
+  - package-ecosystem: gomod
+    directory: /reference/with-rest
+    schedule:
+      interval: monthly
+    groups:
+      gomod:
+        patterns:
+          - "*"
+
+  - package-ecosystem: gomod
+    directory: /reference/with-rpc
+    schedule:
+      interval: monthly
+    groups:
+      gomod:
+        patterns:
+          - "*"
+
+  - package-ecosystem: gomod
+    directory: /reference/benchmark
+    schedule:
+      interval: monthly
+    groups:
+      gomod:
+        patterns:
+          - "*"
+
+  # Documentation site (Astro, pnpm).
+  - package-ecosystem: npm
+    directory: /website
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 5
+    groups:
+      npm:
+        patterns:
+          - "*"

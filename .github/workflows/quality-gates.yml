@@ -282,6 +282,40 @@ jobs:
         working-directory: ${{ matrix.module }}
         run: go test -race -timeout 60s ./...
 
+  go-cross-platform-gates:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            test: true
+          # Windows runs compile-time gates only: several test suites use
+          # unix-shaped paths and ports, and vet+build still catches
+          # platform-conditional code and missing build tags.
+          - os: windows-latest
+            test: false
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: Build all packages
+        run: go build ./...
+
+      - name: Run go vet
+        run: go vet ./...
+
+      - name: Run tests
+        if: matrix.test
+        run: go test -timeout 60s ./...
+
   website-quality-gates:
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -370,6 +404,7 @@ jobs:
     needs:
       - go-quality-gates
       - go-submodule-quality-gates
+      - go-cross-platform-gates
       - website-quality-gates
     runs-on: ubuntu-latest
     timeout-minutes: 60

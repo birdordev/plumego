@@ -112,9 +112,13 @@ Keep the subject under ~72 characters; put the "why" in the body.
   its scope/boundary and verification sections are not optional boilerplate —
   the boundary checkers and reviewers use them.
 - CI runs the same gates as `make gates` plus fuzz smoke tests
-  (`contract`, `security/jwt`, `security/password`, `router`, `x/websocket`)
-  and the website build. A green local `make gates` is the strongest signal
-  your PR will pass.
+  (`contract`, `security/jwt`, `security/password`, `router`, `x/websocket`),
+  cross-platform build/vet checks (macOS and Windows, with the full test
+  suite on macOS), CodeQL analysis, and the website build. A green local
+  `make gates` is the strongest signal your PR will pass.
+- Dependency updates for GitHub Actions, `cmd/plumego`, the reference
+  modules with third-party requirements, and the website are automated via
+  [Dependabot](.github/dependabot.yml).
 - Small, single-purpose PRs are reviewed fastest. A PR that spans a stable
   root, an extension, and a reference app will usually be asked to split.
 
