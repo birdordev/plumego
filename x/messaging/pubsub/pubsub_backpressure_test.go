@@ -110,7 +110,7 @@ func TestBackpressure_CloseSubscriber(t *testing.T) {
 	_ = ps.Publish("t", Message{ID: "m2"}) // should close subscriber if full
 
 	// Drain first
-	_, _ = <-sub.C()
+	<-sub.C()
 
 	// Channel should eventually be closed
 	select {

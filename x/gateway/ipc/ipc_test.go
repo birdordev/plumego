@@ -390,7 +390,7 @@ func TestWithTimeout(t *testing.T) {
 
 			// Read but don't respond immediately
 			buf := make([]byte, 1024)
-			serverClient.Read(buf)
+			_, _ = serverClient.Read(buf)
 
 			// Delay response
 			time.Sleep(200 * time.Millisecond)
@@ -735,7 +735,7 @@ func BenchmarkClientServer(b *testing.B) {
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
 			client.Write(data)
-			serverClient.Read(buf)
+			_, _ = serverClient.Read(buf)
 		}
 	})
 }
@@ -758,7 +758,7 @@ func BenchmarkLargeWrite(b *testing.B) {
 	b.SetBytes(int64(len(data)))
 
 	for i := 0; i < b.N; i++ {
-		go serverClient.Read(buf)
+		go func() { _, _ = serverClient.Read(buf) }()
 		client.Write(data)
 	}
 }

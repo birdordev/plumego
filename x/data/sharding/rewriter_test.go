@@ -572,11 +572,11 @@ func BenchmarkSQLRewriter_Rewrite(b *testing.B) {
 
 	b.Run("with_cache", func(b *testing.B) {
 		// Prime the cache
-		rewriter.Rewrite(query, 0)
+		_, _ = rewriter.Rewrite(query, 0)
 
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
-			rewriter.Rewrite(query, 0)
+			_, _ = rewriter.Rewrite(query, 0)
 		}
 	})
 
@@ -584,7 +584,7 @@ func BenchmarkSQLRewriter_Rewrite(b *testing.B) {
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
 			rewriter.ClearCache()
-			rewriter.Rewrite(query, 0)
+			_, _ = rewriter.Rewrite(query, 0)
 		}
 	})
 }

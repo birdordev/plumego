@@ -35,8 +35,6 @@ const (
 	DevToolsPprofSymbol    = DevToolsPprofBasePath + "/symbol"
 	DevToolsPprofTrace     = DevToolsPprofBasePath + "/trace"
 	DevToolsReloadPath     = DevToolsBasePath + "/reload"
-
-	codeEnvReloadFailed = "ENV_RELOAD_FAILED"
 )
 
 type DevTools struct {

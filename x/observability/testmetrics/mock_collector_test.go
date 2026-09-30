@@ -258,7 +258,6 @@ func Example_mockCollector_embedding() {
 	// no-op collector.
 	type customMock struct {
 		*NoopCollector
-		httpCallCount int
 	}
 
 	mock := &customMock{

@@ -426,7 +426,7 @@ func (w *gzipResponseWriter) Flush() {
 		w.commitPassThrough()
 	}
 	if w.gz != nil {
-		w.gz.Flush()
+		_ = w.gz.Flush()
 	}
 	internaltransport.FlushIfSupported(w.ResponseWriter)
 }

@@ -13,13 +13,13 @@ func TestKVDeduperLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("temp dir: %v", err)
 	}
-	defer os.RemoveAll(dir)
+	defer func() { _ = os.RemoveAll(dir) }()
 
 	kv, err := kvstore.NewKVStore(kvstore.Config{DataDir: dir})
 	if err != nil {
 		t.Fatalf("kv store: %v", err)
 	}
-	defer kv.Close()
+	defer func() { _ = kv.Close() }()
 
 	deduper := NewKVDeduper(kv, KVDeduperConfig{
 		Prefix:     "mq",

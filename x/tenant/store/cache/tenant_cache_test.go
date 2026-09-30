@@ -239,7 +239,7 @@ func TestTenantCache_Decr(t *testing.T) {
 
 	ctx := tenant.WithTenantID(t.Context(), "tenant-1")
 
-	tenantCache.Incr(ctx, "counter", 100)
+	_, _ = tenantCache.Incr(ctx, "counter", 100)
 
 	val, err := tenantCache.Decr(ctx, "counter", 30)
 	if err != nil {
@@ -352,7 +352,7 @@ func TestTenantCache_IsolationBetweenTenants(t *testing.T) {
 		t.Errorf("tenant 3: expected 'config-3', got '%s'", string(val3))
 	}
 
-	tenantCache.Delete(ctx2, "config")
+	_ = tenantCache.Delete(ctx2, "config")
 
 	val1, _ = tenantCache.Get(ctx1, "config")
 	if string(val1) != "config-1" {

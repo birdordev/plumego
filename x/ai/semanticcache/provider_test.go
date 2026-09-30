@@ -282,7 +282,7 @@ func TestSemanticCachingProvider(t *testing.T) {
 		}
 
 		// Make a call
-		scp.Complete(ctx, req)
+		_, _ = scp.Complete(ctx, req)
 
 		stats := scp.Stats()
 		if stats.Stores != 1 {
@@ -301,7 +301,7 @@ func TestSemanticCachingProvider(t *testing.T) {
 		}
 
 		// First call
-		scp.Complete(ctx, req)
+		_, _ = scp.Complete(ctx, req)
 
 		// Clear cache
 		if err := scp.ClearCache(ctx); err != nil {
@@ -309,7 +309,7 @@ func TestSemanticCachingProvider(t *testing.T) {
 		}
 
 		// Second call should hit provider again
-		scp.Complete(ctx, req)
+		_, _ = scp.Complete(ctx, req)
 
 		if mock.CallCount() != 2 {
 			t.Errorf("expected 2 provider calls after clear, got %d", mock.CallCount())

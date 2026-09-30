@@ -198,7 +198,7 @@ func BenchmarkGenerateTokenPair(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		mgr.GenerateTokenPair(b.Context(), identity, authz)
+		_, _ = mgr.GenerateTokenPair(b.Context(), identity, authz)
 	}
 }
 
@@ -212,7 +212,7 @@ func BenchmarkVerifyToken(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		mgr.VerifyToken(b.Context(), pair.AccessToken, TokenTypeAccess)
+		_, _ = mgr.VerifyToken(b.Context(), pair.AccessToken, TokenTypeAccess)
 	}
 }
 
@@ -227,7 +227,7 @@ func BenchmarkGenerateTokenPairEdDSA(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		mgr.GenerateTokenPair(b.Context(), identity, authz)
+		_, _ = mgr.GenerateTokenPair(b.Context(), identity, authz)
 	}
 }
 

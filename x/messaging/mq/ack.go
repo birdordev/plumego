@@ -247,7 +247,7 @@ func (b *InProcBroker) PublishWithAck(ctx context.Context, topic string, msg Ack
 
 		// Generate ACK ID if not provided
 		if msg.AckID == "" {
-			msg.AckID = fmt.Sprintf("%s-%d", msg.Message.ID, time.Now().UnixNano())
+			msg.AckID = fmt.Sprintf("%s-%d", msg.ID, time.Now().UnixNano())
 		}
 
 		// Track acknowledgment if required

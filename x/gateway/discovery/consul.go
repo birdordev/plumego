@@ -125,7 +125,7 @@ func (c *Consul) Resolve(ctx context.Context, serviceName string) ([]string, err
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode == http.StatusNotFound {
 		return nil, ErrServiceNotFound
@@ -191,7 +191,7 @@ func (c *Consul) Register(ctx context.Context, instance Instance) error {
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("consul returned status %d", resp.StatusCode)
@@ -206,7 +206,7 @@ func (c *Consul) Deregister(ctx context.Context, serviceID string) error {
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("consul returned status %d", resp.StatusCode)

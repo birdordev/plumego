@@ -62,7 +62,7 @@ func (l *gLogger) initLogFiles() error {
 
 		linkName := fmt.Sprintf("%s.%s", l.program, lname)
 		linkPath := filepath.Join(l.logDir, linkName)
-		os.Remove(linkPath)
+		_ = os.Remove(linkPath)
 		if err := os.Symlink(filename, linkPath); err != nil {
 			return fmt.Errorf("failed to create symlink %s: %w", linkPath, err)
 		}
@@ -134,7 +134,7 @@ func (l *gLogger) rotateIfNeeded(level Level, logSize int64) (logDir, program st
 func (l *gLogger) rotateLogFile(level Level) error {
 	// Close the current log file
 	if file, ok := l.logFiles[level]; ok {
-		file.Close()
+		_ = file.Close()
 	}
 
 	// Generate new log filename with timestamp
@@ -167,7 +167,7 @@ func (l *gLogger) rotateLogFile(level Level) error {
 	// abort the rotation because the log file itself was opened successfully.
 	linkName := fmt.Sprintf("%s.%s", l.program, lname)
 	linkPath := filepath.Join(l.logDir, linkName)
-	os.Remove(linkPath) // ignore removal error; the next Symlink may still succeed
+	_ = os.Remove(linkPath) // ignore removal error; the next Symlink may still succeed
 	if err := os.Symlink(filename, linkPath); err != nil {
 		// Write directly to stderr to avoid recursion through the logger.
 		fmt.Fprintf(os.Stderr, "log: failed to update symlink %s → %s: %v\n", linkPath, filename, err)

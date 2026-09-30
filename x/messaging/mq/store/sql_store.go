@@ -117,7 +117,7 @@ func (s *SQLStore) Reserve(ctx context.Context, opts mq.ReserveOptions) ([]mq.Ta
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	tasks := make([]mq.Task, 0, len(ids))
 	for rows.Next() {
@@ -578,7 +578,7 @@ func (s *SQLStore) selectDeadIDs(ctx context.Context, tx *sql.Tx, limit int) ([]
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	ids := make([]string, 0, limit)
 	for rows.Next() {
@@ -885,5 +885,5 @@ func isDuplicateError(err error) bool {
 		return false
 	}
 	msg := strings.ToLower(err.Error())
-	return errors.Is(err, sql.ErrNoRows) == false && (strings.Contains(msg, "duplicate") || strings.Contains(msg, "unique") || strings.Contains(msg, "constraint"))
+	return !errors.Is(err, sql.ErrNoRows) && (strings.Contains(msg, "duplicate") || strings.Contains(msg, "unique") || strings.Contains(msg, "constraint"))
 }

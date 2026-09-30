@@ -55,7 +55,7 @@ func TestKVStoreBasicOperations(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewKVStore: %v", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	if err := store.Set("alpha", []byte("one"), 0); err != nil {
 		t.Fatalf("Set: %v", err)
@@ -123,7 +123,7 @@ func TestKVStoreNilAndEmptyValueRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reopen: %v", err)
 	}
-	defer reopened.Close()
+	defer func() { _ = reopened.Close() }()
 
 	emptyValue, err = reopened.Get("empty-value")
 	if err != nil {
@@ -139,7 +139,7 @@ func TestKVStoreTTL(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewKVStore: %v", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	if err := store.Set("ttl", []byte("value"), 20*time.Millisecond); err != nil {
 		t.Fatalf("Set: %v", err)
@@ -172,7 +172,7 @@ func TestKVStorePersistenceAcrossReopen(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reopen: %v", err)
 	}
-	defer reopened.Close()
+	defer func() { _ = reopened.Close() }()
 
 	got, err := reopened.Get("persist")
 	if err != nil {
@@ -188,7 +188,7 @@ func TestKVStoreKeysAndStats(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewKVStore: %v", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	_ = store.Set("b", []byte("2"), 0)
 	_ = store.Set("a", []byte("1"), 0)
@@ -390,7 +390,7 @@ func TestKVStoreRejectsEmptyKeys(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewKVStore: %v", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	if err := store.Set("", []byte("value"), 0); !errors.Is(err, ErrInvalidKey) {
 		t.Fatalf("Set empty key error = %v, want ErrInvalidKey", err)
@@ -431,7 +431,7 @@ func TestKVStoreLoadRecomputesEntrySize(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewKVStore: %v", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	stats := mustStats(t, store)
 	if stats.MemoryUsage != entrySize("alpha", []byte("one")) {
@@ -494,7 +494,7 @@ func TestKVStoreLoadAppliesMaxEntries(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewKVStore: %v", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	keys := mustKeys(t, store)
 	if len(keys) != 1 || keys[0] != "new" {
@@ -523,7 +523,7 @@ func TestKVStoreOpenDoesNotPersistPrunedStartupState(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewKVStore: %v", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	if keys := mustKeys(t, store); len(keys) != 1 || keys[0] != "current" {
 		t.Fatalf("loaded keys = %v, want [current]", keys)
@@ -541,7 +541,7 @@ func TestKVStoreRejectsOversizedValue(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewKVStore: %v", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	oversized := bytes.Repeat([]byte("x"), 1024*1024)
 	err = store.Set("too-large", oversized, 0)
@@ -565,7 +565,7 @@ func TestKVStorePersistFailureCleansTempFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewKVStore: %v", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	blockStatePath(t, dir)
 
@@ -588,7 +588,7 @@ func TestKVStoreSetRollbackOnPersistFailure(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewKVStore: %v", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	if err := store.Set("alpha", []byte("one"), 0); err != nil {
 		t.Fatalf("initial Set: %v", err)
@@ -613,7 +613,7 @@ func TestKVStoreDeleteRollbackOnPersistFailure(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewKVStore: %v", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	if err := store.Set("alpha", []byte("one"), 0); err != nil {
 		t.Fatalf("initial Set: %v", err)
@@ -638,7 +638,7 @@ func TestKVStoreExpiredGetDoesNotPersistCleanup(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewKVStore: %v", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	if err := store.Set("ttl", []byte("value"), 10*time.Millisecond); err != nil {
 		t.Fatalf("Set: %v", err)
@@ -666,7 +666,7 @@ func TestKVStoreContextMethodsRejectCanceledContext(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewKVStore: %v", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
@@ -723,7 +723,7 @@ func TestKVStoreSetContextRejectsCanceledContextAfterWaitingForLock(t *testing.T
 	if err != nil {
 		t.Fatalf("NewKVStore: %v", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	store.mu.Lock()
 	ctx, cancel := context.WithCancel(t.Context())
@@ -754,7 +754,7 @@ func TestKVStoreReadOnlyExpiredChecksDoNotMutate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewKVStore: %v", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	if err := store.Set("ttl", []byte("value"), 10*time.Millisecond); err != nil {
 		t.Fatalf("Set: %v", err)
@@ -784,7 +784,7 @@ func TestKVStoreConcurrentReadOnlyInspection(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewKVStore: %v", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	if err := store.Set("alpha", []byte("one"), 0); err != nil {
 		t.Fatalf("Set alpha: %v", err)
@@ -876,7 +876,7 @@ func TestKVStoreLoadUnreadableStateFile(t *testing.T) {
 	if err := os.Chmod(statePath, 0000); err != nil {
 		t.Skipf("cannot chmod state file: %v", err)
 	}
-	t.Cleanup(func() { os.Chmod(statePath, 0644) })
+	t.Cleanup(func() { _ = os.Chmod(statePath, 0644) })
 
 	_, err := NewKVStore(Options{DataDir: dir})
 	if err == nil {
@@ -899,7 +899,7 @@ func TestSetContextTTLRefreshAfterSlowPersist(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewKVStore: %v", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	// Use an extremely short TTL so persist latency (file IO) exceeds it.
 	const ttl = time.Nanosecond
@@ -925,7 +925,7 @@ func TestDeleteNonExistentKey(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewKVStore: %v", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	err = store.Delete("never-set-key")
 	if !errors.Is(err, ErrKeyNotFound) {
@@ -970,7 +970,7 @@ func TestCurrentUsage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewKVStore: %v", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	if err := store.Set("a", []byte("1"), 0); err != nil {
 		t.Fatalf("Set: %v", err)
@@ -997,7 +997,7 @@ func TestCurrentUsageExcludesExpired(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewKVStore: %v", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	if err := store.Set("live", []byte("ok"), 0); err != nil {
 		t.Fatalf("Set live: %v", err)
@@ -1048,7 +1048,7 @@ func TestSyncDirPersistenceTriggered(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewKVStore: %v", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	// A Set triggers persistLocked → syncDir on the directory.
 	if err := store.Set("sync-key", []byte("sync-val"), 0); err != nil {
@@ -1087,7 +1087,7 @@ func TestKVStoreGetStatsContextMemoryUsage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewKVStore: %v", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	val := []byte("hello")
 	if err := store.Set("stats-key", val, 0); err != nil {
@@ -1110,7 +1110,7 @@ func TestKVStoreHitRatio(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewKVStore: %v", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	_ = store.Set("k", []byte("v"), 0)
 	_, _ = store.Get("k")       // hit
@@ -1132,7 +1132,7 @@ func TestKVStoreEvictIfNeededLocked(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewKVStore: %v", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	// Insert 3 entries; the oldest should be evicted.
 	if err := store.Set("first", []byte("1"), 0); err != nil {
@@ -1160,7 +1160,7 @@ func TestKVStorePersistLockedTempWriteFailure(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewKVStore: %v", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	// This exercises persistLocked success in a normal scenario.
 	if err := store.Set("p", []byte("v"), 0); err != nil {
@@ -1181,7 +1181,7 @@ func TestMemoryUsageLockedWithExpiredEntries(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewKVStore: %v", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	// Insert a live entry first.
 	if err := store.Set("live", []byte("hello"), 0); err != nil {
@@ -1216,7 +1216,7 @@ func TestEvictIfNeededLockedEmptyDataAfterPrune(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewKVStore: %v", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	// Inject a large expired entry that would trigger the memory limit.
 	bigVal := bytes.Repeat([]byte("x"), 512*1024) // 512 KB
@@ -1280,7 +1280,7 @@ func TestPersistLockedSyncDirError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewKVStore: %v", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	// Override opts.DataDir to a broken symlink path so syncDir fails.
 	// The temp file will be created in a temp dir we control, while the
@@ -1310,13 +1310,13 @@ func TestPersistLockedCreateTempError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewKVStore: %v", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	// Make the data directory read-only so CreateTemp fails.
 	if err := os.Chmod(dir, 0555); err != nil {
 		t.Skipf("cannot chmod test dir: %v", err)
 	}
-	t.Cleanup(func() { os.Chmod(dir, 0755) })
+	t.Cleanup(func() { _ = os.Chmod(dir, 0755) })
 
 	// Set should fail because persistLocked cannot create a temp file.
 	if err := store.Set("key", []byte("val"), 0); err == nil {
@@ -1335,7 +1335,7 @@ func TestSyncDirWithFileDoesNotPanic(t *testing.T) {
 		t.Fatalf("CreateTemp: %v", err)
 	}
 	filePath := f.Name()
-	f.Close()
+	_ = f.Close()
 
 	// Should not panic regardless of Sync result.
 	_ = syncDir(filePath)
@@ -1359,7 +1359,7 @@ func TestSyncDirFatalSyncError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	// Remove the directory.
 	if err := os.Remove(subdir); err != nil {
@@ -1389,7 +1389,7 @@ func TestKVStoreDeleteContextCancelledAfterLock(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewKVStore: %v", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	if err := store.Set("alpha", []byte("one"), 0); err != nil {
 		t.Fatalf("Set: %v", err)
@@ -1430,7 +1430,7 @@ func TestKVStoreGetContextCancelledAfterLock(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewKVStore: %v", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	if err := store.Set("key", []byte("val"), 0); err != nil {
 		t.Fatalf("Set: %v", err)
@@ -1465,7 +1465,7 @@ func TestKVStoreExistsContextCancelledAfterLock(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewKVStore: %v", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	store.mu.Lock()
 	ctx, cancel := context.WithCancel(t.Context())
@@ -1495,7 +1495,7 @@ func TestKVStoreKeysContextCancelledAfterLock(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewKVStore: %v", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	store.mu.Lock()
 	ctx, cancel := context.WithCancel(t.Context())
@@ -1525,7 +1525,7 @@ func TestKVStoreSizeContextCancelledAfterLock(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewKVStore: %v", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	store.mu.Lock()
 	ctx, cancel := context.WithCancel(t.Context())
@@ -1555,7 +1555,7 @@ func TestKVStoreGetStatsContextCancelledAfterLock(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewKVStore: %v", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	store.mu.Lock()
 	ctx, cancel := context.WithCancel(t.Context())
@@ -1588,7 +1588,7 @@ func TestPersistLockedRenameFailure(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewKVStore: %v", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	// Replace the state file with a directory so os.Rename will fail.
 	statePath := filepath.Join(dir, stateFileName)

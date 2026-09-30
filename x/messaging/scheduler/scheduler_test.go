@@ -2503,9 +2503,7 @@ func TestReplaceExistingWithInvalidCycleKeepsOriginalJob(t *testing.T) {
 		t.Fatalf("expected ErrDependencyCycle, got %v", err)
 	}
 
-	select {
-	case <-time.After(1200 * time.Millisecond):
-	}
+	<-time.After(1200 * time.Millisecond)
 	if got := oldRuns.Load(); got == 0 {
 		t.Fatal("expected original cron job to remain active after failed replacement")
 	}

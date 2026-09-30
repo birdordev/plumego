@@ -61,8 +61,8 @@ func newPlatformServer(addr string, config *Config) (Server, error) {
 			// Set socket file permissions
 			socketPerm := os.FileMode(config.UnixSocketPerm)
 			if chmodErr := os.Chmod(addr, socketPerm); chmodErr != nil {
-				listener.Close()
-				os.Remove(addr)
+				_ = listener.Close()
+				_ = os.Remove(addr)
 				return nil, chmodErr
 			}
 		}
@@ -120,9 +120,9 @@ func (s *unixServer) AcceptWithContext(ctx context.Context) (Client, error) {
 		defer func() {
 			switch l := s.listener.(type) {
 			case *net.UnixListener:
-				l.SetDeadline(time.Time{})
+				_ = l.SetDeadline(time.Time{})
 			case *net.TCPListener:
-				l.SetDeadline(time.Time{})
+				_ = l.SetDeadline(time.Time{})
 			}
 		}()
 	}
@@ -163,7 +163,7 @@ func (s *unixServer) AcceptWithContext(ctx context.Context) (Client, error) {
 	// Enable keepalive for TCP connections
 	if tcpConn, ok := conn.(*net.TCPConn); ok && s.config.KeepAlive {
 		if err := tcpConn.SetKeepAlive(true); err == nil {
-			tcpConn.SetKeepAlivePeriod(s.config.KeepAlivePeriod)
+			_ = tcpConn.SetKeepAlivePeriod(s.config.KeepAlivePeriod)
 		}
 	}
 
@@ -274,7 +274,7 @@ func dialPlatformWithContext(ctx context.Context, addr string, config *Config) (
 		if err == nil {
 			if tcpConn, ok := conn.(*net.TCPConn); ok && config.KeepAlive {
 				if setErr := tcpConn.SetKeepAlive(true); setErr == nil {
-					tcpConn.SetKeepAlivePeriod(config.KeepAlivePeriod)
+					_ = tcpConn.SetKeepAlivePeriod(config.KeepAlivePeriod)
 				}
 			}
 		}
@@ -330,8 +330,8 @@ func (c *unixClient) WriteWithTimeout(data []byte, timeout time.Duration) (int, 
 	c.mu.RUnlock()
 
 	if timeout > 0 {
-		conn.SetWriteDeadline(time.Now().Add(timeout))
-		defer conn.SetWriteDeadline(time.Time{})
+		_ = conn.SetWriteDeadline(time.Now().Add(timeout))
+		defer func() { _ = conn.SetWriteDeadline(time.Time{}) }()
 	}
 
 	n, err := conn.Write(data)
@@ -374,8 +374,8 @@ func (c *unixClient) ReadWithTimeout(buf []byte, timeout time.Duration) (int, er
 	c.mu.RUnlock()
 
 	if timeout > 0 {
-		conn.SetReadDeadline(time.Now().Add(timeout))
-		defer conn.SetReadDeadline(time.Time{})
+		_ = conn.SetReadDeadline(time.Now().Add(timeout))
+		defer func() { _ = conn.SetReadDeadline(time.Time{}) }()
 	}
 
 	n, err := conn.Read(buf)

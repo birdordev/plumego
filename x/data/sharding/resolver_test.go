@@ -9,10 +9,10 @@ func setupTestResolver() (*ShardKeyResolver, *ShardingRuleRegistry) {
 	registry := NewShardingRuleRegistry()
 
 	// Register users table with mod strategy
-	registry.RegisterWithStrategy("users", "user_id", NewModStrategy(), 4)
+	_ = registry.RegisterWithStrategy("users", "user_id", NewModStrategy(), 4)
 
 	// Register orders table with hash strategy
-	registry.RegisterWithStrategy("orders", "order_id", NewHashStrategy(), 4)
+	_ = registry.RegisterWithStrategy("orders", "order_id", NewHashStrategy(), 4)
 
 	resolver := NewShardKeyResolver(registry)
 	return resolver, registry
@@ -344,7 +344,7 @@ func TestShardKeyResolver_Resolve_DefaultShard(t *testing.T) {
 	registry := NewShardingRuleRegistry()
 
 	rule, _ := NewShardingRule("users", "user_id", NewModStrategy(), 4)
-	rule.SetDefaultShard(2)
+	_ = rule.SetDefaultShard(2)
 	if err := registry.Register(rule); err != nil {
 		t.Fatalf("Register() unexpected error: %v", err)
 	}
@@ -522,7 +522,7 @@ func TestShardKeyResolver_CanResolve(t *testing.T) {
 	t.Run("can resolve with default shard", func(t *testing.T) {
 		registry := NewShardingRuleRegistry()
 		rule, _ := NewShardingRule("users", "user_id", NewModStrategy(), 4)
-		rule.SetDefaultShard(0)
+		_ = rule.SetDefaultShard(0)
 		if err := registry.Register(rule); err != nil {
 			t.Fatalf("Register() unexpected error: %v", err)
 		}

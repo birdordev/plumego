@@ -21,7 +21,7 @@ func TestRateLimiter_ContextCancel(t *testing.T) {
 	rl := NewRateLimiter(1, time.Second)
 	ctx := t.Context()
 	// Drain the bucket.
-	rl.Wait(ctx)
+	_ = rl.Wait(ctx)
 
 	ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
 	defer cancel()

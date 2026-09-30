@@ -534,7 +534,7 @@ func (h *Hub) Shutdown(ctx context.Context) error {
 			return ctx.Err()
 		default:
 		}
-		c.Close()
+		_ = c.Close()
 	}
 
 	h.clearRooms()

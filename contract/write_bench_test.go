@@ -15,7 +15,7 @@ func BenchmarkWriteResponse(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		w := httptest.NewRecorder()
 		r := httptest.NewRequest(http.MethodGet, "/test", nil)
-		WriteResponse(w, r, http.StatusOK, data, nil)
+		_ = WriteResponse(w, r, http.StatusOK, data, nil)
 	}
 }
 
@@ -28,7 +28,7 @@ func BenchmarkWriteResponseWithMeta(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		w := httptest.NewRecorder()
 		r := httptest.NewRequest(http.MethodGet, "/test", nil)
-		WriteResponse(w, r, http.StatusOK, data, meta)
+		_ = WriteResponse(w, r, http.StatusOK, data, meta)
 	}
 }
 
@@ -43,7 +43,7 @@ func BenchmarkWriteError(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		w := httptest.NewRecorder()
 		r := httptest.NewRequest(http.MethodPost, "/test", nil)
-		WriteError(w, r, err)
+		_ = WriteError(w, r, err)
 	}
 }
 
@@ -59,7 +59,7 @@ func BenchmarkWriteErrorWithDetail(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		w := httptest.NewRecorder()
 		r := httptest.NewRequest(http.MethodPost, "/test", bytes.NewReader([]byte(`{}`)))
-		WriteError(w, r, err)
+		_ = WriteError(w, r, err)
 	}
 }
 
@@ -73,6 +73,6 @@ func BenchmarkWriteJSONDirect(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		w := httptest.NewRecorder()
-		writeJSON(w, http.StatusOK, p)
+		_ = writeJSON(w, http.StatusOK, p)
 	}
 }

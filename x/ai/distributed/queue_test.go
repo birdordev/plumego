@@ -138,7 +138,7 @@ func (q *MQTaskQueue) processTasks(ctx context.Context, workerID string, sub mq.
 				WorkerID:  workerID,
 				StartedAt: time.Now(),
 			}
-			q.UpdateTaskStatus(ctx, task.ID, status)
+			_ = q.UpdateTaskStatus(ctx, task.ID, status)
 
 			result, err := handler(ctx, &task)
 
@@ -153,11 +153,11 @@ func (q *MQTaskQueue) processTasks(ctx context.Context, workerID string, sub mq.
 				if result != nil {
 					result.TaskID = task.ID
 					result.CompletedAt = time.Now()
-					q.PublishResult(ctx, result)
+					_ = q.PublishResult(ctx, result)
 				}
 			}
 
-			q.UpdateTaskStatus(ctx, task.ID, status)
+			_ = q.UpdateTaskStatus(ctx, task.ID, status)
 		}
 	}
 }

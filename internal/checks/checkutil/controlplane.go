@@ -46,7 +46,7 @@ func readRepoModulePath(repoRoot string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	scanner := NewLineScanner(file)
 	for scanner.Scan() {
@@ -72,7 +72,7 @@ func ReadManifestSchema(repoRoot string) (manifestSchema, error) {
 	if err != nil {
 		return manifestSchema{}, err
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	out := manifestSchema{
 		Enums:  map[string]map[string]struct{}{},
@@ -165,7 +165,7 @@ func ReadDependencyRules(repoRoot string) (dependencyRulesDoc, error) {
 	if err != nil {
 		return dependencyRulesDoc{}, err
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	out := dependencyRulesDoc{
 		ModulePath: modulePath,
@@ -294,7 +294,7 @@ func ReadExtensionTaxonomy(repoRoot string) (extensionTaxonomyDoc, error) {
 	if err != nil {
 		return extensionTaxonomyDoc{}, err
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	out := extensionTaxonomyDoc{
 		CoveredRoots:    map[string]struct{}{},
@@ -389,7 +389,7 @@ func ReadTaskRouting(repoRoot string) (map[string]taskRoutingEntry, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	out := map[string]taskRoutingEntry{}
 	inTasks := false

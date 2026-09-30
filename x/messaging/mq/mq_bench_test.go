@@ -13,7 +13,7 @@ func BenchmarkPublish(b *testing.B) {
 	if err != nil {
 		b.Fatal(err)
 	}
-	defer broker.Close()
+	defer func() { _ = broker.Close() }()
 
 	ctx := b.Context()
 	msg := Message{ID: "bench-1", Data: "benchmark data"}
@@ -31,7 +31,7 @@ func BenchmarkPublishBatch(b *testing.B) {
 	if err != nil {
 		b.Fatal(err)
 	}
-	defer broker.Close()
+	defer func() { _ = broker.Close() }()
 
 	ctx := b.Context()
 	msgs := make([]Message, 10)
@@ -52,7 +52,7 @@ func BenchmarkPublishPriority(b *testing.B) {
 	if err != nil {
 		b.Fatal(err)
 	}
-	defer broker.Close()
+	defer func() { _ = broker.Close() }()
 
 	ctx := b.Context()
 	msg := PriorityMessage{
@@ -73,7 +73,7 @@ func BenchmarkSubscribe(b *testing.B) {
 	if err != nil {
 		b.Fatal(err)
 	}
-	defer broker.Close()
+	defer func() { _ = broker.Close() }()
 
 	ctx := b.Context()
 
@@ -92,7 +92,7 @@ func BenchmarkPublishSubscribe(b *testing.B) {
 	if err != nil {
 		b.Fatal(err)
 	}
-	defer broker.Close()
+	defer func() { _ = broker.Close() }()
 
 	ctx := b.Context()
 	topic := "bench-pubsub"
@@ -157,7 +157,7 @@ func BenchmarkHealthCheck(b *testing.B) {
 	if err != nil {
 		b.Fatal(err)
 	}
-	defer broker.Close()
+	defer func() { _ = broker.Close() }()
 
 	// Subscribe to some topics to make health check more realistic
 	ctx := b.Context()
@@ -177,7 +177,7 @@ func BenchmarkMemoryUsage(b *testing.B) {
 	if err != nil {
 		b.Fatal(err)
 	}
-	defer broker.Close()
+	defer func() { _ = broker.Close() }()
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -192,7 +192,7 @@ func BenchmarkCheckMemoryLimit(b *testing.B) {
 	if err != nil {
 		b.Fatal(err)
 	}
-	defer broker.Close()
+	defer func() { _ = broker.Close() }()
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -208,7 +208,7 @@ func BenchmarkPublishParallel(b *testing.B) {
 	if err != nil {
 		b.Fatal(err)
 	}
-	defer broker.Close()
+	defer func() { _ = broker.Close() }()
 
 	ctx := b.Context()
 	msg := Message{ID: "bench-1", Data: "benchmark data"}
@@ -229,7 +229,7 @@ func BenchmarkSubscribeParallel(b *testing.B) {
 	if err != nil {
 		b.Fatal(err)
 	}
-	defer broker.Close()
+	defer func() { _ = broker.Close() }()
 
 	ctx := b.Context()
 	counter := 0
@@ -255,7 +255,7 @@ func BenchmarkPublishTTL(b *testing.B) {
 	if err != nil {
 		b.Fatal(err)
 	}
-	defer broker.Close()
+	defer func() { _ = broker.Close() }()
 
 	ctx := b.Context()
 	ttlMsg := TTLMessage{
@@ -280,7 +280,7 @@ func BenchmarkPublishPriorityTTL(b *testing.B) {
 	if err != nil {
 		b.Fatal(err)
 	}
-	defer broker.Close()
+	defer func() { _ = broker.Close() }()
 
 	ctx := b.Context()
 	priorityTTLMsg := PriorityTTLMessage{
@@ -306,7 +306,7 @@ func BenchmarkPublishWithAckTTL(b *testing.B) {
 	if err != nil {
 		b.Fatal(err)
 	}
-	defer broker.Close()
+	defer func() { _ = broker.Close() }()
 
 	ctx := b.Context()
 
@@ -331,7 +331,7 @@ func BenchmarkValidateTTL(b *testing.B) {
 	if err != nil {
 		b.Fatal(err)
 	}
-	defer broker.Close()
+	defer func() { _ = broker.Close() }()
 
 	expiresAt := time.Now().Add(30 * time.Second)
 
@@ -351,7 +351,7 @@ func BenchmarkTTLTrackerTrack(b *testing.B) {
 	if err != nil {
 		b.Fatal(err)
 	}
-	defer broker.Close()
+	defer func() { _ = broker.Close() }()
 
 	expiresAt := time.Now().Add(30 * time.Second)
 
@@ -372,12 +372,12 @@ func BenchmarkTTLTrackerStats(b *testing.B) {
 	if err != nil {
 		b.Fatal(err)
 	}
-	defer broker.Close()
+	defer func() { _ = broker.Close() }()
 
 	// Add some tracked messages
 	expiresAt := time.Now().Add(30 * time.Second)
 	for i := 0; i < 100; i++ {
-		broker.ttlTracker.track(fmt.Sprintf("msg-%d", i), "bench-topic", expiresAt)
+		_ = broker.ttlTracker.track(fmt.Sprintf("msg-%d", i), "bench-topic", expiresAt)
 	}
 
 	b.ResetTimer()
@@ -394,7 +394,7 @@ func BenchmarkPublishTTLParallel(b *testing.B) {
 	if err != nil {
 		b.Fatal(err)
 	}
-	defer broker.Close()
+	defer func() { _ = broker.Close() }()
 
 	ctx := b.Context()
 

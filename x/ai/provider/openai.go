@@ -84,7 +84,7 @@ func (p *OpenAIProvider) Complete(ctx context.Context, req *CompletionRequest) (
 	if err != nil {
 		return nil, fmt.Errorf("http request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	// Check error
 	if resp.StatusCode != http.StatusOK {
@@ -123,7 +123,7 @@ func (p *OpenAIProvider) CompleteStream(ctx context.Context, req *CompletionRequ
 	// Check error
 	if resp.StatusCode != http.StatusOK {
 		body := readErrorBody(resp.Body)
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		return nil, fmt.Errorf("api error (status %d): %s", resp.StatusCode, body)
 	}
 
@@ -282,7 +282,7 @@ func (p *OpenAIProvider) parseResponse(resp *openaiChatResponse) *CompletionResp
 		// Tool calls
 		for _, tc := range choice.Message.ToolCalls {
 			var input map[string]any
-			json.Unmarshal([]byte(tc.Function.Arguments), &input)
+			_ = json.Unmarshal([]byte(tc.Function.Arguments), &input)
 
 			result.Content = append(result.Content, ContentBlock{
 				Type: ContentTypeToolUse,

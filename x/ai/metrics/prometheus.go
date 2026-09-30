@@ -48,12 +48,12 @@ func (pe *PrometheusExporter) writePrometheusFormat(w io.Writer, snapshot *Snaps
 		fullName := pe.addNamespace(metricName)
 
 		// Write HELP
-		fmt.Fprintf(w, "# HELP %s Counter metric\n", fullName)
+		_, _ = fmt.Fprintf(w, "# HELP %s Counter metric\n", fullName)
 		// Write TYPE
-		fmt.Fprintf(w, "# TYPE %s counter\n", fullName)
+		_, _ = fmt.Fprintf(w, "# TYPE %s counter\n", fullName)
 		// Write value
-		fmt.Fprintf(w, "%s%s %.6f\n", fullName, pe.formatLabels(labels), counter.Value)
-		fmt.Fprintln(w)
+		_, _ = fmt.Fprintf(w, "%s%s %.6f\n", fullName, pe.formatLabels(labels), counter.Value)
+		_, _ = fmt.Fprintln(w)
 	}
 
 	// Write gauges
@@ -62,12 +62,12 @@ func (pe *PrometheusExporter) writePrometheusFormat(w io.Writer, snapshot *Snaps
 		fullName := pe.addNamespace(metricName)
 
 		// Write HELP
-		fmt.Fprintf(w, "# HELP %s Gauge metric\n", fullName)
+		_, _ = fmt.Fprintf(w, "# HELP %s Gauge metric\n", fullName)
 		// Write TYPE
-		fmt.Fprintf(w, "# TYPE %s gauge\n", fullName)
+		_, _ = fmt.Fprintf(w, "# TYPE %s gauge\n", fullName)
 		// Write value
-		fmt.Fprintf(w, "%s%s %.6f\n", fullName, pe.formatLabels(labels), gauge.Value)
-		fmt.Fprintln(w)
+		_, _ = fmt.Fprintf(w, "%s%s %.6f\n", fullName, pe.formatLabels(labels), gauge.Value)
+		_, _ = fmt.Fprintln(w)
 	}
 
 	// Write histograms
@@ -76,9 +76,9 @@ func (pe *PrometheusExporter) writePrometheusFormat(w io.Writer, snapshot *Snaps
 		fullName := pe.addNamespace(metricName)
 
 		// Write HELP
-		fmt.Fprintf(w, "# HELP %s Histogram metric\n", fullName)
+		_, _ = fmt.Fprintf(w, "# HELP %s Histogram metric\n", fullName)
 		// Write TYPE
-		fmt.Fprintf(w, "# TYPE %s histogram\n", fullName)
+		_, _ = fmt.Fprintf(w, "# TYPE %s histogram\n", fullName)
 
 		// Write histogram buckets (simulated)
 		buckets := []float64{0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10}
@@ -88,17 +88,17 @@ func (pe *PrometheusExporter) writePrometheusFormat(w io.Writer, snapshot *Snaps
 			bucketCount := pe.estimateBucketCount(hist, bucket)
 			cumulativeCount += bucketCount
 			labelsWithBucket := pe.addBucketLabel(labels, bucket)
-			fmt.Fprintf(w, "%s_bucket%s %d\n", fullName, pe.formatLabels(labelsWithBucket), cumulativeCount)
+			_, _ = fmt.Fprintf(w, "%s_bucket%s %d\n", fullName, pe.formatLabels(labelsWithBucket), cumulativeCount)
 		}
 
 		// Write +Inf bucket
 		labelsWithInf := pe.addBucketLabel(labels, 0) // 0 represents +Inf
-		fmt.Fprintf(w, "%s_bucket%s %d\n", fullName, pe.formatLabelsWithInf(labelsWithInf), hist.Count)
+		_, _ = fmt.Fprintf(w, "%s_bucket%s %d\n", fullName, pe.formatLabelsWithInf(labelsWithInf), hist.Count)
 
 		// Write sum and count
-		fmt.Fprintf(w, "%s_sum%s %.6f\n", fullName, pe.formatLabels(labels), hist.Sum)
-		fmt.Fprintf(w, "%s_count%s %d\n", fullName, pe.formatLabels(labels), hist.Count)
-		fmt.Fprintln(w)
+		_, _ = fmt.Fprintf(w, "%s_sum%s %.6f\n", fullName, pe.formatLabels(labels), hist.Sum)
+		_, _ = fmt.Fprintf(w, "%s_count%s %d\n", fullName, pe.formatLabels(labels), hist.Count)
+		_, _ = fmt.Fprintln(w)
 	}
 
 	return nil

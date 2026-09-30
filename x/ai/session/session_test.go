@@ -334,7 +334,7 @@ func TestMemoryStorage_Count(t *testing.T) {
 	// Add sessions
 	for i := 0; i < 5; i++ {
 		session := &Session{ID: fmt.Sprintf("sess-%d", i)}
-		storage.Save(t.Context(), session)
+		_ = storage.Save(t.Context(), session)
 	}
 
 	if count := storage.Count(); count != 5 {

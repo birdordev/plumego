@@ -467,7 +467,7 @@ func (c *Client) do(cfg *requestConfig) RoundTripperFunc {
 // configured maximum response size fail with ErrResponseTooLarge rather than
 // being silently truncated.
 func (c *Client) readResponse(resp *http.Response) ([]byte, error) {
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode >= http.StatusBadRequest {
 		return nil, errors.New("http error: " + resp.Status)
 	}

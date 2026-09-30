@@ -320,7 +320,7 @@ func (dps *DistributedPubSub) PublishGlobal(topic string, msg Message) error {
 	}
 
 	// Publish locally first
-	if err := dps.InProcBroker.Publish(topic, msg); err != nil {
+	if err := dps.Publish(topic, msg); err != nil {
 		return err
 	}
 
@@ -387,7 +387,7 @@ func (dps *DistributedPubSub) broadcastMessage(topic string, msg Message) error 
 				dps.markNodeUnhealthy(n.ID)
 				return
 			}
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			if resp.StatusCode != http.StatusOK {
 				errChan <- fmt.Errorf("node %s returned %d", n.ID, resp.StatusCode)
@@ -451,7 +451,7 @@ func (dps *DistributedPubSub) sendHeartbeat(ctx context.Context, peerAddr string
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("heartbeat failed: %d", resp.StatusCode)
@@ -656,7 +656,7 @@ func (dps *DistributedPubSub) handleClusterPublish(w http.ResponseWriter, r *htt
 	}
 
 	// Publish locally
-	if err := dps.InProcBroker.Publish(cm.Topic, cm.Message); err != nil {
+	if err := dps.Publish(cm.Topic, cm.Message); err != nil {
 		_ = contract.WriteError(w, r, contract.NewErrorBuilder().
 			Type(contract.TypeInternal).
 			Message("cluster publish failed").

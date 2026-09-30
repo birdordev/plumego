@@ -144,55 +144,55 @@ func (e *SMSPrometheusExporter) writeMetrics(w http.ResponseWriter, records []me
 		return
 	}
 
-	fmt.Fprintf(w, "# HELP %s_sms_gateway_queue_depth Current queue depth by state.\n", e.namespace)
-	fmt.Fprintf(w, "# TYPE %s_sms_gateway_queue_depth gauge\n", e.namespace)
+	_, _ = fmt.Fprintf(w, "# HELP %s_sms_gateway_queue_depth Current queue depth by state.\n", e.namespace)
+	_, _ = fmt.Fprintf(w, "# TYPE %s_sms_gateway_queue_depth gauge\n", e.namespace)
 	for _, key := range sortedSMSGaugeKeys(snapshot.queueDepth) {
-		fmt.Fprintf(w, "%s_sms_gateway_queue_depth%s %.0f\n", e.namespace, formatSMSLabels(key, []string{"queue", "state"}), snapshot.queueDepth[key])
+		_, _ = fmt.Fprintf(w, "%s_sms_gateway_queue_depth%s %.0f\n", e.namespace, formatSMSLabels(key, []string{"queue", "state"}), snapshot.queueDepth[key])
 	}
 
-	fmt.Fprintln(w)
-	fmt.Fprintf(w, "# HELP %s_sms_gateway_send_latency_seconds Send latency summary by provider.\n", e.namespace)
-	fmt.Fprintf(w, "# TYPE %s_sms_gateway_send_latency_seconds summary\n", e.namespace)
+	_, _ = fmt.Fprintln(w)
+	_, _ = fmt.Fprintf(w, "# HELP %s_sms_gateway_send_latency_seconds Send latency summary by provider.\n", e.namespace)
+	_, _ = fmt.Fprintf(w, "# TYPE %s_sms_gateway_send_latency_seconds summary\n", e.namespace)
 	for _, key := range sortedSMSLatencyKeys(snapshot.sendLatency) {
 		stats := snapshot.sendLatency[key]
 		labels := formatSMSLabels(key, []string{"tenant", "provider"})
-		fmt.Fprintf(w, "%s_sms_gateway_send_latency_seconds_sum%s %.9f\n", e.namespace, labels, stats.sum)
-		fmt.Fprintf(w, "%s_sms_gateway_send_latency_seconds_count%s %d\n", e.namespace, labels, stats.count)
-		fmt.Fprintf(w, "%s_sms_gateway_send_latency_seconds_min%s %.9f\n", e.namespace, labels, stats.min)
-		fmt.Fprintf(w, "%s_sms_gateway_send_latency_seconds_max%s %.9f\n", e.namespace, labels, stats.max)
+		_, _ = fmt.Fprintf(w, "%s_sms_gateway_send_latency_seconds_sum%s %.9f\n", e.namespace, labels, stats.sum)
+		_, _ = fmt.Fprintf(w, "%s_sms_gateway_send_latency_seconds_count%s %d\n", e.namespace, labels, stats.count)
+		_, _ = fmt.Fprintf(w, "%s_sms_gateway_send_latency_seconds_min%s %.9f\n", e.namespace, labels, stats.min)
+		_, _ = fmt.Fprintf(w, "%s_sms_gateway_send_latency_seconds_max%s %.9f\n", e.namespace, labels, stats.max)
 	}
 
-	fmt.Fprintln(w)
-	fmt.Fprintf(w, "# HELP %s_sms_gateway_receipt_delay_seconds Receipt delay summary by provider.\n", e.namespace)
-	fmt.Fprintf(w, "# TYPE %s_sms_gateway_receipt_delay_seconds summary\n", e.namespace)
+	_, _ = fmt.Fprintln(w)
+	_, _ = fmt.Fprintf(w, "# HELP %s_sms_gateway_receipt_delay_seconds Receipt delay summary by provider.\n", e.namespace)
+	_, _ = fmt.Fprintf(w, "# TYPE %s_sms_gateway_receipt_delay_seconds summary\n", e.namespace)
 	for _, key := range sortedSMSLatencyKeys(snapshot.receiptDelay) {
 		stats := snapshot.receiptDelay[key]
 		labels := formatSMSLabels(key, []string{"tenant", "provider"})
-		fmt.Fprintf(w, "%s_sms_gateway_receipt_delay_seconds_sum%s %.9f\n", e.namespace, labels, stats.sum)
-		fmt.Fprintf(w, "%s_sms_gateway_receipt_delay_seconds_count%s %d\n", e.namespace, labels, stats.count)
-		fmt.Fprintf(w, "%s_sms_gateway_receipt_delay_seconds_min%s %.9f\n", e.namespace, labels, stats.min)
-		fmt.Fprintf(w, "%s_sms_gateway_receipt_delay_seconds_max%s %.9f\n", e.namespace, labels, stats.max)
+		_, _ = fmt.Fprintf(w, "%s_sms_gateway_receipt_delay_seconds_sum%s %.9f\n", e.namespace, labels, stats.sum)
+		_, _ = fmt.Fprintf(w, "%s_sms_gateway_receipt_delay_seconds_count%s %d\n", e.namespace, labels, stats.count)
+		_, _ = fmt.Fprintf(w, "%s_sms_gateway_receipt_delay_seconds_min%s %.9f\n", e.namespace, labels, stats.min)
+		_, _ = fmt.Fprintf(w, "%s_sms_gateway_receipt_delay_seconds_max%s %.9f\n", e.namespace, labels, stats.max)
 	}
 
-	fmt.Fprintln(w)
-	fmt.Fprintf(w, "# HELP %s_sms_gateway_provider_result_total Provider send results.\n", e.namespace)
-	fmt.Fprintf(w, "# TYPE %s_sms_gateway_provider_result_total counter\n", e.namespace)
+	_, _ = fmt.Fprintln(w)
+	_, _ = fmt.Fprintf(w, "# HELP %s_sms_gateway_provider_result_total Provider send results.\n", e.namespace)
+	_, _ = fmt.Fprintf(w, "# TYPE %s_sms_gateway_provider_result_total counter\n", e.namespace)
 	for _, key := range sortedSMSCounterKeys(snapshot.providerResult) {
-		fmt.Fprintf(w, "%s_sms_gateway_provider_result_total%s %d\n", e.namespace, formatSMSLabels(key, []string{"tenant", "provider", "result"}), snapshot.providerResult[key])
+		_, _ = fmt.Fprintf(w, "%s_sms_gateway_provider_result_total%s %d\n", e.namespace, formatSMSLabels(key, []string{"tenant", "provider", "result"}), snapshot.providerResult[key])
 	}
 
-	fmt.Fprintln(w)
-	fmt.Fprintf(w, "# HELP %s_sms_gateway_retry_total Retry attempts by provider.\n", e.namespace)
-	fmt.Fprintf(w, "# TYPE %s_sms_gateway_retry_total counter\n", e.namespace)
+	_, _ = fmt.Fprintln(w)
+	_, _ = fmt.Fprintf(w, "# HELP %s_sms_gateway_retry_total Retry attempts by provider.\n", e.namespace)
+	_, _ = fmt.Fprintf(w, "# TYPE %s_sms_gateway_retry_total counter\n", e.namespace)
 	for _, key := range sortedSMSCounterKeys(snapshot.retry) {
-		fmt.Fprintf(w, "%s_sms_gateway_retry_total%s %d\n", e.namespace, formatSMSLabels(key, []string{"tenant", "provider", "attempt"}), snapshot.retry[key])
+		_, _ = fmt.Fprintf(w, "%s_sms_gateway_retry_total%s %d\n", e.namespace, formatSMSLabels(key, []string{"tenant", "provider", "attempt"}), snapshot.retry[key])
 	}
 
-	fmt.Fprintln(w)
-	fmt.Fprintf(w, "# HELP %s_sms_gateway_status_total Message status transitions.\n", e.namespace)
-	fmt.Fprintf(w, "# TYPE %s_sms_gateway_status_total counter\n", e.namespace)
+	_, _ = fmt.Fprintln(w)
+	_, _ = fmt.Fprintf(w, "# HELP %s_sms_gateway_status_total Message status transitions.\n", e.namespace)
+	_, _ = fmt.Fprintf(w, "# TYPE %s_sms_gateway_status_total counter\n", e.namespace)
 	for _, key := range sortedSMSCounterKeys(snapshot.status) {
-		fmt.Fprintf(w, "%s_sms_gateway_status_total%s %d\n", e.namespace, formatSMSLabels(key, []string{"tenant", "status"}), snapshot.status[key])
+		_, _ = fmt.Fprintf(w, "%s_sms_gateway_status_total%s %d\n", e.namespace, formatSMSLabels(key, []string{"tenant", "status"}), snapshot.status[key])
 	}
 }
 

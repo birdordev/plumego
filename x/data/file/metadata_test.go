@@ -312,7 +312,7 @@ type metadataConnector struct {
 }
 
 func (c metadataConnector) Connect(context.Context) (driver.Conn, error) {
-	return metadataConn{rec: c.rec}, nil
+	return metadataConn(c), nil
 }
 
 func (c metadataConnector) Driver() driver.Driver {

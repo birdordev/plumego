@@ -479,7 +479,7 @@ func TestClusterBeginTx(t *testing.T) {
 		t.Errorf("BeginTx failed: %v", err)
 	}
 	if tx != nil {
-		tx.Rollback()
+		_ = tx.Rollback()
 	}
 
 	metrics := cluster.Metrics()
@@ -873,7 +873,7 @@ func BenchmarkClusterExecContext(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		cluster.ExecContext(ctx, "INSERT INTO test VALUES (?)", i)
+		_, _ = cluster.ExecContext(ctx, "INSERT INTO test VALUES (?)", i)
 	}
 }
 
@@ -905,6 +905,6 @@ func BenchmarkLoadBalancerNext(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		lb.Next(replicas)
+		_, _ = lb.Next(replicas)
 	}
 }

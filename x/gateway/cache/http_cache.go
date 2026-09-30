@@ -309,7 +309,7 @@ func writeCachedResponse(w http.ResponseWriter, cached *CachedResponse) {
 
 	// Write body
 	if cached.Body != nil {
-		w.Write(cached.Body)
+		_, _ = w.Write(cached.Body)
 	}
 }
 

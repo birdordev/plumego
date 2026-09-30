@@ -524,7 +524,7 @@ func TestPoolGetAndReturn(t *testing.T) {
 			}
 			go func(c Client) {
 				buf := make([]byte, 64)
-				c.Read(buf)
+				_, _ = c.Read(buf)
 				c.Close()
 			}(c)
 		}

@@ -183,7 +183,7 @@ func (r *Router) queryResolvedShards(ctx context.Context, query string, args []a
 func drainCrossShardResults(results <-chan crossShardQueryResult, winningShard int) {
 	for res := range results {
 		if res.err == nil && res.rows != nil && res.shard != winningShard {
-			res.rows.Close()
+			_ = res.rows.Close()
 		}
 		if res.shard != winningShard {
 			res.done()

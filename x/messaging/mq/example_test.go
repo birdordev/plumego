@@ -16,7 +16,7 @@ func Example_basicPubSub() {
 	if err != nil {
 		panic(err)
 	}
-	defer broker.Close()
+	defer func() { _ = broker.Close() }()
 
 	ctx := context.Background()
 
@@ -26,7 +26,7 @@ func Example_basicPubSub() {
 
 	// Publish a message
 	msg := mq.Message{ID: "msg-1", Data: "Hello World"}
-	broker.Publish(ctx, "events", msg)
+	_ = broker.Publish(ctx, "events", msg)
 
 	// Receive message
 	received := <-sub.C()
@@ -42,7 +42,7 @@ func Example_priorityMessages() {
 	if err != nil {
 		panic(err)
 	}
-	defer broker.Close()
+	defer func() { _ = broker.Close() }()
 
 	ctx := context.Background()
 
@@ -61,9 +61,9 @@ func Example_priorityMessages() {
 	}
 
 	// Publish low priority first, then high priority
-	broker.PublishPriority(ctx, "tasks", lowPriority)
+	_ = broker.PublishPriority(ctx, "tasks", lowPriority)
 	time.Sleep(10 * time.Millisecond) // Allow priority queue to process
-	broker.PublishPriority(ctx, "tasks", highPriority)
+	_ = broker.PublishPriority(ctx, "tasks", highPriority)
 	time.Sleep(10 * time.Millisecond) // Allow priority queue to process
 
 	// Receive messages (order depends on priority queue processing)
@@ -81,7 +81,7 @@ func Example_ttlMessages() {
 	if err != nil {
 		panic(err)
 	}
-	defer broker.Close()
+	defer func() { _ = broker.Close() }()
 
 	ctx := context.Background()
 
@@ -90,7 +90,7 @@ func Example_ttlMessages() {
 		Message:   mq.Message{ID: "ttl-1", Data: "Expires soon"},
 		ExpiresAt: time.Now().Add(50 * time.Millisecond),
 	}
-	broker.PublishTTL(ctx, "temp", ttlMsg)
+	_ = broker.PublishTTL(ctx, "temp", ttlMsg)
 
 	// Wait for expiration
 	time.Sleep(100 * time.Millisecond)
@@ -108,7 +108,7 @@ func Example_acknowledgment() {
 	if err != nil {
 		panic(err)
 	}
-	defer broker.Close()
+	defer func() { _ = broker.Close() }()
 
 	ctx := context.Background()
 
@@ -123,14 +123,14 @@ func Example_acknowledgment() {
 		AckPolicy:  mq.AckRequired,
 		AckTimeout: 5 * time.Second,
 	}
-	broker.PublishWithAck(ctx, "orders", ackMsg)
+	_ = broker.PublishWithAck(ctx, "orders", ackMsg)
 
 	// Receive and process
 	msg := <-sub.C()
 	fmt.Printf("Processing: %s\n", msg.Data)
 
 	// Acknowledge successful processing
-	broker.Ack(ctx, "orders", "ack-1")
+	_ = broker.Ack(ctx, "orders", "ack-1")
 	fmt.Println("Message acknowledged")
 	// Output:
 	// Processing: Process this order
@@ -145,7 +145,7 @@ func Example_transactions() {
 	if err != nil {
 		panic(err)
 	}
-	defer broker.Close()
+	defer func() { _ = broker.Close() }()
 
 	ctx := context.Background()
 
@@ -160,11 +160,11 @@ func Example_transactions() {
 	msg1 := mq.Message{ID: "item-1", Data: "Product A"}
 	msg2 := mq.Message{ID: "item-2", Data: "Product B"}
 
-	broker.PublishWithTransaction(ctx, "orders", msg1, txID)
-	broker.PublishWithTransaction(ctx, "orders", msg2, txID)
+	_ = broker.PublishWithTransaction(ctx, "orders", msg1, txID)
+	_ = broker.PublishWithTransaction(ctx, "orders", msg2, txID)
 
 	// Commit transaction (messages are delivered now)
-	broker.CommitTransaction(ctx, txID)
+	_ = broker.CommitTransaction(ctx, txID)
 
 	// Receive messages
 	<-sub.C()
@@ -182,7 +182,7 @@ func Example_deadLetterQueue() {
 	if err != nil {
 		panic(err)
 	}
-	defer broker.Close()
+	defer func() { _ = broker.Close() }()
 
 	ctx := context.Background()
 
@@ -192,7 +192,7 @@ func Example_deadLetterQueue() {
 
 	// Send failed message to DLQ
 	failedMsg := mq.Message{ID: "failed-1", Data: "Processing failed"}
-	broker.PublishToDeadLetter(ctx, "orders", failedMsg, "validation error")
+	_ = broker.PublishToDeadLetter(ctx, "orders", failedMsg, "validation error")
 
 	// Monitor DLQ
 	msg := <-dlqSub.C()
@@ -220,16 +220,16 @@ func Example_persistence() {
 
 	// Publish messages (automatically persisted)
 	msg := mq.Message{ID: "persistent-1", Data: "Important data"}
-	broker.Publish(ctx, "critical", msg)
+	_ = broker.Publish(ctx, "critical", msg)
 
-	broker.Close()
+	_ = broker.Close()
 
 	// Restart broker
 	broker2, err := mq.NewInProcBroker(pubsub.New(), mq.WithConfig(cfg))
 	if err != nil {
 		panic(err)
 	}
-	defer broker2.Close()
+	defer func() { _ = broker2.Close() }()
 
 	// Recover persisted messages
 	messages, _ := broker2.RecoverMessages(ctx, "critical", 10)
@@ -254,7 +254,7 @@ func Example_comprehensive() {
 	if err != nil {
 		panic(err)
 	}
-	defer broker.Close()
+	defer func() { _ = broker.Close() }()
 
 	ctx := context.Background()
 
@@ -270,9 +270,9 @@ func Example_comprehensive() {
 	msg1 := mq.Message{ID: "event-1", Data: "First event"}
 	msg2 := mq.Message{ID: "event-2", Data: "Second event"}
 
-	broker.PublishWithTransaction(ctx, "events", msg1, txID)
-	broker.PublishWithTransaction(ctx, "events", msg2, txID)
-	broker.CommitTransaction(ctx, txID)
+	_ = broker.PublishWithTransaction(ctx, "events", msg1, txID)
+	_ = broker.PublishWithTransaction(ctx, "events", msg2, txID)
+	_ = broker.CommitTransaction(ctx, txID)
 
 	// Process messages with ACK
 	processedCount := 0
@@ -300,7 +300,7 @@ func Example_batchOperations() {
 	if err != nil {
 		panic(err)
 	}
-	defer broker.Close()
+	defer func() { _ = broker.Close() }()
 
 	ctx := context.Background()
 
@@ -314,7 +314,7 @@ func Example_batchOperations() {
 		{ID: "batch-2", Data: "Message 2"},
 		{ID: "batch-3", Data: "Message 3"},
 	}
-	broker.PublishBatch(ctx, "batch", messages)
+	_ = broker.PublishBatch(ctx, "batch", messages)
 
 	// Receive all messages
 	count := 0
@@ -341,7 +341,7 @@ func Example_healthMonitoring() {
 	if err != nil {
 		panic(err)
 	}
-	defer broker.Close()
+	defer func() { _ = broker.Close() }()
 
 	ctx := context.Background()
 
@@ -352,7 +352,7 @@ func Example_healthMonitoring() {
 	// Publish some messages
 	for i := 0; i < 5; i++ {
 		msg := mq.Message{ID: fmt.Sprintf("msg-%d", i), Data: "test"}
-		broker.Publish(ctx, "test", msg)
+		_ = broker.Publish(ctx, "test", msg)
 	}
 
 	// Check health

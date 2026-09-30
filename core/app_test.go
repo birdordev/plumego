@@ -190,7 +190,7 @@ func TestUseMiddlewareAppliedAfterSetup(t *testing.T) {
 		w.Write([]byte("mux"))
 	})))
 
-	app.Use(func(next http.Handler) http.Handler {
+	_ = app.Use(func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("X-Test", "applied")
 			next.ServeHTTP(w, r)
@@ -295,7 +295,7 @@ func TestUseWithNoMiddlewareIsNoop(t *testing.T) {
 func TestServeHTTPLazilyBuildsHandler(t *testing.T) {
 	app := newTestApp()
 
-	app.Use(func(next http.Handler) http.Handler {
+	_ = app.Use(func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("X-Lazy", "true")
 			next.ServeHTTP(w, r)
@@ -411,7 +411,7 @@ func TestServeHTTPOnlyPreparesHandler(t *testing.T) {
 	cfg.Addr = ":5555"
 	app := New(cfg, AppDependencies{})
 
-	app.Use(func(next http.Handler) http.Handler {
+	_ = app.Use(func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("X-Prepared", "true")
 			next.ServeHTTP(w, r)

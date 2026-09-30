@@ -77,27 +77,6 @@ func vDefault(level int) bool {
 	return std.vAt(level, 2)
 }
 
-func debugDefault(args ...any) {
-	if !std.vAt(1, 2) {
-		return
-	}
-	std.log(DEBUG, 2, args...)
-}
-
-func debugfDefault(format string, args ...any) {
-	if !std.vAt(1, 2) {
-		return
-	}
-	std.logf(DEBUG, 2, format, args...)
-}
-
-func debuglnDefault(args ...any) {
-	if !std.vAt(1, 2) {
-		return
-	}
-	std.log(DEBUG, 2, fmt.Sprintln(args...))
-}
-
 func infoDefault(args ...any) {
 	std.log(INFO, 2, args...)
 }
@@ -134,27 +113,9 @@ func errorlnDefault(args ...any) {
 	std.log(ERROR, 2, fmt.Sprintln(args...))
 }
 
-func fatalDefault(args ...any) {
-	std.log(FATAL, 2, args...)
-}
-
-func fatalfDefault(format string, args ...any) {
-	std.logf(FATAL, 2, format, args...)
-}
-
-func fatallnDefault(args ...any) {
-	std.log(FATAL, 2, fmt.Sprintln(args...))
-}
-
 func vlogDefault(level int, args ...any) {
 	if std.vAt(level, 2) {
 		std.log(INFO, 2, args...)
-	}
-}
-
-func vlogfDefault(level int, format string, args ...any) {
-	if std.vAt(level, 2) {
-		std.logf(INFO, 2, format, args...)
 	}
 }
 

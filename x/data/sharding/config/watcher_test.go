@@ -348,7 +348,7 @@ func TestConfigWatcher_Start(t *testing.T) {
 	defer cancel()
 
 	go func() {
-		watcher.Start(ctx)
+		_ = watcher.Start(ctx)
 	}()
 
 	// Wait a bit
@@ -412,7 +412,7 @@ func TestConfigWatcher_Stop(t *testing.T) {
 	// Start watcher
 	ctx := t.Context()
 	go func() {
-		watcher.Start(ctx)
+		_ = watcher.Start(ctx)
 	}()
 
 	time.Sleep(50 * time.Millisecond)

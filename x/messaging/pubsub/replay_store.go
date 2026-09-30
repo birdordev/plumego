@@ -201,14 +201,14 @@ func (rs *ReplayStore) writeArchive(messages []*ReplayMessage) error {
 	if err != nil {
 		return err
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	var writer io.Writer = file
 
 	// Add gzip compression if enabled
 	if rs.config.ArchiveCompression {
 		gzWriter := gzip.NewWriter(file)
-		defer gzWriter.Close()
+		defer func() { _ = gzWriter.Close() }()
 		writer = gzWriter
 	}
 
@@ -235,7 +235,7 @@ func (rs *ReplayStore) LoadArchive(filename string) error {
 	if err != nil {
 		return err
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	var reader io.Reader = file
 
@@ -245,7 +245,7 @@ func (rs *ReplayStore) LoadArchive(filename string) error {
 		if err != nil {
 			return err
 		}
-		defer gzReader.Close()
+		defer func() { _ = gzReader.Close() }()
 		reader = gzReader
 	}
 

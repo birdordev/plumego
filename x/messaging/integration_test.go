@@ -20,7 +20,7 @@ func TestEndToEnd_ReceiptTracking(t *testing.T) {
 		WorkerConcurrency: 2,
 	})
 	ctx := t.Context()
-	svc.Start(ctx)
+	_ = svc.Start(ctx)
 	defer svc.Stop(ctx)
 
 	err := svc.Send(ctx, SendRequest{
@@ -73,10 +73,10 @@ func TestEndToEnd_MonitorUpdatedByWorker(t *testing.T) {
 		WorkerConcurrency: 1,
 	})
 	ctx := t.Context()
-	svc.Start(ctx)
+	_ = svc.Start(ctx)
 	defer svc.Stop(ctx)
 
-	svc.Send(ctx, SendRequest{
+	_ = svc.Send(ctx, SendRequest{
 		ID:      "mon-1",
 		Channel: ChannelSMS,
 		To:      "+1234567890",
@@ -104,7 +104,7 @@ func TestEndToEnd_FailoverProvider(t *testing.T) {
 		WorkerConcurrency: 1,
 	})
 	ctx := t.Context()
-	svc.Start(ctx)
+	_ = svc.Start(ctx)
 	defer svc.Stop(ctx)
 
 	err := svc.Send(ctx, SendRequest{

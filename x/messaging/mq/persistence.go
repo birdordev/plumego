@@ -331,18 +331,6 @@ func (pm *persistenceManager) loadMessages(ctx context.Context, topic string, li
 	return pm.backend.GetMessages(ctx, topic, limit)
 }
 
-// deleteMessage removes a message from persistence.
-func (pm *persistenceManager) deleteMessage(ctx context.Context, topic string, messageID string) error {
-	pm.mu.RLock()
-	defer pm.mu.RUnlock()
-
-	if pm.closed {
-		return ErrBrokerClosed
-	}
-
-	return pm.backend.DeleteMessage(ctx, topic, messageID)
-}
-
 // close shuts down the persistence manager.
 func (pm *persistenceManager) close() error {
 	pm.mu.Lock()

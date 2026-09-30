@@ -122,7 +122,6 @@ type BackpressureController struct {
 // topicPressure tracks backpressure for a topic
 type topicPressure struct {
 	topic           string
-	subscriberCount atomic.Int64
 	pressureSignals atomic.Uint64
 	avgBufferUsage  atomic.Uint64 // Stored as int (percentage * 100)
 	lastUpdate      time.Time

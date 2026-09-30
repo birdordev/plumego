@@ -154,7 +154,7 @@ func (kv *KVStore) replayWAL() error {
 	if err != nil {
 		return err
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 	stat, err := file.Stat()
 	if err != nil {
 		return err

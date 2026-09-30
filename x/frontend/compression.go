@@ -270,11 +270,11 @@ func (h *handler) hasPrecompressedVariant(filePath string) bool {
 		return h.variants.variants[filePath].any()
 	}
 	if f, _ := h.tryOpenFile(filePath + ".br"); f != nil {
-		f.Close()
+		_ = f.Close()
 		return true
 	}
 	if f, _ := h.tryOpenFile(filePath + ".gz"); f != nil {
-		f.Close()
+		_ = f.Close()
 		return true
 	}
 	return false
@@ -288,7 +288,7 @@ func (h *handler) tryOpenFile(filePath string) (http.File, os.FileInfo) {
 	}
 	stat, err := f.Stat()
 	if err != nil || stat.IsDir() {
-		f.Close()
+		_ = f.Close()
 		return nil, nil
 	}
 	return f, stat
@@ -305,7 +305,7 @@ func (h *handler) tryOpenPrecompressedVariant(filePath, encoding string, reportO
 	}
 	stat, err := f.Stat()
 	if err != nil || stat.IsDir() {
-		f.Close()
+		_ = f.Close()
 		h.reportPrecompressedMiss(filePath, variantPath, encoding, "stat")
 		return nil, nil
 	}

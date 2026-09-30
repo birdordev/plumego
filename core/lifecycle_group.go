@@ -141,7 +141,7 @@ func (g *LifecycleGroup) Start(ctx context.Context) error {
 
 	for i, e := range g.entries {
 		if err := e.c.Start(ctx); err != nil {
-			g.stopStartedLocked(ctx, i)
+			_ = g.stopStartedLocked(ctx, i)
 			g.started = 0
 			return fmt.Errorf("core: start %q: %w", e.name, err)
 		}

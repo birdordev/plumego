@@ -85,7 +85,7 @@ func (p *ClaudeProvider) Complete(ctx context.Context, req *CompletionRequest) (
 	if err != nil {
 		return nil, fmt.Errorf("http request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	// Check error
 	if resp.StatusCode != http.StatusOK {
@@ -124,7 +124,7 @@ func (p *ClaudeProvider) CompleteStream(ctx context.Context, req *CompletionRequ
 	// Check error
 	if resp.StatusCode != http.StatusOK {
 		body := readErrorBody(resp.Body)
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		return nil, fmt.Errorf("api error (status %d): %s", resp.StatusCode, body)
 	}
 

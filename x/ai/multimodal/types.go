@@ -415,15 +415,16 @@ func (i *ImageContent) Validate() error {
 		return fmt.Errorf("image format is required")
 	}
 
-	if i.Source == ImageSourceBase64 {
+	switch i.Source {
+	case ImageSourceBase64:
 		if len(i.Data) == 0 {
 			return fmt.Errorf("base64 image data is empty")
 		}
-	} else if i.Source == ImageSourceURL {
+	case ImageSourceURL:
 		if i.URL == "" {
 			return fmt.Errorf("image URL is empty")
 		}
-	} else {
+	default:
 		return fmt.Errorf("invalid image source: %s", i.Source)
 	}
 

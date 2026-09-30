@@ -743,7 +743,7 @@ func BenchmarkLocalStorage_Put(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		storage.Put(ctx, PutOptions{
+		_, _ = storage.Put(ctx, PutOptions{
 			TenantID: "tenant-123",
 			Reader:   bytes.NewReader(content),
 			FileName: "test.txt",
@@ -765,7 +765,7 @@ func BenchmarkLocalStorage_Get(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		reader, _ := storage.Get(ctx, result.Path)
-		io.Copy(io.Discard, reader)
+		_, _ = io.Copy(io.Discard, reader)
 		reader.Close()
 	}
 }

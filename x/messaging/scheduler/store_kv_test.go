@@ -13,7 +13,7 @@ func TestKVStorePersistence(t *testing.T) {
 	if err != nil {
 		t.Fatalf("kv store: %v", err)
 	}
-	defer kv.Close()
+	defer func() { _ = kv.Close() }()
 
 	store := NewKVStore(kv, "")
 	job := StoredJob{ID: "kv-1", Kind: "delay", RunAt: time.Now(), TaskName: "task"}

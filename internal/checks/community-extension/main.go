@@ -54,22 +54,22 @@ func mustGetwd() string {
 
 func run(args []string, cwd string, stderr io.Writer) int {
 	if len(args) != 1 {
-		fmt.Fprintln(stderr, "usage: community-extension <directory>")
+		_, _ = fmt.Fprintln(stderr, "usage: community-extension <directory>")
 		return 1
 	}
 
 	repoRoot, err := findRepoRoot(cwd)
 	if err != nil {
-		fmt.Fprintf(stderr, "resolve repo root: %v\n", err)
+		_, _ = fmt.Fprintf(stderr, "resolve repo root: %v\n", err)
 		return 1
 	}
 	violations, err := validateDirectory(filepath.Join(repoRoot, schemaRelPath), args[0])
 	if err != nil {
-		fmt.Fprintf(stderr, "validate community extension: %v\n", err)
+		_, _ = fmt.Fprintf(stderr, "validate community extension: %v\n", err)
 		return 1
 	}
 	if len(violations) > 0 {
-		fmt.Fprint(stderr, checkutil.FormatViolations("community-extension", violations))
+		_, _ = fmt.Fprint(stderr, checkutil.FormatViolations("community-extension", violations))
 		return 1
 	}
 	return 0

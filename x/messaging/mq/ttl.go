@@ -201,7 +201,7 @@ func (b *InProcBroker) PublishTTL(ctx context.Context, topic string, msg TTLMess
 
 		// Track message with TTL if tracker is enabled
 		if b.ttlTracker != nil && !msg.ExpiresAt.IsZero() {
-			if err := b.ttlTracker.track(msg.Message.ID, topic, msg.ExpiresAt); err != nil {
+			if err := b.ttlTracker.track(msg.ID, topic, msg.ExpiresAt); err != nil {
 				return err
 			}
 		}
@@ -230,7 +230,7 @@ func (b *InProcBroker) PublishPriorityTTL(ctx context.Context, topic string, msg
 
 		// Track message with TTL if tracker is enabled
 		if b.ttlTracker != nil && !msg.ExpiresAt.IsZero() {
-			if err := b.ttlTracker.track(msg.Message.ID, topic, msg.ExpiresAt); err != nil {
+			if err := b.ttlTracker.track(msg.ID, topic, msg.ExpiresAt); err != nil {
 				return err
 			}
 		}
@@ -299,7 +299,7 @@ func (b *InProcBroker) PublishWithAckTTL(ctx context.Context, topic string, msg 
 		// Generate ACK ID if not provided
 		ackID := msg.AckID
 		if ackID == "" {
-			ackID = msg.Message.ID
+			ackID = msg.ID
 		}
 
 		// Track acknowledgment if required
@@ -312,7 +312,7 @@ func (b *InProcBroker) PublishWithAckTTL(ctx context.Context, topic string, msg 
 
 		// Track message with TTL if tracker is enabled
 		if b.ttlTracker != nil && !msg.ExpiresAt.IsZero() {
-			if err := b.ttlTracker.track(msg.Message.ID, topic, msg.ExpiresAt); err != nil {
+			if err := b.ttlTracker.track(msg.ID, topic, msg.ExpiresAt); err != nil {
 				return err
 			}
 		}

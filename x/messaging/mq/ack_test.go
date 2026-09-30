@@ -16,7 +16,7 @@ func TestAckTrackerBasic(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer broker.Close()
+	defer func() { _ = broker.Close() }()
 
 	if broker.ackTracker == nil {
 		t.Fatal("ackTracker should be initialized when ACK support is enabled")
@@ -55,7 +55,7 @@ func TestAckTrackerDuplicateAckID(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer broker.Close()
+	defer func() { _ = broker.Close() }()
 
 	msg := Message{ID: "test-1", Data: "test data"}
 
@@ -82,7 +82,7 @@ func TestAckTrackerNotFound(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer broker.Close()
+	defer func() { _ = broker.Close() }()
 
 	// Try to acknowledge non-existent message
 	err = broker.ackTracker.acknowledge("non-existent")
@@ -101,7 +101,7 @@ func TestPublishWithAckSuccess(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer broker.Close()
+	defer func() { _ = broker.Close() }()
 
 	ctx := t.Context()
 
@@ -147,7 +147,7 @@ func TestPublishWithAckTimeout(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer broker.Close()
+	defer func() { _ = broker.Close() }()
 
 	ctx := t.Context()
 
@@ -194,7 +194,7 @@ func TestNackImmediateRedelivery(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer broker.Close()
+	defer func() { _ = broker.Close() }()
 
 	ctx := t.Context()
 
@@ -251,7 +251,7 @@ func TestAckDisabledError(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer broker.Close()
+	defer func() { _ = broker.Close() }()
 
 	ctx := t.Context()
 
@@ -303,7 +303,7 @@ func TestAckTrackerClose(t *testing.T) {
 	}
 
 	// Close the broker
-	broker.Close()
+	_ = broker.Close()
 
 	// Try to track after close
 	err = broker.ackTracker.track("ack-2", "test-topic", msg, 1*time.Second, 3)
@@ -325,7 +325,7 @@ func TestAckTrackerStats(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer broker.Close()
+	defer func() { _ = broker.Close() }()
 
 	msg := Message{ID: "test-1", Data: "test"}
 
@@ -367,7 +367,7 @@ func TestAckGeneratedID(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer broker.Close()
+	defer func() { _ = broker.Close() }()
 
 	ctx := t.Context()
 
@@ -400,7 +400,7 @@ func TestAckNoPolicySkipsTracking(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer broker.Close()
+	defer func() { _ = broker.Close() }()
 
 	ctx := t.Context()
 

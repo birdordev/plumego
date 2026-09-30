@@ -73,7 +73,7 @@ func TestHealthDebugDisabled(t *testing.T) {
 func TestRegisterRoutesDebugFalse(t *testing.T) {
 	c := New(Options{Debug: false})
 	r := router.NewRouter()
-	c.RegisterRoutes(r)
+	_ = c.RegisterRoutes(r)
 
 	// Debug routes should not be registered
 	req := httptest.NewRequest(http.MethodGet, DevToolsRoutesPath, nil)
@@ -89,7 +89,7 @@ func TestRegisterRoutesDebugFalse(t *testing.T) {
 func TestRegisterRoutesDebugTrue(t *testing.T) {
 	c := New(Options{Debug: true})
 	r := router.NewRouter()
-	c.RegisterRoutes(r)
+	_ = c.RegisterRoutes(r)
 
 	tests := []struct {
 		method string
@@ -117,7 +117,7 @@ func TestRegisterRoutesDebugTrue(t *testing.T) {
 func TestLegacyTopLevelDebugAliasesRemoved(t *testing.T) {
 	c := New(Options{Debug: true})
 	r := router.NewRouter()
-	c.RegisterRoutes(r)
+	_ = c.RegisterRoutes(r)
 
 	for _, path := range []string{
 		"/_" + "routes",
@@ -136,7 +136,7 @@ func TestLegacyTopLevelDebugAliasesRemoved(t *testing.T) {
 func TestRoutesJSONEndpoint(t *testing.T) {
 	c := New(Options{Debug: true})
 	r := router.NewRouter()
-	c.RegisterRoutes(r)
+	_ = c.RegisterRoutes(r)
 
 	req := httptest.NewRequest(http.MethodGet, DevToolsRoutesJSONPath, nil)
 	rec := httptest.NewRecorder()
@@ -155,7 +155,7 @@ func TestRoutesJSONEndpoint(t *testing.T) {
 func TestConfigEndpointNoHook(t *testing.T) {
 	c := New(Options{Debug: true})
 	r := router.NewRouter()
-	c.RegisterRoutes(r)
+	_ = c.RegisterRoutes(r)
 
 	req := httptest.NewRequest(http.MethodGet, DevToolsConfigPath, nil)
 	rec := httptest.NewRecorder()
@@ -186,7 +186,7 @@ func TestConfigEndpointWithHook(t *testing.T) {
 		},
 	})
 	r := router.NewRouter()
-	c.RegisterRoutes(r)
+	_ = c.RegisterRoutes(r)
 
 	req := httptest.NewRequest(http.MethodGet, DevToolsConfigPath, nil)
 	rec := httptest.NewRecorder()
@@ -211,7 +211,7 @@ func TestConfigEndpointWithHook(t *testing.T) {
 func TestMiddlewareEndpointNoHook(t *testing.T) {
 	c := New(Options{Debug: true})
 	r := router.NewRouter()
-	c.RegisterRoutes(r)
+	_ = c.RegisterRoutes(r)
 
 	req := httptest.NewRequest(http.MethodGet, DevToolsMiddlewarePath, nil)
 	rec := httptest.NewRecorder()
@@ -237,7 +237,7 @@ func TestMiddlewareEndpointWithHook(t *testing.T) {
 		},
 	})
 	r := router.NewRouter()
-	c.RegisterRoutes(r)
+	_ = c.RegisterRoutes(r)
 
 	req := httptest.NewRequest(http.MethodGet, DevToolsMiddlewarePath, nil)
 	rec := httptest.NewRecorder()
@@ -256,7 +256,7 @@ func TestMiddlewareEndpointWithHook(t *testing.T) {
 func TestMetricsEndpoint(t *testing.T) {
 	c := New(Options{Debug: true})
 	r := router.NewRouter()
-	c.RegisterRoutes(r)
+	_ = c.RegisterRoutes(r)
 
 	req := httptest.NewRequest(http.MethodGet, DevToolsMetricsPath, nil)
 	rec := httptest.NewRecorder()
@@ -275,7 +275,7 @@ func TestMetricsEndpoint(t *testing.T) {
 func TestMetricsClearEndpoint(t *testing.T) {
 	c := New(Options{Debug: true})
 	r := router.NewRouter()
-	c.RegisterRoutes(r)
+	_ = c.RegisterRoutes(r)
 
 	req := httptest.NewRequest(http.MethodPost, DevToolsMetricsClear, nil)
 	rec := httptest.NewRecorder()
@@ -293,7 +293,7 @@ func TestMetricsClearEndpoint(t *testing.T) {
 func TestReloadEndpointNoEnvFile(t *testing.T) {
 	c := New(Options{Debug: true})
 	r := router.NewRouter()
-	c.RegisterRoutes(r)
+	_ = c.RegisterRoutes(r)
 
 	req := httptest.NewRequest(http.MethodPost, DevToolsReloadPath, nil)
 	rec := httptest.NewRecorder()
@@ -334,7 +334,7 @@ func TestReloadEndpointEnvFileNotFound(t *testing.T) {
 		EnvFile: "/nonexistent/.env",
 	})
 	r := router.NewRouter()
-	c.RegisterRoutes(r)
+	_ = c.RegisterRoutes(r)
 
 	req := httptest.NewRequest(http.MethodPost, DevToolsReloadPath, nil)
 	rec := httptest.NewRecorder()
@@ -357,7 +357,7 @@ func TestReloadEndpointSuccess(t *testing.T) {
 		EnvFile: envFile,
 	})
 	r := router.NewRouter()
-	c.RegisterRoutes(r)
+	_ = c.RegisterRoutes(r)
 
 	req := httptest.NewRequest(http.MethodPost, DevToolsReloadPath, nil)
 	rec := httptest.NewRecorder()
@@ -458,7 +458,7 @@ func TestInfoEndpoint(t *testing.T) {
 		},
 	})
 	r := router.NewRouter()
-	c.RegisterRoutes(r)
+	_ = c.RegisterRoutes(r)
 
 	req := httptest.NewRequest(http.MethodGet, DevToolsInfoPath, nil)
 	rec := httptest.NewRecorder()
@@ -481,7 +481,7 @@ func TestMetricsEndpointDisabledCollectorShape(t *testing.T) {
 	c := New(Options{Debug: true})
 	c.devMetrics = nil
 	r := router.NewRouter()
-	c.RegisterRoutes(r)
+	_ = c.RegisterRoutes(r)
 
 	req := httptest.NewRequest(http.MethodGet, DevToolsMetricsPath, nil)
 	rec := httptest.NewRecorder()
@@ -499,7 +499,7 @@ func TestMetricsEndpointDisabledCollectorShape(t *testing.T) {
 func TestRoutesTextEndpoint(t *testing.T) {
 	c := New(Options{Debug: true})
 	r := router.NewRouter()
-	c.RegisterRoutes(r)
+	_ = c.RegisterRoutes(r)
 
 	req := httptest.NewRequest(http.MethodGet, DevToolsRoutesPath, nil)
 	rec := httptest.NewRecorder()

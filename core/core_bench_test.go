@@ -58,7 +58,7 @@ func BenchmarkAppServeHTTPWithMiddleware(b *testing.B) {
 	_ = app.Get("/api/items", handlerOK())
 
 	// Add a minimal passthrough middleware to measure chain overhead
-	app.Use(func(next http.Handler) http.Handler {
+	_ = app.Use(func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			next.ServeHTTP(w, r)
 		})

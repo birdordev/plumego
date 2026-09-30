@@ -329,11 +329,6 @@ func parseJobKinds(values []string) []string {
 	return out
 }
 
-func parseOptionalBool(value string) *bool {
-	b, _ := parseOptionalBoolE(value, "")
-	return b
-}
-
 func parseOptionalBoolE(value, field string) (*bool, error) {
 	if value == "" {
 		return nil, nil

@@ -35,14 +35,14 @@ func TestConnConfiguration(t *testing.T) {
 
 	// Test SetPingPeriod
 	newPingPeriod := 10 * time.Second
-	mockConn.SetPingPeriod(newPingPeriod)
+	_ = mockConn.SetPingPeriod(newPingPeriod)
 	if time.Duration(mockConn.pingPeriod.Load()) != newPingPeriod {
 		t.Errorf("SetPingPeriod failed, expected %v, got %v", newPingPeriod, time.Duration(mockConn.pingPeriod.Load()))
 	}
 
 	// Test SetPongWait
 	newPongWait := 15 * time.Second
-	mockConn.SetPongWait(newPongWait)
+	_ = mockConn.SetPongWait(newPongWait)
 	if time.Duration(mockConn.pongWait.Load()) != newPongWait {
 		t.Errorf("SetPongWait failed, expected %v, got %v", newPongWait, time.Duration(mockConn.pongWait.Load()))
 	}

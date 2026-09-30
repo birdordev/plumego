@@ -15,25 +15,6 @@ func fixtureNoOpMiddleware() middleware.Middleware {
 	}
 }
 
-func fixtureDoubleNextMiddleware() middleware.Middleware {
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			next.ServeHTTP(w, r)
-			next.ServeHTTP(w, r)
-		})
-	}
-}
-
-func fixtureSuccessWritingMiddleware() middleware.Middleware {
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(`{"middleware":true}`))
-			next.ServeHTTP(w, r)
-		})
-	}
-}
-
 func fixtureCanonicalErrorMiddleware(code string) middleware.Middleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

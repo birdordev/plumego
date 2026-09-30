@@ -137,14 +137,14 @@ func TestMemoryVectorStore(t *testing.T) {
 		}
 
 		// Delete
-		store.Delete(ctx, entry.Embedding.Hash)
+		_ = store.Delete(ctx, entry.Embedding.Hash)
 		if store.Size() != 0 {
 			t.Errorf("expected size 0 after delete, got %d", store.Size())
 		}
 
 		// Add again and clear
 		store.Add(ctx, entry)
-		store.Clear(ctx)
+		_ = store.Clear(ctx)
 		if store.Size() != 0 {
 			t.Errorf("expected size 0 after clear, got %d", store.Size())
 		}
@@ -202,7 +202,7 @@ func TestMemoryVectorStore(t *testing.T) {
 
 		// Perform search
 		query := &Embedding{Vector: []float64{1.0, 0.0, 0.0}, Hash: "query"}
-		store.Search(ctx, query, 5, 0.0)
+		_, _ = store.Search(ctx, query, 5, 0.0)
 
 		stats = store.Stats()
 		if stats.TotalSearches != 1 {
@@ -361,7 +361,7 @@ func TestSemanticCache(t *testing.T) {
 
 		// Store and retrieve
 		cache.Set(ctx, req, resp)
-		cache.Get(ctx, req)
+		_, _, _ = cache.Get(ctx, req)
 
 		stats = cache.Stats()
 		if stats.Stores != 1 {

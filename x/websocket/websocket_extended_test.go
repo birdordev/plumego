@@ -463,7 +463,7 @@ func TestWriteMessageUnknownBehavior(t *testing.T) {
 		sendBehavior: 99,
 	}
 
-	c.WriteMessage(OpcodeText, []byte("test1"))
+	_ = c.WriteMessage(OpcodeText, []byte("test1"))
 	err := c.WriteMessage(OpcodeText, []byte("test2"))
 	assertErrorContains(t, err, "unknown")
 }

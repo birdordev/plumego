@@ -123,11 +123,11 @@ func TestMemoryCache_Stats(t *testing.T) {
 	cache.Set(t.Context(), key, entry)
 
 	// Hit
-	cache.Get(t.Context(), key)
+	_, _ = cache.Get(t.Context(), key)
 
 	// Miss
 	missingKey := &CacheKey{Hash: "missing"}
-	cache.Get(t.Context(), missingKey)
+	_, _ = cache.Get(t.Context(), missingKey)
 
 	stats := cache.Stats()
 

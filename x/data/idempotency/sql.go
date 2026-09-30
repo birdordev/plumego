@@ -218,7 +218,7 @@ func isDuplicateError(err error) bool {
 		return false
 	}
 	msg := strings.ToLower(err.Error())
-	return errors.Is(err, sql.ErrNoRows) == false && (strings.Contains(msg, "duplicate") || strings.Contains(msg, "unique"))
+	return !errors.Is(err, sql.ErrNoRows) && (strings.Contains(msg, "duplicate") || strings.Contains(msg, "unique"))
 }
 
 func (s *SQLStore) isDuplicateError(err error) bool {

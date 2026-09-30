@@ -267,7 +267,7 @@ func (p *WorkerPool) Start(ctx context.Context) error {
 
 		if err := worker.Start(ctx); err != nil {
 			// Stop already started workers
-			p.stopWorkers(ctx)
+			_ = p.stopWorkers(ctx)
 			p.running.Store(false)
 			return fmt.Errorf("failed to start worker %d: %w", i, err)
 		}

@@ -225,8 +225,8 @@ func (a *Aggregator) Summary() string {
 
 	var sb strings.Builder
 	sb.WriteString("=== Database Statistics Summary ===\n\n")
-	sb.WriteString(fmt.Sprintf("Uptime: %s\n", time.Since(a.startTime).Round(time.Second)))
-	sb.WriteString(fmt.Sprintf("Slow Query Threshold: %s\n\n", a.slowQueryThreshold))
+	fmt.Fprintf(&sb, "Uptime: %s\n", time.Since(a.startTime).Round(time.Second))
+	fmt.Fprintf(&sb, "Slow Query Threshold: %s\n\n", a.slowQueryThreshold)
 	sb.WriteString("Global Stats:\n")
 	sb.WriteString(formatQueryStats(a.global))
 	sb.WriteString("\n")
@@ -234,7 +234,7 @@ func (a *Aggregator) Summary() string {
 	if len(a.byOperation) > 0 {
 		sb.WriteString("Stats by Operation:\n")
 		for op, stats := range a.byOperation {
-			sb.WriteString(fmt.Sprintf("  %s:\n", op))
+			fmt.Fprintf(&sb, "  %s:\n", op)
 			sb.WriteString(indentString(formatQueryStats(stats), "    "))
 		}
 		sb.WriteString("\n")
@@ -244,8 +244,8 @@ func (a *Aggregator) Summary() string {
 		sb.WriteString("Top Slow Tables:\n")
 		topTables := a.getTopSlowTablesLocked(5)
 		for i, ts := range topTables {
-			sb.WriteString(fmt.Sprintf("  %d. %s - %d slow queries (avg: %s)\n",
-				i+1, ts.Table, ts.SlowQueries, ts.AvgDuration.Round(time.Millisecond)))
+			fmt.Fprintf(&sb, "  %d. %s - %d slow queries (avg: %s)\n",
+				i+1, ts.Table, ts.SlowQueries, ts.AvgDuration.Round(time.Millisecond))
 		}
 	}
 
@@ -279,19 +279,19 @@ func (a *Aggregator) getTopSlowTablesLocked(n int) []TableStat {
 
 func formatQueryStats(stats QueryStats) string {
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Total Queries: %d\n", stats.TotalQueries))
-	sb.WriteString(fmt.Sprintf("Success: %d, Failed: %d\n", stats.SuccessQueries, stats.FailedQueries))
+	fmt.Fprintf(&sb, "Total Queries: %d\n", stats.TotalQueries)
+	fmt.Fprintf(&sb, "Success: %d, Failed: %d\n", stats.SuccessQueries, stats.FailedQueries)
 	if stats.TotalQueries > 0 {
 		successRate := float64(stats.SuccessQueries) / float64(stats.TotalQueries) * 100
-		sb.WriteString(fmt.Sprintf("Success Rate: %.2f%%\n", successRate))
+		fmt.Fprintf(&sb, "Success Rate: %.2f%%\n", successRate)
 	}
-	sb.WriteString(fmt.Sprintf("Duration: min=%s, avg=%s, max=%s\n",
+	fmt.Fprintf(&sb, "Duration: min=%s, avg=%s, max=%s\n",
 		stats.MinDuration.Round(time.Millisecond),
 		stats.AvgDuration.Round(time.Millisecond),
-		stats.MaxDuration.Round(time.Millisecond)))
-	sb.WriteString(fmt.Sprintf("Query Types: SELECT=%d, INSERT=%d, UPDATE=%d, DELETE=%d\n",
-		stats.SelectQueries, stats.InsertQueries, stats.UpdateQueries, stats.DeleteQueries))
-	sb.WriteString(fmt.Sprintf("Slow Queries: %d (>%s)\n", stats.SlowQueries, stats.SlowQueryThresh))
+		stats.MaxDuration.Round(time.Millisecond))
+	fmt.Fprintf(&sb, "Query Types: SELECT=%d, INSERT=%d, UPDATE=%d, DELETE=%d\n",
+		stats.SelectQueries, stats.InsertQueries, stats.UpdateQueries, stats.DeleteQueries)
+	fmt.Fprintf(&sb, "Slow Queries: %d (>%s)\n", stats.SlowQueries, stats.SlowQueryThresh)
 	return sb.String()
 }
 

@@ -134,7 +134,7 @@ func (h *Handler) Upload(w http.ResponseWriter, r *http.Request) {
 			Build())
 		return
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	generateThumb := r.FormValue("generate_thumb") == "true"
 	thumbWidth, _ := strconv.Atoi(r.FormValue("thumb_width"))
@@ -177,7 +177,7 @@ func (h *Handler) Download(w http.ResponseWriter, r *http.Request) {
 		writeFileInternalError(w, r, "failed to read file")
 		return
 	}
-	defer reader.Close()
+	defer func() { _ = reader.Close() }()
 
 	w.Header().Set("Content-Type", fileMeta.MimeType)
 	w.Header().Set("Content-Length", fmt.Sprintf("%d", fileMeta.Size))

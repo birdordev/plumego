@@ -363,17 +363,17 @@ func (al *AuditLogger) calculateHash(entry *AuditEntry) string {
 	h := sha256.New()
 
 	// Hash components
-	fmt.Fprintf(h, "%d", entry.Sequence)
-	fmt.Fprintf(h, "%s", entry.Timestamp.Format(time.RFC3339Nano))
-	fmt.Fprintf(h, "%s", entry.Operation)
-	fmt.Fprintf(h, "%s", entry.Topic)
-	fmt.Fprintf(h, "%s", entry.Actor)
-	fmt.Fprintf(h, "%s", entry.Source)
-	fmt.Fprintf(h, "%s", entry.MessageID)
-	fmt.Fprintf(h, "%v", entry.Data)
-	fmt.Fprintf(h, "%t", entry.Success)
-	fmt.Fprintf(h, "%s", entry.Error)
-	fmt.Fprintf(h, "%s", entry.PreviousHash)
+	_, _ = fmt.Fprintf(h, "%d", entry.Sequence)
+	_, _ = fmt.Fprintf(h, "%s", entry.Timestamp.Format(time.RFC3339Nano))
+	_, _ = fmt.Fprintf(h, "%s", entry.Operation)
+	_, _ = fmt.Fprintf(h, "%s", entry.Topic)
+	_, _ = fmt.Fprintf(h, "%s", entry.Actor)
+	_, _ = fmt.Fprintf(h, "%s", entry.Source)
+	_, _ = fmt.Fprintf(h, "%s", entry.MessageID)
+	_, _ = fmt.Fprintf(h, "%v", entry.Data)
+	_, _ = fmt.Fprintf(h, "%t", entry.Success)
+	_, _ = fmt.Fprintf(h, "%s", entry.Error)
+	_, _ = fmt.Fprintf(h, "%s", entry.PreviousHash)
 
 	return hex.EncodeToString(h.Sum(nil))
 }
@@ -440,16 +440,16 @@ func (al *AuditLogger) rotateLogFile() error {
 
 		if i == al.config.MaxLogFiles-1 {
 			// Delete oldest file
-			os.Remove(newPath)
+			_ = os.Remove(newPath)
 		}
 
 		if _, err := os.Stat(oldPath); err == nil {
-			os.Rename(oldPath, newPath)
+			_ = os.Rename(oldPath, newPath)
 		}
 	}
 
 	// Rename current to .1
-	os.Rename(al.config.LogFile, al.logFilePath(1))
+	_ = os.Rename(al.config.LogFile, al.logFilePath(1))
 
 	// Create new log file
 	if err := al.openLogFile(); err != nil {
@@ -661,7 +661,7 @@ func (al *AuditLogger) Close() error {
 	// Close log file
 	al.logFileMu.Lock()
 	if al.logFile != nil {
-		al.logFile.Close()
+		_ = al.logFile.Close()
 	}
 	al.logFileMu.Unlock()
 
