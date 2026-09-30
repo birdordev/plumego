@@ -15,6 +15,32 @@ Detailed, evidence-backed release documents live in
 
 ## [Unreleased]
 
+### Added
+
+- CI hardening: Dependabot for GitHub Actions, `cmd/plumego`, reference
+  modules, and the website; CodeQL analysis (weekly + on push/PR);
+  cross-platform gates (full tests on macOS, build+vet on Windows).
+- `golangci-lint` as a zero-finding gate (`make lint`, CI-enforced) covering
+  errcheck, govet, ineffassign, staticcheck, and unused.
+- Codecov coverage upload and badge; coverage gate on stable roots raised
+  from 70% to 90% (current: 96%).
+- Automated GitHub Releases on version tags: changelog-extracted notes plus
+  cross-compiled `plumego` CLI binaries for linux/darwin/windows.
+- `internal/testutil/wait` polling helpers for tests that observe
+  asynchronous state; new tests must not synchronize with `time.Sleep`.
+
+### Fixed
+
+- `x/messaging/pubsub`: `SubOptions.Filter` is now tagged `json:"-"` so
+  subscriptions with a filter predicate no longer fail persistence
+  serialization (the filter is runtime-only and is dropped from snapshots).
+- `log`: glog header buffer pool now stores `*[]byte`, removing a per-line
+  boxing allocation (`SA6002`).
+- `x/ai/filter`: removed dead secret-text computation in the secret filter
+  (matches report redacted placeholders only, as documented).
+- Migrated remaining in-repo callers off the deprecated `store/kv` `Options`
+  alias; the alias itself stays in the frozen v1 API.
+
 ## [1.1.0] - 2026-05-18
 
 Full release notes: [`docs/release/v1.1.0.md`](docs/release/v1.1.0.md).

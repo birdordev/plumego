@@ -1,0 +1,92 @@
+name: release
+
+# Creates a GitHub Release when a version tag (vX.Y.Z) is pushed:
+#   1. verifies the tag has a matching CHANGELOG.md section,
+#   2. extracts that section as the release notes,
+#   3. cross-compiles the cmd/plumego CLI for linux/darwin/windows on
+#      amd64/arm64 and attaches the archives with checksums.
+#
+# Release notes source of truth is CHANGELOG.md (Keep a Changelog format);
+# detailed evidence documents live in docs/release/ and are linked from the
+# changelog entry.
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: Extract release notes from CHANGELOG
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          if ! grep -q "^## \[${version}\]" CHANGELOG.md; then
+            echo "CHANGELOG.md has no section for version ${version}."
+            echo "Add '## [${version}] - <date>' before tagging."
+            exit 1
+          fi
+          awk -v version="$version" '
+            BEGIN { target = "## [" version "]" }
+            index($0, target) == 1 { capture=1; next }
+            capture && /^## \[/ { exit }
+            capture { print }
+          ' CHANGELOG.md > release-notes.md
+          if ! grep -q '[^[:space:]]' release-notes.md; then
+            echo "CHANGELOG section for ${version} is empty."
+            exit 1
+          fi
+          echo "--- release notes for ${GITHUB_REF_NAME} ---"
+          cat release-notes.md
+
+      - name: Build CLI binaries
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          cd cmd/plumego
+          for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64; do
+            goos="${target%/*}"
+            goarch="${target#*/}"
+            out="plumego-${goos}-${goarch}"
+            if [ "$goos" = "windows" ]; then
+              out="${out}.exe"
+            fi
+            echo "building ${out}"
+            CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" \
+              go build -trimpath -ldflags "-s -w -X main.version=${GITHUB_REF_NAME}" \
+              -o "../../dist/${out}" .
+          done
+          cd ../..
+          cd dist
+          sha256sum plumego-* > checksums.txt
+          ls -la
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          prerelease_flag=""
+          case "$GITHUB_REF_NAME" in
+            *-*) prerelease_flag="--prerelease" ;;
+          esac
+          # shellcheck disable=SC2086
+          gh release create "$GITHUB_REF_NAME" \
+            --title "$GITHUB_REF_NAME" \
+            --notes-file release-notes.md \
+            $prerelease_flag \
+            dist/plumego-* dist/checksums.txt
