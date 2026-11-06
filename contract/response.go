@@ -2,6 +2,7 @@ package contract
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 )
 
@@ -24,7 +25,7 @@ func writeJSON(w http.ResponseWriter, status int, payload any) error {
 	if !validResponseHTTPStatus(status) {
 		return ErrInvalidResponseStatus
 	}
-	if statusDisallowsBody(status) {
+	if status == http.StatusNoContent || status == http.StatusResetContent {
 		w.WriteHeader(status)
 		return nil
 	}
@@ -36,10 +37,7 @@ func writeJSON(w http.ResponseWriter, status int, payload any) error {
 		return err
 	}
 
-	w.Header().Set(HeaderContentType, ContentTypeJSON)
-	w.WriteHeader(status)
-	_, err := w.Write(buf.Bytes())
-	return err
+	return writeEncodedJSON(w, status, buf.Bytes())
 }
 
 // WriteResponse writes a standardized success response and injects request id when available.
@@ -58,8 +56,11 @@ func WriteResponse(w http.ResponseWriter, r *http.Request, status int, data any,
 	return writeJSON(w, status, resp)
 }
 
-func statusDisallowsBody(status int) bool {
-	return (status >= 100 && status < 200) || status == http.StatusNoContent || status == http.StatusNotModified
+func writeEncodedJSON(w http.ResponseWriter, status int, body []byte) error {
+	w.Header().Set(HeaderContentType, ContentTypeJSON)
+	w.WriteHeader(status)
+	_, err := w.Write(body)
+	return err
 }
 
 func validResponseHTTPStatus(status int) bool {
@@ -84,8 +85,8 @@ type errorResponse struct {
 }
 
 // WriteError writes a structured error response and injects the request id when available.
-// It returns the encoding error, if any; callers may ignore it when the response
-// headers have already been sent.
+// If details cannot be encoded, it writes the same error without details and
+// returns the original encoding error, joined with any write error.
 //
 // Prefer building APIError values through NewErrorBuilder() so that required
 // fields are always populated. WriteError still normalizes incomplete APIError
@@ -111,14 +112,20 @@ func WriteError(w http.ResponseWriter, r *http.Request, err APIError) error {
 	buf := getJSONBuffer()
 	defer putJSONBuffer(buf)
 
-	if encErr := json.NewEncoder(buf).Encode(resp); encErr != nil {
+	encoder := json.NewEncoder(buf)
+	if encErr := encoder.Encode(resp); encErr != nil {
+		resp.Error.Details = nil
+		buf.Reset()
+		if fallbackErr := encoder.Encode(resp); fallbackErr != nil {
+			return errors.Join(encErr, fallbackErr)
+		}
+		if writeErr := writeEncodedJSON(w, err.status, buf.Bytes()); writeErr != nil {
+			return errors.Join(encErr, writeErr)
+		}
 		return encErr
 	}
 
-	w.Header().Set(HeaderContentType, ContentTypeJSON)
-	w.WriteHeader(err.status)
-	_, writeErr := w.Write(buf.Bytes())
-	return writeErr
+	return writeEncodedJSON(w, err.status, buf.Bytes())
 }
 
 func errorPayloadFrom(err APIError) errorPayload {
@@ -127,6 +134,6 @@ func errorPayloadFrom(err APIError) errorPayload {
 		Message:  err.message,
 		Category: err.category,
 		Type:     err.errorType,
-		Details:  cloneAnyMap(err.details),
+		Details:  err.details,
 	}
 }

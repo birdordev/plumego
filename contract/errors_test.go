@@ -2,8 +2,13 @@ package contract
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"os/exec"
+	"reflect"
+	"runtime/debug"
 	"testing"
 )
 
@@ -906,27 +911,107 @@ func TestWriteErrorNormalizesNonErrorStatus(t *testing.T) {
 	}
 }
 
-func TestWriteErrorEncodingFailureDoesNotCommitHeaders(t *testing.T) {
-	recorder := httptest.NewRecorder()
+func TestWriteErrorEncodingFailureWritesFallback(t *testing.T) {
+	written := make(chan error, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r = r.WithContext(WithRequestID(r.Context(), "fallback-id"))
+		written <- WriteError(w, r, NewErrorBuilder().
+			Type(TypeBadRequest).
+			Message("bad detail").
+			Detail("bad", make(chan int)).
+			Build())
+	}))
+	defer server.Close()
 
-	err := WriteError(recorder, nil, NewErrorBuilder().
-		Type(TypeBadRequest).
-		Code(CodeInternalError).
-		Message("bad detail").
-		Detail("bad", make(chan int)).
-		Build())
-	if err == nil {
-		t.Fatal("expected encoding error, got nil")
+	res, err := server.Client().Get(server.URL)
+	if err != nil {
+		t.Fatal(err)
 	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusBadRequest || res.Header.Get(HeaderContentType) != ContentTypeJSON {
+		t.Fatalf("response status = %d, content type = %q", res.StatusCode, res.Header.Get(HeaderContentType))
+	}
+	var body errorResponse
+	if err := json.NewDecoder(res.Body).Decode(&body); err != nil {
+		t.Fatal(err)
+	}
+	if body.RequestID != "fallback-id" || body.Error.Code != CodeBadRequest || body.Error.Message != "bad detail" ||
+		body.Error.Category != CategoryClient || body.Error.Type != TypeBadRequest || body.Error.Details != nil {
+		t.Fatalf("unexpected fallback body: %+v", body)
+	}
+	var encodingErr *json.UnsupportedTypeError
+	if err := <-written; !errors.As(err, &encodingErr) {
+		t.Fatalf("WriteError = %v, want unsupported type error", err)
+	}
+}
 
-	if recorder.Code != http.StatusOK {
-		t.Fatalf("expected headers to remain uncommitted, got status %d", recorder.Code)
+func TestErrorDetailsPreserveEmptyContainerShapes(t *testing.T) {
+	details := map[string]any{
+		"nested": []any{
+			map[string]any{}, map[string]any(nil), []string{}, []string(nil),
+			[]any{}, []any(nil), []map[string]any{}, []map[string]any(nil),
+		},
 	}
-	if recorder.Body.Len() != 0 {
-		t.Fatalf("expected no body on encoding failure, got %q", recorder.Body.String())
+	apiErr := NewErrorBuilder().Details(details).Build()
+	if got := apiErr.Details(); !reflect.DeepEqual(got, details) {
+		t.Fatalf("Details() = %#v, want %#v", got, details)
 	}
-	if contentType := recorder.Header().Get("Content-Type"); contentType != "" {
-		t.Fatalf("expected no content type on encoding failure, got %q", contentType)
+	w := httptest.NewRecorder()
+	if err := WriteError(w, nil, apiErr); err != nil {
+		t.Fatal(err)
+	}
+	var body errorResponse
+	if err := json.NewDecoder(w.Body).Decode(&body); err != nil {
+		t.Fatal(err)
+	}
+	want := []any{map[string]any{}, nil, []any{}, nil, []any{}, nil, []any{}, nil}
+	if got := body.Error.Details["nested"]; !reflect.DeepEqual(got, want) {
+		t.Fatalf("encoded nested detail = %#v, want %#v", got, want)
+	}
+}
+
+func TestErrorDetailsCycles(t *testing.T) {
+	const child = "PLUMEGO_TEST_ERROR_DETAILS_CYCLES"
+	if os.Getenv(child) != "1" {
+		cmd := exec.CommandContext(t.Context(), os.Args[0], "-test.run=^TestErrorDetailsCycles$")
+		cmd.Env = append(os.Environ(), child+"=1")
+		if output, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("cycle test subprocess: %v\n%s", err, output)
+		}
+		return
+	}
+	debug.SetMaxStack(1 << 20)
+	selfMap := map[string]any{}
+	selfMap["self"] = selfMap
+	selfSlice := make([]any, 1)
+	selfSlice[0] = selfSlice
+	crossMap := map[string]any{}
+	crossSlice := []map[string]any{crossMap}
+	crossMap["back"] = crossSlice
+	apiErr := NewErrorBuilder().Type(TypeBadRequest).
+		Detail("map", selfMap).Detail("slice", selfSlice).Detail("cross", crossSlice).Build()
+	selfMap["changed"] = true
+	selfSlice[0] = nil
+	crossMap["changed"] = true
+	got := apiErr.Details()
+	mapCopy := got["map"].(map[string]any)
+	if _, changed := mapCopy["self"].(map[string]any)["changed"]; changed {
+		t.Fatal("copied map cycle aliases source")
+	}
+	if _, ok := got["slice"].([]any)[0].([]any)[0].([]any); !ok {
+		t.Fatal("copied slice cycle aliases source")
+	}
+	if _, changed := got["cross"].([]map[string]any)[0]["back"].([]map[string]any)[0]["changed"]; changed {
+		t.Fatal("copied map and slice cycle aliases source")
+	}
+	mapCopy["changed"] = true
+	if _, changed := apiErr.Details()["map"].(map[string]any)["changed"]; changed {
+		t.Fatal("Details aliases the stored error")
+	}
+	w := httptest.NewRecorder()
+	var encodingErr *json.UnsupportedValueError
+	if err := WriteError(w, nil, apiErr); !errors.As(err, &encodingErr) || w.Code != http.StatusBadRequest {
+		t.Fatalf("WriteError = %v, status = %d, want cycle error and 400", err, w.Code)
 	}
 }
 

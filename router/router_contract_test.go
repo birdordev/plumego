@@ -591,6 +591,66 @@ func TestWarmCachePreservesTrieSpecificity(t *testing.T) {
 	assertTrimmedResponseBody(t, rec, "static")
 }
 
+func TestDispatchBacktracksFromDeadEnds(t *testing.T) {
+	r := NewRouter(WithMethodNotAllowed(true))
+	for _, route := range []struct {
+		method  string
+		pattern string
+		name    string
+	}{
+		{http.MethodGet, "/items/new/edit", "static"},
+		{http.MethodGet, "/items/:id/edit", "param-edit"},
+		{http.MethodGet, "/items/:id/detail", "param"},
+		{http.MethodGet, "/items/*path", "wildcard"},
+		{http.MethodPost, "/items/new/detail", "post"},
+	} {
+		mustAddRoute(r, route.method, route.pattern, http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			meta := contract.RequestContextFromContext(req.Context())
+			_, _ = io.WriteString(w, strings.Join([]string{meta.RouteName, meta.RoutePattern, Param(req, "id"), Param(req, "path")}, "|"))
+		}), WithRouteName(route.name))
+	}
+	r.Freeze()
+
+	for _, tc := range []struct {
+		name string
+		path string
+		want string
+	}{
+		{"complete static beats param and wildcard", "/items/new/edit", "static|/items/new/edit||"},
+		{"static dead end falls back to param", "/items/new/detail", "param|/items/:id/detail|new|"},
+		{"static and param dead ends fall back to wildcard", "/items/new/other", "wildcard|/items/*path||new/other"},
+		{"param without terminal handler falls back to wildcard", "/items/42", "wildcard|/items/*path||42"},
+		{"literal colon remains a parameter value", "/items/:/detail", "param|/items/:id/detail|:|"},
+		{"literal star remains a wildcard value", "/items/*", "wildcard|/items/*path||*"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for range 2 {
+				rec := serveRouter(r, http.MethodGet, tc.path)
+				assertResponseStatus(t, rec, http.StatusOK)
+				assertResponseBody(t, rec, tc.want)
+			}
+		})
+	}
+}
+
+func TestMethodNotAllowedIncludesBacktrackedRoute(t *testing.T) {
+	r := NewRouter(WithMethodNotAllowed(true))
+	handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	})
+	mustAddRoute(r, http.MethodGet, "/items/new/edit", handler)
+	mustAddRoute(r, http.MethodGet, "/items/:id/detail", handler)
+	mustAddRoute(r, http.MethodPost, "/items/new/detail", handler)
+	r.Freeze()
+
+	for range 2 {
+		rec := serveRouter(r, http.MethodDelete, "/items/new/detail")
+		assertResponseStatus(t, rec, http.StatusMethodNotAllowed)
+		assertResponseHeader(t, rec, "Allow", "GET, HEAD, POST")
+		assertResponseStatus(t, serveRouter(r, http.MethodGet, "/items/new/detail"), http.StatusNoContent)
+	}
+}
+
 func TestMethodNotAllowedWhenEnabled(t *testing.T) {
 	r := NewRouter(WithMethodNotAllowed(true))
 	mustAddRoute(r, http.MethodGet, "/only", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
