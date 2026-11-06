@@ -37,9 +37,9 @@ a time.
 ## Supervising a set: `LifecycleGroup`
 
 `core.LifecycleGroup` runs an ordered set of components. It starts them in
-registration order, stops them in **reverse** order, and is ready only when
-**every** member is ready. A `LifecycleGroup` is itself a `Lifecycle`, so groups
-nest.
+registration order, stops them in **reverse** order, and is ready after a
+successful start when **every** member is ready. A `LifecycleGroup` is itself a
+`Lifecycle`, so groups nest.
 
 ```go
 g := core.NewLifecycleGroup()
@@ -48,7 +48,7 @@ g.Add("message-bus", bus).      // started first, stopped last
   Add("scheduler", scheduler)   // started last, stopped first
 
 if err := g.Start(ctx); err != nil {
-    return err // any started component was already rolled back
+    return err // includes any rollback errors
 }
 defer g.Stop(context.Background())
 
@@ -60,13 +60,20 @@ if err := g.Ready(r.Context()); err != nil {
 
 Guarantees:
 
-- **Ordered start with rollback.** If a component's `Start` fails, the
-  components already started are stopped in reverse order before `Start` returns
-  the originating error — a failed `Start` leaves nothing running.
-- **Reverse stop, aggregated errors.** `Stop` stops every started component even
-  if an earlier one errors, and returns the joined error.
-- **Aggregated readiness.** `Ready` reports the joined error of *all* not-ready
-  components, so one probe surfaces every reason at once.
+- **Ordered start with rollback.** A failed `Start` attempts to stop every
+  component whose startup was attempted, including the failing component, in
+  reverse order using the startup context. It returns any rollback errors with
+  the startup error.
+- **Reverse stop with retry.** `Stop` attempts all pending cleanups in reverse
+  order and joins their errors. Call it again with a live context to retry
+  failed cleanup, including cleanup left pending by startup rollback.
+- **Readiness after startup.** `Ready` joins component probe errors after a
+  successful start. It returns an error before startup, during lifecycle
+  callbacks, after failed startup, and once shutdown begins.
+- **Frozen registration and serialized callbacks.** `Add` ignores calls made
+  after the first `Start` begins. An overlapping or reentrant `Start`, `Stop`,
+  or `Ready` returns an error immediately. If `Stop` overlaps an active
+  callback, retry it after that operation finishes.
 
 Register dependencies before their dependents: a message bus before the workers
 that publish to it, so startup brings the bus up first and shutdown takes it down

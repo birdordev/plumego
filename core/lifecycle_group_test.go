@@ -3,7 +3,9 @@ package core
 import (
 	"context"
 	"errors"
+	"slices"
 	"testing"
+	"time"
 )
 
 // recorder is a Lifecycle that records the order of Start/Stop calls into a
@@ -13,7 +15,6 @@ type recorder struct {
 	log      *[]string
 	startErr error
 	stopErr  error
-	readyErr error
 }
 
 func (r *recorder) Start(context.Context) error {
@@ -26,7 +27,7 @@ func (r *recorder) Stop(context.Context) error {
 	return r.stopErr
 }
 
-func (r *recorder) Ready(context.Context) error { return r.readyErr }
+func (r *recorder) Ready(context.Context) error { return nil }
 
 func TestLifecycleGroupStartsInOrderStopsInReverse(t *testing.T) {
 	var log []string
@@ -65,8 +66,8 @@ func TestLifecycleGroupRollsBackOnStartFailure(t *testing.T) {
 	if err == nil || !errors.Is(err, boom) {
 		t.Fatalf("Start error = %v, want wrapping %v", err, boom)
 	}
-	// a started then b failed: a must be rolled back, c never started.
-	want := []string{"start:a", "start:b", "stop:a"}
+	// Clean up b's partial startup before rolling back a.
+	want := []string{"start:a", "start:b", "stop:b", "stop:a"}
 	if len(log) != len(want) {
 		t.Fatalf("call log = %v, want %v", log, want)
 	}
@@ -82,6 +83,42 @@ func TestLifecycleGroupRollsBackOnStartFailure(t *testing.T) {
 	}
 	if len(log) != 0 {
 		t.Fatalf("Stop after rollback ran %v, want no-op", log)
+	}
+	if err := g.Ready(t.Context()); err == nil {
+		t.Fatal("group reported ready after failed startup")
+	}
+	g.Add("late", Component{})
+	if len(g.entries) != 3 {
+		t.Fatal("registration reopened after failed startup")
+	}
+}
+
+func TestLifecycleGroupRetainsFailedRollbackForStop(t *testing.T) {
+	var log []string
+	startErr := errors.New("partial start")
+	firstStopErr := errors.New("first component rollback failed")
+	partialStopErr := errors.New("partial component rollback failed")
+	first := &recorder{name: "a", log: &log, stopErr: firstStopErr}
+	partial := &recorder{name: "c", log: &log, startErr: startErr, stopErr: partialStopErr}
+	g := NewLifecycleGroup().Add("a", first).
+		Add("b", &recorder{name: "b", log: &log}).Add("c", partial)
+
+	err := g.Start(t.Context())
+	if !errors.Is(err, startErr) || !errors.Is(err, firstStopErr) || !errors.Is(err, partialStopErr) {
+		t.Fatalf("Start error = %v, want %v, %v, and %v", err, startErr, firstStopErr, partialStopErr)
+	}
+	if want := []string{"start:a", "start:b", "start:c", "stop:c", "stop:b", "stop:a"}; !slices.Equal(log, want) {
+		t.Fatalf("call log = %v, want %v", log, want)
+	}
+
+	log = nil
+	first.stopErr = nil
+	partial.stopErr = nil
+	if err := g.Stop(t.Context()); err != nil {
+		t.Fatalf("Stop after failed rollback: %v", err)
+	}
+	if want := []string{"stop:c", "stop:a"}; !slices.Equal(log, want) {
+		t.Fatalf("retry log = %v, want %v", log, want)
 	}
 }
 
@@ -102,22 +139,151 @@ func TestLifecycleGroupStopAggregatesErrors(t *testing.T) {
 	}
 }
 
-func TestLifecycleGroupReadyAggregates(t *testing.T) {
-	notReady := errors.New("warming up")
-	g := NewLifecycleGroup()
+func TestLifecycleGroupStopRetriesOnlyFailedComponents(t *testing.T) {
 	var log []string
-	g.Add("a", &recorder{name: "a", log: &log}).
-		Add("b", &recorder{name: "b", log: &log, readyErr: notReady})
-
-	if err := g.Ready(context.Background()); err == nil || !errors.Is(err, notReady) {
-		t.Fatalf("Ready error = %v, want wrapping %v", err, notReady)
+	g := NewLifecycleGroup().
+		Add("a", &recorder{name: "a", log: &log}).
+		Add("b", Component{OnStop: func(ctx context.Context) error {
+			log = append(log, "stop:b")
+			return ctx.Err()
+		}}).
+		Add("c", &recorder{name: "c", log: &log})
+	if err := g.Start(t.Context()); err != nil {
+		t.Fatalf("Start: %v", err)
 	}
 
-	// All ready -> nil.
-	g2 := NewLifecycleGroup()
-	g2.Add("a", &recorder{name: "a", log: &log})
-	if err := g2.Ready(context.Background()); err != nil {
-		t.Fatalf("Ready with all-ready = %v, want nil", err)
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	if err := g.Stop(ctx); !errors.Is(err, context.Canceled) {
+		t.Fatalf("first Stop error = %v, want context.Canceled", err)
+	}
+	if err := g.Stop(t.Context()); err != nil {
+		t.Fatalf("retry Stop: %v", err)
+	}
+	if err := g.Stop(t.Context()); err != nil {
+		t.Fatalf("Stop after cleanup: %v", err)
+	}
+	if want := []string{"start:a", "start:c", "stop:c", "stop:b", "stop:a", "stop:b"}; !slices.Equal(log, want) {
+		t.Fatalf("call log = %v, want %v", log, want)
+	}
+}
+
+func TestLifecycleGroupReadyAggregates(t *testing.T) {
+	firstErr := errors.New("warming up")
+	secondErr := errors.New("dependency unavailable")
+	child := NewLifecycleGroup().
+		Add("a", Component{OnReady: func(context.Context) error { return firstErr }}).
+		Add("b", Component{OnReady: func(context.Context) error { return secondErr }})
+	g := NewLifecycleGroup().Add("child", child)
+	if err := g.Start(t.Context()); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	if err := g.Ready(t.Context()); !errors.Is(err, firstErr) || !errors.Is(err, secondErr) {
+		t.Fatalf("Ready error = %v, want both %v and %v", err, firstErr, secondErr)
+	}
+}
+
+func TestLifecycleGroupReadyOnlyAfterSuccessfulStart(t *testing.T) {
+	ctx := t.Context()
+	child := NewLifecycleGroup()
+	g := NewLifecycleGroup().Add("empty child", child)
+	if err := g.Ready(ctx); err == nil {
+		t.Fatal("group reported ready before startup")
+	}
+	if err := g.Start(ctx); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	late := Component{OnReady: func(context.Context) error { return errors.New("late component probed") }}
+	g.Add("late", late)
+	if err := g.Ready(ctx); err != nil {
+		t.Fatalf("Ready after successful startup: %v", err)
+	}
+	if err := g.Stop(ctx); err != nil {
+		t.Fatalf("Stop: %v", err)
+	}
+	g.Add("also late", late)
+	if len(g.entries) != 1 {
+		t.Fatal("late additions changed the registered components")
+	}
+	if err := g.Ready(ctx); err == nil {
+		t.Fatal("group reported ready after shutdown")
+	}
+}
+
+func TestLifecycleGroupDoesNotWaitForActiveCallback(t *testing.T) {
+	for _, phase := range []string{"start", "stop", "ready"} {
+		t.Run(phase, func(t *testing.T) {
+			g := NewLifecycleGroup()
+			entered := make(chan struct{})
+			release := make(chan struct{})
+			finished := make(chan error, 1)
+			released := false
+			defer func() {
+				if !released {
+					close(release)
+				}
+			}()
+			callback := func(ctx context.Context) error {
+				g.Add("reentrant", Component{})
+				if err := g.Stop(ctx); err == nil {
+					return errors.New("reentrant Stop succeeded")
+				}
+				if err := g.Ready(ctx); err == nil {
+					return errors.New("reentrant Ready succeeded")
+				}
+				close(entered)
+				<-release
+				return nil
+			}
+			component := Component{}
+			var run func(context.Context) error
+			switch phase {
+			case "start":
+				component.OnStart, run = callback, g.Start
+			case "stop":
+				component.OnStop, run = callback, g.Stop
+			case "ready":
+				component.OnReady, run = callback, g.Ready
+			}
+			g.Add("worker", component)
+			if phase != "start" {
+				if err := g.Start(t.Context()); err != nil {
+					t.Fatalf("Start: %v", err)
+				}
+			}
+
+			go func() { finished <- run(t.Context()) }()
+			select {
+			case <-entered:
+			case err := <-finished:
+				t.Fatalf("callback returned before blocking: %v", err)
+			case <-time.After(2 * time.Second):
+				t.Fatal("reentrant calls blocked the callback")
+			}
+
+			ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
+			defer cancel()
+			probe := make(chan error, 1)
+			go func() { probe <- g.Ready(ctx) }()
+			select {
+			case err := <-probe:
+				if err == nil {
+					t.Fatal("Ready succeeded while a callback was active")
+				}
+			case <-ctx.Done():
+				t.Fatal("Ready blocked on an active callback")
+			}
+			close(release)
+			released = true
+			select {
+			case err := <-finished:
+				if err != nil {
+					t.Fatalf("active operation: %v", err)
+				}
+			case <-ctx.Done():
+				t.Fatal("active operation did not finish")
+			}
+		})
 	}
 }
 
