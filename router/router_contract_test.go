@@ -9,8 +9,10 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/spcent/plumego/contract"
+	"github.com/spcent/plumego/internal/testutil/wait"
 )
 
 func TestMethodMismatchReturnsNotFound(t *testing.T) {
@@ -366,6 +368,41 @@ func TestFreezePreventsMethodNotAllowedOptionMutation(t *testing.T) {
 	}
 }
 
+func TestCacheCapacityOptionDuringDispatch(t *testing.T) {
+	r := NewRouter(WithCacheCapacity(2))
+	mustAddRoute(r, http.MethodGet, "/ready", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+
+	applyWhileServing := func() {
+		var wg sync.WaitGroup
+		wg.Go(func() {
+			for range 100 {
+				WithCacheCapacity(4)(r)
+			}
+		})
+		wg.Go(func() {
+			for range 100 {
+				if status := serveRouter(r, http.MethodGet, "/ready").Code; status != http.StatusNoContent {
+					t.Errorf("dispatch status = %d, want 204", status)
+					return
+				}
+			}
+		})
+		wg.Wait()
+	}
+	applyWhileServing()
+	cache := r.state.matchCache
+	if cache.capacity != 4 {
+		t.Fatalf("cache capacity = %d, want 4", cache.capacity)
+	}
+	r.Freeze()
+	applyWhileServing()
+	if r.state.matchCache != cache {
+		t.Fatal("cache replaced after Freeze")
+	}
+}
+
 func TestAddRouteRejectsRelativeRootPath(t *testing.T) {
 	r := NewRouter()
 	err := r.AddRoute(http.MethodGet, "users/:id", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
@@ -481,6 +518,44 @@ func TestAddRouteClearsStaleExactCache(t *testing.T) {
 	rec = serveRouter(r, http.MethodGet, "/files/readme")
 	assertResponseStatus(t, rec, http.StatusOK)
 	assertTrimmedResponseBody(t, rec, "exact")
+}
+
+func TestRegistrationCannotInvalidateInFlightCacheFill(t *testing.T) {
+	r := NewRouter()
+	mustAddRoute(r, http.MethodGet, "/items/:id", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusAccepted)
+	}))
+
+	served := make(chan int, 1)
+	registered := make(chan error, 1)
+	func() {
+		// Block the cache lookup and confirm dispatch holds the route read lock.
+		r.state.matchCache.mu.Lock()
+		defer r.state.matchCache.mu.Unlock()
+		go func() { served <- serveRouter(r, http.MethodGet, "/items/new").Code }()
+		wait.ForCondition(t, 2*time.Second, "dispatch to hold the route read lock", func() bool {
+			if !r.state.mu.TryLock() {
+				return true
+			}
+			r.state.mu.Unlock()
+			return false
+		})
+		go func() {
+			registered <- r.AddRoute(http.MethodGet, "/items/new", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(http.StatusNoContent)
+			}))
+		}()
+	}()
+	if status := <-served; status != http.StatusAccepted {
+		t.Fatalf("in-flight status = %d, want 202", status)
+	}
+	if err := <-registered; err != nil {
+		t.Fatalf("AddRoute: %v", err)
+	}
+	r.Freeze()
+	for range 2 {
+		assertResponseStatus(t, serveRouter(r, http.MethodGet, "/items/new"), http.StatusNoContent)
+	}
 }
 
 func TestWarmCachePreservesTrieSpecificity(t *testing.T) {

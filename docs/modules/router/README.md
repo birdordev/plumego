@@ -171,7 +171,7 @@ These behaviors are part of the current stable-root freeze baseline:
 | Params | route parameter names are unique per pattern; `Param(r, name)` and `contract.RequestContextFromContext` expose matched params |
 | Groups | nested groups compose normalized prefixes and preserve named route metadata |
 | Matching | static segments take precedence over params, and params take precedence over wildcards; warm cache preserves that result |
-| Match cache | cache keys use method and normalized path; host does not participate in router matching |
+| Match cache | cache keys use method and normalized path; host does not participate in router matching. Successful registration invalidates cached matches, including when requests are served concurrently. |
 | Reverse routing | `URL` percent-escapes params and returns empty string for unknown routes, missing params, empty params, duplicate keys, unknown keys, or malformed params; `URLMust` panics with the specific reason |
 | Route snapshots | `Routes` returns method/path-sorted route metadata snapshots; uninitialized routers return non-nil empty `Routes` and `NamedRoutes` snapshots |
 | 404 handling | unmatched routes use standard-library `http.NotFound` |
