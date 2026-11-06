@@ -157,11 +157,8 @@ func hasNonTestGoFile(dir string) (bool, error) {
 	return false, nil
 }
 
-// parsePackageFiles parses all non-test Go source files directly in dir (not
-// recursing into subdirectories) and returns them keyed by file path together
-// with the set of distinct package names found. It replaces the deprecated
-// go/parser.ParseDir and go/ast.Package with the stdlib primitives they were
-// thin wrappers over.
+// parsePackageFiles parses non-test Go files directly in dir and returns
+// them keyed by file path, along with the distinct package names found.
 func parsePackageFiles(fset *token.FileSet, dir string) (map[string]*ast.File, map[string]struct{}, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {

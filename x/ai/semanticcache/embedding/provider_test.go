@@ -46,6 +46,7 @@ func TestOpenAIProvider_OversizedResponse(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewOpenAIProvider() error = %v", err)
 	}
+	p.maxRetries = 0
 
 	_, err = p.Generate(context.Background(), "hello")
 	if !errors.Is(err, ErrResponseTooLarge) {
@@ -69,6 +70,7 @@ func TestCohereProvider_OversizedResponse(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewCohereProvider() error = %v", err)
 	}
+	p.maxRetries = 0
 
 	_, err = p.Generate(context.Background(), "hello")
 	if !errors.Is(err, ErrResponseTooLarge) {
@@ -97,6 +99,7 @@ func TestOpenAIProvider_APIErrorSurfacesMessage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewOpenAIProvider() error = %v", err)
 	}
+	p.maxRetries = 0
 
 	_, err = p.Generate(context.Background(), "hello")
 	if err == nil || !strings.Contains(err.Error(), "invalid api key") {

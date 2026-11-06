@@ -280,11 +280,10 @@ func defaultFuncMap() template.FuncMap {
 	}
 }
 
-// titleString mirrors the semantics of the deprecated strings.Title: it
-// title-cases the first letter of each word, where a word boundary is any
-// ASCII character that is not a letter, digit, or underscore, or any
-// non-ASCII Unicode space. Kept local so the "title" template function
-// retains its documented behavior without the deprecated stdlib symbol.
+// titleString title-cases the first rune of each word. Word separators are
+// ASCII characters other than letters, digits, and underscores, plus
+// non-ASCII Unicode spaces. These rules preserve the "title" template
+// function's documented behavior.
 func titleString(s string) string {
 	prev := ' '
 	return strings.Map(func(r rune) rune {

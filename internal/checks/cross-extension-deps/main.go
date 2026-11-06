@@ -149,10 +149,8 @@ func checkModule(repoRoot, dir string, forbidden []string) ([]violation, error) 
 	return violations, nil
 }
 
-// parseNonTestGoFiles parses all non-test Go source files directly in dir
-// (not recursing into subdirectories) and returns them keyed by absolute
-// file path. It replaces the deprecated go/parser.ParseDir with the stdlib
-// primitives it was a thin wrapper over.
+// parseNonTestGoFiles parses non-test Go files directly in dir and returns
+// them keyed by absolute path.
 func parseNonTestGoFiles(fset *token.FileSet, dir string, mode parser.Mode) (map[string]*ast.File, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
