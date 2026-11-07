@@ -37,11 +37,12 @@ jobs:
         uses: github/codeql-action/init@v3
         with:
           languages: go
-          # build-mode none suits this repo: the root module is stdlib-only
-          # and nested modules (cmd/, reference/*) carry replace directives
-          # and third-party deps that a full build would need to fetch.
-          build-mode: none
+          # Go 提取器需要构建；显式构建主模块，避免自动探测构建流程。
+          build-mode: manual
           config-file: ./.github/codeql/codeql-config.yml
+
+      - name: Build Go module
+        run: go build ./...
 
       - name: Perform CodeQL analysis
         uses: github/codeql-action/analyze@v3

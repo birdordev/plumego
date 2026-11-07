@@ -1,18 +1,27 @@
 package conformance_test
 
 import (
+	"compress/gzip"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/spcent/plumego/contract"
 	"github.com/spcent/plumego/middleware"
 	"github.com/spcent/plumego/middleware/abuseguard"
 	"github.com/spcent/plumego/middleware/bodylimit"
+	"github.com/spcent/plumego/middleware/compression"
+	"github.com/spcent/plumego/middleware/concurrencylimit"
+	"github.com/spcent/plumego/middleware/cors"
+	"github.com/spcent/plumego/middleware/debug"
 	"github.com/spcent/plumego/middleware/httpmetrics"
 	"github.com/spcent/plumego/middleware/requestid"
+	"github.com/spcent/plumego/middleware/securityheaders"
+	"github.com/spcent/plumego/middleware/singleflight"
+	"github.com/spcent/plumego/middleware/timeout"
 	mwtracing "github.com/spcent/plumego/middleware/tracing"
 	"github.com/spcent/plumego/security/authn"
 )
@@ -22,81 +31,88 @@ func TestMiddlewareTypeShape(t *testing.T) {
 	var _ middleware.Middleware = fixtureNoOpMiddleware()
 }
 
-func TestMiddlewareNextCallAtMostOnce(t *testing.T) {
-	recoveryMw := newConformanceRecovery(t)
-	tests := []struct {
+func passThroughCases(t *testing.T) []struct {
+	name string
+	mw   middleware.Middleware
+} {
+	t.Helper()
+	security, err := securityheaders.Middleware(securityheaders.DefaultConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return []struct {
 		name string
 		mw   middleware.Middleware
-		req  *http.Request
 	}{
-		{
-			name: "noop fixture",
-			mw:   fixtureNoOpMiddleware(),
-			req:  httptest.NewRequest(http.MethodGet, "/", nil),
-		},
-		{
-			name: "request id",
-			mw:   requestid.Middleware(),
-			req:  httptest.NewRequest(http.MethodGet, "/", nil),
-		},
-		{
-			name: "tracing",
-			mw:   mwtracing.Middleware(nil),
-			req:  httptest.NewRequest(http.MethodGet, "/", nil),
-		},
-		{
-			name: "http metrics",
-			mw:   httpmetrics.Middleware(nil),
-			req:  httptest.NewRequest(http.MethodGet, "/", nil),
-		},
-		{
-			name: "access log",
-			mw:   newConformanceAccessLog(t),
-			req:  httptest.NewRequest(http.MethodGet, "/", nil),
-		},
-		{
-			name: "recovery",
-			mw:   recoveryMw,
-			req:  httptest.NewRequest(http.MethodGet, "/", nil),
-		},
-		{
-			name: "auth valid token",
-			mw:   newConformanceAuth(t, authn.StaticToken("secret")),
-			req:  httptest.NewRequest(http.MethodGet, "/", nil),
-		},
+		{"noop fixture", fixtureNoOpMiddleware()},
+		{"request id", requestid.Middleware()},
+		{"tracing", mwtracing.Middleware(&conformanceTracer{})},
+		{"http metrics", httpmetrics.Middleware(conformanceObserver{})},
+		{"access log", newConformanceAccessLog(t)},
+		{"recovery", newConformanceRecovery(t)},
+		{"auth", newConformanceAuth(t, authn.StaticToken("secret"))},
+		{"body limit", bodylimit.Middleware(bodylimit.Config{MaxBytes: 1024})},
+		{"concurrency limit", concurrencylimit.Middleware(concurrencylimit.Config{MaxConcurrent: 1})},
+		{"cors", cors.Middleware(cors.CORSOptions{})},
+		{"compression", compression.Middleware(compression.Config{})},
+		{"debug", debug.Middleware(debug.DefaultConfig())},
+		{"security headers", security},
+		{"singleflight leader", singleflight.New(singleflight.Config{}).Middleware()},
+		{"timeout", timeout.Middleware(timeout.Config{Timeout: time.Second})},
+		{"abuse guard", newConformanceAbuseGuardMiddleware(t, abuseguard.AbuseGuardConfig{Rate: 100, Capacity: 100})},
 	}
+}
 
-	for _, tc := range tests {
+func passThroughRequest() *http.Request {
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.Header.Set("Authorization", "Bearer secret")
+	req.Header.Set("Accept-Encoding", "gzip")
+	return req
+}
+
+func TestMiddlewareNextCallExactlyOnce(t *testing.T) {
+	for _, tc := range passThroughCases(t) {
 		t.Run(tc.name, func(t *testing.T) {
-			if tc.name == "auth valid token" {
-				tc.req.Header.Set("Authorization", "Bearer secret")
-			}
-
 			next := &callCountingHandler{}
-			h := tc.mw(next)
-			h.ServeHTTP(httptest.NewRecorder(), tc.req)
-
-			if next.calls > 1 {
-				t.Fatalf("middleware invoked next more than once: %d", next.calls)
+			rec := execute(tc.mw(next), passThroughRequest())
+			if next.calls != 1 {
+				t.Fatalf("next calls = %d, want 1", next.calls)
+			}
+			if rec.Code != http.StatusNoContent || rec.Header().Get("X-Conformance-Handler") != "called" {
+				t.Fatalf("downstream response was lost: status=%d headers=%v", rec.Code, rec.Header())
 			}
 		})
 	}
 }
 
 func TestMiddlewareNoSuccessResponseEmission(t *testing.T) {
-	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusAccepted)
-		_, _ = io.WriteString(w, "handler-success")
-	})
-
-	h := fixtureNoOpMiddleware()(next)
-	rec := execute(h, httptest.NewRequest(http.MethodGet, "/", nil))
-
-	if rec.Code != http.StatusAccepted {
-		t.Fatalf("expected status from handler, got %d", rec.Code)
-	}
-	if strings.TrimSpace(rec.Body.String()) != "handler-success" {
-		t.Fatalf("expected body from handler, got %q", rec.Body.String())
+	for _, tc := range passThroughCases(t) {
+		t.Run(tc.name, func(t *testing.T) {
+			next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusAccepted)
+				_, _ = io.WriteString(w, "handler-success")
+			})
+			rec := execute(tc.mw(next), passThroughRequest())
+			if rec.Code != http.StatusAccepted {
+				t.Fatalf("status = %d, want 202", rec.Code)
+			}
+			var reader io.Reader = rec.Body
+			if rec.Header().Get("Content-Encoding") == "gzip" {
+				compressed, err := gzip.NewReader(rec.Body)
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer compressed.Close()
+				reader = compressed
+			}
+			body, err := io.ReadAll(reader)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if strings.TrimSpace(string(body)) != "handler-success" {
+				t.Fatalf("unexpected middleware output: %q", body)
+			}
+		})
 	}
 }
 

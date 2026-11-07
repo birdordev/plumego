@@ -25,6 +25,7 @@ type Config struct {
 // This middleware prevents the entire application from crashing when a panic occurs in a request handler.
 // It logs sanitized panic metadata server-side and returns a generic 500 response to the client.
 // Panic details are intentionally omitted from the response to avoid leaking internal state.
+// http.ErrAbortHandler is re-thrown so net/http can abort the response.
 //
 // Example:
 //
@@ -57,6 +58,9 @@ func recoveryHandler(next http.Handler, logger log.StructuredLogger) http.Handle
 		rw := &recoveryResponseWriter{BaseWrappedResponseWriter: internaltransport.BaseWrappedResponseWriter{ResponseWriter: w}}
 		defer func() {
 			if rec := recover(); rec != nil {
+				if rec == http.ErrAbortHandler {
+					panic(rec)
+				}
 				fields := internaltelemetry.MiddlewareLogFields(r, http.StatusInternalServerError, 0)
 				fields["panic_type"] = panicType(rec)
 				internaltelemetry.RunSafeFinalizer(func() {

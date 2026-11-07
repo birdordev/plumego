@@ -86,7 +86,12 @@ jobs:
           # Give each fuzz target a short budget to catch panics and invariant
           # violations on arbitrary inputs.
           for pkg in ./contract ./security/jwt ./security/password ./router ./x/websocket; do
-            go test -run '^$' -fuzz '^Fuzz' -fuzztime 10s "$pkg"
+            targets="$(go test -list '^Fuzz' "$pkg")"
+            while IFS= read -r target; do
+              [[ "$target" == Fuzz* ]] || continue
+              echo "Fuzzing $pkg: $target"
+              go test -run '^$' -fuzz "^${target}$" -fuzztime 10s "$pkg"
+            done <<< "$targets"
           done
 
       - name: Block stale APIs in canonical docs

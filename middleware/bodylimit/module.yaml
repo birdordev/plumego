@@ -4,13 +4,14 @@ layer: stable
 status: ga
 owner: transport
 risk: low
-summary: Request body size limit middleware that rejects oversized payloads before handler processing.
+summary: Request body size limit middleware that bounds reads and emits errors through the response owner.
 
 strict_boundary: transport_primitives
 
 responsibilities:
   - Enforce a maximum request body size
-  - Return a structured error when the limit is exceeded
+  - Record read overruns without writing responses from the reader
+  - Emit a structured error through the response owner before final commitment
   - Wrap the request body with a limited reader
 
 non_goals:
