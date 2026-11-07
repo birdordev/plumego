@@ -272,7 +272,7 @@ func TestTokenClaimsContextCopiesMutableSlices(t *testing.T) {
 func TestPolicyAuthorizerWithMiddlewareAuth(t *testing.T) {
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("success"))
+		_, _ = w.Write([]byte("success"))
 	})
 	policy := AuthZPolicy{
 		AllRoles: []string{"admin"},

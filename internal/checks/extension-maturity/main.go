@@ -82,11 +82,6 @@ func main() {
 	os.Exit(1)
 }
 
-func maturityViolations(repoRoot string) ([]string, error) {
-	_, violations, err := maturityReport(repoRoot)
-	return violations, err
-}
-
 func maturityReport(repoRoot string) ([]string, []string, error) {
 	roots, err := checkutil.ReadRepoExtensionRoots(repoRoot)
 	if err != nil {
@@ -327,7 +322,7 @@ func readCompletedBetaModules(path string) (map[string]bool, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	type betaEntry struct {
 		Module        string
@@ -434,7 +429,7 @@ func readSurfaceCandidateStatuses(path string) ([]surfaceCandidateStatus, error)
 	if err != nil {
 		return nil, err
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	var candidates []surfaceCandidateStatus
 	var current *surfaceCandidateStatus
@@ -508,7 +503,7 @@ func readMaturitySignals(path string) (map[string]maturitySignal, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	signals := map[string]maturitySignal{}
 	var current *maturitySignal
@@ -570,7 +565,7 @@ func readModuleState(path string) (moduleState, error) {
 	if err != nil {
 		return moduleState{}, err
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	var state moduleState
 	scanner := checkutil.NewLineScanner(file)
@@ -609,7 +604,7 @@ func readBetaCandidates(path string) (map[string]betaCandidate, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	candidates := map[string]betaCandidate{}
 	var current *betaCandidate

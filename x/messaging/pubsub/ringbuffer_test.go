@@ -354,10 +354,9 @@ func TestRingBuffer_ConcurrentPushDrop(t *testing.T) {
 
 	// Last 8 messages should be in order
 	msgs := rb.Drain()
-	for i := 1; i < len(msgs); i++ {
-		if msgs[i].ID <= msgs[i-1].ID {
-			// IDs are formatted as mN, compare semantics may differ
-			// Just verify we got messages
+	for i, m := range msgs {
+		if m.ID == "" {
+			t.Fatalf("message %d has empty ID", i)
 		}
 	}
 }

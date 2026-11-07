@@ -10,7 +10,7 @@ import (
 )
 
 func TestKVStoreIdempotency(t *testing.T) {
-	store, err := kvstore.NewKVStore(kvstore.Options{DataDir: t.TempDir()})
+	store, err := kvstore.NewKVStore(kvstore.Config{DataDir: t.TempDir()})
 	if err != nil {
 		t.Fatalf("open kv: %v", err)
 	}
@@ -60,7 +60,7 @@ func TestKVStoreIdempotency(t *testing.T) {
 }
 
 func TestKVStorePutIfAbsentConcurrent(t *testing.T) {
-	store, err := kvstore.NewKVStore(kvstore.Options{DataDir: t.TempDir()})
+	store, err := kvstore.NewKVStore(kvstore.Config{DataDir: t.TempDir()})
 	if err != nil {
 		t.Fatalf("open kv: %v", err)
 	}
@@ -98,7 +98,7 @@ func TestKVStorePutIfAbsentConcurrent(t *testing.T) {
 }
 
 func TestKVStorePutIfAbsentConcurrentAcrossWrappers(t *testing.T) {
-	store, err := kvstore.NewKVStore(kvstore.Options{DataDir: t.TempDir()})
+	store, err := kvstore.NewKVStore(kvstore.Config{DataDir: t.TempDir()})
 	if err != nil {
 		t.Fatalf("open kv: %v", err)
 	}
@@ -140,7 +140,7 @@ func TestKVStorePutIfAbsentConcurrentAcrossWrappers(t *testing.T) {
 }
 
 func TestKVStoreCompleteAcrossSharedWrappers(t *testing.T) {
-	store, err := kvstore.NewKVStore(kvstore.Options{DataDir: t.TempDir()})
+	store, err := kvstore.NewKVStore(kvstore.Config{DataDir: t.TempDir()})
 	if err != nil {
 		t.Fatalf("open kv: %v", err)
 	}
@@ -176,7 +176,7 @@ func TestKVStoreCompleteAcrossSharedWrappers(t *testing.T) {
 }
 
 func TestKVStoreIdempotencyExpired(t *testing.T) {
-	store, err := kvstore.NewKVStore(kvstore.Options{DataDir: t.TempDir()})
+	store, err := kvstore.NewKVStore(kvstore.Config{DataDir: t.TempDir()})
 	if err != nil {
 		t.Fatalf("open kv: %v", err)
 	}
@@ -199,7 +199,7 @@ func TestKVStoreIdempotencyExpired(t *testing.T) {
 }
 
 func TestKVStoreCompleteOnlyInProgress(t *testing.T) {
-	store, err := kvstore.NewKVStore(kvstore.Options{DataDir: t.TempDir()})
+	store, err := kvstore.NewKVStore(kvstore.Config{DataDir: t.TempDir()})
 	if err != nil {
 		t.Fatalf("open kv: %v", err)
 	}

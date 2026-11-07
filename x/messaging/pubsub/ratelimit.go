@@ -166,7 +166,7 @@ func newTokenBucket(rate float64, burst int) *tokenBucket {
 }
 
 func (tb *tokenBucket) allow() bool {
-	if tb.TokenBucket.Allow() {
+	if tb.Allow() {
 		tb.allowed.Add(1)
 		return true
 	}
@@ -177,7 +177,7 @@ func (tb *tokenBucket) allow() bool {
 func (tb *tokenBucket) wait(ctx context.Context, timeout time.Duration) error {
 	ctx2, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	if err := tb.TokenBucket.Wait(ctx2); err != nil {
+	if err := tb.Wait(ctx2); err != nil {
 		return ErrRateLimitExceeded
 	}
 	tb.waited.Add(1)
@@ -185,7 +185,7 @@ func (tb *tokenBucket) wait(ctx context.Context, timeout time.Duration) error {
 }
 
 func (tb *tokenBucket) updateRate(newRate float64) {
-	tb.TokenBucket.UpdateRate(newRate, 0)
+	tb.UpdateRate(newRate, 0)
 }
 
 // Publish publishes a message with rate limiting
@@ -317,7 +317,7 @@ func (rlps *RateLimitedPubSub) startAdaptiveWorker() {
 // adjustAdaptiveRates adjusts rate limits based on system load
 func (rlps *RateLimitedPubSub) adjustAdaptiveRates() {
 	// Calculate current load (simplified metric)
-	snapshot := rlps.InProcBroker.Snapshot()
+	snapshot := rlps.Snapshot()
 
 	// Use total subscribers across all topics as a proxy for load
 	totalSubs := 0

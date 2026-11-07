@@ -12,7 +12,7 @@ import (
 func newJWTStateStore(t *testing.T) (*JWTStateStore, *jwt.JWTManager) {
 	t.Helper()
 
-	store, err := kvstore.NewKVStore(kvstore.Options{DataDir: t.TempDir()})
+	store, err := kvstore.NewKVStore(kvstore.Config{DataDir: t.TempDir()})
 	if err != nil {
 		t.Fatalf("create kv store: %v", err)
 	}
@@ -101,7 +101,7 @@ func TestJWTStateStoreSubjectVersionDefaultsToZero(t *testing.T) {
 }
 
 func TestJWTStateStoreRevocationTTLExpires(t *testing.T) {
-	store, err := kvstore.NewKVStore(kvstore.Options{DataDir: t.TempDir()})
+	store, err := kvstore.NewKVStore(kvstore.Config{DataDir: t.TempDir()})
 	if err != nil {
 		t.Fatalf("create kv store: %v", err)
 	}

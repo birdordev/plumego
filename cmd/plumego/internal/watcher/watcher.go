@@ -76,7 +76,13 @@ func NewWatcherWithOptions(dir string, include, exclude []string, debounce time.
 		pending:      make(map[string]struct{}),
 	}
 
-	go w.watch()
+	// Build the initial file snapshot synchronously so that a file changed
+	// immediately after construction is detected on the next poll. Scanning
+	// inside the watch goroutine would race the caller's first modification.
+	fileModTimes := make(map[string]time.Time)
+	w.scanFiles(fileModTimes)
+
+	go w.watch(fileModTimes)
 
 	return w, nil
 }
@@ -99,15 +105,9 @@ func (w *Watcher) Close() error {
 	return nil
 }
 
-func (w *Watcher) watch() {
+func (w *Watcher) watch(fileModTimes map[string]time.Time) {
 	defer close(w.events)
 	defer close(w.errors)
-
-	// Keep track of file modification times
-	fileModTimes := make(map[string]time.Time)
-
-	// Initial scan
-	w.scanFiles(fileModTimes)
 
 	ticker := time.NewTicker(w.pollInterval)
 	defer ticker.Stop()

@@ -66,8 +66,6 @@ type Proxy struct {
 
 	// For least-connections balancer
 	lcBalancer *LeastConnectionsBalancer
-
-	mu sync.RWMutex
 }
 
 // New creates a new reverse proxy handler and returns an error for invalid
@@ -193,7 +191,7 @@ func (p *Proxy) handleHTTP(w http.ResponseWriter, r *http.Request) {
 
 		// Backoff before retry
 		if p.config.RetryBackoff > 0 {
-			timer := time.NewTimer(p.config.RetryBackoff * time.Duration(attempt + 1))
+			timer := time.NewTimer(p.config.RetryBackoff * time.Duration(attempt+1))
 			select {
 			case <-r.Context().Done():
 				timer.Stop()
@@ -248,7 +246,7 @@ func (p *Proxy) proxyRequest(w http.ResponseWriter, r *http.Request, backend *Ba
 	if err != nil {
 		return proxyRequestResult{err: err}
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	// Apply response modifications
 	if p.config.ModifyResponse != nil {
@@ -385,7 +383,7 @@ func (p *Proxy) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 
 		// Backoff before retry
 		if p.config.RetryBackoff > 0 {
-			timer := time.NewTimer(p.config.RetryBackoff * time.Duration(attempt + 1))
+			timer := time.NewTimer(p.config.RetryBackoff * time.Duration(attempt+1))
 			select {
 			case <-r.Context().Done():
 				timer.Stop()

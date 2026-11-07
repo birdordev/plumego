@@ -99,3 +99,23 @@ func TestBufferedResponseRecorderWriteToReplacesHeaders(t *testing.T) {
 		t.Fatalf("body = %q, want ok", got)
 	}
 }
+
+func TestBufferedResponseRecorderIgnoresInformationalStatus(t *testing.T) {
+	for _, final := range []int{http.StatusCreated, http.StatusSwitchingProtocols} {
+		rec := NewBufferedResponse(0)
+		rec.WriteHeader(http.StatusContinue)
+		rec.WriteHeader(http.StatusProcessing)
+		rec.WriteHeader(http.StatusEarlyHints)
+		rec.WriteHeader(final)
+		rec.WriteHeader(http.StatusAccepted)
+		if rec.StatusCode() != final {
+			t.Fatalf("status = %d, want %d", rec.StatusCode(), final)
+		}
+	}
+	rec := NewBufferedResponse(0)
+	rec.WriteHeader(http.StatusEarlyHints)
+	_, _ = rec.Write([]byte("body"))
+	if rec.StatusCode() != http.StatusOK {
+		t.Fatalf("implicit status = %d, want 200", rec.StatusCode())
+	}
+}

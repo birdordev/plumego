@@ -28,7 +28,9 @@ func (w *BaseWrappedResponseWriter) WriteHeader(statusCode int) {
 	if w.wrote {
 		return
 	}
-	w.wrote = true
+	if statusCode >= 200 || statusCode == http.StatusSwitchingProtocols {
+		w.wrote = true
+	}
 	w.ResponseWriter.WriteHeader(statusCode)
 }
 

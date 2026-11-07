@@ -4,7 +4,7 @@ Milestone: M-027
 Recipe: (none — pure refactor)
 Context Package: middleware
 Priority: P1
-State: active
+State: done
 Primary Module: middleware/internal/telemetry
 Owned Files: middleware/internal/telemetry/helpers.go, middleware/accesslog/accesslog.go, middleware/httpmetrics/http_metrics.go, middleware/tracing/tracing.go, middleware/requestid/request_id.go
 Depends On: (none)

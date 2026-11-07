@@ -78,8 +78,8 @@ func TestRoundRobinSkipsUnhealthy(t *testing.T) {
 func TestRoundRobinReset(t *testing.T) {
 	pool := mustPool(t, "http://a:8080", "http://b:8080")
 	b := NewRoundRobinBalancer()
-	b.Next(pool)
-	b.Next(pool)
+	_, _ = b.Next(pool)
+	_, _ = b.Next(pool)
 	b.Reset()
 	if b.counter.Load() != 0 {
 		t.Errorf("counter after Reset = %d, want 0", b.counter.Load())
@@ -203,7 +203,7 @@ func TestWeightedRoundRobinProportionalDistribution(t *testing.T) {
 func TestWeightedRoundRobinReset(t *testing.T) {
 	b := NewWeightedRoundRobinBalancer()
 	pool := mustPool(t, "http://a:8080")
-	b.Next(pool)
+	_, _ = b.Next(pool)
 	b.Reset()
 	if b.currentWeight != nil {
 		t.Error("currentWeight should be nil after Reset")

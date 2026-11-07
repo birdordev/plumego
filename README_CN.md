@@ -1,6 +1,10 @@
 # Plumego — 标准库优先的 Go Web 工具包
 
+[![Go 文档](https://pkg.go.dev/badge/github.com/spcent/plumego.svg)](https://pkg.go.dev/github.com/spcent/plumego)
 [![Go 版本](https://img.shields.io/badge/Go-1.26%2B-00ADD8?style=flat&logo=go)](https://go.dev/)
+[![CI](https://github.com/spcent/plumego/actions/workflows/quality-gates.yml/badge.svg)](https://github.com/spcent/plumego/actions/workflows/quality-gates.yml)
+[![Go Report Card](https://goreportcard.com/badge/github.com/spcent/plumego)](https://goreportcard.com/report/github.com/spcent/plumego)
+[![codecov](https://codecov.io/gh/spcent/plumego/graph/badge.svg)](https://codecov.io/gh/spcent/plumego)
 [![状态](https://img.shields.io/badge/status-v1.1.0-blue)](https://github.com/spcent/plumego/releases/tag/v1.1.0)
 [![许可证](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
@@ -192,3 +196,8 @@ Plumego 使用 agent-first 控制面维护仓库：`docs/` 解释架构，`specs
 - [`docs/start/adoption-path.md`](./docs/start/adoption-path.md) —— 5 分钟、30 分钟、1 天采用路径。
 - [`docs/start/troubleshooting.md`](./docs/start/troubleshooting.md) —— 路由冻结、中间件顺序、JWT 错误、生命周期问题。
 - [`docs/evidence/benchmarks/README.md`](./docs/evidence/benchmarks/README.md) —— 与 Chi、Gin、Echo 的性能对比。
+
+**参与贡献？**
+- [`CONTRIBUTING.md`](./CONTRIBUTING.md) —— 开发环境、验证门禁与 PR 流程
+- [`SECURITY.md`](./SECURITY.md) —— 支持版本与漏洞私密报告渠道
+- [`CHANGELOG.md`](./CHANGELOG.md) —— 版本发布历史

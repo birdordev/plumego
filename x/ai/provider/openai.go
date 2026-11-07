@@ -25,12 +25,15 @@ type OpenAIProvider struct {
 	tokenizer  tokenizer.Tokenizer
 }
 
-// NewOpenAIProvider creates a new OpenAI provider.
+// NewOpenAIProvider creates a new OpenAI provider. Without WithOpenAIHTTPClient
+// it uses a client that bounds connection and response-header waits; the
+// overall request lifetime is governed by the context passed to
+// Complete/CompleteStream.
 func NewOpenAIProvider(apiKey string, opts ...OpenAIOption) *OpenAIProvider {
 	p := &OpenAIProvider{
 		apiKey:     apiKey,
 		baseURL:    openaiAPIBaseURL,
-		httpClient: &http.Client{},
+		httpClient: defaultHTTPClient(),
 		tokenizer:  tokenizer.NewGPTTokenizer("gpt-4"),
 	}
 
@@ -81,12 +84,11 @@ func (p *OpenAIProvider) Complete(ctx context.Context, req *CompletionRequest) (
 	if err != nil {
 		return nil, fmt.Errorf("http request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	// Check error
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("api error (status %d): %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("api error (status %d): %s", resp.StatusCode, readErrorBody(resp.Body))
 	}
 
 	// Parse response
@@ -120,9 +122,9 @@ func (p *OpenAIProvider) CompleteStream(ctx context.Context, req *CompletionRequ
 
 	// Check error
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		resp.Body.Close()
-		return nil, fmt.Errorf("api error (status %d): %s", resp.StatusCode, string(body))
+		body := readErrorBody(resp.Body)
+		_ = resp.Body.Close()
+		return nil, fmt.Errorf("api error (status %d): %s", resp.StatusCode, body)
 	}
 
 	return &StreamReader{
@@ -280,7 +282,7 @@ func (p *OpenAIProvider) parseResponse(resp *openaiChatResponse) *CompletionResp
 		// Tool calls
 		for _, tc := range choice.Message.ToolCalls {
 			var input map[string]any
-			json.Unmarshal([]byte(tc.Function.Arguments), &input)
+			_ = json.Unmarshal([]byte(tc.Function.Arguments), &input)
 
 			result.Content = append(result.Content, ContentBlock{
 				Type: ContentTypeToolUse,

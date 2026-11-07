@@ -263,11 +263,8 @@ func (f *SecretFilter) Filter(ctx context.Context, content string) (*Result, err
 			result.Score = 1.0 // Very high confidence
 
 			for _, match := range matches {
-				// Redact the actual secret
-				text := content[match[0]:match[1]]
-				if len(text) > 20 {
-					text = text[:20] + "..."
-				}
+				// Never copy the matched secret into the result: Matches
+				// report position only, with the text redacted.
 				result.Matches = append(result.Matches, Match{
 					Pattern: label,
 					Text:    "[REDACTED]",

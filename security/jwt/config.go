@@ -54,6 +54,7 @@ var (
 	ErrTokenExpired     = authn.ErrExpiredToken
 	ErrTokenNotYetValid = errors.New("token not yet valid")
 	ErrUnknownKey       = errors.New("unknown signing key")
+	ErrKeyExpired       = errors.New("signing key expired")
 	ErrMissingSubject   = errors.New("subject is required")
 	ErrInvalidIssuer    = errors.New("invalid issuer")
 	ErrInvalidAudience  = errors.New("invalid audience")

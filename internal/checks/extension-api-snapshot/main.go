@@ -157,27 +157,48 @@ func hasNonTestGoFile(dir string) (bool, error) {
 	return false, nil
 }
 
+// parsePackageFiles parses non-test Go files directly in dir and returns
+// them keyed by file path, along with the distinct package names found.
+func parsePackageFiles(fset *token.FileSet, dir string) (map[string]*ast.File, map[string]struct{}, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	files := make(map[string]*ast.File)
+	pkgNames := make(map[string]struct{})
+	for _, entry := range entries {
+		name := entry.Name()
+		if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		if strings.HasPrefix(name, ".") || strings.HasPrefix(name, "_") {
+			continue
+		}
+		path := filepath.Join(dir, name)
+		file, err := parser.ParseFile(fset, path, nil, 0)
+		if err != nil {
+			return nil, nil, err
+		}
+		files[path] = file
+		pkgNames[file.Name.Name] = struct{}{}
+	}
+	return files, pkgNames, nil
+}
+
 func snapshotDir(repoRoot, modulePath, dir string) ([]string, error) {
 	fset := token.NewFileSet()
-	pkgs, err := parser.ParseDir(fset, dir, func(info os.FileInfo) bool {
-		name := info.Name()
-		return strings.HasSuffix(name, ".go") && !strings.HasSuffix(name, "_test.go")
-	}, 0)
+	files, pkgNames, err := parsePackageFiles(fset, dir)
 	if err != nil {
 		return nil, err
 	}
-	if len(pkgs) != 1 {
-		return nil, fmt.Errorf("%s contains %d packages", relPath(repoRoot, dir), len(pkgs))
-	}
-
-	var pkg *ast.Package
-	for _, parsed := range pkgs {
-		pkg = parsed
+	if len(pkgNames) != 1 {
+		return nil, fmt.Errorf("%s contains %d packages", relPath(repoRoot, dir), len(pkgNames))
 	}
 
 	importPath := modulePath + "/" + filepath.ToSlash(relPath(repoRoot, dir))
 	var lines []string
-	for _, file := range pkg.Files {
+	for _, file := range files {
 		for _, decl := range file.Decls {
 			switch d := decl.(type) {
 			case *ast.GenDecl:
@@ -394,11 +415,11 @@ func compareSnapshots(leftPath, rightPath string, out io.Writer) error {
 	}
 	sort.Strings(diffs)
 	if len(diffs) == 0 {
-		fmt.Fprintln(out, "snapshots match")
+		_, _ = fmt.Fprintln(out, "snapshots match")
 		return nil
 	}
 	for _, diff := range diffs {
-		fmt.Fprintln(out, diff)
+		_, _ = fmt.Fprintln(out, diff)
 	}
 	return errors.New("snapshots differ")
 }
@@ -408,7 +429,7 @@ func readSnapshot(path string) (map[string]string, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open %s: %w", path, err)
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	symbols := make(map[string]string)
 	scanner := checkutil.NewLineScanner(file)
@@ -435,7 +456,7 @@ func readModulePath(path string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	scanner := checkutil.NewLineScanner(file)
 	for scanner.Scan() {

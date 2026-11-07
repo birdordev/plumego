@@ -63,16 +63,36 @@ jobs:
       - name: Run go vet
         run: go vet ./...
 
+      - name: Install golangci-lint
+        run: |
+          set -euo pipefail
+          # Pinned version for reproducible gates; Dependabot tracks the
+          # install script via the github-actions ecosystem only for actions,
+          # so bump this version deliberately alongside a local lint run.
+          curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/HEAD/install.sh | sh -s -- -b "$(go env GOPATH)/bin" v2.14.0
+
+      - name: Run golangci-lint
+        run: "$(go env GOPATH)/bin/golangci-lint run ./..."
+
       - name: Run race tests
         run: go test -race -timeout 60s ./...
 
       - name: Run standard tests
         run: go test -timeout 20s ./...
 
-      - name: Run optional workerfleet Mongo integration tests
-        env:
-          WORKERFLEET_MONGO_TEST_URI: ${{ secrets.WORKERFLEET_MONGO_TEST_URI }}
-        run: make workerfleet-mongo-test
+      - name: Run fuzz smoke tests
+        run: |
+          set -euo pipefail
+          # Give each fuzz target a short budget to catch panics and invariant
+          # violations on arbitrary inputs.
+          for pkg in ./contract ./security/jwt ./security/password ./router ./x/websocket; do
+            targets="$(go test -list '^Fuzz' "$pkg")"
+            while IFS= read -r target; do
+              [[ "$target" == Fuzz* ]] || continue
+              echo "Fuzzing $pkg: $target"
+              go test -run '^$' -fuzz "^${target}$" -fuzztime 10s "$pkg"
+            done <<< "$targets"
+          done
 
       - name: Block stale APIs in canonical docs
         run: |
@@ -134,7 +154,7 @@ jobs:
           go test -coverprofile=/tmp/plumego-stable.cover ./core ./router ./middleware/... ./contract ./security/... ./store/... ./health ./log ./metrics >/tmp/stable-cover.log
           total="$(go tool cover -func=/tmp/plumego-stable.cover | awk '/^total:/ {gsub("%","",$3); print $3}')"
           echo "Stable-module total coverage: ${total}%"
-          min=70.0
+          min=90.0
           awk -v total="$total" -v min="$min" 'BEGIN { if (total+0 < min+0) exit 1 }' || {
             echo "Coverage gate failed: expected >= ${min}%, got ${total}%"
             echo "--- stable cover log tail ---"
@@ -201,6 +221,15 @@ jobs:
             /tmp/coverage-func.txt
             /tmp/coverage.html
           retention-days: 30
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          files: /tmp/plumego-full.cover
+          # The local 90% stable-root gate above is authoritative; Codecov is
+          # informational (trend dashboard + badge), so its outages must not
+          # fail the pipeline.
+          fail_ci_if_error: false
 
       - name: Comment coverage summary on PR
         if: github.event_name == 'pull_request'
@@ -277,6 +306,40 @@ jobs:
       - name: Run race tests
         working-directory: ${{ matrix.module }}
         run: go test -race -timeout 60s ./...
+
+  go-cross-platform-gates:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            test: true
+          # Windows runs compile-time gates only: several test suites use
+          # unix-shaped paths and ports, and vet+build still catches
+          # platform-conditional code and missing build tags.
+          - os: windows-latest
+            test: false
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: Build all packages
+        run: go build ./...
+
+      - name: Run go vet
+        run: go vet ./...
+
+      - name: Run tests
+        if: matrix.test
+        run: go test -timeout 60s ./...
 
   website-quality-gates:
     runs-on: ubuntu-latest
@@ -366,6 +429,7 @@ jobs:
     needs:
       - go-quality-gates
       - go-submodule-quality-gates
+      - go-cross-platform-gates
       - website-quality-gates
     runs-on: ubuntu-latest
     timeout-minutes: 60

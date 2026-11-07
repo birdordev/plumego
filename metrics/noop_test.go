@@ -9,18 +9,28 @@ import (
 func TestNoopCollectorRecord(t *testing.T) {
 	collector := NewNoopCollector()
 
-	// Should not panic
+	// The noop collector records nothing: stats stay at zero values.
 	collector.Record(t.Context(), MetricRecord{
 		Name:  "test",
 		Value: 100,
 	})
+
+	stats := collector.GetStats()
+	if stats.TotalRecords != 0 {
+		t.Fatalf("expected 0 total records after Record, got %d", stats.TotalRecords)
+	}
 }
 
 func TestNoopCollectorObserveHTTP(t *testing.T) {
 	collector := NewNoopCollector()
 
-	// Should not panic
+	// The noop collector observes nothing: stats stay at zero values.
 	collector.ObserveHTTP(t.Context(), "GET", "/test", 200, 100, 50*time.Millisecond)
+
+	stats := collector.GetStats()
+	if stats.TotalRecords != 0 {
+		t.Fatalf("expected 0 total records after ObserveHTTP, got %d", stats.TotalRecords)
+	}
 }
 
 func TestNoopCollectorGetStats(t *testing.T) {
@@ -65,8 +75,13 @@ func TestNoopCollectorGetStatsReturnsCallerOwnedBreakdown(t *testing.T) {
 func TestNoopCollectorClear(t *testing.T) {
 	collector := NewNoopCollector()
 
-	// Should not panic
+	// The noop collector has nothing to clear: the call is safe and stats stay zero.
 	collector.Clear()
+
+	stats := collector.GetStats()
+	if stats.TotalRecords != 0 {
+		t.Fatalf("expected 0 total records after Clear, got %d", stats.TotalRecords)
+	}
 }
 
 func TestNoopCollectorConcurrency(t *testing.T) {
@@ -84,4 +99,13 @@ func TestNoopCollectorConcurrency(t *testing.T) {
 		}()
 	}
 	wg.Wait()
+
+	// Concurrent noop use leaves stats at zero values (no shared state is touched).
+	stats := collector.GetStats()
+	if stats.TotalRecords != 0 {
+		t.Fatalf("expected 0 total records after concurrent use, got %d", stats.TotalRecords)
+	}
+	if stats.ActiveSeries != 0 {
+		t.Fatalf("expected 0 active series after concurrent use, got %d", stats.ActiveSeries)
+	}
 }

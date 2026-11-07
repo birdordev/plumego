@@ -20,8 +20,10 @@ func TestClockSkewTolerance(t *testing.T) {
 
 	pair, _ := mgr.GenerateTokenPair(t.Context(), IdentityClaims{Subject: "user-skew"}, AuthorizationClaims{})
 
-	// wait for token expiration
-	time.Sleep(2 * time.Second)
+	// Sleep inside the skew window (exp + skew = 2s) so the still-valid check
+	// does not sit on the truncation boundary. A longer sleep could tip the
+	// second-truncated timestamp past exp+skew on a loaded machine.
+	time.Sleep(1200 * time.Millisecond)
 
 	// verify token is valid within clock skew
 	_, err = mgr.VerifyToken(t.Context(), pair.AccessToken, TokenTypeAccess)
@@ -29,7 +31,7 @@ func TestClockSkewTolerance(t *testing.T) {
 		t.Errorf("token should be valid within clock skew: %v", err)
 	}
 
-	// wait for token expiration (total 3.1s > 1s expiration + 2s clock skew)
+	// sleep past the window (total 3.3s > 1s expiration + 2s clock skew)
 	time.Sleep(2100 * time.Millisecond)
 
 	// token should be expired

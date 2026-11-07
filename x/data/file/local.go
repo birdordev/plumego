@@ -83,7 +83,7 @@ func (s *LocalStorage) Put(ctx context.Context, opts PutOptions) (*File, error) 
 		return nil, &storefile.Error{Op: "Put", Path: fullPath, Err: err}
 	}
 	tmpPath := tmpFile.Name()
-	defer os.Remove(tmpPath)
+	defer func() { _ = os.Remove(tmpPath) }()
 
 	hash := sha256.New()
 	size, err := io.Copy(io.MultiWriter(tmpFile, hash), opts.Reader)
@@ -139,7 +139,7 @@ func (s *LocalStorage) Put(ctx context.Context, opts PutOptions) (*File, error) 
 		f, err := os.Open(fullPath)
 		if err == nil {
 			imgInfo, err := s.imageProc.GetInfo(f)
-			f.Close()
+			_ = f.Close()
 			if err == nil {
 				file.Width = imgInfo.Width
 				file.Height = imgInfo.Height
@@ -185,7 +185,7 @@ func syncDir(dir string) error {
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	return f.Sync()
 }
 
@@ -344,7 +344,7 @@ func (s *LocalStorage) Copy(ctx context.Context, srcPath, dstPath string) error 
 	if err != nil {
 		return err
 	}
-	defer src.Close()
+	defer func() { _ = src.Close() }()
 
 	dstFullPath := filepath.Join(s.basePath, dstPath)
 	return writeLocalFileAtomic(dstFullPath, src)
@@ -361,7 +361,7 @@ func writeLocalFileAtomic(dstFullPath string, src io.Reader) error {
 		return err
 	}
 	tmpPath := tmpFile.Name()
-	defer os.Remove(tmpPath)
+	defer func() { _ = os.Remove(tmpPath) }()
 
 	if _, err := io.Copy(tmpFile, src); err != nil {
 		_ = tmpFile.Close()
@@ -398,7 +398,7 @@ func (s *LocalStorage) generateThumbnail(srcPath, relativePath string, width, he
 	if err != nil {
 		return "", err
 	}
-	defer src.Close()
+	defer func() { _ = src.Close() }()
 
 	thumbReader, err := s.imageProc.Thumbnail(src, width, height)
 	if err != nil {

@@ -151,7 +151,7 @@ func TestGetHelpers(t *testing.T) {
 
 	// Add environment variable source
 	envSource := NewEnvSource("")
-	cfg.AddSource(envSource)
+	_ = cfg.AddSource(envSource)
 
 	// Load configuration
 	ctx := t.Context()
@@ -181,43 +181,43 @@ func TestGetHelpers(t *testing.T) {
 
 	// Test integer
 	t.Setenv("TEST_INT", "notanint")
-	cfg.Load(ctx)
+	_ = cfg.Load(ctx)
 	if got := cfg.GetInt("test_int", 5); got != 5 {
 		t.Fatalf("GetInt should fallback to default on invalid input, got %d", got)
 	}
 	t.Setenv("TEST_INT", " 42 ")
-	cfg.Load(ctx)
+	_ = cfg.Load(ctx)
 	if got := cfg.GetInt("test_int", 5); got != 42 {
 		t.Fatalf("GetInt should parse trimmed integer, got %d", got)
 	}
 
 	// Test boolean
 	t.Setenv("TEST_BOOL_TRUE", "yes")
-	cfg.Load(ctx)
+	_ = cfg.Load(ctx)
 	if !cfg.GetBool("test_bool_true", false) {
 		t.Fatalf("GetBool should parse affirmative values")
 	}
 	t.Setenv("TEST_BOOL_FALSE", "OFF")
-	cfg.Load(ctx)
+	_ = cfg.Load(ctx)
 	if cfg.GetBool("test_bool_false", true) {
 		t.Fatalf("GetBool should parse negative values")
 	}
 	t.Setenv("TEST_BOOL_INVALID", "maybe")
-	cfg.Load(ctx)
+	_ = cfg.Load(ctx)
 	if !cfg.GetBool("test_bool_invalid", true) {
 		t.Fatalf("GetBool should fallback to default on invalid input")
 	}
 
 	// Test float
 	t.Setenv("TEST_FLOAT", " 1.5 ")
-	cfg.Load(ctx)
+	_ = cfg.Load(ctx)
 	if got := cfg.GetFloat("test_float", 0); got != 1.5 {
 		t.Fatalf("GetFloat should parse trimmed float, got %f", got)
 	}
 
 	// Test duration
 	t.Setenv("TEST_DURATION_MS", " 10 ")
-	cfg.Load(ctx)
+	_ = cfg.Load(ctx)
 	if got := cfg.GetDurationMs("test_duration_ms", 0); got != 10*time.Millisecond {
 		t.Fatalf("GetDurationMs should parse milliseconds, got %s", got)
 	}

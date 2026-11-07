@@ -7,7 +7,6 @@ package session
 import (
 	"context"
 	"fmt"
-	"sync"
 	"time"
 
 	"github.com/spcent/plumego/x/ai/provider"
@@ -35,7 +34,6 @@ type Manager struct {
 	storage   Storage
 	tokenizer tokenizer.Tokenizer
 	config    Config
-	mu        sync.RWMutex
 }
 
 // Config configures the session manager.
@@ -144,7 +142,7 @@ func (m *Manager) Get(ctx context.Context, sessionID string) (*Session, error) {
 
 	// Check expiration
 	if time.Now().After(session.ExpiresAt) {
-		m.storage.Delete(ctx, sessionID)
+		_ = m.storage.Delete(ctx, sessionID)
 		return nil, fmt.Errorf("session expired")
 	}
 

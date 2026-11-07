@@ -2,6 +2,8 @@ package contract
 
 import (
 	"encoding/json"
+	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -243,24 +245,64 @@ func TestWriteResponseRejectedNilResponseWriter(t *testing.T) {
 	}
 }
 
-// TestWriteResponseNoContentStatusOmitsBody verifies 204 No Content writes no body.
-func TestWriteResponseNoContentStatusOmitsBody(t *testing.T) {
-	req := httptest.NewRequest(http.MethodDelete, "/resource/1", nil)
-	rec := httptest.NewRecorder()
+func TestWriteResponseBodylessSuccessStatuses(t *testing.T) {
+	for _, status := range []int{http.StatusNoContent, http.StatusResetContent} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			if err := WriteResponse(rec, nil, status, make(chan int), nil); err != nil {
+				t.Fatalf("bodyless response encoded data: %v", err)
+			}
+			if rec.Code != status || rec.Body.Len() != 0 || rec.Header().Get(HeaderContentType) != "" {
+				t.Fatalf("status = %d, body = %q, headers = %v", rec.Code, rec.Body.String(), rec.Header())
+			}
+		})
+	}
+}
 
-	err := WriteResponse(rec, req, http.StatusNoContent, map[string]string{"deleted": "true"}, nil)
-	if err != nil {
-		t.Fatalf("unexpected write error: %v", err)
-	}
+type failingBodyWriter struct {
+	*httptest.ResponseRecorder
+	headerWrites int
+	bodyWrites   int
+}
 
-	if rec.Code != http.StatusNoContent {
-		t.Fatalf("expected status 204, got %d", rec.Code)
-	}
-	if rec.Body.Len() != 0 {
-		t.Fatalf("expected no body for 204, got %q", rec.Body.String())
-	}
-	if ct := rec.Header().Get(HeaderContentType); ct != "" {
-		t.Fatalf("expected no content-type for 204, got %q", ct)
+func (w *failingBodyWriter) WriteHeader(status int) {
+	w.headerWrites++
+	w.ResponseRecorder.WriteHeader(status)
+}
+
+func (w *failingBodyWriter) Write([]byte) (int, error) {
+	w.bodyWrites++
+	return 0, io.ErrClosedPipe
+}
+
+func TestResponseWritersReturnWriteFailureWithoutRetry(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		status       int
+		write        func(http.ResponseWriter) error
+		encodingFail bool
+	}{
+		{"success", http.StatusCreated, func(w http.ResponseWriter) error {
+			return WriteResponse(w, nil, http.StatusCreated, "created", nil)
+		}, false},
+		{"error", http.StatusBadRequest, func(w http.ResponseWriter) error {
+			return WriteError(w, nil, NewErrorBuilder().Type(TypeBadRequest).Build())
+		}, false},
+		{"fallback", http.StatusBadRequest, func(w http.ResponseWriter) error {
+			return WriteError(w, nil, NewErrorBuilder().Type(TypeBadRequest).Detail("bad", make(chan int)).Build())
+		}, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			w := &failingBodyWriter{ResponseRecorder: httptest.NewRecorder()}
+			err := tc.write(w)
+			var encodingErr *json.UnsupportedTypeError
+			if !errors.Is(err, io.ErrClosedPipe) || errors.As(err, &encodingErr) != tc.encodingFail {
+				t.Fatalf("write error = %v, want closed pipe (encoding failure: %t)", err, tc.encodingFail)
+			}
+			if w.Code != tc.status || w.headerWrites != 1 || w.bodyWrites != 1 {
+				t.Fatalf("status = %d, header writes = %d, body writes = %d", w.Code, w.headerWrites, w.bodyWrites)
+			}
+		})
 	}
 }
 

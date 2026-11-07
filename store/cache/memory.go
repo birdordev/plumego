@@ -115,7 +115,7 @@ func (mc *MemoryCache) removeExpiredItemLocked(key any, item cacheItem) bool {
 
 // cleanupExpired removes expired items from the cache.
 func (mc *MemoryCache) cleanupExpired() {
-	if err := mc.operationErr(nil); err != nil {
+	if err := mc.operationErr(context.Background()); err != nil {
 		return
 	}
 
@@ -420,14 +420,17 @@ func (mc *MemoryCache) Close() error {
 			close(mc.stopChan)
 			mc.wg.Wait()
 		}
+		// Barrier: acquiring writeMu after marking the cache closed blocks
+		// until any in-flight write operation has fully released the lock,
+		// so Close does not return while a write is still mid-flight.
 		mc.writeMu.Lock()
-		mc.writeMu.Unlock()
+		mc.writeMu.Unlock() //nolint:staticcheck // SA2001: empty critical section is an intentional barrier
 	})
 	return nil
 }
 
 func (mc *MemoryCache) closedErr() error {
-	return mc.operationErr(nil)
+	return mc.operationErr(context.Background())
 }
 
 func (mc *MemoryCache) lockWriteOperation(ctx context.Context) error {

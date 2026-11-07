@@ -1,8 +1,13 @@
 package multimodal
 
 import (
+	"errors"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -382,6 +387,85 @@ func TestLoadImageFromFile_NotFound(t *testing.T) {
 		t.Error("LoadImageFromFile() expected error for nonexistent file")
 	}
 }
+
+func TestLoadImageFromURL(t *testing.T) {
+	pngData := []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "image/png")
+		_, _ = w.Write(pngData)
+	}))
+	defer srv.Close()
+
+	img, err := LoadImageFromURL(srv.URL)
+	if err != nil {
+		t.Fatalf("LoadImageFromURL() error = %v", err)
+	}
+	if img.Format != ImageFormatPNG {
+		t.Errorf("LoadImageFromURL() format = %v, want %v", img.Format, ImageFormatPNG)
+	}
+	if img.SizeBytes != int64(len(pngData)) {
+		t.Errorf("LoadImageFromURL() size = %d, want %d", img.SizeBytes, len(pngData))
+	}
+}
+
+func TestLoadImageFromURL_HTTPError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer srv.Close()
+
+	_, err := LoadImageFromURL(srv.URL)
+	if err == nil {
+		t.Fatal("LoadImageFromURL() expected error for non-200 status")
+	}
+	if !strings.Contains(err.Error(), "404") {
+		t.Errorf("LoadImageFromURL() error = %v, want it to mention status 404", err)
+	}
+}
+
+func TestLoadImageFromURL_TooLarge(t *testing.T) {
+	// Serve one byte past the cap; the loader must fail with ErrImageTooLarge
+	// instead of silently truncating.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/octet-stream")
+		chunk := make([]byte, 1<<20)
+		for i := int64(0); i <= MaxRemoteImageBytes/int64(len(chunk)); i++ {
+			if _, err := w.Write(chunk); err != nil {
+				return
+			}
+		}
+	}))
+	defer srv.Close()
+
+	_, err := LoadImageFromURL(srv.URL)
+	if !errors.Is(err, ErrImageTooLarge) {
+		t.Fatalf("LoadImageFromURL() error = %v, want ErrImageTooLarge", err)
+	}
+}
+
+func TestReadBoundedBody(t *testing.T) {
+	atLimit, err := readBoundedBody(strings.NewReader(strings.Repeat("a", 8)), 8)
+	if err != nil {
+		t.Fatalf("readBoundedBody() at limit error = %v", err)
+	}
+	if len(atLimit) != 8 {
+		t.Errorf("readBoundedBody() at limit len = %d, want 8", len(atLimit))
+	}
+
+	_, err = readBoundedBody(strings.NewReader(strings.Repeat("a", 9)), 8)
+	if !errors.Is(err, ErrImageTooLarge) {
+		t.Errorf("readBoundedBody() over limit error = %v, want ErrImageTooLarge", err)
+	}
+
+	_, err = readBoundedBody(failingReader{}, 8)
+	if err == nil || errors.Is(err, ErrImageTooLarge) {
+		t.Errorf("readBoundedBody() read failure error = %v, want wrapped read error", err)
+	}
+}
+
+type failingReader struct{}
+
+func (failingReader) Read([]byte) (int, error) { return 0, fmt.Errorf("simulated read failure") }
 
 func TestLoadAudioFromFile(t *testing.T) {
 	// Create a temporary MP3 file

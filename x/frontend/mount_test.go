@@ -468,7 +468,7 @@ func TestUnreadableDirectory(t *testing.T) {
 	if err := os.MkdirAll(subDir, 0o000); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	defer os.Chmod(subDir, 0o755)
+	defer func() { _ = os.Chmod(subDir, 0o755) }()
 
 	r := router.NewRouter()
 	err := RegisterFromDir(r, subDir)

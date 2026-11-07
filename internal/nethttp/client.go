@@ -30,6 +30,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"math"
 	"math/rand"
@@ -40,6 +41,10 @@ import (
 
 // ErrNilRequest is returned when a nil HTTP request is passed to Do.
 var ErrNilRequest = errors.New("nethttp: nil request")
+
+// ErrResponseTooLarge is returned when a response body exceeds the client's
+// configured maximum response size.
+var ErrResponseTooLarge = errors.New("nethttp: response body exceeds max response size")
 
 // RetryPolicy determines whether an HTTP request should be retried.
 //
@@ -102,16 +107,21 @@ type RoundTripperFunc func(req *http.Request) (*http.Response, error)
 
 // Client is a wrapper around http.Client with retry, timeout, backoff, and middleware support.
 type Client struct {
-	client          *http.Client
-	retryCount      int
-	retryWait       time.Duration
-	maxRetryWait    time.Duration
-	retryPolicy     RetryPolicy
-	defaultTimeout  time.Duration
-	retryCheck      func(*http.Request) bool
-	ssrfProtection  *SSRFProtection
-	enableSSRFCheck bool
+	client           *http.Client
+	retryCount       int
+	retryWait        time.Duration
+	maxRetryWait     time.Duration
+	retryPolicy      RetryPolicy
+	defaultTimeout   time.Duration
+	retryCheck       func(*http.Request) bool
+	ssrfProtection   *SSRFProtection
+	enableSSRFCheck  bool
+	maxResponseBytes int64
 }
+
+// defaultMaxResponseBytes bounds successful response bodies read into memory
+// by default. Configure with WithMaxResponseBytes.
+const defaultMaxResponseBytes int64 = 10 << 20 // 10 MiB
 
 func (c *Client) setSSRFProtection(protection SSRFProtection) {
 	c.ssrfProtection = &protection
@@ -187,6 +197,16 @@ func WithDefaultSSRFProtection() Option {
 	}
 }
 
+// WithMaxResponseBytes caps how many bytes of a successful response body are
+// read into memory. Responses larger than the limit fail with
+// ErrResponseTooLarge instead of being silently truncated. A value of zero
+// disables the limit.
+func WithMaxResponseBytes(maxBytes int64) Option {
+	return func(c *Client) {
+		c.maxResponseBytes = maxBytes
+	}
+}
+
 // New creates a new Client with the provided options.
 // Default: 3 s timeout, up to 3 retries with 1 s base wait capped at 5 s, timeout-only retry policy.
 func New(opts ...Option) *Client {
@@ -194,11 +214,12 @@ func New(opts ...Option) *Client {
 		client: &http.Client{
 			Timeout: 3 * time.Second,
 		},
-		retryCount:     3,
-		retryWait:      1 * time.Second,
-		maxRetryWait:   5 * time.Second,
-		retryPolicy:    TimeoutRetryPolicy{},
-		defaultTimeout: 3 * time.Second,
+		retryCount:       3,
+		retryWait:        1 * time.Second,
+		maxRetryWait:     5 * time.Second,
+		retryPolicy:      TimeoutRetryPolicy{},
+		defaultTimeout:   3 * time.Second,
+		maxResponseBytes: defaultMaxResponseBytes,
 	}
 	for _, opt := range opts {
 		opt(c)
@@ -442,13 +463,26 @@ func (c *Client) do(cfg *requestConfig) RoundTripperFunc {
 }
 
 // readResponse drains the body of a successful response and returns its bytes.
-// It returns an error for any status >= 400.
-func readResponse(resp *http.Response) ([]byte, error) {
-	defer resp.Body.Close()
+// It returns an error for any status >= 400. Bodies larger than the client's
+// configured maximum response size fail with ErrResponseTooLarge rather than
+// being silently truncated.
+func (c *Client) readResponse(resp *http.Response) ([]byte, error) {
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode >= http.StatusBadRequest {
 		return nil, errors.New("http error: " + resp.Status)
 	}
-	return io.ReadAll(resp.Body)
+	if c.maxResponseBytes <= 0 {
+		return io.ReadAll(resp.Body)
+	}
+	// Read one byte past the limit so overflow is detectable.
+	body, err := io.ReadAll(io.LimitReader(resp.Body, c.maxResponseBytes+1))
+	if err != nil {
+		return nil, fmt.Errorf("read response body: %w", err)
+	}
+	if int64(len(body)) > c.maxResponseBytes {
+		return nil, ErrResponseTooLarge
+	}
+	return body, nil
 }
 
 func (c *Client) doAndRead(req *http.Request, opts ...RequestOption) ([]byte, error) {
@@ -459,7 +493,7 @@ func (c *Client) doAndRead(req *http.Request, opts ...RequestOption) ([]byte, er
 		}
 		return nil, err
 	}
-	return readResponse(resp)
+	return c.readResponse(resp)
 }
 
 func (c *Client) doWithBody(ctx context.Context, method, url string, body []byte, contentType string, opts ...RequestOption) ([]byte, error) {

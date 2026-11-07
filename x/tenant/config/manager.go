@@ -180,7 +180,7 @@ func (m *DBTenantConfigManager) ListTenants(ctx context.Context, limit, offset i
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var configs []tenant.Config
 	for rows.Next() {

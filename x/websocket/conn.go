@@ -494,7 +494,7 @@ func (c *Conn) writeFrame(op byte, fin bool, payload []byte) error {
 		if err := c.conn.SetWriteDeadline(time.Now().Add(writeWait)); err != nil {
 			return err
 		}
-		defer c.conn.SetWriteDeadline(time.Time{})
+		defer func() { _ = c.conn.SetWriteDeadline(time.Time{}) }()
 	}
 
 	var header [14]byte

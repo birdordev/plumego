@@ -81,7 +81,7 @@ func TestRecoveryMiddleware(t *testing.T) {
 			name: "Normal handler execution - no panic",
 			handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(http.StatusOK)
-				w.Write([]byte("success"))
+				_, _ = w.Write([]byte("success"))
 			}),
 			shouldPanic:    false,
 			expectedStatus: http.StatusOK,
@@ -158,7 +158,7 @@ func TestRecoveryMiddleware_NormalFlow(t *testing.T) {
 		w.Header().Set("Custom-Header", "test-value")
 		w.Header().Set("Content-Type", "text/plain")
 		w.WriteHeader(http.StatusCreated)
-		w.Write([]byte("custom response"))
+		_, _ = w.Write([]byte("custom response"))
 	})
 
 	req := httptest.NewRequest(http.MethodPost, "/test", nil)
@@ -188,7 +188,7 @@ func TestRecoveryMiddleware_DoesNotAppendErrorAfterResponseStarted(t *testing.T)
 	logger := log.NewLogger(log.LoggerConfig{Format: log.LoggerFormatDiscard})
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusAccepted)
-		w.Write([]byte("partial"))
+		_, _ = w.Write([]byte("partial"))
 		panic("late panic")
 	})
 
@@ -573,7 +573,7 @@ func TestPanicTypeError(t *testing.T) {
 
 // TestPanicTypeStruct verifies panicType reports the type for an arbitrary struct.
 func TestPanicTypeStruct(t *testing.T) {
-	type myStruct struct{ v int }
+	type myStruct struct{}
 	got := panicType(myStruct{})
 	if got != "recovery.myStruct" {
 		t.Fatalf("panicType(struct) = %q, want recovery.myStruct", got)

@@ -57,8 +57,8 @@ func TestManager_PublishAndGetAgent(t *testing.T) {
 
 func TestManager_SearchAgents(t *testing.T) {
 	mgr := newTestManager(t)
-	mgr.PublishAgent(t.Context(), testAgentMetadata("search-1", "1.0.0"))
-	mgr.PublishAgent(t.Context(), testAgentMetadata("search-2", "1.0.0"))
+	_ = mgr.PublishAgent(t.Context(), testAgentMetadata("search-1", "1.0.0"))
+	_ = mgr.PublishAgent(t.Context(), testAgentMetadata("search-2", "1.0.0"))
 
 	results, err := mgr.SearchAgents(t.Context(), SearchQuery{})
 	if err != nil {
@@ -71,8 +71,8 @@ func TestManager_SearchAgents(t *testing.T) {
 
 func TestManager_ListAgentVersions(t *testing.T) {
 	mgr := newTestManager(t)
-	mgr.PublishAgent(t.Context(), testAgentMetadata("versioned", "1.0.0"))
-	mgr.PublishAgent(t.Context(), testAgentMetadata("versioned", "2.0.0"))
+	_ = mgr.PublishAgent(t.Context(), testAgentMetadata("versioned", "1.0.0"))
+	_ = mgr.PublishAgent(t.Context(), testAgentMetadata("versioned", "2.0.0"))
 
 	versions, err := mgr.ListAgentVersions(t.Context(), "versioned")
 	if err != nil {
@@ -103,7 +103,7 @@ func TestManager_ListInstalledAgents_Empty(t *testing.T) {
 
 func TestManager_RateAgent(t *testing.T) {
 	mgr := newTestManager(t)
-	mgr.PublishAgent(t.Context(), testAgentMetadata("ratable", "1.0.0"))
+	_ = mgr.PublishAgent(t.Context(), testAgentMetadata("ratable", "1.0.0"))
 
 	rating := &Rating{
 		TargetID: "ratable",

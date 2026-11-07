@@ -1,7 +1,7 @@
 # plumego — root Makefile
 # Minimal targets. Most work happens via codex --yolo or go toolchain directly.
 
-.PHONY: help bundle validate-diff validate-diff-dry milestone check-spec check-plan check-card check-verify new-milestone new-plan new-card new-verify run-card milestone-status gates website-gates fmt vet test test-race reference-vet reference-test workerfleet-mongo-test setup-hooks website-sync
+.PHONY: help bundle validate-diff validate-diff-dry milestone check-spec check-plan check-card check-verify new-milestone new-plan new-card new-verify run-card milestone-status gates website-gates fmt vet test test-race reference-vet reference-test setup-hooks website-sync
 
 # Default: show help
 help:
@@ -362,17 +362,33 @@ gates: ## Run all required quality gates (mirrors CI)
 	TMP=$$(mktemp -d "$${TMPDIR:-/tmp}/plumego-stable-api.XXXXXX"); \
 	trap 'rm -rf "$$TMP"' EXIT; \
 	go run ./internal/checks/extension-api-snapshot -module ./core -out "$$TMP/core-head.snapshot"; \
-	go run ./internal/checks/extension-api-snapshot -compare docs/evidence/stable-api/snapshots/core-head.snapshot "$$TMP/core-head.snapshot"
+	go run ./internal/checks/extension-api-snapshot -compare docs/evidence/stable-api/snapshots/core-head.snapshot "$$TMP/core-head.snapshot"; \
+	go run ./internal/checks/extension-api-snapshot -module ./router -out "$$TMP/router-head.snapshot"; \
+	go run ./internal/checks/extension-api-snapshot -compare docs/evidence/stable-api/snapshots/router-head.snapshot "$$TMP/router-head.snapshot"; \
+	go run ./internal/checks/extension-api-snapshot -module ./contract/... -out "$$TMP/contract-head.snapshot"; \
+	go run ./internal/checks/extension-api-snapshot -compare docs/evidence/stable-api/snapshots/contract-head.snapshot "$$TMP/contract-head.snapshot"; \
+	go run ./internal/checks/extension-api-snapshot -module ./middleware/... -out "$$TMP/middleware-head.snapshot"; \
+	go run ./internal/checks/extension-api-snapshot -compare docs/evidence/stable-api/snapshots/middleware-head.snapshot "$$TMP/middleware-head.snapshot"; \
+	go run ./internal/checks/extension-api-snapshot -module ./security/... -out "$$TMP/security-head.snapshot"; \
+	go run ./internal/checks/extension-api-snapshot -compare docs/evidence/stable-api/snapshots/security-head.snapshot "$$TMP/security-head.snapshot"; \
+	go run ./internal/checks/extension-api-snapshot -module ./store/... -out "$$TMP/store-head.snapshot"; \
+	go run ./internal/checks/extension-api-snapshot -compare docs/evidence/stable-api/snapshots/store-head.snapshot "$$TMP/store-head.snapshot"; \
+	go run ./internal/checks/extension-api-snapshot -module ./health/... -out "$$TMP/health-head.snapshot"; \
+	go run ./internal/checks/extension-api-snapshot -compare docs/evidence/stable-api/snapshots/health-head.snapshot "$$TMP/health-head.snapshot"; \
+	go run ./internal/checks/extension-api-snapshot -module ./log/... -out "$$TMP/log-head.snapshot"; \
+	go run ./internal/checks/extension-api-snapshot -compare docs/evidence/stable-api/snapshots/log-head.snapshot "$$TMP/log-head.snapshot"; \
+	go run ./internal/checks/extension-api-snapshot -module ./metrics/... -out "$$TMP/metrics-head.snapshot"; \
+	go run ./internal/checks/extension-api-snapshot -compare docs/evidence/stable-api/snapshots/metrics-head.snapshot "$$TMP/metrics-head.snapshot"
 	go run ./internal/tools/doc-snippets
 	go vet ./...
 	$(MAKE) reference-vet
 	go test -race -timeout 60s ./...
 	$(MAKE) reference-test
-	go test -coverprofile=/tmp/plumego-stable.cover ./core ./router ./middleware/... ./contract ./security/... ./store/... >/tmp/plumego-stable-cover.log
+	go test -coverprofile=/tmp/plumego-stable.cover ./core ./router ./middleware/... ./contract ./security/... ./store/... ./health ./log ./metrics >/tmp/plumego-stable-cover.log
 	@TOTAL=$$(go tool cover -func=/tmp/plumego-stable.cover | awk '/^total:/ {gsub("%","",$$3); print $$3}'); \
 	echo "Stable-module total coverage: $$TOTAL%"; \
-	awk -v total="$$TOTAL" -v min="70.0" 'BEGIN { if (total+0 < min+0) exit 1 }' || { \
-	  echo "Coverage gate failed: expected >= 70.0%, got $$TOTAL%"; \
+	awk -v total="$$TOTAL" -v min="90.0" 'BEGIN { if (total+0 < min+0) exit 1 }' || { \
+	  echo "Coverage gate failed: expected >= 90.0%, got $$TOTAL%"; \
 	  tail -n 50 /tmp/plumego-stable-cover.log || true; \
 	  exit 1; \
 	}
@@ -400,6 +416,9 @@ fmt: ## Format all Go source files in-place
 vet: ## Run go vet on all packages
 	go vet ./...
 
+lint: ## Run golangci-lint (zero-finding gate; requires golangci-lint v2 on PATH)
+	golangci-lint run ./...
+
 reference-vet: ## Run go vet for every standalone reference module
 	@set -e; \
 	for mod in reference/*/go.mod; do \
@@ -421,15 +440,6 @@ reference-test: ## Run tests for every standalone reference module
 	  echo "==> $$dir"; \
 	  (cd "$$dir" && go test ./...); \
 	done
-
-workerfleet-mongo-test: ## Run optional workerfleet MongoDB integration tests
-	@if [ -z "$$WORKERFLEET_MONGO_TEST_URI" ]; then \
-	  echo "Skipping workerfleet MongoDB integration tests."; \
-	  echo "Set WORKERFLEET_MONGO_TEST_URI=mongodb://127.0.0.1:27017 locally or configure the CI secret to run them."; \
-	else \
-	  echo "Running workerfleet MongoDB integration tests."; \
-	  cd reference/workerfleet && go test -timeout 60s ./internal/platform/store/mongo; \
-	fi
 
 # ── Git Hooks ─────────────────────────────────────────────────────────────────
 

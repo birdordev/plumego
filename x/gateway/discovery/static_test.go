@@ -453,7 +453,7 @@ func TestStatic_ConcurrentModify(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			s.Resolve(t.Context(), "svc")
+			_, _ = s.Resolve(t.Context(), "svc")
 		}()
 	}
 

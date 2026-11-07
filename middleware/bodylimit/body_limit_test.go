@@ -372,14 +372,14 @@ func TestBodyLimitChunkedNoContentLength(t *testing.T) {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		w.Write(body)
+		_, _ = w.Write(body)
 	}))
 
 	// Use a pipe-based body with no Content-Length set.
 	pr, pw := io.Pipe()
 	go func() {
-		pw.Write([]byte("hello"))
-		pw.Close()
+		_, _ = pw.Write([]byte("hello"))
+		_ = pw.Close()
 	}()
 
 	req := httptest.NewRequest(http.MethodPost, "/", pr)
@@ -405,8 +405,8 @@ func TestBodyLimitChunkedNoContentLength_Overrun(t *testing.T) {
 
 	pr, pw := io.Pipe()
 	go func() {
-		pw.Write([]byte("toolong"))
-		pw.Close()
+		_, _ = pw.Write([]byte("toolong"))
+		_ = pw.Close()
 	}()
 
 	req := httptest.NewRequest(http.MethodPost, "/", pr)
@@ -428,7 +428,7 @@ func TestBodyLimitExactBytesAllowed(t *testing.T) {
 		if err != nil {
 			t.Fatalf("read body: %v", err)
 		}
-		w.Write(body)
+		_, _ = w.Write(body)
 	}))
 
 	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader("abcd")) // exactly 4

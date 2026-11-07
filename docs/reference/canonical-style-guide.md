@@ -522,3 +522,31 @@ Current inventory:
 | Fallible middleware | `middleware/accesslog.Middleware(Config)` | canonical — return `(..., error)` when construction can fail |
 
 Do not run repo-wide constructor renames as drive-by cleanup; each migration must name the owning module, API compatibility policy, docs impact, and tests.
+
+---
+
+## 24. Context Handling
+
+Library functions that accept a `context.Context` must pass it through to
+blocking work and never silently substitute a fresh background context.
+
+This repo treats a **nil `context.Context` as `context.Background()`** at
+package entry points (the one deviation from the standard library, which
+panics on nil contexts). The rule is applied deliberately and consistently so
+library code is callable from `main` without ceremony:
+
+```go
+if ctx == nil {
+    ctx = context.Background()
+}
+```
+
+Where this appears, keep the check at the entry point only — do not thread
+nil-tolerant checks into internal helpers. New exported functions should
+document that nil is accepted, and internal helpers should assume a non-nil
+context.
+
+Context values flow **down** (caller to callee); cancellation and deadlines
+must not be derived from `context.Background()` inside library code. When an
+operation genuinely cannot be canceled, prefer taking the context anyway and
+documenting the limitation over hard-coding `context.Background()`.

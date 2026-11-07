@@ -16,7 +16,7 @@ func TestDeadLetterManagerBasic(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer broker.Close()
+	defer func() { _ = broker.Close() }()
 
 	if broker.deadLetterManager == nil {
 		t.Fatal("deadLetterManager should be initialized when dead letter queue is enabled")
@@ -72,7 +72,7 @@ func TestDeadLetterMultipleMessages(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer broker.Close()
+	defer func() { _ = broker.Close() }()
 
 	ctx := t.Context()
 
@@ -124,7 +124,7 @@ func TestDeadLetterDisabled(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer broker.Close()
+	defer func() { _ = broker.Close() }()
 
 	ctx := t.Context()
 
@@ -153,7 +153,7 @@ func TestDeadLetterDefaultTopic(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer broker.Close()
+	defer func() { _ = broker.Close() }()
 
 	ctx := t.Context()
 
@@ -207,7 +207,7 @@ func TestDeadLetterClose(t *testing.T) {
 	}
 
 	// Close broker
-	broker.Close()
+	_ = broker.Close()
 
 	// Try to add message after close
 	err = broker.PublishToDeadLetter(ctx, "original-topic", msg, "test failure")
@@ -224,7 +224,7 @@ func TestDeadLetterConcurrent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer broker.Close()
+	defer func() { _ = broker.Close() }()
 
 	ctx := t.Context()
 
@@ -284,7 +284,7 @@ func TestDeadLetterValidation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer broker.Close()
+	defer func() { _ = broker.Close() }()
 
 	ctx := t.Context()
 
@@ -307,7 +307,7 @@ func TestDeadLetterWithAckTimeout(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer broker.Close()
+	defer func() { _ = broker.Close() }()
 
 	ctx := t.Context()
 
@@ -349,7 +349,7 @@ func TestDeadLetterTimestamp(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer broker.Close()
+	defer func() { _ = broker.Close() }()
 
 	ctx := t.Context()
 

@@ -107,7 +107,7 @@ func (h *HealthChecker) checkBackend(backend *Backend) {
 		h.updateHealth(backend, false)
 		return
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	// Check status code
 	healthy := resp.StatusCode == h.config.ExpectedStatus

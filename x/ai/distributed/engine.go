@@ -195,7 +195,7 @@ func (e *DistributedEngine) executeWorkflow(
 	execCtx.snapshot.Status = StatusRunning
 	execCtx.snapshot.State = initialState
 	execCtx.mu.Unlock()
-	e.persistence.SaveSnapshot(ctx, execCtx.snapshot)
+	_ = e.persistence.SaveSnapshot(ctx, execCtx.snapshot)
 
 	// Execute steps
 	for i, step := range workflow.Steps {
@@ -237,8 +237,8 @@ func (e *DistributedEngine) executeWorkflow(
 
 		// Save checkpoint if enabled
 		if options.Checkpoints {
-			e.persistence.SaveSnapshot(ctx, execCtx.snapshot)
-			e.persistence.SaveStepResult(ctx, executionID, i, result)
+			_ = e.persistence.SaveSnapshot(ctx, execCtx.snapshot)
+			_ = e.persistence.SaveStepResult(ctx, executionID, i, result)
 		}
 	}
 
@@ -357,18 +357,18 @@ func (e *DistributedEngine) resumeWorkflow(
 		if err != nil {
 			snapshot.Status = StatusFailed
 			snapshot.Error = err.Error()
-			e.persistence.SaveSnapshot(ctx, snapshot)
+			_ = e.persistence.SaveSnapshot(ctx, snapshot)
 			return
 		}
 
 		snapshot.Results = append(snapshot.Results, result)
 		snapshot.CompletedSteps = append(snapshot.CompletedSteps, i)
 		snapshot.CurrentStep = i + 1
-		e.persistence.SaveSnapshot(ctx, snapshot)
+		_ = e.persistence.SaveSnapshot(ctx, snapshot)
 	}
 
 	snapshot.Status = StatusCompleted
-	e.persistence.SaveSnapshot(ctx, snapshot)
+	_ = e.persistence.SaveSnapshot(ctx, snapshot)
 }
 
 // Pause pauses an execution.
@@ -449,7 +449,7 @@ func (e *DistributedEngine) updateSnapshotStatus(
 	execCtx.snapshot.UpdatedAt = time.Now()
 	execCtx.mu.Unlock()
 
-	e.persistence.SaveSnapshot(ctx, execCtx.snapshot)
+	_ = e.persistence.SaveSnapshot(ctx, execCtx.snapshot)
 }
 
 // cleanupExecution removes execution context.

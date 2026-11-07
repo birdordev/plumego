@@ -34,6 +34,7 @@ package transform
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"strconv"
@@ -42,6 +43,28 @@ import (
 	"github.com/spcent/plumego/contract"
 	"github.com/spcent/plumego/internal/httputil"
 )
+
+// maxTransformBodyBytes bounds request and response bodies buffered for
+// transformation. Without a limit a hostile client or upstream could force
+// unbounded memory usage.
+const maxTransformBodyBytes = 16 << 20 // 16 MiB
+
+// ErrBodyTooLarge is returned when a request or response body exceeds
+// maxTransformBodyBytes.
+var ErrBodyTooLarge = errors.New("transform: body exceeds max transform size")
+
+// readBounded reads at most maxTransformBodyBytes from r and fails with
+// ErrBodyTooLarge when the source is larger, so truncation is never silent.
+func readBounded(r io.Reader) ([]byte, error) {
+	body, err := io.ReadAll(io.LimitReader(r, maxTransformBodyBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(body) > maxTransformBodyBytes {
+		return nil, ErrBodyTooLarge
+	}
+	return body, nil
+}
 
 // CodeTransformFailed is the canonical x/gateway transform error code.
 const CodeTransformFailed = "transform_failed"
@@ -118,8 +141,19 @@ func Middleware(config Config) func(http.Handler) http.Handler {
 			// Read transformed body
 			var transformedBody []byte
 			if resp.Body != nil {
-				transformedBody, _ = io.ReadAll(resp.Body)
+				var err error
+				transformedBody, err = readBounded(resp.Body)
 				_ = resp.Body.Close()
+				if err != nil {
+					if config.OnError != nil {
+						config.OnError(err)
+					}
+					_ = contract.WriteError(w, r, contract.NewErrorBuilder().
+						Type(contract.TypeInternal).
+						Message("response transformation failed").
+						Build())
+					return
+				}
 			}
 
 			// SECURITY NOTE: The transformedBody contains response data that has been
@@ -238,7 +272,7 @@ func RenameJSONRequestField(from, to string) RequestTransformer {
 		}
 
 		// Read body
-		body, err := io.ReadAll(r.Body)
+		body, err := readBounded(r.Body)
 		if err != nil {
 			return err
 		}
@@ -278,7 +312,7 @@ func ModifyJSONRequest(modifier func(map[string]any) error) RequestTransformer {
 			return nil
 		}
 
-		body, err := io.ReadAll(r.Body)
+		body, err := readBounded(r.Body)
 		if err != nil {
 			return err
 		}
@@ -344,7 +378,7 @@ func RenameJSONResponseField(from, to string) ResponseTransformer {
 			return nil
 		}
 
-		body, err := io.ReadAll(r.Body)
+		body, err := readBounded(r.Body)
 		if err != nil {
 			return err
 		}
@@ -380,7 +414,7 @@ func ModifyJSONResponse(modifier func(map[string]any) error) ResponseTransformer
 			return nil
 		}
 
-		body, err := io.ReadAll(r.Body)
+		body, err := readBounded(r.Body)
 		if err != nil {
 			return err
 		}

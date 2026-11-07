@@ -11,7 +11,7 @@ import (
 
 func TestRequestIDMiddleware(t *testing.T) {
 	app := newTestApp()
-	app.Use(requestid.Middleware())
+	_ = app.Use(requestid.Middleware())
 	mustRegisterRoute(t, app.Get("/ping", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})))

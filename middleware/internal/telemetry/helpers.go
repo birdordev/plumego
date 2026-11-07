@@ -71,6 +71,8 @@ func BeginTrace(w http.ResponseWriter, prepared PreparedRequest, start TraceStar
 		ctx      context.Context
 		span     TraceSpan
 		panicked bool
+		spanID   string
+		traceID  string
 	)
 	func() {
 		defer func() {
@@ -79,15 +81,18 @@ func BeginTrace(w http.ResponseWriter, prepared PreparedRequest, start TraceStar
 			}
 		}()
 		ctx, span = start(r.Context(), r)
+		if ctx == nil {
+			ctx = r.Context()
+		}
+		if span != nil {
+			traceID = span.TraceID()
+			spanID = span.SpanID()
+		}
 	}()
 	if panicked {
-		return r, nil
-	}
-	spanID := ""
-	traceID := ""
-	if span != nil {
-		traceID = span.TraceID()
-		spanID = span.SpanID()
+		// Keep ownership of a span created before metadata failed so the
+		// normal best-effort finalizer still ends it exactly once.
+		return r, span
 	}
 	spanContext := contract.TraceContext{TraceID: traceID, SpanID: spanID}
 	if tc, ok := contract.TraceContextFromContext(ctx); ok {

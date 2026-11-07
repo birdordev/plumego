@@ -29,7 +29,7 @@ func TestRequestReplyBasic(t *testing.T) {
 	go func() {
 		for msg := range sub.C() {
 			if IsRequest(msg) {
-				Reply(ps, msg, Message{Data: "result:5"})
+				_ = Reply(ps, msg, Message{Data: "result:5"})
 			}
 		}
 	}()
@@ -86,7 +86,7 @@ func TestRequestReplyMultipleConcurrent(t *testing.T) {
 	go func() {
 		for msg := range sub.C() {
 			if IsRequest(msg) {
-				Reply(ps, msg, Message{Data: msg.Data})
+				_ = Reply(ps, msg, Message{Data: msg.Data})
 			}
 		}
 	}()
@@ -140,7 +140,7 @@ func TestRequestReplyCorrelationID(t *testing.T) {
 		for msg := range sub.C() {
 			if IsRequest(msg) {
 				capturedCorrelationID = GetCorrelationID(msg)
-				Reply(ps, msg, Message{Data: "pong"})
+				_ = Reply(ps, msg, Message{Data: "pong"})
 			}
 		}
 	}()
@@ -311,7 +311,7 @@ func TestRequestReplyManagerMultipleRequests(t *testing.T) {
 		for msg := range sub.C() {
 			if IsRequest(msg) {
 				c := count.Add(1)
-				Reply(ps, msg, Message{Data: int(c)})
+				_ = Reply(ps, msg, Message{Data: int(c)})
 			}
 		}
 	}()

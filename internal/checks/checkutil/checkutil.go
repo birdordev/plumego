@@ -114,7 +114,7 @@ func ReadRepoExtensionRoots(repoRoot string) (map[string]struct{}, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	roots := map[string]struct{}{}
 	scanner := NewLineScanner(file)
@@ -197,7 +197,7 @@ func ReadBaseline(path string) (map[string]struct{}, error) {
 		}
 		return nil, err
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	out := map[string]struct{}{}
 	scanner := NewLineScanner(file)
@@ -887,7 +887,7 @@ func ReadPackageIndex(repoRoot string) (map[string]packageIndexEntry, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	out := map[string]packageIndexEntry{}
 	scanner := NewLineScanner(file)
@@ -1383,7 +1383,7 @@ func parseManifest(path string) (manifestDoc, error) {
 	if err != nil {
 		return manifestDoc{}, err
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	doc := manifestDoc{
 		Seen:       map[string]bool{},
@@ -1432,18 +1432,6 @@ func parseManifest(path string) (manifestDoc, error) {
 		return manifestDoc{}, err
 	}
 	return doc, nil
-}
-
-func isDisallowedImport(importPath string, blockedPrefixes []string) bool {
-	if importPath == modulePath {
-		return true
-	}
-	for _, prefix := range blockedPrefixes {
-		if importPath == prefix || strings.HasPrefix(importPath, prefix+"/") || strings.HasPrefix(importPath, prefix) {
-			return true
-		}
-	}
-	return false
 }
 
 func isStableRoot(path string) bool {

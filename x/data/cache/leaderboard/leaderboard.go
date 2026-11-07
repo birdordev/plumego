@@ -102,9 +102,10 @@ func normalizeLeaderboardConfig(config *LeaderboardConfig) (*LeaderboardConfig, 
 	if normalized.CleanupInterval <= 0 {
 		normalized.CleanupInterval = 5 * time.Minute
 	}
-	if normalized.DefaultTTL == NoExpirationTTL {
+	switch normalized.DefaultTTL {
+	case NoExpirationTTL:
 		normalized.DefaultTTL = 0
-	} else if normalized.DefaultTTL == 0 {
+	case 0:
 		normalized.DefaultTTL = time.Hour
 	}
 	return &normalized, nil

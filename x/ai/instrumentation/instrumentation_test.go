@@ -334,8 +334,8 @@ func TestInstrumentedMemoryCache_PublishStats(t *testing.T) {
 	key := &llmcache.CacheKey{Hash: "test"}
 	entry := &llmcache.CacheEntry{Usage: tokenizer.TokenUsage{TotalTokens: 100}}
 	memCache.Set(t.Context(), key, entry)
-	memCache.Get(t.Context(), key)                              // Hit
-	memCache.Get(t.Context(), &llmcache.CacheKey{Hash: "miss"}) // Miss
+	_, _ = memCache.Get(t.Context(), key)                              // Hit
+	_, _ = memCache.Get(t.Context(), &llmcache.CacheKey{Hash: "miss"}) // Miss
 
 	// Publish stats
 	instrumented.PublishStats()

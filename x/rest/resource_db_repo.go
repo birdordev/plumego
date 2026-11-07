@@ -218,7 +218,7 @@ func (r *BaseRepository[T]) FindAll(ctx context.Context, params *QueryParams) ([
 	if err != nil {
 		return nil, 0, fmt.Errorf("failed to query records: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var results []T
 	for rows.Next() {
@@ -250,7 +250,7 @@ func (r *BaseRepository[T]) FindByID(ctx context.Context, id string) (*T, error)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query record: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	if !rows.Next() {
 		if err := rows.Err(); err != nil {

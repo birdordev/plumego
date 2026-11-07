@@ -38,8 +38,8 @@ func TestMemReceiptStore_SaveAndGet(t *testing.T) {
 func TestMemReceiptStore_Update(t *testing.T) {
 	s := NewMemReceiptStore(100)
 
-	s.Save(Receipt{ID: "u1", Status: messageStatusQueued})
-	s.Save(Receipt{ID: "u1", Status: messageStatusSent, ProviderID: "pid-1"})
+	_ = s.Save(Receipt{ID: "u1", Status: messageStatusQueued})
+	_ = s.Save(Receipt{ID: "u1", Status: messageStatusSent, ProviderID: "pid-1"})
 
 	got, _ := s.Get("u1")
 	if got.Status != messageStatusSent {
@@ -53,10 +53,10 @@ func TestMemReceiptStore_Update(t *testing.T) {
 func TestMemReceiptStore_Eviction(t *testing.T) {
 	s := NewMemReceiptStore(3)
 
-	s.Save(Receipt{ID: "e1"})
-	s.Save(Receipt{ID: "e2"})
-	s.Save(Receipt{ID: "e3"})
-	s.Save(Receipt{ID: "e4"}) // should evict e1
+	_ = s.Save(Receipt{ID: "e1"})
+	_ = s.Save(Receipt{ID: "e2"})
+	_ = s.Save(Receipt{ID: "e3"})
+	_ = s.Save(Receipt{ID: "e4"}) // should evict e1
 
 	if _, ok := s.Get("e1"); ok {
 		t.Fatal("e1 should have been evicted")
@@ -69,10 +69,10 @@ func TestMemReceiptStore_Eviction(t *testing.T) {
 func TestMemReceiptStore_List(t *testing.T) {
 	s := NewMemReceiptStore(100)
 
-	s.Save(Receipt{ID: "l1", Channel: ChannelSMS, Status: messageStatusSent})
-	s.Save(Receipt{ID: "l2", Channel: ChannelEmail, Status: messageStatusSent})
-	s.Save(Receipt{ID: "l3", Channel: ChannelSMS, Status: messageStatusFailed})
-	s.Save(Receipt{ID: "l4", Channel: ChannelEmail, Status: messageStatusQueued})
+	_ = s.Save(Receipt{ID: "l1", Channel: ChannelSMS, Status: messageStatusSent})
+	_ = s.Save(Receipt{ID: "l2", Channel: ChannelEmail, Status: messageStatusSent})
+	_ = s.Save(Receipt{ID: "l3", Channel: ChannelSMS, Status: messageStatusFailed})
+	_ = s.Save(Receipt{ID: "l4", Channel: ChannelEmail, Status: messageStatusQueued})
 
 	// Filter by channel.
 	smsReceipts := s.List(ReceiptFilter{Channel: ChannelSMS})
@@ -105,9 +105,9 @@ func TestMemReceiptStore_List(t *testing.T) {
 func TestMemReceiptStore_ListWithTenant(t *testing.T) {
 	s := NewMemReceiptStore(100)
 
-	s.Save(Receipt{ID: "t1", TenantID: "a"})
-	s.Save(Receipt{ID: "t2", TenantID: "b"})
-	s.Save(Receipt{ID: "t3", TenantID: "a"})
+	_ = s.Save(Receipt{ID: "t1", TenantID: "a"})
+	_ = s.Save(Receipt{ID: "t2", TenantID: "b"})
+	_ = s.Save(Receipt{ID: "t3", TenantID: "a"})
 
 	got := s.List(ReceiptFilter{TenantID: "a"})
 	if len(got) != 2 {

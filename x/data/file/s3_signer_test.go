@@ -223,7 +223,7 @@ func BenchmarkS3Signer_SignRequest(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		signer.SignRequest(req, payloadHash)
+		_ = signer.SignRequest(req, payloadHash)
 	}
 }
 

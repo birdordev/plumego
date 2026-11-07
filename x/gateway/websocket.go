@@ -43,7 +43,7 @@ func (p *Proxy) handleWebSocketProxy(w http.ResponseWriter, r *http.Request, bac
 	if err != nil {
 		return err
 	}
-	defer backendConn.Close()
+	defer func() { _ = backendConn.Close() }()
 
 	// Hijack client connection
 	hijacker, ok := w.(http.Hijacker)
@@ -55,7 +55,7 @@ func (p *Proxy) handleWebSocketProxy(w http.ResponseWriter, r *http.Request, bac
 	if err != nil {
 		return err
 	}
-	defer clientConn.Close()
+	defer func() { _ = clientConn.Close() }()
 
 	// Send upgrade response to client
 	if err := p.sendUpgradeResponse(clientConn, r); err != nil {
@@ -95,13 +95,13 @@ func (p *Proxy) dialBackend(backendURL *url.URL, r *http.Request) (net.Conn, err
 
 	// Send upgrade request to backend
 	if err := p.sendBackendUpgrade(conn, backendURL, r); err != nil {
-		conn.Close()
+		_ = conn.Close()
 		return nil, err
 	}
 
 	// Read upgrade response from backend
 	if err := p.readBackendUpgradeResponse(conn); err != nil {
-		conn.Close()
+		_ = conn.Close()
 		return nil, err
 	}
 
@@ -164,8 +164,8 @@ func (p *Proxy) sendBackendUpgrade(conn net.Conn, backendURL *url.URL, r *http.R
 // readBackendUpgradeResponse reads and validates the upgrade response from backend
 func (p *Proxy) readBackendUpgradeResponse(conn net.Conn) error {
 	// Set read deadline
-	conn.SetReadDeadline(time.Now().Add(p.config.Timeout))
-	defer conn.SetReadDeadline(time.Time{})
+	_ = conn.SetReadDeadline(time.Now().Add(p.config.Timeout))
+	defer func() { _ = conn.SetReadDeadline(time.Time{}) }()
 
 	// Read response status line and headers
 	buf := make([]byte, 4096)
@@ -235,8 +235,8 @@ func (p *Proxy) bidirectionalCopy(client, backend net.Conn) error {
 	err := <-errChan
 
 	// Close both connections to terminate the other goroutine
-	client.Close()
-	backend.Close()
+	_ = client.Close()
+	_ = backend.Close()
 
 	return err
 }

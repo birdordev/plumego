@@ -2,7 +2,6 @@ package idempotency
 
 import (
 	"errors"
-	"strings"
 
 	stable "github.com/spcent/plumego/store/idempotency"
 )
@@ -32,12 +31,4 @@ func ValidateKey(key string) error {
 
 func ValidateRecord(record Record) error {
 	return stable.ValidateRecord(record)
-}
-
-func normalizeKey(key string) (string, error) {
-	key = strings.TrimSpace(key)
-	if err := ValidateKey(key); err != nil {
-		return "", err
-	}
-	return key, nil
 }

@@ -55,6 +55,7 @@ symbol	github.com/spcent/plumego/middleware/internal/telemetry	func	MiddlewareLo
 symbol	github.com/spcent/plumego/middleware/internal/telemetry	func	PrepareRequest	func PrepareRequestfunc(w http.ResponseWriter, r *http.Request) PreparedRequest
 symbol	github.com/spcent/plumego/middleware/internal/telemetry	func	RedactFields	func RedactFieldsfunc(fields map[string]any, extraSensitiveKeys ...string) map[string]any
 symbol	github.com/spcent/plumego/middleware/internal/telemetry	func	RunSafeFinalizer	func RunSafeFinalizerfunc(finalize func())
+symbol	github.com/spcent/plumego/middleware/internal/telemetry	func	WithObserver	func WithObserverfunc(next http.Handler, w http.ResponseWriter, r *http.Request, observe func(metrics RequestMetrics, recorder *ResponseRecorder, r *http.Request))
 symbol	github.com/spcent/plumego/middleware/internal/telemetry	method	PreparedRequest.Complete	func (PreparedRequest) Completefunc(r *http.Request) RequestMetrics
 symbol	github.com/spcent/plumego/middleware/internal/telemetry	method	RequestMetrics.ObservedPath	func (RequestMetrics) ObservedPathfunc() string
 symbol	github.com/spcent/plumego/middleware/internal/telemetry	type	PreparedRequest	type PreparedRequest struct { Request *http.Request Recorder *ResponseRecorder RequestID string StartedAt time.Time }
@@ -77,6 +78,7 @@ symbol	github.com/spcent/plumego/middleware/requestid	func	WithRequestHeader	fun
 symbol	github.com/spcent/plumego/middleware/requestid	method	RequestIDGenerator.Generate	func (RequestIDGenerator) Generatefunc() string
 symbol	github.com/spcent/plumego/middleware/requestid	type	Option	type Option func(*config)
 symbol	github.com/spcent/plumego/middleware/requestid	type	RequestIDGenerator	type RequestIDGenerator struct { }
+symbol	github.com/spcent/plumego/middleware/securityheaders	func	DefaultConfig	func DefaultConfigfunc() Config
 symbol	github.com/spcent/plumego/middleware/securityheaders	func	Middleware	func Middlewarefunc(config Config) (middleware.Middleware, error)
 symbol	github.com/spcent/plumego/middleware/securityheaders	type	Config	type Config struct { Policy *headers.Policy }
 symbol	github.com/spcent/plumego/middleware/singleflight	func	DefaultKeyFunc	func DefaultKeyFuncfunc(r *http.Request) string
@@ -86,12 +88,12 @@ symbol	github.com/spcent/plumego/middleware/singleflight	method	Coalescer.Middle
 symbol	github.com/spcent/plumego/middleware/singleflight	method	Coalescer.Stats	func (Coalescer) Statsfunc() Stats
 symbol	github.com/spcent/plumego/middleware/singleflight	method	Config.WithDefaults	func (Config) WithDefaultsfunc() *Config
 symbol	github.com/spcent/plumego/middleware/singleflight	type	Coalescer	type Coalescer struct { }
-symbol	github.com/spcent/plumego/middleware/singleflight	type	Config	type Config struct { KeyFunc KeyFunc Methods []string Timeout time.Duration MaxResponseBytes int OnCoalesced func(key string, count int) OnError func(key string, err error) }
+symbol	github.com/spcent/plumego/middleware/singleflight	type	Config	type Config struct { KeyFunc KeyFunc Methods []string Timeout time.Duration MaxResponseBytes int OnCoalesced func(key string, count int) OnError func(key string, err error) AddCoalescedHeader bool }
 symbol	github.com/spcent/plumego/middleware/singleflight	type	KeyFunc	type KeyFunc func(r *http.Request) string
 symbol	github.com/spcent/plumego/middleware/singleflight	type	Stats	type Stats struct { InFlight int }
 symbol	github.com/spcent/plumego/middleware/timeout	func	DefaultConfig	func DefaultConfigfunc() Config
 symbol	github.com/spcent/plumego/middleware/timeout	func	Middleware	func Middlewarefunc(cfg Config) mw.Middleware
 symbol	github.com/spcent/plumego/middleware/timeout	type	Config	type Config struct { Timeout time.Duration MaxBufferBytes int MaxReplayBytes int OnPanic func(r *http.Request, recovered any) }
 symbol	github.com/spcent/plumego/middleware/tracing	func	Middleware	func Middlewarefunc(tracer Tracer) middleware.Middleware
-symbol	github.com/spcent/plumego/middleware/tracing	type	TraceSpan	type TraceSpan interface { End(status, bytes int, requestID string) TraceID() string SpanID() string }
+symbol	github.com/spcent/plumego/middleware/tracing	type	TraceSpan	type TraceSpan = internaltelemetry.TraceSpan
 symbol	github.com/spcent/plumego/middleware/tracing	type	Tracer	type Tracer interface { Start(ctx context.Context, r *http.Request) (context.Context, TraceSpan) }

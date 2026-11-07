@@ -1590,8 +1590,7 @@ func TestWriteHeaderKeySkipsEmptyValue(t *testing.T) {
 	writeHeaderKey(h2, req2, "Accept")
 
 	if h1.Sum64() == h2.Sum64() {
-		// The hashes differ because "application/json" contributes bytes while
-		// the whitespace-only value contributes only the outer key bytes.
-		// We just confirm neither panics and the function completes.
+		t.Error("expected different hashes: application/json contributes value bytes " +
+			"while the whitespace-only value contributes only the outer key bytes")
 	}
 }

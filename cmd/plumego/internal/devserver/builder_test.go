@@ -54,4 +54,7 @@ func TestBuilderBuildRespectsCanceledContext(t *testing.T) {
 	}
 }
 
+// TestBuilderHelperProcess is the marker entry point for the re-exec'd test
+// binary that stands in for a built devserver (see
+// TestBuilderBuildRespectsCanceledContext). It deliberately has an empty body.
 func TestBuilderHelperProcess(t *testing.T) {}

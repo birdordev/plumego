@@ -238,24 +238,6 @@ func (sm *shardedMap) listMQTTPatterns() []string {
 	return patterns
 }
 
-// getTopicSubscribers returns a snapshot of subscribers for a topic.
-func (sm *shardedMap) getTopicSubscribers(topic string) []*subscriber {
-	s := sm.getShard(topic)
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	subs := s.topics[topic]
-	if len(subs) == 0 {
-		return nil
-	}
-
-	result := make([]*subscriber, 0, len(subs))
-	for _, sub := range subs {
-		result = append(result, sub)
-	}
-	return result
-}
-
 // getTopicSubscriberCount returns the number of subscribers for a topic.
 func (sm *shardedMap) getTopicSubscriberCount(topic string) int {
 	s := sm.getShard(topic)

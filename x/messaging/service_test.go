@@ -290,7 +290,7 @@ func TestSendAndWorker_SMS(t *testing.T) {
 	svc := newTestService(sms, nil)
 	ctx := t.Context()
 
-	svc.Start(ctx)
+	_ = svc.Start(ctx)
 	defer svc.Stop(ctx)
 
 	err := svc.Send(ctx, SendRequest{
@@ -325,7 +325,7 @@ func TestSendAndWorker_Email(t *testing.T) {
 	svc := newTestService(nil, email)
 	ctx := t.Context()
 
-	svc.Start(ctx)
+	_ = svc.Start(ctx)
 	defer svc.Stop(ctx)
 
 	err := svc.Send(ctx, SendRequest{
@@ -390,7 +390,7 @@ func TestStats(t *testing.T) {
 	}
 
 	// Enqueue one
-	svc.Send(ctx, SendRequest{
+	_ = svc.Send(ctx, SendRequest{
 		ID: "s1", Channel: ChannelSMS, To: "+1234567890", Body: "hi",
 	})
 
@@ -407,7 +407,7 @@ func TestTemplate(t *testing.T) {
 
 	svc.Templates().Register("otp", "Your code is {{code}}. Expires in {{minutes}} minutes.")
 
-	svc.Start(ctx)
+	_ = svc.Start(ctx)
 	defer svc.Stop(ctx)
 
 	err := svc.Send(ctx, SendRequest{

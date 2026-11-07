@@ -596,7 +596,7 @@ func TestRouterBeginTx(t *testing.T) {
 		if tx == nil {
 			t.Error("expected transaction, got nil")
 		}
-		tx.Rollback()
+		_ = tx.Rollback()
 	})
 
 	t.Run("transaction on invalid shard", func(t *testing.T) {
@@ -659,8 +659,8 @@ func TestRouterMetrics(t *testing.T) {
 	t.Run("query metrics", func(t *testing.T) {
 		// Execute some queries
 		query := "SELECT * FROM users WHERE user_id = ?"
-		router.QueryContext(ctx, query, 100)
-		router.QueryContext(ctx, query, 200)
+		_, _ = router.QueryContext(ctx, query, 100)
+		_, _ = router.QueryContext(ctx, query, 200)
 
 		metrics := router.Metrics()
 		if metrics.TotalQueries < 2 {
@@ -680,7 +680,7 @@ func TestRouterMetrics(t *testing.T) {
 		defer routerAll.Close()
 
 		query := "SELECT * FROM users WHERE name = ?"
-		routerAll.QueryContext(ctx, query, "Alice")
+		_, _ = routerAll.QueryContext(ctx, query, "Alice")
 
 		var metrics RouterMetrics
 		deadline := time.Now().Add(100 * time.Millisecond)
@@ -885,7 +885,7 @@ func BenchmarkRouterExecContext(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		router.ExecContext(ctx, query, i, "test")
+		_, _ = router.ExecContext(ctx, query, i, "test")
 	}
 }
 

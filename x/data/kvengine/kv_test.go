@@ -418,8 +418,8 @@ func TestStats(t *testing.T) {
 	// Perform some operations
 	kv.Set("key1", []byte("value1"), 0)
 	kv.Set("key2", []byte("value2"), 0)
-	kv.Get("key1") // Hit
-	kv.Get("key3") // Miss
+	_, _ = kv.Get("key1") // Hit
+	_, _ = kv.Get("key3") // Miss
 
 	stats := kv.GetStats()
 
@@ -818,7 +818,7 @@ func BenchmarkGet(b *testing.B) {
 		i := 0
 		for pb.Next() {
 			key := fmt.Sprintf("bench_key_%d", i%numKeys)
-			kv.Get(key)
+			_, _ = kv.Get(key)
 			i++
 		}
 	})
@@ -843,7 +843,7 @@ func BenchmarkMixed(b *testing.B) {
 
 			// 70% reads, 30% writes
 			if i%10 < 7 {
-				kv.Get(key)
+				_, _ = kv.Get(key)
 			} else {
 				value := []byte(fmt.Sprintf("new_value_%d", i))
 				kv.Set(key, value, 0)
@@ -921,10 +921,10 @@ func TestStressHighConcurrency(t *testing.T) {
 					kv.Set(key, value, 0)
 					atomic.AddInt64(&sets, 1)
 				case 1: // Get
-					kv.Get(key)
+					_, _ = kv.Get(key)
 					atomic.AddInt64(&gets, 1)
 				case 2: // Delete
-					kv.Delete(key)
+					_ = kv.Delete(key)
 					atomic.AddInt64(&deletes, 1)
 				}
 			}
@@ -1525,7 +1525,7 @@ func TestWALReplayWithDeletes(t *testing.T) {
 	kv1.Set("key1", []byte("value1"), 0)
 	kv1.Set("key2", []byte("value2"), 0)
 	kv1.Set("key3", []byte("value3"), 0)
-	kv1.Delete("key2")
+	_ = kv1.Delete("key2")
 
 	time.Sleep(50 * time.Millisecond)
 	kv1.Close()
@@ -1752,7 +1752,7 @@ func TestGetWithConcurrentExpiration(t *testing.T) {
 			defer wg.Done()
 			time.Sleep(60 * time.Millisecond)
 			// This should handle concurrent expiration gracefully
-			kv.Get(key)
+			_, _ = kv.Get(key)
 		}()
 	}
 
@@ -2042,7 +2042,7 @@ func TestGetWithRetryPath(t *testing.T) {
 
 	go func() {
 		defer wg.Done()
-		kv.Get(key) // Might trigger expiration
+		_, _ = kv.Get(key) // Might trigger expiration
 	}()
 
 	go func() {
@@ -2166,7 +2166,7 @@ func TestGetWithLRUContentions(t *testing.T) {
 			for j := 0; j < 10; j++ {
 				// Mix of reads and writes to create lock contention
 				if j%2 == 0 {
-					kv.Get(key)
+					_, _ = kv.Get(key)
 				} else {
 					testKey := fmt.Sprintf("contention_%d_%d", id, j)
 					kv.Set(testKey, []byte("value"), 0)
@@ -2384,11 +2384,11 @@ func TestGetExpirationRetryEdgeCase(t *testing.T) {
 				kv.Set(key, []byte(fmt.Sprintf("value_%d", id)), 10*time.Millisecond)
 			case 1:
 				// Try to get
-				kv.Get(key)
+				_, _ = kv.Get(key)
 			default:
 				// Wait a bit then get
 				time.Sleep(15 * time.Millisecond)
-				kv.Get(key)
+				_, _ = kv.Get(key)
 			}
 		}(i)
 	}
@@ -2410,8 +2410,8 @@ func TestMoveToFrontLRU(t *testing.T) {
 
 	// Access some keys multiple times
 	for i := 0; i < 5; i++ {
-		kv.Get("lru_0")
-		kv.Get("lru_5")
+		_, _ = kv.Get("lru_0")
+		_, _ = kv.Get("lru_5")
 	}
 
 	// Verify entries still exist
@@ -2464,7 +2464,7 @@ func TestSizeMethod(t *testing.T) {
 		t.Errorf("Expected size 2, got %d", kv.Size())
 	}
 
-	kv.Delete("key1")
+	_ = kv.Delete("key1")
 
 	if kv.Size() != 1 {
 		t.Errorf("Expected size 1 after delete, got %d", kv.Size())
@@ -2545,7 +2545,7 @@ func TestGetExpiredEntryDoubleCheck(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			kv.Get(key)
+			_, _ = kv.Get(key)
 		}()
 	}
 

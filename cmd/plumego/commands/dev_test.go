@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/spcent/plumego/cmd/plumego/internal/devserver"
 	"github.com/spcent/plumego/cmd/plumego/internal/output"
@@ -19,6 +18,7 @@ type fakeDashboard struct {
 	started     bool
 	stopped     bool
 	built       bool
+	onBuilt     func()
 }
 
 func (d *fakeDashboard) Start(context.Context) error {
@@ -33,6 +33,9 @@ func (d *fakeDashboard) Stop(context.Context) error {
 
 func (d *fakeDashboard) BuildAndRun(context.Context) error {
 	d.built = true
+	if d.onBuilt != nil {
+		d.onBuilt()
+	}
 	return nil
 }
 
@@ -95,18 +98,21 @@ func TestDevRunRejectsNonPositiveDebounce(t *testing.T) {
 func TestDevRunNoReload(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	dash := &fakeDashboard{pubsub: pubsub.New()}
-
 	out := output.NewFormatter()
 	out.SetFormat("text")
 	var buf bytes.Buffer
 	out.SetWriters(&buf, &buf)
 
 	ctx, cancel := context.WithCancel(t.Context())
-	go func() {
-		time.Sleep(10 * time.Millisecond)
-		cancel()
-	}()
+	defer cancel()
+
+	// Cancel once the dashboard has finished its initial build. runWithContext
+	// only reaches its blocking wait after Start/BuildAndRun succeed, so an
+	// event-driven cancel is deterministic and never races the setup phase.
+	dash := &fakeDashboard{
+		pubsub:  pubsub.New(),
+		onBuilt: func() { cancel() },
+	}
 
 	cmd := &DevCmd{
 		newDashboard: func(cfg devserver.Config) (devserver.DashboardAPI, error) {
@@ -138,18 +144,20 @@ func TestDevRunNoReload(t *testing.T) {
 func TestDevRunReloadStopsDashboardOnContextCancel(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	dash := &fakeDashboard{pubsub: pubsub.New()}
-
 	out := output.NewFormatter()
 	out.SetFormat("text")
 	var buf bytes.Buffer
 	out.SetWriters(&buf, &buf)
 
 	ctx, cancel := context.WithCancel(t.Context())
-	go func() {
-		time.Sleep(10 * time.Millisecond)
-		cancel()
-	}()
+	defer cancel()
+
+	// Cancel once the initial build completes so the reload loop reaches its
+	// blocking select before the shutdown path runs.
+	dash := &fakeDashboard{
+		pubsub:  pubsub.New(),
+		onBuilt: func() { cancel() },
+	}
 
 	cmd := &DevCmd{
 		newDashboard: func(cfg devserver.Config) (devserver.DashboardAPI, error) {
@@ -181,16 +189,17 @@ func TestDevRunBuildCmd(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	var capturedCfg devserver.Config
-	dash := &fakeDashboard{pubsub: pubsub.New()}
+
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	dash := &fakeDashboard{
+		pubsub:  pubsub.New(),
+		onBuilt: func() { cancel() },
+	}
 
 	out := output.NewFormatter()
 	out.SetFormat("text")
-
-	ctx, cancel := context.WithCancel(t.Context())
-	go func() {
-		time.Sleep(10 * time.Millisecond)
-		cancel()
-	}()
 
 	cmd := &DevCmd{
 		newDashboard: func(cfg devserver.Config) (devserver.DashboardAPI, error) {

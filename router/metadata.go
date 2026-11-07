@@ -178,11 +178,7 @@ func (r *Router) Routes() []RouteInfo {
 	infos := make([]RouteInfo, 0)
 	for _, routes := range r.state.routes {
 		for _, entry := range routes {
-			infos = append(infos, RouteInfo{
-				Method: entry.Method,
-				Path:   entry.Path,
-				Meta:   entry.Meta,
-			})
+			infos = append(infos, RouteInfo(entry))
 		}
 	}
 
@@ -201,7 +197,7 @@ func (r *Router) Print(w io.Writer) {
 	if w == nil {
 		return
 	}
-	fmt.Fprintln(w, "Registered Routes:")
+	_, _ = fmt.Fprintln(w, "Registered Routes:")
 	if !r.ready() {
 		return
 	}
@@ -211,7 +207,7 @@ func (r *Router) Print(w io.Writer) {
 		if strings.Contains(route.Path, "/*") {
 			label += "   [wildcard]"
 		}
-		fmt.Fprintf(w, "%-6s %s\n", route.Method, label)
+		_, _ = fmt.Fprintf(w, "%-6s %s\n", route.Method, label)
 	}
 }
 

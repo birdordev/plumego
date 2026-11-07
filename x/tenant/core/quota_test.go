@@ -138,8 +138,8 @@ func TestFixedWindowQuotaManager_WindowReset(t *testing.T) {
 
 	// First window
 	now1 := time.Date(2024, 1, 1, 12, 0, 30, 0, time.UTC)
-	quotaMgr.Allow(ctx, "test-tenant", QuotaRequest{Requests: 1, Now: now1})
-	quotaMgr.Allow(ctx, "test-tenant", QuotaRequest{Requests: 1, Now: now1})
+	_, _ = quotaMgr.Allow(ctx, "test-tenant", QuotaRequest{Requests: 1, Now: now1})
+	_, _ = quotaMgr.Allow(ctx, "test-tenant", QuotaRequest{Requests: 1, Now: now1})
 
 	// Third request should fail (quota exceeded in window 1)
 	result, err := quotaMgr.Allow(ctx, "test-tenant", QuotaRequest{Requests: 1, Now: now1})
@@ -291,7 +291,7 @@ func TestFixedWindowQuotaManager_RetryAfter(t *testing.T) {
 	now := time.Now().UTC()
 
 	// First request - allowed
-	quotaMgr.Allow(ctx, "retry-test", QuotaRequest{Requests: 1, Now: now})
+	_, _ = quotaMgr.Allow(ctx, "retry-test", QuotaRequest{Requests: 1, Now: now})
 
 	// Second request - denied with RetryAfter
 	result, err := quotaMgr.Allow(ctx, "retry-test", QuotaRequest{Requests: 1, Now: now})

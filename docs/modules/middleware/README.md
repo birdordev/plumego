@@ -85,8 +85,9 @@
 - middleware-owned instrumentation and logging callbacks are best-effort;
   callback panics are recovered so observability cannot replace a downstream
   handler panic or prevent canonical transport errors from being written
-- tracing start failures are treated as missing tracing for that request; the
-  downstream handler still runs
+- tracing start or span-identity failures preserve the original request and
+  still invoke the downstream handler; any span returned before identity
+  failure is ended once by the normal best-effort finalizer
 - accesslog fields use the shared middleware redaction policy before they are
   passed to the configured logger
 - `middleware/internal/telemetry` is the shared internal helper surface for
@@ -105,7 +106,7 @@ explicitly in application code so ordering and dependencies stay reviewable.
 The conceptual ordering from outermost to innermost is:
 
 ```
-requestid → recovery → bodylimit → timeout → cors → securityheaders → abuseguard → auth → httpmetrics/tracing → accesslog → handler
+requestid → recovery → securityheaders → timeout → bodylimit → cors → abuseguard → auth → httpmetrics/tracing → accesslog → handler
 ```
 
 Plumego does not provide a RealIP middleware. Applications that need to trust
@@ -123,17 +124,17 @@ realip middleware. Transport-level client IP helpers are available in
    panics from all downstream middleware and handlers into structured errors.
    Placing it directly after `requestid` ensures request IDs are present in
    panic logs.
-3. `bodylimit.Middleware(bodylimit.Config{...})` for request body caps before
-   the handler reads the body.
-4. `timeout.Middleware(timeout.Config{...})` for bounded request runtime.
-5. `cors.Middleware(cors.Options{...})` for CORS negotiation. Positioned after
-   timeout so that slow preflight requests are also subject to the deadline.
-   Use `cors.StrictDefaultOptions(origin)` as the starting point for
-   production stacks that need explicit origin control.
-6. `securityheaders.Middleware(securityheaders.Config{Policy: policy})` for
-   response hardening. Security headers are applied before the downstream
-   handler writes a body, so they appear on all responses including errors.
+3. `securityheaders.Middleware(securityheaders.Config{Policy: policy})` for
+   response hardening. Place it outside timeout, bodylimit, CORS, and auth so
+   security headers survive synthesized errors and preflight responses.
    Invalid custom header policies fail during construction.
+4. `timeout.Middleware(timeout.Config{...})` for bounded request runtime.
+5. `bodylimit.Middleware(bodylimit.Config{...})` for request body caps before
+   the handler reads the body. Inside timeout, its error responses remain in
+   the timeout-owned buffer.
+6. `cors.Middleware(cors.CORSOptions{...})` for CORS negotiation. Positioned
+   after timeout so preflight requests are subject to the deadline. Use
+   `cors.StrictDefaultOptions(origin)` for explicit production origins.
 7. `abuseguard.NewAbuseGuard(...).Middleware()` for transport abuse limits when
    the limiter is middleware-owned.
 8. `auth.Authenticate(...)` and `auth.Authorize(...)` on protected route groups
@@ -156,6 +157,11 @@ and telemetry backend wiring in `x/observability`. The stable middleware layer
 should remain a set of explicit transport wrappers, not a business policy
 catalog.
 
+Recovery forwards informational statuses without marking the final response as
+committed. A panic after `100`, `102`, or `103` can still produce a structured
+`500`. `http.ErrAbortHandler` is re-thrown unchanged, allowing `net/http` to
+abort the response instead of synthesizing an error or logging a normal panic.
+
 ### Request ID contract
 
 `requestid.Middleware(...)` provides request correlation only. Generated request
@@ -167,28 +173,34 @@ wire `requestid.WithGenerator(...)`.
 
 ### Timeout contract
 
-`timeout.Middleware(...)` creates a deadline-bound request context and returns a
-structured `504` when the downstream handler does not finish before the
-deadline. It does not forcibly stop downstream work. Handlers and services must
-observe `r.Context().Done()` to stop side effects promptly after cancellation.
+`timeout.Middleware(...)` creates a deadline-bound request context when
+`Config.Timeout` is positive. `DefaultConfig()` leaves the timeout disabled;
+callers must choose a duration explicitly. An expired middleware or parent
+deadline returns a structured `504`. Explicit parent cancellation returns
+without writing a synthetic error, and requests already canceled before
+execution do not invoke the downstream handler.
 
-Timeout buffers successful responses so it can decide whether to return the
-downstream response or the timeout error. Responses larger than
-`Config.MaxReplayBytes` are not streamed through; they become a
-structured server error because the buffered response can no longer be replayed
-safely. Treat `MaxReplayBytes` as the maximum replayable response size, not as
-streaming support.
+Cancellation observed at the response commitment check takes priority over a
+completed result or panic. Once that check accepts a downstream result, later
+cancellation does not undo response commitment. Timeout does not forcibly stop
+or wait for downstream work. Handlers and services must observe
+`r.Context().Done()` to stop side effects promptly; body writes after cancellation
+return the context error.
 
-Writes attempted by a downstream handler after timeout observe the canceled
-request context through the timeout response writer and return the context
-deadline error. Timeout does not wait for that downstream goroutine after the
-504 response is written. If the downstream handler panics before timeout, the
-panic is re-thrown on the request goroutine so outer recovery middleware can
-handle it. If it panics after the timeout response has already been emitted,
-outer recovery can no longer rewrite the response; configure
-`Config.OnPanic` to observe that late failure. The hook is best-effort
-and should be non-blocking; if the hook itself panics, timeout recovers that
-callback panic internally.
+Timeout clones outer response headers into a private buffer. Successful
+responses replay downstream header changes, including explicit deletion.
+Timeout and buffer-limit errors preserve the original outer headers and discard
+downstream header changes and partial bodies. Responses larger than
+`Config.MaxBufferBytes` or `Config.MaxReplayBytes` become a structured `500`
+with the request ID from context. Treat these settings as response limits,
+not streaming support. Informational statuses such as `100`, `102`, and `103`
+are ignored while buffering and do not replace the final status.
+
+Panics accepted before cancellation are re-thrown on the request goroutine so
+outer recovery middleware can handle them. `Config.OnPanic` observes panics
+discarded because of cancellation exactly once, after response handling
+finishes. The hook is best-effort and must not block; callback panics are
+recovered internally.
 
 ### Concurrency limit contract
 
@@ -196,7 +208,9 @@ callback panic internally.
 queued waiters. Queued requests observe `r.Context().Done()` while waiting for a
 worker slot; if the request is canceled before a slot is available, the
 middleware returns without invoking the downstream handler or writing a
-synthetic queue-timeout error.
+synthetic queue-timeout error. Cancellation is checked again after slot
+admission and before rejection responses, so an observed cancellation takes
+priority when cancellation and capacity become available together.
 Queue timeout responses include `queue_occupancy` and `queue_capacity` details;
 `queue_occupancy` reports the internal queue channel occupancy, which includes
 active and waiting requests represented in that channel.
@@ -260,11 +274,18 @@ defaults require explicit origins.
 
 ### Body limit contract
 
-`bodylimit.Middleware(...)` writes the structured `413` response from the request
-body reader as soon as an overrun is detected and the response has not already
-started. After that terminal error, downstream writes are suppressed; they
-report the bytes as consumed to the handler but do not modify the body-limit
-response.
+`bodylimit.Middleware(...)` records an overrun in the body reader without
+writing a response from that reader. The response-owning goroutine emits a
+structured `413` before its next write or when the downstream call returns,
+provided the response has not started and the request context is still active.
+Subsequent writes report their bytes as consumed without appending to the error.
+An overrun after final headers or a flush cannot replace the committed response.
+
+This keeps body reads safe when an inner timeout returns before the reader
+finishes: late reads cannot write to the original response. Prefer placing
+bodylimit inside timeout so all body-limit responses use timeout's private
+buffer. Outside timeout, an overrun already observed when the response is
+committed takes priority over that response; late overruns never append data.
 
 ### Rate limit contract
 

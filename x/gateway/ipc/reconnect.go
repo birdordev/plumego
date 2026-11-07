@@ -102,7 +102,7 @@ func (rc *reconnectClient) reconnect() error {
 		if err == nil {
 			rc.mu.Lock()
 			if rc.client != nil {
-				rc.client.Close()
+				_ = rc.client.Close()
 			}
 			rc.client = client
 			rc.mu.Unlock()

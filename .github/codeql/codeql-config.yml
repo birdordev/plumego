@@ -1,18 +1,17 @@
-name: "CodeQL Config"
+name: "plumego CodeQL Config"
 
+# Skip prose and vendored example apps; the library tree is analyzed in full.
 paths-ignore:
-  - 'examples/**'
-  - 'docs/**'
+  - "docs/**"
+  - "examples/**"
+  - "website/**"
 
 queries:
   - uses: security-and-quality
 
-# Suppress false positive XSS alerts for middleware infrastructure
-# These files are part of the response processing pipeline and pass through
-# response data without injecting user input into HTML contexts.
-#
-# For actual HTML generation, use utils/html.go escaping functions:
-# - utils.HTMLEscape() for HTML content
-# - utils.JSEscape() for JavaScript contexts
-# - utils.URLQueryEscape() for URL parameters
-# - utils.SanitizeHTML() for basic HTML sanitization
+# HTML escaping helpers used across middleware and handlers live in:
+#   - internal/httputil/html.go    (HTMLEscape, JSEscape, URLQueryEscape)
+#   - security/input/input.go      (BestEffortSanitizeHTML, lossy cleanup pass)
+# Reflected-content alerts in transport plumbing are usually false positives
+# because responses are written through contract helpers; genuine HTML output
+# goes through the helpers above.

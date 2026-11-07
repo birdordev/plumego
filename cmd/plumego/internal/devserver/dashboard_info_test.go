@@ -261,6 +261,9 @@ func TestDashboardRestartUsesRequestContext(t *testing.T) {
 	}
 }
 
+// TestDashboardBuildHelperProcess is the marker entry point for the re-exec'd
+// test binary used as a stand-in built app (see
+// TestDashboardBuildStartsAndRestarts). It deliberately has an empty body.
 func TestDashboardBuildHelperProcess(t *testing.T) {}
 
 func TestDashboardActionRequiresConfiguredToken(t *testing.T) {

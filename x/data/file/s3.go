@@ -110,8 +110,8 @@ func (s *S3Storage) Put(ctx context.Context, opts PutOptions) (*File, error) {
 		return nil, &storefile.Error{Op: "Put", Path: objectKey, Err: err}
 	}
 	tmpPath := tmpFile.Name()
-	defer os.Remove(tmpPath)
-	defer tmpFile.Close()
+	defer func() { _ = os.Remove(tmpPath) }()
+	defer func() { _ = tmpFile.Close() }()
 
 	hash := sha256.New()
 	size, err := io.Copy(io.MultiWriter(tmpFile, hash), s.limitUploadReader(opts.Reader))
@@ -151,7 +151,7 @@ func (s *S3Storage) Put(ctx context.Context, opts PutOptions) (*File, error) {
 	if err != nil {
 		return nil, &storefile.Error{Op: "Put", Path: objectKey, Err: err}
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
 		body := readS3ErrorBody(resp.Body)
@@ -236,13 +236,13 @@ func (s *S3Storage) Get(ctx context.Context, p string) (io.ReadCloser, error) {
 	}
 
 	if resp.StatusCode == http.StatusNotFound {
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		return nil, &storefile.Error{Op: "Get", Path: p, Err: storefile.ErrNotFound}
 	}
 
 	if resp.StatusCode != http.StatusOK {
 		body := readS3ErrorBody(resp.Body)
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		return nil, &storefile.Error{
 			Op:   "Get",
 			Path: p,
@@ -271,7 +271,7 @@ func (s *S3Storage) Delete(ctx context.Context, p string) error {
 	if err != nil {
 		return &storefile.Error{Op: "Delete", Path: p, Err: err}
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode == http.StatusNotFound {
 		return &storefile.Error{Op: "Delete", Path: p, Err: storefile.ErrNotFound}
@@ -307,7 +307,7 @@ func (s *S3Storage) Exists(ctx context.Context, p string) (bool, error) {
 	if err != nil {
 		return false, &storefile.Error{Op: "Exists", Path: p, Err: err}
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode == http.StatusNotFound {
 		return false, nil
@@ -342,7 +342,7 @@ func (s *S3Storage) Stat(ctx context.Context, p string) (*storefile.FileStat, er
 	if err != nil {
 		return nil, &storefile.Error{Op: "Stat", Path: p, Err: err}
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode == http.StatusNotFound {
 		return nil, &storefile.Error{Op: "Stat", Path: p, Err: storefile.ErrNotFound}
@@ -440,7 +440,7 @@ func (s *S3Storage) listPage(ctx context.Context, prefix, continuationToken stri
 	if err != nil {
 		return nil, &storefile.Error{Op: "List", Path: prefix, Err: err}
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		body := readS3ErrorBody(resp.Body)
@@ -509,7 +509,7 @@ func (s *S3Storage) Copy(ctx context.Context, srcPath, dstPath string) error {
 	if err != nil {
 		return &storefile.Error{Op: "Copy", Path: dstPath, Err: err}
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		body := readS3ErrorBody(resp.Body)

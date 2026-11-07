@@ -180,7 +180,7 @@ To check the whole repository after editing reference-adjacent files:
 
 ```bash
 make validate-diff   # minimal gate: vet, boundary checks, format
-make gates           # full gate: race tests, coverage ≥70%, generated file freshness
+make gates           # full gate: race tests, coverage ≥90%, generated file freshness
 ```
 
 The boundary checks that references are subject to:

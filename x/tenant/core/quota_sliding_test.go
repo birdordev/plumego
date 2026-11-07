@@ -218,7 +218,7 @@ func TestSlidingWindowQuotaManager_WindowCleanup(t *testing.T) {
 
 	// Make 5 requests
 	for i := 0; i < 5; i++ {
-		quotaMgr.Allow(ctx, "test-tenant", QuotaRequest{
+		_, _ = quotaMgr.Allow(ctx, "test-tenant", QuotaRequest{
 			Requests: 1,
 			Tokens:   10,
 			Now:      now,
@@ -331,7 +331,7 @@ func TestSlidingWindowQuotaManager_ConcurrentAccess(t *testing.T) {
 	for i := 0; i < 10; i++ {
 		go func() {
 			for j := 0; j < 5; j++ {
-				quotaMgr.Allow(ctx, "test-tenant", QuotaRequest{
+				_, _ = quotaMgr.Allow(ctx, "test-tenant", QuotaRequest{
 					Requests: 1,
 					Tokens:   10,
 					Now:      time.Now(),
@@ -376,13 +376,13 @@ func TestSlidingWindowQuotaManager_RetryAfterAccuracy(t *testing.T) {
 	now := time.Now()
 
 	// Request 1 at T=0
-	quotaMgr.Allow(ctx, "test-tenant", QuotaRequest{
+	_, _ = quotaMgr.Allow(ctx, "test-tenant", QuotaRequest{
 		Requests: 1,
 		Now:      now,
 	})
 
 	// Request 2 at T=10s
-	quotaMgr.Allow(ctx, "test-tenant", QuotaRequest{
+	_, _ = quotaMgr.Allow(ctx, "test-tenant", QuotaRequest{
 		Requests: 1,
 		Now:      now.Add(10 * time.Second),
 	})

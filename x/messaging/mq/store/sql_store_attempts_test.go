@@ -17,7 +17,7 @@ import (
 var (
 	attemptDriverOnce sync.Once
 	attemptDriverName = "mq_attempt_driver"
-	attemptErr        = errors.New("attempt log failed")
+	errAttempt        = errors.New("attempt log failed")
 )
 
 func TestSQLStoreAttemptLogHookOnAck(t *testing.T) {
@@ -49,7 +49,7 @@ func TestSQLStoreAttemptLogHookOnAck(t *testing.T) {
 	if got.Attempt != 1 {
 		t.Fatalf("unexpected attempt: %d", got.Attempt)
 	}
-	if !errors.Is(got.Err, attemptErr) {
+	if !errors.Is(got.Err, errAttempt) {
 		t.Fatalf("unexpected error: %v", got.Err)
 	}
 }
@@ -112,7 +112,7 @@ func (c *attemptConn) ExecContext(ctx context.Context, query string, args []driv
 	case strings.HasPrefix(query, "RELEASE SAVEPOINT"):
 		return attemptResult{rows: 0}, nil
 	case strings.Contains(query, "mq_task_attempts"):
-		return nil, attemptErr
+		return nil, errAttempt
 	default:
 		return attemptResult{rows: 0}, nil
 	}

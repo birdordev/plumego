@@ -203,6 +203,10 @@ func (w *gzipResponseWriter) finalize(panicking bool) {
 		return
 	}
 	if w.gz != nil {
+		// Close flushes the gzip footer to the underlying ResponseWriter. The
+		// response is already committed at this point, so a write failure cannot
+		// be retried or surfaced to the caller; discard it the same way the
+		// SafeWrite paths above do.
 		_ = w.gz.Close()
 		return
 	}
@@ -422,7 +426,7 @@ func (w *gzipResponseWriter) Flush() {
 		w.commitPassThrough()
 	}
 	if w.gz != nil {
-		w.gz.Flush()
+		_ = w.gz.Flush()
 	}
 	internaltransport.FlushIfSupported(w.ResponseWriter)
 }

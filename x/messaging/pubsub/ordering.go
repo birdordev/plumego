@@ -110,7 +110,6 @@ type orderedQueue struct {
 	sequence  atomic.Uint64
 	batch     []orderedMessage
 	batchSize int
-	timer     *time.Timer
 	closed    atomic.Bool
 
 	// Per-queue statistics
@@ -196,7 +195,7 @@ func (ops *OrderedPubSub) PublishWithKey(topic, key string, msg Message, level O
 	switch level {
 	case OrderNone:
 		// Fast path: no ordering
-		return ops.InProcBroker.Publish(topic, msg)
+		return ops.Publish(topic, msg)
 
 	case OrderPerTopic:
 		queue = ops.getOrCreateTopicQueue(topic)
@@ -331,7 +330,7 @@ func (ops *OrderedPubSub) flushBatch(queue *orderedQueue, identifier string) {
 		om.message.Meta[MetaKeySequence] = strconv.FormatUint(om.sequence, 10)
 
 		// Publish
-		_ = ops.InProcBroker.Publish(om.topic, om.message)
+		_ = ops.Publish(om.topic, om.message)
 		ops.orderedPublishes.Add(1)
 		queue.processed.Add(1)
 	}

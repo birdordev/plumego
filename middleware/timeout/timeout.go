@@ -44,10 +44,12 @@ const (
 // replayed safely.
 //
 // When a timeout occurs, it returns a 504 Gateway Timeout response with a
-// structured error message. Downstream panics before the timeout fires are
-// re-panicked on the request goroutine so outer recovery middleware can handle
-// them. Downstream panics after the timeout response has been emitted cannot be
-// converted by outer recovery; configure OnPanic to observe that late failure.
+// structured error message. Cancellation observed before response commitment
+// takes priority over a downstream result. Explicit parent cancellation returns
+// without writing a response; an expired deadline returns 504. A request that
+// is already canceled does not invoke the downstream handler. Panics accepted
+// before cancellation are re-panicked on the request goroutine; configure
+// OnPanic to observe panics discarded because of cancellation.
 type Config struct {
 	// Timeout is the maximum duration for request processing
 	Timeout time.Duration
@@ -62,11 +64,11 @@ type Config struct {
 	// cannot be safely replayed after buffering is abandoned.
 	MaxReplayBytes int
 
-	// OnPanic is called when a downstream handler panics after the timeout has
-	// already completed the response. Panics before timeout still re-panic to the
-	// caller so outer recovery middleware can handle them. The callback is
-	// best-effort: it must not block, and panics raised by the callback are
-	// recovered internally because it runs after the request goroutine returned.
+	// OnPanic observes downstream panics discarded because of cancellation,
+	// after response handling has finished. Panics accepted before cancellation
+	// re-panic to the caller so outer recovery middleware can handle them. The
+	// callback is best-effort: it must not block, and callback panics are
+	// recovered internally.
 	OnPanic func(r *http.Request, recovered any)
 }
 
@@ -83,7 +85,7 @@ func DefaultConfig() Config {
 //
 // Example:
 //
-//	import "github.com/spcent/plumego/middleware"
+//	import "github.com/spcent/plumego/middleware/timeout"
 //
 //	config := timeout.Config{
 //		Timeout:        10 * time.Second,
@@ -112,9 +114,17 @@ func Middleware(cfg Config) mw.Middleware {
 			defer cancel()
 
 			r = r.WithContext(ctx)
+			if ctx.Err() != nil {
+				writeContextError(w, r, ctx)
+				return
+			}
 
 			tw := newTimeoutResponseWriter(ctx, cfg)
+			// Clone the outer headers so downstream edits remain private until replay.
+			internaltransport.CopyHeaders(tw.Header(), w.Header())
 			done := make(chan timeoutHandlerResult)
+			responseDone := make(chan struct{})
+			defer close(responseDone)
 
 			go func() {
 				result := timeoutHandlerResult{}
@@ -122,33 +132,53 @@ func Middleware(cfg Config) mw.Middleware {
 					if rec := recover(); rec != nil {
 						result.panicValue = rec
 					}
-					cfg.deliverTimeoutResult(ctx, done, r, result)
+					cfg.deliverTimeoutResult(ctx, done, responseDone, r, result)
 				}()
-				next.ServeHTTP(tw, r)
+				if ctx.Err() == nil {
+					next.ServeHTTP(tw, r)
+				}
 			}()
 
+			var result timeoutHandlerResult
 			select {
-			case result := <-done:
-				if result.panicValue != nil {
-					panic(result.panicValue)
-				}
-				if tw.Overflowed() {
-					internaltransport.WriteTransportError(w, r, http.StatusInternalServerError, contract.CodeInternalError, "response exceeded buffer limit", nil)
-					return
-				}
-				tw.WriteTo(w)
+			case result = <-done:
 			case <-ctx.Done():
-				internaltransport.WriteTransportError(w, r, http.StatusGatewayTimeout, contract.CodeTimeout, "request timed out", nil)
 			}
+			// This is the response commitment point. Observed cancellation wins
+			// even when both select cases were ready. Only the receiver of a
+			// handler result may replay its buffer or handle its panic.
+			if ctx.Err() != nil {
+				writeContextError(w, r, ctx)
+				if result.panicValue != nil && cfg.OnPanic != nil {
+					cfg.reportLatePanic(r, result.panicValue)
+				}
+				return
+			}
+			if result.panicValue != nil {
+				panic(result.panicValue)
+			}
+			if tw.Overflowed() {
+				internaltransport.WriteTransportError(w, r, http.StatusInternalServerError, contract.CodeInternalError, "response exceeded buffer limit", nil)
+				return
+			}
+			tw.writeTo(w, r)
 		})
 	}
 }
 
-func (cfg Config) deliverTimeoutResult(ctx context.Context, done chan<- timeoutHandlerResult, r *http.Request, result timeoutHandlerResult) {
+func writeContextError(w http.ResponseWriter, r *http.Request, ctx context.Context) {
+	if ctx.Err() == context.DeadlineExceeded {
+		internaltransport.WriteTransportError(w, r, http.StatusGatewayTimeout, contract.CodeTimeout, "request timed out", nil)
+	}
+}
+
+func (cfg Config) deliverTimeoutResult(ctx context.Context, done chan<- timeoutHandlerResult, responseDone <-chan struct{}, r *http.Request, result timeoutHandlerResult) {
 	select {
 	case done <- result:
 	case <-ctx.Done():
 		if result.panicValue != nil && cfg.OnPanic != nil {
+			// The request goroutine owns the response until it returns.
+			<-responseDone
 			cfg.reportLatePanic(r, result.panicValue)
 		}
 	}
@@ -220,9 +250,9 @@ func (w *timeoutResponseWriter) Write(p []byte) (int, error) {
 	return n, err
 }
 
-func (w *timeoutResponseWriter) WriteTo(dst http.ResponseWriter) {
+func (w *timeoutResponseWriter) writeTo(dst http.ResponseWriter, r *http.Request) {
 	if w.bypassUsed {
-		internaltransport.WriteTransportError(dst, nil, http.StatusInternalServerError, contract.CodeInternalError, "response too large for timeout buffering", nil)
+		internaltransport.WriteTransportError(dst, r, http.StatusInternalServerError, contract.CodeInternalError, "response too large for timeout buffering", nil)
 		return
 	}
 

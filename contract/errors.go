@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 	"reflect"
+	"slices"
 )
 
 // ErrorCategory describes the high-level class of an API error for observability.
@@ -432,45 +433,78 @@ func cloneAnyMap(in map[string]any) map[string]any {
 	if len(in) == 0 {
 		return nil
 	}
-	out := make(map[string]any, len(in))
-	for k, v := range in {
-		if k == "" {
-			continue
-		}
-		out[k] = cloneDetailValue(v)
-	}
+	cloner := make(detailCloner)
+	out := cloner.cloneMap(in)
 	if len(out) == 0 {
 		return nil
 	}
 	return out
 }
 
-func cloneDetailValue(value any) any {
+// detailCloner tracks containers on the active path so cycles are preserved
+// for the JSON encoder to reject, without sharing those containers with input.
+type detailCloner map[detailReference]any
+
+type detailReference struct {
+	typ reflect.Type
+	ptr uintptr
+	len int
+}
+
+func (c detailCloner) cloneMap(in map[string]any) map[string]any {
+	if in == nil {
+		return nil
+	}
+	key := detailReference{typ: reflect.TypeFor[map[string]any](), ptr: reflect.ValueOf(in).Pointer()}
+	if existing, ok := c[key]; ok {
+		return existing.(map[string]any)
+	}
+	out := make(map[string]any, len(in))
+	c[key] = out
+	for k, v := range in {
+		if k != "" {
+			out[k] = c.cloneValue(v)
+		}
+	}
+	delete(c, key)
+	return out
+}
+
+func cloneDetailSlice[T any](c detailCloner, in []T, clone func(T) T) []T {
+	if in == nil {
+		return nil
+	}
+	key := detailReference{typ: reflect.TypeFor[[]T](), ptr: reflect.ValueOf(in).Pointer(), len: len(in)}
+	if existing, ok := c[key]; ok {
+		return existing.([]T)
+	}
+	out := make([]T, len(in))
+	c[key] = out
+	for i, item := range in {
+		out[i] = clone(item)
+	}
+	delete(c, key)
+	return out
+}
+
+func (c detailCloner) cloneValue(value any) any {
 	switch v := value.(type) {
 	case map[string]any:
-		return cloneAnyMap(v)
+		return c.cloneMap(v)
 	case []any:
-		out := make([]any, len(v))
-		for i, item := range v {
-			out[i] = cloneDetailValue(item)
-		}
-		return out
+		return cloneDetailSlice(c, v, c.cloneValue)
 	case []map[string]any:
-		out := make([]map[string]any, len(v))
-		for i, item := range v {
-			out[i] = cloneAnyMap(item)
-		}
-		return out
+		return cloneDetailSlice(c, v, c.cloneMap)
 	case []string:
-		return append([]string(nil), v...)
+		return slices.Clone(v)
 	case []int:
-		return append([]int(nil), v...)
+		return slices.Clone(v)
 	case []int64:
-		return append([]int64(nil), v...)
+		return slices.Clone(v)
 	case []float64:
-		return append([]float64(nil), v...)
+		return slices.Clone(v)
 	case []bool:
-		return append([]bool(nil), v...)
+		return slices.Clone(v)
 	default:
 		if cloned, ok := cloneReflectDetailValue(value); ok {
 			return cloned

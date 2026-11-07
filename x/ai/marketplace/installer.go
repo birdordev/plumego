@@ -82,7 +82,7 @@ func (i *Installer) InstallAgent(ctx context.Context, id string, version string)
 	}
 
 	// Update download count
-	i.agentRegistry.UpdateDownloadCount(ctx, id)
+	_ = i.agentRegistry.UpdateDownloadCount(ctx, id)
 
 	return nil
 }
@@ -121,7 +121,7 @@ func (i *Installer) UninstallAgent(ctx context.Context, id string, version strin
 	parentDir := filepath.Join(i.installDir, "agents", id)
 	entries, err := os.ReadDir(parentDir)
 	if err == nil && len(entries) == 0 {
-		os.Remove(parentDir)
+		_ = os.Remove(parentDir)
 	}
 
 	return nil
@@ -225,7 +225,7 @@ func (i *Installer) UninstallWorkflow(ctx context.Context, id string, version st
 	parentDir := filepath.Join(i.installDir, "workflows", id)
 	entries, err := os.ReadDir(parentDir)
 	if err == nil && len(entries) == 0 {
-		os.Remove(parentDir)
+		_ = os.Remove(parentDir)
 	}
 
 	return nil

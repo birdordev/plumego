@@ -47,7 +47,9 @@ func TestRegistryAdaptersReturnsCopy(t *testing.T) {
 		t.Fatalf("expected 1 adapter, got %d", len(adapters))
 	}
 
-	adapters = append(adapters, &testAdapter{name: "b", path: "/b"})
+	// Appending to the returned slice (potentially in place) must not
+	// affect the registry's internal state.
+	_ = append(adapters, &testAdapter{name: "b", path: "/b"})
 	if reg.Count() != 1 {
 		t.Fatalf("registry adapters should not be affected by external append")
 	}

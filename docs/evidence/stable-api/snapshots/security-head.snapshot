@@ -59,6 +59,7 @@ symbol	github.com/spcent/plumego/security/headers	method	CSPBuilder.Validate	fun
 symbol	github.com/spcent/plumego/security/headers	method	CSPBuilder.WorkerSrc	func (CSPBuilder) WorkerSrcfunc(sources ...string) *CSPBuilder
 symbol	github.com/spcent/plumego/security/headers	method	Policy.Apply	func (Policy) Applyfunc(w http.ResponseWriter, r *http.Request)
 symbol	github.com/spcent/plumego/security/headers	method	Policy.ApplyChecked	func (Policy) ApplyCheckedfunc(w http.ResponseWriter, r *http.Request) error
+symbol	github.com/spcent/plumego/security/headers	method	Policy.Compile	func (Policy) Compilefunc() Policy
 symbol	github.com/spcent/plumego/security/headers	method	Policy.Validate	func (Policy) Validatefunc() error
 symbol	github.com/spcent/plumego/security/headers	type	CSPBuilder	type CSPBuilder struct { }
 symbol	github.com/spcent/plumego/security/headers	type	HSTSOptions	type HSTSOptions struct { MaxAge time.Duration IncludeSubDomains bool Preload bool }
@@ -81,6 +82,7 @@ symbol	github.com/spcent/plumego/security/jwt	const	AlgorithmHS256	const Algorit
 symbol	github.com/spcent/plumego/security/jwt	const	TokenTypeAccess	const TokenTypeAccess TokenType = "access"
 symbol	github.com/spcent/plumego/security/jwt	const	TokenTypeRefresh	const TokenTypeRefresh TokenType = "refresh"
 symbol	github.com/spcent/plumego/security/jwt	func	DefaultJWTConfig	func DefaultJWTConfigfunc() JWTConfig
+symbol	github.com/spcent/plumego/security/jwt	func	NewInMemoryKeyStore	func NewInMemoryKeyStorefunc() *InMemoryKeyStore
 symbol	github.com/spcent/plumego/security/jwt	func	NewJWTManager	func NewJWTManagerfunc(store KeyStore, config JWTConfig) (*JWTManager, error)
 symbol	github.com/spcent/plumego/security/jwt	func	NewJWTManagerContext	func NewJWTManagerContextfunc(ctx context.Context, store KeyStore, config JWTConfig) (*JWTManager, error)
 symbol	github.com/spcent/plumego/security/jwt	func	PrincipalFromClaims	func PrincipalFromClaimsfunc(claims *TokenClaims) *authn.Principal
@@ -88,6 +90,9 @@ symbol	github.com/spcent/plumego/security/jwt	func	TokenClaimsFromContext	func T
 symbol	github.com/spcent/plumego/security/jwt	func	WithTokenClaims	func WithTokenClaimsfunc(ctx context.Context, claims *TokenClaims) context.Context
 symbol	github.com/spcent/plumego/security/jwt	method	Authenticator.Authenticate	func (Authenticator) Authenticatefunc(r *http.Request) (*authn.Principal, error)
 symbol	github.com/spcent/plumego/security/jwt	method	Authenticator.AuthenticateRequest	func (Authenticator) AuthenticateRequestfunc(r *http.Request) (*authn.Principal, *http.Request, error)
+symbol	github.com/spcent/plumego/security/jwt	method	InMemoryKeyStore.GetContext	func (InMemoryKeyStore) GetContextfunc(ctx context.Context, key string) ([]byte, error)
+symbol	github.com/spcent/plumego/security/jwt	method	InMemoryKeyStore.KeysContext	func (InMemoryKeyStore) KeysContextfunc(ctx context.Context) ([]string, error)
+symbol	github.com/spcent/plumego/security/jwt	method	InMemoryKeyStore.SetContext	func (InMemoryKeyStore) SetContextfunc(ctx context.Context, key string, value []byte, ttl time.Duration) error
 symbol	github.com/spcent/plumego/security/jwt	method	JWTConfig.Validate	func (JWTConfig) Validatefunc() error
 symbol	github.com/spcent/plumego/security/jwt	method	JWTManager.Authenticator	func (JWTManager) Authenticatorfunc(tokenType TokenType) authn.RequestAuthenticator
 symbol	github.com/spcent/plumego/security/jwt	method	JWTManager.GenerateTokenPair	func (JWTManager) GenerateTokenPairfunc(ctx context.Context, identity IdentityClaims, authz AuthorizationClaims) (TokenPair, error)
@@ -101,6 +106,7 @@ symbol	github.com/spcent/plumego/security/jwt	type	AuthZPolicy	type AuthZPolicy 
 symbol	github.com/spcent/plumego/security/jwt	type	Authenticator	type Authenticator struct { Manager *JWTManager ExpectedType TokenType }
 symbol	github.com/spcent/plumego/security/jwt	type	AuthorizationClaims	type AuthorizationClaims struct { Roles []string `json:"roles,omitempty"` Permissions []string `json:"permissions,omitempty"` }
 symbol	github.com/spcent/plumego/security/jwt	type	IdentityClaims	type IdentityClaims struct { Subject string `json:"sub"` Version int64 `json:"ver"` }
+symbol	github.com/spcent/plumego/security/jwt	type	InMemoryKeyStore	type InMemoryKeyStore struct { }
 symbol	github.com/spcent/plumego/security/jwt	type	JWTConfig	type JWTConfig struct { Issuer string Audience string AccessExpiration time.Duration RefreshExpiration time.Duration RotationInterval time.Duration Algorithm Algorithm ClockSkew time.Duration }
 symbol	github.com/spcent/plumego/security/jwt	type	JWTManager	type JWTManager struct { }
 symbol	github.com/spcent/plumego/security/jwt	type	JWTSigningKey	type JWTSigningKey struct { ID string `json:"id"` Algorithm Algorithm `json:"alg"` Secret []byte `json:"secret,omitempty"` Public []byte `json:"public,omitempty"` CreatedAt time.Time `json:"created_at"` }
@@ -114,6 +120,7 @@ symbol	github.com/spcent/plumego/security/jwt	type	TokenType	type TokenType stri
 symbol	github.com/spcent/plumego/security/jwt	var	ErrInvalidAudience	var ErrInvalidAudience = errors.New("invalid audience")
 symbol	github.com/spcent/plumego/security/jwt	var	ErrInvalidIssuer	var ErrInvalidIssuer = errors.New("invalid issuer")
 symbol	github.com/spcent/plumego/security/jwt	var	ErrInvalidToken	var ErrInvalidToken = authn.ErrInvalidToken
+symbol	github.com/spcent/plumego/security/jwt	var	ErrKeyExpired	var ErrKeyExpired = errors.New("signing key expired")
 symbol	github.com/spcent/plumego/security/jwt	var	ErrMissingSubject	var ErrMissingSubject = errors.New("subject is required")
 symbol	github.com/spcent/plumego/security/jwt	var	ErrTokenExpired	var ErrTokenExpired = authn.ErrExpiredToken
 symbol	github.com/spcent/plumego/security/jwt	var	ErrTokenNotYetValid	var ErrTokenNotYetValid = errors.New("token not yet valid")

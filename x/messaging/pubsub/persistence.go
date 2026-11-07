@@ -220,7 +220,7 @@ func (pps *PersistentPubSub) initWAL() error {
 	// Get current size
 	stat, err := f.Stat()
 	if err != nil {
-		f.Close()
+		_ = f.Close()
 		return fmt.Errorf("failed to stat WAL: %w", err)
 	}
 
@@ -353,7 +353,7 @@ func (pps *PersistentPubSub) replayWALFile(path string, startSeq uint64) error {
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	reader := bufio.NewReader(f)
 

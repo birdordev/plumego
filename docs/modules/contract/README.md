@@ -87,6 +87,12 @@ trace metadata carriers.
 - `WriteResponse` accepts only 2xx HTTP statuses; non-2xx responses must use
   `WriteError` or a module-owned representation when the resource intentionally
   returns a status document such as health/readiness
+- `WriteResponse` writes `204` and `205` without a response body. Encoding
+  failures for other success statuses return before the response is committed.
+- If error details cannot be encoded, `WriteError` sends the same status and
+  error envelope without `details`. It returns the encoding error and any
+  write error for diagnostics. The fallback commits the response, so callers
+  should log the error without attempting a second response.
 - handlers decode JSON directly with `json.NewDecoder(r.Body).Decode(&dst)`
 - handlers read query values directly from `r.URL.Query()`
 - validation belongs in the module that owns the request DTO or business rule
@@ -112,9 +118,9 @@ extension-owned refinements.
 - `APIError` remains exported as the normalized error value returned by
   `NewErrorBuilder`, but callers should construct values with
   `NewErrorBuilder` instead of literals.
-- `APIError.Details`, `ErrorBuilder.Detail`, and `ErrorBuilder.Details` clone
-  JSON-like map and slice values so caller mutation after build/write does not
-  change the emitted payload.
+- `ErrorBuilder.Build` and `APIError.Details` clone supported map and slice
+  values, preserving nested empty containers and nil values. Cyclic detail
+  values rejected by JSON encoding trigger the fallback above.
 - Request ids are accepted only when the trimmed value is non-empty, contains no
   control characters, and is at most 128 bytes. Rejected request ids are not
   stored or echoed by `WriteResponse` or `WriteError`.

@@ -173,7 +173,7 @@ func (s *Service) sendOnce(ctx context.Context, target Target, d Delivery, raw [
 	if err != nil {
 		return 0, "", err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	// read small snippet only
 	const maxRead = 4096

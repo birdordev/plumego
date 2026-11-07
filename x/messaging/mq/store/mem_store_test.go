@@ -33,7 +33,7 @@ func TestMemStore_Insert_OK(t *testing.T) {
 func TestMemStore_Insert_DuplicateID(t *testing.T) {
 	s := NewMemory(DefaultMemConfig())
 	task := newTask("t1", "orders")
-	s.Insert(t.Context(), task)
+	_ = s.Insert(t.Context(), task)
 	err := s.Insert(t.Context(), task)
 	if !errors.Is(err, mq.ErrDuplicateTask) {
 		t.Errorf("expected ErrDuplicateTask, got %v", err)
@@ -45,7 +45,7 @@ func TestMemStore_Insert_DedupeKey(t *testing.T) {
 
 	t1 := newTask("t1", "orders")
 	t1.DedupeKey = "order-abc"
-	s.Insert(t.Context(), t1)
+	_ = s.Insert(t.Context(), t1)
 
 	t2 := newTask("t2", "orders")
 	t2.DedupeKey = "order-abc"
@@ -59,8 +59,8 @@ func TestMemStore_Insert_DedupeKey(t *testing.T) {
 
 func TestMemStore_Reserve_ReturnsQueued(t *testing.T) {
 	s := NewMemory(DefaultMemConfig())
-	s.Insert(t.Context(), newTask("t1", "orders"))
-	s.Insert(t.Context(), newTask("t2", "orders"))
+	_ = s.Insert(t.Context(), newTask("t1", "orders"))
+	_ = s.Insert(t.Context(), newTask("t2", "orders"))
 
 	tasks, err := s.Reserve(t.Context(), mq.ReserveOptions{
 		Topics:     []string{"orders"},
@@ -79,7 +79,7 @@ func TestMemStore_Reserve_ReturnsQueued(t *testing.T) {
 
 func TestMemStore_Reserve_ZeroLimit_ReturnsNil(t *testing.T) {
 	s := NewMemory(DefaultMemConfig())
-	s.Insert(t.Context(), newTask("t1", "orders"))
+	_ = s.Insert(t.Context(), newTask("t1", "orders"))
 
 	tasks, err := s.Reserve(t.Context(), mq.ReserveOptions{Limit: 0})
 	if err != nil {
@@ -92,8 +92,8 @@ func TestMemStore_Reserve_ZeroLimit_ReturnsNil(t *testing.T) {
 
 func TestMemStore_Reserve_TopicFilter(t *testing.T) {
 	s := NewMemory(DefaultMemConfig())
-	s.Insert(t.Context(), newTask("t1", "orders"))
-	s.Insert(t.Context(), newTask("t2", "payments"))
+	_ = s.Insert(t.Context(), newTask("t1", "orders"))
+	_ = s.Insert(t.Context(), newTask("t2", "payments"))
 
 	tasks, err := s.Reserve(t.Context(), mq.ReserveOptions{
 		Topics:     []string{"payments"},
@@ -114,7 +114,7 @@ func TestMemStore_Reserve_ExpiresTask(t *testing.T) {
 	s := NewMemory(DefaultMemConfig())
 	task := newTask("t1", "orders")
 	task.ExpiresAt = time.Now().Add(-time.Hour) // already expired
-	s.Insert(t.Context(), task)
+	_ = s.Insert(t.Context(), task)
 
 	tasks, err := s.Reserve(t.Context(), mq.ReserveOptions{
 		Topics:     []string{"orders"},
@@ -134,7 +134,7 @@ func TestMemStore_Reserve_ExpiresTask(t *testing.T) {
 
 func TestMemStore_Ack_OK(t *testing.T) {
 	s := NewMemory(DefaultMemConfig())
-	s.Insert(t.Context(), newTask("t1", "orders"))
+	_ = s.Insert(t.Context(), newTask("t1", "orders"))
 	now := time.Now()
 
 	tasks, _ := s.Reserve(t.Context(), mq.ReserveOptions{
@@ -165,9 +165,9 @@ func TestMemStore_Ack_NotFound(t *testing.T) {
 
 func TestMemStore_Ack_WrongConsumer(t *testing.T) {
 	s := NewMemory(DefaultMemConfig())
-	s.Insert(t.Context(), newTask("t1", "orders"))
+	_ = s.Insert(t.Context(), newTask("t1", "orders"))
 	now := time.Now()
-	s.Reserve(t.Context(), mq.ReserveOptions{
+	_, _ = s.Reserve(t.Context(), mq.ReserveOptions{
 		Topics: []string{"orders"}, Limit: 1, Lease: time.Minute, ConsumerID: "w1", Now: now,
 	})
 
@@ -181,9 +181,9 @@ func TestMemStore_Ack_WrongConsumer(t *testing.T) {
 
 func TestMemStore_Release_OK(t *testing.T) {
 	s := NewMemory(DefaultMemConfig())
-	s.Insert(t.Context(), newTask("t1", "orders"))
+	_ = s.Insert(t.Context(), newTask("t1", "orders"))
 	now := time.Now()
-	s.Reserve(t.Context(), mq.ReserveOptions{
+	_, _ = s.Reserve(t.Context(), mq.ReserveOptions{
 		Topics: []string{"orders"}, Limit: 1, Lease: time.Minute, ConsumerID: "w1", Now: now,
 	})
 
@@ -209,9 +209,9 @@ func TestMemStore_Release_NotFound(t *testing.T) {
 
 func TestMemStore_MoveToDLQ_OK(t *testing.T) {
 	s := NewMemory(DefaultMemConfig())
-	s.Insert(t.Context(), newTask("t1", "orders"))
+	_ = s.Insert(t.Context(), newTask("t1", "orders"))
 	now := time.Now()
-	s.Reserve(t.Context(), mq.ReserveOptions{
+	_, _ = s.Reserve(t.Context(), mq.ReserveOptions{
 		Topics: []string{"orders"}, Limit: 1, Lease: time.Minute, ConsumerID: "w1", Now: now,
 	})
 
@@ -237,9 +237,9 @@ func TestMemStore_MoveToDLQ_NotFound(t *testing.T) {
 
 func TestMemStore_ExtendLease_OK(t *testing.T) {
 	s := NewMemory(DefaultMemConfig())
-	s.Insert(t.Context(), newTask("t1", "orders"))
+	_ = s.Insert(t.Context(), newTask("t1", "orders"))
 	now := time.Now()
-	s.Reserve(t.Context(), mq.ReserveOptions{
+	_, _ = s.Reserve(t.Context(), mq.ReserveOptions{
 		Topics: []string{"orders"}, Limit: 1, Lease: time.Minute, ConsumerID: "w1", Now: now,
 	})
 
@@ -265,16 +265,16 @@ func TestMemStore_Stats_AllStatuses(t *testing.T) {
 	// Insert one per topic to keep topics isolated.
 
 	// Leased: insert into "leased-topic", reserve it.
-	s.Insert(t.Context(), newTask("leased", "leased-topic"))
-	s.Reserve(t.Context(), mq.ReserveOptions{Topics: []string{"leased-topic"}, Limit: 1, Lease: time.Minute, ConsumerID: "w1", Now: now})
+	_ = s.Insert(t.Context(), newTask("leased", "leased-topic"))
+	_, _ = s.Reserve(t.Context(), mq.ReserveOptions{Topics: []string{"leased-topic"}, Limit: 1, Lease: time.Minute, ConsumerID: "w1", Now: now})
 
 	// Dead: insert into "dead-topic", reserve, then move to DLQ.
-	s.Insert(t.Context(), newTask("dead", "dead-topic"))
-	s.Reserve(t.Context(), mq.ReserveOptions{Topics: []string{"dead-topic"}, Limit: 1, Lease: time.Minute, ConsumerID: "w2", Now: now})
-	s.MoveToDLQ(t.Context(), "dead", "w2", "fail", now)
+	_ = s.Insert(t.Context(), newTask("dead", "dead-topic"))
+	_, _ = s.Reserve(t.Context(), mq.ReserveOptions{Topics: []string{"dead-topic"}, Limit: 1, Lease: time.Minute, ConsumerID: "w2", Now: now})
+	_ = s.MoveToDLQ(t.Context(), "dead", "w2", "fail", now)
 
 	// Queued: just insert into "queued-topic", do not reserve.
-	s.Insert(t.Context(), newTask("queued", "queued-topic"))
+	_ = s.Insert(t.Context(), newTask("queued", "queued-topic"))
 
 	stats, err := s.Stats(t.Context())
 	if err != nil {
@@ -297,9 +297,9 @@ func TestMemStore_ReplayDLQ_MovesDeadToQueued(t *testing.T) {
 	s := NewMemory(DefaultMemConfig())
 	now := time.Now()
 
-	s.Insert(t.Context(), newTask("d1", "orders"))
-	s.Reserve(t.Context(), mq.ReserveOptions{Topics: []string{"orders"}, Limit: 1, Lease: time.Minute, ConsumerID: "w1", Now: now})
-	s.MoveToDLQ(t.Context(), "d1", "w1", "fail", now)
+	_ = s.Insert(t.Context(), newTask("d1", "orders"))
+	_, _ = s.Reserve(t.Context(), mq.ReserveOptions{Topics: []string{"orders"}, Limit: 1, Lease: time.Minute, ConsumerID: "w1", Now: now})
+	_ = s.MoveToDLQ(t.Context(), "d1", "w1", "fail", now)
 
 	result, err := s.ReplayDLQ(t.Context(), ReplayOptions{Max: 10})
 	if err != nil {

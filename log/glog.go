@@ -11,8 +11,11 @@ import (
 	"sync"
 )
 
+// Level represents a log severity. Higher values denote more severe events.
 type Level int
 
+// Log severity levels in ascending order. DEBUG is the least severe and FATAL
+// the most; log calls below the configured level are suppressed.
 const (
 	DEBUG   Level = -1
 	INFO    Level = 0

@@ -16,8 +16,13 @@ import (
 	internaltelemetry "github.com/spcent/plumego/middleware/internal/telemetry"
 )
 
+// TraceSpan is the span contract returned by [Tracer.Start]. It is an alias
+// for the internal telemetry span type so stable middleware stays decoupled
+// from the concrete tracing infrastructure.
 type TraceSpan = internaltelemetry.TraceSpan
 
+// Tracer starts a span for an HTTP request and returns the derived context and
+// span. Implementations own span lifecycle and sampling; see [Middleware].
 type Tracer interface {
 	Start(ctx context.Context, r *http.Request) (context.Context, TraceSpan)
 }

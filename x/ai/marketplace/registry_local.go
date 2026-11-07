@@ -256,7 +256,7 @@ func (r *LocalAgentRegistry) Delete(ctx context.Context, id string, ver string) 
 	parentDir := filepath.Join(r.baseDir, id)
 	entries, err := os.ReadDir(parentDir)
 	if err == nil && len(entries) == 0 {
-		os.Remove(parentDir)
+		_ = os.Remove(parentDir)
 	}
 
 	return nil
@@ -363,7 +363,7 @@ func (r *LocalAgentRegistry) updateAggregateRating(ctx context.Context, agentID 
 			continue
 		}
 
-		os.WriteFile(metadataPath, data, 0644)
+		_ = os.WriteFile(metadataPath, data, 0644)
 	}
 
 	return nil
@@ -689,7 +689,7 @@ func (r *LocalWorkflowRegistry) Delete(ctx context.Context, id string, ver strin
 	parentDir := filepath.Join(r.baseDir, id)
 	entries, err := os.ReadDir(parentDir)
 	if err == nil && len(entries) == 0 {
-		os.Remove(parentDir)
+		_ = os.Remove(parentDir)
 	}
 
 	return nil
@@ -796,7 +796,7 @@ func (r *LocalWorkflowRegistry) updateAggregateRating(ctx context.Context, workf
 			continue
 		}
 
-		os.WriteFile(templatePath, data, 0644)
+		_ = os.WriteFile(templatePath, data, 0644)
 	}
 
 	return nil

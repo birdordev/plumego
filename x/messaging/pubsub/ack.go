@@ -134,7 +134,7 @@ func (ps *InProcBroker) SubscribeAckable(ctx context.Context, topic string, subO
 // Receive blocks until a message is available.
 func (as *ackableSubscriber) Receive(ctx context.Context) (Message, error) {
 	select {
-	case msg, ok := <-as.subscriber.C():
+	case msg, ok := <-as.C():
 		if !ok {
 			return Message{}, newErr(ErrCodeClosed, "receive", "", "subscription is closed", nil)
 		}
@@ -146,7 +146,7 @@ func (as *ackableSubscriber) Receive(ctx context.Context) (Message, error) {
 	case <-ctx.Done():
 		return Message{}, ctx.Err()
 
-	case <-as.subscriber.Done():
+	case <-as.Done():
 		return Message{}, newErr(ErrCodeClosed, "receive", "", "subscription is closed", nil)
 	}
 }
@@ -208,9 +208,9 @@ func (as *ackableSubscriber) handleTimeout(msgID string) {
 	// Redeliver to subscriber channel (non-blocking).
 	// Hold s.mu to synchronize with Cancel(), which closes s.ch under the same lock.
 	as.subscriber.mu.Lock()
-	if !as.subscriber.closed.Load() {
+	if !as.closed.Load() {
 		select {
-		case as.subscriber.ch <- msg:
+		case as.ch <- msg:
 		default:
 			// Channel full, message will be redelivered on next timeout
 		}
@@ -278,9 +278,9 @@ func (as *ackableSubscriber) Nack(msgID string, requeue bool) error {
 	// Redeliver immediately.
 	// Hold s.mu to synchronize with Cancel(), which closes s.ch under the same lock.
 	as.subscriber.mu.Lock()
-	if !as.subscriber.closed.Load() {
+	if !as.closed.Load() {
 		select {
-		case as.subscriber.ch <- msg:
+		case as.ch <- msg:
 		default:
 		}
 	}

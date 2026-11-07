@@ -184,9 +184,10 @@ func BuiltinTemplates() []*Template {
 }
 
 // LoadBuiltinTemplates loads builtin templates into an engine.
-func LoadBuiltinTemplates(engine *Engine) error {
+//
+// The context controls template registration; cancel it to abort a long load.
+func LoadBuiltinTemplates(ctx context.Context, engine *Engine) error {
 	templates := BuiltinTemplates()
-	ctx := context.Background()
 
 	for _, tmpl := range templates {
 		if err := engine.Register(ctx, tmpl); err != nil {

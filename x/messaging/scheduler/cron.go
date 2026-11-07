@@ -28,7 +28,7 @@ func (c CronSpec) Expr() string {
 	if len(c.minutes) == 0 {
 		return ""
 	}
-	hasSec := len(c.seconds) > 0 && !(len(c.seconds) == 1 && c.seconds[0] == 0)
+	hasSec := len(c.seconds) > 0 && (len(c.seconds) != 1 || c.seconds[0] != 0)
 	if hasSec {
 		return cronFieldStr(c.seconds, 0, 59) + " " +
 			cronFieldStr(c.minutes, 0, 59) + " " +

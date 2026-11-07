@@ -95,10 +95,10 @@ func Example_withExactCache() {
 	}
 
 	// First call - populates both caches
-	cachingProvider.Complete(ctx, req)
+	_, _ = cachingProvider.Complete(ctx, req)
 
 	// Second call - hits exact cache (faster)
-	cachingProvider.Complete(ctx, req)
+	_, _ = cachingProvider.Complete(ctx, req)
 
 	fmt.Println("Hybrid caching enabled")
 
@@ -141,8 +141,8 @@ func Example_withMetrics() {
 	}
 
 	// Make requests - metrics are collected automatically
-	cachingProvider.Complete(ctx, req)
-	cachingProvider.Complete(ctx, req)
+	_, _ = cachingProvider.Complete(ctx, req)
+	_, _ = cachingProvider.Complete(ctx, req)
 
 	stats := cachingProvider.Stats()
 	fmt.Printf("Hits: %d, Misses: %d\n", stats.SemanticHits, stats.SemanticMisses)
@@ -192,7 +192,7 @@ func Example_customConfiguration() {
 		},
 	}
 
-	cachingProvider.Complete(ctx, req)
+	_, _ = cachingProvider.Complete(ctx, req)
 	fmt.Println("Custom configuration applied")
 
 	// Output:
@@ -230,7 +230,7 @@ func Example_concurrentAccess() {
 					provider.NewTextMessage(provider.RoleUser, "concurrent query"),
 				},
 			}
-			cachingProvider.Complete(ctx, req)
+			_, _ = cachingProvider.Complete(ctx, req)
 			done <- true
 		}()
 	}

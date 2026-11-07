@@ -69,7 +69,7 @@ func TestPublishPriorityRespectsContextCancel(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer broker.Close()
+	defer func() { _ = broker.Close() }()
 
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()

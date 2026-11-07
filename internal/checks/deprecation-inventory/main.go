@@ -78,7 +78,7 @@ func readInventory(path string) ([]inventoryEntry, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	var entries []inventoryEntry
 	var current *inventoryEntry
@@ -191,7 +191,7 @@ func findMarkers(repoRoot string) ([]marker, error) {
 		if err != nil {
 			return err
 		}
-		defer file.Close()
+		defer func() { _ = file.Close() }()
 
 		scanner := checkutil.NewLineScanner(file)
 		lineNo := 0

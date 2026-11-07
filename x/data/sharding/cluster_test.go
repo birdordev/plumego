@@ -410,7 +410,7 @@ func TestClusterDB_BeginTx(t *testing.T) {
 		if tx == nil {
 			t.Error("expected transaction, got nil")
 		}
-		tx.Rollback()
+		_ = tx.Rollback()
 	})
 
 	t.Run("begin transaction on invalid shard", func(t *testing.T) {
@@ -485,8 +485,8 @@ func TestClusterDB_Metrics(t *testing.T) {
 
 	// Execute some queries
 	query := "SELECT * FROM users WHERE user_id = ?"
-	cluster.QueryContext(ctx, query, 100)
-	cluster.QueryContext(ctx, query, 200)
+	_, _ = cluster.QueryContext(ctx, query, 100)
+	_, _ = cluster.QueryContext(ctx, query, 200)
 
 	metrics := cluster.Metrics()
 	if metrics.TotalQueries < 2 {
@@ -621,7 +621,7 @@ func BenchmarkClusterDB_ExecContext(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		cluster.ExecContext(ctx, query, i, "test")
+		_, _ = cluster.ExecContext(ctx, query, i, "test")
 	}
 }
 

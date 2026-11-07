@@ -2,8 +2,34 @@ package embedding
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"io"
 	"time"
 )
+
+// ErrResponseTooLarge is returned when an embedding API response body exceeds
+// maxResponseBytes, so oversized responses fail loudly instead of being read
+// into memory unbounded.
+var ErrResponseTooLarge = errors.New("embedding: provider response exceeds size limit")
+
+// maxResponseBytes bounds embedding API response bodies read into memory
+// (64 MiB — a 96-text batch of 3072-dimension vectors is ~5 MiB as JSON).
+const maxResponseBytes int64 = 64 << 20
+
+// readResponseBody reads at most maxResponseBytes from r and fails with
+// ErrResponseTooLarge when the source is larger, so truncation is never
+// silent. It reads one byte past the limit so overflow is detectable.
+func readResponseBody(r io.Reader) ([]byte, error) {
+	body, err := io.ReadAll(io.LimitReader(r, maxResponseBytes+1))
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+	if int64(len(body)) > maxResponseBytes {
+		return nil, ErrResponseTooLarge
+	}
+	return body, nil
+}
 
 // Provider generates embeddings with additional capabilities.
 type Provider interface {

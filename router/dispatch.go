@@ -36,14 +36,7 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	}
 
 	path := fastNormalizePath(req.URL.Path)
-	cacheKey := req.Method + ":" + path
-	if cachedResult, exists := r.state.matchCache.Get(cacheKey); exists {
-		effectiveW := responseWriterForMatch(w, req, cachedResult)
-		r.attachRouteContextAndServe(effectiveW, req, cachedResult)
-		return
-	}
-
-	result := r.matchRoute(req.Method, path)
+	result := r.cachedMatch(req.Method, path)
 	if result == nil {
 		if r.state.methodNotAllowed.Load() {
 			allowed := r.allowedMethods(path)
@@ -60,8 +53,6 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	r.state.matchCache.Set(cacheKey, result)
-
 	w = responseWriterForMatch(w, req, result)
 	r.attachRouteContextAndServe(w, req, result)
 }
@@ -73,15 +64,29 @@ func responseWriterForMatch(w http.ResponseWriter, req *http.Request, result *ma
 	return w
 }
 
-func (r *Router) matchRoute(method, path string) *matchResult {
-	// After Freeze() the trie is immutable: skip the lock to avoid RLock
-	// overhead on every cache-miss request. The write lock in Freeze() ensures
-	// all prior AddRoute calls are visible before the flag is published.
+func (r *Router) cachedMatch(method, path string) *matchResult {
+	// Keep lookup and publication in the same read lock so registration cannot
+	// clear the cache between matching a route and publishing the result.
+	// Freeze publishes the immutable trie and cache pointer under the write lock.
 	if !r.state.frozen.Load() {
 		r.state.mu.RLock()
 		defer r.state.mu.RUnlock()
 	}
 
+	cache := r.state.matchCache
+	key := method + ":" + path
+	if result, ok := cache.Get(key); ok {
+		return result
+	}
+	result := r.matchRoute(method, path)
+	if result != nil {
+		cache.Set(key, result)
+	}
+	return result
+}
+
+// matchRoute reads the trie under the caller's read lock or after Freeze.
+func (r *Router) matchRoute(method, path string) *matchResult {
 	if path == "/" {
 		if method != MethodAny {
 			tree := r.state.trees[method]

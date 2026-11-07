@@ -11,7 +11,7 @@ import (
 
 func newKV(t *testing.T) *kvstore.KVStore {
 	t.Helper()
-	store, err := kvstore.NewKVStore(kvstore.Options{DataDir: t.TempDir()})
+	store, err := kvstore.NewKVStore(kvstore.Config{DataDir: t.TempDir()})
 	if err != nil {
 		t.Fatalf("open kv: %v", err)
 	}
@@ -328,14 +328,10 @@ func TestSQLStore_EmptyKeyValidation(t *testing.T) {
 	s := NewSQLStore(nil, DefaultSQLConfig())
 	ctx := t.Context()
 
+	// A nil DB short-circuits to ErrNotFound before key validation runs.
 	if _, _, err := s.Get(ctx, ""); err != ErrNotFound {
-		// nil DB returns ErrNotFound before key check
+		t.Fatalf("Get with nil DB: err = %v, want %v", err, ErrNotFound)
 	}
-
-	// Use a store with a non-nil db to exercise key validation... but we can't
-	// easily do that without a real DB. Test the nil-db path is consistent.
-	_ = s
-	_ = ctx
 }
 
 func TestSQLStore_DefaultsOnEmptyConfig(t *testing.T) {

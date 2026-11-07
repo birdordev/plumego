@@ -153,7 +153,7 @@ func (t *TieredBackend) Search(ctx context.Context, query []float64, topK int, t
 			// Promote to L2 and L1
 			for _, result := range results {
 				if t.l2 != nil {
-					t.l2.Add(ctx, result.Entry)
+					_ = t.l2.Add(ctx, result.Entry)
 				}
 				if err := t.l1.Add(ctx, result.Entry); err == nil {
 					t.stats.Promotions++
@@ -182,7 +182,7 @@ func (t *TieredBackend) Get(ctx context.Context, id string) (*Entry, error) {
 		entry, err = t.l2.Get(ctx, id)
 		if err == nil {
 			// Promote to L1
-			t.l1.Add(ctx, entry)
+			_ = t.l1.Add(ctx, entry)
 			return entry, nil
 		}
 	}
@@ -193,9 +193,9 @@ func (t *TieredBackend) Get(ctx context.Context, id string) (*Entry, error) {
 		if err == nil {
 			// Promote to L2 and L1
 			if t.l2 != nil {
-				t.l2.Add(ctx, entry)
+				_ = t.l2.Add(ctx, entry)
 			}
-			t.l1.Add(ctx, entry)
+			_ = t.l1.Add(ctx, entry)
 			return entry, nil
 		}
 	}
@@ -206,12 +206,12 @@ func (t *TieredBackend) Get(ctx context.Context, id string) (*Entry, error) {
 // Delete removes an entry from all tiers.
 func (t *TieredBackend) Delete(ctx context.Context, id string) error {
 	// Delete from all tiers
-	t.l1.Delete(ctx, id)
+	_ = t.l1.Delete(ctx, id)
 	if t.l2 != nil {
-		t.l2.Delete(ctx, id)
+		_ = t.l2.Delete(ctx, id)
 	}
 	if t.l3 != nil {
-		t.l3.Delete(ctx, id)
+		_ = t.l3.Delete(ctx, id)
 	}
 
 	return nil
@@ -219,12 +219,12 @@ func (t *TieredBackend) Delete(ctx context.Context, id string) error {
 
 // DeleteBatch removes multiple entries from all tiers.
 func (t *TieredBackend) DeleteBatch(ctx context.Context, ids []string) error {
-	t.l1.DeleteBatch(ctx, ids)
+	_ = t.l1.DeleteBatch(ctx, ids)
 	if t.l2 != nil {
-		t.l2.DeleteBatch(ctx, ids)
+		_ = t.l2.DeleteBatch(ctx, ids)
 	}
 	if t.l3 != nil {
-		t.l3.DeleteBatch(ctx, ids)
+		_ = t.l3.DeleteBatch(ctx, ids)
 	}
 
 	return nil
@@ -237,10 +237,10 @@ func (t *TieredBackend) Update(ctx context.Context, entry *Entry) error {
 	}
 
 	if t.l2 != nil {
-		t.l2.Update(ctx, entry)
+		_ = t.l2.Update(ctx, entry)
 	}
 	if t.l3 != nil {
-		t.l3.Update(ctx, entry)
+		_ = t.l3.Update(ctx, entry)
 	}
 
 	return nil
@@ -259,12 +259,12 @@ func (t *TieredBackend) Count(ctx context.Context) (int64, error) {
 
 // Clear removes all entries from all tiers.
 func (t *TieredBackend) Clear(ctx context.Context) error {
-	t.l1.Clear(ctx)
+	_ = t.l1.Clear(ctx)
 	if t.l2 != nil {
-		t.l2.Clear(ctx)
+		_ = t.l2.Clear(ctx)
 	}
 	if t.l3 != nil {
-		t.l3.Clear(ctx)
+		_ = t.l3.Clear(ctx)
 	}
 
 	t.stats = &TieredStats{}
@@ -273,12 +273,12 @@ func (t *TieredBackend) Clear(ctx context.Context) error {
 
 // Close closes all backends.
 func (t *TieredBackend) Close() error {
-	t.l1.Close()
+	_ = t.l1.Close()
 	if t.l2 != nil {
-		t.l2.Close()
+		_ = t.l2.Close()
 	}
 	if t.l3 != nil {
-		t.l3.Close()
+		_ = t.l3.Close()
 	}
 
 	return nil

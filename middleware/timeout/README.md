@@ -17,8 +17,8 @@ import "github.com/spcent/plumego/middleware/timeout"
 | Symbol | Description |
 |--------|-------------|
 | `Middleware(cfg Config)` | Constructor; returns a `middleware.Middleware` |
-| `Config{Timeout, MaxBufferBytes, MaxReplayBytes}` | Timeout and buffer limits |
-| `DefaultConfig()` | Sensible defaults (30 s timeout) |
+| `Config{Timeout, MaxBufferBytes, MaxReplayBytes, OnPanic}` | Timeout, buffer limits, and canceled panic hook |
+| `DefaultConfig()` | 10 MiB buffer, 512 KiB replay limit; timeout disabled |
 
 ## Usage
 
@@ -30,5 +30,11 @@ app.Use(timeout.Middleware(cfg))
 
 ## Notes
 
-- Responses larger than `MaxReplayBytes` cannot be replayed and become a structured 504 instead of streamed content.
-- Timeout does not forcibly kill goroutines; cooperative context cancellation is required.
+- A non-positive `Timeout` disables the middleware. Set a positive duration explicitly.
+- Responses larger than `MaxBufferBytes` or `MaxReplayBytes` become a structured `500`, including the request ID from the request context. Partial bodies and downstream header edits are discarded on errors.
+- Outer response headers are cloned into the downstream buffer. Successful responses replay downstream header changes, including explicit deletion; timeout and buffer-limit errors preserve the original outer headers.
+- Explicit parent cancellation returns without writing a synthetic error. An expired parent or middleware deadline returns a structured `504`. Requests already canceled before execution do not invoke the downstream handler.
+- Cancellation observed at the response commitment check takes priority over a completed result or panic. Cancellation after that check does not undo response commitment.
+- Timeout does not forcibly kill goroutines or wait for downstream exit. Handlers must observe `r.Context().Done()`; body writes after cancellation return the context error.
+- Panics accepted before cancellation are re-thrown for outer recovery middleware. `OnPanic` observes panics discarded because of cancellation exactly once, after response handling finishes. The hook must not block; hook panics are recovered internally.
+- Informational statuses such as `100`, `102`, and `103` are not forwarded by this buffering middleware and do not replace the final response status. Streaming, SSE, and connection upgrades are unsupported.

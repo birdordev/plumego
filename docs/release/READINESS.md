@@ -114,7 +114,7 @@ This checklist verifies that Plumego v1 is truly "done" before a release. Track 
 - [x] All examples compile (`go build ./examples/...`)
 - [x] All module tests pass (`go test ./...`)
 - [x] Race detector passes for concurrent tests
-- [x] Code coverage ≥70% (go test -cover)
+- [x] Code coverage ≥90% on stable roots (go test -cover)
 - [x] All internal checks pass locally:
   - [x] `go run ./internal/checks/dependency-rules`
   - [x] `go run ./internal/checks/module-manifests`

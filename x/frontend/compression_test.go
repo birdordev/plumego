@@ -152,7 +152,7 @@ func TestPrecompressedVariantScanErrorFailsFast(t *testing.T) {
 	if err := os.MkdirAll(blocked, 0o000); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	defer os.Chmod(blocked, 0o755)
+	defer func() { _ = os.Chmod(blocked, 0o755) }()
 
 	r := router.NewRouter()
 	err := RegisterFromDir(r, dir, WithPrecompressed(true))

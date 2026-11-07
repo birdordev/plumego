@@ -46,7 +46,7 @@ func TestOpsQueueStatsSingle(t *testing.T) {
 		},
 	})
 
-	handler.RegisterRoutes(r)
+	_ = handler.RegisterRoutes(r)
 
 	req := httptest.NewRequest(http.MethodGet, "/ops/queue?queue=primary", nil)
 	rec := httptest.NewRecorder()
@@ -80,7 +80,7 @@ func TestOpsSummaryResponseShape(t *testing.T) {
 			},
 		},
 	})
-	handler.RegisterRoutes(r)
+	_ = handler.RegisterRoutes(r)
 
 	req := httptest.NewRequest(http.MethodGet, "/ops", nil)
 	rec := httptest.NewRecorder()
@@ -116,7 +116,7 @@ func TestOpsAuthRequired(t *testing.T) {
 		},
 	})
 
-	handler.RegisterRoutes(r)
+	_ = handler.RegisterRoutes(r)
 
 	req := httptest.NewRequest(http.MethodGet, "/ops/queue?queue=primary", nil)
 	rec := httptest.NewRecorder()
@@ -138,7 +138,7 @@ func TestOpsQueueStatsMissingQueueUsesRequiredQueryError(t *testing.T) {
 			},
 		},
 	})
-	handler.RegisterRoutes(r)
+	_ = handler.RegisterRoutes(r)
 
 	req := httptest.NewRequest(http.MethodGet, "/ops/queue", nil)
 	rec := httptest.NewRecorder()
@@ -186,7 +186,7 @@ func TestOpsHookErrorLogDoesNotLeakRawError(t *testing.T) {
 			},
 		},
 	})
-	handler.RegisterRoutes(r)
+	_ = handler.RegisterRoutes(r)
 
 	req := httptest.NewRequest(http.MethodGet, "/ops/queue?queue=primary", nil)
 	rec := httptest.NewRecorder()
@@ -253,7 +253,7 @@ func TestOpsNotConfiguredErrorsUseStableCodes(t *testing.T) {
 				Enabled: true,
 				Auth:    AuthConfig{AllowInsecure: true},
 			})
-			handler.RegisterRoutes(r)
+			_ = handler.RegisterRoutes(r)
 
 			req := httptest.NewRequest(tt.method, tt.path, nil)
 			rec := httptest.NewRecorder()

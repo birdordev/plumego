@@ -698,7 +698,7 @@ func TestMemoryCacheConcurrentAccess(t *testing.T) {
 		go func(i int) {
 			defer readers.Done()
 			key := fmt.Sprintf("key%d", i)
-			cache.Get(t.Context(), key)
+			_, _ = cache.Get(t.Context(), key)
 		}(i)
 	}
 	readers.Wait()

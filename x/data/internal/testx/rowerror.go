@@ -23,7 +23,7 @@ type RowErrorConnector struct {
 
 // Connect returns a RowErrorConn configured with the stored error.
 func (c RowErrorConnector) Connect(context.Context) (driver.Conn, error) {
-	return RowErrorConn{Err: c.Err}, nil
+	return RowErrorConn(c), nil
 }
 
 // Driver returns the RowErrorDriver singleton.

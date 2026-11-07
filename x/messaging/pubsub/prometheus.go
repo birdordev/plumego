@@ -33,10 +33,9 @@ type PrometheusExporter struct {
 
 // metricsRegistry holds all registered metrics
 type metricsRegistry struct {
-	counters   map[string]*counter
-	gauges     map[string]*gauge
-	histograms map[string]*histogram
-	mu         sync.RWMutex
+	counters map[string]*counter
+	gauges   map[string]*gauge
+	mu       sync.RWMutex
 }
 
 // counter represents a Prometheus counter
@@ -55,16 +54,6 @@ type gauge struct {
 	value  float64
 }
 
-// histogram represents a Prometheus histogram (simplified)
-type histogram struct {
-	name   string
-	help   string
-	labels map[string]string
-	count  uint64
-	sum    float64
-	// Buckets: simplified to just count and sum
-}
-
 // NewPrometheusExporter creates a new Prometheus exporter
 func NewPrometheusExporter(ps *InProcBroker) *PrometheusExporter {
 	return &PrometheusExporter{
@@ -79,9 +68,8 @@ func NewPrometheusExporter(ps *InProcBroker) *PrometheusExporter {
 // newMetricsRegistry creates a new metrics registry
 func newMetricsRegistry() *metricsRegistry {
 	return &metricsRegistry{
-		counters:   make(map[string]*counter),
-		gauges:     make(map[string]*gauge),
-		histograms: make(map[string]*histogram),
+		counters: make(map[string]*counter),
+		gauges:   make(map[string]*gauge),
 	}
 }
 
@@ -143,7 +131,6 @@ func (pe *PrometheusExporter) Collect() string {
 	// Clear previous metrics
 	pe.registry.counters = make(map[string]*counter)
 	pe.registry.gauges = make(map[string]*gauge)
-	pe.registry.histograms = make(map[string]*histogram)
 
 	// Collect from base pubsub
 	pe.collectBasicMetrics()
@@ -517,7 +504,7 @@ func (pe *PrometheusExporter) Handler() http.HandlerFunc {
 
 		w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
 		w.WriteHeader(http.StatusOK)
-		io.WriteString(w, metrics)
+		_, _ = io.WriteString(w, metrics)
 	}
 }
 

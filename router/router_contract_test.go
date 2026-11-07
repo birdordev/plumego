@@ -9,8 +9,10 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/spcent/plumego/contract"
+	"github.com/spcent/plumego/internal/testutil/wait"
 )
 
 func TestMethodMismatchReturnsNotFound(t *testing.T) {
@@ -366,6 +368,41 @@ func TestFreezePreventsMethodNotAllowedOptionMutation(t *testing.T) {
 	}
 }
 
+func TestCacheCapacityOptionDuringDispatch(t *testing.T) {
+	r := NewRouter(WithCacheCapacity(2))
+	mustAddRoute(r, http.MethodGet, "/ready", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+
+	applyWhileServing := func() {
+		var wg sync.WaitGroup
+		wg.Go(func() {
+			for range 100 {
+				WithCacheCapacity(4)(r)
+			}
+		})
+		wg.Go(func() {
+			for range 100 {
+				if status := serveRouter(r, http.MethodGet, "/ready").Code; status != http.StatusNoContent {
+					t.Errorf("dispatch status = %d, want 204", status)
+					return
+				}
+			}
+		})
+		wg.Wait()
+	}
+	applyWhileServing()
+	cache := r.state.matchCache
+	if cache.capacity != 4 {
+		t.Fatalf("cache capacity = %d, want 4", cache.capacity)
+	}
+	r.Freeze()
+	applyWhileServing()
+	if r.state.matchCache != cache {
+		t.Fatal("cache replaced after Freeze")
+	}
+}
+
 func TestAddRouteRejectsRelativeRootPath(t *testing.T) {
 	r := NewRouter()
 	err := r.AddRoute(http.MethodGet, "users/:id", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
@@ -483,6 +520,44 @@ func TestAddRouteClearsStaleExactCache(t *testing.T) {
 	assertTrimmedResponseBody(t, rec, "exact")
 }
 
+func TestRegistrationCannotInvalidateInFlightCacheFill(t *testing.T) {
+	r := NewRouter()
+	mustAddRoute(r, http.MethodGet, "/items/:id", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusAccepted)
+	}))
+
+	served := make(chan int, 1)
+	registered := make(chan error, 1)
+	func() {
+		// Block the cache lookup and confirm dispatch holds the route read lock.
+		r.state.matchCache.mu.Lock()
+		defer r.state.matchCache.mu.Unlock()
+		go func() { served <- serveRouter(r, http.MethodGet, "/items/new").Code }()
+		wait.ForCondition(t, 2*time.Second, "dispatch to hold the route read lock", func() bool {
+			if !r.state.mu.TryLock() {
+				return true
+			}
+			r.state.mu.Unlock()
+			return false
+		})
+		go func() {
+			registered <- r.AddRoute(http.MethodGet, "/items/new", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(http.StatusNoContent)
+			}))
+		}()
+	}()
+	if status := <-served; status != http.StatusAccepted {
+		t.Fatalf("in-flight status = %d, want 202", status)
+	}
+	if err := <-registered; err != nil {
+		t.Fatalf("AddRoute: %v", err)
+	}
+	r.Freeze()
+	for range 2 {
+		assertResponseStatus(t, serveRouter(r, http.MethodGet, "/items/new"), http.StatusNoContent)
+	}
+}
+
 func TestWarmCachePreservesTrieSpecificity(t *testing.T) {
 	r := NewRouter(withCacheCapacity(10))
 	mustAddRoute(r, http.MethodGet, "/files/*path", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
@@ -514,6 +589,66 @@ func TestWarmCachePreservesTrieSpecificity(t *testing.T) {
 	rec = serveRouter(r, http.MethodGet, "/files/public/readme")
 	assertResponseStatus(t, rec, http.StatusOK)
 	assertTrimmedResponseBody(t, rec, "static")
+}
+
+func TestDispatchBacktracksFromDeadEnds(t *testing.T) {
+	r := NewRouter(WithMethodNotAllowed(true))
+	for _, route := range []struct {
+		method  string
+		pattern string
+		name    string
+	}{
+		{http.MethodGet, "/items/new/edit", "static"},
+		{http.MethodGet, "/items/:id/edit", "param-edit"},
+		{http.MethodGet, "/items/:id/detail", "param"},
+		{http.MethodGet, "/items/*path", "wildcard"},
+		{http.MethodPost, "/items/new/detail", "post"},
+	} {
+		mustAddRoute(r, route.method, route.pattern, http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			meta := contract.RequestContextFromContext(req.Context())
+			_, _ = io.WriteString(w, strings.Join([]string{meta.RouteName, meta.RoutePattern, Param(req, "id"), Param(req, "path")}, "|"))
+		}), WithRouteName(route.name))
+	}
+	r.Freeze()
+
+	for _, tc := range []struct {
+		name string
+		path string
+		want string
+	}{
+		{"complete static beats param and wildcard", "/items/new/edit", "static|/items/new/edit||"},
+		{"static dead end falls back to param", "/items/new/detail", "param|/items/:id/detail|new|"},
+		{"static and param dead ends fall back to wildcard", "/items/new/other", "wildcard|/items/*path||new/other"},
+		{"param without terminal handler falls back to wildcard", "/items/42", "wildcard|/items/*path||42"},
+		{"literal colon remains a parameter value", "/items/:/detail", "param|/items/:id/detail|:|"},
+		{"literal star remains a wildcard value", "/items/*", "wildcard|/items/*path||*"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for range 2 {
+				rec := serveRouter(r, http.MethodGet, tc.path)
+				assertResponseStatus(t, rec, http.StatusOK)
+				assertResponseBody(t, rec, tc.want)
+			}
+		})
+	}
+}
+
+func TestMethodNotAllowedIncludesBacktrackedRoute(t *testing.T) {
+	r := NewRouter(WithMethodNotAllowed(true))
+	handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	})
+	mustAddRoute(r, http.MethodGet, "/items/new/edit", handler)
+	mustAddRoute(r, http.MethodGet, "/items/:id/detail", handler)
+	mustAddRoute(r, http.MethodPost, "/items/new/detail", handler)
+	r.Freeze()
+
+	for range 2 {
+		rec := serveRouter(r, http.MethodDelete, "/items/new/detail")
+		assertResponseStatus(t, rec, http.StatusMethodNotAllowed)
+		assertResponseHeader(t, rec, "Allow", "GET, HEAD, POST")
+		assertResponseStatus(t, serveRouter(r, http.MethodGet, "/items/new/detail"), http.StatusNoContent)
+	}
 }
 
 func TestMethodNotAllowedWhenEnabled(t *testing.T) {

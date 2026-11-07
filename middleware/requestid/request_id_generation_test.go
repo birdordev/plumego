@@ -136,12 +136,13 @@ func TestZeroValueGenerator(t *testing.T) {
 }
 
 func TestTimestampOrdering(t *testing.T) {
-	time.Sleep(time.Millisecond)
+	// The generator clamps the timestamp to the previous millisecond and bumps
+	// the sequence within the same millisecond, so ordering is guaranteed by
+	// construction; no wall-clock sleeps are needed.
 	gen := NewRequestIDGenerator()
 
 	ids := make([]string, 10)
 	for i := 0; i < 10; i++ {
-		time.Sleep(time.Millisecond)
 		ids[i] = gen.Generate()
 	}
 

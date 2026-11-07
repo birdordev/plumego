@@ -393,7 +393,7 @@ func newMockConn() *Conn {
 
 	// Start goroutines to prevent deadlock
 	go func() {
-		io.Copy(io.Discard, r2) // Discard writes
+		_, _ = io.Copy(io.Discard, r2) // Discard writes
 	}()
 	go func() {
 		<-conn.closeC

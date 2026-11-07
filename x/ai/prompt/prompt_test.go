@@ -314,7 +314,7 @@ func TestLoadBuiltinTemplates(t *testing.T) {
 	storage := NewMemoryStorage()
 	engine := NewEngine(storage)
 
-	err := LoadBuiltinTemplates(engine)
+	err := LoadBuiltinTemplates(t.Context(), engine)
 	if err != nil {
 		t.Fatalf("LoadBuiltinTemplates() error = %v", err)
 	}
@@ -385,7 +385,7 @@ func TestMemoryStorage_Clear(t *testing.T) {
 			Name:    fmt.Sprintf("test-%d", i),
 			Content: "Content",
 		}
-		storage.Save(t.Context(), tmpl)
+		_ = storage.Save(t.Context(), tmpl)
 	}
 
 	if count := storage.Count(); count != 5 {

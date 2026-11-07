@@ -20,7 +20,7 @@ func BenchmarkHashRingGet(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		key := fmt.Sprintf("key%d", i%10000)
-		ring.Get(key)
+		_, _ = ring.Get(key)
 	}
 }
 
@@ -36,7 +36,7 @@ func BenchmarkHashRingGetN(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		key := fmt.Sprintf("key%d", i%10000)
-		ring.GetN(key, 3)
+		_, _ = ring.GetN(key, 3)
 	}
 }
 
@@ -84,7 +84,7 @@ func BenchmarkDistributedCacheGet(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		key := fmt.Sprintf("key%d", i%10000)
-		dc.Get(ctx, key)
+		_, _ = dc.Get(ctx, key)
 	}
 }
 
@@ -146,7 +146,7 @@ func BenchmarkDistributedCacheIncr(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		key := fmt.Sprintf("counter%d", i%100)
-		dc.Incr(ctx, key, 1)
+		_, _ = dc.Incr(ctx, key, 1)
 	}
 }
 
@@ -195,7 +195,7 @@ func BenchmarkDistributedCacheParallelGet(b *testing.B) {
 		i := 0
 		for pb.Next() {
 			key := fmt.Sprintf("key%d", i%10000)
-			dc.Get(ctx, key)
+			_, _ = dc.Get(ctx, key)
 			i++
 		}
 	})

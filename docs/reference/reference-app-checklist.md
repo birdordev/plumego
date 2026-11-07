@@ -203,8 +203,8 @@ make gates
   not hoisted into the main module.
 - [ ] `go.mod` uses a `replace` directive pointing at the repo root; the
   rationale is documented (teaching tool, showcases feature X with external dep
-  Y) following the pattern established by `workerfleet`, `cloud-vault`,
-  `dbadmin`, `guardus`, and `mini-saas-api`.
+  Y) following the pattern established by `with-rest`, `with-rpc`, and
+  `benchmark` (the current reference apps with external dependencies).
 - [ ] No deprecated stable-root symbols are used. Callers must use the
   replacement documented in `specs/deprecation-inventory.yaml`.
 

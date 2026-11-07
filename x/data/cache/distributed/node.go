@@ -76,7 +76,6 @@ type LocalCacheNode struct {
 	cache        cache.Cache
 	weight       int
 	healthStatus atomic.Int32 // Stores HealthStatus as int32
-	mu           sync.RWMutex
 }
 
 // NodeConfig configures a cache node

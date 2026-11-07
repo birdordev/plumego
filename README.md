@@ -1,6 +1,10 @@
 # Plumego — Standard Library Web Toolkit
 
+[![Go Reference](https://pkg.go.dev/badge/github.com/spcent/plumego.svg)](https://pkg.go.dev/github.com/spcent/plumego)
 [![Go Version](https://img.shields.io/badge/Go-1.26%2B-00ADD8?style=flat&logo=go)](https://go.dev/)
+[![CI](https://github.com/spcent/plumego/actions/workflows/quality-gates.yml/badge.svg)](https://github.com/spcent/plumego/actions/workflows/quality-gates.yml)
+[![Go Report Card](https://goreportcard.com/badge/github.com/spcent/plumego)](https://goreportcard.com/report/github.com/spcent/plumego)
+[![codecov](https://codecov.io/gh/spcent/plumego/graph/badge.svg)](https://codecov.io/gh/spcent/plumego)
 [![Status](https://img.shields.io/badge/status-v1.1.0-blue)](https://github.com/spcent/plumego/releases/tag/v1.1.0)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
@@ -189,3 +193,8 @@ for the internal operating reference.
 **Troubleshooting?**
 - [`docs/start/troubleshooting.md`](./docs/start/troubleshooting.md) — route freeze, middleware order, JWT errors, lifecycle issues
 - [`docs/evidence/benchmarks/README.md`](./docs/evidence/benchmarks/README.md) — performance vs Chi, Gin, Echo
+
+**Contributing?**
+- [`CONTRIBUTING.md`](./CONTRIBUTING.md) — development setup, validation gates, and the PR process
+- [`SECURITY.md`](./SECURITY.md) — supported versions and private vulnerability reporting
+- [`CHANGELOG.md`](./CHANGELOG.md) — release history

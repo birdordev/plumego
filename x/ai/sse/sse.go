@@ -261,14 +261,14 @@ func Handle(handler Handler) http.HandlerFunc {
 				Build())
 			return
 		}
-		defer stream.Close()
+		defer func() { _ = stream.Close() }()
 
 		// Call handler
 		if err := handler(stream); err != nil {
 			// If error is context cancellation, it's expected
 			if err != context.Canceled && err != context.DeadlineExceeded && err != io.EOF {
 				// Try to send error event
-				stream.Send(&Event{
+				_ = stream.Send(&Event{
 					Event: "error",
 					Data:  defaultErrorEventData,
 				})

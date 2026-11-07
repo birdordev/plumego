@@ -6,6 +6,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"sync/atomic"
 	"time"
 
 	"github.com/spcent/plumego/contract"
@@ -56,6 +57,7 @@ func Middleware(config Config) mw.Middleware {
 			}
 			r.Body = limited
 
+			defer bw.checkLimitError()
 			next.ServeHTTP(bw, r)
 		})
 	}
@@ -65,6 +67,14 @@ type bodyLimitResponseWriter struct {
 	http.ResponseWriter
 	started bool
 	blocked bool
+	pending atomic.Pointer[bodyLimitError]
+}
+
+type bodyLimitError struct {
+	request   *http.Request
+	maxBytes  int64
+	seenBytes int64
+	at        time.Time
 }
 
 func (w *bodyLimitResponseWriter) Unwrap() http.ResponseWriter {
@@ -72,14 +82,18 @@ func (w *bodyLimitResponseWriter) Unwrap() http.ResponseWriter {
 }
 
 func (w *bodyLimitResponseWriter) WriteHeader(statusCode int) {
+	w.checkLimitError()
 	if w.blocked {
 		return
 	}
-	w.started = true
+	if statusCode >= 200 || statusCode == http.StatusSwitchingProtocols {
+		w.started = true
+	}
 	w.ResponseWriter.WriteHeader(statusCode)
 }
 
 func (w *bodyLimitResponseWriter) Write(p []byte) (int, error) {
+	w.checkLimitError()
 	if w.blocked {
 		return len(p), nil
 	}
@@ -88,13 +102,21 @@ func (w *bodyLimitResponseWriter) Write(p []byte) (int, error) {
 }
 
 func (w *bodyLimitResponseWriter) Flush() {
+	w.checkLimitError()
 	if w.blocked {
 		return
 	}
-	internaltransport.FlushIfSupported(w.ResponseWriter)
+	if flusher, ok := w.ResponseWriter.(http.Flusher); ok {
+		w.started = true
+		flusher.Flush()
+	}
 }
 
 func (w *bodyLimitResponseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	w.checkLimitError()
+	if w.blocked {
+		return nil, nil, http.ErrNotSupported
+	}
 	conn, rw, err := internaltransport.HijackIfSupported(w.ResponseWriter)
 	if err != nil {
 		return nil, nil, err
@@ -103,18 +125,27 @@ func (w *bodyLimitResponseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) 
 	return conn, rw, nil
 }
 
+// checkLimitError runs only on the response-owning goroutine. Body reads may
+// continue after an inner timeout returns, so they only publish immutable data.
+func (w *bodyLimitResponseWriter) checkLimitError() {
+	if failure := w.pending.Load(); failure != nil && failure.request.Context().Err() == nil {
+		w.writeLimitError(failure.request, failure.maxBytes, failure.seenBytes, failure.at)
+	}
+}
+
 func (w *bodyLimitResponseWriter) writeLimitError(r *http.Request, maxBytes, seenBytes int64, at time.Time) {
 	if w.blocked {
 		return
 	}
+	w.blocked = true
 	if !w.started {
+		w.started = true
 		internaltransport.WriteTransportError(w.ResponseWriter, r, http.StatusRequestEntityTooLarge, contract.CodeRequestBodyTooLarge, "request body exceeds configured limit", map[string]any{
 			"max_bytes":  maxBytes,
 			"seen_bytes": seenBytes,
 			"at":         at.UTC(),
 		})
 	}
-	w.blocked = true
 }
 
 type limitedBodyReader struct {
@@ -165,7 +196,7 @@ func (l *limitedBodyReader) Close() error {
 func (l *limitedBodyReader) failErr() error {
 	if !l.exceeded {
 		l.exceeded = true
-		l.w.writeLimitError(l.req, l.maxBytes, l.used, l.now())
+		l.w.pending.Store(&bodyLimitError{request: l.req, maxBytes: l.maxBytes, seenBytes: l.used, at: l.now()})
 		if l.logger != nil {
 			fields := internaltelemetry.MiddlewareLogFields(l.req, http.StatusRequestEntityTooLarge, 0)
 			fields["max_bytes"] = l.maxBytes

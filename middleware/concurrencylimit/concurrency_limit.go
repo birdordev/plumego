@@ -65,6 +65,9 @@ func Middleware(config Config) mw.Middleware {
 			case <-r.Context().Done():
 				return
 			default:
+				if r.Context().Err() != nil {
+					return
+				}
 				internaltransport.WriteTransportError(w, r, http.StatusServiceUnavailable, contract.CodeServerBusy, "server is throttling concurrent requests", nil)
 				return
 			}
@@ -78,6 +81,9 @@ func Middleware(config Config) mw.Middleware {
 			case <-r.Context().Done():
 				return
 			case <-timer.C:
+				if r.Context().Err() != nil {
+					return
+				}
 				internaltransport.WriteTransportError(w, r, http.StatusServiceUnavailable, contract.CodeServerQueueTimeout, "request timed out waiting for an available worker", map[string]any{
 					"queue_occupancy": len(queue),
 					"queue_capacity":  cap(queue),
@@ -85,6 +91,9 @@ func Middleware(config Config) mw.Middleware {
 				return
 			}
 
+			if r.Context().Err() != nil {
+				return
+			}
 			next.ServeHTTP(w, r)
 		})
 	}

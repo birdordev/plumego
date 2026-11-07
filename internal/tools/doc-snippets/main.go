@@ -42,7 +42,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	defer os.RemoveAll(tmp)
+	defer func() { _ = os.RemoveAll(tmp) }()
 
 	if err := writeModuleFile(tmp, root); err != nil {
 		return err
@@ -151,7 +151,7 @@ func goBlocks(path string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	var blocks []string
 	var snippet bytes.Buffer

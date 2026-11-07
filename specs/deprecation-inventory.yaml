@@ -252,3 +252,21 @@ entries:
     paths:
       - store/kv/options.go
       - store/kv/config_test.go
+
+  - id: contract-error-codes-historical-string-shape
+    category: compatibility_behavior
+    status: keep
+    owner: transport
+    decision: Keep. Transport-layer error code constants intentionally preserve the historical string shape so client integrations that match on these literal codes keep working; the wording is not a deprecation marker.
+    replacement: none
+    paths:
+      - contract/error_codes.go
+
+  - id: middleware-tracing-spanspan-internal-alias
+    category: public_alias
+    status: keep
+    owner: tracing
+    decision: Keep for v1. TraceSpan re-exports the shared internal telemetry span type so the middleware/tracing surface stays on one span implementation.
+    replacement: internaltelemetry.TraceSpan
+    paths:
+      - middleware/tracing/tracing.go

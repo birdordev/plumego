@@ -17,7 +17,7 @@ Entry point for all agent types (Claude Code, Codex, Cursor, …); delegates to 
 
 ```bash
 make validate-diff   # minimal gate for current diff (preferred)
-make gates           # Go gates: vet, race tests, boundary checks, coverage ≥70%
+make gates           # Go gates: vet, race tests, boundary checks, coverage ≥90%
 make website-gates   # docs site: content/API checks + static build (slow)
 make fmt             # gofmt -w (run before gates)
 make website-sync    # regenerate website/src/generated/

@@ -14,7 +14,7 @@ func BenchmarkMemoryCacheGet(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, _ = c.Get(ctx,"key")
+		_, _ = c.Get(ctx, "key")
 	}
 }
 
@@ -25,7 +25,7 @@ func BenchmarkMemoryCacheGetMiss(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, _ = c.Get(ctx,"nonexistent")
+		_, _ = c.Get(ctx, "nonexistent")
 	}
 }
 
@@ -71,7 +71,7 @@ func BenchmarkMemoryCacheGetSetParallel(b *testing.B) {
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
 			_ = c.Set(ctx, "key", val, expiry)
-			_, _ = c.Get(ctx,"key")
+			_, _ = c.Get(ctx, "key")
 		}
 	})
 }

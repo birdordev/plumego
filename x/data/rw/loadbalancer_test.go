@@ -268,8 +268,8 @@ func TestLoadBalancerReset(t *testing.T) {
 		replicas := []Replica{{Index: 0, IsHealthy: true}, {Index: 1, IsHealthy: true}}
 
 		// Advance counter
-		lb.Next(replicas)
-		lb.Next(replicas)
+		_, _ = lb.Next(replicas)
+		_, _ = lb.Next(replicas)
 
 		// Reset
 		lb.Reset()
@@ -290,7 +290,7 @@ func TestLoadBalancerReset(t *testing.T) {
 
 		// Advance state
 		for i := 0; i < 10; i++ {
-			lb.Next(replicas)
+			_, _ = lb.Next(replicas)
 		}
 
 		// Reset
@@ -335,7 +335,7 @@ func BenchmarkRoundRobinBalancer(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		lb.Next(replicas)
+		_, _ = lb.Next(replicas)
 	}
 }
 
@@ -350,7 +350,7 @@ func BenchmarkRandomBalancer(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		lb.Next(replicas)
+		_, _ = lb.Next(replicas)
 	}
 }
 
@@ -368,6 +368,6 @@ func BenchmarkWeightedBalancer(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		lb.Next(replicas)
+		_, _ = lb.Next(replicas)
 	}
 }

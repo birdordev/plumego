@@ -294,6 +294,6 @@ func BenchmarkMemoryBackend_Search(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		backend.Search(ctx, query, 10, 0.8)
+		_, _ = backend.Search(ctx, query, 10, 0.8)
 	}
 }

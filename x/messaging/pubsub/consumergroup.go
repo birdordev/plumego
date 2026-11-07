@@ -653,7 +653,7 @@ func (cg *consumerGroup) assignConsistentHash() {
 		for _, partition := range partitions {
 			// Hash partition to consumer
 			hash := fnv.New32a()
-			hash.Write([]byte(fmt.Sprintf("%s:%d", topic, partition)))
+			_, _ = fmt.Fprintf(hash, "%s:%d", topic, partition)
 			consumerIdx := int(hash.Sum32()) % len(consumerIDs)
 			cg.assignments[topic][partition] = consumerIDs[consumerIdx]
 		}

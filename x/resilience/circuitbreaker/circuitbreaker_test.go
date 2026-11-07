@@ -236,7 +236,7 @@ func TestTransitionClosedToOpen(t *testing.T) {
 
 	// 4 failures → 100 % failure rate, exceeds 50 % threshold
 	for i := 0; i < 4; i++ {
-		cb.Call(func() error { return errTest })
+		_ = cb.Call(func() error { return errTest })
 	}
 
 	if cb.State() != StateOpen {
@@ -252,7 +252,7 @@ func TestNoOpenBeforeMinRequests(t *testing.T) {
 
 	// 3 failures out of 3 requests — 100 % but below MinRequests
 	for i := 0; i < 3; i++ {
-		cb.Call(func() error { return errTest })
+		_ = cb.Call(func() error { return errTest })
 	}
 
 	if cb.State() != StateClosed {
@@ -273,7 +273,7 @@ func TestTransitionOpenToHalfOpen(t *testing.T) {
 
 	// Trip to open
 	for i := 0; i < 2; i++ {
-		cb.Call(func() error { return errTest })
+		_ = cb.Call(func() error { return errTest })
 	}
 	if cb.State() != StateOpen {
 		t.Fatalf("state = %v, want Open", cb.State())
@@ -312,7 +312,7 @@ func TestTransitionHalfOpenToClosed(t *testing.T) {
 
 	// Trip to open
 	for i := 0; i < 2; i++ {
-		cb.Call(func() error { return errTest })
+		_ = cb.Call(func() error { return errTest })
 	}
 
 	// Advance past timeout → half-open
@@ -351,19 +351,19 @@ func TestTransitionHalfOpenToOpen(t *testing.T) {
 
 	// Trip to open
 	for i := 0; i < 2; i++ {
-		cb.Call(func() error { return errTest })
+		_ = cb.Call(func() error { return errTest })
 	}
 
 	// Advance past timeout → half-open
 	mc.Advance(2 * time.Second)
 	// Trigger half-open transition
-	cb.Call(func() error { return nil })
+	_ = cb.Call(func() error { return nil })
 	if cb.State() != StateHalfOpen {
 		t.Fatalf("state = %v, want HalfOpen", cb.State())
 	}
 
 	// A failure in half-open should reopen
-	cb.Call(func() error { return errTest })
+	_ = cb.Call(func() error { return errTest })
 	if cb.State() != StateOpen {
 		t.Fatalf("state = %v, want Open after half-open failure", cb.State())
 	}
@@ -384,12 +384,12 @@ func TestHalfOpenMaxRequests(t *testing.T) {
 
 	// Trip to open
 	for i := 0; i < 2; i++ {
-		cb.Call(func() error { return errTest })
+		_ = cb.Call(func() error { return errTest })
 	}
 
 	// Advance past timeout → first call moves to half-open
 	mc.Advance(2 * time.Second)
-	cb.Call(func() error { return nil }) // consumes the 1 allowed request
+	_ = cb.Call(func() error { return nil }) // consumes the 1 allowed request
 
 	if cb.State() != StateHalfOpen {
 		t.Fatalf("state = %v, want HalfOpen", cb.State())
@@ -441,8 +441,8 @@ func TestCustomShouldTrip(t *testing.T) {
 	})
 
 	// One success, one failure
-	cb.Call(func() error { return nil })
-	cb.Call(func() error { return errTest })
+	_ = cb.Call(func() error { return nil })
+	_ = cb.Call(func() error { return errTest })
 
 	if cb.State() != StateOpen {
 		t.Fatalf("state = %v, want Open (custom ShouldTrip)", cb.State())
@@ -459,7 +459,7 @@ func TestCustomShouldTripNotTripped(t *testing.T) {
 
 	// 2 failures but threshold is 10
 	for i := 0; i < 3; i++ {
-		cb.Call(func() error { return errTest })
+		_ = cb.Call(func() error { return errTest })
 	}
 
 	if cb.State() != StateClosed {
@@ -491,12 +491,12 @@ func TestOnStateChangeHook(t *testing.T) {
 
 	// Closed → Open
 	for i := 0; i < 2; i++ {
-		cb.Call(func() error { return errTest })
+		_ = cb.Call(func() error { return errTest })
 	}
 
 	// Open → HalfOpen → Closed (SuccessThreshold=1 so one success closes it)
 	mc.Advance(2 * time.Second)
-	cb.Call(func() error { return nil })
+	_ = cb.Call(func() error { return nil })
 
 	// Collect all 3 expected transitions with a timeout
 	var transitions []transition
@@ -540,7 +540,7 @@ func TestReset(t *testing.T) {
 
 	// Trip to open
 	for i := 0; i < 2; i++ {
-		cb.Call(func() error { return errTest })
+		_ = cb.Call(func() error { return errTest })
 	}
 	if cb.State() != StateOpen {
 		t.Fatalf("state = %v, want Open", cb.State())
@@ -577,8 +577,8 @@ func TestTrip(t *testing.T) {
 func TestStats(t *testing.T) {
 	cb, _ := newTestCB(Config{Name: "test-cb", MinRequests: 100})
 
-	cb.Call(func() error { return nil })
-	cb.Call(func() error { return errTest })
+	_ = cb.Call(func() error { return nil })
+	_ = cb.Call(func() error { return errTest })
 
 	stats := cb.Stats()
 	if stats.Name != "test-cb" {
@@ -812,9 +812,9 @@ func TestConcurrentCalls(t *testing.T) {
 		go func(n int) {
 			defer wg.Done()
 			if n%3 == 0 {
-				cb.Call(func() error { return errTest })
+				_ = cb.Call(func() error { return errTest })
 			} else {
-				cb.Call(func() error { return nil })
+				_ = cb.Call(func() error { return nil })
 			}
 		}(i)
 	}
@@ -845,7 +845,7 @@ func TestFullLifecycle(t *testing.T) {
 
 	// Phase 1: Closed — all failures
 	for i := 0; i < 4; i++ {
-		cb.Call(func() error { return errTest })
+		_ = cb.Call(func() error { return errTest })
 	}
 	if cb.State() != StateOpen {
 		t.Fatalf("phase 1: state = %v, want Open", cb.State())
@@ -869,7 +869,7 @@ func TestFullLifecycle(t *testing.T) {
 	}
 
 	// Phase 4: Enough successes in half-open → Closed
-	cb.Call(func() error { return nil }) // second success
+	_ = cb.Call(func() error { return nil }) // second success
 	if cb.State() != StateClosed {
 		t.Fatalf("phase 4: state = %v, want Closed", cb.State())
 	}

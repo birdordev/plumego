@@ -83,6 +83,8 @@ For module behavior, read the target `<module>/module.yaml` before editing. For 
 
 Prefer `make validate-diff` for the current diff; use `make validate-diff-dry` when you only need to see the selected profile. Validation order is module tests first, then boundary checks, then repo-wide checks when the gate profile requires them.
 
+Lint is a zero-finding gate: `make lint` runs golangci-lint (v2 config in `.golangci.yml`, standard linter set). Fix findings in code rather than adding exclusion rules; an intentional exception needs a `//nolint` comment with a reason.
+
 Baseline boundary/manifest checks are:
 
 ```bash
@@ -97,7 +99,7 @@ go run ./internal/checks/deprecation-inventory -strict
 go run ./internal/checks/public-entrypoints-sync
 ```
 
-`make gates` mirrors CI for the main repo: boundary checks, stable API snapshot comparison for `core`, doc snippet checks, `go vet ./...`, `make reference-vet`, gofmt cleanliness, race tests, `make reference-test`, stable coverage >= 70%, `cmd/plumego` vet/race tests, and `website/src/generated` staleness. Run `make website-gates` separately for the docs website static checks/build.
+`make gates` mirrors CI for the main repo: boundary checks, stable API snapshot comparison for `core`, doc snippet checks, `go vet ./...`, `make reference-vet`, gofmt cleanliness, race tests, `make reference-test`, stable coverage >= 90%, `cmd/plumego` vet/race tests, and `website/src/generated` staleness. Run `make website-gates` separately for the docs website static checks/build.
 
 Docs-only changes may skip Go gates unless code, config, generated data, or runnable examples changed. Still validate accuracy, links, authority order, and any generated-doc staleness implied by the edited source.
 

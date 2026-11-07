@@ -76,7 +76,7 @@ func startTestServer(t *testing.T) (*http.Server, *Hub, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	go server.Serve(ln)
+	go func() { _ = server.Serve(ln) }()
 	return server, hub, "http://" + ln.Addr().String()
 }
 
@@ -105,7 +105,7 @@ func startCustomHandlerServer(t *testing.T, handled chan Message) (*http.Server,
 	if err != nil {
 		t.Fatal(err)
 	}
-	go server.Serve(ln)
+	go func() { _ = server.Serve(ln) }()
 	return server, hub, "http://" + ln.Addr().String()
 }
 
@@ -362,7 +362,7 @@ func TestServerRegisterRoutesUsesConfiguredMessageHandler(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	go httpServer.Serve(ln)
+	go func() { _ = httpServer.Serve(ln) }()
 	defer httpServer.Close()
 
 	cli := newTestWSClient(t, "http://"+ln.Addr().String(), "custom", "", testJWTToken(t, validSecret()))
@@ -406,7 +406,7 @@ func TestServeWSWithConfigHandlerCloseError(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	go server.Serve(ln)
+	go func() { _ = server.Serve(ln) }()
 	defer server.Close()
 
 	cli := newTestWSClient(t, "http://"+ln.Addr().String(), "custom", "", testJWTToken(t, validSecret()))
@@ -454,7 +454,7 @@ func TestServeWSWithConfigHandlerDefaultCloseError(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	go server.Serve(ln)
+	go func() { _ = server.Serve(ln) }()
 	defer server.Close()
 
 	cli := newTestWSClient(t, "http://"+ln.Addr().String(), "custom", "", testJWTToken(t, validSecret()))

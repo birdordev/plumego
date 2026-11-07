@@ -8,6 +8,9 @@ import (
 	internaltelemetry "github.com/spcent/plumego/middleware/internal/telemetry"
 )
 
+// Observer is the metrics sink for HTTP request observations. It is an alias
+// for [metrics.HTTPObserver]; implement it with a collector to record request
+// metrics, or pass nil to [Middleware] for a no-op pass-through.
 type Observer = metrics.HTTPObserver
 
 // Middleware records HTTP request metrics using the provided collector.

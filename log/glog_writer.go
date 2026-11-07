@@ -5,37 +5,85 @@ import (
 	"io"
 	"os"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 )
 
-// logBufferPool is used to recycle log buffers to reduce memory allocations
+// logBufferPool recycles log header buffers to reduce allocations.
+// The pool stores *[]byte (not []byte) so Put/Get avoid boxing the slice
+// header into an interface allocation on every log line.
 var logBufferPool = sync.Pool{
 	New: func() any {
-		return make([]byte, 0, 1024) // Preallocate 1KB buffer
+		b := make([]byte, 0, 1024) // Preallocate 1KB buffer
+		return &b
 	},
 }
 
-func (l *gLogger) formatHeader(level Level, file string, line int) []byte {
-	buf := logBufferPool.Get().([]byte)
-	buf = buf[:0] // Reset buffer to empty
+// appendDecimal writes v as a base-10 integer into b, right-aligned to width
+// digits with the given pad byte (typically '0'). Values wider than width are
+// written in full. The result appends without allocating.
+func appendDecimal(b []byte, v int, width int, pad byte) []byte {
+	digits := 1
+	for tmp := v / 10; tmp > 0; tmp /= 10 {
+		digits++
+	}
+	for i := digits; i < width; i++ {
+		b = append(b, pad)
+	}
+	return strconv.AppendInt(b, int64(v), 10)
+}
+
+// formatHeader builds the log header into a pooled buffer and returns the
+// pool entry pointer. The caller must return it via releaseHeaderBuffer once
+// the header (and any slice appended onto it) is no longer needed.
+func (l *gLogger) formatHeader(level Level, file string, line int) *[]byte {
+	bufp := logBufferPool.Get().(*[]byte)
+	buf := (*bufp)[:0] // Reset buffer to empty
 
 	now := time.Now()
 	if idx := strings.LastIndex(file, "/"); idx >= 0 {
 		file = file[idx+1:]
 	}
 
-	// Build header using buffer
+	// Build header directly into the pooled buffer. Format:
+	// MMDD HH:MM:SS.microseconds %7d [file:line]
 	buf = append(buf, levelInitial(level)) // First letter of level
-	buf = append(buf, fmt.Sprintf("%02d%02d %02d:%02d:%02d.%06d %7d [%s:%d] ",
-		now.Month(), now.Day(),
-		now.Hour(), now.Minute(), now.Second(),
-		now.Nanosecond()/1000,
-		pid,
-		file, line)...)
+	buf = appendDecimal(buf, int(now.Month()), 2, '0')
+	buf = appendDecimal(buf, now.Day(), 2, '0')
+	buf = append(buf, ' ')
+	buf = appendDecimal(buf, now.Hour(), 2, '0')
+	buf = append(buf, ':')
+	buf = appendDecimal(buf, now.Minute(), 2, '0')
+	buf = append(buf, ':')
+	buf = appendDecimal(buf, now.Second(), 2, '0')
+	buf = append(buf, '.')
+	buf = appendDecimal(buf, now.Nanosecond()/1000, 6, '0')
+	buf = append(buf, ' ')
+	buf = appendDecimal(buf, pid, 7, ' ')
+	buf = append(buf, ' ')
+	buf = append(buf, '[')
+	buf = append(buf, file...)
+	buf = append(buf, ':')
+	buf = strconv.AppendInt(buf, int64(line), 10)
+	buf = append(buf, ']')
+	buf = append(buf, ' ')
 
-	return buf
+	*bufp = buf
+	return bufp
+}
+
+// releaseHeaderBuffer resets a header buffer obtained from formatHeader and
+// returns it to the pool.
+func releaseHeaderBuffer(bufp *[]byte) {
+	// Do not pool buffers that grew far beyond the preallocated size; a single
+	// huge log line would otherwise pin the memory in the pool.
+	if cap(*bufp) > 64*1024 {
+		return
+	}
+	*bufp = (*bufp)[:0]
+	logBufferPool.Put(bufp)
 }
 
 // rebuildWriterCache pre-computes the effective io.Writer for each log level
@@ -128,9 +176,9 @@ func (l *gLogger) logInternal(level Level, calldepth int, messageBuilder func() 
 	}
 
 	// Format header and message
-	header := l.formatHeader(level, file, line)
+	headerBuf := l.formatHeader(level, file, line)
 	message := messageBuilder()
-	logLine := append(header, message...)
+	logLine := append(*headerBuf, message...)
 	logLine = append(logLine, '\n')
 
 	l.writeMu.Lock()
@@ -147,15 +195,16 @@ func (l *gLogger) logInternal(level Level, calldepth int, messageBuilder func() 
 		l.reportWriteError(err)
 	}
 
-	// Return buffer to pool
-	logBufferPool.Put(header[:0])
-
 	// Check if log file needs rotation
 	if l.logDir != "" {
 		for _, writtenLevel := range l.fileLevelsForLog(level) {
 			_ = l.checkLogRotation(writtenLevel, int64(len(logLine)))
 		}
 	}
+
+	// Return buffer to pool. logLine may alias the header buffer's backing
+	// array, so this must stay after logLine's last use.
+	releaseHeaderBuffer(headerBuf)
 
 	// Handle backtrace if needed
 	if shouldBacktrace {

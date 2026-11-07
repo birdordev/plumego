@@ -61,24 +61,22 @@ func ExampleServer() {
 		BufferSize:     8192,
 	}
 
-	server, err := NewServer("test_socket", optionsFromConfig(config)...)
+	// Use a unique temporary socket path so the example is runnable and leaves
+	// no residue in the package directory.
+	addr := filepath.Join(os.TempDir(), fmt.Sprintf("plumego-ipc-example-%d.sock", time.Now().UnixNano()))
+	server, err := NewServer(addr, optionsFromConfig(config)...)
 	if err != nil {
 		stdlog.Fatal(err)
 	}
 	defer server.Close()
 
-	fmt.Printf("Server listening on: %s\n", server.Addr())
-
-	// Accept connections
+	// Accept connections and echo each client's messages back.
 	go func() {
 		for {
 			client, acceptErr := server.Accept()
 			if acceptErr != nil {
-				stdlog.Printf("Accept error: %v", acceptErr)
 				return
 			}
-
-			// Handle client in goroutine
 			go handleClient(client)
 		}
 	}()
@@ -98,13 +96,17 @@ func ExampleServer() {
 	}
 	fmt.Printf("Sent %d bytes\n", n)
 
-	// Read response
+	// Read the echoed response
 	buf := make([]byte, 1024)
 	n, err = client.ReadWithTimeout(buf, 5*time.Second)
 	if err != nil {
 		stdlog.Fatal(err)
 	}
 	fmt.Printf("Received: %s\n", string(buf[:n]))
+
+	// Output:
+	// Sent 11 bytes
+	// Received: Hello, IPC!
 }
 
 func handleClient(client Client) {
@@ -388,7 +390,7 @@ func TestWithTimeout(t *testing.T) {
 
 			// Read but don't respond immediately
 			buf := make([]byte, 1024)
-			serverClient.Read(buf)
+			_, _ = serverClient.Read(buf)
 
 			// Delay response
 			time.Sleep(200 * time.Millisecond)
@@ -733,7 +735,7 @@ func BenchmarkClientServer(b *testing.B) {
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
 			client.Write(data)
-			serverClient.Read(buf)
+			_, _ = serverClient.Read(buf)
 		}
 	})
 }
@@ -756,7 +758,7 @@ func BenchmarkLargeWrite(b *testing.B) {
 	b.SetBytes(int64(len(data)))
 
 	for i := 0; i < b.N; i++ {
-		go serverClient.Read(buf)
+		go func() { _, _ = serverClient.Read(buf) }()
 		client.Write(data)
 	}
 }

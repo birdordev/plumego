@@ -3,6 +3,7 @@ package testmetrics
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -252,36 +253,36 @@ func TestMockCollector_ConcurrentAccess(t *testing.T) {
 
 // Example_mockCollector_embedding demonstrates embedding NoopCollector
 func Example_mockCollector_embedding() {
-	// Create a custom mock by embedding NoopCollector
-	// and only overriding the methods you care about
+	// Create a custom mock by embedding NoopCollector and overriding only the
+	// methods you care about. Everything else falls through to the embedded
+	// no-op collector.
 	type customMock struct {
 		*NoopCollector
-		httpCallCount int
 	}
 
 	mock := &customMock{
 		NoopCollector: metrics.NewNoopCollector(),
 	}
 
-	// Override only the method you want to test
-	// This is done by defining the method on customMock
-	_ = mock
-	_ = mock.NoopCollector
+	// The embedded NoopCollector keeps default metric calls safe no-ops.
+	mock.ObserveHTTP(context.Background(), "GET", "/", 200, 0, 0)
+
+	// Output:
 }
 
 // Example_mockCollector_hooks demonstrates using hooks
 func Example_mockCollector_hooks() {
 	mock := NewMockCollector()
 
-	// Set up hook to verify parameters
+	// Set up a hook to observe the operation without a panic.
 	mock.OnObserveDB = func(ctx context.Context, operation, driver, query string, rows int, duration time.Duration, err error) {
-		// Add custom assertions here
-		if operation != "query" {
-			panic("unexpected operation")
-		}
+		fmt.Printf("observed %s on %s\n", operation, driver)
 	}
 
 	// Use the mock
 	ctx := context.Background()
 	mock.ObserveDB(ctx, "query", "postgres", "SELECT 1", 1, 5*time.Millisecond, nil)
+
+	// Output:
+	// observed query on postgres
 }

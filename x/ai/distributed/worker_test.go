@@ -66,7 +66,7 @@ func TestWorker_StartStop(t *testing.T) {
 	defer broker.Close()
 
 	tmpDir := t.TempDir()
-	store, _ := kv.NewKVStore(kv.Options{DataDir: filepath.Join(tmpDir, "test")})
+	store, _ := kv.NewKVStore(kv.Config{DataDir: filepath.Join(tmpDir, "test")})
 	defer store.Close()
 	persistence := NewKVPersistence(store)
 
@@ -205,7 +205,7 @@ func TestWorkerPool(t *testing.T) {
 	defer broker.Close()
 
 	tmpDir := t.TempDir()
-	store, _ := kv.NewKVStore(kv.Options{DataDir: filepath.Join(tmpDir, "test")})
+	store, _ := kv.NewKVStore(kv.Config{DataDir: filepath.Join(tmpDir, "test")})
 	defer store.Close()
 	persistence := NewKVPersistence(store)
 
@@ -351,7 +351,7 @@ func TestWorker_HandleTask(t *testing.T) {
 	defer broker.Close()
 
 	tmpDir := t.TempDir()
-	store, _ := kv.NewKVStore(kv.Options{DataDir: filepath.Join(tmpDir, "test")})
+	store, _ := kv.NewKVStore(kv.Config{DataDir: filepath.Join(tmpDir, "test")})
 	defer store.Close()
 	persistence := NewKVPersistence(store)
 

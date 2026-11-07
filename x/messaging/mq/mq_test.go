@@ -18,7 +18,7 @@ func TestInProcBrokerPublishSubscribe(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer broker.Close()
+	defer func() { _ = broker.Close() }()
 
 	sub, err := broker.Subscribe(t.Context(), "topic", SubOptions{BufferSize: 1})
 	if err != nil {
@@ -49,7 +49,7 @@ func TestInProcBrokerContextCancel(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer broker.Close()
+	defer func() { _ = broker.Close() }()
 
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
@@ -88,7 +88,7 @@ func TestInProcBrokerMetrics(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer broker.Close()
+	defer func() { _ = broker.Close() }()
 
 	if err := broker.Publish(t.Context(), "topic", Message{ID: "test-1"}); err != nil {
 		t.Fatalf("unexpected publish error: %v", err)
@@ -115,7 +115,7 @@ func TestInProcBrokerValidation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer broker.Close()
+	defer func() { _ = broker.Close() }()
 
 	// Test empty topic
 	err = broker.Publish(t.Context(), "  ", Message{ID: "test-1"})
@@ -148,7 +148,7 @@ func TestInProcBrokerConcurrent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer broker.Close()
+	defer func() { _ = broker.Close() }()
 
 	// Subscribe with larger buffer
 	sub, err := broker.Subscribe(t.Context(), "topic", SubOptions{BufferSize: 1000})
@@ -226,7 +226,7 @@ func TestInProcBrokerLongTopic(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer broker.Close()
+	defer func() { _ = broker.Close() }()
 
 	// Create a topic longer than 1024 characters
 	longTopic := strings.Repeat("a", 1025)
@@ -242,7 +242,7 @@ func TestInProcBrokerHealthCheck(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer broker.Close()
+	defer func() { _ = broker.Close() }()
 
 	// Subscribe to a topic
 	sub, err := broker.Subscribe(t.Context(), "health-test", SubOptions{BufferSize: 1})
@@ -280,7 +280,7 @@ func TestInProcBrokerConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer broker.Close()
+	defer func() { _ = broker.Close() }()
 
 	// Get default config
 	cfg := broker.GetConfig()
@@ -321,7 +321,7 @@ func TestInProcBrokerPublishBatch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer broker.Close()
+	defer func() { _ = broker.Close() }()
 
 	// Subscribe
 	sub, err := broker.Subscribe(t.Context(), "batch-topic", SubOptions{BufferSize: 10})
@@ -363,7 +363,7 @@ func TestInProcBrokerSubscribeBatch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer broker.Close()
+	defer func() { _ = broker.Close() }()
 
 	// Subscribe to multiple topics
 	topics := []string{"topic-1", "topic-2", "topic-3"}
@@ -572,7 +572,7 @@ func TestInProcBrokerPriorityQueue(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer broker.Close()
+	defer func() { _ = broker.Close() }()
 
 	// Test priority message
 	priorityMsg := PriorityMessage{
@@ -598,7 +598,7 @@ func TestInProcBrokerAckSupport(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer broker.Close()
+	defer func() { _ = broker.Close() }()
 
 	cfg := broker.GetConfig()
 	if cfg.EnableAckSupport {
@@ -612,7 +612,7 @@ func TestInProcBrokerAckSupport(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer brokerWithAck.Close()
+	defer func() { _ = brokerWithAck.Close() }()
 
 	// Test publishing with acknowledgment
 	ackMsg := AckMessage{
@@ -659,7 +659,7 @@ func TestInProcBrokerMemoryLimit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer broker.Close()
+	defer func() { _ = broker.Close() }()
 
 	// Get memory usage
 	memUsage := broker.GetMemoryUsage()
@@ -691,7 +691,7 @@ func TestInProcBrokerMemoryLimitExceeded(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer broker.Close()
+	defer func() { _ = broker.Close() }()
 
 	// Try to publish a message - should fail due to memory limit
 	err = broker.Publish(t.Context(), "test-topic", Message{ID: "test-1", Data: "test"})
@@ -713,7 +713,7 @@ func TestInProcBrokerMemoryLimitEnforced(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer broker.Close()
+	defer func() { _ = broker.Close() }()
 
 	testCases := []struct {
 		name string
@@ -781,7 +781,7 @@ func TestInProcBrokerTriePattern(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer broker.Close()
+	defer func() { _ = broker.Close() }()
 
 	// Verify config
 	updatedCfg := broker.GetConfig()
@@ -820,7 +820,7 @@ func TestInProcBrokerTransaction(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer broker.Close()
+	defer func() { _ = broker.Close() }()
 
 	// Verify config
 	updatedCfg := broker.GetConfig()
@@ -864,7 +864,7 @@ func TestInProcBrokerDeadLetter(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer broker.Close()
+	defer func() { _ = broker.Close() }()
 
 	// Verify config
 	updatedCfg := broker.GetConfig()
@@ -897,7 +897,7 @@ func TestInProcBrokerPersistence(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer broker.Close()
+	defer func() { _ = broker.Close() }()
 
 	// Verify config
 	updatedCfg := broker.GetConfig()
@@ -914,7 +914,7 @@ func TestInProcBrokerClusterDisabled(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer broker.Close()
+	defer func() { _ = broker.Close() }()
 
 	// Test cluster operations when disabled
 	err = broker.PublishToCluster(t.Context(), "topic", Message{ID: "test-1", Data: "test"})
@@ -934,7 +934,7 @@ func TestInProcBrokerTransactionDisabled(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer broker.Close()
+	defer func() { _ = broker.Close() }()
 
 	// Test transaction operations when disabled
 	err = broker.PublishWithTransaction(t.Context(), "topic", Message{ID: "test-1", Data: "test"}, "tx-1")
@@ -958,7 +958,7 @@ func TestInProcBrokerDeadLetterDisabled(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer broker.Close()
+	defer func() { _ = broker.Close() }()
 
 	// Test dead letter operations when disabled
 	err = broker.PublishToDeadLetter(t.Context(), "topic", Message{ID: "test-1", Data: "test"}, "reason")

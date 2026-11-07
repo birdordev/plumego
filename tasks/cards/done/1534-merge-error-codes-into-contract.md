@@ -4,7 +4,7 @@ Milestone: M-027
 Recipe: specs/change-recipes/symbol-change.yaml
 Context Package: middleware
 Priority: P1
-State: active
+State: done
 Primary Module: contract, internal/httputil
 Owned Files: contract/error_codes.go, internal/httputil/errors.go, middleware/concurrencylimit/concurrency_limit.go, middleware/singleflight/singleflight.go
 Depends On: (none)

@@ -31,9 +31,12 @@ symbol	github.com/spcent/plumego/contract	const	CodeRateLimited	const CodeRateLi
 symbol	github.com/spcent/plumego/contract	const	CodeRequestBodyTooLarge	const CodeRequestBodyTooLarge = "REQUEST_BODY_TOO_LARGE"
 symbol	github.com/spcent/plumego/contract	const	CodeRequired	const CodeRequired = "REQUIRED_FIELD_MISSING"
 symbol	github.com/spcent/plumego/contract	const	CodeResourceNotFound	const CodeResourceNotFound = "RESOURCE_NOT_FOUND"
+symbol	github.com/spcent/plumego/contract	const	CodeServerBusy	const CodeServerBusy = "server_busy"
+symbol	github.com/spcent/plumego/contract	const	CodeServerQueueTimeout	const CodeServerQueueTimeout = "server_queue_timeout"
 symbol	github.com/spcent/plumego/contract	const	CodeTimeout	const CodeTimeout = "TIMEOUT"
 symbol	github.com/spcent/plumego/contract	const	CodeUnauthorized	const CodeUnauthorized = "UNAUTHORIZED"
 symbol	github.com/spcent/plumego/contract	const	CodeUnavailable	const CodeUnavailable = "SERVICE_UNAVAILABLE"
+symbol	github.com/spcent/plumego/contract	const	CodeUpstreamFailed	const CodeUpstreamFailed = "upstream_failed"
 symbol	github.com/spcent/plumego/contract	const	CodeValidationError	const CodeValidationError = "VALIDATION_ERROR"
 symbol	github.com/spcent/plumego/contract	const	ContentTypeJSON	const ContentTypeJSON = "application/json"
 symbol	github.com/spcent/plumego/contract	const	HeaderContentType	const HeaderContentType = "Content-Type"
@@ -67,10 +70,10 @@ symbol	github.com/spcent/plumego/contract	const	TypeValidation	const TypeValidat
 symbol	github.com/spcent/plumego/contract	func	AsAPIError	func AsAPIErrorfunc(err error) (APIError, bool)
 symbol	github.com/spcent/plumego/contract	func	GetRouteState	func GetRouteStatefunc() *RouteState
 symbol	github.com/spcent/plumego/contract	func	NewErrorBuilder	func NewErrorBuilderfunc() *ErrorBuilder
+symbol	github.com/spcent/plumego/contract	func	PutRouteState	func PutRouteStatefunc(rs *RouteState)
 symbol	github.com/spcent/plumego/contract	func	RequestContextFromContext	func RequestContextFromContextfunc(ctx context.Context) RequestContext
 symbol	github.com/spcent/plumego/contract	func	RequestIDFromContext	func RequestIDFromContextfunc(ctx context.Context) string
 symbol	github.com/spcent/plumego/contract	func	RequestParamFromContext	func RequestParamFromContextfunc(ctx context.Context, name string) string
-symbol	github.com/spcent/plumego/contract	func	PutRouteState	func PutRouteStatefunc(rs *RouteState)
 symbol	github.com/spcent/plumego/contract	func	TraceContextFromContext	func TraceContextFromContextfunc(ctx context.Context) (TraceContext, bool)
 symbol	github.com/spcent/plumego/contract	func	WithRequestContext	func WithRequestContextfunc(ctx context.Context, rc RequestContext) context.Context
 symbol	github.com/spcent/plumego/contract	func	WithRequestID	func WithRequestIDfunc(ctx context.Context, id string) context.Context
@@ -82,11 +85,11 @@ symbol	github.com/spcent/plumego/contract	method	APIError.Category	func (APIErro
 symbol	github.com/spcent/plumego/contract	method	APIError.Code	func (APIError) Codefunc() string
 symbol	github.com/spcent/plumego/contract	method	APIError.Details	func (APIError) Detailsfunc() map[string]any
 symbol	github.com/spcent/plumego/contract	method	APIError.Error	func (APIError) Errorfunc() string
-symbol	github.com/spcent/plumego/contract	method	APIError.Unwrap	func (APIError) Unwrapfunc() error
 symbol	github.com/spcent/plumego/contract	method	APIError.Message	func (APIError) Messagefunc() string
 symbol	github.com/spcent/plumego/contract	method	APIError.RequestID	func (APIError) RequestIDfunc() string
 symbol	github.com/spcent/plumego/contract	method	APIError.Status	func (APIError) Statusfunc() int
 symbol	github.com/spcent/plumego/contract	method	APIError.Type	func (APIError) Typefunc() ErrorType
+symbol	github.com/spcent/plumego/contract	method	APIError.Unwrap	func (APIError) Unwrapfunc() error
 symbol	github.com/spcent/plumego/contract	method	ErrorBuilder.Build	func (ErrorBuilder) Buildfunc() APIError
 symbol	github.com/spcent/plumego/contract	method	ErrorBuilder.Code	func (ErrorBuilder) Codefunc(code string) *ErrorBuilder
 symbol	github.com/spcent/plumego/contract	method	ErrorBuilder.Detail	func (ErrorBuilder) Detailfunc(key string, value any) *ErrorBuilder

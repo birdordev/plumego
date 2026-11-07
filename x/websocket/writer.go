@@ -52,7 +52,7 @@ func (c *Conn) WriteMessageContext(ctx context.Context, op byte, data []byte) er
 	case SendDrop:
 		return ErrQueueFull
 	case SendClose:
-		c.Close()
+		_ = c.Close()
 		return ErrQueueFullClosed
 	default:
 		return errors.New("unknown send behavior")
@@ -138,7 +138,7 @@ func (c *Conn) writerPump() {
 	ticker := time.NewTicker(period)
 	defer func() {
 		ticker.Stop()
-		c.Close()
+		_ = c.Close()
 	}()
 	for {
 		select {
@@ -152,7 +152,7 @@ func (c *Conn) writerPump() {
 			data := out.Data
 			if len(data) <= maxFragmentSize {
 				if err := c.writeFrame(out.Op, true, data); err != nil {
-					c.Close()
+					_ = c.Close()
 					return
 				}
 				continue
@@ -175,7 +175,7 @@ func (c *Conn) writerPump() {
 					op = opcodeContinuation
 				}
 				if err := c.writeFrame(op, fin, chunk); err != nil {
-					c.Close()
+					_ = c.Close()
 					return
 				}
 				offset = end
@@ -187,7 +187,7 @@ func (c *Conn) writerPump() {
 				ticker.Reset(period)
 			}
 			if err := c.writeFrame(opcodePing, true, []byte("ping")); err != nil {
-				c.Close()
+				_ = c.Close()
 				return
 			}
 		}

@@ -124,7 +124,7 @@ func BenchmarkLeaderboardCacheZScore(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		lbc.ZScore(ctx, "benchmark", fmt.Sprintf("member%d", i%10000))
+		_, _ = lbc.ZScore(ctx, "benchmark", fmt.Sprintf("member%d", i%10000))
 	}
 }
 
@@ -147,7 +147,7 @@ func BenchmarkLeaderboardCacheZIncrBy(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		lbc.ZIncrBy(ctx, "benchmark", fmt.Sprintf("member%d", i%10000), 1.0)
+		_, _ = lbc.ZIncrBy(ctx, "benchmark", fmt.Sprintf("member%d", i%10000), 1.0)
 	}
 }
 
@@ -170,7 +170,7 @@ func BenchmarkLeaderboardCacheZRange(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		lbc.ZRange(ctx, "benchmark", 0, 99, true)
+		_, _ = lbc.ZRange(ctx, "benchmark", 0, 99, true)
 	}
 }
 
@@ -193,7 +193,7 @@ func BenchmarkLeaderboardCacheZRangeByScore(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		lbc.ZRangeByScore(ctx, "benchmark", 1000.0, 2000.0, false)
+		_, _ = lbc.ZRangeByScore(ctx, "benchmark", 1000.0, 2000.0, false)
 	}
 }
 
@@ -216,7 +216,7 @@ func BenchmarkLeaderboardCacheZRank(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		lbc.ZRank(ctx, "benchmark", fmt.Sprintf("member%d", i%10000), true)
+		_, _ = lbc.ZRank(ctx, "benchmark", fmt.Sprintf("member%d", i%10000), true)
 	}
 }
 
@@ -239,7 +239,7 @@ func BenchmarkLeaderboardCacheZCard(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		lbc.ZCard(ctx, "benchmark")
+		_, _ = lbc.ZCard(ctx, "benchmark")
 	}
 }
 
@@ -262,7 +262,7 @@ func BenchmarkLeaderboardCacheZCount(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		lbc.ZCount(ctx, "benchmark", 1000.0, 2000.0)
+		_, _ = lbc.ZCount(ctx, "benchmark", 1000.0, 2000.0)
 	}
 }
 
@@ -283,7 +283,7 @@ func BenchmarkLeaderboardCacheScoreRangeFullScanBaseline(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		lbc.ZCount(ctx, "benchmark", 0, float64(lbConfig.MaxMembersPerSet))
+		_, _ = lbc.ZCount(ctx, "benchmark", 0, float64(lbConfig.MaxMembersPerSet))
 	}
 }
 
@@ -370,7 +370,7 @@ func BenchmarkLeaderboardCacheParallelZScore(b *testing.B) {
 	b.RunParallel(func(pb *testing.PB) {
 		i := 0
 		for pb.Next() {
-			lbc.ZScore(ctx, "benchmark", fmt.Sprintf("member%d", i%10000))
+			_, _ = lbc.ZScore(ctx, "benchmark", fmt.Sprintf("member%d", i%10000))
 			i++
 		}
 	})
@@ -397,7 +397,7 @@ func BenchmarkLeaderboardCacheParallelZRank(b *testing.B) {
 	b.RunParallel(func(pb *testing.PB) {
 		i := 0
 		for pb.Next() {
-			lbc.ZRank(ctx, "benchmark", fmt.Sprintf("member%d", i%10000), true)
+			_, _ = lbc.ZRank(ctx, "benchmark", fmt.Sprintf("member%d", i%10000), true)
 			i++
 		}
 	})

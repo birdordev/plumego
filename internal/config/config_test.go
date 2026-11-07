@@ -166,10 +166,10 @@ func TestConfigWithData(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create test config file: %v", err)
 	}
-	defer os.Remove(tmpFile)
+	defer func() { _ = os.Remove(tmpFile) }()
 
 	// Add file source
-	cfg.AddSource(NewFileSource(tmpFile, FormatJSON, false))
+	_ = cfg.AddSource(NewFileSource(tmpFile, FormatJSON, false))
 
 	// Load config
 	err = cfg.Load(ctx)
@@ -274,8 +274,8 @@ func TestConfigUnmarshalNestedStruct(t *testing.T) {
 
 func TestLoadBestEffort(t *testing.T) {
 	cfg := NewManager(log.NewLogger())
-	cfg.AddSource(&stubSource{name: "bad", err: errors.New("boom")})
-	cfg.AddSource(&stubSource{name: "ok", data: map[string]any{"app_name": "demo"}})
+	_ = cfg.AddSource(&stubSource{name: "bad", err: errors.New("boom")})
+	_ = cfg.AddSource(&stubSource{name: "ok", data: map[string]any{"app_name": "demo"}})
 
 	if err := cfg.LoadBestEffort(t.Context()); err != nil {
 		t.Fatalf("expected best effort load to succeed, got %v", err)
@@ -288,8 +288,8 @@ func TestLoadBestEffort(t *testing.T) {
 
 func TestLoadBestEffortAllFail(t *testing.T) {
 	cfg := NewManager(log.NewLogger())
-	cfg.AddSource(&stubSource{name: "bad1", err: errors.New("boom1")})
-	cfg.AddSource(&stubSource{name: "bad2", err: errors.New("boom2")})
+	_ = cfg.AddSource(&stubSource{name: "bad1", err: errors.New("boom1")})
+	_ = cfg.AddSource(&stubSource{name: "bad2", err: errors.New("boom2")})
 
 	if err := cfg.LoadBestEffort(t.Context()); err == nil {
 		t.Fatalf("expected error when all sources fail")
@@ -299,7 +299,7 @@ func TestLoadBestEffortAllFail(t *testing.T) {
 func TestReloadWithValidation(t *testing.T) {
 	source := &stubSource{name: "test", data: map[string]any{"value": "ok"}}
 	cfg := NewManager(log.NewLogger())
-	cfg.AddSource(source)
+	_ = cfg.AddSource(source)
 
 	if err := cfg.Load(t.Context()); err != nil {
 		t.Fatalf("load failed: %v", err)
@@ -341,7 +341,7 @@ func TestConfigUnmarshal(t *testing.T) {
 	t.Setenv("DEBUG_MODE", "true")
 	t.Setenv("MAX_CONNECTIONS", "200")
 
-	cfg.AddSource(NewEnvSource(""))
+	_ = cfg.AddSource(NewEnvSource(""))
 
 	err := cfg.Load(ctx)
 	if err != nil {
@@ -382,11 +382,11 @@ func TestConfigUnmarshal(t *testing.T) {
 func TestReloadNotifiesWatchers(t *testing.T) {
 	source := &stubSource{name: "test", data: map[string]any{"value": "v1"}}
 	cfg := NewManager(log.NewLogger())
-	cfg.AddSource(source)
-	cfg.Load(t.Context())
+	_ = cfg.AddSource(source)
+	_ = cfg.Load(t.Context())
 
 	got := make(chan string, 1)
-	cfg.Watch("value", func(_, newVal any) {
+	_ = cfg.Watch("value", func(_, newVal any) {
 		got <- toString(newVal)
 	})
 
@@ -408,11 +408,11 @@ func TestReloadNotifiesWatchers(t *testing.T) {
 func TestReloadWithValidationWatcherOnlyOnSuccess(t *testing.T) {
 	source := &stubSource{name: "test", data: map[string]any{"value": "ok"}}
 	cfg := NewManager(log.NewLogger())
-	cfg.AddSource(source)
-	cfg.Load(t.Context())
+	_ = cfg.AddSource(source)
+	_ = cfg.Load(t.Context())
 
 	fired := make(chan struct{}, 1)
-	cfg.Watch("value", func(_, _ any) { fired <- struct{}{} })
+	_ = cfg.Watch("value", func(_, _ any) { fired <- struct{}{} })
 
 	// Failed validation — watcher must NOT fire
 	source.data = map[string]any{"value": "bad"}

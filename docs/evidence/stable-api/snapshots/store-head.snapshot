@@ -91,6 +91,7 @@ symbol	github.com/spcent/plumego/store/idempotency	var	ErrInvalidKey	var ErrInva
 symbol	github.com/spcent/plumego/store/idempotency	var	ErrInvalidRecord	var ErrInvalidRecord = errors.New("idempotency: invalid record")
 symbol	github.com/spcent/plumego/store/idempotency	var	ErrNotFound	var ErrNotFound = errors.New("idempotency: record not found")
 symbol	github.com/spcent/plumego/store/idempotency	var	ErrRequestMismatch	var ErrRequestMismatch = errors.New("idempotency: request hash mismatch")
+symbol	github.com/spcent/plumego/store/kv	func	DefaultConfig	func DefaultConfigfunc(dataDir string) Config
 symbol	github.com/spcent/plumego/store/kv	func	DefaultOptions	func DefaultOptionsfunc(dataDir string) Options
 symbol	github.com/spcent/plumego/store/kv	func	NewKVStore	func NewKVStorefunc(opts Options) (*KVStore, error)
 symbol	github.com/spcent/plumego/store/kv	method	KVStore.Close	func (KVStore) Closefunc() error
@@ -104,8 +105,9 @@ symbol	github.com/spcent/plumego/store/kv	method	KVStore.KeysContext	func (KVSto
 symbol	github.com/spcent/plumego/store/kv	method	KVStore.Set	func (KVStore) Setfunc(key string, value []byte, ttl time.Duration) error
 symbol	github.com/spcent/plumego/store/kv	method	KVStore.SetContext	func (KVStore) SetContextfunc(ctx context.Context, key string, value []byte, ttl time.Duration) error
 symbol	github.com/spcent/plumego/store/kv	method	KVStore.SizeContext	func (KVStore) SizeContextfunc(ctx context.Context) (int, error)
+symbol	github.com/spcent/plumego/store/kv	type	Config	type Config struct { DataDir string `json:"data_dir"` MaxEntries int `json:"max_entries"` MaxMemoryMB int `json:"max_memory_mb"` }
 symbol	github.com/spcent/plumego/store/kv	type	KVStore	type KVStore struct { }
-symbol	github.com/spcent/plumego/store/kv	type	Options	type Options struct { DataDir string `json:"data_dir"` MaxEntries int `json:"max_entries"` MaxMemoryMB int `json:"max_memory_mb"` }
+symbol	github.com/spcent/plumego/store/kv	type	Options	type Options = Config
 symbol	github.com/spcent/plumego/store/kv	type	Stats	type Stats struct { Entries int64 `json:"entries"` Hits int64 `json:"hits"` Misses int64 `json:"misses"` MemoryUsage int64 `json:"memory_usage"` HitRatio float64 `json:"hit_ratio"` }
 symbol	github.com/spcent/plumego/store/kv	var	ErrCorruptState	var ErrCorruptState = errors.New("kv: corrupt state")
 symbol	github.com/spcent/plumego/store/kv	var	ErrInvalidKey	var ErrInvalidKey = errors.New("kv: key is required")

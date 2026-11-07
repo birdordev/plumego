@@ -138,11 +138,11 @@ func TestErrorVariables(t *testing.T) {
 	}
 }
 
+// Static must satisfy the Discovery interface; checked at compile time.
+var _ Discovery = (*Static)(nil)
+
 func TestDiscoveryInterface_StaticImplements(t *testing.T) {
 	var d Discovery = NewStatic(nil)
-	if d == nil {
-		t.Fatal("NewStatic returned nil")
-	}
 
 	ctx := t.Context()
 

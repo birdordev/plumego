@@ -99,7 +99,7 @@ func readCandidates(path string) ([]candidate, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	var candidates []candidate
 	var current *candidate
@@ -473,7 +473,7 @@ func readModuleManifest(path string) (moduleManifest, error) {
 	if err != nil {
 		return moduleManifest{}, err
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	manifest := moduleManifest{Tiers: map[string][]string{}}
 	currentTier := ""

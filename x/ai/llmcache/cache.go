@@ -339,7 +339,7 @@ func (p *CachingProvider) Complete(ctx context.Context, req *provider.Completion
 		Usage:     resp.Usage,
 		CreatedAt: time.Now(),
 	}
-	p.cache.Set(ctx, key, entry)
+	_ = p.cache.Set(ctx, key, entry)
 
 	return resp, nil
 }

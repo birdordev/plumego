@@ -19,7 +19,7 @@ var validIdentifier = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*$`)
 type errConnector struct{ err error }
 
 func (c errConnector) Connect(context.Context) (driver.Conn, error) { return nil, c.err }
-func (c errConnector) Driver() driver.Driver                        { return errDriver{c.err} }
+func (c errConnector) Driver() driver.Driver                        { return errDriver(c) }
 
 type errDriver struct{ err error }
 

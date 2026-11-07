@@ -515,14 +515,14 @@ func handshakeUpgradeConn(w http.ResponseWriter, r *http.Request, cfg ServerConf
 	if cfg.WriteTimeout > 0 {
 		if err := c.SetWriteTimeout(cfg.WriteTimeout); err != nil {
 			writeHijackedWebSocketHandshakeError(buf.Writer, http.StatusInternalServerError, codeWebSocketInvalidConfig, "websocket server misconfigured", contract.CategoryServer)
-			c.Close()
+			_ = c.Close()
 			return nil, nil, false
 		}
 	}
 	if cfg.ReadLimit > 0 {
 		if err := c.SetReadLimit(cfg.ReadLimit); err != nil {
 			writeHijackedWebSocketHandshakeError(buf.Writer, http.StatusInternalServerError, codeWebSocketInvalidConfig, "websocket server misconfigured", contract.CategoryServer)
-			c.Close()
+			_ = c.Close()
 			return nil, nil, false
 		}
 	}
@@ -533,7 +533,7 @@ func handshakeUpgradeConn(w http.ResponseWriter, r *http.Request, cfg ServerConf
 func handshakeRegisterAndRespond(c *Conn, bufWriter *bufio.Writer, cfg ServerConfig, room, key string) bool {
 	if err := cfg.Hub.tryJoin(room, c, cfg.RoomNameValidator); err != nil {
 		writeHijackedWebSocketHandshakeError(bufWriter, websocketJoinDeniedStatus(err), codeWebSocketJoinDenied, "websocket room join denied", contract.CategoryClient)
-		c.Close()
+		_ = c.Close()
 		return false
 	}
 
@@ -545,12 +545,12 @@ func handshakeRegisterAndRespond(c *Conn, bufWriter *bufio.Writer, cfg ServerCon
 		"\r\n"
 	if _, err := bufWriter.WriteString(resp); err != nil {
 		cfg.Hub.RemoveConn(c)
-		c.Close()
+		_ = c.Close()
 		return false
 	}
 	if err := bufWriter.Flush(); err != nil {
 		cfg.Hub.RemoveConn(c)
-		c.Close()
+		_ = c.Close()
 		return false
 	}
 	return true
@@ -571,7 +571,7 @@ func startReadLoopAndCleanup(c *Conn, room string, cfg ServerConfig) {
 					cfg.Hub.logger.Printf("ReadMessageReader error: %v", err)
 					writeCloseForReadError(c, err)
 				}
-				c.Close()
+				_ = c.Close()
 				return
 			}
 			buf := msgBufPool.Get().(*bytes.Buffer)
@@ -581,14 +581,14 @@ func startReadLoopAndCleanup(c *Conn, room string, cfg ServerConfig) {
 				putMessageBuffer(buf)
 				cfg.Hub.logger.Printf("ReadMessageReader copy error: %v", err)
 				writeCloseForReadError(c, err)
-				c.Close()
+				_ = c.Close()
 				return
 			}
 			if err := rstream.Close(); err != nil {
 				putMessageBuffer(buf)
 				cfg.Hub.logger.Printf("ReadMessageReader close error: %v", err)
 				_ = c.WriteClose(CloseServerError, "read close failed")
-				c.Close()
+				_ = c.Close()
 				return
 			}
 			// Validate text messages before broadcasting.
@@ -597,7 +597,7 @@ func startReadLoopAndCleanup(c *Conn, room string, cfg ServerConfig) {
 					cfg.Hub.logger.Printf("closing invalid text message: %v", err)
 					putMessageBuffer(buf)
 					writeCloseForValidationError(c, err)
-					c.Close()
+					_ = c.Close()
 					return
 				}
 			}
@@ -609,7 +609,7 @@ func startReadLoopAndCleanup(c *Conn, room string, cfg ServerConfig) {
 				if err := cfg.OnMessage(c, Message{Room: room, Op: op, Data: data}); err != nil {
 					cfg.Hub.logger.Printf("OnMessage error: %v", err)
 					writeCloseForHandlerError(c, err)
-					c.Close()
+					_ = c.Close()
 					return
 				}
 			}

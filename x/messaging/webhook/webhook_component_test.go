@@ -22,7 +22,7 @@ import (
 
 func TestWebhookBridge(t *testing.T) {
 	ps := pubsub.New()
-	defer ps.Close()
+	defer func() { _ = ps.Close() }()
 
 	// Test with nil PubSub
 	bridgeBad := &WebhookBridge{
@@ -60,7 +60,7 @@ func TestWebhookBridge(t *testing.T) {
 
 func TestWebhookBridgeStopAll(t *testing.T) {
 	ps := pubsub.New()
-	defer ps.Close()
+	defer func() { _ = ps.Close() }()
 
 	bridge := &WebhookBridge{
 		Pub:   ps,
@@ -102,7 +102,7 @@ func TestWebhookBridgeFirstNonEmpty(t *testing.T) {
 
 func TestWebhookInboundBasic(t *testing.T) {
 	ps := pubsub.New()
-	defer ps.Close()
+	defer func() { _ = ps.Close() }()
 
 	cfg := WebhookInConfig{
 		Enabled:      true,
@@ -161,7 +161,7 @@ func TestWebhookOutboundBasic(t *testing.T) {
 
 func TestInboundRegisterRoutesDuplicateReturnsError(t *testing.T) {
 	ps := pubsub.New()
-	defer ps.Close()
+	defer func() { _ = ps.Close() }()
 
 	handler := NewInbound(WebhookInConfig{
 		Enabled:      true,
@@ -196,7 +196,7 @@ func TestOutboundRegisterRoutesDuplicateReturnsError(t *testing.T) {
 
 func TestInboundMissingSecretWritesCanonicalError(t *testing.T) {
 	ps := pubsub.New()
-	defer ps.Close()
+	defer func() { _ = ps.Close() }()
 
 	handler := NewInbound(WebhookInConfig{
 		Enabled:    true,
@@ -232,7 +232,7 @@ func TestInboundMissingSecretWritesCanonicalError(t *testing.T) {
 
 func TestInboundGitHubSuccessResponseShapeAndDedup(t *testing.T) {
 	ps := pubsub.New()
-	defer ps.Close()
+	defer func() { _ = ps.Close() }()
 
 	handler := NewInbound(WebhookInConfig{
 		Enabled:           true,
@@ -267,7 +267,7 @@ func TestInboundGitHubSuccessResponseShapeAndDedup(t *testing.T) {
 
 func TestInboundStripeSuccessResponseShapeAndDedup(t *testing.T) {
 	ps := pubsub.New()
-	defer ps.Close()
+	defer func() { _ = ps.Close() }()
 
 	now := time.Now().UTC()
 	handler := NewInbound(WebhookInConfig{

@@ -11,7 +11,8 @@ strict_boundary: transport_primitives
 responsibilities:
   - Enforce a configurable deadline on handler execution
   - Cancel the request context when the deadline expires
-  - Write a 503 Service Unavailable response on timeout
+  - Write a 504 Gateway Timeout response on deadline expiry
+  - Return without a synthetic response on explicit parent cancellation
 
 non_goals:
   - Per-route timeout configuration
@@ -20,10 +21,14 @@ non_goals:
 
 public_entrypoints:
   - Middleware
+  - Config
+  - DefaultConfig
 
 allowed_imports:
   - stdlib
   - middleware
+  - contract
+  - internal/httputil
 
 forbidden_imports:
   - core/**
@@ -35,7 +40,10 @@ test_commands:
   - go vet ./middleware/timeout/...
 
 review_checklist:
-  - next must be called exactly once
+  - next must be called exactly once unless the request is already canceled
+  - Cancellation observed before response commitment must take priority
+  - Outer response headers must survive replay unless downstream changes them
+  - Canceled panics must be observed at most once after response handling
   - Context cancellation must be propagated correctly
   - Keep responsibility transport-only
 

@@ -26,12 +26,15 @@ type ClaudeProvider struct {
 	tokenizer  tokenizer.Tokenizer
 }
 
-// NewClaudeProvider creates a new Claude provider.
+// NewClaudeProvider creates a new Claude provider. Without WithClaudeHTTPClient
+// it uses a client that bounds connection and response-header waits; the
+// overall request lifetime is governed by the context passed to
+// Complete/CompleteStream.
 func NewClaudeProvider(apiKey string, opts ...ClaudeOption) *ClaudeProvider {
 	p := &ClaudeProvider{
 		apiKey:     apiKey,
 		baseURL:    claudeAPIBaseURL,
-		httpClient: &http.Client{},
+		httpClient: defaultHTTPClient(),
 		tokenizer:  tokenizer.NewClaudeTokenizer("claude-3"),
 	}
 
@@ -82,12 +85,11 @@ func (p *ClaudeProvider) Complete(ctx context.Context, req *CompletionRequest) (
 	if err != nil {
 		return nil, fmt.Errorf("http request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	// Check error
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("api error (status %d): %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("api error (status %d): %s", resp.StatusCode, readErrorBody(resp.Body))
 	}
 
 	// Parse response
@@ -121,9 +123,9 @@ func (p *ClaudeProvider) CompleteStream(ctx context.Context, req *CompletionRequ
 
 	// Check error
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		resp.Body.Close()
-		return nil, fmt.Errorf("api error (status %d): %s", resp.StatusCode, string(body))
+		body := readErrorBody(resp.Body)
+		_ = resp.Body.Close()
+		return nil, fmt.Errorf("api error (status %d): %s", resp.StatusCode, body)
 	}
 
 	return &StreamReader{

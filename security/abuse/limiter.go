@@ -275,7 +275,9 @@ func (c Config) Validate() error {
 func NewLimiter(config Config) *Limiter {
 	limiter, err := NewLimiterWithConfig(config)
 	if err != nil {
-		panic(fmt.Errorf("abuse.NewLimiter: invalid config: %w", err))
+		// Fail closed as documented: return a disabled limiter that denies all
+		// requests rather than panicking on an invalid explicit configuration.
+		return &Limiter{}
 	}
 	return limiter
 }

@@ -220,7 +220,7 @@ func NewKVStore(opts Options) (*KVStore, error) {
 
 	// Load existing data
 	if err := kv.loadData(); err != nil {
-		kv.Close()
+		_ = kv.Close()
 		return nil, fmt.Errorf("failed to load data: %w", err)
 	}
 
@@ -476,7 +476,7 @@ func syncDataDir(dir string) error {
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	return f.Sync()
 }
 
@@ -508,7 +508,7 @@ func (kv *KVStore) loadSnapshot() error {
 	if file == nil {
 		return nil // No snapshot exists
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	var reader io.Reader = file
 	if kv.opts.EnableCompression {
@@ -516,7 +516,7 @@ func (kv *KVStore) loadSnapshot() error {
 		if err != nil {
 			return fmt.Errorf("open compressed snapshot: %w", err)
 		}
-		defer gzReader.Close()
+		defer func() { _ = gzReader.Close() }()
 		reader = gzReader
 	}
 

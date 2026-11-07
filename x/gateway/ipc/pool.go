@@ -94,7 +94,7 @@ func (p *Pool) GetWithContext(ctx context.Context) (Client, error) {
 			// Check if connection is still valid
 			if time.Since(pc.lastUsed) > p.poolCfg.MaxIdleTime {
 				// Connection too old, remove it
-				pc.client.Close()
+				_ = pc.client.Close()
 				p.conns = append(p.conns[:i], p.conns[i+1:]...)
 				continue
 			}
@@ -157,7 +157,7 @@ func (p *Pool) put(pc *poolConn) {
 	defer p.mu.Unlock()
 
 	if p.closed {
-		pc.client.Close()
+		_ = pc.client.Close()
 		return
 	}
 
@@ -186,7 +186,7 @@ func (p *Pool) Close() error {
 
 	// Close all connections
 	for _, pc := range p.conns {
-		pc.client.Close()
+		_ = pc.client.Close()
 	}
 	p.conns = nil
 
@@ -244,7 +244,7 @@ func (p *Pool) cleanup() {
 
 			// Close connections outside lock
 			for _, pc := range toClose {
-				pc.client.Close()
+				_ = pc.client.Close()
 			}
 
 		case <-p.stopCh:

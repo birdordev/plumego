@@ -189,7 +189,7 @@ func serveFromDirectory(w http.ResponseWriter, req *http.Request, root string) {
 		http.NotFound(w, req)
 		return
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	info, err := f.Stat()
 	if err != nil {
@@ -218,7 +218,7 @@ func serveFromFileSystem(w http.ResponseWriter, req *http.Request, fs http.FileS
 		http.NotFound(w, req)
 		return
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	info, err := f.Stat()
 	if err != nil {

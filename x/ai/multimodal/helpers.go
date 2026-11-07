@@ -2,13 +2,27 @@ package multimodal
 
 import (
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
+
+// ErrImageTooLarge is returned by LoadImageFromURL when the remote image body
+// exceeds MaxRemoteImageBytes, so oversized downloads fail loudly instead of
+// being silently truncated.
+var ErrImageTooLarge = errors.New("multimodal: remote image exceeds size limit")
+
+// MaxRemoteImageBytes bounds the body LoadImageFromURL reads into memory.
+const MaxRemoteImageBytes int64 = 20 << 20 // 20 MiB
+
+// remoteImageHTTPClient is used by LoadImageFromURL. It carries an explicit
+// total timeout so a stalled peer cannot block the caller indefinitely.
+var remoteImageHTTPClient = &http.Client{Timeout: 30 * time.Second}
 
 // LoadImageFromFile loads an image from a file.
 func LoadImageFromFile(path string) (*ImageContent, error) {
@@ -30,19 +44,23 @@ func LoadImageFromFile(path string) (*ImageContent, error) {
 	}, nil
 }
 
-// LoadImageFromURL loads an image from a URL.
+// LoadImageFromURL loads an image from a URL. The fetch uses a client with a
+// 30s total timeout, and the body is bounded by MaxRemoteImageBytes; larger
+// images fail with ErrImageTooLarge. Callers that need custom timeouts,
+// redirects, or authentication should fetch the bytes themselves and use
+// DetectImageFormat.
 func LoadImageFromURL(url string) (*ImageContent, error) {
-	resp, err := http.Get(url)
+	resp, err := remoteImageHTTPClient.Get(url)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch image: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("HTTP error: %d", resp.StatusCode)
 	}
 
-	data, err := io.ReadAll(resp.Body)
+	data, err := readBoundedBody(resp.Body, MaxRemoteImageBytes)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read image data: %w", err)
 	}
@@ -58,6 +76,20 @@ func LoadImageFromURL(url string) (*ImageContent, error) {
 		Data:      data,
 		SizeBytes: int64(len(data)),
 	}, nil
+}
+
+// readBoundedBody reads at most max bytes from r and fails with
+// ErrImageTooLarge when the source is larger, so truncation is never silent.
+// It reads one byte past the limit so overflow is detectable.
+func readBoundedBody(r io.Reader, max int64) ([]byte, error) {
+	body, err := io.ReadAll(io.LimitReader(r, max+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(body)) > max {
+		return nil, ErrImageTooLarge
+	}
+	return body, nil
 }
 
 // DetectImageFormat detects the image format from file data.

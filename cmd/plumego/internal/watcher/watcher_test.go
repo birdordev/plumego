@@ -81,7 +81,6 @@ func TestWatcherEmitsDebouncedModifyEvent(t *testing.T) {
 	}
 	defer w.Close()
 
-	time.Sleep(50 * time.Millisecond)
 	if err := os.WriteFile(path, []byte("package main\n\nfunc main() {}\n"), 0644); err != nil {
 		t.Fatalf("modify file: %v", err)
 	}
@@ -139,7 +138,6 @@ func TestWatcherEmitsMultipleDebouncedModifyEvents(t *testing.T) {
 	}
 	defer w.Close()
 
-	time.Sleep(50 * time.Millisecond)
 	for _, path := range paths {
 		if err := os.WriteFile(path, []byte("package main\n\nvar changed = true\n"), 0644); err != nil {
 			t.Fatalf("modify file: %v", err)
@@ -166,7 +164,6 @@ func TestWatcherEmitsDeleteEvent(t *testing.T) {
 	}
 	defer w.Close()
 
-	time.Sleep(50 * time.Millisecond)
 	if err := os.Remove(path); err != nil {
 		t.Fatalf("remove file: %v", err)
 	}

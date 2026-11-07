@@ -18,6 +18,7 @@ import (
 //     launched. It must be safe to assume Start is called at most once.
 //   - Stop drains those goroutines and returns once they have exited (or ctx
 //     is cancelled). Stop must be safe to call after a failed or partial Start.
+//     Stop must allow another attempt after an error.
 //   - Ready reports whether the component is currently able to serve. It is a
 //     point-in-time probe (suitable for readiness checks), not a phase, and may
 //     be called repeatedly. A component that is always ready once started
@@ -95,18 +96,30 @@ func (c Component) Ready(ctx context.Context) error {
 // when every component is ready. A LifecycleGroup is itself a Lifecycle, so
 // groups compose.
 //
-// The zero value is not usable; construct with NewLifecycleGroup. A group is
-// single-use: Start may be called once.
+// A group is single-use: Start may be called once and freezes registration.
+// Component callbacks are serialized. Operations that overlap a callback
+// return without waiting, including calls made by the callback itself.
 type LifecycleGroup struct {
-	mu       sync.Mutex
-	entries  []namedLifecycle
-	started  int  // number of entries successfully started, for rollback/Stop
-	didStart bool // guards against a second Start
+	mu      sync.Mutex
+	phase   lifecyclePhase
+	entries []namedLifecycle
 }
 
+type lifecyclePhase uint8
+
+const (
+	lifecycleIdle lifecyclePhase = iota
+	lifecycleStarting
+	lifecycleRunning
+	lifecycleProbing
+	lifecycleStopping
+	lifecycleInactive
+)
+
 type namedLifecycle struct {
-	name string
-	c    Lifecycle
+	name        string
+	c           Lifecycle
+	pendingStop bool
 }
 
 // NewLifecycleGroup returns an empty LifecycleGroup.
@@ -116,74 +129,122 @@ func NewLifecycleGroup() *LifecycleGroup {
 
 // Add registers a component under name. Components start in the order added and
 // stop in reverse, so register dependencies before their dependents. Add
-// returns the group for chaining and is a no-op if c is nil.
+// returns the group for chaining. It ignores nil components and additions after
+// the first Start begins.
 func (g *LifecycleGroup) Add(name string, c Lifecycle) *LifecycleGroup {
 	if c == nil {
 		return g
 	}
 	g.mu.Lock()
-	g.entries = append(g.entries, namedLifecycle{name: name, c: c})
+	if g.phase == lifecycleIdle {
+		g.entries = append(g.entries, namedLifecycle{name: name, c: c})
+	}
 	g.mu.Unlock()
 	return g
 }
 
-// Start launches every registered component in order. If one fails, the
-// components already started are stopped in reverse order (best effort) and the
-// originating error is returned, so a failed Start leaves nothing running.
+// Start launches components in registration order. On failure it uses ctx to
+// stop all attempted components in reverse order and returns the startup and
+// rollback errors. Stop can retry failed cleanup.
 func (g *LifecycleGroup) Start(ctx context.Context) error {
 	g.mu.Lock()
-	defer g.mu.Unlock()
-
-	if g.didStart {
+	if g.phase != lifecycleIdle {
+		g.mu.Unlock()
 		return errors.New("core: LifecycleGroup already started")
 	}
-	g.didStart = true
+	g.phase = lifecycleStarting
+	g.mu.Unlock()
 
-	for i, e := range g.entries {
+	finalPhase := lifecycleInactive
+	defer func() { g.setPhase(finalPhase) }()
+
+	for i := range g.entries {
+		e := &g.entries[i]
+		e.pendingStop = true
 		if err := e.c.Start(ctx); err != nil {
-			g.stopStartedLocked(ctx, i)
-			g.started = 0
-			return fmt.Errorf("core: start %q: %w", e.name, err)
+			startErr := fmt.Errorf("core: start %q: %w", e.name, err)
+			if rollbackErr := g.stopPending(ctx); rollbackErr != nil {
+				return errors.Join(startErr, rollbackErr)
+			}
+			return startErr
 		}
-		g.started = i + 1
 	}
+	finalPhase = lifecycleRunning
 	return nil
 }
 
-// Stop drains every started component in reverse order. Every component is
-// stopped even if an earlier one errors; the errors are joined and returned.
+// Stop cleans up pending components in reverse registration order and joins
+// cleanup errors. A later Stop retries only failed cleanup. If a lifecycle
+// operation is already executing callbacks, Stop returns an error for retry.
 func (g *LifecycleGroup) Stop(ctx context.Context) error {
 	g.mu.Lock()
-	defer g.mu.Unlock()
-	return g.stopStartedLocked(ctx, g.started)
+	switch g.phase {
+	case lifecycleIdle:
+		g.mu.Unlock()
+		return nil
+	case lifecycleStarting, lifecycleProbing, lifecycleStopping:
+		g.mu.Unlock()
+		return errors.New("core: LifecycleGroup operation in progress")
+	}
+	g.phase = lifecycleStopping
+	g.mu.Unlock()
+	defer g.setPhase(lifecycleInactive)
+	return g.stopPending(ctx)
 }
 
-// stopStartedLocked stops entries [0,count) in reverse order, joining errors.
-// The caller must hold g.mu.
-func (g *LifecycleGroup) stopStartedLocked(ctx context.Context, count int) error {
+// stopPending runs only during startup rollback or shutdown. Those phases own
+// the frozen entries and their cleanup flags exclusively.
+func (g *LifecycleGroup) stopPending(ctx context.Context) error {
 	var errs []error
-	for i := count - 1; i >= 0; i-- {
-		e := g.entries[i]
+	for i := len(g.entries) - 1; i >= 0; i-- {
+		e := &g.entries[i]
+		if !e.pendingStop {
+			continue
+		}
 		if err := e.c.Stop(ctx); err != nil {
 			errs = append(errs, fmt.Errorf("core: stop %q: %w", e.name, err))
+			continue
 		}
+		e.pendingStop = false
 	}
-	g.started = 0
 	return errors.Join(errs...)
 }
 
-// Ready returns nil only when every registered component reports ready. The
-// errors from all not-ready components are joined so the caller sees every
-// reason at once.
+// Ready probes components after successful startup. It joins their errors and
+// returns promptly if another lifecycle operation is executing callbacks.
 func (g *LifecycleGroup) Ready(ctx context.Context) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	g.mu.Lock()
-	defer g.mu.Unlock()
+	if g.phase != lifecycleRunning {
+		g.mu.Unlock()
+		return errors.New("core: LifecycleGroup is not available for readiness checks")
+	}
+	g.phase = lifecycleProbing
+	g.mu.Unlock()
+	defer g.setPhase(lifecycleRunning)
 
 	var errs []error
 	for _, e := range g.entries {
+		if ctx.Err() != nil {
+			break
+		}
 		if err := e.c.Ready(ctx); err != nil {
 			errs = append(errs, fmt.Errorf("core: %q not ready: %w", e.name, err))
 		}
 	}
+	if err := ctx.Err(); err != nil {
+		errs = append(errs, err)
+	}
 	return errors.Join(errs...)
+}
+
+func (g *LifecycleGroup) setPhase(phase lifecyclePhase) {
+	g.mu.Lock()
+	g.phase = phase
+	g.mu.Unlock()
 }

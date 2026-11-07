@@ -993,7 +993,12 @@ func TestScanRowNoRows(t *testing.T) {
 
 // TestApplyConfigNilDB ensures ApplyConfig with nil db is a no-op (covers nil guard).
 func TestApplyConfigNilDB(t *testing.T) {
-	// Should not panic.
+	// Applying configuration to a nil DB is a safe no-op: it must not panic.
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("ApplyConfig with nil DB panicked: %v", r)
+		}
+	}()
 	ApplyConfig(nil, Config{MaxOpenConns: 5})
 }
 

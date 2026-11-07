@@ -6,7 +6,7 @@ func (l *gLogger) Flush() {
 
 	for _, file := range l.logFiles {
 		if file != nil {
-			file.Sync()
+			_ = file.Sync()
 		}
 	}
 }

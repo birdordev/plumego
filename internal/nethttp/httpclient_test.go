@@ -116,6 +116,37 @@ func TestGetErrorsPropagate(t *testing.T) {
 	}
 }
 
+func TestMaxResponseBytesRejectsOversizedBody(t *testing.T) {
+	const payload = "0123456789abcdef" // 16 bytes
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, payload)
+	}))
+	t.Cleanup(srv.Close)
+
+	client := New(WithRetryCount(0), WithMaxResponseBytes(8))
+	_, err := client.Get(t.Context(), srv.URL)
+	if !errors.Is(err, ErrResponseTooLarge) {
+		t.Fatalf("expected ErrResponseTooLarge for oversized body, got %v", err)
+	}
+}
+
+func TestMaxResponseBytesAllowsBodyWithinLimit(t *testing.T) {
+	const payload = "0123456789abcdef" // 16 bytes
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, payload)
+	}))
+	t.Cleanup(srv.Close)
+
+	client := New(WithRetryCount(0), WithMaxResponseBytes(int64(len(payload))))
+	body, err := client.Get(t.Context(), srv.URL)
+	if err != nil {
+		t.Fatalf("expected success within limit, got %v", err)
+	}
+	if string(body) != payload {
+		t.Fatalf("got %q, want %q", body, payload)
+	}
+}
+
 func TestHighLevelRequestClosesResponseBodyOnDoRequestError(t *testing.T) {
 	var closed atomic.Bool
 	client := New(WithRetryCount(0))
