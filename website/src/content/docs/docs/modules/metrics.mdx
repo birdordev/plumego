@@ -55,7 +55,7 @@ app.Use(httpmetrics.Middleware(collector))
 ### Import
 
 ```go
-import "github.com/spcent/plumego/metrics"
+import "github.com/birdordev/plumego/metrics"
 ```
 
 ### Inject a collector
@@ -80,7 +80,7 @@ func NewUserService(repo UserRepository, col metrics.AggregateCollector) *UserSe
 ### Record a custom observation
 
 ```go
-import "github.com/spcent/plumego/metrics"
+import "github.com/birdordev/plumego/metrics"
 
 func (s *UserService) Create(ctx context.Context, req CreateRequest) (*User, error) {
     start := time.Now()
@@ -105,7 +105,7 @@ func (s *UserService) Create(ctx context.Context, req CreateRequest) (*User, err
 col := metrics.NewBaseMetricsCollector()
 
 // Wire to httpmetrics middleware
-import "github.com/spcent/plumego/middleware/httpmetrics"
+import "github.com/birdordev/plumego/middleware/httpmetrics"
 app.Use(httpmetrics.Middleware(col))
 
 // Or record manually inside a handler

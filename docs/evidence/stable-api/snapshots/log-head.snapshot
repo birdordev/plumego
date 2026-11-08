@@ -1,17 +1,17 @@
 # plumego extension api snapshot v1
-module	github.com/spcent/plumego
+module	github.com/birdordev/plumego
 pattern	./log/...
-symbol	github.com/spcent/plumego/log	const	DEBUG	const DEBUG Level = -1
-symbol	github.com/spcent/plumego/log	const	ERROR	const ERROR Level = 2
-symbol	github.com/spcent/plumego/log	const	FATAL	const FATAL Level = 3
-symbol	github.com/spcent/plumego/log	const	INFO	const INFO Level = 0
-symbol	github.com/spcent/plumego/log	const	LoggerFormatDiscard	const LoggerFormatDiscard LoggerFormat = "discard"
-symbol	github.com/spcent/plumego/log	const	LoggerFormatJSON	const LoggerFormatJSON LoggerFormat = "json"
-symbol	github.com/spcent/plumego/log	const	LoggerFormatText	const LoggerFormatText LoggerFormat = "text"
-symbol	github.com/spcent/plumego/log	const	WARNING	const WARNING Level = 1
-symbol	github.com/spcent/plumego/log	func	NewLogger	func NewLoggerfunc(configs ...LoggerConfig) StructuredLogger
-symbol	github.com/spcent/plumego/log	type	Fields	type Fields map[string]any
-symbol	github.com/spcent/plumego/log	type	Level	type Level int
-symbol	github.com/spcent/plumego/log	type	LoggerConfig	type LoggerConfig struct { Format LoggerFormat Output io.Writer ErrorOutput io.Writer Level Level Fields Fields RespectVerbosity bool Verbosity int }
-symbol	github.com/spcent/plumego/log	type	LoggerFormat	type LoggerFormat string
-symbol	github.com/spcent/plumego/log	type	StructuredLogger	type StructuredLogger interface { WithFields(fields Fields) StructuredLogger Debug(msg string, fields ...Fields) Info(msg string, fields ...Fields) Warn(msg string, fields ...Fields) Error(msg string, fields ...Fields) Fatal(msg string, fields ...Fields) DebugCtx(ctx context.Context, msg string, fields ...Fields) InfoCtx(ctx context.Context, msg string, fields ...Fields) WarnCtx(ctx context.Context, msg string, fields ...Fields) ErrorCtx(ctx context.Context, msg string, fields ...Fields) FatalCtx(ctx context.Context, msg string, fields ...Fields) }
+symbol	github.com/birdordev/plumego/log	const	DEBUG	const DEBUG Level = -1
+symbol	github.com/birdordev/plumego/log	const	ERROR	const ERROR Level = 2
+symbol	github.com/birdordev/plumego/log	const	FATAL	const FATAL Level = 3
+symbol	github.com/birdordev/plumego/log	const	INFO	const INFO Level = 0
+symbol	github.com/birdordev/plumego/log	const	LoggerFormatDiscard	const LoggerFormatDiscard LoggerFormat = "discard"
+symbol	github.com/birdordev/plumego/log	const	LoggerFormatJSON	const LoggerFormatJSON LoggerFormat = "json"
+symbol	github.com/birdordev/plumego/log	const	LoggerFormatText	const LoggerFormatText LoggerFormat = "text"
+symbol	github.com/birdordev/plumego/log	const	WARNING	const WARNING Level = 1
+symbol	github.com/birdordev/plumego/log	func	NewLogger	func NewLoggerfunc(configs ...LoggerConfig) StructuredLogger
+symbol	github.com/birdordev/plumego/log	type	Fields	type Fields map[string]any
+symbol	github.com/birdordev/plumego/log	type	Level	type Level int
+symbol	github.com/birdordev/plumego/log	type	LoggerConfig	type LoggerConfig struct { Format LoggerFormat Output io.Writer ErrorOutput io.Writer Level Level Fields Fields RespectVerbosity bool Verbosity int }
+symbol	github.com/birdordev/plumego/log	type	LoggerFormat	type LoggerFormat string
+symbol	github.com/birdordev/plumego/log	type	StructuredLogger	type StructuredLogger interface { WithFields(fields Fields) StructuredLogger Debug(msg string, fields ...Fields) Info(msg string, fields ...Fields) Warn(msg string, fields ...Fields) Error(msg string, fields ...Fields) Fatal(msg string, fields ...Fields) DebugCtx(ctx context.Context, msg string, fields ...Fields) InfoCtx(ctx context.Context, msg string, fields ...Fields) WarnCtx(ctx context.Context, msg string, fields ...Fields) ErrorCtx(ctx context.Context, msg string, fields ...Fields) FatalCtx(ctx context.Context, msg string, fields ...Fields) }

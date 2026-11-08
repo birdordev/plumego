@@ -32,7 +32,7 @@ sidebar:
 使用 `NewErrorBuilder`，绝不要直接构造 `APIError` 字面量：
 
 ```go
-import "github.com/spcent/plumego/contract"
+import "github.com/birdordev/plumego/contract"
 
 err := contract.NewErrorBuilder().
     Type(contract.TypeRequired).        // 自动设置 type、code、category、HTTP 状态

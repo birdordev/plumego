@@ -120,7 +120,7 @@ package compat
 import (
 	"net/http"
 
-	plumemw "github.com/spcent/plumego/middleware"
+	plumemw "github.com/birdordev/plumego/middleware"
 )
 
 type Constructor func(http.Handler) http.Handler

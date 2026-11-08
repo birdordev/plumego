@@ -1,6 +1,6 @@
 # x/observability/tracer
 
-> **Import path:** `github.com/spcent/plumego/x/observability/tracer` — sub-package of [`x/observability`](../README.md).
+> **Import path:** `github.com/birdordev/plumego/x/observability/tracer` — sub-package of [`x/observability`](../README.md).
 
 ## Purpose
 

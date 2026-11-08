@@ -2,7 +2,7 @@
 
 ## Purpose
 
-`github.com/spcent/plumego` is the convenience entry point for the toolkit.
+`github.com/birdordev/plumego` is the convenience entry point for the toolkit.
 It provides zero-config constructors and type aliases so new services only
 need a single import to get started.
 

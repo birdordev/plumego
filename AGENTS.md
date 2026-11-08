@@ -1,6 +1,6 @@
 # AGENTS.md - plumego
 
-Operational guide for AI coding agents in `github.com/spcent/plumego`. The root module declares Go 1.26.0+ and is stdlib-only unless an exception is explicitly approved.
+Operational guide for AI coding agents in `github.com/birdordev/plumego`. The root module declares Go 1.26.0+ and is stdlib-only unless an exception is explicitly approved.
 
 ## 1. Authority
 
@@ -17,8 +17,8 @@ Canonical wiring: `reference/standard-service`. Agent entry shim: `CLAUDE.md` de
 - Preserve `net/http` compatibility: handlers remain `func(http.ResponseWriter, *http.Request)` and middleware wraps `http.Handler`.
 - Main module code is stdlib-only unless approved; `x/*` is part of the main module and must not contain nested `go.mod` files.
 - Stable roots must not import `x/*`, `reference/*`, `cmd/*`, or use-case modules.
-- The root package `github.com/spcent/plumego` is an approved thin facade only: `New`, `NewWithConfig`, `DefaultConfig`, `AppConfig`, `AppDependencies`, and `Param`. Do not expand it into custom handlers, context helpers, response helpers, or extension wiring, and do not import it from inside this repository.
-- `reference/*`, `examples/*` and `cmd/plumego` may be standalone modules with their own `go.mod`. External dependencies there must stay isolated, use local `replace github.com/spcent/plumego => ...` when developing against this checkout, and have a clear scenario/tooling rationale.
+- The root package `github.com/birdordev/plumego` is an approved thin facade only: `New`, `NewWithConfig`, `DefaultConfig`, `AppConfig`, `AppDependencies`, and `Param`. Do not expand it into custom handlers, context helpers, response helpers, or extension wiring, and do not import it from inside this repository.
+- `reference/*`, `examples/*` and `cmd/plumego` may be standalone modules with their own `go.mod`. External dependencies there must stay isolated, use local `replace github.com/birdordev/plumego => ...` when developing against this checkout, and have a clear scenario/tooling rationale.
 - No hidden globals, `init()` registration, route auto-discovery, reflection-based wiring, or context service-locator patterns.
 - Never log or return secrets, tokens, signatures, private keys, or derived values that can replay credentials. Auth, verification, and policy errors fail closed; secret/signature comparisons use timing-safe checks.
 - Context accessors use `With{Type}` + `{Type}FromContext`; context key types are unexported zero-value structs declared at the call site.

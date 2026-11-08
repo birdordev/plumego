@@ -29,7 +29,7 @@ import (
     "database/sql"
     "net/http"
 
-    "github.com/spcent/plumego/contract"
+    "github.com/birdordev/plumego/contract"
 )
 
 type ItemHandler struct {
@@ -160,14 +160,14 @@ func (a *App) Start() error {
 
 参考服务展示了数据库连接依赖注入的完整模式：
 
-- [`reference/standard-service/internal/app/app.go`](https://github.com/spcent/plumego/blob/main/reference/standard-service/internal/app/app.go) — 构造函数打开 DB 并注入 handler
-- [`reference/standard-service/internal/app/routes.go`](https://github.com/spcent/plumego/blob/main/reference/standard-service/internal/app/routes.go) — 传入已填充的 handler 结构体
-- [`reference/standard-service/main.go`](https://github.com/spcent/plumego/blob/main/reference/standard-service/main.go) — 启动顺序：打开 → 注入 → 运行 → defer 关闭
+- [`reference/standard-service/internal/app/app.go`](https://github.com/birdordev/plumego/blob/main/reference/standard-service/internal/app/app.go) — 构造函数打开 DB 并注入 handler
+- [`reference/standard-service/internal/app/routes.go`](https://github.com/birdordev/plumego/blob/main/reference/standard-service/internal/app/routes.go) — 传入已填充的 handler 结构体
+- [`reference/standard-service/main.go`](https://github.com/birdordev/plumego/blob/main/reference/standard-service/main.go) — 启动顺序：打开 → 注入 → 运行 → defer 关闭
 
 本地运行验证：
 
 ```bash
-git clone https://github.com/spcent/plumego
+git clone https://github.com/birdordev/plumego
 cd plumego/reference/standard-service
 go run .
 ```

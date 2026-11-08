@@ -123,7 +123,7 @@ entries:
     category: public_alias
     status: keep
     owner: runtime
-    decision: AppConfig and AppDependencies are permanent type aliases in the root convenience facade. They re-export core types so callers importing github.com/spcent/plumego do not need a separate core import for the quick-start case.
+    decision: AppConfig and AppDependencies are permanent type aliases in the root convenience facade. They re-export core types so callers importing github.com/birdordev/plumego do not need a separate core import for the quick-start case.
     replacement: core.AppConfig and core.AppDependencies
     paths:
       - plumego.go

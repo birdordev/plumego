@@ -1,16 +1,16 @@
 # plumego extension api snapshot v1
-module	github.com/spcent/plumego
+module	github.com/birdordev/plumego
 pattern	./health/...
-symbol	github.com/spcent/plumego/health	const	StatusDegraded	const StatusDegraded HealthState = "degraded"
-symbol	github.com/spcent/plumego/health	const	StatusHealthy	const StatusHealthy HealthState = "healthy"
-symbol	github.com/spcent/plumego/health	const	StatusUnhealthy	const StatusUnhealthy HealthState = "unhealthy"
-symbol	github.com/spcent/plumego/health	method	ComponentHealth.Clone	func (ComponentHealth) Clonefunc() ComponentHealth
-symbol	github.com/spcent/plumego/health	method	HealthState.IsKnown	func (HealthState) IsKnownfunc() bool
-symbol	github.com/spcent/plumego/health	method	HealthState.IsReady	func (HealthState) IsReadyfunc() bool
-symbol	github.com/spcent/plumego/health	method	HealthStatus.Clone	func (HealthStatus) Clonefunc() HealthStatus
-symbol	github.com/spcent/plumego/health	method	ReadinessStatus.Clone	func (ReadinessStatus) Clonefunc() ReadinessStatus
-symbol	github.com/spcent/plumego/health	type	ComponentChecker	type ComponentChecker interface { Name() string Check(ctx context.Context) error }
-symbol	github.com/spcent/plumego/health	type	ComponentHealth	type ComponentHealth struct { HealthStatus Enabled bool `json:"enabled"` }
-symbol	github.com/spcent/plumego/health	type	HealthState	type HealthState string
-symbol	github.com/spcent/plumego/health	type	HealthStatus	type HealthStatus struct { Status HealthState `json:"status"` Message string `json:"message,omitempty"` Details map[string]any `json:"details,omitempty"` Timestamp time.Time `json:"timestamp"` Duration time.Duration `json:"duration,omitempty"` Dependencies []string `json:"dependencies,omitempty"` }
-symbol	github.com/spcent/plumego/health	type	ReadinessStatus	type ReadinessStatus struct { Ready bool `json:"ready"` Reason string `json:"reason,omitempty"` Timestamp time.Time `json:"timestamp"` Components map[string]bool `json:"components,omitempty"` }
+symbol	github.com/birdordev/plumego/health	const	StatusDegraded	const StatusDegraded HealthState = "degraded"
+symbol	github.com/birdordev/plumego/health	const	StatusHealthy	const StatusHealthy HealthState = "healthy"
+symbol	github.com/birdordev/plumego/health	const	StatusUnhealthy	const StatusUnhealthy HealthState = "unhealthy"
+symbol	github.com/birdordev/plumego/health	method	ComponentHealth.Clone	func (ComponentHealth) Clonefunc() ComponentHealth
+symbol	github.com/birdordev/plumego/health	method	HealthState.IsKnown	func (HealthState) IsKnownfunc() bool
+symbol	github.com/birdordev/plumego/health	method	HealthState.IsReady	func (HealthState) IsReadyfunc() bool
+symbol	github.com/birdordev/plumego/health	method	HealthStatus.Clone	func (HealthStatus) Clonefunc() HealthStatus
+symbol	github.com/birdordev/plumego/health	method	ReadinessStatus.Clone	func (ReadinessStatus) Clonefunc() ReadinessStatus
+symbol	github.com/birdordev/plumego/health	type	ComponentChecker	type ComponentChecker interface { Name() string Check(ctx context.Context) error }
+symbol	github.com/birdordev/plumego/health	type	ComponentHealth	type ComponentHealth struct { HealthStatus Enabled bool `json:"enabled"` }
+symbol	github.com/birdordev/plumego/health	type	HealthState	type HealthState string
+symbol	github.com/birdordev/plumego/health	type	HealthStatus	type HealthStatus struct { Status HealthState `json:"status"` Message string `json:"message,omitempty"` Details map[string]any `json:"details,omitempty"` Timestamp time.Time `json:"timestamp"` Duration time.Duration `json:"duration,omitempty"` Dependencies []string `json:"dependencies,omitempty"` }
+symbol	github.com/birdordev/plumego/health	type	ReadinessStatus	type ReadinessStatus struct { Ready bool `json:"ready"` Reason string `json:"reason,omitempty"` Timestamp time.Time `json:"timestamp"` Components map[string]bool `json:"components,omitempty"` }

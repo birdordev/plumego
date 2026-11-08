@@ -1,6 +1,6 @@
 # x/observability/dbinsights
 
-> **Import path:** `github.com/spcent/plumego/x/observability/dbinsights` — sub-package of [`x/observability`](../README.md).
+> **Import path:** `github.com/birdordev/plumego/x/observability/dbinsights` — sub-package of [`x/observability`](../README.md).
 
 ## Purpose
 

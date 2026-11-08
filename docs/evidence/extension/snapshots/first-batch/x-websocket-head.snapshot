@@ -1,153 +1,153 @@
 # plumego extension api snapshot v1
-module	github.com/spcent/plumego
+module	github.com/birdordev/plumego
 pattern	./x/websocket/...
-symbol	github.com/spcent/plumego/x/websocket	const	CloseGoingAway	const CloseGoingAway uint16 = 1001
-symbol	github.com/spcent/plumego/x/websocket	const	CloseInvalidPayload	const CloseInvalidPayload uint16 = 1007
-symbol	github.com/spcent/plumego/x/websocket	const	CloseMessageTooBig	const CloseMessageTooBig uint16 = 1009
-symbol	github.com/spcent/plumego/x/websocket	const	CloseNormalClosure	const CloseNormalClosure uint16 = 1000
-symbol	github.com/spcent/plumego/x/websocket	const	ClosePolicyViolation	const ClosePolicyViolation uint16 = 1008
-symbol	github.com/spcent/plumego/x/websocket	const	CloseProtocolError	const CloseProtocolError uint16 = 1002
-symbol	github.com/spcent/plumego/x/websocket	const	CloseServerError	const CloseServerError uint16 = 1011
-symbol	github.com/spcent/plumego/x/websocket	const	CloseUnsupportedData	const CloseUnsupportedData uint16 = 1003
-symbol	github.com/spcent/plumego/x/websocket	const	DefaultSendQueueSize	const DefaultSendQueueSize = 256
-symbol	github.com/spcent/plumego/x/websocket	const	MaxRoomNameLength	const MaxRoomNameLength = 128
-symbol	github.com/spcent/plumego/x/websocket	const	OpcodeBinary	const OpcodeBinary byte = 0x2
-symbol	github.com/spcent/plumego/x/websocket	const	OpcodeText	const OpcodeText byte = 0x1
-symbol	github.com/spcent/plumego/x/websocket	const	RoomPasswordHeader	const RoomPasswordHeader = "X-Room-Password"
-symbol	github.com/spcent/plumego/x/websocket	const	SendBlock	const SendBlock SendBehavior = iota
-symbol	github.com/spcent/plumego/x/websocket	const	SendClose	const SendClose
-symbol	github.com/spcent/plumego/x/websocket	const	SendDrop	const SendDrop
-symbol	github.com/spcent/plumego/x/websocket	func	DefaultMessageValidationConfig	func DefaultMessageValidationConfigfunc() MessageValidationConfig
-symbol	github.com/spcent/plumego/x/websocket	func	DefaultWebSocketConfig	func DefaultWebSocketConfigfunc() WebSocketConfig
-symbol	github.com/spcent/plumego/x/websocket	func	ExtractUserInfo	func ExtractUserInfofunc(payload map[string]any) *UserInfo
-symbol	github.com/spcent/plumego/x/websocket	func	GenerateSecureSecret	func GenerateSecureSecretfunc(length int) ([]byte, error)
-symbol	github.com/spcent/plumego/x/websocket	func	IsTemporary	func IsTemporaryfunc(err error) bool
-symbol	github.com/spcent/plumego/x/websocket	func	New	func Newfunc(cfg WebSocketConfig) (*Server, error)
-symbol	github.com/spcent/plumego/x/websocket	func	NewCloseError	func NewCloseErrorfunc(code int, reason string) *CloseError
-symbol	github.com/spcent/plumego/x/websocket	func	NewConnE	func NewConnEfunc(c net.Conn, queueSize int, sendTimeout time.Duration, behavior SendBehavior) (*Conn, error)
-symbol	github.com/spcent/plumego/x/websocket	func	NewHS256TokenAuth	func NewHS256TokenAuthfunc(secret []byte) (*HS256TokenAuth, error)
-symbol	github.com/spcent/plumego/x/websocket	func	NewHubE	func NewHubEfunc(workerCount int, jobQueueSize int) (*Hub, error)
-symbol	github.com/spcent/plumego/x/websocket	func	NewHubWithConfigE	func NewHubWithConfigEfunc(cfg HubConfig) (*Hub, error)
-symbol	github.com/spcent/plumego/x/websocket	func	NewSecureRoomAuth	func NewSecureRoomAuthfunc(secret []byte, cfg SecurityConfig) (*SecureRoomAuth, error)
-symbol	github.com/spcent/plumego/x/websocket	func	NewSecurityError	func NewSecurityErrorfunc(typ, message string) *SecurityError
-symbol	github.com/spcent/plumego/x/websocket	func	NewSimpleRoomAuth	func NewSimpleRoomAuthfunc() *SimpleRoomAuth
-symbol	github.com/spcent/plumego/x/websocket	func	NewValidationError	func NewValidationErrorfunc(field, message string) *ValidationError
-symbol	github.com/spcent/plumego/x/websocket	func	SanitizeForLogging	func SanitizeForLoggingfunc(data []byte, maxLen int) string
-symbol	github.com/spcent/plumego/x/websocket	func	ServeRoomFanoutWS	func ServeRoomFanoutWSfunc(w http.ResponseWriter, r *http.Request, cfg ServerConfig)
-symbol	github.com/spcent/plumego/x/websocket	func	ServeWSWithConfig	func ServeWSWithConfigfunc(w http.ResponseWriter, r *http.Request, cfg ServerConfig)
-symbol	github.com/spcent/plumego/x/websocket	func	ValidateRoomName	func ValidateRoomNamefunc(room string) error
-symbol	github.com/spcent/plumego/x/websocket	func	ValidateRoomPassword	func ValidateRoomPasswordfunc(pwd string, config password.PasswordStrengthConfig, enforce bool) error
-symbol	github.com/spcent/plumego/x/websocket	func	ValidateSecurityConfig	func ValidateSecurityConfigfunc(cfg SecurityConfig) error
-symbol	github.com/spcent/plumego/x/websocket	func	ValidateTextMessage	func ValidateTextMessagefunc(data []byte, cfg MessageValidationConfig) error
-symbol	github.com/spcent/plumego/x/websocket	func	ValidateWebSocketKey	func ValidateWebSocketKeyfunc(key string) error
-symbol	github.com/spcent/plumego/x/websocket	method	CloseError.Error	func (CloseError) Errorfunc() string
-symbol	github.com/spcent/plumego/x/websocket	method	Conn.Close	func (Conn) Closefunc() error
-symbol	github.com/spcent/plumego/x/websocket	method	Conn.DeleteMetadata	func (Conn) DeleteMetadatafunc(key string)
-symbol	github.com/spcent/plumego/x/websocket	method	Conn.GetLastPong	func (Conn) GetLastPongfunc() time.Time
-symbol	github.com/spcent/plumego/x/websocket	method	Conn.GetMetadata	func (Conn) GetMetadatafunc(key string) (any, bool)
-symbol	github.com/spcent/plumego/x/websocket	method	Conn.IsClosed	func (Conn) IsClosedfunc() bool
-symbol	github.com/spcent/plumego/x/websocket	method	Conn.RangeMetadata	func (Conn) RangeMetadatafunc(f func(key, value any) bool)
-symbol	github.com/spcent/plumego/x/websocket	method	Conn.ReadMessage	func (Conn) ReadMessagefunc() (byte, []byte, error)
-symbol	github.com/spcent/plumego/x/websocket	method	Conn.ReadMessageStream	func (Conn) ReadMessageStreamfunc() (byte, io.ReadCloser, error)
-symbol	github.com/spcent/plumego/x/websocket	method	Conn.SetMetadata	func (Conn) SetMetadatafunc(key string, value any)
-symbol	github.com/spcent/plumego/x/websocket	method	Conn.SetPingPeriod	func (Conn) SetPingPeriodfunc(d time.Duration) error
-symbol	github.com/spcent/plumego/x/websocket	method	Conn.SetPongWait	func (Conn) SetPongWaitfunc(d time.Duration) error
-symbol	github.com/spcent/plumego/x/websocket	method	Conn.SetReadLimit	func (Conn) SetReadLimitfunc(limit int64) error
-symbol	github.com/spcent/plumego/x/websocket	method	Conn.WriteBinary	func (Conn) WriteBinaryfunc(data []byte) error
-symbol	github.com/spcent/plumego/x/websocket	method	Conn.WriteClose	func (Conn) WriteClosefunc(code uint16, reason string) error
-symbol	github.com/spcent/plumego/x/websocket	method	Conn.WriteJSON	func (Conn) WriteJSONfunc(v any) error
-symbol	github.com/spcent/plumego/x/websocket	method	Conn.WriteMessage	func (Conn) WriteMessagefunc(op byte, data []byte) error
-symbol	github.com/spcent/plumego/x/websocket	method	Conn.WriteMessageContext	func (Conn) WriteMessageContextfunc(ctx context.Context, op byte, data []byte) error
-symbol	github.com/spcent/plumego/x/websocket	method	Conn.WriteText	func (Conn) WriteTextfunc(data string) error
-symbol	github.com/spcent/plumego/x/websocket	method	HS256TokenAuth.AuthenticateToken	func (HS256TokenAuth) AuthenticateTokenfunc(token string) (map[string]any, error)
-symbol	github.com/spcent/plumego/x/websocket	method	Hub.BroadcastAll	func (Hub) BroadcastAllfunc(op byte, data []byte)
-symbol	github.com/spcent/plumego/x/websocket	method	Hub.BroadcastRoom	func (Hub) BroadcastRoomfunc(room string, op byte, data []byte)
-symbol	github.com/spcent/plumego/x/websocket	method	Hub.CanJoin	func (Hub) CanJoinfunc(room string) error
-symbol	github.com/spcent/plumego/x/websocket	method	Hub.GetRoomCount	func (Hub) GetRoomCountfunc(room string) int
-symbol	github.com/spcent/plumego/x/websocket	method	Hub.GetRoomRegistrationCount	func (Hub) GetRoomRegistrationCountfunc() int
-symbol	github.com/spcent/plumego/x/websocket	method	Hub.GetRooms	func (Hub) GetRoomsfunc() []string
-symbol	github.com/spcent/plumego/x/websocket	method	Hub.Leave	func (Hub) Leavefunc(room string, c *Conn)
-symbol	github.com/spcent/plumego/x/websocket	method	Hub.Metrics	func (Hub) Metricsfunc() HubMetrics
-symbol	github.com/spcent/plumego/x/websocket	method	Hub.RangeConns	func (Hub) RangeConnsfunc(room string, fn func(*Conn) bool)
-symbol	github.com/spcent/plumego/x/websocket	method	Hub.RemoveConn	func (Hub) RemoveConnfunc(c *Conn)
-symbol	github.com/spcent/plumego/x/websocket	method	Hub.Shutdown	func (Hub) Shutdownfunc(ctx context.Context) error
-symbol	github.com/spcent/plumego/x/websocket	method	Hub.Stop	func (Hub) Stopfunc()
-symbol	github.com/spcent/plumego/x/websocket	method	Hub.TryBroadcastAll	func (Hub) TryBroadcastAllfunc(op byte, data []byte) (BroadcastResult, error)
-symbol	github.com/spcent/plumego/x/websocket	method	Hub.TryBroadcastRoom	func (Hub) TryBroadcastRoomfunc(room string, op byte, data []byte) (BroadcastResult, error)
-symbol	github.com/spcent/plumego/x/websocket	method	Hub.TryJoin	func (Hub) TryJoinfunc(room string, c *Conn) error
-symbol	github.com/spcent/plumego/x/websocket	method	SecureRoomAuth.AuthenticateToken	func (SecureRoomAuth) AuthenticateTokenfunc(token string) (map[string]any, error)
-symbol	github.com/spcent/plumego/x/websocket	method	SecureRoomAuth.GetMetrics	func (SecureRoomAuth) GetMetricsfunc() SecurityMetrics
-symbol	github.com/spcent/plumego/x/websocket	method	SecureRoomAuth.MaxMessageSize	func (SecureRoomAuth) MaxMessageSizefunc() int64
-symbol	github.com/spcent/plumego/x/websocket	method	SecureRoomAuth.ResetMetrics	func (SecureRoomAuth) ResetMetricsfunc()
-symbol	github.com/spcent/plumego/x/websocket	method	SecureRoomAuth.SetRoomPassword	func (SecureRoomAuth) SetRoomPasswordfunc(room, pwd string) error
-symbol	github.com/spcent/plumego/x/websocket	method	SecurityError.Error	func (SecurityError) Errorfunc() string
-symbol	github.com/spcent/plumego/x/websocket	method	Server.Health	func (Server) Healthfunc() (string, health.HealthStatus)
-symbol	github.com/spcent/plumego/x/websocket	method	Server.Hub	func (Server) Hubfunc() *Hub
-symbol	github.com/spcent/plumego/x/websocket	method	Server.RegisterRoutes	func (Server) RegisterRoutesfunc(r RouteRegistrar) error
-symbol	github.com/spcent/plumego/x/websocket	method	Server.Shutdown	func (Server) Shutdownfunc(ctx context.Context) error
-symbol	github.com/spcent/plumego/x/websocket	method	SimpleRoomAuth.AuthorizeRoom	func (SimpleRoomAuth) AuthorizeRoomfunc(room, provided string) bool
-symbol	github.com/spcent/plumego/x/websocket	method	SimpleRoomAuth.SetRoomPassword	func (SimpleRoomAuth) SetRoomPasswordfunc(room, pwd string) error
-symbol	github.com/spcent/plumego/x/websocket	method	ValidationError.Error	func (ValidationError) Errorfunc() string
-symbol	github.com/spcent/plumego/x/websocket	type	BroadcastResult	type BroadcastResult struct { Sent int `json:"sent"` Dropped int `json:"dropped"` }
-symbol	github.com/spcent/plumego/x/websocket	type	CloseError	type CloseError struct { Code int Reason string }
-symbol	github.com/spcent/plumego/x/websocket	type	Conn	type Conn struct { conn net.Conn br *bufio.Reader bw *bufio.Writer writeMu sync.Mutex sendQueue chan outbound sendMu sync.Mutex sendQueueSize int sendTimeout time.Duration sendBehavior SendBehavior closeOnce sync.Once closed atomic.Int32 closeC chan struct{} readLimit atomic.Int64 pingPeriod atomic.Int64 pongWait atomic.Int64 lastPong atomic.Int64 UserInfo *UserInfo metadata sync.Map }
-symbol	github.com/spcent/plumego/x/websocket	type	HS256TokenAuth	type HS256TokenAuth struct { secret []byte }
-symbol	github.com/spcent/plumego/x/websocket	type	Hub	type Hub struct { rooms map[string]map[*Conn]struct{} mu sync.RWMutex jobQueue chan hubJob jobMu sync.Mutex workers int wg sync.WaitGroup quit chan struct{} stopped atomic.Bool maxRoomRegistrations int maxRoomConns int totalConns atomic.Uint64 accepted atomic.Uint64 rejected atomic.Uint64 broadcastDropped atomic.Uint64 securityRejections atomic.Uint64 invalidWSKeys atomic.Uint64 successfulAuths atomic.Uint64 rateLimiter *simpleRateLimiter connListPool sync.Pool config HubConfig logger *log.Logger securityEvents chan SecurityEvent handlerEvents chan SecurityEvent }
-symbol	github.com/spcent/plumego/x/websocket	type	HubConfig	type HubConfig struct { WorkerCount int JobQueueSize int MaxRoomRegistrations int MaxRoomConnections int EnableDebugLogging bool Logger *log.Logger RejectOnQueueFull bool MaxConnectionRate int EnableSecurityEvents bool SecurityEventHandler func(SecurityEvent) }
-symbol	github.com/spcent/plumego/x/websocket	type	HubMetrics	type HubMetrics struct { RoomRegistrations int `json:"room_registrations"` Rooms int `json:"rooms"` AcceptedTotal uint64 `json:"accepted_total"` RejectedTotal uint64 `json:"rejected_total"` MaxRoomRegistrations int `json:"max_room_registrations"` MaxRoomConnections int `json:"max_room_connections"` BroadcastDropped uint64 `json:"broadcast_dropped"` SecurityRejections uint64 `json:"security_rejections"` InvalidWSKeys uint64 `json:"invalid_ws_keys"` SuccessfulAuths uint64 `json:"successful_auths"` }
-symbol	github.com/spcent/plumego/x/websocket	type	Message	type Message struct { Room string Opcode byte Data []byte }
-symbol	github.com/spcent/plumego/x/websocket	type	MessageHandler	type MessageHandler func(conn *Conn, msg Message)
-symbol	github.com/spcent/plumego/x/websocket	type	MessageValidationConfig	type MessageValidationConfig struct { MaxLength int AllowEmpty bool RejectControlCharacters bool RequireValidUTF8 bool AllowedNewlines bool AllowedTabs bool }
-symbol	github.com/spcent/plumego/x/websocket	type	RoomAuthorizer	type RoomAuthorizer interface { AuthorizeRoom(room, provided string) bool }
-symbol	github.com/spcent/plumego/x/websocket	type	RouteRegistrar	type RouteRegistrar interface { AddRoute(method, path string, handler http.Handler, opts ...router.RouteOption) error }
-symbol	github.com/spcent/plumego/x/websocket	type	SecureRoomAuth	type SecureRoomAuth struct { *SimpleRoomAuth tokenAuth *HS256TokenAuth securityConfig SecurityConfig invalidJWTSecrets atomic.Uint64 weakRoomPasswords atomic.Uint64 successfulAuthentications atomic.Uint64 }
-symbol	github.com/spcent/plumego/x/websocket	type	SecurityConfig	type SecurityConfig struct { JWTSecret []byte MinJWTSecretLength int RoomPasswordConfig password.PasswordStrengthConfig EnforcePasswordStrength bool AllowWeakRoomPasswords bool MaxMessageSize int64 EnableDebugLogging bool Logger *log.Logger }
-symbol	github.com/spcent/plumego/x/websocket	type	SecurityError	type SecurityError struct { Type string Message string Details map[string]any }
-symbol	github.com/spcent/plumego/x/websocket	type	SecurityEvent	type SecurityEvent struct { Timestamp time.Time Type string Details map[string]any Severity string }
-symbol	github.com/spcent/plumego/x/websocket	type	SecurityMetrics	type SecurityMetrics struct { InvalidJWTSecrets uint64 `json:"invalid_jwt_secrets"` WeakRoomPasswords uint64 `json:"weak_room_passwords"` SuccessfulAuthentications uint64 `json:"successful_authentications"` }
-symbol	github.com/spcent/plumego/x/websocket	type	SendBehavior	type SendBehavior int
-symbol	github.com/spcent/plumego/x/websocket	type	Server	type Server struct { config WebSocketConfig hub *Hub }
-symbol	github.com/spcent/plumego/x/websocket	type	ServerConfig	type ServerConfig struct { Hub *Hub RoomAuth RoomAuthorizer TokenAuth TokenAuthenticator OnMessage MessageHandler AllowUnauthenticated bool AllowQueryToken bool QueueSize int SendTimeout time.Duration SendBehavior SendBehavior ReadLimit int64 MessageValidation MessageValidationConfig AllowedOrigins []string }
-symbol	github.com/spcent/plumego/x/websocket	type	SimpleRoomAuth	type SimpleRoomAuth struct { roomPasswords map[string]string mu sync.RWMutex }
-symbol	github.com/spcent/plumego/x/websocket	type	TokenAuthenticator	type TokenAuthenticator interface { AuthenticateToken(token string) (map[string]any, error) }
-symbol	github.com/spcent/plumego/x/websocket	type	UserInfo	type UserInfo struct { ID string `json:"id"` Name string `json:"name"` Email string `json:"email"` Roles []string `json:"roles"` Claims map[string]any `json:"claims"` }
-symbol	github.com/spcent/plumego/x/websocket	type	ValidationError	type ValidationError struct { Field string Message string }
-symbol	github.com/spcent/plumego/x/websocket	type	WebSocketConfig	type WebSocketConfig struct { WorkerCount int JobQueueSize int SendQueueSize int SendTimeout time.Duration SendBehavior SendBehavior ReadLimit int64 MessageValidation MessageValidationConfig Secret []byte RoomAuth RoomAuthorizer TokenAuth TokenAuthenticator AllowUnauthenticated bool AllowQueryToken bool AllowedOrigins []string EnableDebugLogging bool Logger *log.Logger RejectOnQueueFull bool MaxConnectionRate int EnableSecurityEvents bool SecurityEventHandler func(SecurityEvent) WSRoutePath string BroadcastPath string BroadcastEnabled bool BroadcastSecret []byte BroadcastMaxBodyBytes int64 MaxRoomRegistrations int MaxRoomConnections int OnMessage MessageHandler }
-symbol	github.com/spcent/plumego/x/websocket	var	ErrConnClosed	var ErrConnClosed = errors.New("websocket: connection closed")
-symbol	github.com/spcent/plumego/x/websocket	var	ErrControlCharacters	var ErrControlCharacters = errors.New("websocket: message contains control characters")
-symbol	github.com/spcent/plumego/x/websocket	var	ErrControlTooLarge	var ErrControlTooLarge = errors.New("websocket: control frame too large")
-symbol	github.com/spcent/plumego/x/websocket	var	ErrEmptyBroadcastToken	var ErrEmptyBroadcastToken = errors.New("websocket: broadcast token is empty")
-symbol	github.com/spcent/plumego/x/websocket	var	ErrEmptyMessage	var ErrEmptyMessage = errors.New("websocket: empty message")
-symbol	github.com/spcent/plumego/x/websocket	var	ErrEmptyRoutePath	var ErrEmptyRoutePath = errors.New("websocket: route path is empty")
-symbol	github.com/spcent/plumego/x/websocket	var	ErrFragmentedControl	var ErrFragmentedControl = errors.New("websocket: fragmented control frame")
-symbol	github.com/spcent/plumego/x/websocket	var	ErrHubFull	var ErrHubFull = errors.New("websocket: hub at capacity")
-symbol	github.com/spcent/plumego/x/websocket	var	ErrHubStopped	var ErrHubStopped = errors.New("websocket: hub stopped")
-symbol	github.com/spcent/plumego/x/websocket	var	ErrInvalidConfig	var ErrInvalidConfig = errors.New("invalid security configuration")
-symbol	github.com/spcent/plumego/x/websocket	var	ErrInvalidHubConfig	var ErrInvalidHubConfig = errors.New("websocket: invalid hub configuration")
-symbol	github.com/spcent/plumego/x/websocket	var	ErrInvalidPingPeriod	var ErrInvalidPingPeriod = errors.New("websocket: ping period must be positive")
-symbol	github.com/spcent/plumego/x/websocket	var	ErrInvalidPongWait	var ErrInvalidPongWait = errors.New("websocket: pong wait must be positive")
-symbol	github.com/spcent/plumego/x/websocket	var	ErrInvalidRoomName	var ErrInvalidRoomName = errors.New("websocket: invalid room name")
-symbol	github.com/spcent/plumego/x/websocket	var	ErrInvalidSendBehavior	var ErrInvalidSendBehavior = errors.New("websocket: invalid send behavior")
-symbol	github.com/spcent/plumego/x/websocket	var	ErrInvalidToken	var ErrInvalidToken = errors.New("websocket: invalid token")
-symbol	github.com/spcent/plumego/x/websocket	var	ErrInvalidUTF8	var ErrInvalidUTF8 = errors.New("websocket: invalid utf-8 in message")
-symbol	github.com/spcent/plumego/x/websocket	var	ErrInvalidWebSocketKey	var ErrInvalidWebSocketKey = errors.New("invalid websocket key format")
-symbol	github.com/spcent/plumego/x/websocket	var	ErrMessageTooLong	var ErrMessageTooLong = errors.New("websocket: message too long")
-symbol	github.com/spcent/plumego/x/websocket	var	ErrNegativeQueueSize	var ErrNegativeQueueSize = errors.New("websocket: queue size cannot be negative")
-symbol	github.com/spcent/plumego/x/websocket	var	ErrNegativeReadLimit	var ErrNegativeReadLimit = errors.New("websocket: read limit cannot be negative")
-symbol	github.com/spcent/plumego/x/websocket	var	ErrNegativeSendTimeout	var ErrNegativeSendTimeout = errors.New("websocket: send timeout cannot be negative")
-symbol	github.com/spcent/plumego/x/websocket	var	ErrNilHub	var ErrNilHub = errors.New("websocket: hub is nil")
-symbol	github.com/spcent/plumego/x/websocket	var	ErrNilMessageHandler	var ErrNilMessageHandler = errors.New("websocket: message handler is nil")
-symbol	github.com/spcent/plumego/x/websocket	var	ErrNilNetConn	var ErrNilNetConn = errors.New("websocket: net conn is nil")
-symbol	github.com/spcent/plumego/x/websocket	var	ErrNilRegistrar	var ErrNilRegistrar = errors.New("websocket: route registrar is nil")
-symbol	github.com/spcent/plumego/x/websocket	var	ErrNilRoomAuthorizer	var ErrNilRoomAuthorizer = errors.New("websocket: room authorizer is nil")
-symbol	github.com/spcent/plumego/x/websocket	var	ErrNilTokenAuthorizer	var ErrNilTokenAuthorizer = errors.New("websocket: token authenticator is nil")
-symbol	github.com/spcent/plumego/x/websocket	var	ErrPayloadTooLarge	var ErrPayloadTooLarge = errors.New("websocket: payload too large")
-symbol	github.com/spcent/plumego/x/websocket	var	ErrProtocolError	var ErrProtocolError = errors.New("websocket: protocol error")
-symbol	github.com/spcent/plumego/x/websocket	var	ErrQueueFull	var ErrQueueFull = errors.New("websocket: send queue full")
-symbol	github.com/spcent/plumego/x/websocket	var	ErrQueueFullClosed	var ErrQueueFullClosed = errors.New("websocket: send queue full, connection closed")
-symbol	github.com/spcent/plumego/x/websocket	var	ErrRateLimitExceeded	var ErrRateLimitExceeded = errors.New("websocket: rate limit exceeded")
-symbol	github.com/spcent/plumego/x/websocket	var	ErrRoomFull	var ErrRoomFull = errors.New("websocket: room at capacity")
-symbol	github.com/spcent/plumego/x/websocket	var	ErrTokenExpired	var ErrTokenExpired = errors.New("websocket: token expired")
-symbol	github.com/spcent/plumego/x/websocket	var	ErrUnmaskedFrame	var ErrUnmaskedFrame = errors.New("websocket: unmasked client frame")
-symbol	github.com/spcent/plumego/x/websocket	var	ErrWeakJWTSecret	var ErrWeakJWTSecret = errors.New("jwt secret too weak: minimum 32 bytes required")
-symbol	github.com/spcent/plumego/x/websocket	var	ErrWeakRoomPassword	var ErrWeakRoomPassword = errors.New("room password does not meet strength requirements")
+symbol	github.com/birdordev/plumego/x/websocket	const	CloseGoingAway	const CloseGoingAway uint16 = 1001
+symbol	github.com/birdordev/plumego/x/websocket	const	CloseInvalidPayload	const CloseInvalidPayload uint16 = 1007
+symbol	github.com/birdordev/plumego/x/websocket	const	CloseMessageTooBig	const CloseMessageTooBig uint16 = 1009
+symbol	github.com/birdordev/plumego/x/websocket	const	CloseNormalClosure	const CloseNormalClosure uint16 = 1000
+symbol	github.com/birdordev/plumego/x/websocket	const	ClosePolicyViolation	const ClosePolicyViolation uint16 = 1008
+symbol	github.com/birdordev/plumego/x/websocket	const	CloseProtocolError	const CloseProtocolError uint16 = 1002
+symbol	github.com/birdordev/plumego/x/websocket	const	CloseServerError	const CloseServerError uint16 = 1011
+symbol	github.com/birdordev/plumego/x/websocket	const	CloseUnsupportedData	const CloseUnsupportedData uint16 = 1003
+symbol	github.com/birdordev/plumego/x/websocket	const	DefaultSendQueueSize	const DefaultSendQueueSize = 256
+symbol	github.com/birdordev/plumego/x/websocket	const	MaxRoomNameLength	const MaxRoomNameLength = 128
+symbol	github.com/birdordev/plumego/x/websocket	const	OpcodeBinary	const OpcodeBinary byte = 0x2
+symbol	github.com/birdordev/plumego/x/websocket	const	OpcodeText	const OpcodeText byte = 0x1
+symbol	github.com/birdordev/plumego/x/websocket	const	RoomPasswordHeader	const RoomPasswordHeader = "X-Room-Password"
+symbol	github.com/birdordev/plumego/x/websocket	const	SendBlock	const SendBlock SendBehavior = iota
+symbol	github.com/birdordev/plumego/x/websocket	const	SendClose	const SendClose
+symbol	github.com/birdordev/plumego/x/websocket	const	SendDrop	const SendDrop
+symbol	github.com/birdordev/plumego/x/websocket	func	DefaultMessageValidationConfig	func DefaultMessageValidationConfigfunc() MessageValidationConfig
+symbol	github.com/birdordev/plumego/x/websocket	func	DefaultWebSocketConfig	func DefaultWebSocketConfigfunc() WebSocketConfig
+symbol	github.com/birdordev/plumego/x/websocket	func	ExtractUserInfo	func ExtractUserInfofunc(payload map[string]any) *UserInfo
+symbol	github.com/birdordev/plumego/x/websocket	func	GenerateSecureSecret	func GenerateSecureSecretfunc(length int) ([]byte, error)
+symbol	github.com/birdordev/plumego/x/websocket	func	IsTemporary	func IsTemporaryfunc(err error) bool
+symbol	github.com/birdordev/plumego/x/websocket	func	New	func Newfunc(cfg WebSocketConfig) (*Server, error)
+symbol	github.com/birdordev/plumego/x/websocket	func	NewCloseError	func NewCloseErrorfunc(code int, reason string) *CloseError
+symbol	github.com/birdordev/plumego/x/websocket	func	NewConnE	func NewConnEfunc(c net.Conn, queueSize int, sendTimeout time.Duration, behavior SendBehavior) (*Conn, error)
+symbol	github.com/birdordev/plumego/x/websocket	func	NewHS256TokenAuth	func NewHS256TokenAuthfunc(secret []byte) (*HS256TokenAuth, error)
+symbol	github.com/birdordev/plumego/x/websocket	func	NewHubE	func NewHubEfunc(workerCount int, jobQueueSize int) (*Hub, error)
+symbol	github.com/birdordev/plumego/x/websocket	func	NewHubWithConfigE	func NewHubWithConfigEfunc(cfg HubConfig) (*Hub, error)
+symbol	github.com/birdordev/plumego/x/websocket	func	NewSecureRoomAuth	func NewSecureRoomAuthfunc(secret []byte, cfg SecurityConfig) (*SecureRoomAuth, error)
+symbol	github.com/birdordev/plumego/x/websocket	func	NewSecurityError	func NewSecurityErrorfunc(typ, message string) *SecurityError
+symbol	github.com/birdordev/plumego/x/websocket	func	NewSimpleRoomAuth	func NewSimpleRoomAuthfunc() *SimpleRoomAuth
+symbol	github.com/birdordev/plumego/x/websocket	func	NewValidationError	func NewValidationErrorfunc(field, message string) *ValidationError
+symbol	github.com/birdordev/plumego/x/websocket	func	SanitizeForLogging	func SanitizeForLoggingfunc(data []byte, maxLen int) string
+symbol	github.com/birdordev/plumego/x/websocket	func	ServeRoomFanoutWS	func ServeRoomFanoutWSfunc(w http.ResponseWriter, r *http.Request, cfg ServerConfig)
+symbol	github.com/birdordev/plumego/x/websocket	func	ServeWSWithConfig	func ServeWSWithConfigfunc(w http.ResponseWriter, r *http.Request, cfg ServerConfig)
+symbol	github.com/birdordev/plumego/x/websocket	func	ValidateRoomName	func ValidateRoomNamefunc(room string) error
+symbol	github.com/birdordev/plumego/x/websocket	func	ValidateRoomPassword	func ValidateRoomPasswordfunc(pwd string, config password.PasswordStrengthConfig, enforce bool) error
+symbol	github.com/birdordev/plumego/x/websocket	func	ValidateSecurityConfig	func ValidateSecurityConfigfunc(cfg SecurityConfig) error
+symbol	github.com/birdordev/plumego/x/websocket	func	ValidateTextMessage	func ValidateTextMessagefunc(data []byte, cfg MessageValidationConfig) error
+symbol	github.com/birdordev/plumego/x/websocket	func	ValidateWebSocketKey	func ValidateWebSocketKeyfunc(key string) error
+symbol	github.com/birdordev/plumego/x/websocket	method	CloseError.Error	func (CloseError) Errorfunc() string
+symbol	github.com/birdordev/plumego/x/websocket	method	Conn.Close	func (Conn) Closefunc() error
+symbol	github.com/birdordev/plumego/x/websocket	method	Conn.DeleteMetadata	func (Conn) DeleteMetadatafunc(key string)
+symbol	github.com/birdordev/plumego/x/websocket	method	Conn.GetLastPong	func (Conn) GetLastPongfunc() time.Time
+symbol	github.com/birdordev/plumego/x/websocket	method	Conn.GetMetadata	func (Conn) GetMetadatafunc(key string) (any, bool)
+symbol	github.com/birdordev/plumego/x/websocket	method	Conn.IsClosed	func (Conn) IsClosedfunc() bool
+symbol	github.com/birdordev/plumego/x/websocket	method	Conn.RangeMetadata	func (Conn) RangeMetadatafunc(f func(key, value any) bool)
+symbol	github.com/birdordev/plumego/x/websocket	method	Conn.ReadMessage	func (Conn) ReadMessagefunc() (byte, []byte, error)
+symbol	github.com/birdordev/plumego/x/websocket	method	Conn.ReadMessageStream	func (Conn) ReadMessageStreamfunc() (byte, io.ReadCloser, error)
+symbol	github.com/birdordev/plumego/x/websocket	method	Conn.SetMetadata	func (Conn) SetMetadatafunc(key string, value any)
+symbol	github.com/birdordev/plumego/x/websocket	method	Conn.SetPingPeriod	func (Conn) SetPingPeriodfunc(d time.Duration) error
+symbol	github.com/birdordev/plumego/x/websocket	method	Conn.SetPongWait	func (Conn) SetPongWaitfunc(d time.Duration) error
+symbol	github.com/birdordev/plumego/x/websocket	method	Conn.SetReadLimit	func (Conn) SetReadLimitfunc(limit int64) error
+symbol	github.com/birdordev/plumego/x/websocket	method	Conn.WriteBinary	func (Conn) WriteBinaryfunc(data []byte) error
+symbol	github.com/birdordev/plumego/x/websocket	method	Conn.WriteClose	func (Conn) WriteClosefunc(code uint16, reason string) error
+symbol	github.com/birdordev/plumego/x/websocket	method	Conn.WriteJSON	func (Conn) WriteJSONfunc(v any) error
+symbol	github.com/birdordev/plumego/x/websocket	method	Conn.WriteMessage	func (Conn) WriteMessagefunc(op byte, data []byte) error
+symbol	github.com/birdordev/plumego/x/websocket	method	Conn.WriteMessageContext	func (Conn) WriteMessageContextfunc(ctx context.Context, op byte, data []byte) error
+symbol	github.com/birdordev/plumego/x/websocket	method	Conn.WriteText	func (Conn) WriteTextfunc(data string) error
+symbol	github.com/birdordev/plumego/x/websocket	method	HS256TokenAuth.AuthenticateToken	func (HS256TokenAuth) AuthenticateTokenfunc(token string) (map[string]any, error)
+symbol	github.com/birdordev/plumego/x/websocket	method	Hub.BroadcastAll	func (Hub) BroadcastAllfunc(op byte, data []byte)
+symbol	github.com/birdordev/plumego/x/websocket	method	Hub.BroadcastRoom	func (Hub) BroadcastRoomfunc(room string, op byte, data []byte)
+symbol	github.com/birdordev/plumego/x/websocket	method	Hub.CanJoin	func (Hub) CanJoinfunc(room string) error
+symbol	github.com/birdordev/plumego/x/websocket	method	Hub.GetRoomCount	func (Hub) GetRoomCountfunc(room string) int
+symbol	github.com/birdordev/plumego/x/websocket	method	Hub.GetRoomRegistrationCount	func (Hub) GetRoomRegistrationCountfunc() int
+symbol	github.com/birdordev/plumego/x/websocket	method	Hub.GetRooms	func (Hub) GetRoomsfunc() []string
+symbol	github.com/birdordev/plumego/x/websocket	method	Hub.Leave	func (Hub) Leavefunc(room string, c *Conn)
+symbol	github.com/birdordev/plumego/x/websocket	method	Hub.Metrics	func (Hub) Metricsfunc() HubMetrics
+symbol	github.com/birdordev/plumego/x/websocket	method	Hub.RangeConns	func (Hub) RangeConnsfunc(room string, fn func(*Conn) bool)
+symbol	github.com/birdordev/plumego/x/websocket	method	Hub.RemoveConn	func (Hub) RemoveConnfunc(c *Conn)
+symbol	github.com/birdordev/plumego/x/websocket	method	Hub.Shutdown	func (Hub) Shutdownfunc(ctx context.Context) error
+symbol	github.com/birdordev/plumego/x/websocket	method	Hub.Stop	func (Hub) Stopfunc()
+symbol	github.com/birdordev/plumego/x/websocket	method	Hub.TryBroadcastAll	func (Hub) TryBroadcastAllfunc(op byte, data []byte) (BroadcastResult, error)
+symbol	github.com/birdordev/plumego/x/websocket	method	Hub.TryBroadcastRoom	func (Hub) TryBroadcastRoomfunc(room string, op byte, data []byte) (BroadcastResult, error)
+symbol	github.com/birdordev/plumego/x/websocket	method	Hub.TryJoin	func (Hub) TryJoinfunc(room string, c *Conn) error
+symbol	github.com/birdordev/plumego/x/websocket	method	SecureRoomAuth.AuthenticateToken	func (SecureRoomAuth) AuthenticateTokenfunc(token string) (map[string]any, error)
+symbol	github.com/birdordev/plumego/x/websocket	method	SecureRoomAuth.GetMetrics	func (SecureRoomAuth) GetMetricsfunc() SecurityMetrics
+symbol	github.com/birdordev/plumego/x/websocket	method	SecureRoomAuth.MaxMessageSize	func (SecureRoomAuth) MaxMessageSizefunc() int64
+symbol	github.com/birdordev/plumego/x/websocket	method	SecureRoomAuth.ResetMetrics	func (SecureRoomAuth) ResetMetricsfunc()
+symbol	github.com/birdordev/plumego/x/websocket	method	SecureRoomAuth.SetRoomPassword	func (SecureRoomAuth) SetRoomPasswordfunc(room, pwd string) error
+symbol	github.com/birdordev/plumego/x/websocket	method	SecurityError.Error	func (SecurityError) Errorfunc() string
+symbol	github.com/birdordev/plumego/x/websocket	method	Server.Health	func (Server) Healthfunc() (string, health.HealthStatus)
+symbol	github.com/birdordev/plumego/x/websocket	method	Server.Hub	func (Server) Hubfunc() *Hub
+symbol	github.com/birdordev/plumego/x/websocket	method	Server.RegisterRoutes	func (Server) RegisterRoutesfunc(r RouteRegistrar) error
+symbol	github.com/birdordev/plumego/x/websocket	method	Server.Shutdown	func (Server) Shutdownfunc(ctx context.Context) error
+symbol	github.com/birdordev/plumego/x/websocket	method	SimpleRoomAuth.AuthorizeRoom	func (SimpleRoomAuth) AuthorizeRoomfunc(room, provided string) bool
+symbol	github.com/birdordev/plumego/x/websocket	method	SimpleRoomAuth.SetRoomPassword	func (SimpleRoomAuth) SetRoomPasswordfunc(room, pwd string) error
+symbol	github.com/birdordev/plumego/x/websocket	method	ValidationError.Error	func (ValidationError) Errorfunc() string
+symbol	github.com/birdordev/plumego/x/websocket	type	BroadcastResult	type BroadcastResult struct { Sent int `json:"sent"` Dropped int `json:"dropped"` }
+symbol	github.com/birdordev/plumego/x/websocket	type	CloseError	type CloseError struct { Code int Reason string }
+symbol	github.com/birdordev/plumego/x/websocket	type	Conn	type Conn struct { conn net.Conn br *bufio.Reader bw *bufio.Writer writeMu sync.Mutex sendQueue chan outbound sendMu sync.Mutex sendQueueSize int sendTimeout time.Duration sendBehavior SendBehavior closeOnce sync.Once closed atomic.Int32 closeC chan struct{} readLimit atomic.Int64 pingPeriod atomic.Int64 pongWait atomic.Int64 lastPong atomic.Int64 UserInfo *UserInfo metadata sync.Map }
+symbol	github.com/birdordev/plumego/x/websocket	type	HS256TokenAuth	type HS256TokenAuth struct { secret []byte }
+symbol	github.com/birdordev/plumego/x/websocket	type	Hub	type Hub struct { rooms map[string]map[*Conn]struct{} mu sync.RWMutex jobQueue chan hubJob jobMu sync.Mutex workers int wg sync.WaitGroup quit chan struct{} stopped atomic.Bool maxRoomRegistrations int maxRoomConns int totalConns atomic.Uint64 accepted atomic.Uint64 rejected atomic.Uint64 broadcastDropped atomic.Uint64 securityRejections atomic.Uint64 invalidWSKeys atomic.Uint64 successfulAuths atomic.Uint64 rateLimiter *simpleRateLimiter connListPool sync.Pool config HubConfig logger *log.Logger securityEvents chan SecurityEvent handlerEvents chan SecurityEvent }
+symbol	github.com/birdordev/plumego/x/websocket	type	HubConfig	type HubConfig struct { WorkerCount int JobQueueSize int MaxRoomRegistrations int MaxRoomConnections int EnableDebugLogging bool Logger *log.Logger RejectOnQueueFull bool MaxConnectionRate int EnableSecurityEvents bool SecurityEventHandler func(SecurityEvent) }
+symbol	github.com/birdordev/plumego/x/websocket	type	HubMetrics	type HubMetrics struct { RoomRegistrations int `json:"room_registrations"` Rooms int `json:"rooms"` AcceptedTotal uint64 `json:"accepted_total"` RejectedTotal uint64 `json:"rejected_total"` MaxRoomRegistrations int `json:"max_room_registrations"` MaxRoomConnections int `json:"max_room_connections"` BroadcastDropped uint64 `json:"broadcast_dropped"` SecurityRejections uint64 `json:"security_rejections"` InvalidWSKeys uint64 `json:"invalid_ws_keys"` SuccessfulAuths uint64 `json:"successful_auths"` }
+symbol	github.com/birdordev/plumego/x/websocket	type	Message	type Message struct { Room string Opcode byte Data []byte }
+symbol	github.com/birdordev/plumego/x/websocket	type	MessageHandler	type MessageHandler func(conn *Conn, msg Message)
+symbol	github.com/birdordev/plumego/x/websocket	type	MessageValidationConfig	type MessageValidationConfig struct { MaxLength int AllowEmpty bool RejectControlCharacters bool RequireValidUTF8 bool AllowedNewlines bool AllowedTabs bool }
+symbol	github.com/birdordev/plumego/x/websocket	type	RoomAuthorizer	type RoomAuthorizer interface { AuthorizeRoom(room, provided string) bool }
+symbol	github.com/birdordev/plumego/x/websocket	type	RouteRegistrar	type RouteRegistrar interface { AddRoute(method, path string, handler http.Handler, opts ...router.RouteOption) error }
+symbol	github.com/birdordev/plumego/x/websocket	type	SecureRoomAuth	type SecureRoomAuth struct { *SimpleRoomAuth tokenAuth *HS256TokenAuth securityConfig SecurityConfig invalidJWTSecrets atomic.Uint64 weakRoomPasswords atomic.Uint64 successfulAuthentications atomic.Uint64 }
+symbol	github.com/birdordev/plumego/x/websocket	type	SecurityConfig	type SecurityConfig struct { JWTSecret []byte MinJWTSecretLength int RoomPasswordConfig password.PasswordStrengthConfig EnforcePasswordStrength bool AllowWeakRoomPasswords bool MaxMessageSize int64 EnableDebugLogging bool Logger *log.Logger }
+symbol	github.com/birdordev/plumego/x/websocket	type	SecurityError	type SecurityError struct { Type string Message string Details map[string]any }
+symbol	github.com/birdordev/plumego/x/websocket	type	SecurityEvent	type SecurityEvent struct { Timestamp time.Time Type string Details map[string]any Severity string }
+symbol	github.com/birdordev/plumego/x/websocket	type	SecurityMetrics	type SecurityMetrics struct { InvalidJWTSecrets uint64 `json:"invalid_jwt_secrets"` WeakRoomPasswords uint64 `json:"weak_room_passwords"` SuccessfulAuthentications uint64 `json:"successful_authentications"` }
+symbol	github.com/birdordev/plumego/x/websocket	type	SendBehavior	type SendBehavior int
+symbol	github.com/birdordev/plumego/x/websocket	type	Server	type Server struct { config WebSocketConfig hub *Hub }
+symbol	github.com/birdordev/plumego/x/websocket	type	ServerConfig	type ServerConfig struct { Hub *Hub RoomAuth RoomAuthorizer TokenAuth TokenAuthenticator OnMessage MessageHandler AllowUnauthenticated bool AllowQueryToken bool QueueSize int SendTimeout time.Duration SendBehavior SendBehavior ReadLimit int64 MessageValidation MessageValidationConfig AllowedOrigins []string }
+symbol	github.com/birdordev/plumego/x/websocket	type	SimpleRoomAuth	type SimpleRoomAuth struct { roomPasswords map[string]string mu sync.RWMutex }
+symbol	github.com/birdordev/plumego/x/websocket	type	TokenAuthenticator	type TokenAuthenticator interface { AuthenticateToken(token string) (map[string]any, error) }
+symbol	github.com/birdordev/plumego/x/websocket	type	UserInfo	type UserInfo struct { ID string `json:"id"` Name string `json:"name"` Email string `json:"email"` Roles []string `json:"roles"` Claims map[string]any `json:"claims"` }
+symbol	github.com/birdordev/plumego/x/websocket	type	ValidationError	type ValidationError struct { Field string Message string }
+symbol	github.com/birdordev/plumego/x/websocket	type	WebSocketConfig	type WebSocketConfig struct { WorkerCount int JobQueueSize int SendQueueSize int SendTimeout time.Duration SendBehavior SendBehavior ReadLimit int64 MessageValidation MessageValidationConfig Secret []byte RoomAuth RoomAuthorizer TokenAuth TokenAuthenticator AllowUnauthenticated bool AllowQueryToken bool AllowedOrigins []string EnableDebugLogging bool Logger *log.Logger RejectOnQueueFull bool MaxConnectionRate int EnableSecurityEvents bool SecurityEventHandler func(SecurityEvent) WSRoutePath string BroadcastPath string BroadcastEnabled bool BroadcastSecret []byte BroadcastMaxBodyBytes int64 MaxRoomRegistrations int MaxRoomConnections int OnMessage MessageHandler }
+symbol	github.com/birdordev/plumego/x/websocket	var	ErrConnClosed	var ErrConnClosed = errors.New("websocket: connection closed")
+symbol	github.com/birdordev/plumego/x/websocket	var	ErrControlCharacters	var ErrControlCharacters = errors.New("websocket: message contains control characters")
+symbol	github.com/birdordev/plumego/x/websocket	var	ErrControlTooLarge	var ErrControlTooLarge = errors.New("websocket: control frame too large")
+symbol	github.com/birdordev/plumego/x/websocket	var	ErrEmptyBroadcastToken	var ErrEmptyBroadcastToken = errors.New("websocket: broadcast token is empty")
+symbol	github.com/birdordev/plumego/x/websocket	var	ErrEmptyMessage	var ErrEmptyMessage = errors.New("websocket: empty message")
+symbol	github.com/birdordev/plumego/x/websocket	var	ErrEmptyRoutePath	var ErrEmptyRoutePath = errors.New("websocket: route path is empty")
+symbol	github.com/birdordev/plumego/x/websocket	var	ErrFragmentedControl	var ErrFragmentedControl = errors.New("websocket: fragmented control frame")
+symbol	github.com/birdordev/plumego/x/websocket	var	ErrHubFull	var ErrHubFull = errors.New("websocket: hub at capacity")
+symbol	github.com/birdordev/plumego/x/websocket	var	ErrHubStopped	var ErrHubStopped = errors.New("websocket: hub stopped")
+symbol	github.com/birdordev/plumego/x/websocket	var	ErrInvalidConfig	var ErrInvalidConfig = errors.New("invalid security configuration")
+symbol	github.com/birdordev/plumego/x/websocket	var	ErrInvalidHubConfig	var ErrInvalidHubConfig = errors.New("websocket: invalid hub configuration")
+symbol	github.com/birdordev/plumego/x/websocket	var	ErrInvalidPingPeriod	var ErrInvalidPingPeriod = errors.New("websocket: ping period must be positive")
+symbol	github.com/birdordev/plumego/x/websocket	var	ErrInvalidPongWait	var ErrInvalidPongWait = errors.New("websocket: pong wait must be positive")
+symbol	github.com/birdordev/plumego/x/websocket	var	ErrInvalidRoomName	var ErrInvalidRoomName = errors.New("websocket: invalid room name")
+symbol	github.com/birdordev/plumego/x/websocket	var	ErrInvalidSendBehavior	var ErrInvalidSendBehavior = errors.New("websocket: invalid send behavior")
+symbol	github.com/birdordev/plumego/x/websocket	var	ErrInvalidToken	var ErrInvalidToken = errors.New("websocket: invalid token")
+symbol	github.com/birdordev/plumego/x/websocket	var	ErrInvalidUTF8	var ErrInvalidUTF8 = errors.New("websocket: invalid utf-8 in message")
+symbol	github.com/birdordev/plumego/x/websocket	var	ErrInvalidWebSocketKey	var ErrInvalidWebSocketKey = errors.New("invalid websocket key format")
+symbol	github.com/birdordev/plumego/x/websocket	var	ErrMessageTooLong	var ErrMessageTooLong = errors.New("websocket: message too long")
+symbol	github.com/birdordev/plumego/x/websocket	var	ErrNegativeQueueSize	var ErrNegativeQueueSize = errors.New("websocket: queue size cannot be negative")
+symbol	github.com/birdordev/plumego/x/websocket	var	ErrNegativeReadLimit	var ErrNegativeReadLimit = errors.New("websocket: read limit cannot be negative")
+symbol	github.com/birdordev/plumego/x/websocket	var	ErrNegativeSendTimeout	var ErrNegativeSendTimeout = errors.New("websocket: send timeout cannot be negative")
+symbol	github.com/birdordev/plumego/x/websocket	var	ErrNilHub	var ErrNilHub = errors.New("websocket: hub is nil")
+symbol	github.com/birdordev/plumego/x/websocket	var	ErrNilMessageHandler	var ErrNilMessageHandler = errors.New("websocket: message handler is nil")
+symbol	github.com/birdordev/plumego/x/websocket	var	ErrNilNetConn	var ErrNilNetConn = errors.New("websocket: net conn is nil")
+symbol	github.com/birdordev/plumego/x/websocket	var	ErrNilRegistrar	var ErrNilRegistrar = errors.New("websocket: route registrar is nil")
+symbol	github.com/birdordev/plumego/x/websocket	var	ErrNilRoomAuthorizer	var ErrNilRoomAuthorizer = errors.New("websocket: room authorizer is nil")
+symbol	github.com/birdordev/plumego/x/websocket	var	ErrNilTokenAuthorizer	var ErrNilTokenAuthorizer = errors.New("websocket: token authenticator is nil")
+symbol	github.com/birdordev/plumego/x/websocket	var	ErrPayloadTooLarge	var ErrPayloadTooLarge = errors.New("websocket: payload too large")
+symbol	github.com/birdordev/plumego/x/websocket	var	ErrProtocolError	var ErrProtocolError = errors.New("websocket: protocol error")
+symbol	github.com/birdordev/plumego/x/websocket	var	ErrQueueFull	var ErrQueueFull = errors.New("websocket: send queue full")
+symbol	github.com/birdordev/plumego/x/websocket	var	ErrQueueFullClosed	var ErrQueueFullClosed = errors.New("websocket: send queue full, connection closed")
+symbol	github.com/birdordev/plumego/x/websocket	var	ErrRateLimitExceeded	var ErrRateLimitExceeded = errors.New("websocket: rate limit exceeded")
+symbol	github.com/birdordev/plumego/x/websocket	var	ErrRoomFull	var ErrRoomFull = errors.New("websocket: room at capacity")
+symbol	github.com/birdordev/plumego/x/websocket	var	ErrTokenExpired	var ErrTokenExpired = errors.New("websocket: token expired")
+symbol	github.com/birdordev/plumego/x/websocket	var	ErrUnmaskedFrame	var ErrUnmaskedFrame = errors.New("websocket: unmasked client frame")
+symbol	github.com/birdordev/plumego/x/websocket	var	ErrWeakJWTSecret	var ErrWeakJWTSecret = errors.New("jwt secret too weak: minimum 32 bytes required")
+symbol	github.com/birdordev/plumego/x/websocket	var	ErrWeakRoomPassword	var ErrWeakRoomPassword = errors.New("room password does not meet strength requirements")

@@ -1,6 +1,6 @@
 # x/observability/devtools
 
-> **Import path:** `github.com/spcent/plumego/x/observability/devtools` — sub-package of [`x/observability`](../README.md). This primer mirrors the package path under `docs/modules/x/`.
+> **Import path:** `github.com/birdordev/plumego/x/observability/devtools` — sub-package of [`x/observability`](../README.md). This primer mirrors the package path under `docs/modules/x/`.
 
 ## Purpose
 

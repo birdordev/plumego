@@ -1,6 +1,6 @@
 # x/gateway/cache
 
-> **Import path:** `github.com/spcent/plumego/x/gateway/cache` — sub-package of [`x/gateway`](../README.md).
+> **Import path:** `github.com/birdordev/plumego/x/gateway/cache` — sub-package of [`x/gateway`](../README.md).
 
 ## Purpose
 

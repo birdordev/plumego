@@ -163,7 +163,7 @@ All existing v1.0 code works unchanged:
 **Migration note:** If coming from v1.0, no changes needed. Just upgrade.
 
 ```bash
-go get -u github.com/spcent/plumego@v1.1.0
+go get -u github.com/birdordev/plumego@v1.1.0
 ```
 
 ---
@@ -233,14 +233,14 @@ Open an issue or discussion — your feedback shapes the roadmap.
 ### Start a New Service
 ```bash
 go mod init example.com/myservice
-go get github.com/spcent/plumego@v1.1.0
-cp -r github.com/spcent/plumego/examples/standard-api ./cmd/api
+go get github.com/birdordev/plumego@v1.1.0
+cp -r github.com/birdordev/plumego/examples/standard-api ./cmd/api
 go run ./cmd/api
 ```
 
 ### Migrate from v1.0
 ```bash
-go get -u github.com/spcent/plumego@v1.1.0
+go get -u github.com/birdordev/plumego@v1.1.0
 go test ./...
 # Everything just works!
 ```
@@ -341,7 +341,7 @@ v1.1.0 brings these to the community with comprehensive onboarding, clear stabil
 - **Migrating:** `docs/guides/migration/` (from Gin, Echo, Chi, stdlib)
 - **Examples:** `examples/hello`, `examples/standard-api`, `examples/error-handling`
 - **Reference:** `reference/standard-service` (canonical app layout)
-- **GitHub:** https://github.com/spcent/plumego
+- **GitHub:** https://github.com/birdordev/plumego
 
 ---
 

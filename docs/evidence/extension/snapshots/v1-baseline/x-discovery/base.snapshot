@@ -1,53 +1,53 @@
 # plumego extension api snapshot v1
-module	github.com/spcent/plumego
+module	github.com/birdordev/plumego
 pattern	./x/discovery
-symbol	github.com/spcent/plumego/x/discovery	func	NewConsul	func NewConsulfunc(address string, config ConsulConfig) (*Consul, error)
-symbol	github.com/spcent/plumego/x/discovery	func	NewEtcd	func NewEtcdfunc(endpoints []string, config EtcdConfig) (*Etcd, error)
-symbol	github.com/spcent/plumego/x/discovery	func	NewKubernetes	func NewKubernetesfunc(config KubernetesConfig) (*Kubernetes, error)
-symbol	github.com/spcent/plumego/x/discovery	func	NewStatic	func NewStaticfunc(services map[string][]string) *Static
-symbol	github.com/spcent/plumego/x/discovery	method	Consul.Close	func (Consul) Closefunc() error
-symbol	github.com/spcent/plumego/x/discovery	method	Consul.Deregister	func (Consul) Deregisterfunc(ctx context.Context, serviceID string) error
-symbol	github.com/spcent/plumego/x/discovery	method	Consul.Health	func (Consul) Healthfunc(ctx context.Context, serviceID string, healthy bool) error
-symbol	github.com/spcent/plumego/x/discovery	method	Consul.Register	func (Consul) Registerfunc(ctx context.Context, instance Instance) error
-symbol	github.com/spcent/plumego/x/discovery	method	Consul.Resolve	func (Consul) Resolvefunc(ctx context.Context, serviceName string) ([]string, error)
-symbol	github.com/spcent/plumego/x/discovery	method	Consul.Watch	func (Consul) Watchfunc(ctx context.Context, serviceName string) (<-chan []string, error)
-symbol	github.com/spcent/plumego/x/discovery	method	Etcd.Close	func (Etcd) Closefunc() error
-symbol	github.com/spcent/plumego/x/discovery	method	Etcd.Deregister	func (Etcd) Deregisterfunc(ctx context.Context, serviceID string) error
-symbol	github.com/spcent/plumego/x/discovery	method	Etcd.Health	func (Etcd) Healthfunc(ctx context.Context, serviceID string, healthy bool) error
-symbol	github.com/spcent/plumego/x/discovery	method	Etcd.Register	func (Etcd) Registerfunc(ctx context.Context, instance Instance) error
-symbol	github.com/spcent/plumego/x/discovery	method	Etcd.Resolve	func (Etcd) Resolvefunc(ctx context.Context, serviceName string) ([]string, error)
-symbol	github.com/spcent/plumego/x/discovery	method	Etcd.Watch	func (Etcd) Watchfunc(ctx context.Context, serviceName string) (<-chan []string, error)
-symbol	github.com/spcent/plumego/x/discovery	method	Instance.URL	func (Instance) URLfunc() string
-symbol	github.com/spcent/plumego/x/discovery	method	Kubernetes.Close	func (Kubernetes) Closefunc() error
-symbol	github.com/spcent/plumego/x/discovery	method	Kubernetes.Deregister	func (Kubernetes) Deregisterfunc(_ context.Context, _ string) error
-symbol	github.com/spcent/plumego/x/discovery	method	Kubernetes.Health	func (Kubernetes) Healthfunc(_ context.Context, _ string, _ bool) error
-symbol	github.com/spcent/plumego/x/discovery	method	Kubernetes.Register	func (Kubernetes) Registerfunc(_ context.Context, _ Instance) error
-symbol	github.com/spcent/plumego/x/discovery	method	Kubernetes.Resolve	func (Kubernetes) Resolvefunc(ctx context.Context, serviceName string) ([]string, error)
-symbol	github.com/spcent/plumego/x/discovery	method	Kubernetes.Watch	func (Kubernetes) Watchfunc(ctx context.Context, serviceName string) (<-chan []string, error)
-symbol	github.com/spcent/plumego/x/discovery	method	Static.AddBackend	func (Static) AddBackendfunc(serviceName, backend string)
-symbol	github.com/spcent/plumego/x/discovery	method	Static.Close	func (Static) Closefunc() error
-symbol	github.com/spcent/plumego/x/discovery	method	Static.Deregister	func (Static) Deregisterfunc(ctx context.Context, serviceID string) error
-symbol	github.com/spcent/plumego/x/discovery	method	Static.Health	func (Static) Healthfunc(ctx context.Context, serviceID string, healthy bool) error
-symbol	github.com/spcent/plumego/x/discovery	method	Static.Register	func (Static) Registerfunc(ctx context.Context, instance Instance) error
-symbol	github.com/spcent/plumego/x/discovery	method	Static.RemoveBackend	func (Static) RemoveBackendfunc(serviceName, backend string)
-symbol	github.com/spcent/plumego/x/discovery	method	Static.RemoveService	func (Static) RemoveServicefunc(serviceName string)
-symbol	github.com/spcent/plumego/x/discovery	method	Static.Resolve	func (Static) Resolvefunc(ctx context.Context, serviceName string) ([]string, error)
-symbol	github.com/spcent/plumego/x/discovery	method	Static.Services	func (Static) Servicesfunc() []string
-symbol	github.com/spcent/plumego/x/discovery	method	Static.UpdateService	func (Static) UpdateServicefunc(serviceName string, backends []string)
-symbol	github.com/spcent/plumego/x/discovery	method	Static.Watch	func (Static) Watchfunc(ctx context.Context, serviceName string) (<-chan []string, error)
-symbol	github.com/spcent/plumego/x/discovery	type	Consul	type Consul struct { }
-symbol	github.com/spcent/plumego/x/discovery	type	ConsulConfig	type ConsulConfig struct { Datacenter string Token string Namespace string WaitTime time.Duration Timeout time.Duration IncludeUnhealthy bool Tag string Scheme string }
-symbol	github.com/spcent/plumego/x/discovery	type	Discovery	type Discovery interface { Resolve(ctx context.Context, serviceName string) ([]string, error) Watch(ctx context.Context, serviceName string) (<-chan []string, error) Register(ctx context.Context, instance Instance) error Deregister(ctx context.Context, serviceID string) error Health(ctx context.Context, serviceID string, healthy bool) error Close() error }
-symbol	github.com/spcent/plumego/x/discovery	type	Etcd	type Etcd struct { }
-symbol	github.com/spcent/plumego/x/discovery	type	EtcdConfig	type EtcdConfig struct { Prefix string Username string Password string Timeout time.Duration PollInterval time.Duration }
-symbol	github.com/spcent/plumego/x/discovery	type	HealthChecker	type HealthChecker interface { CheckHealth(ctx context.Context, instance Instance) error }
-symbol	github.com/spcent/plumego/x/discovery	type	Instance	type Instance struct { ID string Name string Address string Port int Scheme string Metadata map[string]string Tags []string Weight int Healthy bool }
-symbol	github.com/spcent/plumego/x/discovery	type	Kubernetes	type Kubernetes struct { }
-symbol	github.com/spcent/plumego/x/discovery	type	KubernetesConfig	type KubernetesConfig struct { APIServerURL string BearerToken string CAFile string Namespace string PortName string Timeout time.Duration PollInterval time.Duration }
-symbol	github.com/spcent/plumego/x/discovery	type	ServiceUpdate	type ServiceUpdate struct { ServiceName string Instances []Instance Error error }
-symbol	github.com/spcent/plumego/x/discovery	type	Static	type Static struct { }
-symbol	github.com/spcent/plumego/x/discovery	type	Watcher	type Watcher interface { Start(ctx context.Context) error Stop() error Updates() <-chan ServiceUpdate }
-symbol	github.com/spcent/plumego/x/discovery	var	ErrInvalidConfig	var ErrInvalidConfig = errors.New("discovery: invalid configuration")
-symbol	github.com/spcent/plumego/x/discovery	var	ErrNoInstances	var ErrNoInstances = errors.New("discovery: no instances available")
-symbol	github.com/spcent/plumego/x/discovery	var	ErrNotSupported	var ErrNotSupported = errors.New("discovery: operation not supported")
-symbol	github.com/spcent/plumego/x/discovery	var	ErrServiceNotFound	var ErrServiceNotFound = errors.New("discovery: service not found")
+symbol	github.com/birdordev/plumego/x/discovery	func	NewConsul	func NewConsulfunc(address string, config ConsulConfig) (*Consul, error)
+symbol	github.com/birdordev/plumego/x/discovery	func	NewEtcd	func NewEtcdfunc(endpoints []string, config EtcdConfig) (*Etcd, error)
+symbol	github.com/birdordev/plumego/x/discovery	func	NewKubernetes	func NewKubernetesfunc(config KubernetesConfig) (*Kubernetes, error)
+symbol	github.com/birdordev/plumego/x/discovery	func	NewStatic	func NewStaticfunc(services map[string][]string) *Static
+symbol	github.com/birdordev/plumego/x/discovery	method	Consul.Close	func (Consul) Closefunc() error
+symbol	github.com/birdordev/plumego/x/discovery	method	Consul.Deregister	func (Consul) Deregisterfunc(ctx context.Context, serviceID string) error
+symbol	github.com/birdordev/plumego/x/discovery	method	Consul.Health	func (Consul) Healthfunc(ctx context.Context, serviceID string, healthy bool) error
+symbol	github.com/birdordev/plumego/x/discovery	method	Consul.Register	func (Consul) Registerfunc(ctx context.Context, instance Instance) error
+symbol	github.com/birdordev/plumego/x/discovery	method	Consul.Resolve	func (Consul) Resolvefunc(ctx context.Context, serviceName string) ([]string, error)
+symbol	github.com/birdordev/plumego/x/discovery	method	Consul.Watch	func (Consul) Watchfunc(ctx context.Context, serviceName string) (<-chan []string, error)
+symbol	github.com/birdordev/plumego/x/discovery	method	Etcd.Close	func (Etcd) Closefunc() error
+symbol	github.com/birdordev/plumego/x/discovery	method	Etcd.Deregister	func (Etcd) Deregisterfunc(ctx context.Context, serviceID string) error
+symbol	github.com/birdordev/plumego/x/discovery	method	Etcd.Health	func (Etcd) Healthfunc(ctx context.Context, serviceID string, healthy bool) error
+symbol	github.com/birdordev/plumego/x/discovery	method	Etcd.Register	func (Etcd) Registerfunc(ctx context.Context, instance Instance) error
+symbol	github.com/birdordev/plumego/x/discovery	method	Etcd.Resolve	func (Etcd) Resolvefunc(ctx context.Context, serviceName string) ([]string, error)
+symbol	github.com/birdordev/plumego/x/discovery	method	Etcd.Watch	func (Etcd) Watchfunc(ctx context.Context, serviceName string) (<-chan []string, error)
+symbol	github.com/birdordev/plumego/x/discovery	method	Instance.URL	func (Instance) URLfunc() string
+symbol	github.com/birdordev/plumego/x/discovery	method	Kubernetes.Close	func (Kubernetes) Closefunc() error
+symbol	github.com/birdordev/plumego/x/discovery	method	Kubernetes.Deregister	func (Kubernetes) Deregisterfunc(_ context.Context, _ string) error
+symbol	github.com/birdordev/plumego/x/discovery	method	Kubernetes.Health	func (Kubernetes) Healthfunc(_ context.Context, _ string, _ bool) error
+symbol	github.com/birdordev/plumego/x/discovery	method	Kubernetes.Register	func (Kubernetes) Registerfunc(_ context.Context, _ Instance) error
+symbol	github.com/birdordev/plumego/x/discovery	method	Kubernetes.Resolve	func (Kubernetes) Resolvefunc(ctx context.Context, serviceName string) ([]string, error)
+symbol	github.com/birdordev/plumego/x/discovery	method	Kubernetes.Watch	func (Kubernetes) Watchfunc(ctx context.Context, serviceName string) (<-chan []string, error)
+symbol	github.com/birdordev/plumego/x/discovery	method	Static.AddBackend	func (Static) AddBackendfunc(serviceName, backend string)
+symbol	github.com/birdordev/plumego/x/discovery	method	Static.Close	func (Static) Closefunc() error
+symbol	github.com/birdordev/plumego/x/discovery	method	Static.Deregister	func (Static) Deregisterfunc(ctx context.Context, serviceID string) error
+symbol	github.com/birdordev/plumego/x/discovery	method	Static.Health	func (Static) Healthfunc(ctx context.Context, serviceID string, healthy bool) error
+symbol	github.com/birdordev/plumego/x/discovery	method	Static.Register	func (Static) Registerfunc(ctx context.Context, instance Instance) error
+symbol	github.com/birdordev/plumego/x/discovery	method	Static.RemoveBackend	func (Static) RemoveBackendfunc(serviceName, backend string)
+symbol	github.com/birdordev/plumego/x/discovery	method	Static.RemoveService	func (Static) RemoveServicefunc(serviceName string)
+symbol	github.com/birdordev/plumego/x/discovery	method	Static.Resolve	func (Static) Resolvefunc(ctx context.Context, serviceName string) ([]string, error)
+symbol	github.com/birdordev/plumego/x/discovery	method	Static.Services	func (Static) Servicesfunc() []string
+symbol	github.com/birdordev/plumego/x/discovery	method	Static.UpdateService	func (Static) UpdateServicefunc(serviceName string, backends []string)
+symbol	github.com/birdordev/plumego/x/discovery	method	Static.Watch	func (Static) Watchfunc(ctx context.Context, serviceName string) (<-chan []string, error)
+symbol	github.com/birdordev/plumego/x/discovery	type	Consul	type Consul struct { }
+symbol	github.com/birdordev/plumego/x/discovery	type	ConsulConfig	type ConsulConfig struct { Datacenter string Token string Namespace string WaitTime time.Duration Timeout time.Duration IncludeUnhealthy bool Tag string Scheme string }
+symbol	github.com/birdordev/plumego/x/discovery	type	Discovery	type Discovery interface { Resolve(ctx context.Context, serviceName string) ([]string, error) Watch(ctx context.Context, serviceName string) (<-chan []string, error) Register(ctx context.Context, instance Instance) error Deregister(ctx context.Context, serviceID string) error Health(ctx context.Context, serviceID string, healthy bool) error Close() error }
+symbol	github.com/birdordev/plumego/x/discovery	type	Etcd	type Etcd struct { }
+symbol	github.com/birdordev/plumego/x/discovery	type	EtcdConfig	type EtcdConfig struct { Prefix string Username string Password string Timeout time.Duration PollInterval time.Duration }
+symbol	github.com/birdordev/plumego/x/discovery	type	HealthChecker	type HealthChecker interface { CheckHealth(ctx context.Context, instance Instance) error }
+symbol	github.com/birdordev/plumego/x/discovery	type	Instance	type Instance struct { ID string Name string Address string Port int Scheme string Metadata map[string]string Tags []string Weight int Healthy bool }
+symbol	github.com/birdordev/plumego/x/discovery	type	Kubernetes	type Kubernetes struct { }
+symbol	github.com/birdordev/plumego/x/discovery	type	KubernetesConfig	type KubernetesConfig struct { APIServerURL string BearerToken string CAFile string Namespace string PortName string Timeout time.Duration PollInterval time.Duration }
+symbol	github.com/birdordev/plumego/x/discovery	type	ServiceUpdate	type ServiceUpdate struct { ServiceName string Instances []Instance Error error }
+symbol	github.com/birdordev/plumego/x/discovery	type	Static	type Static struct { }
+symbol	github.com/birdordev/plumego/x/discovery	type	Watcher	type Watcher interface { Start(ctx context.Context) error Stop() error Updates() <-chan ServiceUpdate }
+symbol	github.com/birdordev/plumego/x/discovery	var	ErrInvalidConfig	var ErrInvalidConfig = errors.New("discovery: invalid configuration")
+symbol	github.com/birdordev/plumego/x/discovery	var	ErrNoInstances	var ErrNoInstances = errors.New("discovery: no instances available")
+symbol	github.com/birdordev/plumego/x/discovery	var	ErrNotSupported	var ErrNotSupported = errors.New("discovery: operation not supported")
+symbol	github.com/birdordev/plumego/x/discovery	var	ErrServiceNotFound	var ErrServiceNotFound = errors.New("discovery: service not found")

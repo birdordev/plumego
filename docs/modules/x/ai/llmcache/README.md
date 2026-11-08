@@ -1,6 +1,6 @@
 # x/ai/llmcache
 
-> **Import path:** `github.com/spcent/plumego/x/ai/llmcache` — sub-package of [`x/ai`](../README.md).
+> **Import path:** `github.com/birdordev/plumego/x/ai/llmcache` — sub-package of [`x/ai`](../README.md).
 
 ## Purpose
 

@@ -5,7 +5,7 @@ Provides `Authenticate` and `Authorize` adapters for request-level identity and 
 ## Import
 
 ```go
-import "github.com/spcent/plumego/middleware/auth"
+import "github.com/birdordev/plumego/middleware/auth"
 ```
 
 ## Overview

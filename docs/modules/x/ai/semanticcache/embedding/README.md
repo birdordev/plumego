@@ -1,6 +1,6 @@
 # x/ai/semanticcache/embedding
 
-> **Import path:** `github.com/spcent/plumego/x/ai/semanticcache/embedding` — sub-package of [`x/ai/semanticcache`](../README.md).
+> **Import path:** `github.com/birdordev/plumego/x/ai/semanticcache/embedding` — sub-package of [`x/ai/semanticcache`](../README.md).
 
 ## Purpose
 

@@ -30,7 +30,7 @@ x/data/file.MetadataManager  ← 在数据库中持久化文件元数据
 ### 本地磁盘（开发环境）
 
 ```go
-import datafile "github.com/spcent/plumego/x/data/file"
+import datafile "github.com/birdordev/plumego/x/data/file"
 
 metadata, err := datafile.NewDBMetadataManager(sqlDB)
 if err != nil {
@@ -69,7 +69,7 @@ if err != nil {
 ## 第二步 — 创建 handler
 
 ```go
-import "github.com/spcent/plumego/x/fileapi"
+import "github.com/birdordev/plumego/x/fileapi"
 
 const maxUploadSize = 50 << 20  // 50 MB
 
@@ -82,7 +82,7 @@ h := fileapi.NewHandler(storage, metadata).
 将每个 handler 方法显式绑定到路由。文件相关操作的路由参数必须包含 `{id}`：
 
 ```go
-import "github.com/spcent/plumego/router"
+import "github.com/birdordev/plumego/router"
 
 r := router.NewRouter()
 r.Post("/files",          h.Upload)
@@ -107,7 +107,7 @@ r.Delete("/files/{id}",   h.Delete)
 上传和列表 handler 按用户 ID 限定文件范围。在文件路由之前将用户 ID 注入请求 context：
 
 ```go
-import "github.com/spcent/plumego/x/fileapi"
+import "github.com/birdordev/plumego/x/fileapi"
 
 func withUserID(next http.Handler) http.Handler {
     return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -129,8 +129,8 @@ r.Use(withUserID)
 
 ```go
 import (
-    authmw  "github.com/spcent/plumego/middleware/auth"
-    resolve "github.com/spcent/plumego/x/tenant/resolve"
+    authmw  "github.com/birdordev/plumego/middleware/auth"
+    resolve "github.com/birdordev/plumego/x/tenant/resolve"
 )
 
 authMw, err := authmw.Authenticate(authenticator)

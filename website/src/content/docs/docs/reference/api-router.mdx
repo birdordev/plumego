@@ -8,12 +8,12 @@ sidebar:
 
 # router — API Quick Reference
 
-This page lists every public symbol exported by `github.com/spcent/plumego/router`. Use it as a lookup when you already know the package; use the [Router Primer](/docs/modules/router) for boundary rationale and usage patterns.
+This page lists every public symbol exported by `github.com/birdordev/plumego/router`. Use it as a lookup when you already know the package; use the [Router Primer](/docs/modules/router) for boundary rationale and usage patterns.
 
 Routes are typically registered through `core.App` (which delegates to this package). Use `router` directly when you need a standalone router outside the `App` lifecycle.
 
 ```go
-import "github.com/spcent/plumego/router"
+import "github.com/birdordev/plumego/router"
 ```
 
 ---
@@ -246,4 +246,4 @@ Path parameters are extracted with `router.Param(r, "id")` in transport-layer co
 
 - [Router Primer](/docs/modules/router) — boundary rationale, when to use groups, ownership examples
 - [Core API Reference](/docs/reference/api-core) — `App.Get`, `App.AddRoute`, `App.Group`, and `App.URL`
-- [Reference App routes](https://github.com/spcent/plumego/blob/main/reference/standard-service/internal/app/routes.go) — canonical route registration in one place
+- [Reference App routes](https://github.com/birdordev/plumego/blob/main/reference/standard-service/internal/app/routes.go) — canonical route registration in one place

@@ -1,48 +1,48 @@
 # plumego extension api snapshot v1
-module	github.com/spcent/plumego
+module	github.com/birdordev/plumego
 pattern	./x/data/file
-symbol	github.com/spcent/plumego/x/data/file	func	NewDBMetadataManager	func NewDBMetadataManagerfunc(db *sql.DB, opts ...DBMetadataOption) MetadataManager
-symbol	github.com/spcent/plumego/x/data/file	func	NewDBMetadataManagerE	func NewDBMetadataManagerEfunc(db *sql.DB, opts ...DBMetadataOption) (*DBMetadataManager, error)
-symbol	github.com/spcent/plumego/x/data/file	func	NewLocalStorage	func NewLocalStoragefunc(basePath, baseURL string, metadata MetadataManager) (*LocalStorage, error)
-symbol	github.com/spcent/plumego/x/data/file	func	NewS3Signer	func NewS3Signerfunc(accessKey, secretKey, region string) *S3Signer
-symbol	github.com/spcent/plumego/x/data/file	func	NewS3Storage	func NewS3Storagefunc(config S3Config, metadata MetadataManager) (*S3Storage, error)
-symbol	github.com/spcent/plumego/x/data/file	func	WithMetadataClock	func WithMetadataClockfunc(now func() time.Time) DBMetadataOption
-symbol	github.com/spcent/plumego/x/data/file	method	DBMetadataManager.Delete	func (DBMetadataManager) Deletefunc(ctx context.Context, tenantID, id string) error
-symbol	github.com/spcent/plumego/x/data/file	method	DBMetadataManager.Get	func (DBMetadataManager) Getfunc(ctx context.Context, tenantID, id string) (*File, error)
-symbol	github.com/spcent/plumego/x/data/file	method	DBMetadataManager.GetByHash	func (DBMetadataManager) GetByHashfunc(ctx context.Context, tenantID, hash string) (*File, error)
-symbol	github.com/spcent/plumego/x/data/file	method	DBMetadataManager.GetByPath	func (DBMetadataManager) GetByPathfunc(ctx context.Context, tenantID, p string) (*File, error)
-symbol	github.com/spcent/plumego/x/data/file	method	DBMetadataManager.List	func (DBMetadataManager) Listfunc(ctx context.Context, query Query) ([]*File, int64, error)
-symbol	github.com/spcent/plumego/x/data/file	method	DBMetadataManager.ListAll	func (DBMetadataManager) ListAllfunc(ctx context.Context, query Query) ([]*File, int64, error)
-symbol	github.com/spcent/plumego/x/data/file	method	DBMetadataManager.Save	func (DBMetadataManager) Savefunc(ctx context.Context, file *File) error
-symbol	github.com/spcent/plumego/x/data/file	method	DBMetadataManager.UpdateAccessTime	func (DBMetadataManager) UpdateAccessTimefunc(ctx context.Context, tenantID, id string) error
-symbol	github.com/spcent/plumego/x/data/file	method	LocalStorage.Copy	func (LocalStorage) Copyfunc(ctx context.Context, srcPath, dstPath string) error
-symbol	github.com/spcent/plumego/x/data/file	method	LocalStorage.Delete	func (LocalStorage) Deletefunc(ctx context.Context, path string) error
-symbol	github.com/spcent/plumego/x/data/file	method	LocalStorage.Exists	func (LocalStorage) Existsfunc(ctx context.Context, path string) (bool, error)
-symbol	github.com/spcent/plumego/x/data/file	method	LocalStorage.Get	func (LocalStorage) Getfunc(ctx context.Context, path string) (io.ReadCloser, error)
-symbol	github.com/spcent/plumego/x/data/file	method	LocalStorage.GetURL	func (LocalStorage) GetURLfunc(ctx context.Context, path string, expiry time.Duration) (string, error)
-symbol	github.com/spcent/plumego/x/data/file	method	LocalStorage.List	func (LocalStorage) Listfunc(ctx context.Context, prefix string, limit int) ([]*storefile.FileStat, error)
-symbol	github.com/spcent/plumego/x/data/file	method	LocalStorage.Put	func (LocalStorage) Putfunc(ctx context.Context, opts PutOptions) (*File, error)
-symbol	github.com/spcent/plumego/x/data/file	method	LocalStorage.Stat	func (LocalStorage) Statfunc(ctx context.Context, path string) (*storefile.FileStat, error)
-symbol	github.com/spcent/plumego/x/data/file	method	S3Signer.PresignRequest	func (S3Signer) PresignRequestfunc(req *http.Request, expiry time.Duration) (string, error)
-symbol	github.com/spcent/plumego/x/data/file	method	S3Signer.SignRequest	func (S3Signer) SignRequestfunc(req *http.Request, payloadHash string) error
-symbol	github.com/spcent/plumego/x/data/file	method	S3Storage.Copy	func (S3Storage) Copyfunc(ctx context.Context, srcPath, dstPath string) error
-symbol	github.com/spcent/plumego/x/data/file	method	S3Storage.Delete	func (S3Storage) Deletefunc(ctx context.Context, p string) error
-symbol	github.com/spcent/plumego/x/data/file	method	S3Storage.Exists	func (S3Storage) Existsfunc(ctx context.Context, p string) (bool, error)
-symbol	github.com/spcent/plumego/x/data/file	method	S3Storage.Get	func (S3Storage) Getfunc(ctx context.Context, p string) (io.ReadCloser, error)
-symbol	github.com/spcent/plumego/x/data/file	method	S3Storage.GetURL	func (S3Storage) GetURLfunc(ctx context.Context, p string, expiry time.Duration) (string, error)
-symbol	github.com/spcent/plumego/x/data/file	method	S3Storage.List	func (S3Storage) Listfunc(ctx context.Context, prefix string, limit int) ([]*storefile.FileStat, error)
-symbol	github.com/spcent/plumego/x/data/file	method	S3Storage.Put	func (S3Storage) Putfunc(ctx context.Context, opts PutOptions) (*File, error)
-symbol	github.com/spcent/plumego/x/data/file	method	S3Storage.Stat	func (S3Storage) Statfunc(ctx context.Context, p string) (*storefile.FileStat, error)
-symbol	github.com/spcent/plumego/x/data/file	type	DBMetadataManager	type DBMetadataManager struct { }
-symbol	github.com/spcent/plumego/x/data/file	type	DBMetadataOption	type DBMetadataOption func(*DBMetadataManager)
-symbol	github.com/spcent/plumego/x/data/file	type	File	type File struct { ID string `json:"id" db:"id"` TenantID string `json:"tenant_id" db:"tenant_id"` Name string `json:"name" db:"name"` Path string `json:"path" db:"path"` Size int64 `json:"size" db:"size"` MimeType string `json:"mime_type" db:"mime_type"` Extension string `json:"extension" db:"extension"` Hash string `json:"hash" db:"hash"` Width int `json:"width,omitempty" db:"width"` Height int `json:"height,omitempty" db:"height"` ThumbnailPath string `json:"thumbnail_path,omitempty" db:"thumbnail_path"` StorageType string `json:"storage_type" db:"storage_type"` Metadata map[string]any `json:"metadata,omitempty" db:"metadata"` UploadedBy string `json:"uploaded_by" db:"uploaded_by"` CreatedAt time.Time `json:"created_at" db:"created_at"` UpdatedAt time.Time `json:"updated_at" db:"updated_at"` LastAccessAt *time.Time `json:"last_access_at,omitempty" db:"last_access_at"` DeletedAt *time.Time `json:"deleted_at,omitempty" db:"deleted_at"` }
-symbol	github.com/spcent/plumego/x/data/file	type	LocalStorage	type LocalStorage struct { }
-symbol	github.com/spcent/plumego/x/data/file	type	MetadataManager	type MetadataManager interface { Save(ctx context.Context, file *File) error Get(ctx context.Context, tenantID, id string) (*File, error) GetByPath(ctx context.Context, tenantID, path string) (*File, error) GetByHash(ctx context.Context, tenantID, hash string) (*File, error) List(ctx context.Context, query Query) ([]*File, int64, error) Delete(ctx context.Context, tenantID, id string) error UpdateAccessTime(ctx context.Context, tenantID, id string) error }
-symbol	github.com/spcent/plumego/x/data/file	type	PutOptions	type PutOptions struct { TenantID string Reader io.Reader FileName string ContentType string Size int64 UploadedBy string GenerateThumb bool ThumbWidth int ThumbHeight int Metadata map[string]any }
-symbol	github.com/spcent/plumego/x/data/file	type	Query	type Query struct { TenantID string UploadedBy string MimeType string StartTime time.Time EndTime time.Time Page int PageSize int OrderBy string }
-symbol	github.com/spcent/plumego/x/data/file	type	S3Config	type S3Config struct { Endpoint string Region string Bucket string AccessKey string SecretKey string UseSSL bool PathStyle bool TempDir string MaxSinglePutBytes int64 }
-symbol	github.com/spcent/plumego/x/data/file	type	S3Signer	type S3Signer struct { }
-symbol	github.com/spcent/plumego/x/data/file	type	S3Storage	type S3Storage struct { }
-symbol	github.com/spcent/plumego/x/data/file	type	Storage	type Storage interface { Put(ctx context.Context, opts PutOptions) (*File, error) Get(ctx context.Context, path string) (io.ReadCloser, error) Delete(ctx context.Context, path string) error Exists(ctx context.Context, path string) (bool, error) Stat(ctx context.Context, path string) (*storefile.FileStat, error) List(ctx context.Context, prefix string, limit int) ([]*storefile.FileStat, error) GetURL(ctx context.Context, path string, expiry time.Duration) (string, error) Copy(ctx context.Context, srcPath, dstPath string) error }
-symbol	github.com/spcent/plumego/x/data/file	var	ErrNilMetadataDB	var ErrNilMetadataDB = errors.New("file metadata: database cannot be nil")
-symbol	github.com/spcent/plumego/x/data/file	var	ErrTenantRequired	var ErrTenantRequired = errors.New("file metadata: tenant id is required")
+symbol	github.com/birdordev/plumego/x/data/file	func	NewDBMetadataManager	func NewDBMetadataManagerfunc(db *sql.DB, opts ...DBMetadataOption) MetadataManager
+symbol	github.com/birdordev/plumego/x/data/file	func	NewDBMetadataManagerE	func NewDBMetadataManagerEfunc(db *sql.DB, opts ...DBMetadataOption) (*DBMetadataManager, error)
+symbol	github.com/birdordev/plumego/x/data/file	func	NewLocalStorage	func NewLocalStoragefunc(basePath, baseURL string, metadata MetadataManager) (*LocalStorage, error)
+symbol	github.com/birdordev/plumego/x/data/file	func	NewS3Signer	func NewS3Signerfunc(accessKey, secretKey, region string) *S3Signer
+symbol	github.com/birdordev/plumego/x/data/file	func	NewS3Storage	func NewS3Storagefunc(config S3Config, metadata MetadataManager) (*S3Storage, error)
+symbol	github.com/birdordev/plumego/x/data/file	func	WithMetadataClock	func WithMetadataClockfunc(now func() time.Time) DBMetadataOption
+symbol	github.com/birdordev/plumego/x/data/file	method	DBMetadataManager.Delete	func (DBMetadataManager) Deletefunc(ctx context.Context, tenantID, id string) error
+symbol	github.com/birdordev/plumego/x/data/file	method	DBMetadataManager.Get	func (DBMetadataManager) Getfunc(ctx context.Context, tenantID, id string) (*File, error)
+symbol	github.com/birdordev/plumego/x/data/file	method	DBMetadataManager.GetByHash	func (DBMetadataManager) GetByHashfunc(ctx context.Context, tenantID, hash string) (*File, error)
+symbol	github.com/birdordev/plumego/x/data/file	method	DBMetadataManager.GetByPath	func (DBMetadataManager) GetByPathfunc(ctx context.Context, tenantID, p string) (*File, error)
+symbol	github.com/birdordev/plumego/x/data/file	method	DBMetadataManager.List	func (DBMetadataManager) Listfunc(ctx context.Context, query Query) ([]*File, int64, error)
+symbol	github.com/birdordev/plumego/x/data/file	method	DBMetadataManager.ListAll	func (DBMetadataManager) ListAllfunc(ctx context.Context, query Query) ([]*File, int64, error)
+symbol	github.com/birdordev/plumego/x/data/file	method	DBMetadataManager.Save	func (DBMetadataManager) Savefunc(ctx context.Context, file *File) error
+symbol	github.com/birdordev/plumego/x/data/file	method	DBMetadataManager.UpdateAccessTime	func (DBMetadataManager) UpdateAccessTimefunc(ctx context.Context, tenantID, id string) error
+symbol	github.com/birdordev/plumego/x/data/file	method	LocalStorage.Copy	func (LocalStorage) Copyfunc(ctx context.Context, srcPath, dstPath string) error
+symbol	github.com/birdordev/plumego/x/data/file	method	LocalStorage.Delete	func (LocalStorage) Deletefunc(ctx context.Context, path string) error
+symbol	github.com/birdordev/plumego/x/data/file	method	LocalStorage.Exists	func (LocalStorage) Existsfunc(ctx context.Context, path string) (bool, error)
+symbol	github.com/birdordev/plumego/x/data/file	method	LocalStorage.Get	func (LocalStorage) Getfunc(ctx context.Context, path string) (io.ReadCloser, error)
+symbol	github.com/birdordev/plumego/x/data/file	method	LocalStorage.GetURL	func (LocalStorage) GetURLfunc(ctx context.Context, path string, expiry time.Duration) (string, error)
+symbol	github.com/birdordev/plumego/x/data/file	method	LocalStorage.List	func (LocalStorage) Listfunc(ctx context.Context, prefix string, limit int) ([]*storefile.FileStat, error)
+symbol	github.com/birdordev/plumego/x/data/file	method	LocalStorage.Put	func (LocalStorage) Putfunc(ctx context.Context, opts PutOptions) (*File, error)
+symbol	github.com/birdordev/plumego/x/data/file	method	LocalStorage.Stat	func (LocalStorage) Statfunc(ctx context.Context, path string) (*storefile.FileStat, error)
+symbol	github.com/birdordev/plumego/x/data/file	method	S3Signer.PresignRequest	func (S3Signer) PresignRequestfunc(req *http.Request, expiry time.Duration) (string, error)
+symbol	github.com/birdordev/plumego/x/data/file	method	S3Signer.SignRequest	func (S3Signer) SignRequestfunc(req *http.Request, payloadHash string) error
+symbol	github.com/birdordev/plumego/x/data/file	method	S3Storage.Copy	func (S3Storage) Copyfunc(ctx context.Context, srcPath, dstPath string) error
+symbol	github.com/birdordev/plumego/x/data/file	method	S3Storage.Delete	func (S3Storage) Deletefunc(ctx context.Context, p string) error
+symbol	github.com/birdordev/plumego/x/data/file	method	S3Storage.Exists	func (S3Storage) Existsfunc(ctx context.Context, p string) (bool, error)
+symbol	github.com/birdordev/plumego/x/data/file	method	S3Storage.Get	func (S3Storage) Getfunc(ctx context.Context, p string) (io.ReadCloser, error)
+symbol	github.com/birdordev/plumego/x/data/file	method	S3Storage.GetURL	func (S3Storage) GetURLfunc(ctx context.Context, p string, expiry time.Duration) (string, error)
+symbol	github.com/birdordev/plumego/x/data/file	method	S3Storage.List	func (S3Storage) Listfunc(ctx context.Context, prefix string, limit int) ([]*storefile.FileStat, error)
+symbol	github.com/birdordev/plumego/x/data/file	method	S3Storage.Put	func (S3Storage) Putfunc(ctx context.Context, opts PutOptions) (*File, error)
+symbol	github.com/birdordev/plumego/x/data/file	method	S3Storage.Stat	func (S3Storage) Statfunc(ctx context.Context, p string) (*storefile.FileStat, error)
+symbol	github.com/birdordev/plumego/x/data/file	type	DBMetadataManager	type DBMetadataManager struct { }
+symbol	github.com/birdordev/plumego/x/data/file	type	DBMetadataOption	type DBMetadataOption func(*DBMetadataManager)
+symbol	github.com/birdordev/plumego/x/data/file	type	File	type File struct { ID string `json:"id" db:"id"` TenantID string `json:"tenant_id" db:"tenant_id"` Name string `json:"name" db:"name"` Path string `json:"path" db:"path"` Size int64 `json:"size" db:"size"` MimeType string `json:"mime_type" db:"mime_type"` Extension string `json:"extension" db:"extension"` Hash string `json:"hash" db:"hash"` Width int `json:"width,omitempty" db:"width"` Height int `json:"height,omitempty" db:"height"` ThumbnailPath string `json:"thumbnail_path,omitempty" db:"thumbnail_path"` StorageType string `json:"storage_type" db:"storage_type"` Metadata map[string]any `json:"metadata,omitempty" db:"metadata"` UploadedBy string `json:"uploaded_by" db:"uploaded_by"` CreatedAt time.Time `json:"created_at" db:"created_at"` UpdatedAt time.Time `json:"updated_at" db:"updated_at"` LastAccessAt *time.Time `json:"last_access_at,omitempty" db:"last_access_at"` DeletedAt *time.Time `json:"deleted_at,omitempty" db:"deleted_at"` }
+symbol	github.com/birdordev/plumego/x/data/file	type	LocalStorage	type LocalStorage struct { }
+symbol	github.com/birdordev/plumego/x/data/file	type	MetadataManager	type MetadataManager interface { Save(ctx context.Context, file *File) error Get(ctx context.Context, tenantID, id string) (*File, error) GetByPath(ctx context.Context, tenantID, path string) (*File, error) GetByHash(ctx context.Context, tenantID, hash string) (*File, error) List(ctx context.Context, query Query) ([]*File, int64, error) Delete(ctx context.Context, tenantID, id string) error UpdateAccessTime(ctx context.Context, tenantID, id string) error }
+symbol	github.com/birdordev/plumego/x/data/file	type	PutOptions	type PutOptions struct { TenantID string Reader io.Reader FileName string ContentType string Size int64 UploadedBy string GenerateThumb bool ThumbWidth int ThumbHeight int Metadata map[string]any }
+symbol	github.com/birdordev/plumego/x/data/file	type	Query	type Query struct { TenantID string UploadedBy string MimeType string StartTime time.Time EndTime time.Time Page int PageSize int OrderBy string }
+symbol	github.com/birdordev/plumego/x/data/file	type	S3Config	type S3Config struct { Endpoint string Region string Bucket string AccessKey string SecretKey string UseSSL bool PathStyle bool TempDir string MaxSinglePutBytes int64 }
+symbol	github.com/birdordev/plumego/x/data/file	type	S3Signer	type S3Signer struct { }
+symbol	github.com/birdordev/plumego/x/data/file	type	S3Storage	type S3Storage struct { }
+symbol	github.com/birdordev/plumego/x/data/file	type	Storage	type Storage interface { Put(ctx context.Context, opts PutOptions) (*File, error) Get(ctx context.Context, path string) (io.ReadCloser, error) Delete(ctx context.Context, path string) error Exists(ctx context.Context, path string) (bool, error) Stat(ctx context.Context, path string) (*storefile.FileStat, error) List(ctx context.Context, prefix string, limit int) ([]*storefile.FileStat, error) GetURL(ctx context.Context, path string, expiry time.Duration) (string, error) Copy(ctx context.Context, srcPath, dstPath string) error }
+symbol	github.com/birdordev/plumego/x/data/file	var	ErrNilMetadataDB	var ErrNilMetadataDB = errors.New("file metadata: database cannot be nil")
+symbol	github.com/birdordev/plumego/x/data/file	var	ErrTenantRequired	var ErrTenantRequired = errors.New("file metadata: tenant id is required")

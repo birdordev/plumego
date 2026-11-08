@@ -13,7 +13,7 @@ Plumego 是一个标准库优先的 Go HTTP 工具包。
 安装：
 
 ```bash
-go get github.com/spcent/plumego@latest
+go get github.com/birdordev/plumego@latest
 ```
 
 ## 最小可运行示例
@@ -27,8 +27,8 @@ import (
     "log"
     "net/http"
 
-    "github.com/spcent/plumego/contract"
-    "github.com/spcent/plumego/core"
+    "github.com/birdordev/plumego/contract"
+    "github.com/birdordev/plumego/core"
 )
 
 func main() {
@@ -83,12 +83,12 @@ import (
     "os/signal"
     "syscall"
 
-    "github.com/spcent/plumego/contract"
-    "github.com/spcent/plumego/core"
-    plog "github.com/spcent/plumego/log"
-    "github.com/spcent/plumego/middleware/accesslog"
-    "github.com/spcent/plumego/middleware/recovery"
-    "github.com/spcent/plumego/middleware/requestid"
+    "github.com/birdordev/plumego/contract"
+    "github.com/birdordev/plumego/core"
+    plog "github.com/birdordev/plumego/log"
+    "github.com/birdordev/plumego/middleware/accesslog"
+    "github.com/birdordev/plumego/middleware/recovery"
+    "github.com/birdordev/plumego/middleware/requestid"
 )
 
 func main() {
@@ -175,7 +175,7 @@ _ = app.Delete("/users/{id}", deleteUserHandler)
 读取路径参数：
 
 ```go
-import "github.com/spcent/plumego/router"
+import "github.com/birdordev/plumego/router"
 
 app.Get("/users/{id}", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
     id := router.Param(r, "id")

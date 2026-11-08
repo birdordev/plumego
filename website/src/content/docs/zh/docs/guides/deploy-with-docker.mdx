@@ -141,13 +141,13 @@ docker compose down
 
 参考服务提供了可直接使用的 `Dockerfile` 和 `docker-compose.yml`：
 
-- [`reference/standard-service/Dockerfile`](https://github.com/spcent/plumego/blob/main/reference/standard-service/Dockerfile) — 多阶段构建、distroless 最终镜像、非 root 用户
-- [`reference/standard-service/docker-compose.yml`](https://github.com/spcent/plumego/blob/main/reference/standard-service/docker-compose.yml) — 本地 compose 配置，通过环境变量注入配置
+- [`reference/standard-service/Dockerfile`](https://github.com/birdordev/plumego/blob/main/reference/standard-service/Dockerfile) — 多阶段构建、distroless 最终镜像、非 root 用户
+- [`reference/standard-service/docker-compose.yml`](https://github.com/birdordev/plumego/blob/main/reference/standard-service/docker-compose.yml) — 本地 compose 配置，通过环境变量注入配置
 
 本地运行验证：
 
 ```bash
-git clone https://github.com/spcent/plumego
+git clone https://github.com/birdordev/plumego
 docker build -t plumego-ref ./reference/standard-service
 docker run -p 8080:8080 plumego-ref
 curl http://localhost:8080/healthz

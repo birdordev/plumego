@@ -17,7 +17,7 @@ Go 1.26 或更高版本。运行 `go version` 检查。最快路径无需其他�
 克隆仓库并运行参考服务，验证 Plumego 在你的环境中可以工作：
 
 ```bash
-git clone https://github.com/spcent/plumego
+git clone https://github.com/birdordev/plumego
 cd plumego/reference/standard-service
 go run .
 ```
@@ -42,7 +42,7 @@ curl 'http://localhost:8080/api/v1/greet?name=Alice'
 
 ```bash
 go mod init myservice        # 已有 module 可跳过
-go get github.com/spcent/plumego@latest
+go get github.com/birdordev/plumego@latest
 ```
 
 创建 `main.go`：
@@ -53,9 +53,9 @@ package main
 import (
     "net/http"
 
-    "github.com/spcent/plumego/contract"
-    "github.com/spcent/plumego/core"
-    plog "github.com/spcent/plumego/log"
+    "github.com/birdordev/plumego/contract"
+    "github.com/birdordev/plumego/core"
+    plog "github.com/birdordev/plumego/log"
 )
 
 func main() {

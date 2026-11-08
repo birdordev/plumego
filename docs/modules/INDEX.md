@@ -69,7 +69,7 @@ The primer path is always `docs/modules/<import-path>/README.md`.
 
 | Import path | Primer |
 |---|---|
-| `github.com/spcent/plumego` | [`plumego/README.md`](plumego/README.md) |
+| `github.com/birdordev/plumego` | [`plumego/README.md`](plumego/README.md) |
 
 ## Extension Primers
 

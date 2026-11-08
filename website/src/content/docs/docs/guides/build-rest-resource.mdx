@@ -54,8 +54,8 @@ Use `rest.NewBaseRepository` for a SQL-backed resource. Configure the `SQLBuilde
 
 ```go
 import (
-    "github.com/spcent/plumego/x/rest"
-    "github.com/spcent/plumego/store/db"
+    "github.com/birdordev/plumego/x/rest"
+    "github.com/birdordev/plumego/store/db"
 )
 
 builder := rest.NewSQLBuilder("users", "id").
@@ -89,8 +89,8 @@ Register all CRUD routes at once:
 
 ```go
 import (
-    "github.com/spcent/plumego/router"
-    "github.com/spcent/plumego/x/rest"
+    "github.com/birdordev/plumego/router"
+    "github.com/birdordev/plumego/x/rest"
 )
 
 r := router.NewRouter()
@@ -160,7 +160,7 @@ Builder configuration:
 Parse them in your own handlers with `rest.QueryBuilder`:
 
 ```go
-import "github.com/spcent/plumego/x/rest"
+import "github.com/birdordev/plumego/x/rest"
 
 func (h UserHandler) List(w http.ResponseWriter, r *http.Request) {
     params := rest.NewQueryBuilder().
@@ -239,13 +239,13 @@ func (c *UserController) Create(w http.ResponseWriter, r *http.Request) {
 
 The reference service shows a complete CRUD handler with explicit dependency injection:
 
-- [`reference/standard-service/internal/handler/api.go`](https://github.com/spcent/plumego/blob/main/reference/standard-service/internal/handler/api.go) — canonical handler shape with `WriteResponse` and `WriteError`
-- [`reference/standard-service/internal/app/routes.go`](https://github.com/spcent/plumego/blob/main/reference/standard-service/internal/app/routes.go) — route wiring that keeps controller instantiation explicit
+- [`reference/standard-service/internal/handler/api.go`](https://github.com/birdordev/plumego/blob/main/reference/standard-service/internal/handler/api.go) — canonical handler shape with `WriteResponse` and `WriteError`
+- [`reference/standard-service/internal/app/routes.go`](https://github.com/birdordev/plumego/blob/main/reference/standard-service/internal/app/routes.go) — route wiring that keeps controller instantiation explicit
 
 Run it locally to see the list and show endpoints respond correctly:
 
 ```bash
-git clone https://github.com/spcent/plumego
+git clone https://github.com/birdordev/plumego
 cd plumego/reference/standard-service
 go run .
 curl 'http://localhost:8080/api/v1/greet?name=Alice'

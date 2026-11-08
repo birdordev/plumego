@@ -1,120 +1,120 @@
 # plumego extension api snapshot v1
-module	github.com/spcent/plumego
+module	github.com/birdordev/plumego
 pattern	./contract/...
-symbol	github.com/spcent/plumego/contract	const	CategoryAuth	const CategoryAuth ErrorCategory = "auth_error"
-symbol	github.com/spcent/plumego/contract	const	CategoryClient	const CategoryClient ErrorCategory = "client_error"
-symbol	github.com/spcent/plumego/contract	const	CategoryRateLimit	const CategoryRateLimit ErrorCategory = "rate_limit_error"
-symbol	github.com/spcent/plumego/contract	const	CategoryServer	const CategoryServer ErrorCategory = "server_error"
-symbol	github.com/spcent/plumego/contract	const	CategoryTimeout	const CategoryTimeout ErrorCategory = "timeout_error"
-symbol	github.com/spcent/plumego/contract	const	CategoryValidation	const CategoryValidation ErrorCategory = "validation_error"
-symbol	github.com/spcent/plumego/contract	const	CodeAlreadyExists	const CodeAlreadyExists = "RESOURCE_ALREADY_EXISTS"
-symbol	github.com/spcent/plumego/contract	const	CodeBadGateway	const CodeBadGateway = "BAD_GATEWAY"
-symbol	github.com/spcent/plumego/contract	const	CodeBadRequest	const CodeBadRequest = "BAD_REQUEST"
-symbol	github.com/spcent/plumego/contract	const	CodeConflict	const CodeConflict = "RESOURCE_CONFLICT"
-symbol	github.com/spcent/plumego/contract	const	CodeDuplicate	const CodeDuplicate = "DUPLICATE_VALUE"
-symbol	github.com/spcent/plumego/contract	const	CodeExpiredToken	const CodeExpiredToken = "EXPIRED_TOKEN"
-symbol	github.com/spcent/plumego/contract	const	CodeForbidden	const CodeForbidden = "FORBIDDEN"
-symbol	github.com/spcent/plumego/contract	const	CodeGatewayTimeout	const CodeGatewayTimeout = "GATEWAY_TIMEOUT"
-symbol	github.com/spcent/plumego/contract	const	CodeGone	const CodeGone = "RESOURCE_GONE"
-symbol	github.com/spcent/plumego/contract	const	CodeInternalError	const CodeInternalError = "INTERNAL_ERROR"
-symbol	github.com/spcent/plumego/contract	const	CodeInvalidFormat	const CodeInvalidFormat = "INVALID_FORMAT"
-symbol	github.com/spcent/plumego/contract	const	CodeInvalidJSON	const CodeInvalidJSON = "INVALID_JSON"
-symbol	github.com/spcent/plumego/contract	const	CodeInvalidQuery	const CodeInvalidQuery = "INVALID_QUERY"
-symbol	github.com/spcent/plumego/contract	const	CodeInvalidRequest	const CodeInvalidRequest = "INVALID_REQUEST"
-symbol	github.com/spcent/plumego/contract	const	CodeInvalidToken	const CodeInvalidToken = "INVALID_TOKEN"
-symbol	github.com/spcent/plumego/contract	const	CodeMaintenance	const CodeMaintenance = "MAINTENANCE_MODE"
-symbol	github.com/spcent/plumego/contract	const	CodeMethodNotAllowed	const CodeMethodNotAllowed = "METHOD_NOT_ALLOWED"
-symbol	github.com/spcent/plumego/contract	const	CodeNotAcceptable	const CodeNotAcceptable = "NOT_ACCEPTABLE"
-symbol	github.com/spcent/plumego/contract	const	CodeNotImplemented	const CodeNotImplemented = "NOT_IMPLEMENTED"
-symbol	github.com/spcent/plumego/contract	const	CodeOutOfRange	const CodeOutOfRange = "VALUE_OUT_OF_RANGE"
-symbol	github.com/spcent/plumego/contract	const	CodeRateLimited	const CodeRateLimited = "RATE_LIMITED"
-symbol	github.com/spcent/plumego/contract	const	CodeRequestBodyTooLarge	const CodeRequestBodyTooLarge = "REQUEST_BODY_TOO_LARGE"
-symbol	github.com/spcent/plumego/contract	const	CodeRequired	const CodeRequired = "REQUIRED_FIELD_MISSING"
-symbol	github.com/spcent/plumego/contract	const	CodeResourceNotFound	const CodeResourceNotFound = "RESOURCE_NOT_FOUND"
-symbol	github.com/spcent/plumego/contract	const	CodeServerBusy	const CodeServerBusy = "server_busy"
-symbol	github.com/spcent/plumego/contract	const	CodeServerQueueTimeout	const CodeServerQueueTimeout = "server_queue_timeout"
-symbol	github.com/spcent/plumego/contract	const	CodeTimeout	const CodeTimeout = "TIMEOUT"
-symbol	github.com/spcent/plumego/contract	const	CodeUnauthorized	const CodeUnauthorized = "UNAUTHORIZED"
-symbol	github.com/spcent/plumego/contract	const	CodeUnavailable	const CodeUnavailable = "SERVICE_UNAVAILABLE"
-symbol	github.com/spcent/plumego/contract	const	CodeUpstreamFailed	const CodeUpstreamFailed = "upstream_failed"
-symbol	github.com/spcent/plumego/contract	const	CodeValidationError	const CodeValidationError = "VALIDATION_ERROR"
-symbol	github.com/spcent/plumego/contract	const	ContentTypeJSON	const ContentTypeJSON = "application/json"
-symbol	github.com/spcent/plumego/contract	const	HeaderContentType	const HeaderContentType = "Content-Type"
-symbol	github.com/spcent/plumego/contract	const	RequestIDHeader	const RequestIDHeader = "X-Request-ID"
-symbol	github.com/spcent/plumego/contract	const	TypeAlreadyExists	const TypeAlreadyExists ErrorType = "resource_already_exists"
-symbol	github.com/spcent/plumego/contract	const	TypeBadGateway	const TypeBadGateway ErrorType = "bad_gateway"
-symbol	github.com/spcent/plumego/contract	const	TypeBadRequest	const TypeBadRequest ErrorType = "bad_request"
-symbol	github.com/spcent/plumego/contract	const	TypeConflict	const TypeConflict ErrorType = "resource_conflict"
-symbol	github.com/spcent/plumego/contract	const	TypeDuplicate	const TypeDuplicate ErrorType = "duplicate_value"
-symbol	github.com/spcent/plumego/contract	const	TypeExpiredToken	const TypeExpiredToken ErrorType = "expired_token"
-symbol	github.com/spcent/plumego/contract	const	TypeForbidden	const TypeForbidden ErrorType = "forbidden_request"
-symbol	github.com/spcent/plumego/contract	const	TypeGatewayTimeout	const TypeGatewayTimeout ErrorType = "gateway_timeout"
-symbol	github.com/spcent/plumego/contract	const	TypeGone	const TypeGone ErrorType = "resource_gone"
-symbol	github.com/spcent/plumego/contract	const	TypeInternal	const TypeInternal ErrorType = "internal_error"
-symbol	github.com/spcent/plumego/contract	const	TypeInvalidFormat	const TypeInvalidFormat ErrorType = "invalid_format"
-symbol	github.com/spcent/plumego/contract	const	TypeInvalidRequest	const TypeInvalidRequest ErrorType = "invalid_request"
-symbol	github.com/spcent/plumego/contract	const	TypeInvalidToken	const TypeInvalidToken ErrorType = "invalid_token"
-symbol	github.com/spcent/plumego/contract	const	TypeMaintenance	const TypeMaintenance ErrorType = "maintenance_mode"
-symbol	github.com/spcent/plumego/contract	const	TypeMethodNotAllowed	const TypeMethodNotAllowed ErrorType = "method_not_allowed"
-symbol	github.com/spcent/plumego/contract	const	TypeNotAcceptable	const TypeNotAcceptable ErrorType = "not_acceptable"
-symbol	github.com/spcent/plumego/contract	const	TypeNotFound	const TypeNotFound ErrorType = "resource_not_found"
-symbol	github.com/spcent/plumego/contract	const	TypeNotImplemented	const TypeNotImplemented ErrorType = "not_implemented"
-symbol	github.com/spcent/plumego/contract	const	TypeOutOfRange	const TypeOutOfRange ErrorType = "value_out_of_range"
-symbol	github.com/spcent/plumego/contract	const	TypePayloadTooLarge	const TypePayloadTooLarge ErrorType = "payload_too_large"
-symbol	github.com/spcent/plumego/contract	const	TypeRateLimited	const TypeRateLimited ErrorType = "rate_limited"
-symbol	github.com/spcent/plumego/contract	const	TypeRequired	const TypeRequired ErrorType = "required_field_missing"
-symbol	github.com/spcent/plumego/contract	const	TypeTimeout	const TypeTimeout ErrorType = "timeout_failure"
-symbol	github.com/spcent/plumego/contract	const	TypeUnauthorized	const TypeUnauthorized ErrorType = "unauthorized_request"
-symbol	github.com/spcent/plumego/contract	const	TypeUnavailable	const TypeUnavailable ErrorType = "service_unavailable"
-symbol	github.com/spcent/plumego/contract	const	TypeValidation	const TypeValidation ErrorType = "validation_failure"
-symbol	github.com/spcent/plumego/contract	func	AsAPIError	func AsAPIErrorfunc(err error) (APIError, bool)
-symbol	github.com/spcent/plumego/contract	func	GetRouteState	func GetRouteStatefunc() *RouteState
-symbol	github.com/spcent/plumego/contract	func	NewErrorBuilder	func NewErrorBuilderfunc() *ErrorBuilder
-symbol	github.com/spcent/plumego/contract	func	PutRouteState	func PutRouteStatefunc(rs *RouteState)
-symbol	github.com/spcent/plumego/contract	func	RequestContextFromContext	func RequestContextFromContextfunc(ctx context.Context) RequestContext
-symbol	github.com/spcent/plumego/contract	func	RequestIDFromContext	func RequestIDFromContextfunc(ctx context.Context) string
-symbol	github.com/spcent/plumego/contract	func	RequestParamFromContext	func RequestParamFromContextfunc(ctx context.Context, name string) string
-symbol	github.com/spcent/plumego/contract	func	TraceContextFromContext	func TraceContextFromContextfunc(ctx context.Context) (TraceContext, bool)
-symbol	github.com/spcent/plumego/contract	func	WithRequestContext	func WithRequestContextfunc(ctx context.Context, rc RequestContext) context.Context
-symbol	github.com/spcent/plumego/contract	func	WithRequestID	func WithRequestIDfunc(ctx context.Context, id string) context.Context
-symbol	github.com/spcent/plumego/contract	func	WithRouteState	func WithRouteStatefunc(ctx context.Context, rs *RouteState) context.Context
-symbol	github.com/spcent/plumego/contract	func	WithTraceContext	func WithTraceContextfunc(ctx context.Context, traceContext TraceContext) context.Context
-symbol	github.com/spcent/plumego/contract	func	WriteError	func WriteErrorfunc(w http.ResponseWriter, r *http.Request, err APIError) error
-symbol	github.com/spcent/plumego/contract	func	WriteResponse	func WriteResponsefunc(w http.ResponseWriter, r *http.Request, status int, data any, meta map[string]any) error
-symbol	github.com/spcent/plumego/contract	method	APIError.Category	func (APIError) Categoryfunc() ErrorCategory
-symbol	github.com/spcent/plumego/contract	method	APIError.Code	func (APIError) Codefunc() string
-symbol	github.com/spcent/plumego/contract	method	APIError.Details	func (APIError) Detailsfunc() map[string]any
-symbol	github.com/spcent/plumego/contract	method	APIError.Error	func (APIError) Errorfunc() string
-symbol	github.com/spcent/plumego/contract	method	APIError.Message	func (APIError) Messagefunc() string
-symbol	github.com/spcent/plumego/contract	method	APIError.RequestID	func (APIError) RequestIDfunc() string
-symbol	github.com/spcent/plumego/contract	method	APIError.Status	func (APIError) Statusfunc() int
-symbol	github.com/spcent/plumego/contract	method	APIError.Type	func (APIError) Typefunc() ErrorType
-symbol	github.com/spcent/plumego/contract	method	APIError.Unwrap	func (APIError) Unwrapfunc() error
-symbol	github.com/spcent/plumego/contract	method	ErrorBuilder.Build	func (ErrorBuilder) Buildfunc() APIError
-symbol	github.com/spcent/plumego/contract	method	ErrorBuilder.Code	func (ErrorBuilder) Codefunc(code string) *ErrorBuilder
-symbol	github.com/spcent/plumego/contract	method	ErrorBuilder.Detail	func (ErrorBuilder) Detailfunc(key string, value any) *ErrorBuilder
-symbol	github.com/spcent/plumego/contract	method	ErrorBuilder.Details	func (ErrorBuilder) Detailsfunc(details map[string]any) *ErrorBuilder
-symbol	github.com/spcent/plumego/contract	method	ErrorBuilder.Message	func (ErrorBuilder) Messagefunc(message string) *ErrorBuilder
-symbol	github.com/spcent/plumego/contract	method	ErrorBuilder.RequestID	func (ErrorBuilder) RequestIDfunc(requestID string) *ErrorBuilder
-symbol	github.com/spcent/plumego/contract	method	ErrorBuilder.Type	func (ErrorBuilder) Typefunc(errorType ErrorType) *ErrorBuilder
-symbol	github.com/spcent/plumego/contract	method	ErrorBuilder.Wrap	func (ErrorBuilder) Wrapfunc(cause error) *ErrorBuilder
-symbol	github.com/spcent/plumego/contract	method	ErrorType.Meta	func (ErrorType) Metafunc() ErrorTypeMeta
-symbol	github.com/spcent/plumego/contract	method	RouteState.AddParam	func (RouteState) AddParamfunc(key, val string)
-symbol	github.com/spcent/plumego/contract	method	RouteState.Reset	func (RouteState) Resetfunc()
-symbol	github.com/spcent/plumego/contract	method	RouteState.SetName	func (RouteState) SetNamefunc(n string)
-symbol	github.com/spcent/plumego/contract	method	RouteState.SetPattern	func (RouteState) SetPatternfunc(p string)
-symbol	github.com/spcent/plumego/contract	method	TraceContext.HasSpanID	func (TraceContext) HasSpanIDfunc() bool
-symbol	github.com/spcent/plumego/contract	method	TraceContext.HasTraceID	func (TraceContext) HasTraceIDfunc() bool
-symbol	github.com/spcent/plumego/contract	method	TraceContext.IsSampled	func (TraceContext) IsSampledfunc() bool
-symbol	github.com/spcent/plumego/contract	method	TraceContext.Valid	func (TraceContext) Validfunc() bool
-symbol	github.com/spcent/plumego/contract	type	APIError	type APIError struct { }
-symbol	github.com/spcent/plumego/contract	type	ErrorBuilder	type ErrorBuilder struct { }
-symbol	github.com/spcent/plumego/contract	type	ErrorCategory	type ErrorCategory string
-symbol	github.com/spcent/plumego/contract	type	ErrorType	type ErrorType string
-symbol	github.com/spcent/plumego/contract	type	ErrorTypeMeta	type ErrorTypeMeta struct { Category ErrorCategory Code string Status int }
-symbol	github.com/spcent/plumego/contract	type	RequestContext	type RequestContext struct { Params map[string]string RoutePattern string RouteName string }
-symbol	github.com/spcent/plumego/contract	type	RouteState	type RouteState struct { }
-symbol	github.com/spcent/plumego/contract	type	TraceContext	type TraceContext struct { TraceID string `json:"trace_id"` SpanID string `json:"span_id"` ParentSpanID *string `json:"parent_span_id,omitempty"` Baggage map[string]string `json:"baggage,omitempty"` Flags uint8 `json:"flags"` }
-symbol	github.com/spcent/plumego/contract	var	ErrHandlerNil	var ErrHandlerNil = errors.New("handler cannot be nil")
-symbol	github.com/spcent/plumego/contract	var	ErrInvalidResponseStatus	var ErrInvalidResponseStatus = errors.New("response status must be 2xx")
-symbol	github.com/spcent/plumego/contract	var	ErrResponseWriterNil	var ErrResponseWriterNil = errors.New("response writer cannot be nil")
+symbol	github.com/birdordev/plumego/contract	const	CategoryAuth	const CategoryAuth ErrorCategory = "auth_error"
+symbol	github.com/birdordev/plumego/contract	const	CategoryClient	const CategoryClient ErrorCategory = "client_error"
+symbol	github.com/birdordev/plumego/contract	const	CategoryRateLimit	const CategoryRateLimit ErrorCategory = "rate_limit_error"
+symbol	github.com/birdordev/plumego/contract	const	CategoryServer	const CategoryServer ErrorCategory = "server_error"
+symbol	github.com/birdordev/plumego/contract	const	CategoryTimeout	const CategoryTimeout ErrorCategory = "timeout_error"
+symbol	github.com/birdordev/plumego/contract	const	CategoryValidation	const CategoryValidation ErrorCategory = "validation_error"
+symbol	github.com/birdordev/plumego/contract	const	CodeAlreadyExists	const CodeAlreadyExists = "RESOURCE_ALREADY_EXISTS"
+symbol	github.com/birdordev/plumego/contract	const	CodeBadGateway	const CodeBadGateway = "BAD_GATEWAY"
+symbol	github.com/birdordev/plumego/contract	const	CodeBadRequest	const CodeBadRequest = "BAD_REQUEST"
+symbol	github.com/birdordev/plumego/contract	const	CodeConflict	const CodeConflict = "RESOURCE_CONFLICT"
+symbol	github.com/birdordev/plumego/contract	const	CodeDuplicate	const CodeDuplicate = "DUPLICATE_VALUE"
+symbol	github.com/birdordev/plumego/contract	const	CodeExpiredToken	const CodeExpiredToken = "EXPIRED_TOKEN"
+symbol	github.com/birdordev/plumego/contract	const	CodeForbidden	const CodeForbidden = "FORBIDDEN"
+symbol	github.com/birdordev/plumego/contract	const	CodeGatewayTimeout	const CodeGatewayTimeout = "GATEWAY_TIMEOUT"
+symbol	github.com/birdordev/plumego/contract	const	CodeGone	const CodeGone = "RESOURCE_GONE"
+symbol	github.com/birdordev/plumego/contract	const	CodeInternalError	const CodeInternalError = "INTERNAL_ERROR"
+symbol	github.com/birdordev/plumego/contract	const	CodeInvalidFormat	const CodeInvalidFormat = "INVALID_FORMAT"
+symbol	github.com/birdordev/plumego/contract	const	CodeInvalidJSON	const CodeInvalidJSON = "INVALID_JSON"
+symbol	github.com/birdordev/plumego/contract	const	CodeInvalidQuery	const CodeInvalidQuery = "INVALID_QUERY"
+symbol	github.com/birdordev/plumego/contract	const	CodeInvalidRequest	const CodeInvalidRequest = "INVALID_REQUEST"
+symbol	github.com/birdordev/plumego/contract	const	CodeInvalidToken	const CodeInvalidToken = "INVALID_TOKEN"
+symbol	github.com/birdordev/plumego/contract	const	CodeMaintenance	const CodeMaintenance = "MAINTENANCE_MODE"
+symbol	github.com/birdordev/plumego/contract	const	CodeMethodNotAllowed	const CodeMethodNotAllowed = "METHOD_NOT_ALLOWED"
+symbol	github.com/birdordev/plumego/contract	const	CodeNotAcceptable	const CodeNotAcceptable = "NOT_ACCEPTABLE"
+symbol	github.com/birdordev/plumego/contract	const	CodeNotImplemented	const CodeNotImplemented = "NOT_IMPLEMENTED"
+symbol	github.com/birdordev/plumego/contract	const	CodeOutOfRange	const CodeOutOfRange = "VALUE_OUT_OF_RANGE"
+symbol	github.com/birdordev/plumego/contract	const	CodeRateLimited	const CodeRateLimited = "RATE_LIMITED"
+symbol	github.com/birdordev/plumego/contract	const	CodeRequestBodyTooLarge	const CodeRequestBodyTooLarge = "REQUEST_BODY_TOO_LARGE"
+symbol	github.com/birdordev/plumego/contract	const	CodeRequired	const CodeRequired = "REQUIRED_FIELD_MISSING"
+symbol	github.com/birdordev/plumego/contract	const	CodeResourceNotFound	const CodeResourceNotFound = "RESOURCE_NOT_FOUND"
+symbol	github.com/birdordev/plumego/contract	const	CodeServerBusy	const CodeServerBusy = "server_busy"
+symbol	github.com/birdordev/plumego/contract	const	CodeServerQueueTimeout	const CodeServerQueueTimeout = "server_queue_timeout"
+symbol	github.com/birdordev/plumego/contract	const	CodeTimeout	const CodeTimeout = "TIMEOUT"
+symbol	github.com/birdordev/plumego/contract	const	CodeUnauthorized	const CodeUnauthorized = "UNAUTHORIZED"
+symbol	github.com/birdordev/plumego/contract	const	CodeUnavailable	const CodeUnavailable = "SERVICE_UNAVAILABLE"
+symbol	github.com/birdordev/plumego/contract	const	CodeUpstreamFailed	const CodeUpstreamFailed = "upstream_failed"
+symbol	github.com/birdordev/plumego/contract	const	CodeValidationError	const CodeValidationError = "VALIDATION_ERROR"
+symbol	github.com/birdordev/plumego/contract	const	ContentTypeJSON	const ContentTypeJSON = "application/json"
+symbol	github.com/birdordev/plumego/contract	const	HeaderContentType	const HeaderContentType = "Content-Type"
+symbol	github.com/birdordev/plumego/contract	const	RequestIDHeader	const RequestIDHeader = "X-Request-ID"
+symbol	github.com/birdordev/plumego/contract	const	TypeAlreadyExists	const TypeAlreadyExists ErrorType = "resource_already_exists"
+symbol	github.com/birdordev/plumego/contract	const	TypeBadGateway	const TypeBadGateway ErrorType = "bad_gateway"
+symbol	github.com/birdordev/plumego/contract	const	TypeBadRequest	const TypeBadRequest ErrorType = "bad_request"
+symbol	github.com/birdordev/plumego/contract	const	TypeConflict	const TypeConflict ErrorType = "resource_conflict"
+symbol	github.com/birdordev/plumego/contract	const	TypeDuplicate	const TypeDuplicate ErrorType = "duplicate_value"
+symbol	github.com/birdordev/plumego/contract	const	TypeExpiredToken	const TypeExpiredToken ErrorType = "expired_token"
+symbol	github.com/birdordev/plumego/contract	const	TypeForbidden	const TypeForbidden ErrorType = "forbidden_request"
+symbol	github.com/birdordev/plumego/contract	const	TypeGatewayTimeout	const TypeGatewayTimeout ErrorType = "gateway_timeout"
+symbol	github.com/birdordev/plumego/contract	const	TypeGone	const TypeGone ErrorType = "resource_gone"
+symbol	github.com/birdordev/plumego/contract	const	TypeInternal	const TypeInternal ErrorType = "internal_error"
+symbol	github.com/birdordev/plumego/contract	const	TypeInvalidFormat	const TypeInvalidFormat ErrorType = "invalid_format"
+symbol	github.com/birdordev/plumego/contract	const	TypeInvalidRequest	const TypeInvalidRequest ErrorType = "invalid_request"
+symbol	github.com/birdordev/plumego/contract	const	TypeInvalidToken	const TypeInvalidToken ErrorType = "invalid_token"
+symbol	github.com/birdordev/plumego/contract	const	TypeMaintenance	const TypeMaintenance ErrorType = "maintenance_mode"
+symbol	github.com/birdordev/plumego/contract	const	TypeMethodNotAllowed	const TypeMethodNotAllowed ErrorType = "method_not_allowed"
+symbol	github.com/birdordev/plumego/contract	const	TypeNotAcceptable	const TypeNotAcceptable ErrorType = "not_acceptable"
+symbol	github.com/birdordev/plumego/contract	const	TypeNotFound	const TypeNotFound ErrorType = "resource_not_found"
+symbol	github.com/birdordev/plumego/contract	const	TypeNotImplemented	const TypeNotImplemented ErrorType = "not_implemented"
+symbol	github.com/birdordev/plumego/contract	const	TypeOutOfRange	const TypeOutOfRange ErrorType = "value_out_of_range"
+symbol	github.com/birdordev/plumego/contract	const	TypePayloadTooLarge	const TypePayloadTooLarge ErrorType = "payload_too_large"
+symbol	github.com/birdordev/plumego/contract	const	TypeRateLimited	const TypeRateLimited ErrorType = "rate_limited"
+symbol	github.com/birdordev/plumego/contract	const	TypeRequired	const TypeRequired ErrorType = "required_field_missing"
+symbol	github.com/birdordev/plumego/contract	const	TypeTimeout	const TypeTimeout ErrorType = "timeout_failure"
+symbol	github.com/birdordev/plumego/contract	const	TypeUnauthorized	const TypeUnauthorized ErrorType = "unauthorized_request"
+symbol	github.com/birdordev/plumego/contract	const	TypeUnavailable	const TypeUnavailable ErrorType = "service_unavailable"
+symbol	github.com/birdordev/plumego/contract	const	TypeValidation	const TypeValidation ErrorType = "validation_failure"
+symbol	github.com/birdordev/plumego/contract	func	AsAPIError	func AsAPIErrorfunc(err error) (APIError, bool)
+symbol	github.com/birdordev/plumego/contract	func	GetRouteState	func GetRouteStatefunc() *RouteState
+symbol	github.com/birdordev/plumego/contract	func	NewErrorBuilder	func NewErrorBuilderfunc() *ErrorBuilder
+symbol	github.com/birdordev/plumego/contract	func	PutRouteState	func PutRouteStatefunc(rs *RouteState)
+symbol	github.com/birdordev/plumego/contract	func	RequestContextFromContext	func RequestContextFromContextfunc(ctx context.Context) RequestContext
+symbol	github.com/birdordev/plumego/contract	func	RequestIDFromContext	func RequestIDFromContextfunc(ctx context.Context) string
+symbol	github.com/birdordev/plumego/contract	func	RequestParamFromContext	func RequestParamFromContextfunc(ctx context.Context, name string) string
+symbol	github.com/birdordev/plumego/contract	func	TraceContextFromContext	func TraceContextFromContextfunc(ctx context.Context) (TraceContext, bool)
+symbol	github.com/birdordev/plumego/contract	func	WithRequestContext	func WithRequestContextfunc(ctx context.Context, rc RequestContext) context.Context
+symbol	github.com/birdordev/plumego/contract	func	WithRequestID	func WithRequestIDfunc(ctx context.Context, id string) context.Context
+symbol	github.com/birdordev/plumego/contract	func	WithRouteState	func WithRouteStatefunc(ctx context.Context, rs *RouteState) context.Context
+symbol	github.com/birdordev/plumego/contract	func	WithTraceContext	func WithTraceContextfunc(ctx context.Context, traceContext TraceContext) context.Context
+symbol	github.com/birdordev/plumego/contract	func	WriteError	func WriteErrorfunc(w http.ResponseWriter, r *http.Request, err APIError) error
+symbol	github.com/birdordev/plumego/contract	func	WriteResponse	func WriteResponsefunc(w http.ResponseWriter, r *http.Request, status int, data any, meta map[string]any) error
+symbol	github.com/birdordev/plumego/contract	method	APIError.Category	func (APIError) Categoryfunc() ErrorCategory
+symbol	github.com/birdordev/plumego/contract	method	APIError.Code	func (APIError) Codefunc() string
+symbol	github.com/birdordev/plumego/contract	method	APIError.Details	func (APIError) Detailsfunc() map[string]any
+symbol	github.com/birdordev/plumego/contract	method	APIError.Error	func (APIError) Errorfunc() string
+symbol	github.com/birdordev/plumego/contract	method	APIError.Message	func (APIError) Messagefunc() string
+symbol	github.com/birdordev/plumego/contract	method	APIError.RequestID	func (APIError) RequestIDfunc() string
+symbol	github.com/birdordev/plumego/contract	method	APIError.Status	func (APIError) Statusfunc() int
+symbol	github.com/birdordev/plumego/contract	method	APIError.Type	func (APIError) Typefunc() ErrorType
+symbol	github.com/birdordev/plumego/contract	method	APIError.Unwrap	func (APIError) Unwrapfunc() error
+symbol	github.com/birdordev/plumego/contract	method	ErrorBuilder.Build	func (ErrorBuilder) Buildfunc() APIError
+symbol	github.com/birdordev/plumego/contract	method	ErrorBuilder.Code	func (ErrorBuilder) Codefunc(code string) *ErrorBuilder
+symbol	github.com/birdordev/plumego/contract	method	ErrorBuilder.Detail	func (ErrorBuilder) Detailfunc(key string, value any) *ErrorBuilder
+symbol	github.com/birdordev/plumego/contract	method	ErrorBuilder.Details	func (ErrorBuilder) Detailsfunc(details map[string]any) *ErrorBuilder
+symbol	github.com/birdordev/plumego/contract	method	ErrorBuilder.Message	func (ErrorBuilder) Messagefunc(message string) *ErrorBuilder
+symbol	github.com/birdordev/plumego/contract	method	ErrorBuilder.RequestID	func (ErrorBuilder) RequestIDfunc(requestID string) *ErrorBuilder
+symbol	github.com/birdordev/plumego/contract	method	ErrorBuilder.Type	func (ErrorBuilder) Typefunc(errorType ErrorType) *ErrorBuilder
+symbol	github.com/birdordev/plumego/contract	method	ErrorBuilder.Wrap	func (ErrorBuilder) Wrapfunc(cause error) *ErrorBuilder
+symbol	github.com/birdordev/plumego/contract	method	ErrorType.Meta	func (ErrorType) Metafunc() ErrorTypeMeta
+symbol	github.com/birdordev/plumego/contract	method	RouteState.AddParam	func (RouteState) AddParamfunc(key, val string)
+symbol	github.com/birdordev/plumego/contract	method	RouteState.Reset	func (RouteState) Resetfunc()
+symbol	github.com/birdordev/plumego/contract	method	RouteState.SetName	func (RouteState) SetNamefunc(n string)
+symbol	github.com/birdordev/plumego/contract	method	RouteState.SetPattern	func (RouteState) SetPatternfunc(p string)
+symbol	github.com/birdordev/plumego/contract	method	TraceContext.HasSpanID	func (TraceContext) HasSpanIDfunc() bool
+symbol	github.com/birdordev/plumego/contract	method	TraceContext.HasTraceID	func (TraceContext) HasTraceIDfunc() bool
+symbol	github.com/birdordev/plumego/contract	method	TraceContext.IsSampled	func (TraceContext) IsSampledfunc() bool
+symbol	github.com/birdordev/plumego/contract	method	TraceContext.Valid	func (TraceContext) Validfunc() bool
+symbol	github.com/birdordev/plumego/contract	type	APIError	type APIError struct { }
+symbol	github.com/birdordev/plumego/contract	type	ErrorBuilder	type ErrorBuilder struct { }
+symbol	github.com/birdordev/plumego/contract	type	ErrorCategory	type ErrorCategory string
+symbol	github.com/birdordev/plumego/contract	type	ErrorType	type ErrorType string
+symbol	github.com/birdordev/plumego/contract	type	ErrorTypeMeta	type ErrorTypeMeta struct { Category ErrorCategory Code string Status int }
+symbol	github.com/birdordev/plumego/contract	type	RequestContext	type RequestContext struct { Params map[string]string RoutePattern string RouteName string }
+symbol	github.com/birdordev/plumego/contract	type	RouteState	type RouteState struct { }
+symbol	github.com/birdordev/plumego/contract	type	TraceContext	type TraceContext struct { TraceID string `json:"trace_id"` SpanID string `json:"span_id"` ParentSpanID *string `json:"parent_span_id,omitempty"` Baggage map[string]string `json:"baggage,omitempty"` Flags uint8 `json:"flags"` }
+symbol	github.com/birdordev/plumego/contract	var	ErrHandlerNil	var ErrHandlerNil = errors.New("handler cannot be nil")
+symbol	github.com/birdordev/plumego/contract	var	ErrInvalidResponseStatus	var ErrInvalidResponseStatus = errors.New("response status must be 2xx")
+symbol	github.com/birdordev/plumego/contract	var	ErrResponseWriterNil	var ErrResponseWriterNil = errors.New("response writer cannot be nil")

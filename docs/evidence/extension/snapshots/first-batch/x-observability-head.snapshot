@@ -1,245 +1,245 @@
 # plumego extension api snapshot v1
-module	github.com/spcent/plumego
+module	github.com/birdordev/plumego
 pattern	./x/observability/...
-symbol	github.com/spcent/plumego/x/observability	func	Configure	func Configurefunc(hooks Hooks, cfg ObservabilityConfig) error
-symbol	github.com/spcent/plumego/x/observability	func	DefaultMetricsConfig	func DefaultMetricsConfigfunc() MetricsConfig
-symbol	github.com/spcent/plumego/x/observability	func	DefaultObservabilityConfig	func DefaultObservabilityConfigfunc() ObservabilityConfig
-symbol	github.com/spcent/plumego/x/observability	func	DefaultTracingConfig	func DefaultTracingConfigfunc() TracingConfig
-symbol	github.com/spcent/plumego/x/observability	func	NewOpenTelemetryTracer	func NewOpenTelemetryTracerfunc(name string) *OpenTelemetryTracer
-symbol	github.com/spcent/plumego/x/observability	func	NewPrometheusCollector	func NewPrometheusCollectorfunc(namespace string) *PrometheusCollector
-symbol	github.com/spcent/plumego/x/observability	func	NewPrometheusExporter	func NewPrometheusExporterfunc(collector *PrometheusCollector) *PrometheusExporter
-symbol	github.com/spcent/plumego/x/observability	func	NewPrometheusExporterE	func NewPrometheusExporterEfunc(collector *PrometheusCollector) (*PrometheusExporter, error)
-symbol	github.com/spcent/plumego/x/observability	method	OpenTelemetryTracer.Clear	func (OpenTelemetryTracer) Clearfunc()
-symbol	github.com/spcent/plumego/x/observability	method	OpenTelemetryTracer.GetSpanStats	func (OpenTelemetryTracer) GetSpanStatsfunc() SpanStats
-symbol	github.com/spcent/plumego/x/observability	method	OpenTelemetryTracer.Spans	func (OpenTelemetryTracer) Spansfunc() []Span
-symbol	github.com/spcent/plumego/x/observability	method	OpenTelemetryTracer.Start	func (OpenTelemetryTracer) Startfunc(ctx context.Context, r *http.Request) (context.Context, mwtracing.TraceSpan)
-symbol	github.com/spcent/plumego/x/observability	method	OpenTelemetryTracer.WithMaxSpans	func (OpenTelemetryTracer) WithMaxSpansfunc(max int) *OpenTelemetryTracer
-symbol	github.com/spcent/plumego/x/observability	method	PrometheusCollector.Clear	func (PrometheusCollector) Clearfunc()
-symbol	github.com/spcent/plumego/x/observability	method	PrometheusCollector.GetStats	func (PrometheusCollector) GetStatsfunc() metrics.CollectorStats
-symbol	github.com/spcent/plumego/x/observability	method	PrometheusCollector.Handler	func (PrometheusCollector) Handlerfunc() http.Handler
-symbol	github.com/spcent/plumego/x/observability	method	PrometheusCollector.ObserveHTTP	func (PrometheusCollector) ObserveHTTPfunc(_ context.Context, method, path string, status, _ int, duration time.Duration)
-symbol	github.com/spcent/plumego/x/observability	method	PrometheusCollector.Record	func (PrometheusCollector) Recordfunc(ctx context.Context, record metrics.MetricRecord)
-symbol	github.com/spcent/plumego/x/observability	method	PrometheusCollector.WithMaxMemory	func (PrometheusCollector) WithMaxMemoryfunc(max int) *PrometheusCollector
-symbol	github.com/spcent/plumego/x/observability	method	PrometheusExporter.Handler	func (PrometheusExporter) Handlerfunc() http.Handler
-symbol	github.com/spcent/plumego/x/observability	type	Exporter	type Exporter interface { Handler() http.Handler }
-symbol	github.com/spcent/plumego/x/observability	type	Hooks	type Hooks struct { EnsureMutable func(op, desc string) error RegisterRoute func(method, path string, handler http.Handler) error GetPrometheusCollector func() *PrometheusCollector SetPrometheusCollector func(*PrometheusCollector) GetTracer func() mwtracing.Tracer SetTracer func(mwtracing.Tracer) }
-symbol	github.com/spcent/plumego/x/observability	type	MetricsConfig	type MetricsConfig struct { Enabled bool Path string Namespace string MaxSeries int Collector *PrometheusCollector Exporter Exporter Handler http.Handler }
-symbol	github.com/spcent/plumego/x/observability	type	ObservabilityConfig	type ObservabilityConfig struct { Metrics MetricsConfig Tracing TracingConfig }
-symbol	github.com/spcent/plumego/x/observability	type	OpenTelemetryTracer	type OpenTelemetryTracer struct { }
-symbol	github.com/spcent/plumego/x/observability	type	PrometheusCollector	type PrometheusCollector struct { }
-symbol	github.com/spcent/plumego/x/observability	type	PrometheusExporter	type PrometheusExporter struct { }
-symbol	github.com/spcent/plumego/x/observability	type	Span	type Span struct { Name string `json:"name"` Attributes map[string]string `json:"attributes,omitempty"` Status string `json:"status"` StatusMessage string `json:"status_message,omitempty"` Duration time.Duration `json:"duration,omitempty"` Timestamp time.Time `json:"timestamp"` ParentSpanID string `json:"parent_span_id,omitempty"` SpanID string `json:"span_id"` TraceID string `json:"trace_id"` }
-symbol	github.com/spcent/plumego/x/observability	type	SpanStats	type SpanStats struct { TotalSpans int ErrorSpans int TotalDuration time.Duration AverageDuration time.Duration MaxRetention int DroppedSpans int }
-symbol	github.com/spcent/plumego/x/observability	type	TracingConfig	type TracingConfig struct { Enabled bool ServiceName string Tracer mwtracing.Tracer }
-symbol	github.com/spcent/plumego/x/observability	var	ErrNilCollector	var ErrNilCollector = errors.New("observability: prometheus collector cannot be nil")
-symbol	github.com/spcent/plumego/x/observability/dbinsights	func	NewAggregatingObserver	func NewAggregatingObserverfunc(base MetricsObserver, slowQueryThreshold time.Duration) *AggregatingObserver
-symbol	github.com/spcent/plumego/x/observability/dbinsights	func	NewAggregator	func NewAggregatorfunc(slowQueryThreshold time.Duration) *Aggregator
-symbol	github.com/spcent/plumego/x/observability/dbinsights	func	NewDetector	func NewDetectorfunc(opts ...DetectorOption) *Detector
-symbol	github.com/spcent/plumego/x/observability/dbinsights	func	NewInstrumentedDB	func NewInstrumentedDBfunc(db *sql.DB, observer MetricsObserver, driver string) *InstrumentedDB
-symbol	github.com/spcent/plumego/x/observability/dbinsights	func	NewObserver	func NewObserverfunc(base MetricsObserver, opts ...DetectorOption) *Observer
-symbol	github.com/spcent/plumego/x/observability/dbinsights	func	NewSlowQueryDB	func NewSlowQueryDBfunc(db *InstrumentedDB, driver string, opts ...DetectorOption) *SlowQueryDB
-symbol	github.com/spcent/plumego/x/observability/dbinsights	func	WithCallback	func WithCallbackfunc(callback func(SlowQuery)) DetectorOption
-symbol	github.com/spcent/plumego/x/observability/dbinsights	func	WithMaxRecords	func WithMaxRecordsfunc(max int) DetectorOption
-symbol	github.com/spcent/plumego/x/observability/dbinsights	func	WithThreshold	func WithThresholdfunc(threshold time.Duration) DetectorOption
-symbol	github.com/spcent/plumego/x/observability/dbinsights	method	AggregatingObserver.GetAggregator	func (AggregatingObserver) GetAggregatorfunc() *Aggregator
-symbol	github.com/spcent/plumego/x/observability/dbinsights	method	AggregatingObserver.ObserveDB	func (AggregatingObserver) ObserveDBfunc(ctx context.Context, operation, driver, query string, rows int, duration time.Duration, err error)
-symbol	github.com/spcent/plumego/x/observability/dbinsights	method	Aggregator.GetAllOperationStats	func (Aggregator) GetAllOperationStatsfunc() map[string]QueryStats
-symbol	github.com/spcent/plumego/x/observability/dbinsights	method	Aggregator.GetAllTableStats	func (Aggregator) GetAllTableStatsfunc() map[string]QueryStats
-symbol	github.com/spcent/plumego/x/observability/dbinsights	method	Aggregator.GetGlobalStats	func (Aggregator) GetGlobalStatsfunc() QueryStats
-symbol	github.com/spcent/plumego/x/observability/dbinsights	method	Aggregator.GetOperationStats	func (Aggregator) GetOperationStatsfunc(operation string) (QueryStats, bool)
-symbol	github.com/spcent/plumego/x/observability/dbinsights	method	Aggregator.GetTableStats	func (Aggregator) GetTableStatsfunc(table string) (QueryStats, bool)
-symbol	github.com/spcent/plumego/x/observability/dbinsights	method	Aggregator.GetTopSlowTables	func (Aggregator) GetTopSlowTablesfunc(n int) []TableStat
-symbol	github.com/spcent/plumego/x/observability/dbinsights	method	Aggregator.RecordQuery	func (Aggregator) RecordQueryfunc(operation, query string, duration time.Duration, err error)
-symbol	github.com/spcent/plumego/x/observability/dbinsights	method	Aggregator.Reset	func (Aggregator) Resetfunc()
-symbol	github.com/spcent/plumego/x/observability/dbinsights	method	Aggregator.Summary	func (Aggregator) Summaryfunc() string
-symbol	github.com/spcent/plumego/x/observability/dbinsights	method	Detector.Check	func (Detector) Checkfunc(operation, driver, query string, duration time.Duration, err error) bool
-symbol	github.com/spcent/plumego/x/observability/dbinsights	method	Detector.Clear	func (Detector) Clearfunc()
-symbol	github.com/spcent/plumego/x/observability/dbinsights	method	Detector.GetRecentSlowQueries	func (Detector) GetRecentSlowQueriesfunc(n int) []SlowQuery
-symbol	github.com/spcent/plumego/x/observability/dbinsights	method	Detector.GetSlowQueries	func (Detector) GetSlowQueriesfunc() []SlowQuery
-symbol	github.com/spcent/plumego/x/observability/dbinsights	method	Detector.GetTotalDetected	func (Detector) GetTotalDetectedfunc() int64
-symbol	github.com/spcent/plumego/x/observability/dbinsights	method	Detector.Summary	func (Detector) Summaryfunc() string
-symbol	github.com/spcent/plumego/x/observability/dbinsights	method	InstrumentedDB.BeginTx	func (InstrumentedDB) BeginTxfunc(ctx context.Context, opts *sql.TxOptions) (*sql.Tx, error)
-symbol	github.com/spcent/plumego/x/observability/dbinsights	method	InstrumentedDB.Close	func (InstrumentedDB) Closefunc() error
-symbol	github.com/spcent/plumego/x/observability/dbinsights	method	InstrumentedDB.ExecContext	func (InstrumentedDB) ExecContextfunc(ctx context.Context, query string, args ...any) (sql.Result, error)
-symbol	github.com/spcent/plumego/x/observability/dbinsights	method	InstrumentedDB.PingContext	func (InstrumentedDB) PingContextfunc(ctx context.Context) error
-symbol	github.com/spcent/plumego/x/observability/dbinsights	method	InstrumentedDB.QueryContext	func (InstrumentedDB) QueryContextfunc(ctx context.Context, query string, args ...any) (*sql.Rows, error)
-symbol	github.com/spcent/plumego/x/observability/dbinsights	method	InstrumentedDB.QueryRowContext	func (InstrumentedDB) QueryRowContextfunc(ctx context.Context, query string, args ...any) *sql.Row
-symbol	github.com/spcent/plumego/x/observability/dbinsights	method	InstrumentedDB.RecordPoolStats	func (InstrumentedDB) RecordPoolStatsfunc(ctx context.Context)
-symbol	github.com/spcent/plumego/x/observability/dbinsights	method	InstrumentedDB.SetConnMaxIdleTime	func (InstrumentedDB) SetConnMaxIdleTimefunc(d time.Duration)
-symbol	github.com/spcent/plumego/x/observability/dbinsights	method	InstrumentedDB.SetConnMaxLifetime	func (InstrumentedDB) SetConnMaxLifetimefunc(d time.Duration)
-symbol	github.com/spcent/plumego/x/observability/dbinsights	method	InstrumentedDB.SetMaxIdleConns	func (InstrumentedDB) SetMaxIdleConnsfunc(n int)
-symbol	github.com/spcent/plumego/x/observability/dbinsights	method	InstrumentedDB.SetMaxOpenConns	func (InstrumentedDB) SetMaxOpenConnsfunc(n int)
-symbol	github.com/spcent/plumego/x/observability/dbinsights	method	InstrumentedDB.Stats	func (InstrumentedDB) Statsfunc() sql.DBStats
-symbol	github.com/spcent/plumego/x/observability/dbinsights	method	InstrumentedDB.Unwrap	func (InstrumentedDB) Unwrapfunc() *sql.DB
-symbol	github.com/spcent/plumego/x/observability/dbinsights	method	Observer.GetDetector	func (Observer) GetDetectorfunc() *Detector
-symbol	github.com/spcent/plumego/x/observability/dbinsights	method	Observer.ObserveDB	func (Observer) ObserveDBfunc(ctx context.Context, operation, driver, query string, rows int, duration time.Duration, err error)
-symbol	github.com/spcent/plumego/x/observability/dbinsights	method	SlowQueryDB.ExecContext	func (SlowQueryDB) ExecContextfunc(ctx context.Context, query string, args ...any) (sql.Result, error)
-symbol	github.com/spcent/plumego/x/observability/dbinsights	method	SlowQueryDB.GetDetector	func (SlowQueryDB) GetDetectorfunc() *Detector
-symbol	github.com/spcent/plumego/x/observability/dbinsights	method	SlowQueryDB.QueryContext	func (SlowQueryDB) QueryContextfunc(ctx context.Context, query string, args ...any) (*sql.Rows, error)
-symbol	github.com/spcent/plumego/x/observability/dbinsights	method	SlowQueryDB.QueryRowContext	func (SlowQueryDB) QueryRowContextfunc(ctx context.Context, query string, args ...any) *sql.Row
-symbol	github.com/spcent/plumego/x/observability/dbinsights	type	AggregatingObserver	type AggregatingObserver struct { }
-symbol	github.com/spcent/plumego/x/observability/dbinsights	type	Aggregator	type Aggregator struct { }
-symbol	github.com/spcent/plumego/x/observability/dbinsights	type	Detector	type Detector struct { }
-symbol	github.com/spcent/plumego/x/observability/dbinsights	type	DetectorOption	type DetectorOption func(*Detector)
-symbol	github.com/spcent/plumego/x/observability/dbinsights	type	InstrumentedDB	type InstrumentedDB struct { }
-symbol	github.com/spcent/plumego/x/observability/dbinsights	type	MetricsObserver	type MetricsObserver interface { ObserveDB(ctx context.Context, operation, driver, query string, rows int, duration time.Duration, err error) }
-symbol	github.com/spcent/plumego/x/observability/dbinsights	type	Observer	type Observer struct { }
-symbol	github.com/spcent/plumego/x/observability/dbinsights	type	QueryStats	type QueryStats struct { TotalQueries int64 `json:"total_queries"` SuccessQueries int64 `json:"success_queries"` FailedQueries int64 `json:"failed_queries"` TotalDuration time.Duration `json:"total_duration"` MinDuration time.Duration `json:"min_duration"` MaxDuration time.Duration `json:"max_duration"` AvgDuration time.Duration `json:"avg_duration"` SelectQueries int64 `json:"select_queries"` InsertQueries int64 `json:"insert_queries"` UpdateQueries int64 `json:"update_queries"` DeleteQueries int64 `json:"delete_queries"` SlowQueries int64 `json:"slow_queries"` SlowQueryThresh time.Duration `json:"slow_query_threshold"` LastUpdate time.Time `json:"last_update"` }
-symbol	github.com/spcent/plumego/x/observability/dbinsights	type	SlowQuery	type SlowQuery struct { Query string `json:"query"` Operation string `json:"operation"` Duration time.Duration `json:"duration"` Error error `json:"error,omitempty"` Timestamp time.Time `json:"timestamp"` Driver string `json:"driver"` }
-symbol	github.com/spcent/plumego/x/observability/dbinsights	type	SlowQueryDB	type SlowQueryDB struct { *InstrumentedDB }
-symbol	github.com/spcent/plumego/x/observability/dbinsights	type	TableStat	type TableStat struct { Table string `json:"table"` SlowQueries int64 `json:"slow_queries"` AvgDuration time.Duration `json:"avg_duration"` TotalQueries int64 `json:"total_queries"` }
-symbol	github.com/spcent/plumego/x/observability/featuremetrics	func	DBRecord	func DBRecordfunc(operation, driver, query string, rows int, duration time.Duration, err error) metrics.MetricRecord
-symbol	github.com/spcent/plumego/x/observability/featuremetrics	func	ExtractTableName	func ExtractTableNamefunc(query string) string
-symbol	github.com/spcent/plumego/x/observability/featuremetrics	func	IPCRecord	func IPCRecordfunc(operation, addr, transport string, bytes int, duration time.Duration, err error) metrics.MetricRecord
-symbol	github.com/spcent/plumego/x/observability/featuremetrics	func	KVRecord	func KVRecordfunc(operation, key string, duration time.Duration, err error, hit bool) metrics.MetricRecord
-symbol	github.com/spcent/plumego/x/observability/featuremetrics	func	MQRecord	func MQRecordfunc(operation, topic string, duration time.Duration, err error, panicked bool) metrics.MetricRecord
-symbol	github.com/spcent/plumego/x/observability/featuremetrics	func	ObserveDB	func ObserveDBfunc(recorder metrics.Recorder, ctx context.Context, operation, driver, query string, rows int, duration time.Duration, err error)
-symbol	github.com/spcent/plumego/x/observability/featuremetrics	func	ObserveIPC	func ObserveIPCfunc(recorder metrics.Recorder, ctx context.Context, operation, addr, transport string, bytes int, duration time.Duration, err error)
-symbol	github.com/spcent/plumego/x/observability/featuremetrics	func	ObserveKV	func ObserveKVfunc(recorder metrics.Recorder, ctx context.Context, operation, key string, duration time.Duration, err error, hit bool)
-symbol	github.com/spcent/plumego/x/observability/featuremetrics	func	ObserveMQ	func ObserveMQfunc(recorder metrics.Recorder, ctx context.Context, operation, topic string, duration time.Duration, err error, panicked bool)
-symbol	github.com/spcent/plumego/x/observability/featuremetrics	func	ObservePubSub	func ObservePubSubfunc(recorder metrics.Recorder, ctx context.Context, operation, topic string, duration time.Duration, err error)
-symbol	github.com/spcent/plumego/x/observability/featuremetrics	func	PubSubRecord	func PubSubRecordfunc(operation, topic string, duration time.Duration, err error) metrics.MetricRecord
-symbol	github.com/spcent/plumego/x/observability/recordbuffer	func	NewCollector	func NewCollectorfunc() *Collector
-symbol	github.com/spcent/plumego/x/observability/recordbuffer	method	Collector.Clear	func (Collector) Clearfunc()
-symbol	github.com/spcent/plumego/x/observability/recordbuffer	method	Collector.GetRecords	func (Collector) GetRecordsfunc() []metrics.MetricRecord
-symbol	github.com/spcent/plumego/x/observability/recordbuffer	method	Collector.GetStats	func (Collector) GetStatsfunc() metrics.CollectorStats
-symbol	github.com/spcent/plumego/x/observability/recordbuffer	method	Collector.ObserveHTTP	func (Collector) ObserveHTTPfunc(ctx context.Context, method, path string, status, bytes int, duration time.Duration)
-symbol	github.com/spcent/plumego/x/observability/recordbuffer	method	Collector.Record	func (Collector) Recordfunc(ctx context.Context, record metrics.MetricRecord)
-symbol	github.com/spcent/plumego/x/observability/recordbuffer	method	Collector.WithMaxRecords	func (Collector) WithMaxRecordsfunc(max int) *Collector
-symbol	github.com/spcent/plumego/x/observability/recordbuffer	type	Collector	type Collector struct { }
-symbol	github.com/spcent/plumego/x/observability/testlog	const	DEBUG	const DEBUG = plog.DEBUG
-symbol	github.com/spcent/plumego/x/observability/testlog	const	ERROR	const ERROR = plog.ERROR
-symbol	github.com/spcent/plumego/x/observability/testlog	const	FATAL	const FATAL = plog.FATAL
-symbol	github.com/spcent/plumego/x/observability/testlog	const	INFO	const INFO = plog.INFO
-symbol	github.com/spcent/plumego/x/observability/testlog	const	WARNING	const WARNING = plog.WARNING
-symbol	github.com/spcent/plumego/x/observability/testlog	func	New	func Newfunc() *Logger
-symbol	github.com/spcent/plumego/x/observability/testlog	method	Logger.Clear	func (Logger) Clearfunc()
-symbol	github.com/spcent/plumego/x/observability/testlog	method	Logger.Count	func (Logger) Countfunc() int
-symbol	github.com/spcent/plumego/x/observability/testlog	method	Logger.CountByLevel	func (Logger) CountByLevelfunc(level Level) int
-symbol	github.com/spcent/plumego/x/observability/testlog	method	Logger.Debug	func (Logger) Debugfunc(msg string, fields ...Fields)
-symbol	github.com/spcent/plumego/x/observability/testlog	method	Logger.DebugCtx	func (Logger) DebugCtxfunc(ctx context.Context, msg string, fields ...Fields)
-symbol	github.com/spcent/plumego/x/observability/testlog	method	Logger.Entries	func (Logger) Entriesfunc() []Entry
-symbol	github.com/spcent/plumego/x/observability/testlog	method	Logger.Error	func (Logger) Errorfunc(msg string, fields ...Fields)
-symbol	github.com/spcent/plumego/x/observability/testlog	method	Logger.ErrorCtx	func (Logger) ErrorCtxfunc(ctx context.Context, msg string, fields ...Fields)
-symbol	github.com/spcent/plumego/x/observability/testlog	method	Logger.Fatal	func (Logger) Fatalfunc(msg string, fields ...Fields)
-symbol	github.com/spcent/plumego/x/observability/testlog	method	Logger.FatalCtx	func (Logger) FatalCtxfunc(ctx context.Context, msg string, fields ...Fields)
-symbol	github.com/spcent/plumego/x/observability/testlog	method	Logger.HasEntry	func (Logger) HasEntryfunc(level Level, substr string) bool
-symbol	github.com/spcent/plumego/x/observability/testlog	method	Logger.Info	func (Logger) Infofunc(msg string, fields ...Fields)
-symbol	github.com/spcent/plumego/x/observability/testlog	method	Logger.InfoCtx	func (Logger) InfoCtxfunc(ctx context.Context, msg string, fields ...Fields)
-symbol	github.com/spcent/plumego/x/observability/testlog	method	Logger.LastEntry	func (Logger) LastEntryfunc() (Entry, bool)
-symbol	github.com/spcent/plumego/x/observability/testlog	method	Logger.Warn	func (Logger) Warnfunc(msg string, fields ...Fields)
-symbol	github.com/spcent/plumego/x/observability/testlog	method	Logger.WarnCtx	func (Logger) WarnCtxfunc(ctx context.Context, msg string, fields ...Fields)
-symbol	github.com/spcent/plumego/x/observability/testlog	method	Logger.With	func (Logger) Withfunc(key string, value any) plog.StructuredLogger
-symbol	github.com/spcent/plumego/x/observability/testlog	method	Logger.WithFields	func (Logger) WithFieldsfunc(fields Fields) plog.StructuredLogger
-symbol	github.com/spcent/plumego/x/observability/testlog	type	Entry	type Entry struct { Level Level Message string Fields Fields Time time.Time }
-symbol	github.com/spcent/plumego/x/observability/testlog	type	Fields	type Fields = plog.Fields
-symbol	github.com/spcent/plumego/x/observability/testlog	type	Level	type Level = plog.Level
-symbol	github.com/spcent/plumego/x/observability/testlog	type	Logger	type Logger struct { FatalHook func(msg string) }
-symbol	github.com/spcent/plumego/x/observability/testmetrics	func	NewMockCollector	func NewMockCollectorfunc() *MockCollector
-symbol	github.com/spcent/plumego/x/observability/testmetrics	method	MockCollector.Clear	func (MockCollector) Clearfunc()
-symbol	github.com/spcent/plumego/x/observability/testmetrics	method	MockCollector.DBCallCount	func (MockCollector) DBCallCountfunc() int
-symbol	github.com/spcent/plumego/x/observability/testmetrics	method	MockCollector.GetDBCalls	func (MockCollector) GetDBCallsfunc() []DBCall
-symbol	github.com/spcent/plumego/x/observability/testmetrics	method	MockCollector.GetHTTPCalls	func (MockCollector) GetHTTPCallsfunc() []HTTPCall
-symbol	github.com/spcent/plumego/x/observability/testmetrics	method	MockCollector.GetIPCCalls	func (MockCollector) GetIPCCallsfunc() []IPCCall
-symbol	github.com/spcent/plumego/x/observability/testmetrics	method	MockCollector.GetKVCalls	func (MockCollector) GetKVCallsfunc() []KVCall
-symbol	github.com/spcent/plumego/x/observability/testmetrics	method	MockCollector.GetLastDBCall	func (MockCollector) GetLastDBCallfunc() *DBCall
-symbol	github.com/spcent/plumego/x/observability/testmetrics	method	MockCollector.GetLastHTTPCall	func (MockCollector) GetLastHTTPCallfunc() *HTTPCall
-symbol	github.com/spcent/plumego/x/observability/testmetrics	method	MockCollector.GetMQCalls	func (MockCollector) GetMQCallsfunc() []MQCall
-symbol	github.com/spcent/plumego/x/observability/testmetrics	method	MockCollector.GetPubSubCalls	func (MockCollector) GetPubSubCallsfunc() []PubSubCall
-symbol	github.com/spcent/plumego/x/observability/testmetrics	method	MockCollector.GetRecords	func (MockCollector) GetRecordsfunc() []MetricRecord
-symbol	github.com/spcent/plumego/x/observability/testmetrics	method	MockCollector.GetStats	func (MockCollector) GetStatsfunc() CollectorStats
-symbol	github.com/spcent/plumego/x/observability/testmetrics	method	MockCollector.HTTPCallCount	func (MockCollector) HTTPCallCountfunc() int
-symbol	github.com/spcent/plumego/x/observability/testmetrics	method	MockCollector.IPCCallCount	func (MockCollector) IPCCallCountfunc() int
-symbol	github.com/spcent/plumego/x/observability/testmetrics	method	MockCollector.KVCallCount	func (MockCollector) KVCallCountfunc() int
-symbol	github.com/spcent/plumego/x/observability/testmetrics	method	MockCollector.MQCallCount	func (MockCollector) MQCallCountfunc() int
-symbol	github.com/spcent/plumego/x/observability/testmetrics	method	MockCollector.ObserveDB	func (MockCollector) ObserveDBfunc(ctx context.Context, operation, driver, query string, rows int, duration time.Duration, err error)
-symbol	github.com/spcent/plumego/x/observability/testmetrics	method	MockCollector.ObserveHTTP	func (MockCollector) ObserveHTTPfunc(ctx context.Context, method, path string, status, bytes int, duration time.Duration)
-symbol	github.com/spcent/plumego/x/observability/testmetrics	method	MockCollector.ObserveIPC	func (MockCollector) ObserveIPCfunc(ctx context.Context, operation, addr, transport string, bytes int, duration time.Duration, err error)
-symbol	github.com/spcent/plumego/x/observability/testmetrics	method	MockCollector.ObserveKV	func (MockCollector) ObserveKVfunc(ctx context.Context, operation, key string, duration time.Duration, err error, hit bool)
-symbol	github.com/spcent/plumego/x/observability/testmetrics	method	MockCollector.ObserveMQ	func (MockCollector) ObserveMQfunc(ctx context.Context, operation, topic string, duration time.Duration, err error, panicked bool)
-symbol	github.com/spcent/plumego/x/observability/testmetrics	method	MockCollector.ObservePubSub	func (MockCollector) ObservePubSubfunc(ctx context.Context, operation, topic string, duration time.Duration, err error)
-symbol	github.com/spcent/plumego/x/observability/testmetrics	method	MockCollector.PubSubCallCount	func (MockCollector) PubSubCallCountfunc() int
-symbol	github.com/spcent/plumego/x/observability/testmetrics	method	MockCollector.Record	func (MockCollector) Recordfunc(ctx context.Context, record MetricRecord)
-symbol	github.com/spcent/plumego/x/observability/testmetrics	method	MockCollector.RecordCallCount	func (MockCollector) RecordCallCountfunc() int
-symbol	github.com/spcent/plumego/x/observability/testmetrics	type	AggregateCollector	type AggregateCollector = metrics.AggregateCollector
-symbol	github.com/spcent/plumego/x/observability/testmetrics	type	CollectorStats	type CollectorStats = metrics.CollectorStats
-symbol	github.com/spcent/plumego/x/observability/testmetrics	type	DBCall	type DBCall struct { Operation string Driver string Query string Rows int Duration time.Duration Err error }
-symbol	github.com/spcent/plumego/x/observability/testmetrics	type	HTTPCall	type HTTPCall struct { Method string Path string Status int Bytes int Duration time.Duration }
-symbol	github.com/spcent/plumego/x/observability/testmetrics	type	IPCCall	type IPCCall struct { Operation string Addr string Transport string Bytes int Duration time.Duration Err error }
-symbol	github.com/spcent/plumego/x/observability/testmetrics	type	KVCall	type KVCall struct { Operation string Key string Duration time.Duration Err error Hit bool }
-symbol	github.com/spcent/plumego/x/observability/testmetrics	type	MQCall	type MQCall struct { Operation string Topic string Duration time.Duration Err error Panicked bool }
-symbol	github.com/spcent/plumego/x/observability/testmetrics	type	MetricRecord	type MetricRecord = metrics.MetricRecord
-symbol	github.com/spcent/plumego/x/observability/testmetrics	type	MockCollector	type MockCollector struct { NoopCollector OnRecord func(ctx context.Context, record MetricRecord) OnObserveHTTP func(ctx context.Context, method, path string, status, bytes int, duration time.Duration) OnObserveDB func(ctx context.Context, operation, driver, query string, rows int, duration time.Duration, err error) OnObserveKV func(ctx context.Context, operation, key string, duration time.Duration, err error, hit bool) OnObserveIPC func(ctx context.Context, operation, addr, transport string, bytes int, duration time.Duration, err error) OnObserveMQ func(ctx context.Context, operation, topic string, duration time.Duration, err error, panicked bool) OnObservePubSub func(ctx context.Context, operation, topic string, duration time.Duration, err error) OnGetStats func() CollectorStats OnClear func() }
-symbol	github.com/spcent/plumego/x/observability/testmetrics	type	NoopCollector	type NoopCollector = metrics.NoopCollector
-symbol	github.com/spcent/plumego/x/observability/testmetrics	type	PubSubCall	type PubSubCall struct { Operation string Topic string Duration time.Duration Err error }
-symbol	github.com/spcent/plumego/x/observability/tracer	const	SpanIDLength	const SpanIDLength = 16
-symbol	github.com/spcent/plumego/x/observability/tracer	const	SpanKindClient	const SpanKindClient SpanKind = "client"
-symbol	github.com/spcent/plumego/x/observability/tracer	const	SpanKindConsumer	const SpanKindConsumer SpanKind = "consumer"
-symbol	github.com/spcent/plumego/x/observability/tracer	const	SpanKindInternal	const SpanKindInternal SpanKind = "internal"
-symbol	github.com/spcent/plumego/x/observability/tracer	const	SpanKindProducer	const SpanKindProducer SpanKind = "producer"
-symbol	github.com/spcent/plumego/x/observability/tracer	const	SpanKindServer	const SpanKindServer SpanKind = "server"
-symbol	github.com/spcent/plumego/x/observability/tracer	const	StatusCodeError	const StatusCodeError StatusCode = 2
-symbol	github.com/spcent/plumego/x/observability/tracer	const	StatusCodeOk	const StatusCodeOk StatusCode = 1
-symbol	github.com/spcent/plumego/x/observability/tracer	const	StatusCodeUnset	const StatusCodeUnset StatusCode = 0
-symbol	github.com/spcent/plumego/x/observability/tracer	const	TraceIDLength	const TraceIDLength = 32
-symbol	github.com/spcent/plumego/x/observability/tracer	func	DefaultTracerConfig	func DefaultTracerConfigfunc() TracerConfig
-symbol	github.com/spcent/plumego/x/observability/tracer	func	NewProbabilitySampler	func NewProbabilitySamplerfunc(probability float64) *ProbabilitySampler
-symbol	github.com/spcent/plumego/x/observability/tracer	func	NewRandomIDGenerator	func NewRandomIDGeneratorfunc() *RandomIDGenerator
-symbol	github.com/spcent/plumego/x/observability/tracer	func	NewSimpleTraceCollector	func NewSimpleTraceCollectorfunc() *SimpleTraceCollector
-symbol	github.com/spcent/plumego/x/observability/tracer	func	NewTracer	func NewTracerfunc(config TracerConfig) *Tracer
-symbol	github.com/spcent/plumego/x/observability/tracer	func	WithErrorAttributes	func WithErrorAttributesfunc(attrs map[string]any) ErrorOption
-symbol	github.com/spcent/plumego/x/observability/tracer	func	WithEventAttributes	func WithEventAttributesfunc(attrs map[string]any) EventOption
-symbol	github.com/spcent/plumego/x/observability/tracer	func	WithSpanAttributes	func WithSpanAttributesfunc(attrs map[string]any) SpanOption
-symbol	github.com/spcent/plumego/x/observability/tracer	func	WithSpanKind	func WithSpanKindfunc(kind SpanKind) TraceOption
-symbol	github.com/spcent/plumego/x/observability/tracer	func	WithSpanStatus	func WithSpanStatusfunc(status SpanStatus) SpanOption
-symbol	github.com/spcent/plumego/x/observability/tracer	func	WithTraceAttributes	func WithTraceAttributesfunc(attrs map[string]any) TraceOption
-symbol	github.com/spcent/plumego/x/observability/tracer	method	ProbabilitySampler.ShouldSample	func (ProbabilitySampler) ShouldSamplefunc(traceID TraceID) bool
-symbol	github.com/spcent/plumego/x/observability/tracer	method	RandomIDGenerator.GenerateSpanID	func (RandomIDGenerator) GenerateSpanIDfunc() SpanID
-symbol	github.com/spcent/plumego/x/observability/tracer	method	RandomIDGenerator.GenerateTraceID	func (RandomIDGenerator) GenerateTraceIDfunc() TraceID
-symbol	github.com/spcent/plumego/x/observability/tracer	method	SimpleTraceCollector.Collect	func (SimpleTraceCollector) Collectfunc(trace *Trace)
-symbol	github.com/spcent/plumego/x/observability/tracer	method	SimpleTraceCollector.GetTrace	func (SimpleTraceCollector) GetTracefunc(traceID TraceID) (*Trace, bool)
-symbol	github.com/spcent/plumego/x/observability/tracer	method	SimpleTraceCollector.GetTraces	func (SimpleTraceCollector) GetTracesfunc(filter TraceFilter) []*Trace
-symbol	github.com/spcent/plumego/x/observability/tracer	method	SimpleTraceCollector.SetMaxAge	func (SimpleTraceCollector) SetMaxAgefunc(maxAge time.Duration)
-symbol	github.com/spcent/plumego/x/observability/tracer	method	Span.Clone	func (Span) Clonefunc() *Span
-symbol	github.com/spcent/plumego/x/observability/tracer	method	SpanEvent.Clone	func (SpanEvent) Clonefunc() SpanEvent
-symbol	github.com/spcent/plumego/x/observability/tracer	method	SpanLink.Clone	func (SpanLink) Clonefunc() SpanLink
-symbol	github.com/spcent/plumego/x/observability/tracer	method	Trace.Clone	func (Trace) Clonefunc() *Trace
-symbol	github.com/spcent/plumego/x/observability/tracer	method	TraceLink.Clone	func (TraceLink) Clonefunc() TraceLink
-symbol	github.com/spcent/plumego/x/observability/tracer	method	Tracer.EndSpan	func (Tracer) EndSpanfunc(span *Span, options ...SpanOption)
-symbol	github.com/spcent/plumego/x/observability/tracer	method	Tracer.GetActiveSpan	func (Tracer) GetActiveSpanfunc(ctx context.Context) *Span
-symbol	github.com/spcent/plumego/x/observability/tracer	method	Tracer.GetTraceStatistics	func (Tracer) GetTraceStatisticsfunc() TraceStatistics
-symbol	github.com/spcent/plumego/x/observability/tracer	method	Tracer.RecordError	func (Tracer) RecordErrorfunc(span *Span, err error, options ...ErrorOption)
-symbol	github.com/spcent/plumego/x/observability/tracer	method	Tracer.RecordSpanEvent	func (Tracer) RecordSpanEventfunc(span *Span, name string, options ...EventOption)
-symbol	github.com/spcent/plumego/x/observability/tracer	method	Tracer.StartChildSpan	func (Tracer) StartChildSpanfunc(ctx context.Context, parentSpan *Span, name string, options ...TraceOption) (context.Context, *Span)
-symbol	github.com/spcent/plumego/x/observability/tracer	method	Tracer.StartTrace	func (Tracer) StartTracefunc(ctx context.Context, name string, options ...TraceOption) (context.Context, *Span)
-symbol	github.com/spcent/plumego/x/observability/tracer	type	ErrorOption	type ErrorOption func(attrs map[string]any)
-symbol	github.com/spcent/plumego/x/observability/tracer	type	EventOption	type EventOption func(event *SpanEvent)
-symbol	github.com/spcent/plumego/x/observability/tracer	type	IDGenerator	type IDGenerator interface { GenerateTraceID() TraceID GenerateSpanID() SpanID }
-symbol	github.com/spcent/plumego/x/observability/tracer	type	ProbabilitySampler	type ProbabilitySampler struct { }
-symbol	github.com/spcent/plumego/x/observability/tracer	type	RandomIDGenerator	type RandomIDGenerator struct{}
-symbol	github.com/spcent/plumego/x/observability/tracer	type	Sampler	type Sampler interface { ShouldSample(traceID TraceID) bool }
-symbol	github.com/spcent/plumego/x/observability/tracer	type	SimpleTraceCollector	type SimpleTraceCollector struct { }
-symbol	github.com/spcent/plumego/x/observability/tracer	type	Span	type Span struct { ID SpanID `json:"span_id"` ParentSpanID *SpanID `json:"parent_span_id,omitempty"` TraceID TraceID `json:"trace_id"` Name string `json:"name"` Kind SpanKind `json:"kind"` StartTime time.Time `json:"start_time"` EndTime *time.Time `json:"end_time,omitempty"` Duration time.Duration `json:"duration,omitempty"` Status SpanStatus `json:"status"` Attributes map[string]any `json:"attributes"` Events []SpanEvent `json:"events,omitempty"` Links []SpanLink `json:"links,omitempty"` }
-symbol	github.com/spcent/plumego/x/observability/tracer	type	SpanEvent	type SpanEvent struct { Name string `json:"name"` Timestamp time.Time `json:"timestamp"` Attributes map[string]any `json:"attributes,omitempty"` }
-symbol	github.com/spcent/plumego/x/observability/tracer	type	SpanID	type SpanID string
-symbol	github.com/spcent/plumego/x/observability/tracer	type	SpanKind	type SpanKind string
-symbol	github.com/spcent/plumego/x/observability/tracer	type	SpanLink	type SpanLink struct { TraceID TraceID `json:"trace_id"` SpanID SpanID `json:"span_id"` Attributes map[string]any `json:"attributes,omitempty"` }
-symbol	github.com/spcent/plumego/x/observability/tracer	type	SpanOption	type SpanOption func(span *Span)
-symbol	github.com/spcent/plumego/x/observability/tracer	type	SpanStatus	type SpanStatus struct { Code StatusCode `json:"code"` Description string `json:"description,omitempty"` }
-symbol	github.com/spcent/plumego/x/observability/tracer	type	StatusCode	type StatusCode int32
-symbol	github.com/spcent/plumego/x/observability/tracer	type	Trace	type Trace struct { ID TraceID `json:"trace_id"` RootSpanID SpanID `json:"root_span_id"` StartTime time.Time `json:"start_time"` EndTime *time.Time `json:"end_time,omitempty"` Spans []*Span `json:"spans"` Attributes map[string]any `json:"attributes"` Links []TraceLink `json:"links,omitempty"` }
-symbol	github.com/spcent/plumego/x/observability/tracer	type	TraceCollector	type TraceCollector interface { Collect(trace *Trace) GetTrace(traceID TraceID) (*Trace, bool) GetTraces(filter TraceFilter) []*Trace }
-symbol	github.com/spcent/plumego/x/observability/tracer	type	TraceFilter	type TraceFilter func(trace *Trace) bool
-symbol	github.com/spcent/plumego/x/observability/tracer	type	TraceID	type TraceID string
-symbol	github.com/spcent/plumego/x/observability/tracer	type	TraceLink	type TraceLink struct { TraceID TraceID `json:"trace_id"` Attributes map[string]any `json:"attributes,omitempty"` }
-symbol	github.com/spcent/plumego/x/observability/tracer	type	TraceOption	type TraceOption func(trace *Trace, span *Span)
-symbol	github.com/spcent/plumego/x/observability/tracer	type	TraceStatistics	type TraceStatistics struct { TotalTraces int64 `json:"total_traces"` ActiveTraces int64 `json:"active_traces"` CompletedTraces int64 `json:"completed_traces"` ByStatus map[StatusCode]int64 `json:"by_status"` AverageDuration time.Duration `json:"average_duration"` TotalSpans int64 `json:"total_spans"` LastTraceTime time.Time `json:"last_trace_time"` }
-symbol	github.com/spcent/plumego/x/observability/tracer	type	Tracer	type Tracer struct { }
-symbol	github.com/spcent/plumego/x/observability/tracer	type	TracerConfig	type TracerConfig struct { ServiceName string ServiceVersion string Environment string SamplingRate float64 MaxSpansPerTrace int MaxTraceAge time.Duration }
-symbol	github.com/spcent/plumego/x/observability/windowmetrics	func	NewAggregator	func NewAggregatorfunc(window time.Duration) *Aggregator
-symbol	github.com/spcent/plumego/x/observability/windowmetrics	method	Aggregator.Clear	func (Aggregator) Clearfunc()
-symbol	github.com/spcent/plumego/x/observability/windowmetrics	method	Aggregator.GetAllStats	func (Aggregator) GetAllStatsfunc() map[string]AggregatorStats
-symbol	github.com/spcent/plumego/x/observability/windowmetrics	method	Aggregator.GetStats	func (Aggregator) GetStatsfunc(name string) AggregatorStats
-symbol	github.com/spcent/plumego/x/observability/windowmetrics	method	Aggregator.Record	func (Aggregator) Recordfunc(name string, value float64)
-symbol	github.com/spcent/plumego/x/observability/windowmetrics	type	Aggregator	type Aggregator struct { }
-symbol	github.com/spcent/plumego/x/observability/windowmetrics	type	AggregatorStats	type AggregatorStats struct { Count int64 `json:"count"` Sum float64 `json:"sum"` Mean float64 `json:"mean"` Min float64 `json:"min"` Max float64 `json:"max"` P50 float64 `json:"p50"` P95 float64 `json:"p95"` P99 float64 `json:"p99"` }
+symbol	github.com/birdordev/plumego/x/observability	func	Configure	func Configurefunc(hooks Hooks, cfg ObservabilityConfig) error
+symbol	github.com/birdordev/plumego/x/observability	func	DefaultMetricsConfig	func DefaultMetricsConfigfunc() MetricsConfig
+symbol	github.com/birdordev/plumego/x/observability	func	DefaultObservabilityConfig	func DefaultObservabilityConfigfunc() ObservabilityConfig
+symbol	github.com/birdordev/plumego/x/observability	func	DefaultTracingConfig	func DefaultTracingConfigfunc() TracingConfig
+symbol	github.com/birdordev/plumego/x/observability	func	NewOpenTelemetryTracer	func NewOpenTelemetryTracerfunc(name string) *OpenTelemetryTracer
+symbol	github.com/birdordev/plumego/x/observability	func	NewPrometheusCollector	func NewPrometheusCollectorfunc(namespace string) *PrometheusCollector
+symbol	github.com/birdordev/plumego/x/observability	func	NewPrometheusExporter	func NewPrometheusExporterfunc(collector *PrometheusCollector) *PrometheusExporter
+symbol	github.com/birdordev/plumego/x/observability	func	NewPrometheusExporterE	func NewPrometheusExporterEfunc(collector *PrometheusCollector) (*PrometheusExporter, error)
+symbol	github.com/birdordev/plumego/x/observability	method	OpenTelemetryTracer.Clear	func (OpenTelemetryTracer) Clearfunc()
+symbol	github.com/birdordev/plumego/x/observability	method	OpenTelemetryTracer.GetSpanStats	func (OpenTelemetryTracer) GetSpanStatsfunc() SpanStats
+symbol	github.com/birdordev/plumego/x/observability	method	OpenTelemetryTracer.Spans	func (OpenTelemetryTracer) Spansfunc() []Span
+symbol	github.com/birdordev/plumego/x/observability	method	OpenTelemetryTracer.Start	func (OpenTelemetryTracer) Startfunc(ctx context.Context, r *http.Request) (context.Context, mwtracing.TraceSpan)
+symbol	github.com/birdordev/plumego/x/observability	method	OpenTelemetryTracer.WithMaxSpans	func (OpenTelemetryTracer) WithMaxSpansfunc(max int) *OpenTelemetryTracer
+symbol	github.com/birdordev/plumego/x/observability	method	PrometheusCollector.Clear	func (PrometheusCollector) Clearfunc()
+symbol	github.com/birdordev/plumego/x/observability	method	PrometheusCollector.GetStats	func (PrometheusCollector) GetStatsfunc() metrics.CollectorStats
+symbol	github.com/birdordev/plumego/x/observability	method	PrometheusCollector.Handler	func (PrometheusCollector) Handlerfunc() http.Handler
+symbol	github.com/birdordev/plumego/x/observability	method	PrometheusCollector.ObserveHTTP	func (PrometheusCollector) ObserveHTTPfunc(_ context.Context, method, path string, status, _ int, duration time.Duration)
+symbol	github.com/birdordev/plumego/x/observability	method	PrometheusCollector.Record	func (PrometheusCollector) Recordfunc(ctx context.Context, record metrics.MetricRecord)
+symbol	github.com/birdordev/plumego/x/observability	method	PrometheusCollector.WithMaxMemory	func (PrometheusCollector) WithMaxMemoryfunc(max int) *PrometheusCollector
+symbol	github.com/birdordev/plumego/x/observability	method	PrometheusExporter.Handler	func (PrometheusExporter) Handlerfunc() http.Handler
+symbol	github.com/birdordev/plumego/x/observability	type	Exporter	type Exporter interface { Handler() http.Handler }
+symbol	github.com/birdordev/plumego/x/observability	type	Hooks	type Hooks struct { EnsureMutable func(op, desc string) error RegisterRoute func(method, path string, handler http.Handler) error GetPrometheusCollector func() *PrometheusCollector SetPrometheusCollector func(*PrometheusCollector) GetTracer func() mwtracing.Tracer SetTracer func(mwtracing.Tracer) }
+symbol	github.com/birdordev/plumego/x/observability	type	MetricsConfig	type MetricsConfig struct { Enabled bool Path string Namespace string MaxSeries int Collector *PrometheusCollector Exporter Exporter Handler http.Handler }
+symbol	github.com/birdordev/plumego/x/observability	type	ObservabilityConfig	type ObservabilityConfig struct { Metrics MetricsConfig Tracing TracingConfig }
+symbol	github.com/birdordev/plumego/x/observability	type	OpenTelemetryTracer	type OpenTelemetryTracer struct { }
+symbol	github.com/birdordev/plumego/x/observability	type	PrometheusCollector	type PrometheusCollector struct { }
+symbol	github.com/birdordev/plumego/x/observability	type	PrometheusExporter	type PrometheusExporter struct { }
+symbol	github.com/birdordev/plumego/x/observability	type	Span	type Span struct { Name string `json:"name"` Attributes map[string]string `json:"attributes,omitempty"` Status string `json:"status"` StatusMessage string `json:"status_message,omitempty"` Duration time.Duration `json:"duration,omitempty"` Timestamp time.Time `json:"timestamp"` ParentSpanID string `json:"parent_span_id,omitempty"` SpanID string `json:"span_id"` TraceID string `json:"trace_id"` }
+symbol	github.com/birdordev/plumego/x/observability	type	SpanStats	type SpanStats struct { TotalSpans int ErrorSpans int TotalDuration time.Duration AverageDuration time.Duration MaxRetention int DroppedSpans int }
+symbol	github.com/birdordev/plumego/x/observability	type	TracingConfig	type TracingConfig struct { Enabled bool ServiceName string Tracer mwtracing.Tracer }
+symbol	github.com/birdordev/plumego/x/observability	var	ErrNilCollector	var ErrNilCollector = errors.New("observability: prometheus collector cannot be nil")
+symbol	github.com/birdordev/plumego/x/observability/dbinsights	func	NewAggregatingObserver	func NewAggregatingObserverfunc(base MetricsObserver, slowQueryThreshold time.Duration) *AggregatingObserver
+symbol	github.com/birdordev/plumego/x/observability/dbinsights	func	NewAggregator	func NewAggregatorfunc(slowQueryThreshold time.Duration) *Aggregator
+symbol	github.com/birdordev/plumego/x/observability/dbinsights	func	NewDetector	func NewDetectorfunc(opts ...DetectorOption) *Detector
+symbol	github.com/birdordev/plumego/x/observability/dbinsights	func	NewInstrumentedDB	func NewInstrumentedDBfunc(db *sql.DB, observer MetricsObserver, driver string) *InstrumentedDB
+symbol	github.com/birdordev/plumego/x/observability/dbinsights	func	NewObserver	func NewObserverfunc(base MetricsObserver, opts ...DetectorOption) *Observer
+symbol	github.com/birdordev/plumego/x/observability/dbinsights	func	NewSlowQueryDB	func NewSlowQueryDBfunc(db *InstrumentedDB, driver string, opts ...DetectorOption) *SlowQueryDB
+symbol	github.com/birdordev/plumego/x/observability/dbinsights	func	WithCallback	func WithCallbackfunc(callback func(SlowQuery)) DetectorOption
+symbol	github.com/birdordev/plumego/x/observability/dbinsights	func	WithMaxRecords	func WithMaxRecordsfunc(max int) DetectorOption
+symbol	github.com/birdordev/plumego/x/observability/dbinsights	func	WithThreshold	func WithThresholdfunc(threshold time.Duration) DetectorOption
+symbol	github.com/birdordev/plumego/x/observability/dbinsights	method	AggregatingObserver.GetAggregator	func (AggregatingObserver) GetAggregatorfunc() *Aggregator
+symbol	github.com/birdordev/plumego/x/observability/dbinsights	method	AggregatingObserver.ObserveDB	func (AggregatingObserver) ObserveDBfunc(ctx context.Context, operation, driver, query string, rows int, duration time.Duration, err error)
+symbol	github.com/birdordev/plumego/x/observability/dbinsights	method	Aggregator.GetAllOperationStats	func (Aggregator) GetAllOperationStatsfunc() map[string]QueryStats
+symbol	github.com/birdordev/plumego/x/observability/dbinsights	method	Aggregator.GetAllTableStats	func (Aggregator) GetAllTableStatsfunc() map[string]QueryStats
+symbol	github.com/birdordev/plumego/x/observability/dbinsights	method	Aggregator.GetGlobalStats	func (Aggregator) GetGlobalStatsfunc() QueryStats
+symbol	github.com/birdordev/plumego/x/observability/dbinsights	method	Aggregator.GetOperationStats	func (Aggregator) GetOperationStatsfunc(operation string) (QueryStats, bool)
+symbol	github.com/birdordev/plumego/x/observability/dbinsights	method	Aggregator.GetTableStats	func (Aggregator) GetTableStatsfunc(table string) (QueryStats, bool)
+symbol	github.com/birdordev/plumego/x/observability/dbinsights	method	Aggregator.GetTopSlowTables	func (Aggregator) GetTopSlowTablesfunc(n int) []TableStat
+symbol	github.com/birdordev/plumego/x/observability/dbinsights	method	Aggregator.RecordQuery	func (Aggregator) RecordQueryfunc(operation, query string, duration time.Duration, err error)
+symbol	github.com/birdordev/plumego/x/observability/dbinsights	method	Aggregator.Reset	func (Aggregator) Resetfunc()
+symbol	github.com/birdordev/plumego/x/observability/dbinsights	method	Aggregator.Summary	func (Aggregator) Summaryfunc() string
+symbol	github.com/birdordev/plumego/x/observability/dbinsights	method	Detector.Check	func (Detector) Checkfunc(operation, driver, query string, duration time.Duration, err error) bool
+symbol	github.com/birdordev/plumego/x/observability/dbinsights	method	Detector.Clear	func (Detector) Clearfunc()
+symbol	github.com/birdordev/plumego/x/observability/dbinsights	method	Detector.GetRecentSlowQueries	func (Detector) GetRecentSlowQueriesfunc(n int) []SlowQuery
+symbol	github.com/birdordev/plumego/x/observability/dbinsights	method	Detector.GetSlowQueries	func (Detector) GetSlowQueriesfunc() []SlowQuery
+symbol	github.com/birdordev/plumego/x/observability/dbinsights	method	Detector.GetTotalDetected	func (Detector) GetTotalDetectedfunc() int64
+symbol	github.com/birdordev/plumego/x/observability/dbinsights	method	Detector.Summary	func (Detector) Summaryfunc() string
+symbol	github.com/birdordev/plumego/x/observability/dbinsights	method	InstrumentedDB.BeginTx	func (InstrumentedDB) BeginTxfunc(ctx context.Context, opts *sql.TxOptions) (*sql.Tx, error)
+symbol	github.com/birdordev/plumego/x/observability/dbinsights	method	InstrumentedDB.Close	func (InstrumentedDB) Closefunc() error
+symbol	github.com/birdordev/plumego/x/observability/dbinsights	method	InstrumentedDB.ExecContext	func (InstrumentedDB) ExecContextfunc(ctx context.Context, query string, args ...any) (sql.Result, error)
+symbol	github.com/birdordev/plumego/x/observability/dbinsights	method	InstrumentedDB.PingContext	func (InstrumentedDB) PingContextfunc(ctx context.Context) error
+symbol	github.com/birdordev/plumego/x/observability/dbinsights	method	InstrumentedDB.QueryContext	func (InstrumentedDB) QueryContextfunc(ctx context.Context, query string, args ...any) (*sql.Rows, error)
+symbol	github.com/birdordev/plumego/x/observability/dbinsights	method	InstrumentedDB.QueryRowContext	func (InstrumentedDB) QueryRowContextfunc(ctx context.Context, query string, args ...any) *sql.Row
+symbol	github.com/birdordev/plumego/x/observability/dbinsights	method	InstrumentedDB.RecordPoolStats	func (InstrumentedDB) RecordPoolStatsfunc(ctx context.Context)
+symbol	github.com/birdordev/plumego/x/observability/dbinsights	method	InstrumentedDB.SetConnMaxIdleTime	func (InstrumentedDB) SetConnMaxIdleTimefunc(d time.Duration)
+symbol	github.com/birdordev/plumego/x/observability/dbinsights	method	InstrumentedDB.SetConnMaxLifetime	func (InstrumentedDB) SetConnMaxLifetimefunc(d time.Duration)
+symbol	github.com/birdordev/plumego/x/observability/dbinsights	method	InstrumentedDB.SetMaxIdleConns	func (InstrumentedDB) SetMaxIdleConnsfunc(n int)
+symbol	github.com/birdordev/plumego/x/observability/dbinsights	method	InstrumentedDB.SetMaxOpenConns	func (InstrumentedDB) SetMaxOpenConnsfunc(n int)
+symbol	github.com/birdordev/plumego/x/observability/dbinsights	method	InstrumentedDB.Stats	func (InstrumentedDB) Statsfunc() sql.DBStats
+symbol	github.com/birdordev/plumego/x/observability/dbinsights	method	InstrumentedDB.Unwrap	func (InstrumentedDB) Unwrapfunc() *sql.DB
+symbol	github.com/birdordev/plumego/x/observability/dbinsights	method	Observer.GetDetector	func (Observer) GetDetectorfunc() *Detector
+symbol	github.com/birdordev/plumego/x/observability/dbinsights	method	Observer.ObserveDB	func (Observer) ObserveDBfunc(ctx context.Context, operation, driver, query string, rows int, duration time.Duration, err error)
+symbol	github.com/birdordev/plumego/x/observability/dbinsights	method	SlowQueryDB.ExecContext	func (SlowQueryDB) ExecContextfunc(ctx context.Context, query string, args ...any) (sql.Result, error)
+symbol	github.com/birdordev/plumego/x/observability/dbinsights	method	SlowQueryDB.GetDetector	func (SlowQueryDB) GetDetectorfunc() *Detector
+symbol	github.com/birdordev/plumego/x/observability/dbinsights	method	SlowQueryDB.QueryContext	func (SlowQueryDB) QueryContextfunc(ctx context.Context, query string, args ...any) (*sql.Rows, error)
+symbol	github.com/birdordev/plumego/x/observability/dbinsights	method	SlowQueryDB.QueryRowContext	func (SlowQueryDB) QueryRowContextfunc(ctx context.Context, query string, args ...any) *sql.Row
+symbol	github.com/birdordev/plumego/x/observability/dbinsights	type	AggregatingObserver	type AggregatingObserver struct { }
+symbol	github.com/birdordev/plumego/x/observability/dbinsights	type	Aggregator	type Aggregator struct { }
+symbol	github.com/birdordev/plumego/x/observability/dbinsights	type	Detector	type Detector struct { }
+symbol	github.com/birdordev/plumego/x/observability/dbinsights	type	DetectorOption	type DetectorOption func(*Detector)
+symbol	github.com/birdordev/plumego/x/observability/dbinsights	type	InstrumentedDB	type InstrumentedDB struct { }
+symbol	github.com/birdordev/plumego/x/observability/dbinsights	type	MetricsObserver	type MetricsObserver interface { ObserveDB(ctx context.Context, operation, driver, query string, rows int, duration time.Duration, err error) }
+symbol	github.com/birdordev/plumego/x/observability/dbinsights	type	Observer	type Observer struct { }
+symbol	github.com/birdordev/plumego/x/observability/dbinsights	type	QueryStats	type QueryStats struct { TotalQueries int64 `json:"total_queries"` SuccessQueries int64 `json:"success_queries"` FailedQueries int64 `json:"failed_queries"` TotalDuration time.Duration `json:"total_duration"` MinDuration time.Duration `json:"min_duration"` MaxDuration time.Duration `json:"max_duration"` AvgDuration time.Duration `json:"avg_duration"` SelectQueries int64 `json:"select_queries"` InsertQueries int64 `json:"insert_queries"` UpdateQueries int64 `json:"update_queries"` DeleteQueries int64 `json:"delete_queries"` SlowQueries int64 `json:"slow_queries"` SlowQueryThresh time.Duration `json:"slow_query_threshold"` LastUpdate time.Time `json:"last_update"` }
+symbol	github.com/birdordev/plumego/x/observability/dbinsights	type	SlowQuery	type SlowQuery struct { Query string `json:"query"` Operation string `json:"operation"` Duration time.Duration `json:"duration"` Error error `json:"error,omitempty"` Timestamp time.Time `json:"timestamp"` Driver string `json:"driver"` }
+symbol	github.com/birdordev/plumego/x/observability/dbinsights	type	SlowQueryDB	type SlowQueryDB struct { *InstrumentedDB }
+symbol	github.com/birdordev/plumego/x/observability/dbinsights	type	TableStat	type TableStat struct { Table string `json:"table"` SlowQueries int64 `json:"slow_queries"` AvgDuration time.Duration `json:"avg_duration"` TotalQueries int64 `json:"total_queries"` }
+symbol	github.com/birdordev/plumego/x/observability/featuremetrics	func	DBRecord	func DBRecordfunc(operation, driver, query string, rows int, duration time.Duration, err error) metrics.MetricRecord
+symbol	github.com/birdordev/plumego/x/observability/featuremetrics	func	ExtractTableName	func ExtractTableNamefunc(query string) string
+symbol	github.com/birdordev/plumego/x/observability/featuremetrics	func	IPCRecord	func IPCRecordfunc(operation, addr, transport string, bytes int, duration time.Duration, err error) metrics.MetricRecord
+symbol	github.com/birdordev/plumego/x/observability/featuremetrics	func	KVRecord	func KVRecordfunc(operation, key string, duration time.Duration, err error, hit bool) metrics.MetricRecord
+symbol	github.com/birdordev/plumego/x/observability/featuremetrics	func	MQRecord	func MQRecordfunc(operation, topic string, duration time.Duration, err error, panicked bool) metrics.MetricRecord
+symbol	github.com/birdordev/plumego/x/observability/featuremetrics	func	ObserveDB	func ObserveDBfunc(recorder metrics.Recorder, ctx context.Context, operation, driver, query string, rows int, duration time.Duration, err error)
+symbol	github.com/birdordev/plumego/x/observability/featuremetrics	func	ObserveIPC	func ObserveIPCfunc(recorder metrics.Recorder, ctx context.Context, operation, addr, transport string, bytes int, duration time.Duration, err error)
+symbol	github.com/birdordev/plumego/x/observability/featuremetrics	func	ObserveKV	func ObserveKVfunc(recorder metrics.Recorder, ctx context.Context, operation, key string, duration time.Duration, err error, hit bool)
+symbol	github.com/birdordev/plumego/x/observability/featuremetrics	func	ObserveMQ	func ObserveMQfunc(recorder metrics.Recorder, ctx context.Context, operation, topic string, duration time.Duration, err error, panicked bool)
+symbol	github.com/birdordev/plumego/x/observability/featuremetrics	func	ObservePubSub	func ObservePubSubfunc(recorder metrics.Recorder, ctx context.Context, operation, topic string, duration time.Duration, err error)
+symbol	github.com/birdordev/plumego/x/observability/featuremetrics	func	PubSubRecord	func PubSubRecordfunc(operation, topic string, duration time.Duration, err error) metrics.MetricRecord
+symbol	github.com/birdordev/plumego/x/observability/recordbuffer	func	NewCollector	func NewCollectorfunc() *Collector
+symbol	github.com/birdordev/plumego/x/observability/recordbuffer	method	Collector.Clear	func (Collector) Clearfunc()
+symbol	github.com/birdordev/plumego/x/observability/recordbuffer	method	Collector.GetRecords	func (Collector) GetRecordsfunc() []metrics.MetricRecord
+symbol	github.com/birdordev/plumego/x/observability/recordbuffer	method	Collector.GetStats	func (Collector) GetStatsfunc() metrics.CollectorStats
+symbol	github.com/birdordev/plumego/x/observability/recordbuffer	method	Collector.ObserveHTTP	func (Collector) ObserveHTTPfunc(ctx context.Context, method, path string, status, bytes int, duration time.Duration)
+symbol	github.com/birdordev/plumego/x/observability/recordbuffer	method	Collector.Record	func (Collector) Recordfunc(ctx context.Context, record metrics.MetricRecord)
+symbol	github.com/birdordev/plumego/x/observability/recordbuffer	method	Collector.WithMaxRecords	func (Collector) WithMaxRecordsfunc(max int) *Collector
+symbol	github.com/birdordev/plumego/x/observability/recordbuffer	type	Collector	type Collector struct { }
+symbol	github.com/birdordev/plumego/x/observability/testlog	const	DEBUG	const DEBUG = plog.DEBUG
+symbol	github.com/birdordev/plumego/x/observability/testlog	const	ERROR	const ERROR = plog.ERROR
+symbol	github.com/birdordev/plumego/x/observability/testlog	const	FATAL	const FATAL = plog.FATAL
+symbol	github.com/birdordev/plumego/x/observability/testlog	const	INFO	const INFO = plog.INFO
+symbol	github.com/birdordev/plumego/x/observability/testlog	const	WARNING	const WARNING = plog.WARNING
+symbol	github.com/birdordev/plumego/x/observability/testlog	func	New	func Newfunc() *Logger
+symbol	github.com/birdordev/plumego/x/observability/testlog	method	Logger.Clear	func (Logger) Clearfunc()
+symbol	github.com/birdordev/plumego/x/observability/testlog	method	Logger.Count	func (Logger) Countfunc() int
+symbol	github.com/birdordev/plumego/x/observability/testlog	method	Logger.CountByLevel	func (Logger) CountByLevelfunc(level Level) int
+symbol	github.com/birdordev/plumego/x/observability/testlog	method	Logger.Debug	func (Logger) Debugfunc(msg string, fields ...Fields)
+symbol	github.com/birdordev/plumego/x/observability/testlog	method	Logger.DebugCtx	func (Logger) DebugCtxfunc(ctx context.Context, msg string, fields ...Fields)
+symbol	github.com/birdordev/plumego/x/observability/testlog	method	Logger.Entries	func (Logger) Entriesfunc() []Entry
+symbol	github.com/birdordev/plumego/x/observability/testlog	method	Logger.Error	func (Logger) Errorfunc(msg string, fields ...Fields)
+symbol	github.com/birdordev/plumego/x/observability/testlog	method	Logger.ErrorCtx	func (Logger) ErrorCtxfunc(ctx context.Context, msg string, fields ...Fields)
+symbol	github.com/birdordev/plumego/x/observability/testlog	method	Logger.Fatal	func (Logger) Fatalfunc(msg string, fields ...Fields)
+symbol	github.com/birdordev/plumego/x/observability/testlog	method	Logger.FatalCtx	func (Logger) FatalCtxfunc(ctx context.Context, msg string, fields ...Fields)
+symbol	github.com/birdordev/plumego/x/observability/testlog	method	Logger.HasEntry	func (Logger) HasEntryfunc(level Level, substr string) bool
+symbol	github.com/birdordev/plumego/x/observability/testlog	method	Logger.Info	func (Logger) Infofunc(msg string, fields ...Fields)
+symbol	github.com/birdordev/plumego/x/observability/testlog	method	Logger.InfoCtx	func (Logger) InfoCtxfunc(ctx context.Context, msg string, fields ...Fields)
+symbol	github.com/birdordev/plumego/x/observability/testlog	method	Logger.LastEntry	func (Logger) LastEntryfunc() (Entry, bool)
+symbol	github.com/birdordev/plumego/x/observability/testlog	method	Logger.Warn	func (Logger) Warnfunc(msg string, fields ...Fields)
+symbol	github.com/birdordev/plumego/x/observability/testlog	method	Logger.WarnCtx	func (Logger) WarnCtxfunc(ctx context.Context, msg string, fields ...Fields)
+symbol	github.com/birdordev/plumego/x/observability/testlog	method	Logger.With	func (Logger) Withfunc(key string, value any) plog.StructuredLogger
+symbol	github.com/birdordev/plumego/x/observability/testlog	method	Logger.WithFields	func (Logger) WithFieldsfunc(fields Fields) plog.StructuredLogger
+symbol	github.com/birdordev/plumego/x/observability/testlog	type	Entry	type Entry struct { Level Level Message string Fields Fields Time time.Time }
+symbol	github.com/birdordev/plumego/x/observability/testlog	type	Fields	type Fields = plog.Fields
+symbol	github.com/birdordev/plumego/x/observability/testlog	type	Level	type Level = plog.Level
+symbol	github.com/birdordev/plumego/x/observability/testlog	type	Logger	type Logger struct { FatalHook func(msg string) }
+symbol	github.com/birdordev/plumego/x/observability/testmetrics	func	NewMockCollector	func NewMockCollectorfunc() *MockCollector
+symbol	github.com/birdordev/plumego/x/observability/testmetrics	method	MockCollector.Clear	func (MockCollector) Clearfunc()
+symbol	github.com/birdordev/plumego/x/observability/testmetrics	method	MockCollector.DBCallCount	func (MockCollector) DBCallCountfunc() int
+symbol	github.com/birdordev/plumego/x/observability/testmetrics	method	MockCollector.GetDBCalls	func (MockCollector) GetDBCallsfunc() []DBCall
+symbol	github.com/birdordev/plumego/x/observability/testmetrics	method	MockCollector.GetHTTPCalls	func (MockCollector) GetHTTPCallsfunc() []HTTPCall
+symbol	github.com/birdordev/plumego/x/observability/testmetrics	method	MockCollector.GetIPCCalls	func (MockCollector) GetIPCCallsfunc() []IPCCall
+symbol	github.com/birdordev/plumego/x/observability/testmetrics	method	MockCollector.GetKVCalls	func (MockCollector) GetKVCallsfunc() []KVCall
+symbol	github.com/birdordev/plumego/x/observability/testmetrics	method	MockCollector.GetLastDBCall	func (MockCollector) GetLastDBCallfunc() *DBCall
+symbol	github.com/birdordev/plumego/x/observability/testmetrics	method	MockCollector.GetLastHTTPCall	func (MockCollector) GetLastHTTPCallfunc() *HTTPCall
+symbol	github.com/birdordev/plumego/x/observability/testmetrics	method	MockCollector.GetMQCalls	func (MockCollector) GetMQCallsfunc() []MQCall
+symbol	github.com/birdordev/plumego/x/observability/testmetrics	method	MockCollector.GetPubSubCalls	func (MockCollector) GetPubSubCallsfunc() []PubSubCall
+symbol	github.com/birdordev/plumego/x/observability/testmetrics	method	MockCollector.GetRecords	func (MockCollector) GetRecordsfunc() []MetricRecord
+symbol	github.com/birdordev/plumego/x/observability/testmetrics	method	MockCollector.GetStats	func (MockCollector) GetStatsfunc() CollectorStats
+symbol	github.com/birdordev/plumego/x/observability/testmetrics	method	MockCollector.HTTPCallCount	func (MockCollector) HTTPCallCountfunc() int
+symbol	github.com/birdordev/plumego/x/observability/testmetrics	method	MockCollector.IPCCallCount	func (MockCollector) IPCCallCountfunc() int
+symbol	github.com/birdordev/plumego/x/observability/testmetrics	method	MockCollector.KVCallCount	func (MockCollector) KVCallCountfunc() int
+symbol	github.com/birdordev/plumego/x/observability/testmetrics	method	MockCollector.MQCallCount	func (MockCollector) MQCallCountfunc() int
+symbol	github.com/birdordev/plumego/x/observability/testmetrics	method	MockCollector.ObserveDB	func (MockCollector) ObserveDBfunc(ctx context.Context, operation, driver, query string, rows int, duration time.Duration, err error)
+symbol	github.com/birdordev/plumego/x/observability/testmetrics	method	MockCollector.ObserveHTTP	func (MockCollector) ObserveHTTPfunc(ctx context.Context, method, path string, status, bytes int, duration time.Duration)
+symbol	github.com/birdordev/plumego/x/observability/testmetrics	method	MockCollector.ObserveIPC	func (MockCollector) ObserveIPCfunc(ctx context.Context, operation, addr, transport string, bytes int, duration time.Duration, err error)
+symbol	github.com/birdordev/plumego/x/observability/testmetrics	method	MockCollector.ObserveKV	func (MockCollector) ObserveKVfunc(ctx context.Context, operation, key string, duration time.Duration, err error, hit bool)
+symbol	github.com/birdordev/plumego/x/observability/testmetrics	method	MockCollector.ObserveMQ	func (MockCollector) ObserveMQfunc(ctx context.Context, operation, topic string, duration time.Duration, err error, panicked bool)
+symbol	github.com/birdordev/plumego/x/observability/testmetrics	method	MockCollector.ObservePubSub	func (MockCollector) ObservePubSubfunc(ctx context.Context, operation, topic string, duration time.Duration, err error)
+symbol	github.com/birdordev/plumego/x/observability/testmetrics	method	MockCollector.PubSubCallCount	func (MockCollector) PubSubCallCountfunc() int
+symbol	github.com/birdordev/plumego/x/observability/testmetrics	method	MockCollector.Record	func (MockCollector) Recordfunc(ctx context.Context, record MetricRecord)
+symbol	github.com/birdordev/plumego/x/observability/testmetrics	method	MockCollector.RecordCallCount	func (MockCollector) RecordCallCountfunc() int
+symbol	github.com/birdordev/plumego/x/observability/testmetrics	type	AggregateCollector	type AggregateCollector = metrics.AggregateCollector
+symbol	github.com/birdordev/plumego/x/observability/testmetrics	type	CollectorStats	type CollectorStats = metrics.CollectorStats
+symbol	github.com/birdordev/plumego/x/observability/testmetrics	type	DBCall	type DBCall struct { Operation string Driver string Query string Rows int Duration time.Duration Err error }
+symbol	github.com/birdordev/plumego/x/observability/testmetrics	type	HTTPCall	type HTTPCall struct { Method string Path string Status int Bytes int Duration time.Duration }
+symbol	github.com/birdordev/plumego/x/observability/testmetrics	type	IPCCall	type IPCCall struct { Operation string Addr string Transport string Bytes int Duration time.Duration Err error }
+symbol	github.com/birdordev/plumego/x/observability/testmetrics	type	KVCall	type KVCall struct { Operation string Key string Duration time.Duration Err error Hit bool }
+symbol	github.com/birdordev/plumego/x/observability/testmetrics	type	MQCall	type MQCall struct { Operation string Topic string Duration time.Duration Err error Panicked bool }
+symbol	github.com/birdordev/plumego/x/observability/testmetrics	type	MetricRecord	type MetricRecord = metrics.MetricRecord
+symbol	github.com/birdordev/plumego/x/observability/testmetrics	type	MockCollector	type MockCollector struct { NoopCollector OnRecord func(ctx context.Context, record MetricRecord) OnObserveHTTP func(ctx context.Context, method, path string, status, bytes int, duration time.Duration) OnObserveDB func(ctx context.Context, operation, driver, query string, rows int, duration time.Duration, err error) OnObserveKV func(ctx context.Context, operation, key string, duration time.Duration, err error, hit bool) OnObserveIPC func(ctx context.Context, operation, addr, transport string, bytes int, duration time.Duration, err error) OnObserveMQ func(ctx context.Context, operation, topic string, duration time.Duration, err error, panicked bool) OnObservePubSub func(ctx context.Context, operation, topic string, duration time.Duration, err error) OnGetStats func() CollectorStats OnClear func() }
+symbol	github.com/birdordev/plumego/x/observability/testmetrics	type	NoopCollector	type NoopCollector = metrics.NoopCollector
+symbol	github.com/birdordev/plumego/x/observability/testmetrics	type	PubSubCall	type PubSubCall struct { Operation string Topic string Duration time.Duration Err error }
+symbol	github.com/birdordev/plumego/x/observability/tracer	const	SpanIDLength	const SpanIDLength = 16
+symbol	github.com/birdordev/plumego/x/observability/tracer	const	SpanKindClient	const SpanKindClient SpanKind = "client"
+symbol	github.com/birdordev/plumego/x/observability/tracer	const	SpanKindConsumer	const SpanKindConsumer SpanKind = "consumer"
+symbol	github.com/birdordev/plumego/x/observability/tracer	const	SpanKindInternal	const SpanKindInternal SpanKind = "internal"
+symbol	github.com/birdordev/plumego/x/observability/tracer	const	SpanKindProducer	const SpanKindProducer SpanKind = "producer"
+symbol	github.com/birdordev/plumego/x/observability/tracer	const	SpanKindServer	const SpanKindServer SpanKind = "server"
+symbol	github.com/birdordev/plumego/x/observability/tracer	const	StatusCodeError	const StatusCodeError StatusCode = 2
+symbol	github.com/birdordev/plumego/x/observability/tracer	const	StatusCodeOk	const StatusCodeOk StatusCode = 1
+symbol	github.com/birdordev/plumego/x/observability/tracer	const	StatusCodeUnset	const StatusCodeUnset StatusCode = 0
+symbol	github.com/birdordev/plumego/x/observability/tracer	const	TraceIDLength	const TraceIDLength = 32
+symbol	github.com/birdordev/plumego/x/observability/tracer	func	DefaultTracerConfig	func DefaultTracerConfigfunc() TracerConfig
+symbol	github.com/birdordev/plumego/x/observability/tracer	func	NewProbabilitySampler	func NewProbabilitySamplerfunc(probability float64) *ProbabilitySampler
+symbol	github.com/birdordev/plumego/x/observability/tracer	func	NewRandomIDGenerator	func NewRandomIDGeneratorfunc() *RandomIDGenerator
+symbol	github.com/birdordev/plumego/x/observability/tracer	func	NewSimpleTraceCollector	func NewSimpleTraceCollectorfunc() *SimpleTraceCollector
+symbol	github.com/birdordev/plumego/x/observability/tracer	func	NewTracer	func NewTracerfunc(config TracerConfig) *Tracer
+symbol	github.com/birdordev/plumego/x/observability/tracer	func	WithErrorAttributes	func WithErrorAttributesfunc(attrs map[string]any) ErrorOption
+symbol	github.com/birdordev/plumego/x/observability/tracer	func	WithEventAttributes	func WithEventAttributesfunc(attrs map[string]any) EventOption
+symbol	github.com/birdordev/plumego/x/observability/tracer	func	WithSpanAttributes	func WithSpanAttributesfunc(attrs map[string]any) SpanOption
+symbol	github.com/birdordev/plumego/x/observability/tracer	func	WithSpanKind	func WithSpanKindfunc(kind SpanKind) TraceOption
+symbol	github.com/birdordev/plumego/x/observability/tracer	func	WithSpanStatus	func WithSpanStatusfunc(status SpanStatus) SpanOption
+symbol	github.com/birdordev/plumego/x/observability/tracer	func	WithTraceAttributes	func WithTraceAttributesfunc(attrs map[string]any) TraceOption
+symbol	github.com/birdordev/plumego/x/observability/tracer	method	ProbabilitySampler.ShouldSample	func (ProbabilitySampler) ShouldSamplefunc(traceID TraceID) bool
+symbol	github.com/birdordev/plumego/x/observability/tracer	method	RandomIDGenerator.GenerateSpanID	func (RandomIDGenerator) GenerateSpanIDfunc() SpanID
+symbol	github.com/birdordev/plumego/x/observability/tracer	method	RandomIDGenerator.GenerateTraceID	func (RandomIDGenerator) GenerateTraceIDfunc() TraceID
+symbol	github.com/birdordev/plumego/x/observability/tracer	method	SimpleTraceCollector.Collect	func (SimpleTraceCollector) Collectfunc(trace *Trace)
+symbol	github.com/birdordev/plumego/x/observability/tracer	method	SimpleTraceCollector.GetTrace	func (SimpleTraceCollector) GetTracefunc(traceID TraceID) (*Trace, bool)
+symbol	github.com/birdordev/plumego/x/observability/tracer	method	SimpleTraceCollector.GetTraces	func (SimpleTraceCollector) GetTracesfunc(filter TraceFilter) []*Trace
+symbol	github.com/birdordev/plumego/x/observability/tracer	method	SimpleTraceCollector.SetMaxAge	func (SimpleTraceCollector) SetMaxAgefunc(maxAge time.Duration)
+symbol	github.com/birdordev/plumego/x/observability/tracer	method	Span.Clone	func (Span) Clonefunc() *Span
+symbol	github.com/birdordev/plumego/x/observability/tracer	method	SpanEvent.Clone	func (SpanEvent) Clonefunc() SpanEvent
+symbol	github.com/birdordev/plumego/x/observability/tracer	method	SpanLink.Clone	func (SpanLink) Clonefunc() SpanLink
+symbol	github.com/birdordev/plumego/x/observability/tracer	method	Trace.Clone	func (Trace) Clonefunc() *Trace
+symbol	github.com/birdordev/plumego/x/observability/tracer	method	TraceLink.Clone	func (TraceLink) Clonefunc() TraceLink
+symbol	github.com/birdordev/plumego/x/observability/tracer	method	Tracer.EndSpan	func (Tracer) EndSpanfunc(span *Span, options ...SpanOption)
+symbol	github.com/birdordev/plumego/x/observability/tracer	method	Tracer.GetActiveSpan	func (Tracer) GetActiveSpanfunc(ctx context.Context) *Span
+symbol	github.com/birdordev/plumego/x/observability/tracer	method	Tracer.GetTraceStatistics	func (Tracer) GetTraceStatisticsfunc() TraceStatistics
+symbol	github.com/birdordev/plumego/x/observability/tracer	method	Tracer.RecordError	func (Tracer) RecordErrorfunc(span *Span, err error, options ...ErrorOption)
+symbol	github.com/birdordev/plumego/x/observability/tracer	method	Tracer.RecordSpanEvent	func (Tracer) RecordSpanEventfunc(span *Span, name string, options ...EventOption)
+symbol	github.com/birdordev/plumego/x/observability/tracer	method	Tracer.StartChildSpan	func (Tracer) StartChildSpanfunc(ctx context.Context, parentSpan *Span, name string, options ...TraceOption) (context.Context, *Span)
+symbol	github.com/birdordev/plumego/x/observability/tracer	method	Tracer.StartTrace	func (Tracer) StartTracefunc(ctx context.Context, name string, options ...TraceOption) (context.Context, *Span)
+symbol	github.com/birdordev/plumego/x/observability/tracer	type	ErrorOption	type ErrorOption func(attrs map[string]any)
+symbol	github.com/birdordev/plumego/x/observability/tracer	type	EventOption	type EventOption func(event *SpanEvent)
+symbol	github.com/birdordev/plumego/x/observability/tracer	type	IDGenerator	type IDGenerator interface { GenerateTraceID() TraceID GenerateSpanID() SpanID }
+symbol	github.com/birdordev/plumego/x/observability/tracer	type	ProbabilitySampler	type ProbabilitySampler struct { }
+symbol	github.com/birdordev/plumego/x/observability/tracer	type	RandomIDGenerator	type RandomIDGenerator struct{}
+symbol	github.com/birdordev/plumego/x/observability/tracer	type	Sampler	type Sampler interface { ShouldSample(traceID TraceID) bool }
+symbol	github.com/birdordev/plumego/x/observability/tracer	type	SimpleTraceCollector	type SimpleTraceCollector struct { }
+symbol	github.com/birdordev/plumego/x/observability/tracer	type	Span	type Span struct { ID SpanID `json:"span_id"` ParentSpanID *SpanID `json:"parent_span_id,omitempty"` TraceID TraceID `json:"trace_id"` Name string `json:"name"` Kind SpanKind `json:"kind"` StartTime time.Time `json:"start_time"` EndTime *time.Time `json:"end_time,omitempty"` Duration time.Duration `json:"duration,omitempty"` Status SpanStatus `json:"status"` Attributes map[string]any `json:"attributes"` Events []SpanEvent `json:"events,omitempty"` Links []SpanLink `json:"links,omitempty"` }
+symbol	github.com/birdordev/plumego/x/observability/tracer	type	SpanEvent	type SpanEvent struct { Name string `json:"name"` Timestamp time.Time `json:"timestamp"` Attributes map[string]any `json:"attributes,omitempty"` }
+symbol	github.com/birdordev/plumego/x/observability/tracer	type	SpanID	type SpanID string
+symbol	github.com/birdordev/plumego/x/observability/tracer	type	SpanKind	type SpanKind string
+symbol	github.com/birdordev/plumego/x/observability/tracer	type	SpanLink	type SpanLink struct { TraceID TraceID `json:"trace_id"` SpanID SpanID `json:"span_id"` Attributes map[string]any `json:"attributes,omitempty"` }
+symbol	github.com/birdordev/plumego/x/observability/tracer	type	SpanOption	type SpanOption func(span *Span)
+symbol	github.com/birdordev/plumego/x/observability/tracer	type	SpanStatus	type SpanStatus struct { Code StatusCode `json:"code"` Description string `json:"description,omitempty"` }
+symbol	github.com/birdordev/plumego/x/observability/tracer	type	StatusCode	type StatusCode int32
+symbol	github.com/birdordev/plumego/x/observability/tracer	type	Trace	type Trace struct { ID TraceID `json:"trace_id"` RootSpanID SpanID `json:"root_span_id"` StartTime time.Time `json:"start_time"` EndTime *time.Time `json:"end_time,omitempty"` Spans []*Span `json:"spans"` Attributes map[string]any `json:"attributes"` Links []TraceLink `json:"links,omitempty"` }
+symbol	github.com/birdordev/plumego/x/observability/tracer	type	TraceCollector	type TraceCollector interface { Collect(trace *Trace) GetTrace(traceID TraceID) (*Trace, bool) GetTraces(filter TraceFilter) []*Trace }
+symbol	github.com/birdordev/plumego/x/observability/tracer	type	TraceFilter	type TraceFilter func(trace *Trace) bool
+symbol	github.com/birdordev/plumego/x/observability/tracer	type	TraceID	type TraceID string
+symbol	github.com/birdordev/plumego/x/observability/tracer	type	TraceLink	type TraceLink struct { TraceID TraceID `json:"trace_id"` Attributes map[string]any `json:"attributes,omitempty"` }
+symbol	github.com/birdordev/plumego/x/observability/tracer	type	TraceOption	type TraceOption func(trace *Trace, span *Span)
+symbol	github.com/birdordev/plumego/x/observability/tracer	type	TraceStatistics	type TraceStatistics struct { TotalTraces int64 `json:"total_traces"` ActiveTraces int64 `json:"active_traces"` CompletedTraces int64 `json:"completed_traces"` ByStatus map[StatusCode]int64 `json:"by_status"` AverageDuration time.Duration `json:"average_duration"` TotalSpans int64 `json:"total_spans"` LastTraceTime time.Time `json:"last_trace_time"` }
+symbol	github.com/birdordev/plumego/x/observability/tracer	type	Tracer	type Tracer struct { }
+symbol	github.com/birdordev/plumego/x/observability/tracer	type	TracerConfig	type TracerConfig struct { ServiceName string ServiceVersion string Environment string SamplingRate float64 MaxSpansPerTrace int MaxTraceAge time.Duration }
+symbol	github.com/birdordev/plumego/x/observability/windowmetrics	func	NewAggregator	func NewAggregatorfunc(window time.Duration) *Aggregator
+symbol	github.com/birdordev/plumego/x/observability/windowmetrics	method	Aggregator.Clear	func (Aggregator) Clearfunc()
+symbol	github.com/birdordev/plumego/x/observability/windowmetrics	method	Aggregator.GetAllStats	func (Aggregator) GetAllStatsfunc() map[string]AggregatorStats
+symbol	github.com/birdordev/plumego/x/observability/windowmetrics	method	Aggregator.GetStats	func (Aggregator) GetStatsfunc(name string) AggregatorStats
+symbol	github.com/birdordev/plumego/x/observability/windowmetrics	method	Aggregator.Record	func (Aggregator) Recordfunc(name string, value float64)
+symbol	github.com/birdordev/plumego/x/observability/windowmetrics	type	Aggregator	type Aggregator struct { }
+symbol	github.com/birdordev/plumego/x/observability/windowmetrics	type	AggregatorStats	type AggregatorStats struct { Count int64 `json:"count"` Sum float64 `json:"sum"` Mean float64 `json:"mean"` Min float64 `json:"min"` Max float64 `json:"max"` P50 float64 `json:"p50"` P95 float64 `json:"p95"` P99 float64 `json:"p99"` }

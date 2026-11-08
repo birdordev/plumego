@@ -5,7 +5,7 @@ Injects a strict set of HTTP security headers into every response.
 ## Import
 
 ```go
-import "github.com/spcent/plumego/middleware/securityheaders"
+import "github.com/birdordev/plumego/middleware/securityheaders"
 ```
 
 ## Overview

@@ -1,176 +1,176 @@
 # plumego extension api snapshot v1
-module	github.com/spcent/plumego
+module	github.com/birdordev/plumego
 pattern	./x/messaging
-symbol	github.com/spcent/plumego/x/messaging	const	ChannelDegraded	const ChannelDegraded ChannelState = "degraded"
-symbol	github.com/spcent/plumego/x/messaging	const	ChannelEmail	const ChannelEmail Channel = "email"
-symbol	github.com/spcent/plumego/x/messaging	const	ChannelHealthy	const ChannelHealthy ChannelState = "healthy"
-symbol	github.com/spcent/plumego/x/messaging	const	ChannelSMS	const ChannelSMS Channel = "sms"
-symbol	github.com/spcent/plumego/x/messaging	const	ChannelUnhealthy	const ChannelUnhealthy ChannelState = "unhealthy"
-symbol	github.com/spcent/plumego/x/messaging	const	CodeDuplicateMessage	const CodeDuplicateMessage = "DUPLICATE_MESSAGE"
-symbol	github.com/spcent/plumego/x/messaging	const	CodeEmptyBatch	const CodeEmptyBatch = "EMPTY_BATCH"
-symbol	github.com/spcent/plumego/x/messaging	const	CodeProviderError	const CodeProviderError = "PROVIDER_ERROR"
-symbol	github.com/spcent/plumego/x/messaging	const	CodeQuotaExceeded	const CodeQuotaExceeded = "QUOTA_EXCEEDED"
-symbol	github.com/spcent/plumego/x/messaging	const	CodeSendError	const CodeSendError = "SEND_ERROR"
-symbol	github.com/spcent/plumego/x/messaging	const	CodeStatsError	const CodeStatsError = "STATS_ERROR"
-symbol	github.com/spcent/plumego/x/messaging	const	CodeTaskExpired	const CodeTaskExpired = "TASK_EXPIRED"
-symbol	github.com/spcent/plumego/x/messaging	const	LabelAttempt	const LabelAttempt = "attempt"
-symbol	github.com/spcent/plumego/x/messaging	const	LabelProvider	const LabelProvider = "provider"
-symbol	github.com/spcent/plumego/x/messaging	const	LabelQueue	const LabelQueue = "queue"
-symbol	github.com/spcent/plumego/x/messaging	const	LabelResult	const LabelResult = "result"
-symbol	github.com/spcent/plumego/x/messaging	const	LabelState	const LabelState = "state"
-symbol	github.com/spcent/plumego/x/messaging	const	LabelStatus	const LabelStatus = "status"
-symbol	github.com/spcent/plumego/x/messaging	const	LabelTenant	const LabelTenant = "tenant"
-symbol	github.com/spcent/plumego/x/messaging	const	MetricProviderResult	const MetricProviderResult = "sms_gateway_provider_result"
-symbol	github.com/spcent/plumego/x/messaging	const	MetricQueueDepth	const MetricQueueDepth = "sms_gateway_queue_depth"
-symbol	github.com/spcent/plumego/x/messaging	const	MetricReceiptDelay	const MetricReceiptDelay = "sms_gateway_receipt_delay"
-symbol	github.com/spcent/plumego/x/messaging	const	MetricRetry	const MetricRetry = "sms_gateway_retry"
-symbol	github.com/spcent/plumego/x/messaging	const	MetricSendLatency	const MetricSendLatency = "sms_gateway_send_latency"
-symbol	github.com/spcent/plumego/x/messaging	const	MetricStatus	const MetricStatus = "sms_gateway_status"
-symbol	github.com/spcent/plumego/x/messaging	const	PriorityCritical	const PriorityCritical Priority = 40
-symbol	github.com/spcent/plumego/x/messaging	const	PriorityHigh	const PriorityHigh Priority = 30
-symbol	github.com/spcent/plumego/x/messaging	const	PriorityLow	const PriorityLow Priority = 10
-symbol	github.com/spcent/plumego/x/messaging	const	PriorityNormal	const PriorityNormal Priority = 20
-symbol	github.com/spcent/plumego/x/messaging	func	New	func Newfunc(cfg Config) *Service
-symbol	github.com/spcent/plumego/x/messaging	func	NewChannelMonitor	func NewChannelMonitorfunc(sms SMSProvider, email EmailProvider, logger log.StructuredLogger) *ChannelMonitor
-symbol	github.com/spcent/plumego/x/messaging	func	NewFailoverEmailProvider	func NewFailoverEmailProviderfunc(providers ...EmailProvider) *FailoverEmailProvider
-symbol	github.com/spcent/plumego/x/messaging	func	NewFailoverSMSProvider	func NewFailoverSMSProviderfunc(providers ...SMSProvider) *FailoverSMSProvider
-symbol	github.com/spcent/plumego/x/messaging	func	NewHTTPEmailProvider	func NewHTTPEmailProviderfunc(cfg HTTPEmailProviderConfig) *HTTPEmailProvider
-symbol	github.com/spcent/plumego/x/messaging	func	NewHTTPSMSProvider	func NewHTTPSMSProviderfunc(cfg HTTPSMSProviderConfig) *HTTPSMSProvider
-symbol	github.com/spcent/plumego/x/messaging	func	NewInProcBroker	func NewInProcBrokerfunc(opts ...BrokerOption) *Broker
-symbol	github.com/spcent/plumego/x/messaging	func	NewLogEmailProvider	func NewLogEmailProviderfunc(logger log.StructuredLogger) *LogEmailProvider
-symbol	github.com/spcent/plumego/x/messaging	func	NewLogSMSProvider	func NewLogSMSProviderfunc(logger log.StructuredLogger) *LogSMSProvider
-symbol	github.com/spcent/plumego/x/messaging	func	NewMemReceiptStore	func NewMemReceiptStorefunc(maxSize int) *MemReceiptStore
-symbol	github.com/spcent/plumego/x/messaging	func	NewQuotaChecker	func NewQuotaCheckerfunc(mgr tenant.QuotaManager) *QuotaChecker
-symbol	github.com/spcent/plumego/x/messaging	func	NewRateLimitedEmailProvider	func NewRateLimitedEmailProviderfunc(inner EmailProvider, maxPerSecond int) *RateLimitedEmailProvider
-symbol	github.com/spcent/plumego/x/messaging	func	NewRateLimitedSMSProvider	func NewRateLimitedSMSProviderfunc(inner SMSProvider, maxPerSecond int) *RateLimitedSMSProvider
-symbol	github.com/spcent/plumego/x/messaging	func	NewRateLimiter	func NewRateLimiterfunc(maxPerInterval int, interval time.Duration) *RateLimiter
-symbol	github.com/spcent/plumego/x/messaging	func	NewSMSMetricsReporter	func NewSMSMetricsReporterfunc(recorder metrics.Recorder) *SMSMetricsReporter
-symbol	github.com/spcent/plumego/x/messaging	func	NewSMSPrometheusExporter	func NewSMSPrometheusExporterfunc(namespace string, source metricRecordSource) *SMSPrometheusExporter
-symbol	github.com/spcent/plumego/x/messaging	func	NewSMSPrometheusExporterE	func NewSMSPrometheusExporterEfunc(namespace string, source metricRecordSource) (*SMSPrometheusExporter, error)
-symbol	github.com/spcent/plumego/x/messaging	func	NewTemplateEngine	func NewTemplateEnginefunc() *TemplateEngine
-symbol	github.com/spcent/plumego/x/messaging	func	NewWebhookMemStore	func NewWebhookMemStorefunc() *WebhookMemStore
-symbol	github.com/spcent/plumego/x/messaging	func	NewWebhookNotifier	func NewWebhookNotifierfunc(bus *pubsub.InProcBroker, webhook *webhook.Service, logger log.StructuredLogger) *WebhookNotifier
-symbol	github.com/spcent/plumego/x/messaging	func	NewWebhookService	func NewWebhookServicefunc(store WebhookStore, cfg WebhookConfig) *WebhookService
-symbol	github.com/spcent/plumego/x/messaging	func	RegisterRoutes	func RegisterRoutesfunc(r *router.Router, svc *Service, prefix string) error
-symbol	github.com/spcent/plumego/x/messaging	func	VerifyGitHubWebhook	func VerifyGitHubWebhookfunc(r *http.Request, secret string, maxBody int64) ([]byte, error)
-symbol	github.com/spcent/plumego/x/messaging	func	VerifyStripeWebhook	func VerifyStripeWebhookfunc(r *http.Request, endpointSecret string, opt StripeVerifyOptions) ([]byte, error)
-symbol	github.com/spcent/plumego/x/messaging	func	VerifyWebhookHMAC	func VerifyWebhookHMACfunc(r *http.Request, cfg WebhookHMACConfig) (WebhookVerifyResult, error)
-symbol	github.com/spcent/plumego/x/messaging	method	ChannelMonitor.ChannelHealth	func (ChannelMonitor) ChannelHealthfunc(ch Channel) ChannelState
-symbol	github.com/spcent/plumego/x/messaging	method	ChannelMonitor.RecordFailure	func (ChannelMonitor) RecordFailurefunc(ch Channel, err error)
-symbol	github.com/spcent/plumego/x/messaging	method	ChannelMonitor.RecordSuccess	func (ChannelMonitor) RecordSuccessfunc(ch Channel, latency time.Duration)
-symbol	github.com/spcent/plumego/x/messaging	method	ChannelMonitor.RegisterJobs	func (ChannelMonitor) RegisterJobsfunc(sch *scheduler.Scheduler) error
-symbol	github.com/spcent/plumego/x/messaging	method	ChannelMonitor.Status	func (ChannelMonitor) Statusfunc() []ChannelStatus
-symbol	github.com/spcent/plumego/x/messaging	method	FailoverEmailProvider.Name	func (FailoverEmailProvider) Namefunc() string
-symbol	github.com/spcent/plumego/x/messaging	method	FailoverEmailProvider.Send	func (FailoverEmailProvider) Sendfunc(ctx context.Context, msg EmailMessage) (*EmailResult, error)
-symbol	github.com/spcent/plumego/x/messaging	method	FailoverSMSProvider.Name	func (FailoverSMSProvider) Namefunc() string
-symbol	github.com/spcent/plumego/x/messaging	method	FailoverSMSProvider.Send	func (FailoverSMSProvider) Sendfunc(ctx context.Context, msg SMSMessage) (*SMSResult, error)
-symbol	github.com/spcent/plumego/x/messaging	method	HTTPEmailProvider.Name	func (HTTPEmailProvider) Namefunc() string
-symbol	github.com/spcent/plumego/x/messaging	method	HTTPEmailProvider.Send	func (HTTPEmailProvider) Sendfunc(ctx context.Context, msg EmailMessage) (*EmailResult, error)
-symbol	github.com/spcent/plumego/x/messaging	method	HTTPSMSProvider.Name	func (HTTPSMSProvider) Namefunc() string
-symbol	github.com/spcent/plumego/x/messaging	method	HTTPSMSProvider.Send	func (HTTPSMSProvider) Sendfunc(ctx context.Context, msg SMSMessage) (*SMSResult, error)
-symbol	github.com/spcent/plumego/x/messaging	method	LogEmailProvider.Name	func (LogEmailProvider) Namefunc() string
-symbol	github.com/spcent/plumego/x/messaging	method	LogEmailProvider.Send	func (LogEmailProvider) Sendfunc(_ context.Context, msg EmailMessage) (*EmailResult, error)
-symbol	github.com/spcent/plumego/x/messaging	method	LogSMSProvider.Name	func (LogSMSProvider) Namefunc() string
-symbol	github.com/spcent/plumego/x/messaging	method	LogSMSProvider.Send	func (LogSMSProvider) Sendfunc(_ context.Context, msg SMSMessage) (*SMSResult, error)
-symbol	github.com/spcent/plumego/x/messaging	method	MemReceiptStore.Get	func (MemReceiptStore) Getfunc(id string) (Receipt, bool)
-symbol	github.com/spcent/plumego/x/messaging	method	MemReceiptStore.List	func (MemReceiptStore) Listfunc(f ReceiptFilter) []Receipt
-symbol	github.com/spcent/plumego/x/messaging	method	MemReceiptStore.Save	func (MemReceiptStore) Savefunc(r Receipt) error
-symbol	github.com/spcent/plumego/x/messaging	method	QuotaChecker.Allow	func (QuotaChecker) Allowfunc(ctx context.Context, tenantID string) error
-symbol	github.com/spcent/plumego/x/messaging	method	RateLimitedEmailProvider.Name	func (RateLimitedEmailProvider) Namefunc() string
-symbol	github.com/spcent/plumego/x/messaging	method	RateLimitedEmailProvider.Send	func (RateLimitedEmailProvider) Sendfunc(ctx context.Context, msg EmailMessage) (*EmailResult, error)
-symbol	github.com/spcent/plumego/x/messaging	method	RateLimitedSMSProvider.Name	func (RateLimitedSMSProvider) Namefunc() string
-symbol	github.com/spcent/plumego/x/messaging	method	RateLimitedSMSProvider.Send	func (RateLimitedSMSProvider) Sendfunc(ctx context.Context, msg SMSMessage) (*SMSResult, error)
-symbol	github.com/spcent/plumego/x/messaging	method	RateLimiter.Wait	func (RateLimiter) Waitfunc(ctx context.Context) error
-symbol	github.com/spcent/plumego/x/messaging	method	SMSMetricsReporter.RecordProviderResult	func (SMSMetricsReporter) RecordProviderResultfunc(ctx context.Context, tenantID, provider string, success bool)
-symbol	github.com/spcent/plumego/x/messaging	method	SMSMetricsReporter.RecordQueueDepth	func (SMSMetricsReporter) RecordQueueDepthfunc(ctx context.Context, queue string, stats SMSQueueStats)
-symbol	github.com/spcent/plumego/x/messaging	method	SMSMetricsReporter.RecordReceiptDelay	func (SMSMetricsReporter) RecordReceiptDelayfunc(ctx context.Context, tenantID, provider string, delay time.Duration)
-symbol	github.com/spcent/plumego/x/messaging	method	SMSMetricsReporter.RecordRetry	func (SMSMetricsReporter) RecordRetryfunc(ctx context.Context, tenantID, provider string, attempt int)
-symbol	github.com/spcent/plumego/x/messaging	method	SMSMetricsReporter.RecordSendLatency	func (SMSMetricsReporter) RecordSendLatencyfunc(ctx context.Context, tenantID, provider string, duration time.Duration, err error)
-symbol	github.com/spcent/plumego/x/messaging	method	SMSMetricsReporter.RecordStatus	func (SMSMetricsReporter) RecordStatusfunc(ctx context.Context, tenantID, status string)
-symbol	github.com/spcent/plumego/x/messaging	method	SMSPrometheusExporter.Handler	func (SMSPrometheusExporter) Handlerfunc() http.Handler
-symbol	github.com/spcent/plumego/x/messaging	method	Service.HandleBatchSend	func (Service) HandleBatchSendfunc(w http.ResponseWriter, r *http.Request)
-symbol	github.com/spcent/plumego/x/messaging	method	Service.HandleChannelHealth	func (Service) HandleChannelHealthfunc(w http.ResponseWriter, r *http.Request)
-symbol	github.com/spcent/plumego/x/messaging	method	Service.HandleGetReceipt	func (Service) HandleGetReceiptfunc(w http.ResponseWriter, r *http.Request)
-symbol	github.com/spcent/plumego/x/messaging	method	Service.HandleListReceipts	func (Service) HandleListReceiptsfunc(w http.ResponseWriter, r *http.Request)
-symbol	github.com/spcent/plumego/x/messaging	method	Service.HandleSend	func (Service) HandleSendfunc(w http.ResponseWriter, r *http.Request)
-symbol	github.com/spcent/plumego/x/messaging	method	Service.HandleStats	func (Service) HandleStatsfunc(w http.ResponseWriter, r *http.Request)
-symbol	github.com/spcent/plumego/x/messaging	method	Service.Monitor	func (Service) Monitorfunc() *ChannelMonitor
-symbol	github.com/spcent/plumego/x/messaging	method	Service.Receipts	func (Service) Receiptsfunc() ReceiptStore
-symbol	github.com/spcent/plumego/x/messaging	method	Service.Send	func (Service) Sendfunc(ctx context.Context, req SendRequest) error
-symbol	github.com/spcent/plumego/x/messaging	method	Service.SendBatch	func (Service) SendBatchfunc(ctx context.Context, batch BatchRequest) BatchResult
-symbol	github.com/spcent/plumego/x/messaging	method	Service.Start	func (Service) Startfunc(ctx context.Context) error
-symbol	github.com/spcent/plumego/x/messaging	method	Service.Stats	func (Service) Statsfunc(ctx context.Context) (ServiceStats, error)
-symbol	github.com/spcent/plumego/x/messaging	method	Service.Stop	func (Service) Stopfunc(ctx context.Context) error
-symbol	github.com/spcent/plumego/x/messaging	method	Service.Templates	func (Service) Templatesfunc() *TemplateEngine
-symbol	github.com/spcent/plumego/x/messaging	method	TemplateEngine.Has	func (TemplateEngine) Hasfunc(id string) bool
-symbol	github.com/spcent/plumego/x/messaging	method	TemplateEngine.Register	func (TemplateEngine) Registerfunc(id, body string)
-symbol	github.com/spcent/plumego/x/messaging	method	TemplateEngine.Render	func (TemplateEngine) Renderfunc(id string, params map[string]string) (string, error)
-symbol	github.com/spcent/plumego/x/messaging	method	WebhookNotifier.Start	func (WebhookNotifier) Startfunc(ctx context.Context) error
-symbol	github.com/spcent/plumego/x/messaging	method	WebhookNotifier.Stop	func (WebhookNotifier) Stopfunc()
-symbol	github.com/spcent/plumego/x/messaging	type	BatchRequest	type BatchRequest struct { Requests []SendRequest `json:"requests"` }
-symbol	github.com/spcent/plumego/x/messaging	type	BatchResult	type BatchResult struct { Total int `json:"total"` Accepted int `json:"accepted"` Rejected int `json:"rejected"` Errors []string `json:"errors,omitempty"` }
-symbol	github.com/spcent/plumego/x/messaging	type	Broker	type Broker = pubsub.InProcBroker
-symbol	github.com/spcent/plumego/x/messaging	type	BrokerBackpressurePolicy	type BrokerBackpressurePolicy = pubsub.BackpressurePolicy
-symbol	github.com/spcent/plumego/x/messaging	type	BrokerConfig	type BrokerConfig = pubsub.Config
-symbol	github.com/spcent/plumego/x/messaging	type	BrokerMessage	type BrokerMessage = pubsub.Message
-symbol	github.com/spcent/plumego/x/messaging	type	BrokerOption	type BrokerOption = pubsub.Option
-symbol	github.com/spcent/plumego/x/messaging	type	BrokerSubOptions	type BrokerSubOptions = pubsub.SubOptions
-symbol	github.com/spcent/plumego/x/messaging	type	BrokerSubscription	type BrokerSubscription = pubsub.Subscription
-symbol	github.com/spcent/plumego/x/messaging	type	Channel	type Channel string
-symbol	github.com/spcent/plumego/x/messaging	type	ChannelMonitor	type ChannelMonitor struct { }
-symbol	github.com/spcent/plumego/x/messaging	type	ChannelState	type ChannelState string
-symbol	github.com/spcent/plumego/x/messaging	type	ChannelStatus	type ChannelStatus struct { Channel Channel `json:"channel"` Provider string `json:"provider"` State ChannelState `json:"state"` Latency string `json:"latency,omitempty"` LastChecked time.Time `json:"last_checked"` Error string `json:"error,omitempty"` }
-symbol	github.com/spcent/plumego/x/messaging	type	Config	type Config struct { TaskStore mq.TaskStore Scheduler *scheduler.Scheduler Bus *pubsub.InProcBroker SMS SMSProvider Email EmailProvider Logger log.StructuredLogger Receipts ReceiptStore Quota *QuotaChecker Metrics interface { mq.MetricsObserver metrics.Recorder } Webhook *webhook.Service WorkerConcurrency int WorkerMaxInflight int ConsumerID string }
-symbol	github.com/spcent/plumego/x/messaging	type	EmailMessage	type EmailMessage struct { To string Subject string Body string HTML bool }
-symbol	github.com/spcent/plumego/x/messaging	type	EmailProvider	type EmailProvider interface { Send(ctx context.Context, msg EmailMessage) (*EmailResult, error) Name() string }
-symbol	github.com/spcent/plumego/x/messaging	type	EmailResult	type EmailResult struct { MessageID string }
-symbol	github.com/spcent/plumego/x/messaging	type	FailoverEmailProvider	type FailoverEmailProvider struct { }
-symbol	github.com/spcent/plumego/x/messaging	type	FailoverSMSProvider	type FailoverSMSProvider struct { }
-symbol	github.com/spcent/plumego/x/messaging	type	GitHubVerifyOptions	type GitHubVerifyOptions = webhook.GitHubVerifyOptions
-symbol	github.com/spcent/plumego/x/messaging	type	HTTPEmailProvider	type HTTPEmailProvider struct { }
-symbol	github.com/spcent/plumego/x/messaging	type	HTTPEmailProviderConfig	type HTTPEmailProviderConfig struct { BaseURL string APIKey string Timeout time.Duration MaxRetries int }
-symbol	github.com/spcent/plumego/x/messaging	type	HTTPSMSProvider	type HTTPSMSProvider struct { }
-symbol	github.com/spcent/plumego/x/messaging	type	HTTPSMSProviderConfig	type HTTPSMSProviderConfig struct { BaseURL string APIKey string Timeout time.Duration MaxRetries int }
-symbol	github.com/spcent/plumego/x/messaging	type	LogEmailProvider	type LogEmailProvider struct { }
-symbol	github.com/spcent/plumego/x/messaging	type	LogSMSProvider	type LogSMSProvider struct { }
-symbol	github.com/spcent/plumego/x/messaging	type	MemReceiptStore	type MemReceiptStore struct { }
-symbol	github.com/spcent/plumego/x/messaging	type	Priority	type Priority int
-symbol	github.com/spcent/plumego/x/messaging	type	QuotaChecker	type QuotaChecker struct { }
-symbol	github.com/spcent/plumego/x/messaging	type	RateLimitedEmailProvider	type RateLimitedEmailProvider struct { }
-symbol	github.com/spcent/plumego/x/messaging	type	RateLimitedSMSProvider	type RateLimitedSMSProvider struct { }
-symbol	github.com/spcent/plumego/x/messaging	type	RateLimiter	type RateLimiter struct { }
-symbol	github.com/spcent/plumego/x/messaging	type	Receipt	type Receipt struct { ID string `json:"id"` Channel Channel `json:"channel"` To string `json:"to"` Status string `json:"status"` ProviderID string `json:"provider_id,omitempty"` Provider string `json:"provider,omitempty"` Error string `json:"error,omitempty"` Attempts int `json:"attempts"` TenantID string `json:"tenant_id,omitempty"` QueuedAt time.Time `json:"queued_at"` SentAt time.Time `json:"sent_at,omitempty"` UpdatedAt time.Time `json:"updated_at"` }
-symbol	github.com/spcent/plumego/x/messaging	type	ReceiptFilter	type ReceiptFilter struct { Channel Channel `json:"channel,omitempty"` Status string `json:"status,omitempty"` TenantID string `json:"tenant_id,omitempty"` Limit int `json:"limit,omitempty"` Offset int `json:"offset,omitempty"` }
-symbol	github.com/spcent/plumego/x/messaging	type	ReceiptStore	type ReceiptStore interface { Save(receipt Receipt) error Get(id string) (Receipt, bool) List(filter ReceiptFilter) []Receipt }
-symbol	github.com/spcent/plumego/x/messaging	type	SMSMessage	type SMSMessage struct { To string Body string }
-symbol	github.com/spcent/plumego/x/messaging	type	SMSMetricsReporter	type SMSMetricsReporter struct { Recorder metrics.Recorder Now func() time.Time }
-symbol	github.com/spcent/plumego/x/messaging	type	SMSPrometheusExporter	type SMSPrometheusExporter struct { }
-symbol	github.com/spcent/plumego/x/messaging	type	SMSProvider	type SMSProvider interface { Send(ctx context.Context, msg SMSMessage) (*SMSResult, error) Name() string }
-symbol	github.com/spcent/plumego/x/messaging	type	SMSQueueStats	type SMSQueueStats struct { Queued int64 Leased int64 Dead int64 Expired int64 }
-symbol	github.com/spcent/plumego/x/messaging	type	SMSResult	type SMSResult struct { ProviderID string }
-symbol	github.com/spcent/plumego/x/messaging	type	SendRequest	type SendRequest struct { ID string `json:"id"` Channel Channel `json:"channel"` Priority Priority `json:"priority"` To string `json:"to"` Subject string `json:"subject,omitempty"` Template string `json:"template,omitempty"` Params map[string]string `json:"params,omitempty"` Body string `json:"body,omitempty"` HTML bool `json:"html,omitempty"` ScheduledAt *time.Time `json:"scheduled_at,omitempty"` DedupeKey string `json:"dedupe_key,omitempty"` MaxRetries int `json:"max_retries,omitempty"` TenantID string `json:"tenant_id,omitempty"` TTL time.Duration `json:"ttl,omitempty"` }
-symbol	github.com/spcent/plumego/x/messaging	type	SendResult	type SendResult struct { RequestID string `json:"request_id"` Channel Channel `json:"channel"` Status string `json:"status"` ProviderID string `json:"provider_id,omitempty"` Error string `json:"error,omitempty"` SentAt time.Time `json:"sent_at,omitempty"` Attempts int `json:"attempts"` }
-symbol	github.com/spcent/plumego/x/messaging	type	Service	type Service struct { }
-symbol	github.com/spcent/plumego/x/messaging	type	ServiceStats	type ServiceStats struct { Queued int64 `json:"queued"` InFlight int64 `json:"in_flight"` Dead int64 `json:"dead"` Expired int64 `json:"expired"` TotalSent int64 `json:"total_sent"` TotalFailed int64 `json:"total_failed"` }
-symbol	github.com/spcent/plumego/x/messaging	type	StripeVerifyOptions	type StripeVerifyOptions = webhook.StripeVerifyOptions
-symbol	github.com/spcent/plumego/x/messaging	type	TemplateEngine	type TemplateEngine struct { }
-symbol	github.com/spcent/plumego/x/messaging	type	WebhookConfig	type WebhookConfig = webhook.Config
-symbol	github.com/spcent/plumego/x/messaging	type	WebhookDelivery	type WebhookDelivery = webhook.Delivery
-symbol	github.com/spcent/plumego/x/messaging	type	WebhookEvent	type WebhookEvent = webhook.Event
-symbol	github.com/spcent/plumego/x/messaging	type	WebhookHMACConfig	type WebhookHMACConfig = webhook.HMACConfig
-symbol	github.com/spcent/plumego/x/messaging	type	WebhookMemStore	type WebhookMemStore = webhook.MemStore
-symbol	github.com/spcent/plumego/x/messaging	type	WebhookNotifier	type WebhookNotifier struct { }
-symbol	github.com/spcent/plumego/x/messaging	type	WebhookService	type WebhookService = webhook.Service
-symbol	github.com/spcent/plumego/x/messaging	type	WebhookStore	type WebhookStore = webhook.Store
-symbol	github.com/spcent/plumego/x/messaging	type	WebhookVerifyResult	type WebhookVerifyResult = webhook.VerifyResult
-symbol	github.com/spcent/plumego/x/messaging	var	ErrInvalidChannel	var ErrInvalidChannel = errors.New("messaging: invalid channel")
-symbol	github.com/spcent/plumego/x/messaging	var	ErrInvalidEmail	var ErrInvalidEmail = errors.New("messaging: invalid email address")
-symbol	github.com/spcent/plumego/x/messaging	var	ErrInvalidPhone	var ErrInvalidPhone = errors.New("messaging: invalid phone number")
-symbol	github.com/spcent/plumego/x/messaging	var	ErrMissingBody	var ErrMissingBody = errors.New("messaging: body or template is required")
-symbol	github.com/spcent/plumego/x/messaging	var	ErrMissingID	var ErrMissingID = errors.New("messaging: id is required")
-symbol	github.com/spcent/plumego/x/messaging	var	ErrMissingRecipient	var ErrMissingRecipient = errors.New("messaging: recipient (to) is required")
-symbol	github.com/spcent/plumego/x/messaging	var	ErrMissingSubject	var ErrMissingSubject = errors.New("messaging: subject is required for email")
-symbol	github.com/spcent/plumego/x/messaging	var	ErrNilMetricRecordSource	var ErrNilMetricRecordSource = errors.New("messaging: sms prometheus exporter requires a metric record source")
-symbol	github.com/spcent/plumego/x/messaging	var	ErrProviderFailure	var ErrProviderFailure = errors.New("messaging: provider send failed")
-symbol	github.com/spcent/plumego/x/messaging	var	ErrQuotaExceeded	var ErrQuotaExceeded = tenant.ErrQuotaExceeded
-symbol	github.com/spcent/plumego/x/messaging	var	ErrTemplateRender	var ErrTemplateRender = errors.New("messaging: template rendering failed")
+symbol	github.com/birdordev/plumego/x/messaging	const	ChannelDegraded	const ChannelDegraded ChannelState = "degraded"
+symbol	github.com/birdordev/plumego/x/messaging	const	ChannelEmail	const ChannelEmail Channel = "email"
+symbol	github.com/birdordev/plumego/x/messaging	const	ChannelHealthy	const ChannelHealthy ChannelState = "healthy"
+symbol	github.com/birdordev/plumego/x/messaging	const	ChannelSMS	const ChannelSMS Channel = "sms"
+symbol	github.com/birdordev/plumego/x/messaging	const	ChannelUnhealthy	const ChannelUnhealthy ChannelState = "unhealthy"
+symbol	github.com/birdordev/plumego/x/messaging	const	CodeDuplicateMessage	const CodeDuplicateMessage = "DUPLICATE_MESSAGE"
+symbol	github.com/birdordev/plumego/x/messaging	const	CodeEmptyBatch	const CodeEmptyBatch = "EMPTY_BATCH"
+symbol	github.com/birdordev/plumego/x/messaging	const	CodeProviderError	const CodeProviderError = "PROVIDER_ERROR"
+symbol	github.com/birdordev/plumego/x/messaging	const	CodeQuotaExceeded	const CodeQuotaExceeded = "QUOTA_EXCEEDED"
+symbol	github.com/birdordev/plumego/x/messaging	const	CodeSendError	const CodeSendError = "SEND_ERROR"
+symbol	github.com/birdordev/plumego/x/messaging	const	CodeStatsError	const CodeStatsError = "STATS_ERROR"
+symbol	github.com/birdordev/plumego/x/messaging	const	CodeTaskExpired	const CodeTaskExpired = "TASK_EXPIRED"
+symbol	github.com/birdordev/plumego/x/messaging	const	LabelAttempt	const LabelAttempt = "attempt"
+symbol	github.com/birdordev/plumego/x/messaging	const	LabelProvider	const LabelProvider = "provider"
+symbol	github.com/birdordev/plumego/x/messaging	const	LabelQueue	const LabelQueue = "queue"
+symbol	github.com/birdordev/plumego/x/messaging	const	LabelResult	const LabelResult = "result"
+symbol	github.com/birdordev/plumego/x/messaging	const	LabelState	const LabelState = "state"
+symbol	github.com/birdordev/plumego/x/messaging	const	LabelStatus	const LabelStatus = "status"
+symbol	github.com/birdordev/plumego/x/messaging	const	LabelTenant	const LabelTenant = "tenant"
+symbol	github.com/birdordev/plumego/x/messaging	const	MetricProviderResult	const MetricProviderResult = "sms_gateway_provider_result"
+symbol	github.com/birdordev/plumego/x/messaging	const	MetricQueueDepth	const MetricQueueDepth = "sms_gateway_queue_depth"
+symbol	github.com/birdordev/plumego/x/messaging	const	MetricReceiptDelay	const MetricReceiptDelay = "sms_gateway_receipt_delay"
+symbol	github.com/birdordev/plumego/x/messaging	const	MetricRetry	const MetricRetry = "sms_gateway_retry"
+symbol	github.com/birdordev/plumego/x/messaging	const	MetricSendLatency	const MetricSendLatency = "sms_gateway_send_latency"
+symbol	github.com/birdordev/plumego/x/messaging	const	MetricStatus	const MetricStatus = "sms_gateway_status"
+symbol	github.com/birdordev/plumego/x/messaging	const	PriorityCritical	const PriorityCritical Priority = 40
+symbol	github.com/birdordev/plumego/x/messaging	const	PriorityHigh	const PriorityHigh Priority = 30
+symbol	github.com/birdordev/plumego/x/messaging	const	PriorityLow	const PriorityLow Priority = 10
+symbol	github.com/birdordev/plumego/x/messaging	const	PriorityNormal	const PriorityNormal Priority = 20
+symbol	github.com/birdordev/plumego/x/messaging	func	New	func Newfunc(cfg Config) *Service
+symbol	github.com/birdordev/plumego/x/messaging	func	NewChannelMonitor	func NewChannelMonitorfunc(sms SMSProvider, email EmailProvider, logger log.StructuredLogger) *ChannelMonitor
+symbol	github.com/birdordev/plumego/x/messaging	func	NewFailoverEmailProvider	func NewFailoverEmailProviderfunc(providers ...EmailProvider) *FailoverEmailProvider
+symbol	github.com/birdordev/plumego/x/messaging	func	NewFailoverSMSProvider	func NewFailoverSMSProviderfunc(providers ...SMSProvider) *FailoverSMSProvider
+symbol	github.com/birdordev/plumego/x/messaging	func	NewHTTPEmailProvider	func NewHTTPEmailProviderfunc(cfg HTTPEmailProviderConfig) *HTTPEmailProvider
+symbol	github.com/birdordev/plumego/x/messaging	func	NewHTTPSMSProvider	func NewHTTPSMSProviderfunc(cfg HTTPSMSProviderConfig) *HTTPSMSProvider
+symbol	github.com/birdordev/plumego/x/messaging	func	NewInProcBroker	func NewInProcBrokerfunc(opts ...BrokerOption) *Broker
+symbol	github.com/birdordev/plumego/x/messaging	func	NewLogEmailProvider	func NewLogEmailProviderfunc(logger log.StructuredLogger) *LogEmailProvider
+symbol	github.com/birdordev/plumego/x/messaging	func	NewLogSMSProvider	func NewLogSMSProviderfunc(logger log.StructuredLogger) *LogSMSProvider
+symbol	github.com/birdordev/plumego/x/messaging	func	NewMemReceiptStore	func NewMemReceiptStorefunc(maxSize int) *MemReceiptStore
+symbol	github.com/birdordev/plumego/x/messaging	func	NewQuotaChecker	func NewQuotaCheckerfunc(mgr tenant.QuotaManager) *QuotaChecker
+symbol	github.com/birdordev/plumego/x/messaging	func	NewRateLimitedEmailProvider	func NewRateLimitedEmailProviderfunc(inner EmailProvider, maxPerSecond int) *RateLimitedEmailProvider
+symbol	github.com/birdordev/plumego/x/messaging	func	NewRateLimitedSMSProvider	func NewRateLimitedSMSProviderfunc(inner SMSProvider, maxPerSecond int) *RateLimitedSMSProvider
+symbol	github.com/birdordev/plumego/x/messaging	func	NewRateLimiter	func NewRateLimiterfunc(maxPerInterval int, interval time.Duration) *RateLimiter
+symbol	github.com/birdordev/plumego/x/messaging	func	NewSMSMetricsReporter	func NewSMSMetricsReporterfunc(recorder metrics.Recorder) *SMSMetricsReporter
+symbol	github.com/birdordev/plumego/x/messaging	func	NewSMSPrometheusExporter	func NewSMSPrometheusExporterfunc(namespace string, source metricRecordSource) *SMSPrometheusExporter
+symbol	github.com/birdordev/plumego/x/messaging	func	NewSMSPrometheusExporterE	func NewSMSPrometheusExporterEfunc(namespace string, source metricRecordSource) (*SMSPrometheusExporter, error)
+symbol	github.com/birdordev/plumego/x/messaging	func	NewTemplateEngine	func NewTemplateEnginefunc() *TemplateEngine
+symbol	github.com/birdordev/plumego/x/messaging	func	NewWebhookMemStore	func NewWebhookMemStorefunc() *WebhookMemStore
+symbol	github.com/birdordev/plumego/x/messaging	func	NewWebhookNotifier	func NewWebhookNotifierfunc(bus *pubsub.InProcBroker, webhook *webhook.Service, logger log.StructuredLogger) *WebhookNotifier
+symbol	github.com/birdordev/plumego/x/messaging	func	NewWebhookService	func NewWebhookServicefunc(store WebhookStore, cfg WebhookConfig) *WebhookService
+symbol	github.com/birdordev/plumego/x/messaging	func	RegisterRoutes	func RegisterRoutesfunc(r *router.Router, svc *Service, prefix string) error
+symbol	github.com/birdordev/plumego/x/messaging	func	VerifyGitHubWebhook	func VerifyGitHubWebhookfunc(r *http.Request, secret string, maxBody int64) ([]byte, error)
+symbol	github.com/birdordev/plumego/x/messaging	func	VerifyStripeWebhook	func VerifyStripeWebhookfunc(r *http.Request, endpointSecret string, opt StripeVerifyOptions) ([]byte, error)
+symbol	github.com/birdordev/plumego/x/messaging	func	VerifyWebhookHMAC	func VerifyWebhookHMACfunc(r *http.Request, cfg WebhookHMACConfig) (WebhookVerifyResult, error)
+symbol	github.com/birdordev/plumego/x/messaging	method	ChannelMonitor.ChannelHealth	func (ChannelMonitor) ChannelHealthfunc(ch Channel) ChannelState
+symbol	github.com/birdordev/plumego/x/messaging	method	ChannelMonitor.RecordFailure	func (ChannelMonitor) RecordFailurefunc(ch Channel, err error)
+symbol	github.com/birdordev/plumego/x/messaging	method	ChannelMonitor.RecordSuccess	func (ChannelMonitor) RecordSuccessfunc(ch Channel, latency time.Duration)
+symbol	github.com/birdordev/plumego/x/messaging	method	ChannelMonitor.RegisterJobs	func (ChannelMonitor) RegisterJobsfunc(sch *scheduler.Scheduler) error
+symbol	github.com/birdordev/plumego/x/messaging	method	ChannelMonitor.Status	func (ChannelMonitor) Statusfunc() []ChannelStatus
+symbol	github.com/birdordev/plumego/x/messaging	method	FailoverEmailProvider.Name	func (FailoverEmailProvider) Namefunc() string
+symbol	github.com/birdordev/plumego/x/messaging	method	FailoverEmailProvider.Send	func (FailoverEmailProvider) Sendfunc(ctx context.Context, msg EmailMessage) (*EmailResult, error)
+symbol	github.com/birdordev/plumego/x/messaging	method	FailoverSMSProvider.Name	func (FailoverSMSProvider) Namefunc() string
+symbol	github.com/birdordev/plumego/x/messaging	method	FailoverSMSProvider.Send	func (FailoverSMSProvider) Sendfunc(ctx context.Context, msg SMSMessage) (*SMSResult, error)
+symbol	github.com/birdordev/plumego/x/messaging	method	HTTPEmailProvider.Name	func (HTTPEmailProvider) Namefunc() string
+symbol	github.com/birdordev/plumego/x/messaging	method	HTTPEmailProvider.Send	func (HTTPEmailProvider) Sendfunc(ctx context.Context, msg EmailMessage) (*EmailResult, error)
+symbol	github.com/birdordev/plumego/x/messaging	method	HTTPSMSProvider.Name	func (HTTPSMSProvider) Namefunc() string
+symbol	github.com/birdordev/plumego/x/messaging	method	HTTPSMSProvider.Send	func (HTTPSMSProvider) Sendfunc(ctx context.Context, msg SMSMessage) (*SMSResult, error)
+symbol	github.com/birdordev/plumego/x/messaging	method	LogEmailProvider.Name	func (LogEmailProvider) Namefunc() string
+symbol	github.com/birdordev/plumego/x/messaging	method	LogEmailProvider.Send	func (LogEmailProvider) Sendfunc(_ context.Context, msg EmailMessage) (*EmailResult, error)
+symbol	github.com/birdordev/plumego/x/messaging	method	LogSMSProvider.Name	func (LogSMSProvider) Namefunc() string
+symbol	github.com/birdordev/plumego/x/messaging	method	LogSMSProvider.Send	func (LogSMSProvider) Sendfunc(_ context.Context, msg SMSMessage) (*SMSResult, error)
+symbol	github.com/birdordev/plumego/x/messaging	method	MemReceiptStore.Get	func (MemReceiptStore) Getfunc(id string) (Receipt, bool)
+symbol	github.com/birdordev/plumego/x/messaging	method	MemReceiptStore.List	func (MemReceiptStore) Listfunc(f ReceiptFilter) []Receipt
+symbol	github.com/birdordev/plumego/x/messaging	method	MemReceiptStore.Save	func (MemReceiptStore) Savefunc(r Receipt) error
+symbol	github.com/birdordev/plumego/x/messaging	method	QuotaChecker.Allow	func (QuotaChecker) Allowfunc(ctx context.Context, tenantID string) error
+symbol	github.com/birdordev/plumego/x/messaging	method	RateLimitedEmailProvider.Name	func (RateLimitedEmailProvider) Namefunc() string
+symbol	github.com/birdordev/plumego/x/messaging	method	RateLimitedEmailProvider.Send	func (RateLimitedEmailProvider) Sendfunc(ctx context.Context, msg EmailMessage) (*EmailResult, error)
+symbol	github.com/birdordev/plumego/x/messaging	method	RateLimitedSMSProvider.Name	func (RateLimitedSMSProvider) Namefunc() string
+symbol	github.com/birdordev/plumego/x/messaging	method	RateLimitedSMSProvider.Send	func (RateLimitedSMSProvider) Sendfunc(ctx context.Context, msg SMSMessage) (*SMSResult, error)
+symbol	github.com/birdordev/plumego/x/messaging	method	RateLimiter.Wait	func (RateLimiter) Waitfunc(ctx context.Context) error
+symbol	github.com/birdordev/plumego/x/messaging	method	SMSMetricsReporter.RecordProviderResult	func (SMSMetricsReporter) RecordProviderResultfunc(ctx context.Context, tenantID, provider string, success bool)
+symbol	github.com/birdordev/plumego/x/messaging	method	SMSMetricsReporter.RecordQueueDepth	func (SMSMetricsReporter) RecordQueueDepthfunc(ctx context.Context, queue string, stats SMSQueueStats)
+symbol	github.com/birdordev/plumego/x/messaging	method	SMSMetricsReporter.RecordReceiptDelay	func (SMSMetricsReporter) RecordReceiptDelayfunc(ctx context.Context, tenantID, provider string, delay time.Duration)
+symbol	github.com/birdordev/plumego/x/messaging	method	SMSMetricsReporter.RecordRetry	func (SMSMetricsReporter) RecordRetryfunc(ctx context.Context, tenantID, provider string, attempt int)
+symbol	github.com/birdordev/plumego/x/messaging	method	SMSMetricsReporter.RecordSendLatency	func (SMSMetricsReporter) RecordSendLatencyfunc(ctx context.Context, tenantID, provider string, duration time.Duration, err error)
+symbol	github.com/birdordev/plumego/x/messaging	method	SMSMetricsReporter.RecordStatus	func (SMSMetricsReporter) RecordStatusfunc(ctx context.Context, tenantID, status string)
+symbol	github.com/birdordev/plumego/x/messaging	method	SMSPrometheusExporter.Handler	func (SMSPrometheusExporter) Handlerfunc() http.Handler
+symbol	github.com/birdordev/plumego/x/messaging	method	Service.HandleBatchSend	func (Service) HandleBatchSendfunc(w http.ResponseWriter, r *http.Request)
+symbol	github.com/birdordev/plumego/x/messaging	method	Service.HandleChannelHealth	func (Service) HandleChannelHealthfunc(w http.ResponseWriter, r *http.Request)
+symbol	github.com/birdordev/plumego/x/messaging	method	Service.HandleGetReceipt	func (Service) HandleGetReceiptfunc(w http.ResponseWriter, r *http.Request)
+symbol	github.com/birdordev/plumego/x/messaging	method	Service.HandleListReceipts	func (Service) HandleListReceiptsfunc(w http.ResponseWriter, r *http.Request)
+symbol	github.com/birdordev/plumego/x/messaging	method	Service.HandleSend	func (Service) HandleSendfunc(w http.ResponseWriter, r *http.Request)
+symbol	github.com/birdordev/plumego/x/messaging	method	Service.HandleStats	func (Service) HandleStatsfunc(w http.ResponseWriter, r *http.Request)
+symbol	github.com/birdordev/plumego/x/messaging	method	Service.Monitor	func (Service) Monitorfunc() *ChannelMonitor
+symbol	github.com/birdordev/plumego/x/messaging	method	Service.Receipts	func (Service) Receiptsfunc() ReceiptStore
+symbol	github.com/birdordev/plumego/x/messaging	method	Service.Send	func (Service) Sendfunc(ctx context.Context, req SendRequest) error
+symbol	github.com/birdordev/plumego/x/messaging	method	Service.SendBatch	func (Service) SendBatchfunc(ctx context.Context, batch BatchRequest) BatchResult
+symbol	github.com/birdordev/plumego/x/messaging	method	Service.Start	func (Service) Startfunc(ctx context.Context) error
+symbol	github.com/birdordev/plumego/x/messaging	method	Service.Stats	func (Service) Statsfunc(ctx context.Context) (ServiceStats, error)
+symbol	github.com/birdordev/plumego/x/messaging	method	Service.Stop	func (Service) Stopfunc(ctx context.Context) error
+symbol	github.com/birdordev/plumego/x/messaging	method	Service.Templates	func (Service) Templatesfunc() *TemplateEngine
+symbol	github.com/birdordev/plumego/x/messaging	method	TemplateEngine.Has	func (TemplateEngine) Hasfunc(id string) bool
+symbol	github.com/birdordev/plumego/x/messaging	method	TemplateEngine.Register	func (TemplateEngine) Registerfunc(id, body string)
+symbol	github.com/birdordev/plumego/x/messaging	method	TemplateEngine.Render	func (TemplateEngine) Renderfunc(id string, params map[string]string) (string, error)
+symbol	github.com/birdordev/plumego/x/messaging	method	WebhookNotifier.Start	func (WebhookNotifier) Startfunc(ctx context.Context) error
+symbol	github.com/birdordev/plumego/x/messaging	method	WebhookNotifier.Stop	func (WebhookNotifier) Stopfunc()
+symbol	github.com/birdordev/plumego/x/messaging	type	BatchRequest	type BatchRequest struct { Requests []SendRequest `json:"requests"` }
+symbol	github.com/birdordev/plumego/x/messaging	type	BatchResult	type BatchResult struct { Total int `json:"total"` Accepted int `json:"accepted"` Rejected int `json:"rejected"` Errors []string `json:"errors,omitempty"` }
+symbol	github.com/birdordev/plumego/x/messaging	type	Broker	type Broker = pubsub.InProcBroker
+symbol	github.com/birdordev/plumego/x/messaging	type	BrokerBackpressurePolicy	type BrokerBackpressurePolicy = pubsub.BackpressurePolicy
+symbol	github.com/birdordev/plumego/x/messaging	type	BrokerConfig	type BrokerConfig = pubsub.Config
+symbol	github.com/birdordev/plumego/x/messaging	type	BrokerMessage	type BrokerMessage = pubsub.Message
+symbol	github.com/birdordev/plumego/x/messaging	type	BrokerOption	type BrokerOption = pubsub.Option
+symbol	github.com/birdordev/plumego/x/messaging	type	BrokerSubOptions	type BrokerSubOptions = pubsub.SubOptions
+symbol	github.com/birdordev/plumego/x/messaging	type	BrokerSubscription	type BrokerSubscription = pubsub.Subscription
+symbol	github.com/birdordev/plumego/x/messaging	type	Channel	type Channel string
+symbol	github.com/birdordev/plumego/x/messaging	type	ChannelMonitor	type ChannelMonitor struct { }
+symbol	github.com/birdordev/plumego/x/messaging	type	ChannelState	type ChannelState string
+symbol	github.com/birdordev/plumego/x/messaging	type	ChannelStatus	type ChannelStatus struct { Channel Channel `json:"channel"` Provider string `json:"provider"` State ChannelState `json:"state"` Latency string `json:"latency,omitempty"` LastChecked time.Time `json:"last_checked"` Error string `json:"error,omitempty"` }
+symbol	github.com/birdordev/plumego/x/messaging	type	Config	type Config struct { TaskStore mq.TaskStore Scheduler *scheduler.Scheduler Bus *pubsub.InProcBroker SMS SMSProvider Email EmailProvider Logger log.StructuredLogger Receipts ReceiptStore Quota *QuotaChecker Metrics interface { mq.MetricsObserver metrics.Recorder } Webhook *webhook.Service WorkerConcurrency int WorkerMaxInflight int ConsumerID string }
+symbol	github.com/birdordev/plumego/x/messaging	type	EmailMessage	type EmailMessage struct { To string Subject string Body string HTML bool }
+symbol	github.com/birdordev/plumego/x/messaging	type	EmailProvider	type EmailProvider interface { Send(ctx context.Context, msg EmailMessage) (*EmailResult, error) Name() string }
+symbol	github.com/birdordev/plumego/x/messaging	type	EmailResult	type EmailResult struct { MessageID string }
+symbol	github.com/birdordev/plumego/x/messaging	type	FailoverEmailProvider	type FailoverEmailProvider struct { }
+symbol	github.com/birdordev/plumego/x/messaging	type	FailoverSMSProvider	type FailoverSMSProvider struct { }
+symbol	github.com/birdordev/plumego/x/messaging	type	GitHubVerifyOptions	type GitHubVerifyOptions = webhook.GitHubVerifyOptions
+symbol	github.com/birdordev/plumego/x/messaging	type	HTTPEmailProvider	type HTTPEmailProvider struct { }
+symbol	github.com/birdordev/plumego/x/messaging	type	HTTPEmailProviderConfig	type HTTPEmailProviderConfig struct { BaseURL string APIKey string Timeout time.Duration MaxRetries int }
+symbol	github.com/birdordev/plumego/x/messaging	type	HTTPSMSProvider	type HTTPSMSProvider struct { }
+symbol	github.com/birdordev/plumego/x/messaging	type	HTTPSMSProviderConfig	type HTTPSMSProviderConfig struct { BaseURL string APIKey string Timeout time.Duration MaxRetries int }
+symbol	github.com/birdordev/plumego/x/messaging	type	LogEmailProvider	type LogEmailProvider struct { }
+symbol	github.com/birdordev/plumego/x/messaging	type	LogSMSProvider	type LogSMSProvider struct { }
+symbol	github.com/birdordev/plumego/x/messaging	type	MemReceiptStore	type MemReceiptStore struct { }
+symbol	github.com/birdordev/plumego/x/messaging	type	Priority	type Priority int
+symbol	github.com/birdordev/plumego/x/messaging	type	QuotaChecker	type QuotaChecker struct { }
+symbol	github.com/birdordev/plumego/x/messaging	type	RateLimitedEmailProvider	type RateLimitedEmailProvider struct { }
+symbol	github.com/birdordev/plumego/x/messaging	type	RateLimitedSMSProvider	type RateLimitedSMSProvider struct { }
+symbol	github.com/birdordev/plumego/x/messaging	type	RateLimiter	type RateLimiter struct { }
+symbol	github.com/birdordev/plumego/x/messaging	type	Receipt	type Receipt struct { ID string `json:"id"` Channel Channel `json:"channel"` To string `json:"to"` Status string `json:"status"` ProviderID string `json:"provider_id,omitempty"` Provider string `json:"provider,omitempty"` Error string `json:"error,omitempty"` Attempts int `json:"attempts"` TenantID string `json:"tenant_id,omitempty"` QueuedAt time.Time `json:"queued_at"` SentAt time.Time `json:"sent_at,omitempty"` UpdatedAt time.Time `json:"updated_at"` }
+symbol	github.com/birdordev/plumego/x/messaging	type	ReceiptFilter	type ReceiptFilter struct { Channel Channel `json:"channel,omitempty"` Status string `json:"status,omitempty"` TenantID string `json:"tenant_id,omitempty"` Limit int `json:"limit,omitempty"` Offset int `json:"offset,omitempty"` }
+symbol	github.com/birdordev/plumego/x/messaging	type	ReceiptStore	type ReceiptStore interface { Save(receipt Receipt) error Get(id string) (Receipt, bool) List(filter ReceiptFilter) []Receipt }
+symbol	github.com/birdordev/plumego/x/messaging	type	SMSMessage	type SMSMessage struct { To string Body string }
+symbol	github.com/birdordev/plumego/x/messaging	type	SMSMetricsReporter	type SMSMetricsReporter struct { Recorder metrics.Recorder Now func() time.Time }
+symbol	github.com/birdordev/plumego/x/messaging	type	SMSPrometheusExporter	type SMSPrometheusExporter struct { }
+symbol	github.com/birdordev/plumego/x/messaging	type	SMSProvider	type SMSProvider interface { Send(ctx context.Context, msg SMSMessage) (*SMSResult, error) Name() string }
+symbol	github.com/birdordev/plumego/x/messaging	type	SMSQueueStats	type SMSQueueStats struct { Queued int64 Leased int64 Dead int64 Expired int64 }
+symbol	github.com/birdordev/plumego/x/messaging	type	SMSResult	type SMSResult struct { ProviderID string }
+symbol	github.com/birdordev/plumego/x/messaging	type	SendRequest	type SendRequest struct { ID string `json:"id"` Channel Channel `json:"channel"` Priority Priority `json:"priority"` To string `json:"to"` Subject string `json:"subject,omitempty"` Template string `json:"template,omitempty"` Params map[string]string `json:"params,omitempty"` Body string `json:"body,omitempty"` HTML bool `json:"html,omitempty"` ScheduledAt *time.Time `json:"scheduled_at,omitempty"` DedupeKey string `json:"dedupe_key,omitempty"` MaxRetries int `json:"max_retries,omitempty"` TenantID string `json:"tenant_id,omitempty"` TTL time.Duration `json:"ttl,omitempty"` }
+symbol	github.com/birdordev/plumego/x/messaging	type	SendResult	type SendResult struct { RequestID string `json:"request_id"` Channel Channel `json:"channel"` Status string `json:"status"` ProviderID string `json:"provider_id,omitempty"` Error string `json:"error,omitempty"` SentAt time.Time `json:"sent_at,omitempty"` Attempts int `json:"attempts"` }
+symbol	github.com/birdordev/plumego/x/messaging	type	Service	type Service struct { }
+symbol	github.com/birdordev/plumego/x/messaging	type	ServiceStats	type ServiceStats struct { Queued int64 `json:"queued"` InFlight int64 `json:"in_flight"` Dead int64 `json:"dead"` Expired int64 `json:"expired"` TotalSent int64 `json:"total_sent"` TotalFailed int64 `json:"total_failed"` }
+symbol	github.com/birdordev/plumego/x/messaging	type	StripeVerifyOptions	type StripeVerifyOptions = webhook.StripeVerifyOptions
+symbol	github.com/birdordev/plumego/x/messaging	type	TemplateEngine	type TemplateEngine struct { }
+symbol	github.com/birdordev/plumego/x/messaging	type	WebhookConfig	type WebhookConfig = webhook.Config
+symbol	github.com/birdordev/plumego/x/messaging	type	WebhookDelivery	type WebhookDelivery = webhook.Delivery
+symbol	github.com/birdordev/plumego/x/messaging	type	WebhookEvent	type WebhookEvent = webhook.Event
+symbol	github.com/birdordev/plumego/x/messaging	type	WebhookHMACConfig	type WebhookHMACConfig = webhook.HMACConfig
+symbol	github.com/birdordev/plumego/x/messaging	type	WebhookMemStore	type WebhookMemStore = webhook.MemStore
+symbol	github.com/birdordev/plumego/x/messaging	type	WebhookNotifier	type WebhookNotifier struct { }
+symbol	github.com/birdordev/plumego/x/messaging	type	WebhookService	type WebhookService = webhook.Service
+symbol	github.com/birdordev/plumego/x/messaging	type	WebhookStore	type WebhookStore = webhook.Store
+symbol	github.com/birdordev/plumego/x/messaging	type	WebhookVerifyResult	type WebhookVerifyResult = webhook.VerifyResult
+symbol	github.com/birdordev/plumego/x/messaging	var	ErrInvalidChannel	var ErrInvalidChannel = errors.New("messaging: invalid channel")
+symbol	github.com/birdordev/plumego/x/messaging	var	ErrInvalidEmail	var ErrInvalidEmail = errors.New("messaging: invalid email address")
+symbol	github.com/birdordev/plumego/x/messaging	var	ErrInvalidPhone	var ErrInvalidPhone = errors.New("messaging: invalid phone number")
+symbol	github.com/birdordev/plumego/x/messaging	var	ErrMissingBody	var ErrMissingBody = errors.New("messaging: body or template is required")
+symbol	github.com/birdordev/plumego/x/messaging	var	ErrMissingID	var ErrMissingID = errors.New("messaging: id is required")
+symbol	github.com/birdordev/plumego/x/messaging	var	ErrMissingRecipient	var ErrMissingRecipient = errors.New("messaging: recipient (to) is required")
+symbol	github.com/birdordev/plumego/x/messaging	var	ErrMissingSubject	var ErrMissingSubject = errors.New("messaging: subject is required for email")
+symbol	github.com/birdordev/plumego/x/messaging	var	ErrNilMetricRecordSource	var ErrNilMetricRecordSource = errors.New("messaging: sms prometheus exporter requires a metric record source")
+symbol	github.com/birdordev/plumego/x/messaging	var	ErrProviderFailure	var ErrProviderFailure = errors.New("messaging: provider send failed")
+symbol	github.com/birdordev/plumego/x/messaging	var	ErrQuotaExceeded	var ErrQuotaExceeded = tenant.ErrQuotaExceeded
+symbol	github.com/birdordev/plumego/x/messaging	var	ErrTemplateRender	var ErrTemplateRender = errors.New("messaging: template rendering failed")

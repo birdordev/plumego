@@ -5,7 +5,7 @@ Controls browser cross-origin request policies.
 ## Import
 
 ```go
-import "github.com/spcent/plumego/middleware/cors"
+import "github.com/birdordev/plumego/middleware/cors"
 ```
 
 ## Overview

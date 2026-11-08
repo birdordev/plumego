@@ -32,7 +32,7 @@ updates:
           - "*"
 
   # Reference applications with external dependencies. They use local
-  # `replace github.com/spcent/plumego => ../..` directives, which
+  # `replace github.com/birdordev/plumego => ../..` directives, which
   # dependabot preserves; updates touch only third-party requirements.
   - package-ecosystem: gomod
     directory: /reference/with-rest

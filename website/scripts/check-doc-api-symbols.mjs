@@ -5,7 +5,7 @@ import { REPO_ROOT, WEBSITE_ROOT } from './_shared.mjs';
 const DOCS_ROOT = path.join(WEBSITE_ROOT, 'src', 'content', 'docs');
 const PAGES_ROOT = path.join(WEBSITE_ROOT, 'src', 'pages');
 const SITE_DATA_FILE = path.join(WEBSITE_ROOT, 'src', 'data', 'site.ts');
-const MODULE_IMPORT_PREFIX = 'github.com/spcent/plumego/';
+const MODULE_IMPORT_PREFIX = 'github.com/birdordev/plumego/';
 const repoPathPrefixes = [
   'AGENTS.md',
   'CLAUDE.md',
@@ -91,12 +91,12 @@ const bannedPatterns = [
   {
     packageName: 'db',
     pattern: /\bstore\/db\.Open\b/,
-    message: 'import github.com/spcent/plumego/store/db and call db.Open',
+    message: 'import github.com/birdordev/plumego/store/db and call db.Open',
   },
   {
     packageName: 'cache',
     pattern: /\bstore\/cache\.MemoryCache\b/,
-    message: 'import github.com/spcent/plumego/store/cache and refer to cache.MemoryCache',
+    message: 'import github.com/birdordev/plumego/store/cache and refer to cache.MemoryCache',
   },
   {
     packageName: 'store',

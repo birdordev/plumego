@@ -42,22 +42,22 @@ as forbidden.
 
 ```yaml
 name: rpc
-module_path: github.com/spcent/plumego/x/rpc
+module_path: github.com/birdordev/plumego/x/rpc
 status: experimental
 handler_shape: "func(http.ResponseWriter, *http.Request)"
 test_commands:
   - go test -race -timeout 60s ./...
   - go vet ./...
 forbidden_imports:
-  - github.com/spcent/plumego/core
-  - github.com/spcent/plumego/router
-  - github.com/spcent/plumego/contract
-  - github.com/spcent/plumego/middleware
-  - github.com/spcent/plumego/security
-  - github.com/spcent/plumego/store
-  - github.com/spcent/plumego/health
-  - github.com/spcent/plumego/log
-  - github.com/spcent/plumego/metrics
+  - github.com/birdordev/plumego/core
+  - github.com/birdordev/plumego/router
+  - github.com/birdordev/plumego/contract
+  - github.com/birdordev/plumego/middleware
+  - github.com/birdordev/plumego/security
+  - github.com/birdordev/plumego/store
+  - github.com/birdordev/plumego/health
+  - github.com/birdordev/plumego/log
+  - github.com/birdordev/plumego/metrics
 no_init_side_effects: true
 no_globals: true
 owner: rpc
@@ -87,7 +87,7 @@ owner: rpc
 
 6. `forbidden_imports`
    Pass: includes all stable-root import paths from the schema
-   Fail: omits `github.com/spcent/plumego/core`, or imports a forbidden path in
+   Fail: omits `github.com/birdordev/plumego/core`, or imports a forbidden path in
    extension code
 
 7. `no_init_side_effects`

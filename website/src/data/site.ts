@@ -6,7 +6,7 @@ export type { Locale };
 
 export const SITE = {
   name: 'Plumego',
-  githubUrl: 'https://github.com/spcent/plumego',
+  githubUrl: 'https://github.com/birdordev/plumego',
   repoPath: 'reference/standard-service',
   currentVersion: RELEASE_FACTS.currentVersion,
 };
@@ -188,7 +188,7 @@ api.Get("/data", data.List)
     stabilityBandCta: { label: 'Project status & release evidence', href: '/status' },
     moduleTitle: 'Stable modules.',
     moduleLead: '9 packages with the v1 stable-root compatibility promise. The recommended starting scope for production evaluation.',
-    moduleBaseImport: 'github.com/spcent/plumego',
+    moduleBaseImport: 'github.com/birdordev/plumego',
     modules: [
       { name: 'core',       description: 'App bootstrap, server lifecycle, and configuration assembly',                        docHref: '/docs/modules/core' },
       { name: 'router',     description: 'http.Handler-compatible mux with groups and path parameter matching',                docHref: '/docs/modules/router' },
@@ -311,7 +311,7 @@ api.Get("/data", data.List)
     stabilityBandCta: { label: '项目状态与发布证据', href: '/zh/status' },
     moduleTitle: '稳定模块。',
     moduleLead: '9 个包承载 v1 稳定根兼容性承诺，是推荐的生产评估起点。',
-    moduleBaseImport: 'github.com/spcent/plumego',
+    moduleBaseImport: 'github.com/birdordev/plumego',
     modules: [
       { name: 'core',       description: '应用启动、服务器生命周期与配置组装',                              docHref: '/zh/docs/modules/core' },
       { name: 'router',     description: '兼容 http.Handler 的多路复用器，支持路由组和路径参数匹配',         docHref: '/zh/docs/modules/router' },

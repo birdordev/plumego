@@ -131,12 +131,12 @@ jobs:
           )
 
           stale_refs=(
-            github.com/spcent/plumego/core/components
-            github.com/spcent/plumego/components
-            github.com/spcent/plumego/plumego
-            github.com/spcent/plumego/net
-            github.com/spcent/plumego/tenant
-            github.com/spcent/plumego/rest
+            github.com/birdordev/plumego/core/components
+            github.com/birdordev/plumego/components
+            github.com/birdordev/plumego/plumego
+            github.com/birdordev/plumego/net
+            github.com/birdordev/plumego/tenant
+            github.com/birdordev/plumego/rest
           )
 
           for ref in "${stale_refs[@]}"; do
@@ -531,12 +531,12 @@ jobs:
           )
 
           stale_refs=(
-            github.com/spcent/plumego/core/components
-            github.com/spcent/plumego/components
-            github.com/spcent/plumego/plumego
-            github.com/spcent/plumego/net
-            github.com/spcent/plumego/tenant
-            github.com/spcent/plumego/rest
+            github.com/birdordev/plumego/core/components
+            github.com/birdordev/plumego/components
+            github.com/birdordev/plumego/plumego
+            github.com/birdordev/plumego/net
+            github.com/birdordev/plumego/tenant
+            github.com/birdordev/plumego/rest
           )
 
           for ref in "${stale_refs[@]}"; do

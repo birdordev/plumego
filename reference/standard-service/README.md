@@ -406,7 +406,7 @@ To copy manually without the scaffold, change three things:
 1. Rename the module in `go.mod` from `standard-service` to your module path
    (e.g. `module github.com/yourorg/myapp`).
 2. Remove the `replace` directive and pin the real published version of
-   `github.com/spcent/plumego`.
+   `github.com/birdordev/plumego`.
 3. Replace the `standard-service/` import prefix in all `.go` files with your
    new module path.
 

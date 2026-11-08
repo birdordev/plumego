@@ -1,6 +1,6 @@
 # x/ai/marketplace
 
-> **Import path:** `github.com/spcent/plumego/x/ai/marketplace` — sub-package of [`x/ai`](../README.md).
+> **Import path:** `github.com/birdordev/plumego/x/ai/marketplace` — sub-package of [`x/ai`](../README.md).
 
 ## Purpose
 

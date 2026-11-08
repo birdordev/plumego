@@ -94,7 +94,7 @@ export default defineConfig({
         {
           icon: 'github',
           label: 'GitHub',
-          href: 'https://github.com/spcent/plumego',
+          href: 'https://github.com/birdordev/plumego',
         },
       ],
       locales: {

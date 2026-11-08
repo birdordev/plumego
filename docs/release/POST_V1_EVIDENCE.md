@@ -29,7 +29,7 @@ clear bug fixes. It is not a feature lane for new stable-root APIs.
 ## CLI Install Boundary
 
 `cmd/plumego` is a nested Go module. v1 CLI validation is source-checkout based;
-tagged `go install github.com/spcent/plumego/cmd/plumego@<tag>` is not
+tagged `go install github.com/birdordev/plumego/cmd/plumego@<tag>` is not
 advertised until a release checklist verifies that exact tag.
 
 ## Extension Promotion Boundary

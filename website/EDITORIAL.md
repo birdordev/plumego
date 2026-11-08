@@ -291,7 +291,7 @@ summary) that shows the first runnable command without navigation:
 
 ```
 go run ./reference/standard-service
-# or: go get github.com/spcent/plumego
+# or: go get github.com/birdordev/plumego
 ```
 
 This satisfies Rule 3 and reduces the click cost for developers who want

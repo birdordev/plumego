@@ -5,7 +5,7 @@ Limits the number of concurrently processed requests.
 ## Import
 
 ```go
-import "github.com/spcent/plumego/middleware/concurrencylimit"
+import "github.com/birdordev/plumego/middleware/concurrencylimit"
 ```
 
 ## Overview

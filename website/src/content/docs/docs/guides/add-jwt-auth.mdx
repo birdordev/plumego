@@ -25,8 +25,8 @@ Place the manager in your application's dependency struct so it can be injected 
 
 ```go
 import (
-    "github.com/spcent/plumego/security/jwt"
-    kvstore "github.com/spcent/plumego/store/kv"
+    "github.com/birdordev/plumego/security/jwt"
+    kvstore "github.com/birdordev/plumego/store/kv"
 )
 
 store, err := kvstore.NewKVStore(kvstore.Options{DataDir: "/var/lib/myapp/jwt"})
@@ -49,8 +49,8 @@ In your `RegisterRoutes` method, apply `authmw.Authenticate` to the routes that 
 
 ```go
 import (
-    authmw "github.com/spcent/plumego/middleware/auth"
-    "github.com/spcent/plumego/security/jwt"
+    authmw "github.com/birdordev/plumego/middleware/auth"
+    "github.com/birdordev/plumego/security/jwt"
 )
 
 // app.Use applies middleware globally; wrap individual routes for finer control.
@@ -136,13 +136,13 @@ if err != nil {
 
 The reference service shows JWT wiring in context:
 
-- [`reference/standard-service/internal/app/app.go`](https://github.com/spcent/plumego/blob/main/reference/standard-service/internal/app/app.go) — where `JWTManager` is constructed and injected
-- [`reference/standard-service/internal/handler/api.go`](https://github.com/spcent/plumego/blob/main/reference/standard-service/internal/handler/api.go) — a handler that issues and verifies tokens
+- [`reference/standard-service/internal/app/app.go`](https://github.com/birdordev/plumego/blob/main/reference/standard-service/internal/app/app.go) — where `JWTManager` is constructed and injected
+- [`reference/standard-service/internal/handler/api.go`](https://github.com/birdordev/plumego/blob/main/reference/standard-service/internal/handler/api.go) — a handler that issues and verifies tokens
 
 Run the reference service locally and hit the auth routes to see the complete flow:
 
 ```bash
-git clone https://github.com/spcent/plumego
+git clone https://github.com/birdordev/plumego
 cd plumego/reference/standard-service
 go run .
 ```

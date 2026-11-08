@@ -1,6 +1,6 @@
 # x/data/cache
 
-> **Import path:** `github.com/spcent/plumego/x/data/cache` — sub-package of [`x/data`](../README.md). This primer mirrors the package path under `docs/modules/x/`.
+> **Import path:** `github.com/birdordev/plumego/x/data/cache` — sub-package of [`x/data`](../README.md). This primer mirrors the package path under `docs/modules/x/`.
 
 ## Purpose
 

@@ -30,7 +30,7 @@ x/data/file.MetadataManager  ← persists file metadata in a database
 ### Local disk (development)
 
 ```go
-import datafile "github.com/spcent/plumego/x/data/file"
+import datafile "github.com/birdordev/plumego/x/data/file"
 
 metadata, err := datafile.NewDBMetadataManager(sqlDB)
 if err != nil {
@@ -69,7 +69,7 @@ if err != nil {
 ## Step 2 — Create the handler
 
 ```go
-import "github.com/spcent/plumego/x/fileapi"
+import "github.com/birdordev/plumego/x/fileapi"
 
 const maxUploadSize = 50 << 20  // 50 MB
 
@@ -82,7 +82,7 @@ h := fileapi.NewHandler(storage, metadata).
 Wire each handler method to an explicit route. Route parameters must include `{id}` for file-specific operations:
 
 ```go
-import "github.com/spcent/plumego/router"
+import "github.com/birdordev/plumego/router"
 
 r := router.NewRouter()
 r.Post("/files",          h.Upload)
@@ -107,7 +107,7 @@ r.Delete("/files/{id}",   h.Delete)
 Upload and list handlers scope files by user ID. Inject the user ID into the request context before the file routes:
 
 ```go
-import "github.com/spcent/plumego/x/fileapi"
+import "github.com/birdordev/plumego/x/fileapi"
 
 func withUserID(next http.Handler) http.Handler {
     return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -129,8 +129,8 @@ When your service uses `x/tenant`, mount tenant resolution before the file middl
 
 ```go
 import (
-    authmw  "github.com/spcent/plumego/middleware/auth"
-    resolve "github.com/spcent/plumego/x/tenant/resolve"
+    authmw  "github.com/birdordev/plumego/middleware/auth"
+    resolve "github.com/birdordev/plumego/x/tenant/resolve"
 )
 
 authMw, err := authmw.Authenticate(authenticator)

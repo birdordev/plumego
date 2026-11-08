@@ -1,196 +1,196 @@
 # plumego extension api snapshot v1
-module	github.com/spcent/plumego
+module	github.com/birdordev/plumego
 pattern	./x/tenant/...
-symbol	github.com/spcent/plumego/x/tenant/config	func	NewDBTenantConfigManager	func NewDBTenantConfigManagerfunc(db *sql.DB, options ...DBTenantConfigOption) *DBTenantConfigManager
-symbol	github.com/spcent/plumego/x/tenant/config	func	WithTenantCache	func WithTenantCachefunc(size int, ttl time.Duration) DBTenantConfigOption
-symbol	github.com/spcent/plumego/x/tenant/config	method	DBTenantConfigManager.DeleteTenantConfig	func (DBTenantConfigManager) DeleteTenantConfigfunc(ctx context.Context, tenantID string) error
-symbol	github.com/spcent/plumego/x/tenant/config	method	DBTenantConfigManager.GetTenantConfig	func (DBTenantConfigManager) GetTenantConfigfunc(ctx context.Context, tenantID string) (tenant.Config, error)
-symbol	github.com/spcent/plumego/x/tenant/config	method	DBTenantConfigManager.ListTenants	func (DBTenantConfigManager) ListTenantsfunc(ctx context.Context, limit, offset int) ([]tenant.Config, error)
-symbol	github.com/spcent/plumego/x/tenant/config	method	DBTenantConfigManager.PolicyConfig	func (DBTenantConfigManager) PolicyConfigfunc(ctx context.Context, tenantID string) (tenant.PolicyConfig, error)
-symbol	github.com/spcent/plumego/x/tenant/config	method	DBTenantConfigManager.QuotaConfig	func (DBTenantConfigManager) QuotaConfigfunc(ctx context.Context, tenantID string) (tenant.QuotaConfig, error)
-symbol	github.com/spcent/plumego/x/tenant/config	method	DBTenantConfigManager.SetTenantConfig	func (DBTenantConfigManager) SetTenantConfigfunc(ctx context.Context, cfg tenant.Config) error
-symbol	github.com/spcent/plumego/x/tenant/config	type	DBTenantConfigManager	type DBTenantConfigManager struct { }
-symbol	github.com/spcent/plumego/x/tenant/config	type	DBTenantConfigOption	type DBTenantConfigOption func(*DBTenantConfigManager)
-symbol	github.com/spcent/plumego/x/tenant/core	const	QuotaWindowDay	const QuotaWindowDay QuotaWindow = "day"
-symbol	github.com/spcent/plumego/x/tenant/core	const	QuotaWindowHour	const QuotaWindowHour QuotaWindow = "hour"
-symbol	github.com/spcent/plumego/x/tenant/core	const	QuotaWindowMinute	const QuotaWindowMinute QuotaWindow = "minute"
-symbol	github.com/spcent/plumego/x/tenant/core	const	QuotaWindowMonth	const QuotaWindowMonth QuotaWindow = "month"
-symbol	github.com/spcent/plumego/x/tenant/core	func	Chain	func Chainfunc(extractors ...TenantExtractor) TenantExtractor
-symbol	github.com/spcent/plumego/x/tenant/core	func	FromContextValue	func FromContextValuefunc(key any, extract func(any) string) TenantExtractor
-symbol	github.com/spcent/plumego/x/tenant/core	func	FromCookie	func FromCookiefunc(cookieName string) TenantExtractor
-symbol	github.com/spcent/plumego/x/tenant/core	func	FromHeader	func FromHeaderfunc(headerName string) TenantExtractor
-symbol	github.com/spcent/plumego/x/tenant/core	func	FromQuery	func FromQueryfunc(paramName string) TenantExtractor
-symbol	github.com/spcent/plumego/x/tenant/core	func	FromSubdomain	func FromSubdomainfunc() TenantExtractor
-symbol	github.com/spcent/plumego/x/tenant/core	func	NewCachedRoutePolicyProvider	func NewCachedRoutePolicyProviderfunc(provider RoutePolicyProvider, cache RoutePolicyCache) *CachedRoutePolicyProvider
-symbol	github.com/spcent/plumego/x/tenant/core	func	NewConfigPolicyEvaluator	func NewConfigPolicyEvaluatorfunc(provider PolicyConfigProvider) *ConfigPolicyEvaluator
-symbol	github.com/spcent/plumego/x/tenant/core	func	NewFixedWindowQuotaManager	func NewFixedWindowQuotaManagerfunc(provider QuotaConfigProvider) *FixedWindowQuotaManager
-symbol	github.com/spcent/plumego/x/tenant/core	func	NewInMemoryConfigManager	func NewInMemoryConfigManagerfunc() *InMemoryConfigManager
-symbol	github.com/spcent/plumego/x/tenant/core	func	NewInMemoryQuotaStore	func NewInMemoryQuotaStorefunc(opts ...InMemoryQuotaStoreConfig) *InMemoryQuotaStore
-symbol	github.com/spcent/plumego/x/tenant/core	func	NewInMemoryRateLimitManager	func NewInMemoryRateLimitManagerfunc() *InMemoryRateLimitManager
-symbol	github.com/spcent/plumego/x/tenant/core	func	NewInMemoryRoutePolicyCache	func NewInMemoryRoutePolicyCachefunc(maxSize int, ttl time.Duration) *InMemoryRoutePolicyCache
-symbol	github.com/spcent/plumego/x/tenant/core	func	NewInMemoryRoutePolicyStore	func NewInMemoryRoutePolicyStorefunc() *InMemoryRoutePolicyStore
-symbol	github.com/spcent/plumego/x/tenant/core	func	NewSlidingWindowQuotaManager	func NewSlidingWindowQuotaManagerfunc(provider QuotaConfigProvider) *SlidingWindowQuotaManager
-symbol	github.com/spcent/plumego/x/tenant/core	func	NewTokenBucketRateLimiter	func NewTokenBucketRateLimiterfunc(provider RateLimitConfigProvider) *TokenBucketRateLimiter
-symbol	github.com/spcent/plumego/x/tenant/core	func	NewWindowQuotaManager	func NewWindowQuotaManagerfunc(provider QuotaConfigProvider, store QuotaStore) *WindowQuotaManager
-symbol	github.com/spcent/plumego/x/tenant/core	func	RequestWithTenantID	func RequestWithTenantIDfunc(r *http.Request, tenantID string) *http.Request
-symbol	github.com/spcent/plumego/x/tenant/core	func	TenantIDFromContext	func TenantIDFromContextfunc(ctx context.Context) string
-symbol	github.com/spcent/plumego/x/tenant/core	func	ValidateTenantID	func ValidateTenantIDfunc(id string) error
-symbol	github.com/spcent/plumego/x/tenant/core	func	WithTenantID	func WithTenantIDfunc(ctx context.Context, tenantID string) context.Context
-symbol	github.com/spcent/plumego/x/tenant/core	method	CachedRoutePolicyProvider.Invalidate	func (CachedRoutePolicyProvider) Invalidatefunc(ctx context.Context, tenantID string) error
-symbol	github.com/spcent/plumego/x/tenant/core	method	CachedRoutePolicyProvider.RoutePolicy	func (CachedRoutePolicyProvider) RoutePolicyfunc(ctx context.Context, tenantID string) (RoutePolicy, error)
-symbol	github.com/spcent/plumego/x/tenant/core	method	ConfigPolicyEvaluator.Evaluate	func (ConfigPolicyEvaluator) Evaluatefunc(ctx context.Context, tenantID string, req PolicyRequest) (PolicyResult, error)
-symbol	github.com/spcent/plumego/x/tenant/core	method	FixedWindowQuotaManager.Allow	func (FixedWindowQuotaManager) Allowfunc(ctx context.Context, tenantID string, req QuotaRequest) (QuotaResult, error)
-symbol	github.com/spcent/plumego/x/tenant/core	method	Hooks.Policy	func (Hooks) Policyfunc(ctx context.Context, info PolicyDecision)
-symbol	github.com/spcent/plumego/x/tenant/core	method	Hooks.Quota	func (Hooks) Quotafunc(ctx context.Context, info QuotaDecision)
-symbol	github.com/spcent/plumego/x/tenant/core	method	Hooks.RateLimit	func (Hooks) RateLimitfunc(ctx context.Context, info RateLimitDecision)
-symbol	github.com/spcent/plumego/x/tenant/core	method	Hooks.Resolve	func (Hooks) Resolvefunc(ctx context.Context, info ResolveInfo)
-symbol	github.com/spcent/plumego/x/tenant/core	method	InMemoryConfigManager.GetTenantConfig	func (InMemoryConfigManager) GetTenantConfigfunc(ctx context.Context, tenantID string) (Config, error)
-symbol	github.com/spcent/plumego/x/tenant/core	method	InMemoryConfigManager.PolicyConfig	func (InMemoryConfigManager) PolicyConfigfunc(ctx context.Context, tenantID string) (PolicyConfig, error)
-symbol	github.com/spcent/plumego/x/tenant/core	method	InMemoryConfigManager.QuotaConfig	func (InMemoryConfigManager) QuotaConfigfunc(ctx context.Context, tenantID string) (QuotaConfig, error)
-symbol	github.com/spcent/plumego/x/tenant/core	method	InMemoryConfigManager.RateLimitConfig	func (InMemoryConfigManager) RateLimitConfigfunc(ctx context.Context, tenantID string) (RateLimitConfig, error)
-symbol	github.com/spcent/plumego/x/tenant/core	method	InMemoryConfigManager.SetTenantConfig	func (InMemoryConfigManager) SetTenantConfigfunc(cfg Config)
-symbol	github.com/spcent/plumego/x/tenant/core	method	InMemoryQuotaStore.Release	func (InMemoryQuotaStore) Releasefunc(ctx context.Context, req QuotaReleaseRequest) error
-symbol	github.com/spcent/plumego/x/tenant/core	method	InMemoryQuotaStore.Reserve	func (InMemoryQuotaStore) Reservefunc(ctx context.Context, req QuotaReserveRequest) (QuotaUsage, bool, error)
-symbol	github.com/spcent/plumego/x/tenant/core	method	InMemoryQuotaStore.Usage	func (InMemoryQuotaStore) Usagefunc(tenantID string, window QuotaWindow, windowStart time.Time) (QuotaUsage, bool)
-symbol	github.com/spcent/plumego/x/tenant/core	method	InMemoryRateLimitManager.RateLimitConfig	func (InMemoryRateLimitManager) RateLimitConfigfunc(ctx context.Context, tenantID string) (RateLimitConfig, error)
-symbol	github.com/spcent/plumego/x/tenant/core	method	InMemoryRateLimitManager.SetRateLimit	func (InMemoryRateLimitManager) SetRateLimitfunc(tenantID string, cfg RateLimitConfig)
-symbol	github.com/spcent/plumego/x/tenant/core	method	InMemoryRoutePolicyCache.Delete	func (InMemoryRoutePolicyCache) Deletefunc(ctx context.Context, tenantID string) error
-symbol	github.com/spcent/plumego/x/tenant/core	method	InMemoryRoutePolicyCache.Get	func (InMemoryRoutePolicyCache) Getfunc(ctx context.Context, tenantID string) (RoutePolicy, bool)
-symbol	github.com/spcent/plumego/x/tenant/core	method	InMemoryRoutePolicyCache.Set	func (InMemoryRoutePolicyCache) Setfunc(ctx context.Context, tenantID string, policy RoutePolicy) error
-symbol	github.com/spcent/plumego/x/tenant/core	method	InMemoryRoutePolicyStore.DeleteRoutePolicy	func (InMemoryRoutePolicyStore) DeleteRoutePolicyfunc(ctx context.Context, tenantID string) error
-symbol	github.com/spcent/plumego/x/tenant/core	method	InMemoryRoutePolicyStore.RoutePolicy	func (InMemoryRoutePolicyStore) RoutePolicyfunc(ctx context.Context, tenantID string) (RoutePolicy, error)
-symbol	github.com/spcent/plumego/x/tenant/core	method	InMemoryRoutePolicyStore.SetRoutePolicy	func (InMemoryRoutePolicyStore) SetRoutePolicyfunc(ctx context.Context, policy RoutePolicy) error
-symbol	github.com/spcent/plumego/x/tenant/core	method	SlidingWindowQuotaManager.Allow	func (SlidingWindowQuotaManager) Allowfunc(ctx context.Context, tenantID string, req QuotaRequest) (QuotaResult, error)
-symbol	github.com/spcent/plumego/x/tenant/core	method	SlidingWindowQuotaManager.DeleteTenant	func (SlidingWindowQuotaManager) DeleteTenantfunc(tenantID string)
-symbol	github.com/spcent/plumego/x/tenant/core	method	TokenBucketRateLimiter.Allow	func (TokenBucketRateLimiter) Allowfunc(ctx context.Context, tenantID string, req RateLimitRequest) (RateLimitResult, error)
-symbol	github.com/spcent/plumego/x/tenant/core	method	TokenBucketRateLimiter.DeleteTenant	func (TokenBucketRateLimiter) DeleteTenantfunc(tenantID string)
-symbol	github.com/spcent/plumego/x/tenant/core	method	WindowQuotaManager.Allow	func (WindowQuotaManager) Allowfunc(ctx context.Context, tenantID string, req QuotaRequest) (QuotaResult, error)
-symbol	github.com/spcent/plumego/x/tenant/core	type	CachedRoutePolicyProvider	type CachedRoutePolicyProvider struct { }
-symbol	github.com/spcent/plumego/x/tenant/core	type	Config	type Config struct { TenantID string Quota QuotaConfig Policy PolicyConfig RateLimit RateLimitConfig Metadata map[string]string UpdatedAt time.Time }
-symbol	github.com/spcent/plumego/x/tenant/core	type	ConfigManager	type ConfigManager interface { QuotaConfigProvider PolicyConfigProvider RateLimitConfigProvider GetTenantConfig(ctx context.Context, tenantID string) (Config, error) }
-symbol	github.com/spcent/plumego/x/tenant/core	type	ConfigPolicyEvaluator	type ConfigPolicyEvaluator struct { }
-symbol	github.com/spcent/plumego/x/tenant/core	type	FixedWindowQuotaManager	type FixedWindowQuotaManager struct { }
-symbol	github.com/spcent/plumego/x/tenant/core	type	Hooks	type Hooks struct { OnResolve func(ctx context.Context, info ResolveInfo) OnPolicy func(ctx context.Context, info PolicyDecision) OnQuota func(ctx context.Context, info QuotaDecision) OnRateLimit func(ctx context.Context, info RateLimitDecision) }
-symbol	github.com/spcent/plumego/x/tenant/core	type	InMemoryConfigManager	type InMemoryConfigManager struct { }
-symbol	github.com/spcent/plumego/x/tenant/core	type	InMemoryQuotaStore	type InMemoryQuotaStore struct { }
-symbol	github.com/spcent/plumego/x/tenant/core	type	InMemoryQuotaStoreConfig	type InMemoryQuotaStoreConfig struct { CleanupInterval time.Duration }
-symbol	github.com/spcent/plumego/x/tenant/core	type	InMemoryRateLimitManager	type InMemoryRateLimitManager struct { }
-symbol	github.com/spcent/plumego/x/tenant/core	type	InMemoryRoutePolicyCache	type InMemoryRoutePolicyCache struct { }
-symbol	github.com/spcent/plumego/x/tenant/core	type	InMemoryRoutePolicyStore	type InMemoryRoutePolicyStore struct { }
-symbol	github.com/spcent/plumego/x/tenant/core	type	PolicyConfig	type PolicyConfig struct { AllowedModels []string AllowedTools []string AllowedMethods []string AllowedPaths []string }
-symbol	github.com/spcent/plumego/x/tenant/core	type	PolicyConfigProvider	type PolicyConfigProvider interface { PolicyConfig(ctx context.Context, tenantID string) (PolicyConfig, error) }
-symbol	github.com/spcent/plumego/x/tenant/core	type	PolicyDecision	type PolicyDecision struct { TenantID string Allowed bool Reason string Model string Tool string Method string Path string Status int Err error }
-symbol	github.com/spcent/plumego/x/tenant/core	type	PolicyEvaluator	type PolicyEvaluator interface { Evaluate(ctx context.Context, tenantID string, req PolicyRequest) (PolicyResult, error) }
-symbol	github.com/spcent/plumego/x/tenant/core	type	PolicyRequest	type PolicyRequest struct { Model string Tool string Method string Path string }
-symbol	github.com/spcent/plumego/x/tenant/core	type	PolicyResult	type PolicyResult struct { Allowed bool Reason string }
-symbol	github.com/spcent/plumego/x/tenant/core	type	QuotaConfig	type QuotaConfig struct { Limits []QuotaLimit }
-symbol	github.com/spcent/plumego/x/tenant/core	type	QuotaConfigProvider	type QuotaConfigProvider interface { QuotaConfig(ctx context.Context, tenantID string) (QuotaConfig, error) }
-symbol	github.com/spcent/plumego/x/tenant/core	type	QuotaDecision	type QuotaDecision struct { TenantID string Allowed bool Tokens int64 Requests int64 RemainingTokens int64 RemainingRequests int64 RetryAfter time.Duration Status int Err error }
-symbol	github.com/spcent/plumego/x/tenant/core	type	QuotaLimit	type QuotaLimit struct { Window QuotaWindow Requests int64 Tokens int64 }
-symbol	github.com/spcent/plumego/x/tenant/core	type	QuotaManager	type QuotaManager interface { Allow(ctx context.Context, tenantID string, req QuotaRequest) (QuotaResult, error) }
-symbol	github.com/spcent/plumego/x/tenant/core	type	QuotaReleaseRequest	type QuotaReleaseRequest struct { TenantID string Window QuotaWindow WindowStart time.Time DeltaRequests int64 DeltaTokens int64 }
-symbol	github.com/spcent/plumego/x/tenant/core	type	QuotaRequest	type QuotaRequest struct { Requests int64 Tokens int64 Now time.Time }
-symbol	github.com/spcent/plumego/x/tenant/core	type	QuotaReserveRequest	type QuotaReserveRequest struct { TenantID string Window QuotaWindow WindowStart time.Time DeltaRequests int64 DeltaTokens int64 LimitRequests int64 LimitTokens int64 }
-symbol	github.com/spcent/plumego/x/tenant/core	type	QuotaResult	type QuotaResult struct { Allowed bool RemainingRequests int64 RemainingTokens int64 RetryAfter time.Duration }
-symbol	github.com/spcent/plumego/x/tenant/core	type	QuotaStore	type QuotaStore interface { Reserve(ctx context.Context, req QuotaReserveRequest) (QuotaUsage, bool, error) Release(ctx context.Context, req QuotaReleaseRequest) error }
-symbol	github.com/spcent/plumego/x/tenant/core	type	QuotaUsage	type QuotaUsage struct { WindowStart time.Time WindowEnd time.Time Requests int64 Tokens int64 }
-symbol	github.com/spcent/plumego/x/tenant/core	type	QuotaWindow	type QuotaWindow string
-symbol	github.com/spcent/plumego/x/tenant/core	type	RateLimitConfig	type RateLimitConfig struct { RequestsPerSecond int64 Burst int64 }
-symbol	github.com/spcent/plumego/x/tenant/core	type	RateLimitConfigProvider	type RateLimitConfigProvider interface { RateLimitConfig(ctx context.Context, tenantID string) (RateLimitConfig, error) }
-symbol	github.com/spcent/plumego/x/tenant/core	type	RateLimitDecision	type RateLimitDecision struct { TenantID string Allowed bool Tokens int64 Remaining int64 Limit int64 Burst int64 RetryAfter time.Duration Status int Err error }
-symbol	github.com/spcent/plumego/x/tenant/core	type	RateLimitRequest	type RateLimitRequest struct { Tokens int64 Now time.Time }
-symbol	github.com/spcent/plumego/x/tenant/core	type	RateLimitResult	type RateLimitResult struct { Allowed bool Remaining int64 RetryAfter time.Duration Limit int64 Burst int64 }
-symbol	github.com/spcent/plumego/x/tenant/core	type	RateLimiter	type RateLimiter interface { Allow(ctx context.Context, tenantID string, req RateLimitRequest) (RateLimitResult, error) }
-symbol	github.com/spcent/plumego/x/tenant/core	type	ResolveInfo	type ResolveInfo struct { TenantID string Source string }
-symbol	github.com/spcent/plumego/x/tenant/core	type	RoutePolicy	type RoutePolicy struct { TenantID string Strategy string Payload []byte Metadata map[string]string UpdatedAt time.Time }
-symbol	github.com/spcent/plumego/x/tenant/core	type	RoutePolicyCache	type RoutePolicyCache interface { Get(ctx context.Context, tenantID string) (RoutePolicy, bool) Set(ctx context.Context, tenantID string, policy RoutePolicy) error Delete(ctx context.Context, tenantID string) error }
-symbol	github.com/spcent/plumego/x/tenant/core	type	RoutePolicyProvider	type RoutePolicyProvider interface { RoutePolicy(ctx context.Context, tenantID string) (RoutePolicy, error) }
-symbol	github.com/spcent/plumego/x/tenant/core	type	RoutePolicyStore	type RoutePolicyStore interface { RoutePolicyProvider SetRoutePolicy(ctx context.Context, policy RoutePolicy) error DeleteRoutePolicy(ctx context.Context, tenantID string) error }
-symbol	github.com/spcent/plumego/x/tenant/core	type	SlidingWindowQuotaManager	type SlidingWindowQuotaManager struct { }
-symbol	github.com/spcent/plumego/x/tenant/core	type	TenantExtractor	type TenantExtractor func(*http.Request) (string, error)
-symbol	github.com/spcent/plumego/x/tenant/core	type	TokenBucketRateLimiter	type TokenBucketRateLimiter struct { }
-symbol	github.com/spcent/plumego/x/tenant/core	type	WindowQuotaManager	type WindowQuotaManager struct { }
-symbol	github.com/spcent/plumego/x/tenant/core	var	ErrInvalidTenantID	var ErrInvalidTenantID = errors.New("invalid tenant ID")
-symbol	github.com/spcent/plumego/x/tenant/core	var	ErrPolicyDenied	var ErrPolicyDenied = errors.New("policy denied")
-symbol	github.com/spcent/plumego/x/tenant/core	var	ErrQuotaExceeded	var ErrQuotaExceeded = errors.New("quota exceeded")
-symbol	github.com/spcent/plumego/x/tenant/core	var	ErrRateLimitExceeded	var ErrRateLimitExceeded = errors.New("rate limit exceeded")
-symbol	github.com/spcent/plumego/x/tenant/core	var	ErrRoutePolicyNotFound	var ErrRoutePolicyNotFound = errors.New("route policy not found")
-symbol	github.com/spcent/plumego/x/tenant/core	var	ErrTenantNotFound	var ErrTenantNotFound = errors.New("tenant not found")
-symbol	github.com/spcent/plumego/x/tenant/core	var	ErrUnsupportedQuotaWindow	var ErrUnsupportedQuotaWindow = errors.New("unsupported quota window")
-symbol	github.com/spcent/plumego/x/tenant/policy	func	Middleware	func Middlewarefunc(options Options) mw.Middleware
-symbol	github.com/spcent/plumego/x/tenant/policy	type	Options	type Options struct { Evaluator tenantcore.PolicyEvaluator ModelHeader string ToolHeader string Hooks tenantcore.Hooks OnDenied func(http.ResponseWriter, *http.Request, tenantcore.PolicyResult) }
-symbol	github.com/spcent/plumego/x/tenant/quota	func	Middleware	func Middlewarefunc(options Options) mw.Middleware
-symbol	github.com/spcent/plumego/x/tenant/quota	type	Options	type Options struct { Manager tenantcore.QuotaManager TokensHeader string Estimator func(*http.Request) int Hooks tenantcore.Hooks OnRejected func(http.ResponseWriter, *http.Request, tenantcore.QuotaResult) }
-symbol	github.com/spcent/plumego/x/tenant/ratelimit	func	Middleware	func Middlewarefunc(options Options) middleware.Middleware
-symbol	github.com/spcent/plumego/x/tenant/ratelimit	type	Options	type Options struct { Limiter tenantcore.RateLimiter Estimator func(*http.Request) int64 Hooks tenantcore.Hooks OnRejected func(http.ResponseWriter, *http.Request, tenantcore.RateLimitResult) }
-symbol	github.com/spcent/plumego/x/tenant/resolve	func	Middleware	func Middlewarefunc(options Options) middleware.Middleware
-symbol	github.com/spcent/plumego/x/tenant/resolve	type	Options	type Options struct { HeaderName string Extractor tenantcore.TenantExtractor AllowMissing bool DisablePrincipal bool Hooks tenantcore.Hooks OnMissing func(http.ResponseWriter, *http.Request) }
-symbol	github.com/spcent/plumego/x/tenant/session	const	SessionActive	const SessionActive SessionStatus = "active"
-symbol	github.com/spcent/plumego/x/tenant/session	const	SessionExpired	const SessionExpired SessionStatus = "expired"
-symbol	github.com/spcent/plumego/x/tenant/session	const	SessionRevoked	const SessionRevoked SessionStatus = "revoked"
-symbol	github.com/spcent/plumego/x/tenant/session	func	NewJWTStateStore	func NewJWTStateStorefunc(store *kvstore.KVStore) (*JWTStateStore, error)
-symbol	github.com/spcent/plumego/x/tenant/session	func	SessionCheck	func SessionCheckfunc(store SessionStore, validator SessionValidator, opts ...SessionOption) middleware.Middleware
-symbol	github.com/spcent/plumego/x/tenant/session	func	WithSessionErrorHandler	func WithSessionErrorHandlerfunc(handler SessionErrorHandler) SessionOption
-symbol	github.com/spcent/plumego/x/tenant/session	func	WithSessionIDExtractor	func WithSessionIDExtractorfunc(extractor func(*authn.Principal) (string, bool)) SessionOption
-symbol	github.com/spcent/plumego/x/tenant/session	func	WithSessionLookup	func WithSessionLookupfunc(lookup SessionLookup) SessionOption
-symbol	github.com/spcent/plumego/x/tenant/session	func	WithSessionNow	func WithSessionNowfunc(now func() time.Time) SessionOption
-symbol	github.com/spcent/plumego/x/tenant/session	func	WithSessionRequired	func WithSessionRequiredfunc(required bool) SessionOption
-symbol	github.com/spcent/plumego/x/tenant/session	method	JWTStateStore.IncrementSubjectVersion	func (JWTStateStore) IncrementSubjectVersionfunc(subject string) (int64, error)
-symbol	github.com/spcent/plumego/x/tenant/session	method	JWTStateStore.RevokeClaims	func (JWTStateStore) RevokeClaimsfunc(claims *jwt.TokenClaims) error
-symbol	github.com/spcent/plumego/x/tenant/session	method	JWTStateStore.SubjectVersion	func (JWTStateStore) SubjectVersionfunc(subject string) (int64, error)
-symbol	github.com/spcent/plumego/x/tenant/session	method	JWTStateStore.ValidateClaims	func (JWTStateStore) ValidateClaimsfunc(claims *jwt.TokenClaims) error
-symbol	github.com/spcent/plumego/x/tenant/session	type	JWTStateStore	type JWTStateStore struct { }
-symbol	github.com/spcent/plumego/x/tenant/session	type	RefreshClaims	type RefreshClaims struct { SessionID string RefreshID string Subject string TenantID string KeyID string TokenVersion int64 ExpiresAt time.Time }
-symbol	github.com/spcent/plumego/x/tenant/session	type	RefreshManager	type RefreshManager interface { IssueRefreshClaims(ctx context.Context, s *Session, now time.Time) (RefreshClaims, error) RotateRefreshClaims(ctx context.Context, s *Session, currentRefreshID string, now time.Time) (RefreshClaims, error) }
-symbol	github.com/spcent/plumego/x/tenant/session	type	Session	type Session struct { SessionID string Subject string TenantID string TokenVersion int64 KeyID string RefreshID string PreviousRefreshID string RefreshExpiresAt time.Time Status SessionStatus CreatedAt time.Time LastSeenAt time.Time ExpiresAt time.Time RevokedAt time.Time RevokeReason string ClientID string DeviceID string UserAgentHash string IPHash string Attributes map[string]string }
-symbol	github.com/spcent/plumego/x/tenant/session	type	SessionErrorHandler	type SessionErrorHandler func(w http.ResponseWriter, r *http.Request, err error)
-symbol	github.com/spcent/plumego/x/tenant/session	type	SessionLookup	type SessionLookup func(ctx context.Context, r *http.Request, p *authn.Principal) (*Session, error)
-symbol	github.com/spcent/plumego/x/tenant/session	type	SessionManager	type SessionManager interface { SessionStore SessionValidator RefreshManager }
-symbol	github.com/spcent/plumego/x/tenant/session	type	SessionOption	type SessionOption func(*sessionOptions)
-symbol	github.com/spcent/plumego/x/tenant/session	type	SessionStatus	type SessionStatus string
-symbol	github.com/spcent/plumego/x/tenant/session	type	SessionStore	type SessionStore interface { CreateSession(ctx context.Context, s *Session) error GetSession(ctx context.Context, sessionID string) (*Session, error) RotateRefresh(ctx context.Context, sessionID, currentRefreshID, nextRefreshID string, now time.Time) (*Session, error) RevokeSession(ctx context.Context, sessionID string, now time.Time, reason string) error ListSessionsBySubject(ctx context.Context, tenantID, subject string, limit int) ([]*Session, error) }
-symbol	github.com/spcent/plumego/x/tenant/session	type	SessionValidator	type SessionValidator interface { ValidateSession(ctx context.Context, s *Session, now time.Time) error ValidateRefresh(ctx context.Context, s *Session, claims RefreshClaims, now time.Time) error }
-symbol	github.com/spcent/plumego/x/tenant/session	var	ErrRefreshReused	var ErrRefreshReused = errors.New("refresh token reuse detected")
-symbol	github.com/spcent/plumego/x/tenant/session	var	ErrSessionExpired	var ErrSessionExpired = errors.New("session expired")
-symbol	github.com/spcent/plumego/x/tenant/session	var	ErrSessionRevoked	var ErrSessionRevoked = errors.New("session revoked")
-symbol	github.com/spcent/plumego/x/tenant/session	var	ErrTokenVersionMismatch	var ErrTokenVersionMismatch = errors.New("token version mismatch")
-symbol	github.com/spcent/plumego/x/tenant/store/cache	func	NewTenantCache	func NewTenantCachefunc(cache storecache.Cache, options ...TenantCacheOption) *TenantCache
-symbol	github.com/spcent/plumego/x/tenant/store/cache	func	WithKeyPrefix	func WithKeyPrefixfunc(prefix string) TenantCacheOption
-symbol	github.com/spcent/plumego/x/tenant/store/cache	func	WithSeparator	func WithSeparatorfunc(sep string) TenantCacheOption
-symbol	github.com/spcent/plumego/x/tenant/store/cache	method	TenantCache.Append	func (TenantCache) Appendfunc(ctx context.Context, key string, data []byte) error
-symbol	github.com/spcent/plumego/x/tenant/store/cache	method	TenantCache.Clear	func (TenantCache) Clearfunc(ctx context.Context) error
-symbol	github.com/spcent/plumego/x/tenant/store/cache	method	TenantCache.Decr	func (TenantCache) Decrfunc(ctx context.Context, key string, delta int64) (int64, error)
-symbol	github.com/spcent/plumego/x/tenant/store/cache	method	TenantCache.Delete	func (TenantCache) Deletefunc(ctx context.Context, key string) error
-symbol	github.com/spcent/plumego/x/tenant/store/cache	method	TenantCache.Exists	func (TenantCache) Existsfunc(ctx context.Context, key string) (bool, error)
-symbol	github.com/spcent/plumego/x/tenant/store/cache	method	TenantCache.Get	func (TenantCache) Getfunc(ctx context.Context, key string) ([]byte, error)
-symbol	github.com/spcent/plumego/x/tenant/store/cache	method	TenantCache.Incr	func (TenantCache) Incrfunc(ctx context.Context, key string, delta int64) (int64, error)
-symbol	github.com/spcent/plumego/x/tenant/store/cache	method	TenantCache.RawCache	func (TenantCache) RawCachefunc() storecache.Cache
-symbol	github.com/spcent/plumego/x/tenant/store/cache	method	TenantCache.Set	func (TenantCache) Setfunc(ctx context.Context, key string, value []byte, ttl time.Duration) error
-symbol	github.com/spcent/plumego/x/tenant/store/cache	type	TenantCache	type TenantCache struct { }
-symbol	github.com/spcent/plumego/x/tenant/store/cache	type	TenantCacheOption	type TenantCacheOption func(*TenantCache)
-symbol	github.com/spcent/plumego/x/tenant/store/db	func	NewTenantDB	func NewTenantDBfunc(db *sql.DB, options ...TenantDBOption) *TenantDB
-symbol	github.com/spcent/plumego/x/tenant/store/db	func	ValidateQuery	func ValidateQueryfunc(query string, tenantColumn string) error
-symbol	github.com/spcent/plumego/x/tenant/store/db	func	WithTenantColumn	func WithTenantColumnfunc(column string) TenantDBOption
-symbol	github.com/spcent/plumego/x/tenant/store/db	method	TenantDB.Err	func (TenantDB) Errfunc() error
-symbol	github.com/spcent/plumego/x/tenant/store/db	method	TenantDB.ExecContext	func (TenantDB) ExecContextfunc(ctx context.Context, tenantID string, query string, args ...any) (sql.Result, error)
-symbol	github.com/spcent/plumego/x/tenant/store/db	method	TenantDB.ExecFromContext	func (TenantDB) ExecFromContextfunc(ctx context.Context, query string, args ...any) (sql.Result, error)
-symbol	github.com/spcent/plumego/x/tenant/store/db	method	TenantDB.QueryContext	func (TenantDB) QueryContextfunc(ctx context.Context, tenantID string, query string, args ...any) (*sql.Rows, error)
-symbol	github.com/spcent/plumego/x/tenant/store/db	method	TenantDB.QueryFromContext	func (TenantDB) QueryFromContextfunc(ctx context.Context, query string, args ...any) (*sql.Rows, error)
-symbol	github.com/spcent/plumego/x/tenant/store/db	method	TenantDB.QueryRowContext	func (TenantDB) QueryRowContextfunc(ctx context.Context, tenantID string, query string, args ...any) *sql.Row
-symbol	github.com/spcent/plumego/x/tenant/store/db	method	TenantDB.QueryRowFromContext	func (TenantDB) QueryRowFromContextfunc(ctx context.Context, query string, args ...any) *sql.Row
-symbol	github.com/spcent/plumego/x/tenant/store/db	method	TenantDB.RawDB	func (TenantDB) RawDBfunc() *sql.DB
-symbol	github.com/spcent/plumego/x/tenant/store/db	type	TenantDB	type TenantDB struct { }
-symbol	github.com/spcent/plumego/x/tenant/store/db	type	TenantDBOption	type TenantDBOption func(*TenantDB)
-symbol	github.com/spcent/plumego/x/tenant/transport	const	CodeInvalidID	const CodeInvalidID = "tenant_invalid_id"
-symbol	github.com/spcent/plumego/x/tenant/transport	const	CodePolicyDenied	const CodePolicyDenied = "tenant_policy_denied"
-symbol	github.com/spcent/plumego/x/tenant/transport	const	CodeQuotaExceeded	const CodeQuotaExceeded = "tenant_quota_exceeded"
-symbol	github.com/spcent/plumego/x/tenant/transport	const	CodeRateLimited	const CodeRateLimited = "tenant_rate_limited"
-symbol	github.com/spcent/plumego/x/tenant/transport	const	CodeRequired	const CodeRequired = "tenant_required"
-symbol	github.com/spcent/plumego/x/tenant/transport	const	DefaultModelHeader	const DefaultModelHeader = "X-Model"
-symbol	github.com/spcent/plumego/x/tenant/transport	const	DefaultTenantHeader	const DefaultTenantHeader = "X-Tenant-ID"
-symbol	github.com/spcent/plumego/x/tenant/transport	const	DefaultTokensHeader	const DefaultTokensHeader = "X-Token-Count"
-symbol	github.com/spcent/plumego/x/tenant/transport	const	DefaultToolHeader	const DefaultToolHeader = "X-Tool"
-symbol	github.com/spcent/plumego/x/tenant/transport	func	HeaderOrDefault	func HeaderOrDefaultfunc(value, fallback string) string
-symbol	github.com/spcent/plumego/x/tenant/transport	func	SetQuotaHeaders	func SetQuotaHeadersfunc(w http.ResponseWriter, remainingRequests, remainingTokens int64)
-symbol	github.com/spcent/plumego/x/tenant/transport	func	SetRateLimitHeaders	func SetRateLimitHeadersfunc(w http.ResponseWriter, limit, remaining int64)
-symbol	github.com/spcent/plumego/x/tenant/transport	func	SetRetryAfterHeader	func SetRetryAfterHeaderfunc(w http.ResponseWriter, retry time.Duration)
+symbol	github.com/birdordev/plumego/x/tenant/config	func	NewDBTenantConfigManager	func NewDBTenantConfigManagerfunc(db *sql.DB, options ...DBTenantConfigOption) *DBTenantConfigManager
+symbol	github.com/birdordev/plumego/x/tenant/config	func	WithTenantCache	func WithTenantCachefunc(size int, ttl time.Duration) DBTenantConfigOption
+symbol	github.com/birdordev/plumego/x/tenant/config	method	DBTenantConfigManager.DeleteTenantConfig	func (DBTenantConfigManager) DeleteTenantConfigfunc(ctx context.Context, tenantID string) error
+symbol	github.com/birdordev/plumego/x/tenant/config	method	DBTenantConfigManager.GetTenantConfig	func (DBTenantConfigManager) GetTenantConfigfunc(ctx context.Context, tenantID string) (tenant.Config, error)
+symbol	github.com/birdordev/plumego/x/tenant/config	method	DBTenantConfigManager.ListTenants	func (DBTenantConfigManager) ListTenantsfunc(ctx context.Context, limit, offset int) ([]tenant.Config, error)
+symbol	github.com/birdordev/plumego/x/tenant/config	method	DBTenantConfigManager.PolicyConfig	func (DBTenantConfigManager) PolicyConfigfunc(ctx context.Context, tenantID string) (tenant.PolicyConfig, error)
+symbol	github.com/birdordev/plumego/x/tenant/config	method	DBTenantConfigManager.QuotaConfig	func (DBTenantConfigManager) QuotaConfigfunc(ctx context.Context, tenantID string) (tenant.QuotaConfig, error)
+symbol	github.com/birdordev/plumego/x/tenant/config	method	DBTenantConfigManager.SetTenantConfig	func (DBTenantConfigManager) SetTenantConfigfunc(ctx context.Context, cfg tenant.Config) error
+symbol	github.com/birdordev/plumego/x/tenant/config	type	DBTenantConfigManager	type DBTenantConfigManager struct { }
+symbol	github.com/birdordev/plumego/x/tenant/config	type	DBTenantConfigOption	type DBTenantConfigOption func(*DBTenantConfigManager)
+symbol	github.com/birdordev/plumego/x/tenant/core	const	QuotaWindowDay	const QuotaWindowDay QuotaWindow = "day"
+symbol	github.com/birdordev/plumego/x/tenant/core	const	QuotaWindowHour	const QuotaWindowHour QuotaWindow = "hour"
+symbol	github.com/birdordev/plumego/x/tenant/core	const	QuotaWindowMinute	const QuotaWindowMinute QuotaWindow = "minute"
+symbol	github.com/birdordev/plumego/x/tenant/core	const	QuotaWindowMonth	const QuotaWindowMonth QuotaWindow = "month"
+symbol	github.com/birdordev/plumego/x/tenant/core	func	Chain	func Chainfunc(extractors ...TenantExtractor) TenantExtractor
+symbol	github.com/birdordev/plumego/x/tenant/core	func	FromContextValue	func FromContextValuefunc(key any, extract func(any) string) TenantExtractor
+symbol	github.com/birdordev/plumego/x/tenant/core	func	FromCookie	func FromCookiefunc(cookieName string) TenantExtractor
+symbol	github.com/birdordev/plumego/x/tenant/core	func	FromHeader	func FromHeaderfunc(headerName string) TenantExtractor
+symbol	github.com/birdordev/plumego/x/tenant/core	func	FromQuery	func FromQueryfunc(paramName string) TenantExtractor
+symbol	github.com/birdordev/plumego/x/tenant/core	func	FromSubdomain	func FromSubdomainfunc() TenantExtractor
+symbol	github.com/birdordev/plumego/x/tenant/core	func	NewCachedRoutePolicyProvider	func NewCachedRoutePolicyProviderfunc(provider RoutePolicyProvider, cache RoutePolicyCache) *CachedRoutePolicyProvider
+symbol	github.com/birdordev/plumego/x/tenant/core	func	NewConfigPolicyEvaluator	func NewConfigPolicyEvaluatorfunc(provider PolicyConfigProvider) *ConfigPolicyEvaluator
+symbol	github.com/birdordev/plumego/x/tenant/core	func	NewFixedWindowQuotaManager	func NewFixedWindowQuotaManagerfunc(provider QuotaConfigProvider) *FixedWindowQuotaManager
+symbol	github.com/birdordev/plumego/x/tenant/core	func	NewInMemoryConfigManager	func NewInMemoryConfigManagerfunc() *InMemoryConfigManager
+symbol	github.com/birdordev/plumego/x/tenant/core	func	NewInMemoryQuotaStore	func NewInMemoryQuotaStorefunc(opts ...InMemoryQuotaStoreConfig) *InMemoryQuotaStore
+symbol	github.com/birdordev/plumego/x/tenant/core	func	NewInMemoryRateLimitManager	func NewInMemoryRateLimitManagerfunc() *InMemoryRateLimitManager
+symbol	github.com/birdordev/plumego/x/tenant/core	func	NewInMemoryRoutePolicyCache	func NewInMemoryRoutePolicyCachefunc(maxSize int, ttl time.Duration) *InMemoryRoutePolicyCache
+symbol	github.com/birdordev/plumego/x/tenant/core	func	NewInMemoryRoutePolicyStore	func NewInMemoryRoutePolicyStorefunc() *InMemoryRoutePolicyStore
+symbol	github.com/birdordev/plumego/x/tenant/core	func	NewSlidingWindowQuotaManager	func NewSlidingWindowQuotaManagerfunc(provider QuotaConfigProvider) *SlidingWindowQuotaManager
+symbol	github.com/birdordev/plumego/x/tenant/core	func	NewTokenBucketRateLimiter	func NewTokenBucketRateLimiterfunc(provider RateLimitConfigProvider) *TokenBucketRateLimiter
+symbol	github.com/birdordev/plumego/x/tenant/core	func	NewWindowQuotaManager	func NewWindowQuotaManagerfunc(provider QuotaConfigProvider, store QuotaStore) *WindowQuotaManager
+symbol	github.com/birdordev/plumego/x/tenant/core	func	RequestWithTenantID	func RequestWithTenantIDfunc(r *http.Request, tenantID string) *http.Request
+symbol	github.com/birdordev/plumego/x/tenant/core	func	TenantIDFromContext	func TenantIDFromContextfunc(ctx context.Context) string
+symbol	github.com/birdordev/plumego/x/tenant/core	func	ValidateTenantID	func ValidateTenantIDfunc(id string) error
+symbol	github.com/birdordev/plumego/x/tenant/core	func	WithTenantID	func WithTenantIDfunc(ctx context.Context, tenantID string) context.Context
+symbol	github.com/birdordev/plumego/x/tenant/core	method	CachedRoutePolicyProvider.Invalidate	func (CachedRoutePolicyProvider) Invalidatefunc(ctx context.Context, tenantID string) error
+symbol	github.com/birdordev/plumego/x/tenant/core	method	CachedRoutePolicyProvider.RoutePolicy	func (CachedRoutePolicyProvider) RoutePolicyfunc(ctx context.Context, tenantID string) (RoutePolicy, error)
+symbol	github.com/birdordev/plumego/x/tenant/core	method	ConfigPolicyEvaluator.Evaluate	func (ConfigPolicyEvaluator) Evaluatefunc(ctx context.Context, tenantID string, req PolicyRequest) (PolicyResult, error)
+symbol	github.com/birdordev/plumego/x/tenant/core	method	FixedWindowQuotaManager.Allow	func (FixedWindowQuotaManager) Allowfunc(ctx context.Context, tenantID string, req QuotaRequest) (QuotaResult, error)
+symbol	github.com/birdordev/plumego/x/tenant/core	method	Hooks.Policy	func (Hooks) Policyfunc(ctx context.Context, info PolicyDecision)
+symbol	github.com/birdordev/plumego/x/tenant/core	method	Hooks.Quota	func (Hooks) Quotafunc(ctx context.Context, info QuotaDecision)
+symbol	github.com/birdordev/plumego/x/tenant/core	method	Hooks.RateLimit	func (Hooks) RateLimitfunc(ctx context.Context, info RateLimitDecision)
+symbol	github.com/birdordev/plumego/x/tenant/core	method	Hooks.Resolve	func (Hooks) Resolvefunc(ctx context.Context, info ResolveInfo)
+symbol	github.com/birdordev/plumego/x/tenant/core	method	InMemoryConfigManager.GetTenantConfig	func (InMemoryConfigManager) GetTenantConfigfunc(ctx context.Context, tenantID string) (Config, error)
+symbol	github.com/birdordev/plumego/x/tenant/core	method	InMemoryConfigManager.PolicyConfig	func (InMemoryConfigManager) PolicyConfigfunc(ctx context.Context, tenantID string) (PolicyConfig, error)
+symbol	github.com/birdordev/plumego/x/tenant/core	method	InMemoryConfigManager.QuotaConfig	func (InMemoryConfigManager) QuotaConfigfunc(ctx context.Context, tenantID string) (QuotaConfig, error)
+symbol	github.com/birdordev/plumego/x/tenant/core	method	InMemoryConfigManager.RateLimitConfig	func (InMemoryConfigManager) RateLimitConfigfunc(ctx context.Context, tenantID string) (RateLimitConfig, error)
+symbol	github.com/birdordev/plumego/x/tenant/core	method	InMemoryConfigManager.SetTenantConfig	func (InMemoryConfigManager) SetTenantConfigfunc(cfg Config)
+symbol	github.com/birdordev/plumego/x/tenant/core	method	InMemoryQuotaStore.Release	func (InMemoryQuotaStore) Releasefunc(ctx context.Context, req QuotaReleaseRequest) error
+symbol	github.com/birdordev/plumego/x/tenant/core	method	InMemoryQuotaStore.Reserve	func (InMemoryQuotaStore) Reservefunc(ctx context.Context, req QuotaReserveRequest) (QuotaUsage, bool, error)
+symbol	github.com/birdordev/plumego/x/tenant/core	method	InMemoryQuotaStore.Usage	func (InMemoryQuotaStore) Usagefunc(tenantID string, window QuotaWindow, windowStart time.Time) (QuotaUsage, bool)
+symbol	github.com/birdordev/plumego/x/tenant/core	method	InMemoryRateLimitManager.RateLimitConfig	func (InMemoryRateLimitManager) RateLimitConfigfunc(ctx context.Context, tenantID string) (RateLimitConfig, error)
+symbol	github.com/birdordev/plumego/x/tenant/core	method	InMemoryRateLimitManager.SetRateLimit	func (InMemoryRateLimitManager) SetRateLimitfunc(tenantID string, cfg RateLimitConfig)
+symbol	github.com/birdordev/plumego/x/tenant/core	method	InMemoryRoutePolicyCache.Delete	func (InMemoryRoutePolicyCache) Deletefunc(ctx context.Context, tenantID string) error
+symbol	github.com/birdordev/plumego/x/tenant/core	method	InMemoryRoutePolicyCache.Get	func (InMemoryRoutePolicyCache) Getfunc(ctx context.Context, tenantID string) (RoutePolicy, bool)
+symbol	github.com/birdordev/plumego/x/tenant/core	method	InMemoryRoutePolicyCache.Set	func (InMemoryRoutePolicyCache) Setfunc(ctx context.Context, tenantID string, policy RoutePolicy) error
+symbol	github.com/birdordev/plumego/x/tenant/core	method	InMemoryRoutePolicyStore.DeleteRoutePolicy	func (InMemoryRoutePolicyStore) DeleteRoutePolicyfunc(ctx context.Context, tenantID string) error
+symbol	github.com/birdordev/plumego/x/tenant/core	method	InMemoryRoutePolicyStore.RoutePolicy	func (InMemoryRoutePolicyStore) RoutePolicyfunc(ctx context.Context, tenantID string) (RoutePolicy, error)
+symbol	github.com/birdordev/plumego/x/tenant/core	method	InMemoryRoutePolicyStore.SetRoutePolicy	func (InMemoryRoutePolicyStore) SetRoutePolicyfunc(ctx context.Context, policy RoutePolicy) error
+symbol	github.com/birdordev/plumego/x/tenant/core	method	SlidingWindowQuotaManager.Allow	func (SlidingWindowQuotaManager) Allowfunc(ctx context.Context, tenantID string, req QuotaRequest) (QuotaResult, error)
+symbol	github.com/birdordev/plumego/x/tenant/core	method	SlidingWindowQuotaManager.DeleteTenant	func (SlidingWindowQuotaManager) DeleteTenantfunc(tenantID string)
+symbol	github.com/birdordev/plumego/x/tenant/core	method	TokenBucketRateLimiter.Allow	func (TokenBucketRateLimiter) Allowfunc(ctx context.Context, tenantID string, req RateLimitRequest) (RateLimitResult, error)
+symbol	github.com/birdordev/plumego/x/tenant/core	method	TokenBucketRateLimiter.DeleteTenant	func (TokenBucketRateLimiter) DeleteTenantfunc(tenantID string)
+symbol	github.com/birdordev/plumego/x/tenant/core	method	WindowQuotaManager.Allow	func (WindowQuotaManager) Allowfunc(ctx context.Context, tenantID string, req QuotaRequest) (QuotaResult, error)
+symbol	github.com/birdordev/plumego/x/tenant/core	type	CachedRoutePolicyProvider	type CachedRoutePolicyProvider struct { }
+symbol	github.com/birdordev/plumego/x/tenant/core	type	Config	type Config struct { TenantID string Quota QuotaConfig Policy PolicyConfig RateLimit RateLimitConfig Metadata map[string]string UpdatedAt time.Time }
+symbol	github.com/birdordev/plumego/x/tenant/core	type	ConfigManager	type ConfigManager interface { QuotaConfigProvider PolicyConfigProvider RateLimitConfigProvider GetTenantConfig(ctx context.Context, tenantID string) (Config, error) }
+symbol	github.com/birdordev/plumego/x/tenant/core	type	ConfigPolicyEvaluator	type ConfigPolicyEvaluator struct { }
+symbol	github.com/birdordev/plumego/x/tenant/core	type	FixedWindowQuotaManager	type FixedWindowQuotaManager struct { }
+symbol	github.com/birdordev/plumego/x/tenant/core	type	Hooks	type Hooks struct { OnResolve func(ctx context.Context, info ResolveInfo) OnPolicy func(ctx context.Context, info PolicyDecision) OnQuota func(ctx context.Context, info QuotaDecision) OnRateLimit func(ctx context.Context, info RateLimitDecision) }
+symbol	github.com/birdordev/plumego/x/tenant/core	type	InMemoryConfigManager	type InMemoryConfigManager struct { }
+symbol	github.com/birdordev/plumego/x/tenant/core	type	InMemoryQuotaStore	type InMemoryQuotaStore struct { }
+symbol	github.com/birdordev/plumego/x/tenant/core	type	InMemoryQuotaStoreConfig	type InMemoryQuotaStoreConfig struct { CleanupInterval time.Duration }
+symbol	github.com/birdordev/plumego/x/tenant/core	type	InMemoryRateLimitManager	type InMemoryRateLimitManager struct { }
+symbol	github.com/birdordev/plumego/x/tenant/core	type	InMemoryRoutePolicyCache	type InMemoryRoutePolicyCache struct { }
+symbol	github.com/birdordev/plumego/x/tenant/core	type	InMemoryRoutePolicyStore	type InMemoryRoutePolicyStore struct { }
+symbol	github.com/birdordev/plumego/x/tenant/core	type	PolicyConfig	type PolicyConfig struct { AllowedModels []string AllowedTools []string AllowedMethods []string AllowedPaths []string }
+symbol	github.com/birdordev/plumego/x/tenant/core	type	PolicyConfigProvider	type PolicyConfigProvider interface { PolicyConfig(ctx context.Context, tenantID string) (PolicyConfig, error) }
+symbol	github.com/birdordev/plumego/x/tenant/core	type	PolicyDecision	type PolicyDecision struct { TenantID string Allowed bool Reason string Model string Tool string Method string Path string Status int Err error }
+symbol	github.com/birdordev/plumego/x/tenant/core	type	PolicyEvaluator	type PolicyEvaluator interface { Evaluate(ctx context.Context, tenantID string, req PolicyRequest) (PolicyResult, error) }
+symbol	github.com/birdordev/plumego/x/tenant/core	type	PolicyRequest	type PolicyRequest struct { Model string Tool string Method string Path string }
+symbol	github.com/birdordev/plumego/x/tenant/core	type	PolicyResult	type PolicyResult struct { Allowed bool Reason string }
+symbol	github.com/birdordev/plumego/x/tenant/core	type	QuotaConfig	type QuotaConfig struct { Limits []QuotaLimit }
+symbol	github.com/birdordev/plumego/x/tenant/core	type	QuotaConfigProvider	type QuotaConfigProvider interface { QuotaConfig(ctx context.Context, tenantID string) (QuotaConfig, error) }
+symbol	github.com/birdordev/plumego/x/tenant/core	type	QuotaDecision	type QuotaDecision struct { TenantID string Allowed bool Tokens int64 Requests int64 RemainingTokens int64 RemainingRequests int64 RetryAfter time.Duration Status int Err error }
+symbol	github.com/birdordev/plumego/x/tenant/core	type	QuotaLimit	type QuotaLimit struct { Window QuotaWindow Requests int64 Tokens int64 }
+symbol	github.com/birdordev/plumego/x/tenant/core	type	QuotaManager	type QuotaManager interface { Allow(ctx context.Context, tenantID string, req QuotaRequest) (QuotaResult, error) }
+symbol	github.com/birdordev/plumego/x/tenant/core	type	QuotaReleaseRequest	type QuotaReleaseRequest struct { TenantID string Window QuotaWindow WindowStart time.Time DeltaRequests int64 DeltaTokens int64 }
+symbol	github.com/birdordev/plumego/x/tenant/core	type	QuotaRequest	type QuotaRequest struct { Requests int64 Tokens int64 Now time.Time }
+symbol	github.com/birdordev/plumego/x/tenant/core	type	QuotaReserveRequest	type QuotaReserveRequest struct { TenantID string Window QuotaWindow WindowStart time.Time DeltaRequests int64 DeltaTokens int64 LimitRequests int64 LimitTokens int64 }
+symbol	github.com/birdordev/plumego/x/tenant/core	type	QuotaResult	type QuotaResult struct { Allowed bool RemainingRequests int64 RemainingTokens int64 RetryAfter time.Duration }
+symbol	github.com/birdordev/plumego/x/tenant/core	type	QuotaStore	type QuotaStore interface { Reserve(ctx context.Context, req QuotaReserveRequest) (QuotaUsage, bool, error) Release(ctx context.Context, req QuotaReleaseRequest) error }
+symbol	github.com/birdordev/plumego/x/tenant/core	type	QuotaUsage	type QuotaUsage struct { WindowStart time.Time WindowEnd time.Time Requests int64 Tokens int64 }
+symbol	github.com/birdordev/plumego/x/tenant/core	type	QuotaWindow	type QuotaWindow string
+symbol	github.com/birdordev/plumego/x/tenant/core	type	RateLimitConfig	type RateLimitConfig struct { RequestsPerSecond int64 Burst int64 }
+symbol	github.com/birdordev/plumego/x/tenant/core	type	RateLimitConfigProvider	type RateLimitConfigProvider interface { RateLimitConfig(ctx context.Context, tenantID string) (RateLimitConfig, error) }
+symbol	github.com/birdordev/plumego/x/tenant/core	type	RateLimitDecision	type RateLimitDecision struct { TenantID string Allowed bool Tokens int64 Remaining int64 Limit int64 Burst int64 RetryAfter time.Duration Status int Err error }
+symbol	github.com/birdordev/plumego/x/tenant/core	type	RateLimitRequest	type RateLimitRequest struct { Tokens int64 Now time.Time }
+symbol	github.com/birdordev/plumego/x/tenant/core	type	RateLimitResult	type RateLimitResult struct { Allowed bool Remaining int64 RetryAfter time.Duration Limit int64 Burst int64 }
+symbol	github.com/birdordev/plumego/x/tenant/core	type	RateLimiter	type RateLimiter interface { Allow(ctx context.Context, tenantID string, req RateLimitRequest) (RateLimitResult, error) }
+symbol	github.com/birdordev/plumego/x/tenant/core	type	ResolveInfo	type ResolveInfo struct { TenantID string Source string }
+symbol	github.com/birdordev/plumego/x/tenant/core	type	RoutePolicy	type RoutePolicy struct { TenantID string Strategy string Payload []byte Metadata map[string]string UpdatedAt time.Time }
+symbol	github.com/birdordev/plumego/x/tenant/core	type	RoutePolicyCache	type RoutePolicyCache interface { Get(ctx context.Context, tenantID string) (RoutePolicy, bool) Set(ctx context.Context, tenantID string, policy RoutePolicy) error Delete(ctx context.Context, tenantID string) error }
+symbol	github.com/birdordev/plumego/x/tenant/core	type	RoutePolicyProvider	type RoutePolicyProvider interface { RoutePolicy(ctx context.Context, tenantID string) (RoutePolicy, error) }
+symbol	github.com/birdordev/plumego/x/tenant/core	type	RoutePolicyStore	type RoutePolicyStore interface { RoutePolicyProvider SetRoutePolicy(ctx context.Context, policy RoutePolicy) error DeleteRoutePolicy(ctx context.Context, tenantID string) error }
+symbol	github.com/birdordev/plumego/x/tenant/core	type	SlidingWindowQuotaManager	type SlidingWindowQuotaManager struct { }
+symbol	github.com/birdordev/plumego/x/tenant/core	type	TenantExtractor	type TenantExtractor func(*http.Request) (string, error)
+symbol	github.com/birdordev/plumego/x/tenant/core	type	TokenBucketRateLimiter	type TokenBucketRateLimiter struct { }
+symbol	github.com/birdordev/plumego/x/tenant/core	type	WindowQuotaManager	type WindowQuotaManager struct { }
+symbol	github.com/birdordev/plumego/x/tenant/core	var	ErrInvalidTenantID	var ErrInvalidTenantID = errors.New("invalid tenant ID")
+symbol	github.com/birdordev/plumego/x/tenant/core	var	ErrPolicyDenied	var ErrPolicyDenied = errors.New("policy denied")
+symbol	github.com/birdordev/plumego/x/tenant/core	var	ErrQuotaExceeded	var ErrQuotaExceeded = errors.New("quota exceeded")
+symbol	github.com/birdordev/plumego/x/tenant/core	var	ErrRateLimitExceeded	var ErrRateLimitExceeded = errors.New("rate limit exceeded")
+symbol	github.com/birdordev/plumego/x/tenant/core	var	ErrRoutePolicyNotFound	var ErrRoutePolicyNotFound = errors.New("route policy not found")
+symbol	github.com/birdordev/plumego/x/tenant/core	var	ErrTenantNotFound	var ErrTenantNotFound = errors.New("tenant not found")
+symbol	github.com/birdordev/plumego/x/tenant/core	var	ErrUnsupportedQuotaWindow	var ErrUnsupportedQuotaWindow = errors.New("unsupported quota window")
+symbol	github.com/birdordev/plumego/x/tenant/policy	func	Middleware	func Middlewarefunc(options Options) mw.Middleware
+symbol	github.com/birdordev/plumego/x/tenant/policy	type	Options	type Options struct { Evaluator tenantcore.PolicyEvaluator ModelHeader string ToolHeader string Hooks tenantcore.Hooks OnDenied func(http.ResponseWriter, *http.Request, tenantcore.PolicyResult) }
+symbol	github.com/birdordev/plumego/x/tenant/quota	func	Middleware	func Middlewarefunc(options Options) mw.Middleware
+symbol	github.com/birdordev/plumego/x/tenant/quota	type	Options	type Options struct { Manager tenantcore.QuotaManager TokensHeader string Estimator func(*http.Request) int Hooks tenantcore.Hooks OnRejected func(http.ResponseWriter, *http.Request, tenantcore.QuotaResult) }
+symbol	github.com/birdordev/plumego/x/tenant/ratelimit	func	Middleware	func Middlewarefunc(options Options) middleware.Middleware
+symbol	github.com/birdordev/plumego/x/tenant/ratelimit	type	Options	type Options struct { Limiter tenantcore.RateLimiter Estimator func(*http.Request) int64 Hooks tenantcore.Hooks OnRejected func(http.ResponseWriter, *http.Request, tenantcore.RateLimitResult) }
+symbol	github.com/birdordev/plumego/x/tenant/resolve	func	Middleware	func Middlewarefunc(options Options) middleware.Middleware
+symbol	github.com/birdordev/plumego/x/tenant/resolve	type	Options	type Options struct { HeaderName string Extractor tenantcore.TenantExtractor AllowMissing bool DisablePrincipal bool Hooks tenantcore.Hooks OnMissing func(http.ResponseWriter, *http.Request) }
+symbol	github.com/birdordev/plumego/x/tenant/session	const	SessionActive	const SessionActive SessionStatus = "active"
+symbol	github.com/birdordev/plumego/x/tenant/session	const	SessionExpired	const SessionExpired SessionStatus = "expired"
+symbol	github.com/birdordev/plumego/x/tenant/session	const	SessionRevoked	const SessionRevoked SessionStatus = "revoked"
+symbol	github.com/birdordev/plumego/x/tenant/session	func	NewJWTStateStore	func NewJWTStateStorefunc(store *kvstore.KVStore) (*JWTStateStore, error)
+symbol	github.com/birdordev/plumego/x/tenant/session	func	SessionCheck	func SessionCheckfunc(store SessionStore, validator SessionValidator, opts ...SessionOption) middleware.Middleware
+symbol	github.com/birdordev/plumego/x/tenant/session	func	WithSessionErrorHandler	func WithSessionErrorHandlerfunc(handler SessionErrorHandler) SessionOption
+symbol	github.com/birdordev/plumego/x/tenant/session	func	WithSessionIDExtractor	func WithSessionIDExtractorfunc(extractor func(*authn.Principal) (string, bool)) SessionOption
+symbol	github.com/birdordev/plumego/x/tenant/session	func	WithSessionLookup	func WithSessionLookupfunc(lookup SessionLookup) SessionOption
+symbol	github.com/birdordev/plumego/x/tenant/session	func	WithSessionNow	func WithSessionNowfunc(now func() time.Time) SessionOption
+symbol	github.com/birdordev/plumego/x/tenant/session	func	WithSessionRequired	func WithSessionRequiredfunc(required bool) SessionOption
+symbol	github.com/birdordev/plumego/x/tenant/session	method	JWTStateStore.IncrementSubjectVersion	func (JWTStateStore) IncrementSubjectVersionfunc(subject string) (int64, error)
+symbol	github.com/birdordev/plumego/x/tenant/session	method	JWTStateStore.RevokeClaims	func (JWTStateStore) RevokeClaimsfunc(claims *jwt.TokenClaims) error
+symbol	github.com/birdordev/plumego/x/tenant/session	method	JWTStateStore.SubjectVersion	func (JWTStateStore) SubjectVersionfunc(subject string) (int64, error)
+symbol	github.com/birdordev/plumego/x/tenant/session	method	JWTStateStore.ValidateClaims	func (JWTStateStore) ValidateClaimsfunc(claims *jwt.TokenClaims) error
+symbol	github.com/birdordev/plumego/x/tenant/session	type	JWTStateStore	type JWTStateStore struct { }
+symbol	github.com/birdordev/plumego/x/tenant/session	type	RefreshClaims	type RefreshClaims struct { SessionID string RefreshID string Subject string TenantID string KeyID string TokenVersion int64 ExpiresAt time.Time }
+symbol	github.com/birdordev/plumego/x/tenant/session	type	RefreshManager	type RefreshManager interface { IssueRefreshClaims(ctx context.Context, s *Session, now time.Time) (RefreshClaims, error) RotateRefreshClaims(ctx context.Context, s *Session, currentRefreshID string, now time.Time) (RefreshClaims, error) }
+symbol	github.com/birdordev/plumego/x/tenant/session	type	Session	type Session struct { SessionID string Subject string TenantID string TokenVersion int64 KeyID string RefreshID string PreviousRefreshID string RefreshExpiresAt time.Time Status SessionStatus CreatedAt time.Time LastSeenAt time.Time ExpiresAt time.Time RevokedAt time.Time RevokeReason string ClientID string DeviceID string UserAgentHash string IPHash string Attributes map[string]string }
+symbol	github.com/birdordev/plumego/x/tenant/session	type	SessionErrorHandler	type SessionErrorHandler func(w http.ResponseWriter, r *http.Request, err error)
+symbol	github.com/birdordev/plumego/x/tenant/session	type	SessionLookup	type SessionLookup func(ctx context.Context, r *http.Request, p *authn.Principal) (*Session, error)
+symbol	github.com/birdordev/plumego/x/tenant/session	type	SessionManager	type SessionManager interface { SessionStore SessionValidator RefreshManager }
+symbol	github.com/birdordev/plumego/x/tenant/session	type	SessionOption	type SessionOption func(*sessionOptions)
+symbol	github.com/birdordev/plumego/x/tenant/session	type	SessionStatus	type SessionStatus string
+symbol	github.com/birdordev/plumego/x/tenant/session	type	SessionStore	type SessionStore interface { CreateSession(ctx context.Context, s *Session) error GetSession(ctx context.Context, sessionID string) (*Session, error) RotateRefresh(ctx context.Context, sessionID, currentRefreshID, nextRefreshID string, now time.Time) (*Session, error) RevokeSession(ctx context.Context, sessionID string, now time.Time, reason string) error ListSessionsBySubject(ctx context.Context, tenantID, subject string, limit int) ([]*Session, error) }
+symbol	github.com/birdordev/plumego/x/tenant/session	type	SessionValidator	type SessionValidator interface { ValidateSession(ctx context.Context, s *Session, now time.Time) error ValidateRefresh(ctx context.Context, s *Session, claims RefreshClaims, now time.Time) error }
+symbol	github.com/birdordev/plumego/x/tenant/session	var	ErrRefreshReused	var ErrRefreshReused = errors.New("refresh token reuse detected")
+symbol	github.com/birdordev/plumego/x/tenant/session	var	ErrSessionExpired	var ErrSessionExpired = errors.New("session expired")
+symbol	github.com/birdordev/plumego/x/tenant/session	var	ErrSessionRevoked	var ErrSessionRevoked = errors.New("session revoked")
+symbol	github.com/birdordev/plumego/x/tenant/session	var	ErrTokenVersionMismatch	var ErrTokenVersionMismatch = errors.New("token version mismatch")
+symbol	github.com/birdordev/plumego/x/tenant/store/cache	func	NewTenantCache	func NewTenantCachefunc(cache storecache.Cache, options ...TenantCacheOption) *TenantCache
+symbol	github.com/birdordev/plumego/x/tenant/store/cache	func	WithKeyPrefix	func WithKeyPrefixfunc(prefix string) TenantCacheOption
+symbol	github.com/birdordev/plumego/x/tenant/store/cache	func	WithSeparator	func WithSeparatorfunc(sep string) TenantCacheOption
+symbol	github.com/birdordev/plumego/x/tenant/store/cache	method	TenantCache.Append	func (TenantCache) Appendfunc(ctx context.Context, key string, data []byte) error
+symbol	github.com/birdordev/plumego/x/tenant/store/cache	method	TenantCache.Clear	func (TenantCache) Clearfunc(ctx context.Context) error
+symbol	github.com/birdordev/plumego/x/tenant/store/cache	method	TenantCache.Decr	func (TenantCache) Decrfunc(ctx context.Context, key string, delta int64) (int64, error)
+symbol	github.com/birdordev/plumego/x/tenant/store/cache	method	TenantCache.Delete	func (TenantCache) Deletefunc(ctx context.Context, key string) error
+symbol	github.com/birdordev/plumego/x/tenant/store/cache	method	TenantCache.Exists	func (TenantCache) Existsfunc(ctx context.Context, key string) (bool, error)
+symbol	github.com/birdordev/plumego/x/tenant/store/cache	method	TenantCache.Get	func (TenantCache) Getfunc(ctx context.Context, key string) ([]byte, error)
+symbol	github.com/birdordev/plumego/x/tenant/store/cache	method	TenantCache.Incr	func (TenantCache) Incrfunc(ctx context.Context, key string, delta int64) (int64, error)
+symbol	github.com/birdordev/plumego/x/tenant/store/cache	method	TenantCache.RawCache	func (TenantCache) RawCachefunc() storecache.Cache
+symbol	github.com/birdordev/plumego/x/tenant/store/cache	method	TenantCache.Set	func (TenantCache) Setfunc(ctx context.Context, key string, value []byte, ttl time.Duration) error
+symbol	github.com/birdordev/plumego/x/tenant/store/cache	type	TenantCache	type TenantCache struct { }
+symbol	github.com/birdordev/plumego/x/tenant/store/cache	type	TenantCacheOption	type TenantCacheOption func(*TenantCache)
+symbol	github.com/birdordev/plumego/x/tenant/store/db	func	NewTenantDB	func NewTenantDBfunc(db *sql.DB, options ...TenantDBOption) *TenantDB
+symbol	github.com/birdordev/plumego/x/tenant/store/db	func	ValidateQuery	func ValidateQueryfunc(query string, tenantColumn string) error
+symbol	github.com/birdordev/plumego/x/tenant/store/db	func	WithTenantColumn	func WithTenantColumnfunc(column string) TenantDBOption
+symbol	github.com/birdordev/plumego/x/tenant/store/db	method	TenantDB.Err	func (TenantDB) Errfunc() error
+symbol	github.com/birdordev/plumego/x/tenant/store/db	method	TenantDB.ExecContext	func (TenantDB) ExecContextfunc(ctx context.Context, tenantID string, query string, args ...any) (sql.Result, error)
+symbol	github.com/birdordev/plumego/x/tenant/store/db	method	TenantDB.ExecFromContext	func (TenantDB) ExecFromContextfunc(ctx context.Context, query string, args ...any) (sql.Result, error)
+symbol	github.com/birdordev/plumego/x/tenant/store/db	method	TenantDB.QueryContext	func (TenantDB) QueryContextfunc(ctx context.Context, tenantID string, query string, args ...any) (*sql.Rows, error)
+symbol	github.com/birdordev/plumego/x/tenant/store/db	method	TenantDB.QueryFromContext	func (TenantDB) QueryFromContextfunc(ctx context.Context, query string, args ...any) (*sql.Rows, error)
+symbol	github.com/birdordev/plumego/x/tenant/store/db	method	TenantDB.QueryRowContext	func (TenantDB) QueryRowContextfunc(ctx context.Context, tenantID string, query string, args ...any) *sql.Row
+symbol	github.com/birdordev/plumego/x/tenant/store/db	method	TenantDB.QueryRowFromContext	func (TenantDB) QueryRowFromContextfunc(ctx context.Context, query string, args ...any) *sql.Row
+symbol	github.com/birdordev/plumego/x/tenant/store/db	method	TenantDB.RawDB	func (TenantDB) RawDBfunc() *sql.DB
+symbol	github.com/birdordev/plumego/x/tenant/store/db	type	TenantDB	type TenantDB struct { }
+symbol	github.com/birdordev/plumego/x/tenant/store/db	type	TenantDBOption	type TenantDBOption func(*TenantDB)
+symbol	github.com/birdordev/plumego/x/tenant/transport	const	CodeInvalidID	const CodeInvalidID = "tenant_invalid_id"
+symbol	github.com/birdordev/plumego/x/tenant/transport	const	CodePolicyDenied	const CodePolicyDenied = "tenant_policy_denied"
+symbol	github.com/birdordev/plumego/x/tenant/transport	const	CodeQuotaExceeded	const CodeQuotaExceeded = "tenant_quota_exceeded"
+symbol	github.com/birdordev/plumego/x/tenant/transport	const	CodeRateLimited	const CodeRateLimited = "tenant_rate_limited"
+symbol	github.com/birdordev/plumego/x/tenant/transport	const	CodeRequired	const CodeRequired = "tenant_required"
+symbol	github.com/birdordev/plumego/x/tenant/transport	const	DefaultModelHeader	const DefaultModelHeader = "X-Model"
+symbol	github.com/birdordev/plumego/x/tenant/transport	const	DefaultTenantHeader	const DefaultTenantHeader = "X-Tenant-ID"
+symbol	github.com/birdordev/plumego/x/tenant/transport	const	DefaultTokensHeader	const DefaultTokensHeader = "X-Token-Count"
+symbol	github.com/birdordev/plumego/x/tenant/transport	const	DefaultToolHeader	const DefaultToolHeader = "X-Tool"
+symbol	github.com/birdordev/plumego/x/tenant/transport	func	HeaderOrDefault	func HeaderOrDefaultfunc(value, fallback string) string
+symbol	github.com/birdordev/plumego/x/tenant/transport	func	SetQuotaHeaders	func SetQuotaHeadersfunc(w http.ResponseWriter, remainingRequests, remainingTokens int64)
+symbol	github.com/birdordev/plumego/x/tenant/transport	func	SetRateLimitHeaders	func SetRateLimitHeadersfunc(w http.ResponseWriter, limit, remaining int64)
+symbol	github.com/birdordev/plumego/x/tenant/transport	func	SetRetryAfterHeader	func SetRetryAfterHeaderfunc(w http.ResponseWriter, retry time.Duration)

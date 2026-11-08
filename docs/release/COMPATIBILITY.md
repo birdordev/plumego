@@ -19,7 +19,7 @@ This document explains how to upgrade Plumego, migrate from other frameworks, an
 To upgrade:
 
 ```bash
-go get -u github.com/spcent/plumego@v1.2.0
+go get -u github.com/birdordev/plumego@v1.2.0
 go mod tidy
 go test ./...
 ```
@@ -34,7 +34,7 @@ go test ./...
    - Update handler signatures if they changed
    - Adjust middleware patterns if needed
 3. Run tests: `go test -vet=all ./...`
-4. Update your go.mod: `go get github.com/spcent/plumego@v2.0.0`
+4. Update your go.mod: `go get github.com/birdordev/plumego@v2.0.0`
 5. Incrementally migrate (can often do one package at a time)
 
 The migration guide will include:
@@ -178,7 +178,7 @@ To check compatibility:
 
 ```bash
 go version
-go mod why github.com/spcent/plumego
+go mod why github.com/birdordev/plumego
 ```
 
 ## Security updates

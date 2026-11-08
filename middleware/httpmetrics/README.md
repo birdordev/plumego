@@ -5,7 +5,7 @@ Emits per-request metrics for collection by external observability systems.
 ## Import
 
 ```go
-import "github.com/spcent/plumego/middleware/httpmetrics"
+import "github.com/birdordev/plumego/middleware/httpmetrics"
 ```
 
 ## Overview

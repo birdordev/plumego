@@ -44,7 +44,7 @@ Every error response has the same JSON envelope:
 Never construct `APIError` as a struct literal. Use the builder:
 
 ```go
-import "github.com/spcent/plumego/contract"
+import "github.com/birdordev/plumego/contract"
 
 _ = contract.WriteError(w, r, contract.NewErrorBuilder().
     Type(contract.TypeRequired).
@@ -172,7 +172,7 @@ Keep the translation function in your application code, not in a shared library 
 
 ## Complete example in the reference app
 
-The reference service handler at [`reference/standard-service/internal/handler/api.go`](https://github.com/spcent/plumego/blob/main/reference/standard-service/internal/handler/api.go) shows `WriteError` and `NewErrorBuilder` in a complete, runnable handler. The health handler at [`reference/standard-service/internal/handler/health.go`](https://github.com/spcent/plumego/blob/main/reference/standard-service/internal/handler/health.go) shows the same pattern for liveness and readiness endpoints.
+The reference service handler at [`reference/standard-service/internal/handler/api.go`](https://github.com/birdordev/plumego/blob/main/reference/standard-service/internal/handler/api.go) shows `WriteError` and `NewErrorBuilder` in a complete, runnable handler. The health handler at [`reference/standard-service/internal/handler/health.go`](https://github.com/birdordev/plumego/blob/main/reference/standard-service/internal/handler/health.go) shows the same pattern for liveness and readiness endpoints.
 
 ## Read next
 

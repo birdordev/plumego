@@ -57,7 +57,7 @@ app.Use(mw1, mw2, mw3)   // 按注册顺序执行，最外层最先运行
 
 ### 内置中间件目录
 
-所有包位于 `github.com/spcent/plumego/middleware/` 下。
+所有包位于 `github.com/birdordev/plumego/middleware/` 下。
 
 | 包 | 构造函数 | 作用 |
 | --- | --- | --- |
@@ -84,9 +84,9 @@ app.Use(mw1, mw2, mw3)   // 按注册顺序执行，最外层最先运行
 
 ```go
 import (
-    "github.com/spcent/plumego/middleware/requestid"
-    "github.com/spcent/plumego/middleware/recovery"
-    "github.com/spcent/plumego/middleware/accesslog"
+    "github.com/birdordev/plumego/middleware/requestid"
+    "github.com/birdordev/plumego/middleware/recovery"
+    "github.com/birdordev/plumego/middleware/accesslog"
 )
 
 app.Use(requestid.Middleware())

@@ -1,32 +1,32 @@
 # plumego extension api snapshot v1
-module	github.com/spcent/plumego
+module	github.com/birdordev/plumego
 pattern	./x/cache/redis
-symbol	github.com/spcent/plumego/x/cache/redis	const	DefaultMaxKeyLength	const DefaultMaxKeyLength = 256
-symbol	github.com/spcent/plumego/x/cache/redis	func	NewAdapter	func NewAdapterfunc(client Client, isNotFound func(error) bool) *Adapter
-symbol	github.com/spcent/plumego/x/cache/redis	func	NewAdapterWithOptions	func NewAdapterWithOptionsfunc(client Client, opts ...Option) *Adapter
-symbol	github.com/spcent/plumego/x/cache/redis	func	NewValidatedAdapterWithOptions	func NewValidatedAdapterWithOptionsfunc(client Client, opts ...Option) (*Adapter, error)
-symbol	github.com/spcent/plumego/x/cache/redis	func	WithAllowFlushDB	func WithAllowFlushDBfunc(allow bool) Option
-symbol	github.com/spcent/plumego/x/cache/redis	func	WithClearPrefix	func WithClearPrefixfunc(prefix string) Option
-symbol	github.com/spcent/plumego/x/cache/redis	func	WithMaxKeyLength	func WithMaxKeyLengthfunc(max int) Option
-symbol	github.com/spcent/plumego/x/cache/redis	func	WithNotFound	func WithNotFoundfunc(isNotFound func(error) bool) Option
-symbol	github.com/spcent/plumego/x/cache/redis	method	Adapter.Append	func (Adapter) Appendfunc(ctx context.Context, key string, data []byte) error
-symbol	github.com/spcent/plumego/x/cache/redis	method	Adapter.Capabilities	func (Adapter) Capabilitiesfunc() AdapterCapabilities
-symbol	github.com/spcent/plumego/x/cache/redis	method	Adapter.Clear	func (Adapter) Clearfunc(ctx context.Context) error
-symbol	github.com/spcent/plumego/x/cache/redis	method	Adapter.Decr	func (Adapter) Decrfunc(ctx context.Context, key string, delta int64) (int64, error)
-symbol	github.com/spcent/plumego/x/cache/redis	method	Adapter.Delete	func (Adapter) Deletefunc(ctx context.Context, key string) error
-symbol	github.com/spcent/plumego/x/cache/redis	method	Adapter.Exists	func (Adapter) Existsfunc(ctx context.Context, key string) (bool, error)
-symbol	github.com/spcent/plumego/x/cache/redis	method	Adapter.Get	func (Adapter) Getfunc(ctx context.Context, key string) ([]byte, error)
-symbol	github.com/spcent/plumego/x/cache/redis	method	Adapter.Incr	func (Adapter) Incrfunc(ctx context.Context, key string, delta int64) (int64, error)
-symbol	github.com/spcent/plumego/x/cache/redis	method	Adapter.Set	func (Adapter) Setfunc(ctx context.Context, key string, value []byte, ttl time.Duration) error
-symbol	github.com/spcent/plumego/x/cache/redis	type	Adapter	type Adapter struct { Client Client IsNotFound func(error) bool MaxKeyLength int AllowFlushDB bool ClearPrefix string options adapterOptions }
-symbol	github.com/spcent/plumego/x/cache/redis	type	AdapterCapabilities	type AdapterCapabilities struct { Atomic bool Append bool Clear bool PrefixClear bool FlushDB bool }
-symbol	github.com/spcent/plumego/x/cache/redis	type	Appender	type Appender interface { Append(ctx context.Context, key string, data []byte) (int64, error) }
-symbol	github.com/spcent/plumego/x/cache/redis	type	Client	type Client interface { Get(ctx context.Context, key string) ([]byte, error) Set(ctx context.Context, key string, value []byte, ttl time.Duration) error Del(ctx context.Context, keys ...string) (int64, error) Exists(ctx context.Context, keys ...string) (int64, error) }
-symbol	github.com/spcent/plumego/x/cache/redis	type	Flusher	type Flusher interface { FlushDB(ctx context.Context) error }
-symbol	github.com/spcent/plumego/x/cache/redis	type	Incrementer	type Incrementer interface { IncrBy(ctx context.Context, key string, delta int64) (int64, error) }
-symbol	github.com/spcent/plumego/x/cache/redis	type	Option	type Option func(*Adapter)
-symbol	github.com/spcent/plumego/x/cache/redis	type	PrefixFlusher	type PrefixFlusher interface { FlushPrefix(ctx context.Context, prefix string) error }
-symbol	github.com/spcent/plumego/x/cache/redis	var	ErrAtomicUnsupported	var ErrAtomicUnsupported = errors.New("redis cache: atomic operation unsupported")
-symbol	github.com/spcent/plumego/x/cache/redis	var	ErrClearUnsupported	var ErrClearUnsupported = errors.New("redis cache: clear unsupported")
-symbol	github.com/spcent/plumego/x/cache/redis	var	ErrFlushDBDisabled	var ErrFlushDBDisabled = errors.New("redis cache: flushdb disabled")
-symbol	github.com/spcent/plumego/x/cache/redis	var	ErrNilClient	var ErrNilClient = errors.New("redis cache: client is nil")
+symbol	github.com/birdordev/plumego/x/cache/redis	const	DefaultMaxKeyLength	const DefaultMaxKeyLength = 256
+symbol	github.com/birdordev/plumego/x/cache/redis	func	NewAdapter	func NewAdapterfunc(client Client, isNotFound func(error) bool) *Adapter
+symbol	github.com/birdordev/plumego/x/cache/redis	func	NewAdapterWithOptions	func NewAdapterWithOptionsfunc(client Client, opts ...Option) *Adapter
+symbol	github.com/birdordev/plumego/x/cache/redis	func	NewValidatedAdapterWithOptions	func NewValidatedAdapterWithOptionsfunc(client Client, opts ...Option) (*Adapter, error)
+symbol	github.com/birdordev/plumego/x/cache/redis	func	WithAllowFlushDB	func WithAllowFlushDBfunc(allow bool) Option
+symbol	github.com/birdordev/plumego/x/cache/redis	func	WithClearPrefix	func WithClearPrefixfunc(prefix string) Option
+symbol	github.com/birdordev/plumego/x/cache/redis	func	WithMaxKeyLength	func WithMaxKeyLengthfunc(max int) Option
+symbol	github.com/birdordev/plumego/x/cache/redis	func	WithNotFound	func WithNotFoundfunc(isNotFound func(error) bool) Option
+symbol	github.com/birdordev/plumego/x/cache/redis	method	Adapter.Append	func (Adapter) Appendfunc(ctx context.Context, key string, data []byte) error
+symbol	github.com/birdordev/plumego/x/cache/redis	method	Adapter.Capabilities	func (Adapter) Capabilitiesfunc() AdapterCapabilities
+symbol	github.com/birdordev/plumego/x/cache/redis	method	Adapter.Clear	func (Adapter) Clearfunc(ctx context.Context) error
+symbol	github.com/birdordev/plumego/x/cache/redis	method	Adapter.Decr	func (Adapter) Decrfunc(ctx context.Context, key string, delta int64) (int64, error)
+symbol	github.com/birdordev/plumego/x/cache/redis	method	Adapter.Delete	func (Adapter) Deletefunc(ctx context.Context, key string) error
+symbol	github.com/birdordev/plumego/x/cache/redis	method	Adapter.Exists	func (Adapter) Existsfunc(ctx context.Context, key string) (bool, error)
+symbol	github.com/birdordev/plumego/x/cache/redis	method	Adapter.Get	func (Adapter) Getfunc(ctx context.Context, key string) ([]byte, error)
+symbol	github.com/birdordev/plumego/x/cache/redis	method	Adapter.Incr	func (Adapter) Incrfunc(ctx context.Context, key string, delta int64) (int64, error)
+symbol	github.com/birdordev/plumego/x/cache/redis	method	Adapter.Set	func (Adapter) Setfunc(ctx context.Context, key string, value []byte, ttl time.Duration) error
+symbol	github.com/birdordev/plumego/x/cache/redis	type	Adapter	type Adapter struct { Client Client IsNotFound func(error) bool MaxKeyLength int AllowFlushDB bool ClearPrefix string options adapterOptions }
+symbol	github.com/birdordev/plumego/x/cache/redis	type	AdapterCapabilities	type AdapterCapabilities struct { Atomic bool Append bool Clear bool PrefixClear bool FlushDB bool }
+symbol	github.com/birdordev/plumego/x/cache/redis	type	Appender	type Appender interface { Append(ctx context.Context, key string, data []byte) (int64, error) }
+symbol	github.com/birdordev/plumego/x/cache/redis	type	Client	type Client interface { Get(ctx context.Context, key string) ([]byte, error) Set(ctx context.Context, key string, value []byte, ttl time.Duration) error Del(ctx context.Context, keys ...string) (int64, error) Exists(ctx context.Context, keys ...string) (int64, error) }
+symbol	github.com/birdordev/plumego/x/cache/redis	type	Flusher	type Flusher interface { FlushDB(ctx context.Context) error }
+symbol	github.com/birdordev/plumego/x/cache/redis	type	Incrementer	type Incrementer interface { IncrBy(ctx context.Context, key string, delta int64) (int64, error) }
+symbol	github.com/birdordev/plumego/x/cache/redis	type	Option	type Option func(*Adapter)
+symbol	github.com/birdordev/plumego/x/cache/redis	type	PrefixFlusher	type PrefixFlusher interface { FlushPrefix(ctx context.Context, prefix string) error }
+symbol	github.com/birdordev/plumego/x/cache/redis	var	ErrAtomicUnsupported	var ErrAtomicUnsupported = errors.New("redis cache: atomic operation unsupported")
+symbol	github.com/birdordev/plumego/x/cache/redis	var	ErrClearUnsupported	var ErrClearUnsupported = errors.New("redis cache: clear unsupported")
+symbol	github.com/birdordev/plumego/x/cache/redis	var	ErrFlushDBDisabled	var ErrFlushDBDisabled = errors.New("redis cache: flushdb disabled")
+symbol	github.com/birdordev/plumego/x/cache/redis	var	ErrNilClient	var ErrNilClient = errors.New("redis cache: client is nil")

@@ -40,7 +40,7 @@ Requirements: Go 1.26+ and an existing Go module (`go.mod`).
 
 ```bash
 go mod init myservice        # skip if you already have a module
-go get github.com/spcent/plumego@latest
+go get github.com/birdordev/plumego@latest
 ```
 
 Create `main.go`:
@@ -51,9 +51,9 @@ package main
 import (
     "net/http"
 
-    "github.com/spcent/plumego/contract"
-    "github.com/spcent/plumego/core"
-    plog "github.com/spcent/plumego/log"
+    "github.com/birdordev/plumego/contract"
+    "github.com/birdordev/plumego/core"
+    plog "github.com/birdordev/plumego/log"
 )
 
 func main() {
@@ -101,7 +101,7 @@ The `data` wrapper and `request_id` field are part of the [contract response env
 Clone and run the reference app to see the complete directory layout — config loading, health endpoints, handler separation, and constructor-based dependency wiring.
 
 ```bash
-git clone https://github.com/spcent/plumego
+git clone https://github.com/birdordev/plumego
 cd plumego/reference/standard-service
 go run .
 ```

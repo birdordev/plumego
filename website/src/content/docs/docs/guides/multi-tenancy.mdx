@@ -38,9 +38,9 @@ Add `resolve.Middleware` to the app's middleware stack, after auth so the JWT pr
 
 ```go
 import (
-    authmw  "github.com/spcent/plumego/middleware/auth"
-    resolve "github.com/spcent/plumego/x/tenant/resolve"
-    "github.com/spcent/plumego/security/jwt"
+    authmw  "github.com/birdordev/plumego/middleware/auth"
+    resolve "github.com/birdordev/plumego/x/tenant/resolve"
+    "github.com/birdordev/plumego/security/jwt"
 )
 
 // Auth runs first so the JWT principal is available for tenant extraction
@@ -82,7 +82,7 @@ app.Use(resolve.Middleware(resolve.Options{
 ## Step 2 — Read the tenant ID in handlers
 
 ```go
-import tenantcore "github.com/spcent/plumego/x/tenant/core"
+import tenantcore "github.com/birdordev/plumego/x/tenant/core"
 
 func (h ItemHandler) List(w http.ResponseWriter, r *http.Request) {
     tenantID := tenantcore.TenantIDFromContext(r.Context())
@@ -99,8 +99,8 @@ Implement `tenantcore.PolicyEvaluator` and attach `policy.Middleware`:
 
 ```go
 import (
-    "github.com/spcent/plumego/x/tenant/policy"
-    tenantcore "github.com/spcent/plumego/x/tenant/core"
+    "github.com/birdordev/plumego/x/tenant/policy"
+    tenantcore "github.com/birdordev/plumego/x/tenant/core"
 )
 
 type MyPolicyEvaluator struct {
@@ -127,8 +127,8 @@ Implement `tenantcore.QuotaManager` and attach `quota.Middleware`:
 
 ```go
 import (
-    "github.com/spcent/plumego/x/tenant/quota"
-    tenantcore "github.com/spcent/plumego/x/tenant/core"
+    "github.com/birdordev/plumego/x/tenant/quota"
+    tenantcore "github.com/birdordev/plumego/x/tenant/core"
 )
 
 app.Use(quota.Middleware(quota.Options{

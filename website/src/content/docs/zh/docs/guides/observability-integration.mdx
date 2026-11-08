@@ -30,7 +30,7 @@ sidebar:
 ```go
 import (
     "net/http"
-    "github.com/spcent/plumego/x/observability"
+    "github.com/birdordev/plumego/x/observability"
 )
 
 // 在 app.go 中，构建 Core 之前先构建可观测性。
@@ -48,7 +48,7 @@ a.Core.Get("/metrics", collector.Handler())
 
 ```go
 import (
-    "github.com/spcent/plumego/middleware/httpmetrics"
+    "github.com/birdordev/plumego/middleware/httpmetrics"
 )
 
 // 在路由专属 middleware 之前应用。
@@ -64,7 +64,7 @@ a.Core.Use(httpmetrics.Middleware(collector))
 ```go
 import (
     "os"
-    "github.com/spcent/plumego/log"
+    "github.com/birdordev/plumego/log"
 )
 
 logger := log.NewLogger(log.LoggerConfig{
@@ -100,8 +100,8 @@ Plumego 中的追踪分为传输层和导出层两部分：
 
 ```go
 import (
-    mwtracing "github.com/spcent/plumego/middleware/tracing"
-    "github.com/spcent/plumego/x/observability"
+    mwtracing "github.com/birdordev/plumego/middleware/tracing"
+    "github.com/birdordev/plumego/x/observability"
 )
 
 tracer := observability.NewOpenTelemetryTracer("myapp")

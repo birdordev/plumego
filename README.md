@@ -1,11 +1,11 @@
 # Plumego — Standard Library Web Toolkit
 
-[![Go Reference](https://pkg.go.dev/badge/github.com/spcent/plumego.svg)](https://pkg.go.dev/github.com/spcent/plumego)
+[![Go Reference](https://pkg.go.dev/badge/github.com/birdordev/plumego.svg)](https://pkg.go.dev/github.com/birdordev/plumego)
 [![Go Version](https://img.shields.io/badge/Go-1.26%2B-00ADD8?style=flat&logo=go)](https://go.dev/)
-[![CI](https://github.com/spcent/plumego/actions/workflows/quality-gates.yml/badge.svg)](https://github.com/spcent/plumego/actions/workflows/quality-gates.yml)
-[![Go Report Card](https://goreportcard.com/badge/github.com/spcent/plumego)](https://goreportcard.com/report/github.com/spcent/plumego)
+[![CI](https://github.com/birdordev/plumego/actions/workflows/quality-gates.yml/badge.svg)](https://github.com/birdordev/plumego/actions/workflows/quality-gates.yml)
+[![Go Report Card](https://goreportcard.com/badge/github.com/birdordev/plumego)](https://goreportcard.com/report/github.com/birdordev/plumego)
 [![codecov](https://codecov.io/gh/spcent/plumego/graph/badge.svg)](https://codecov.io/gh/spcent/plumego)
-[![Status](https://img.shields.io/badge/status-v1.1.0-blue)](https://github.com/spcent/plumego/releases/tag/v1.1.0)
+[![Status](https://img.shields.io/badge/status-v1.1.0-blue)](https://github.com/birdordev/plumego/releases/tag/v1.1.0)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 Plumego is a small Go HTTP toolkit built on the standard library, keeping
@@ -56,8 +56,8 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/spcent/plumego"
-	"github.com/spcent/plumego/contract"
+	"github.com/birdordev/plumego"
+	"github.com/birdordev/plumego/contract"
 )
 
 func main() {
@@ -73,7 +73,7 @@ Run:
 
 ```bash
 go mod init example.com/hello
-go get github.com/spcent/plumego@latest
+go get github.com/birdordev/plumego@latest
 go run main.go
 ```
 

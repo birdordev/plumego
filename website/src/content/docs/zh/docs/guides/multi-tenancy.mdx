@@ -38,9 +38,9 @@ rows, err := db.QueryContext(ctx, db, "SELECT * FROM items WHERE tenant_id = $1"
 
 ```go
 import (
-    authmw  "github.com/spcent/plumego/middleware/auth"
-    resolve "github.com/spcent/plumego/x/tenant/resolve"
-    "github.com/spcent/plumego/security/jwt"
+    authmw  "github.com/birdordev/plumego/middleware/auth"
+    resolve "github.com/birdordev/plumego/x/tenant/resolve"
+    "github.com/birdordev/plumego/security/jwt"
 )
 
 // auth 先运行，JWT principal 才会可用
@@ -82,7 +82,7 @@ app.Use(resolve.Middleware(resolve.Options{
 ## 第二步 — 在 handler 中读取租户 ID
 
 ```go
-import tenantcore "github.com/spcent/plumego/x/tenant/core"
+import tenantcore "github.com/birdordev/plumego/x/tenant/core"
 
 func (h ItemHandler) List(w http.ResponseWriter, r *http.Request) {
     tenantID := tenantcore.TenantIDFromContext(r.Context())
@@ -99,8 +99,8 @@ func (h ItemHandler) List(w http.ResponseWriter, r *http.Request) {
 
 ```go
 import (
-    "github.com/spcent/plumego/x/tenant/policy"
-    tenantcore "github.com/spcent/plumego/x/tenant/core"
+    "github.com/birdordev/plumego/x/tenant/policy"
+    tenantcore "github.com/birdordev/plumego/x/tenant/core"
 )
 
 type MyPolicyEvaluator struct {
@@ -127,8 +127,8 @@ app.Use(policy.Middleware(policy.Options{
 
 ```go
 import (
-    "github.com/spcent/plumego/x/tenant/quota"
-    tenantcore "github.com/spcent/plumego/x/tenant/core"
+    "github.com/birdordev/plumego/x/tenant/quota"
+    tenantcore "github.com/birdordev/plumego/x/tenant/core"
 )
 
 app.Use(quota.Middleware(quota.Options{

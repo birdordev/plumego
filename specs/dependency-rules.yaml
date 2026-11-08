@@ -920,7 +920,7 @@ modules:
 
 special_rules:
   forbidden_import_patterns:
-    - github.com/spcent/plumego
+    - github.com/birdordev/plumego
   notes:
     - Middleware must stay transport-only and must not import store
     - Stable middleware must not grow tenant resolution, tenant policy, or tenant quota behavior; move to x/tenant

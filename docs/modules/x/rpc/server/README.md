@@ -1,6 +1,6 @@
 # x/rpc/server
 
-> **Import path:** `github.com/spcent/plumego/x/rpc/server` — sub-package of [`x/rpc`](../README.md).
+> **Import path:** `github.com/birdordev/plumego/x/rpc/server` — sub-package of [`x/rpc`](../README.md).
 
 ## Purpose
 

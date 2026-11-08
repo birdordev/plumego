@@ -53,7 +53,7 @@ If your middleware needs to know the current tenant, read a quota, or make a pro
 
 ## Built-in middleware catalog
 
-All packages are under `github.com/spcent/plumego/middleware/`.
+All packages are under `github.com/birdordev/plumego/middleware/`.
 
 | Package | Constructor | Typical usage |
 | --- | --- | --- |
@@ -113,7 +113,7 @@ app.Use(authMw)                                      // 8. auth last in the defa
 Any `func(http.Handler) http.Handler` is valid middleware. Use the `middleware.Middleware` type alias to register it with `app.Use`:
 
 ```go
-import mw "github.com/spcent/plumego/middleware"
+import mw "github.com/birdordev/plumego/middleware"
 
 func TenantHeader(next http.Handler) http.Handler {
     return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

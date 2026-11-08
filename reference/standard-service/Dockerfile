@@ -1,5 +1,5 @@
 # Build context must be the repository root so the replace directive in go.mod
-# can resolve github.com/spcent/plumego to the local source tree:
+# can resolve github.com/birdordev/plumego to the local source tree:
 #
 #   docker build -f reference/standard-service/Dockerfile \
 #                --build-arg VERSION=$(git describe --tags --always) \

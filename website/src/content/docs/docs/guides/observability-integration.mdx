@@ -30,7 +30,7 @@ Construct a `PrometheusCollector` and register its HTTP handler on `/metrics`. I
 ```go
 import (
     "net/http"
-    "github.com/spcent/plumego/x/observability"
+    "github.com/birdordev/plumego/x/observability"
 )
 
 // In app.go — build observability before constructing Core.
@@ -48,7 +48,7 @@ Apply `middleware/httpmetrics` globally so every request is recorded. Pass the s
 
 ```go
 import (
-    "github.com/spcent/plumego/middleware/httpmetrics"
+    "github.com/birdordev/plumego/middleware/httpmetrics"
 )
 
 // Apply before route-specific middleware.
@@ -64,7 +64,7 @@ The `log` package produces structured JSON output by default. Wire it with a log
 ```go
 import (
     "os"
-    "github.com/spcent/plumego/log"
+    "github.com/birdordev/plumego/log"
 )
 
 logger := log.NewLogger(log.LoggerConfig{
@@ -100,8 +100,8 @@ Wire the tracing middleware globally:
 
 ```go
 import (
-    mwtracing "github.com/spcent/plumego/middleware/tracing"
-    "github.com/spcent/plumego/x/observability"
+    mwtracing "github.com/birdordev/plumego/middleware/tracing"
+    "github.com/birdordev/plumego/x/observability"
 )
 
 tracer := observability.NewOpenTelemetryTracer("myapp")

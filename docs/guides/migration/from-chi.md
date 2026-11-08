@@ -39,7 +39,7 @@ package users
 import (
 	"net/http"
 
-	"github.com/spcent/plumego/contract"
+	"github.com/birdordev/plumego/contract"
 )
 
 type UserResponse struct {
@@ -73,7 +73,7 @@ package routes
 import (
 	"net/http"
 
-	"github.com/spcent/plumego/router"
+	"github.com/birdordev/plumego/router"
 )
 
 func Register(r *router.Router) error {
@@ -108,7 +108,7 @@ package routes
 import (
 	"net/http"
 
-	"github.com/spcent/plumego/router"
+	"github.com/birdordev/plumego/router"
 )
 
 func RegisterAPI(r *router.Router) error {
@@ -137,7 +137,7 @@ package chain
 import (
 	"net/http"
 
-	plumemw "github.com/spcent/plumego/middleware"
+	plumemw "github.com/birdordev/plumego/middleware"
 )
 
 func AddHeader(name, value string) func(http.Handler) http.Handler {

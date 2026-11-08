@@ -5,7 +5,7 @@ Deduplicates in-flight identical requests so thundering herds collapse to a sing
 ## Import
 
 ```go
-import "github.com/spcent/plumego/middleware/singleflight"
+import "github.com/birdordev/plumego/middleware/singleflight"
 ```
 
 ## Overview

@@ -67,8 +67,8 @@ _ = contract.WriteResponse(w, r, http.StatusOK,
 
 ```go
 import (
-    "github.com/spcent/plumego/security/jwt"
-    kvstore "github.com/spcent/plumego/store/kv"
+    "github.com/birdordev/plumego/security/jwt"
+    kvstore "github.com/birdordev/plumego/store/kv"
 )
 
 store, _ := kvstore.NewKVStore(kvstore.Options{DataDir: "/var/lib/myapp/jwt"})
@@ -93,7 +93,7 @@ For the full wiring walkthrough, see the [Add JWT Auth guide](/docs/guides/add-j
 ### authn — read identity from context
 
 ```go
-import "github.com/spcent/plumego/security/authn"
+import "github.com/birdordev/plumego/security/authn"
 
 // In a handler, after auth middleware has run:
 principal := authn.PrincipalFromContext(r.Context())
@@ -108,8 +108,8 @@ roles  := principal.Roles
 
 ```go
 import (
-    "github.com/spcent/plumego/security/headers"
-    secmw "github.com/spcent/plumego/middleware/security"
+    "github.com/birdordev/plumego/security/headers"
+    secmw "github.com/birdordev/plumego/middleware/security"
 )
 
 policy := headers.DefaultPolicy()    // sensible defaults
@@ -138,7 +138,7 @@ policy.ContentSecurityPolicy = csp
 ### input — validate and sanitize user data
 
 ```go
-import "github.com/spcent/plumego/security/input"
+import "github.com/birdordev/plumego/security/input"
 
 // Validate common formats
 if !input.ValidateEmail(email) { ... }
@@ -152,7 +152,7 @@ safe  := input.StripControlChars(rawInput)         // removes control characters
 ### password — hash and verify passwords
 
 ```go
-import "github.com/spcent/plumego/security/password"
+import "github.com/birdordev/plumego/security/password"
 
 hash, _ := password.HashPassword(plaintext)
 err     := password.CheckPassword(hash, plaintext) // timing-safe comparison

@@ -100,8 +100,8 @@ issues. Notes: [`docs/release/v1.0.0-rc.1.md`](docs/release/v1.0.0-rc.1.md).
 
 Pre-1.0 development snapshot. Not covered by the stability guarantee.
 
-[Unreleased]: https://github.com/spcent/plumego/compare/v1.1.0...HEAD
-[1.1.0]: https://github.com/spcent/plumego/compare/v1.0.0...v1.1.0
-[1.0.0]: https://github.com/spcent/plumego/compare/v1.0.0-rc.1...v1.0.0
-[1.0.0-rc.1]: https://github.com/spcent/plumego/compare/v0.2.0...v1.0.0-rc.1
-[0.2.0]: https://github.com/spcent/plumego/releases/tag/v0.2.0
+[Unreleased]: https://github.com/birdordev/plumego/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/birdordev/plumego/compare/v1.0.0...v1.1.0
+[1.0.0]: https://github.com/birdordev/plumego/compare/v1.0.0-rc.1...v1.0.0
+[1.0.0-rc.1]: https://github.com/birdordev/plumego/compare/v0.2.0...v1.0.0-rc.1
+[0.2.0]: https://github.com/birdordev/plumego/releases/tag/v0.2.0

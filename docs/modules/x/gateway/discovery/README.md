@@ -1,6 +1,6 @@
 # x/gateway/discovery — Service Discovery
 
-> **Import path:** `github.com/spcent/plumego/x/gateway/discovery` — sub-package of [`x/gateway`](../README.md). This primer mirrors the package path under `docs/modules/x/`.
+> **Import path:** `github.com/birdordev/plumego/x/gateway/discovery` — sub-package of [`x/gateway`](../README.md). This primer mirrors the package path under `docs/modules/x/`.
 
 **Purpose:** Service discovery primitives and adapters within the `x/gateway` family. Resolves logical service names to backend instance URLs via static config, Consul, etcd, or Kubernetes Endpoints.
 

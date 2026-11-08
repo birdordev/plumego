@@ -35,7 +35,7 @@ A high-performance, feature-rich in-process message broker for Go applications.
 ### Durable Task Queue (Quick Start)
 
 ```go
-// import mqstore "github.com/spcent/plumego/x/messaging/mq/store"
+// import mqstore "github.com/birdordev/plumego/x/messaging/mq/store"
 db, _ := sql.Open("postgres", os.Getenv("DATABASE_URL"))
 store := mqstore.NewSQL(db, mqstore.DefaultSQLConfig())
 
@@ -97,7 +97,7 @@ worker := mq.NewWorker(queue, mq.WorkerConfig{
 })
 ```
 
-Or use the SQL-backed deduper (requires an `idempotency_keys` migration and `github.com/spcent/plumego/x/data/idempotency` for dialect constants):
+Or use the SQL-backed deduper (requires an `idempotency_keys` migration and `github.com/birdordev/plumego/x/data/idempotency` for dialect constants):
 
 ```go
 db, _ := sql.Open("postgres", os.Getenv("DATABASE_URL"))
@@ -148,7 +148,7 @@ store := mqstore.NewSQL(db, cfg)
 ## Installation
 
 ```bash
-go get github.com/spcent/plumego
+go get github.com/birdordev/plumego
 ```
 
 ## Quick Start

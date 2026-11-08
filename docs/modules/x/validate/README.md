@@ -26,7 +26,7 @@ Status: **experimental**. The API may change between minor releases.
 ## Core API
 
 ```go
-import "github.com/spcent/plumego/x/validate"
+import "github.com/birdordev/plumego/x/validate"
 
 // BindJSON decodes the request body into T without validation.
 // Returns a *validate.ValidationError with contract.APIError shape on decode failure.
@@ -52,8 +52,8 @@ own validation inline:
 ```go
 import (
     "net/http"
-    "github.com/spcent/plumego/contract"
-    "github.com/spcent/plumego/x/validate"
+    "github.com/birdordev/plumego/contract"
+    "github.com/birdordev/plumego/x/validate"
 )
 
 type CreateUserRequest struct {
@@ -130,7 +130,7 @@ package validation
 
 import (
     "github.com/go-playground/validator/v10"
-    xvalidate "github.com/spcent/plumego/x/validate"
+    xvalidate "github.com/birdordev/plumego/x/validate"
 )
 
 type PlaygroundAdapter struct{ v *validator.Validate }

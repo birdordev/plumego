@@ -5,7 +5,7 @@ Captures handler responses for debugging and testing.
 ## Import
 
 ```go
-import "github.com/spcent/plumego/middleware/debug"
+import "github.com/birdordev/plumego/middleware/debug"
 ```
 
 ## Overview

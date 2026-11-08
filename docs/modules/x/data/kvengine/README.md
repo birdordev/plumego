@@ -1,6 +1,6 @@
 # x/data/kvengine
 
-> **Import path:** `github.com/spcent/plumego/x/data/kvengine` — sub-package of [`x/data`](../README.md).
+> **Import path:** `github.com/birdordev/plumego/x/data/kvengine` — sub-package of [`x/data`](../README.md).
 
 ## Purpose
 

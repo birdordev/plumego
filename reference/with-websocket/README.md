@@ -336,7 +336,7 @@ Enable debug logging with `APP_DEBUG=true` and check server logs for `ReadMessag
 
 1. **Mint tokens**: Implement a `/login` endpoint that signs a JWT with `WS_SECRET`:
    ```go
-   import "github.com/spcent/plumego/x/websocket"
+   import "github.com/birdordev/plumego/x/websocket"
    
    secret := []byte(cfg.WSSecret)
    auth, err := websocket.NewSimpleHS256TokenAuth(secret)

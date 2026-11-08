@@ -4,7 +4,7 @@ go 1.26.0
 
 require (
 	github.com/go-playground/validator/v10 v10.30.6
-	github.com/spcent/plumego v0.0.0
+	github.com/birdordev/plumego v0.0.0
 )
 
 require (
@@ -17,4 +17,4 @@ require (
 	golang.org/x/text v0.43.0 // indirect
 )
 
-replace github.com/spcent/plumego => ../..
+replace github.com/birdordev/plumego => ../..
