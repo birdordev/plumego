@@ -4,7 +4,7 @@
 [![Go 版本](https://img.shields.io/badge/Go-1.26%2B-00ADD8?style=flat&logo=go)](https://go.dev/)
 [![CI](https://github.com/birdordev/plumego/actions/workflows/quality-gates.yml/badge.svg)](https://github.com/birdordev/plumego/actions/workflows/quality-gates.yml)
 [![Go Report Card](https://goreportcard.com/badge/github.com/birdordev/plumego)](https://goreportcard.com/report/github.com/birdordev/plumego)
-[![codecov](https://codecov.io/gh/spcent/plumego/graph/badge.svg)](https://codecov.io/gh/spcent/plumego)
+[![codecov](https://codecov.io/gh/birdordev/plumego/graph/badge.svg)](https://codecov.io/gh/birdordev/plumego)
 [![状态](https://img.shields.io/badge/status-v1.1.0-blue)](https://github.com/birdordev/plumego/releases/tag/v1.1.0)
 [![许可证](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
