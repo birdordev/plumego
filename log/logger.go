@@ -268,10 +268,13 @@ func formatTextValue(value reflect.Value, depth int, remaining *int) string {
 	if !value.IsValid() {
 		return "<nil>"
 	}
-	if depth >= 32 || *remaining <= 0 {
+	if *remaining <= 0 {
 		return "[truncated]"
 	}
 	*remaining -= 1
+	if depth >= 32 {
+		return "[truncated]"
+	}
 	if value.Kind() == reflect.Interface {
 		if value.IsNil() {
 			return "<nil>"

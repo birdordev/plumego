@@ -383,3 +383,5 @@ from `src`. Use `ReplaceHeaders` when replaying a fully buffered response that
 should remove stale destination headers.
 
 Outer access logging, HTTP metrics, and tracing receive the matched route template through synchronized response observers. Metadata publication carries no services and does not mutate the request or response headers. A missing match continues to use the original path.
+
+HTTP observation middleware preserves informational responses, implicit header-only responses, Flush commitment, and declared/dynamic trailers through the underlying net/http writer. Final status is recorded independently of informational status codes. Ordinary header changes after commitment do not rewrite the transmitted snapshot. Observation records status and byte counts without retaining response bodies; internal capture users such as gateway caching keep their explicit capture recorder.

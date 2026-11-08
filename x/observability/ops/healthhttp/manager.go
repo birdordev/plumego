@@ -97,11 +97,12 @@ func validateConfig(config Config) error {
 }
 
 func (m *manager) MarkReady() {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if m.closed {
 		return
 	}
+	m.aggregateVersion++
 	m.readinessMu.Lock()
 	defer m.readinessMu.Unlock()
 	m.readiness = health.ReadinessStatus{
@@ -111,6 +112,12 @@ func (m *manager) MarkReady() {
 }
 
 func (m *manager) MarkNotReady(reason string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.closed {
+		return
+	}
+	m.aggregateVersion++
 	m.readinessMu.Lock()
 	defer m.readinessMu.Unlock()
 	m.readiness = health.ReadinessStatus{
