@@ -45,7 +45,7 @@ func (r BroadcastResult) Rejected() bool {
 //
 // Example:
 //
-//	import "github.com/spcent/plumego/x/websocket"
+//	import "github.com/birdordev/plumego/x/websocket"
 //
 //	// Create hub with 4 workers and 1024 job queue size
 //	hub, err := websocket.NewHubWithConfig(websocket.HubConfig{WorkerCount: 4, JobQueueSize: 1024})
@@ -197,7 +197,7 @@ type securityEvent struct {
 //
 // Example:
 //
-//	import "github.com/spcent/plumego/x/websocket"
+//	import "github.com/birdordev/plumego/x/websocket"
 //
 //	config := websocket.HubConfig{
 //		WorkerCount:            4,
@@ -252,7 +252,7 @@ type HubConfig struct {
 //
 // Example:
 //
-//	import "github.com/spcent/plumego/x/websocket"
+//	import "github.com/birdordev/plumego/x/websocket"
 //
 //	hub, err := websocket.NewHubWithConfig(websocket.HubConfig{WorkerCount: 4, JobQueueSize: 1024})
 //	metrics := hub.Metrics()
@@ -466,7 +466,7 @@ func (h *Hub) recordSecurityEvent(eventType string, details map[string]any, seve
 //
 // Example:
 //
-//	import "github.com/spcent/plumego/x/websocket"
+//	import "github.com/birdordev/plumego/x/websocket"
 //
 //	hub, err := websocket.NewHubWithConfig(websocket.HubConfig{WorkerCount: 4, JobQueueSize: 1024})
 //	defer hub.Stop()
@@ -499,7 +499,7 @@ func (h *Hub) Stop() {
 //	import (
 //	    "context"
 //	    "time"
-//	    "github.com/spcent/plumego/x/websocket"
+//	    "github.com/birdordev/plumego/x/websocket"
 //	)
 //
 //	hub, err := websocket.NewHubWithConfig(websocket.HubConfig{WorkerCount: 4, JobQueueSize: 1024})

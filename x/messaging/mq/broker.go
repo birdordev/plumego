@@ -49,7 +49,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/spcent/plumego/x/messaging/pubsub"
+	"github.com/birdordev/plumego/x/messaging/pubsub"
 )
 
 // InProcBroker adapts pubsub.Broker to the Broker interface.

@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/spcent/plumego/log"
+	"github.com/birdordev/plumego/log"
 )
 
 // LoggingRouter wraps a router with structured logging for database sharding operations.

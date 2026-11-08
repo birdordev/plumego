@@ -7,9 +7,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/spcent/plumego/cmd/plumego/internal/devserver"
-	"github.com/spcent/plumego/cmd/plumego/internal/output"
-	"github.com/spcent/plumego/x/messaging/pubsub"
+	"github.com/birdordev/plumego/cmd/plumego/internal/devserver"
+	"github.com/birdordev/plumego/cmd/plumego/internal/output"
+	"github.com/birdordev/plumego/x/messaging/pubsub"
 )
 
 type fakeDashboard struct {

@@ -6,7 +6,7 @@ import (
 	"io"
 	"path/filepath"
 
-	"github.com/spcent/plumego/cmd/plumego/internal/codegen"
+	"github.com/birdordev/plumego/cmd/plumego/internal/codegen"
 )
 
 // GenerateCmd generates code

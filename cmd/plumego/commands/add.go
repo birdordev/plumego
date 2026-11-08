@@ -15,22 +15,22 @@ import (
 	"strings"
 	"time"
 
-	"github.com/spcent/plumego/cmd/plumego/internal/executil"
+	"github.com/birdordev/plumego/cmd/plumego/internal/executil"
 	"gopkg.in/yaml.v3"
 )
 
 const communityExtensionManifest = "community-extension.yaml"
 
 var stableRootForbiddenImports = []string{
-	"github.com/spcent/plumego/core",
-	"github.com/spcent/plumego/router",
-	"github.com/spcent/plumego/contract",
-	"github.com/spcent/plumego/middleware",
-	"github.com/spcent/plumego/security",
-	"github.com/spcent/plumego/store",
-	"github.com/spcent/plumego/health",
-	"github.com/spcent/plumego/log",
-	"github.com/spcent/plumego/metrics",
+	"github.com/birdordev/plumego/core",
+	"github.com/birdordev/plumego/router",
+	"github.com/birdordev/plumego/contract",
+	"github.com/birdordev/plumego/middleware",
+	"github.com/birdordev/plumego/security",
+	"github.com/birdordev/plumego/store",
+	"github.com/birdordev/plumego/health",
+	"github.com/birdordev/plumego/log",
+	"github.com/birdordev/plumego/metrics",
 }
 
 type AddCmd struct {

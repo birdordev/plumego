@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/spcent/plumego/x/tenant/core"
+	"github.com/birdordev/plumego/x/tenant/core"
 )
 
 // QuotaChecker enforces per-tenant send limits before enqueue.

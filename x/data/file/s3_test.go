@@ -16,7 +16,7 @@ import (
 	"testing"
 	"time"
 
-	storefile "github.com/spcent/plumego/store/file"
+	storefile "github.com/birdordev/plumego/store/file"
 )
 
 func newS3Server(t *testing.T) (*httptest.Server, map[string][]byte) {

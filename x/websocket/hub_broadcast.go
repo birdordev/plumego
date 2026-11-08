@@ -59,7 +59,7 @@ func (h *Hub) recordSkippedBroadcast(skipped int) BroadcastResult {
 //
 // Example:
 //
-//	import "github.com/spcent/plumego/x/websocket"
+//	import "github.com/birdordev/plumego/x/websocket"
 //
 //	hub, err := websocket.NewHubWithConfig(websocket.HubConfig{WorkerCount: 4, JobQueueSize: 1024})
 //	// Broadcast text message to all users in chat-room
@@ -121,7 +121,7 @@ func (h *Hub) tryBroadcastRoom(room string, op byte, data []byte, validator Room
 //
 // Example:
 //
-//	import "github.com/spcent/plumego/x/websocket"
+//	import "github.com/birdordev/plumego/x/websocket"
 //
 //	hub, err := websocket.NewHubWithConfig(websocket.HubConfig{WorkerCount: 4, JobQueueSize: 1024})
 //	// Send system-wide notification

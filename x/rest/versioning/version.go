@@ -9,8 +9,8 @@
 // Example usage:
 //
 //	import (
-//		"github.com/spcent/plumego/x/rest/versioning"
-//		"github.com/spcent/plumego/core"
+//		"github.com/birdordev/plumego/x/rest/versioning"
+//		"github.com/birdordev/plumego/core"
 //	)
 //
 //	app := core.New(core.DefaultConfig())
@@ -46,8 +46,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/spcent/plumego/contract"
-	mw "github.com/spcent/plumego/middleware"
+	"github.com/birdordev/plumego/contract"
+	mw "github.com/birdordev/plumego/middleware"
 )
 
 // CodeUnsupportedVersion is the canonical x/rest version-negotiation error code.

@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	metrics "github.com/spcent/plumego/metrics"
+	metrics "github.com/birdordev/plumego/metrics"
 )
 
 // TestMockCollector_BasicUsage demonstrates basic MockCollector usage

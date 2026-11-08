@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	xwebhook "github.com/spcent/plumego/x/messaging/webhook"
+	xwebhook "github.com/birdordev/plumego/x/messaging/webhook"
 	"with-events/internal/order"
 )
 

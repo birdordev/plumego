@@ -11,8 +11,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/spcent/plumego/x/ai/provider"
-	"github.com/spcent/plumego/x/ai/tokenizer"
+	"github.com/birdordev/plumego/x/ai/provider"
+	"github.com/birdordev/plumego/x/ai/tokenizer"
 )
 
 // Cache is the interface for LLM response caching.

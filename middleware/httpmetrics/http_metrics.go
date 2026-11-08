@@ -3,9 +3,9 @@ package httpmetrics
 import (
 	"net/http"
 
-	"github.com/spcent/plumego/metrics"
-	"github.com/spcent/plumego/middleware"
-	internaltelemetry "github.com/spcent/plumego/middleware/internal/telemetry"
+	"github.com/birdordev/plumego/metrics"
+	"github.com/birdordev/plumego/middleware"
+	internaltelemetry "github.com/birdordev/plumego/middleware/internal/telemetry"
 )
 
 // Observer is the metrics sink for HTTP request observations. It is an alias

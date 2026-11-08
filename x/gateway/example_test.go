@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 
-	"github.com/spcent/plumego/router"
-	"github.com/spcent/plumego/x/gateway"
+	"github.com/birdordev/plumego/router"
+	"github.com/birdordev/plumego/x/gateway"
 )
 
 func ExampleRegisterProxy() {

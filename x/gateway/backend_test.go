@@ -5,7 +5,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/spcent/plumego/x/resilience/circuitbreaker"
+	"github.com/birdordev/plumego/x/resilience/circuitbreaker"
 )
 
 // TestNewBackend verifies backend creation with URL parsing.

@@ -1,6 +1,6 @@
 package openapi
 
-import "github.com/spcent/plumego/router"
+import "github.com/birdordev/plumego/router"
 
 // Generator builds OpenAPI documents from router route metadata.
 type Generator struct {

@@ -4,8 +4,8 @@ package config
 import (
 	"os"
 
-	"github.com/spcent/plumego/core"
-	tenantcore "github.com/spcent/plumego/x/tenant/core"
+	"github.com/birdordev/plumego/core"
+	tenantcore "github.com/birdordev/plumego/x/tenant/core"
 )
 
 // Config holds all runtime configuration for the with-tenant reference app.

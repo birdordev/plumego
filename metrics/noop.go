@@ -17,7 +17,7 @@ import (
 //
 // Example:
 //
-//	import "github.com/spcent/plumego/metrics"
+//	import "github.com/birdordev/plumego/metrics"
 //
 //	// Disable metrics collection
 //	collector := metrics.NewNoopCollector()
@@ -31,7 +31,7 @@ type NoopCollector struct{}
 //
 // Example:
 //
-//	import "github.com/spcent/plumego/metrics"
+//	import "github.com/birdordev/plumego/metrics"
 //
 //	collector := metrics.NewNoopCollector()
 func NewNoopCollector() *NoopCollector {
@@ -53,7 +53,7 @@ func (n *NoopCollector) ObserveHTTP(ctx context.Context, method, path string, st
 //
 // Example:
 //
-//	import "github.com/spcent/plumego/metrics"
+//	import "github.com/birdordev/plumego/metrics"
 //
 //	collector := metrics.NewNoopCollector()
 //	stats := collector.GetStats()

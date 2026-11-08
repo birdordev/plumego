@@ -8,8 +8,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/spcent/plumego/contract"
-	plog "github.com/spcent/plumego/log"
+	"github.com/birdordev/plumego/contract"
+	plog "github.com/birdordev/plumego/log"
 )
 
 const maxMapCapacity = int(^uint(0) >> 1)

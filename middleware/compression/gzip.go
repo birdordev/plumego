@@ -8,8 +8,8 @@ import (
 	"strconv"
 	"strings"
 
-	internaltransport "github.com/spcent/plumego/internal/httputil"
-	"github.com/spcent/plumego/middleware"
+	internaltransport "github.com/birdordev/plumego/internal/httputil"
+	"github.com/birdordev/plumego/middleware"
 )
 
 // Middleware compresses HTTP responses when the client supports it via
@@ -23,7 +23,7 @@ import (
 //
 // Example:
 //
-//	import "github.com/spcent/plumego/middleware/compression"
+//	import "github.com/birdordev/plumego/middleware/compression"
 //
 //	// Use explicit configuration
 //	config := compression.Config{
@@ -39,7 +39,7 @@ import (
 //
 // Example:
 //
-//	import "github.com/spcent/plumego/middleware/compression"
+//	import "github.com/birdordev/plumego/middleware/compression"
 //
 //	config := compression.Config{
 //		MaxBufferBytes: 5 << 20, // 5MB max buffer

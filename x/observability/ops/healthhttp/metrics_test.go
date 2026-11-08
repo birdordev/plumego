@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/spcent/plumego/health"
+	"github.com/birdordev/plumego/health"
 )
 
 func TestMetricsHandler(t *testing.T) {

@@ -16,8 +16,8 @@
 //	import (
 //		"context"
 //
-//		authmw "github.com/spcent/plumego/middleware/auth"
-//		"github.com/spcent/plumego/security/jwt"
+//		authmw "github.com/birdordev/plumego/middleware/auth"
+//		"github.com/birdordev/plumego/security/jwt"
 //	)
 //
 //	var store jwt.KeyStore = appJWTKeyStore()

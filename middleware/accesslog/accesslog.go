@@ -4,11 +4,11 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/spcent/plumego/contract"
-	internaltransport "github.com/spcent/plumego/internal/httputil"
-	"github.com/spcent/plumego/log"
-	"github.com/spcent/plumego/middleware"
-	internaltelemetry "github.com/spcent/plumego/middleware/internal/telemetry"
+	"github.com/birdordev/plumego/contract"
+	internaltransport "github.com/birdordev/plumego/internal/httputil"
+	"github.com/birdordev/plumego/log"
+	"github.com/birdordev/plumego/middleware"
+	internaltelemetry "github.com/birdordev/plumego/middleware/internal/telemetry"
 )
 
 // ErrNilLogger is returned when access logging is configured without a logger.

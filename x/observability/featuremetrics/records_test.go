@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/spcent/plumego/metrics"
-	"github.com/spcent/plumego/x/observability/recordbuffer"
+	"github.com/birdordev/plumego/metrics"
+	"github.com/birdordev/plumego/x/observability/recordbuffer"
 )
 
 func TestDBRecord(t *testing.T) {

@@ -6,8 +6,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	tenantcore "github.com/spcent/plumego/x/tenant/core"
-	tenanttransport "github.com/spcent/plumego/x/tenant/transport"
+	tenantcore "github.com/birdordev/plumego/x/tenant/core"
+	tenanttransport "github.com/birdordev/plumego/x/tenant/transport"
 )
 
 func TestMiddleware(t *testing.T) {

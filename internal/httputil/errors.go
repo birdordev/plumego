@@ -3,7 +3,7 @@ package httputil
 import (
 	"net/http"
 
-	"github.com/spcent/plumego/contract"
+	"github.com/birdordev/plumego/contract"
 )
 
 // WriteTransportError writes transport errors using the canonical contract helper.

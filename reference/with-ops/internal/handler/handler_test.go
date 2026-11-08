@@ -6,8 +6,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	plumelog "github.com/spcent/plumego/log"
-	"github.com/spcent/plumego/metrics"
+	plumelog "github.com/birdordev/plumego/log"
+	"github.com/birdordev/plumego/metrics"
 	"with-ops/internal/config"
 )
 

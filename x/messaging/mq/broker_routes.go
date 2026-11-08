@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/spcent/plumego/x/messaging/pubsub"
+	"github.com/birdordev/plumego/x/messaging/pubsub"
 )
 
 // PublishToCluster publishes a message to the cluster (replicates to other nodes).

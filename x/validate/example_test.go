@@ -6,7 +6,7 @@ import (
 	"net/http/httptest"
 	"strings"
 
-	"github.com/spcent/plumego/x/validate"
+	"github.com/birdordev/plumego/x/validate"
 )
 
 type userRequest struct {

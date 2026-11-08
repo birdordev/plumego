@@ -6,7 +6,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/spcent/plumego/store/cache"
+	"github.com/birdordev/plumego/store/cache"
 )
 
 // failoverGet attempts to get a value from replica nodes

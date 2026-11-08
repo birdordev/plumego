@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/spcent/plumego/middleware/httpmetrics"
+	"github.com/birdordev/plumego/middleware/httpmetrics"
 )
 
 type statusObserver struct{ statuses chan int }

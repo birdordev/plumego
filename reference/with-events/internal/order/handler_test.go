@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	plumelog "github.com/spcent/plumego/log"
-	"github.com/spcent/plumego/x/messaging/pubsub"
+	plumelog "github.com/birdordev/plumego/log"
+	"github.com/birdordev/plumego/x/messaging/pubsub"
 )
 
 func discardLogger() plumelog.StructuredLogger {

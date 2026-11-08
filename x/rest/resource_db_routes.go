@@ -6,7 +6,7 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/spcent/plumego/contract"
+	"github.com/birdordev/plumego/contract"
 )
 
 // Index handles GET /resource with database query, pagination, and transformation.

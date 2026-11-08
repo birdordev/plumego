@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/spcent/plumego/x/tenant/transport"
+	"github.com/birdordev/plumego/x/tenant/transport"
 )
 
 func TestHeaderOrDefault(t *testing.T) {

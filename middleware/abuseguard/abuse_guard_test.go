@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	internaltransport "github.com/spcent/plumego/internal/httputil"
-	"github.com/spcent/plumego/log"
-	"github.com/spcent/plumego/security/abuse"
+	internaltransport "github.com/birdordev/plumego/internal/httputil"
+	"github.com/birdordev/plumego/log"
+	"github.com/birdordev/plumego/security/abuse"
 )
 
 type panicLogger struct{}

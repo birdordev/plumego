@@ -4,9 +4,9 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/spcent/plumego/contract"
-	"github.com/spcent/plumego/health"
-	plumelog "github.com/spcent/plumego/log"
+	"github.com/birdordev/plumego/contract"
+	"github.com/birdordev/plumego/health"
+	plumelog "github.com/birdordev/plumego/log"
 )
 
 const codeComponentUnhealthy = "health.component.unhealthy"
@@ -20,7 +20,7 @@ const codeComponentUnhealthy = "health.component.unhealthy"
 // surfaces component names in both success and error responses so operators
 // immediately know which dependency is unhealthy without inspecting logs.
 //
-// Use health.ComponentChecker (from github.com/spcent/plumego/health) as the
+// Use health.ComponentChecker (from github.com/birdordev/plumego/health) as the
 // checker type. It carries a stable Name() for labeling plus Check() for the
 // probe. Implement health.ComponentChecker directly or adapt an existing
 // client's health method with a small wrapper struct in routes.go.

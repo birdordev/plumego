@@ -11,9 +11,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/spcent/plumego/contract"
-	"github.com/spcent/plumego/health"
-	"github.com/spcent/plumego/router"
+	"github.com/birdordev/plumego/contract"
+	"github.com/birdordev/plumego/health"
+	"github.com/birdordev/plumego/router"
 )
 
 type routeRegistrar interface {

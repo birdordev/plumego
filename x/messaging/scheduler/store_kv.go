@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"strings"
 
-	kvstore "github.com/spcent/plumego/store/kv"
+	kvstore "github.com/birdordev/plumego/store/kv"
 )
 
 // KVStore persists jobs in the internal KV store.

@@ -7,8 +7,8 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/spcent/plumego/contract"
-	"github.com/spcent/plumego/x/messaging/mq"
+	"github.com/birdordev/plumego/contract"
+	"github.com/birdordev/plumego/x/messaging/mq"
 )
 
 type sendAcceptedResponse struct {

@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/spcent/plumego/contract"
+	"github.com/birdordev/plumego/contract"
 )
 
 type renameResponseFieldPayload struct {

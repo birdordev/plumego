@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/spcent/plumego/cmd/plumego/internal/executil"
+	"github.com/birdordev/plumego/cmd/plumego/internal/executil"
 )
 
 func writeCheckerFile(t *testing.T, path string, content string) {

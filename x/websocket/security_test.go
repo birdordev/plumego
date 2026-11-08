@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/spcent/plumego/security/password"
+	"github.com/birdordev/plumego/security/password"
 )
 
 func TestValidateSecurityConfig(t *testing.T) {

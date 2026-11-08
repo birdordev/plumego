@@ -9,11 +9,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/spcent/plumego/contract"
-	"github.com/spcent/plumego/health"
-	plumelog "github.com/spcent/plumego/log"
-	"github.com/spcent/plumego/metrics"
-	tenantcore "github.com/spcent/plumego/x/tenant/core"
+	"github.com/birdordev/plumego/contract"
+	"github.com/birdordev/plumego/health"
+	plumelog "github.com/birdordev/plumego/log"
+	"github.com/birdordev/plumego/metrics"
+	tenantcore "github.com/birdordev/plumego/x/tenant/core"
 	"production-service/internal/domain/tenant"
 )
 

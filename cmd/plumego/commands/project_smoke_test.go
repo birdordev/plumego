@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/spcent/plumego/cmd/plumego/internal/output"
+	"github.com/birdordev/plumego/cmd/plumego/internal/output"
 )
 
 func TestCLI_NewAcceptsScenarioTemplatesDryRun(t *testing.T) {
@@ -339,7 +339,7 @@ func TestCLI_NewWritesLocalPlumegoReplaceWhenRunFromCheckout(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read generated go.mod: %v", err)
 	}
-	want := "replace github.com/spcent/plumego => " + filepath.ToSlash(root)
+	want := "replace github.com/birdordev/plumego => " + filepath.ToSlash(root)
 	if !strings.Contains(string(data), want) {
 		t.Fatalf("generated go.mod missing local replace %q:\n%s", want, string(data))
 	}

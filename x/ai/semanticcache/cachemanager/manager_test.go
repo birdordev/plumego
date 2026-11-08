@@ -5,9 +5,9 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/spcent/plumego/x/ai/semanticcache/cachemanager"
-	"github.com/spcent/plumego/x/ai/semanticcache/embedding"
-	"github.com/spcent/plumego/x/ai/semanticcache/vectorstore"
+	"github.com/birdordev/plumego/x/ai/semanticcache/cachemanager"
+	"github.com/birdordev/plumego/x/ai/semanticcache/embedding"
+	"github.com/birdordev/plumego/x/ai/semanticcache/vectorstore"
 )
 
 // stubProvider is a minimal embedding.Provider for tests.

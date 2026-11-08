@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/spcent/plumego/router"
+	"github.com/birdordev/plumego/router"
 )
 
 // RegisterRoutes binds the canonical messaging HTTP routes with explicit wiring.

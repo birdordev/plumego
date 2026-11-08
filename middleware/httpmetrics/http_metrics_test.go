@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/spcent/plumego/contract"
+	"github.com/birdordev/plumego/contract"
 )
 
 type stubMetrics struct {

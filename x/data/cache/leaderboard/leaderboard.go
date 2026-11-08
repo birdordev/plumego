@@ -16,7 +16,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	storecache "github.com/spcent/plumego/store/cache"
+	storecache "github.com/birdordev/plumego/store/cache"
 )
 
 // LeaderboardCache extends store/cache with sorted-set operations for ranked data.

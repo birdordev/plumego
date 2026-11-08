@@ -9,9 +9,9 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/spcent/plumego/x/ai/provider"
-	sharedcircuitbreaker "github.com/spcent/plumego/x/resilience/circuitbreaker"
-	sharedratelimit "github.com/spcent/plumego/x/resilience/ratelimit"
+	"github.com/birdordev/plumego/x/ai/provider"
+	sharedcircuitbreaker "github.com/birdordev/plumego/x/resilience/circuitbreaker"
+	sharedratelimit "github.com/birdordev/plumego/x/resilience/ratelimit"
 )
 
 var (

@@ -3,7 +3,7 @@ package idempotency
 import (
 	"errors"
 
-	stable "github.com/spcent/plumego/store/idempotency"
+	stable "github.com/birdordev/plumego/store/idempotency"
 )
 
 var (

@@ -10,13 +10,13 @@ import (
 	"sync"
 	"time"
 
-	"github.com/spcent/plumego/contract"
-	"github.com/spcent/plumego/core"
-	"github.com/spcent/plumego/health"
-	"github.com/spcent/plumego/internal/config"
-	"github.com/spcent/plumego/log"
-	"github.com/spcent/plumego/router"
-	"github.com/spcent/plumego/x/observability/ops/healthhttp"
+	"github.com/birdordev/plumego/contract"
+	"github.com/birdordev/plumego/core"
+	"github.com/birdordev/plumego/health"
+	"github.com/birdordev/plumego/internal/config"
+	"github.com/birdordev/plumego/log"
+	"github.com/birdordev/plumego/router"
+	"github.com/birdordev/plumego/x/observability/ops/healthhttp"
 )
 
 const (

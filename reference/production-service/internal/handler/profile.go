@@ -4,9 +4,9 @@ import (
 	"context"
 	"net/http"
 
-	"github.com/spcent/plumego/contract"
-	plumelog "github.com/spcent/plumego/log"
-	tenantcore "github.com/spcent/plumego/x/tenant/core"
+	"github.com/birdordev/plumego/contract"
+	plumelog "github.com/birdordev/plumego/log"
+	tenantcore "github.com/birdordev/plumego/x/tenant/core"
 	"production-service/internal/domain/tenant"
 )
 

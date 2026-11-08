@@ -1,12 +1,12 @@
 package app
 
 import (
-	"github.com/spcent/plumego/middleware"
-	tenantcore "github.com/spcent/plumego/x/tenant/core"
-	"github.com/spcent/plumego/x/tenant/policy"
-	"github.com/spcent/plumego/x/tenant/quota"
-	"github.com/spcent/plumego/x/tenant/ratelimit"
-	"github.com/spcent/plumego/x/tenant/resolve"
+	"github.com/birdordev/plumego/middleware"
+	tenantcore "github.com/birdordev/plumego/x/tenant/core"
+	"github.com/birdordev/plumego/x/tenant/policy"
+	"github.com/birdordev/plumego/x/tenant/quota"
+	"github.com/birdordev/plumego/x/tenant/ratelimit"
+	"github.com/birdordev/plumego/x/tenant/resolve"
 	"with-tenant/internal/handler"
 )
 

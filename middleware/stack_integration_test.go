@@ -7,13 +7,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/spcent/plumego/contract"
-	"github.com/spcent/plumego/log"
-	"github.com/spcent/plumego/middleware"
-	"github.com/spcent/plumego/middleware/recovery"
-	"github.com/spcent/plumego/middleware/requestid"
-	"github.com/spcent/plumego/middleware/securityheaders"
-	"github.com/spcent/plumego/middleware/timeout"
+	"github.com/birdordev/plumego/contract"
+	"github.com/birdordev/plumego/log"
+	"github.com/birdordev/plumego/middleware"
+	"github.com/birdordev/plumego/middleware/recovery"
+	"github.com/birdordev/plumego/middleware/requestid"
+	"github.com/birdordev/plumego/middleware/securityheaders"
+	"github.com/birdordev/plumego/middleware/timeout"
 )
 
 // mustRecoveryMw is a test helper that constructs a recovery middleware or

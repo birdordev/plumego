@@ -7,7 +7,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/spcent/plumego/x/ai/orchestration"
+	"github.com/birdordev/plumego/x/ai/orchestration"
 )
 
 // Worker represents a distributed workflow task worker.

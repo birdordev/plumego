@@ -139,7 +139,7 @@ func scanExternalContractGoFilePaths(repoRoot string) ([]string, error) {
 				return nil
 			}
 
-			usesContract, err := fileImportsPackage(path, "github.com/spcent/plumego/contract")
+			usesContract, err := fileImportsPackage(path, "github.com/birdordev/plumego/contract")
 			if err != nil {
 				return err
 			}
@@ -766,7 +766,7 @@ func contractSelector(expr ast.Expr, contractNames map[string]struct{}, prefix s
 }
 
 func contractImportNames(file *ast.File) map[string]struct{} {
-	return packageImportNames(file, "github.com/spcent/plumego/contract")
+	return packageImportNames(file, "github.com/birdordev/plumego/contract")
 }
 
 func packageImportNames(file *ast.File, importPath string) map[string]struct{} {

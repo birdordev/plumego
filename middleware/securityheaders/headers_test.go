@@ -6,7 +6,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/spcent/plumego/security/headers"
+	"github.com/birdordev/plumego/security/headers"
 )
 
 func mustSecurityHeaders(t *testing.T, config Config) func(http.Handler) http.Handler {

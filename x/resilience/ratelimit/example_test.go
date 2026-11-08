@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/spcent/plumego/x/resilience/ratelimit"
+	"github.com/birdordev/plumego/x/resilience/ratelimit"
 )
 
 func ExampleNew() {

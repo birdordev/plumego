@@ -5,8 +5,8 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/spcent/plumego/x/ai/llmcache"
-	"github.com/spcent/plumego/x/ai/provider"
+	"github.com/birdordev/plumego/x/ai/llmcache"
+	"github.com/birdordev/plumego/x/ai/provider"
 )
 
 var (

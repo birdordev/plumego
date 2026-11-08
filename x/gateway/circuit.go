@@ -1,7 +1,7 @@
 package gateway
 
 import (
-	"github.com/spcent/plumego/x/resilience/circuitbreaker"
+	"github.com/birdordev/plumego/x/resilience/circuitbreaker"
 )
 
 // CircuitBreaker wraps the circuit breaker for a backend

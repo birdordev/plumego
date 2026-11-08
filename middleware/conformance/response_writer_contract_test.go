@@ -13,14 +13,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/spcent/plumego/middleware"
-	"github.com/spcent/plumego/middleware/bodylimit"
-	"github.com/spcent/plumego/middleware/compression"
-	"github.com/spcent/plumego/middleware/debug"
-	"github.com/spcent/plumego/middleware/httpmetrics"
-	"github.com/spcent/plumego/middleware/singleflight"
-	"github.com/spcent/plumego/middleware/timeout"
-	"github.com/spcent/plumego/middleware/tracing"
+	"github.com/birdordev/plumego/middleware"
+	"github.com/birdordev/plumego/middleware/bodylimit"
+	"github.com/birdordev/plumego/middleware/compression"
+	"github.com/birdordev/plumego/middleware/debug"
+	"github.com/birdordev/plumego/middleware/httpmetrics"
+	"github.com/birdordev/plumego/middleware/singleflight"
+	"github.com/birdordev/plumego/middleware/timeout"
+	"github.com/birdordev/plumego/middleware/tracing"
 )
 
 func TestResponseWriterConformancePanicPropagation(t *testing.T) {

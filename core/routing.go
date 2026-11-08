@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/spcent/plumego/contract"
-	"github.com/spcent/plumego/router"
+	"github.com/birdordev/plumego/contract"
+	"github.com/birdordev/plumego/router"
 )
 
 // registerRoute is the single implementation for all route registration.

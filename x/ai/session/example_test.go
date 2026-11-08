@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/spcent/plumego/x/ai/provider"
-	"github.com/spcent/plumego/x/ai/session"
+	"github.com/birdordev/plumego/x/ai/provider"
+	"github.com/birdordev/plumego/x/ai/session"
 )
 
 func ExampleManager() {

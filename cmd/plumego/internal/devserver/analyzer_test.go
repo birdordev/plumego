@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/spcent/plumego/x/observability/devtools"
+	"github.com/birdordev/plumego/x/observability/devtools"
 )
 
 func TestGetAppSnapshot(t *testing.T) {

@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/spcent/plumego/contract"
+	"github.com/birdordev/plumego/contract"
 )
 
 func TestRandomIDGenerator(t *testing.T) {

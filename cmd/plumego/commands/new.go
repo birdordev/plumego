@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/spcent/plumego/cmd/plumego/internal/scaffold"
+	"github.com/birdordev/plumego/cmd/plumego/internal/scaffold"
 )
 
 var newProjectTemplates = []string{
@@ -144,7 +144,7 @@ func findPlumegoModuleRoot(start string) string {
 	for {
 		goMod := filepath.Join(dir, "go.mod")
 		if data, err := os.ReadFile(goMod); err == nil {
-			if strings.Contains(string(data), "module github.com/spcent/plumego\n") {
+			if strings.Contains(string(data), "module github.com/birdordev/plumego\n") {
 				return dir
 			}
 		}

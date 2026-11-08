@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	metrics "github.com/spcent/plumego/metrics"
+	metrics "github.com/birdordev/plumego/metrics"
 )
 
 type (

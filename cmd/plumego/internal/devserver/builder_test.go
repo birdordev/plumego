@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/spcent/plumego/x/messaging/pubsub"
+	"github.com/birdordev/plumego/x/messaging/pubsub"
 )
 
 func TestLimitedBufferBoundsCapturedOutput(t *testing.T) {

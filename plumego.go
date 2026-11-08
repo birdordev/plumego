@@ -20,8 +20,8 @@ package plumego
 import (
 	"net/http"
 
-	"github.com/spcent/plumego/core"
-	"github.com/spcent/plumego/router"
+	"github.com/birdordev/plumego/core"
+	"github.com/birdordev/plumego/router"
 )
 
 // AppConfig is an alias for [core.AppConfig]. Use [DefaultConfig] as the

@@ -6,8 +6,8 @@ import (
 	"net/http"
 	"testing"
 
-	mwtracing "github.com/spcent/plumego/middleware/tracing"
-	"github.com/spcent/plumego/router"
+	mwtracing "github.com/birdordev/plumego/middleware/tracing"
+	"github.com/birdordev/plumego/router"
 )
 
 func addRouteHook(r *router.Router) func(method, path string, handler http.Handler) error {

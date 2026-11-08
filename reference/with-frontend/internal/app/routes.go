@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"testing/fstest"
 
-	"github.com/spcent/plumego/x/frontend"
+	"github.com/birdordev/plumego/x/frontend"
 	"with-frontend/internal/handler"
 )
 

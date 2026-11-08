@@ -12,7 +12,7 @@
 //
 // Example usage:
 //
-//	import "github.com/spcent/plumego/security/password"
+//	import "github.com/birdordev/plumego/security/password"
 //
 //	// Hash a password
 //	hash, err := password.HashPassword("user-password-123")
@@ -69,7 +69,7 @@ var (
 //
 // Example:
 //
-//	import "github.com/spcent/plumego/security/password"
+//	import "github.com/birdordev/plumego/security/password"
 //
 //	config := password.PasswordStrengthConfig{
 //		MinLength:        12,
@@ -114,7 +114,7 @@ type PasswordStrengthConfig struct {
 //
 // Example:
 //
-//	import "github.com/spcent/plumego/security/password"
+//	import "github.com/birdordev/plumego/security/password"
 //
 //	config := password.DefaultPasswordStrengthConfig()
 //	if !password.ValidatePasswordStrength("MySecurePass123", config) {
@@ -135,7 +135,7 @@ func DefaultPasswordStrengthConfig() PasswordStrengthConfig {
 //
 // Example:
 //
-//	import "github.com/spcent/plumego/security/password"
+//	import "github.com/birdordev/plumego/security/password"
 //
 //	config := password.DefaultPasswordStrengthConfig()
 //	if !password.ValidatePasswordStrength("MySecurePass123", config) {

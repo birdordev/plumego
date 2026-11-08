@@ -3,9 +3,9 @@ package jwt
 import (
 	"testing"
 
-	"github.com/spcent/plumego/middleware"
-	authmw "github.com/spcent/plumego/middleware/auth"
-	"github.com/spcent/plumego/security/authn"
+	"github.com/birdordev/plumego/middleware"
+	authmw "github.com/birdordev/plumego/middleware/auth"
+	"github.com/birdordev/plumego/security/authn"
 )
 
 func mustAuthMiddleware(t *testing.T, authenticator authn.Authenticator, opts ...authmw.AuthOption) middleware.Middleware {

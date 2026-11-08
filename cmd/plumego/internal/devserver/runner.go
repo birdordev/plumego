@@ -13,7 +13,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/spcent/plumego/x/messaging/pubsub"
+	"github.com/birdordev/plumego/x/messaging/pubsub"
 )
 
 const maxAppLogLineBytes = 1024 * 1024

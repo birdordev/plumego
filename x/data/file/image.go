@@ -10,7 +10,7 @@ import (
 	"io"
 	"strings"
 
-	storefile "github.com/spcent/plumego/store/file"
+	storefile "github.com/birdordev/plumego/store/file"
 )
 
 type imageInfo struct {

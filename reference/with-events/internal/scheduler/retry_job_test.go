@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	xscheduler "github.com/spcent/plumego/x/messaging/scheduler"
+	xscheduler "github.com/birdordev/plumego/x/messaging/scheduler"
 	"with-events/internal/order"
 )
 

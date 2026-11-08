@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/spcent/plumego/internal/checks/checkutil"
+	"github.com/birdordev/plumego/internal/checks/checkutil"
 )
 
 const (

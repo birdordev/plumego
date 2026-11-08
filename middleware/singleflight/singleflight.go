@@ -16,7 +16,7 @@
 //
 // Example usage:
 //
-//	import "github.com/spcent/plumego/middleware/singleflight"
+//	import "github.com/birdordev/plumego/middleware/singleflight"
 //
 //	// Simple coalescing with defaults
 //	mw := singleflight.New(singleflight.Config{}).Middleware()
@@ -45,8 +45,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/spcent/plumego/contract"
-	internaltransport "github.com/spcent/plumego/internal/httputil"
+	"github.com/birdordev/plumego/contract"
+	internaltransport "github.com/birdordev/plumego/internal/httputil"
 )
 
 var errUpstreamPanic = errors.New("upstream request panicked")

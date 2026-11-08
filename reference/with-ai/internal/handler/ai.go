@@ -5,12 +5,12 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/spcent/plumego/contract"
-	plumelog "github.com/spcent/plumego/log"
-	"github.com/spcent/plumego/x/ai/provider"
-	"github.com/spcent/plumego/x/ai/session"
-	"github.com/spcent/plumego/x/ai/streaming"
-	"github.com/spcent/plumego/x/ai/tool"
+	"github.com/birdordev/plumego/contract"
+	plumelog "github.com/birdordev/plumego/log"
+	"github.com/birdordev/plumego/x/ai/provider"
+	"github.com/birdordev/plumego/x/ai/session"
+	"github.com/birdordev/plumego/x/ai/streaming"
+	"github.com/birdordev/plumego/x/ai/tool"
 )
 
 // AIHandler demonstrates the four x/ai subpackages: provider, session,

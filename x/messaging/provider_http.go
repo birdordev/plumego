@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	phttp "github.com/spcent/plumego/internal/nethttp"
+	phttp "github.com/birdordev/plumego/internal/nethttp"
 )
 
 // newHTTPProviderClient creates a phttp.Client pre-configured with

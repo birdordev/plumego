@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/spcent/plumego/security/authn"
+	"github.com/birdordev/plumego/security/authn"
 )
 
 // mapSessionStore is a map-backed SessionStore for coverage tests.

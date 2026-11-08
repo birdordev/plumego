@@ -5,11 +5,11 @@ import (
 	"net/http"
 	"reflect"
 
-	contract "github.com/spcent/plumego/contract"
-	internaltransport "github.com/spcent/plumego/internal/httputil"
-	"github.com/spcent/plumego/log"
-	"github.com/spcent/plumego/middleware"
-	internaltelemetry "github.com/spcent/plumego/middleware/internal/telemetry"
+	contract "github.com/birdordev/plumego/contract"
+	internaltransport "github.com/birdordev/plumego/internal/httputil"
+	"github.com/birdordev/plumego/log"
+	"github.com/birdordev/plumego/middleware"
+	internaltelemetry "github.com/birdordev/plumego/middleware/internal/telemetry"
 )
 
 // ErrNilLogger is returned when recovery is configured without a logger.
@@ -29,7 +29,7 @@ type Config struct {
 //
 // Example:
 //
-//	import "github.com/spcent/plumego/middleware/recovery"
+//	import "github.com/birdordev/plumego/middleware/recovery"
 //
 //	mw, err := recovery.Middleware(recovery.Config{Logger: logger})
 //	if err != nil {

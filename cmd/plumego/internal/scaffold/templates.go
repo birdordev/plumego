@@ -121,11 +121,11 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/spcent/plumego/core"
-	plumelog "github.com/spcent/plumego/log"
-	"github.com/spcent/plumego/middleware/accesslog"
-	"github.com/spcent/plumego/middleware/recovery"
-	"github.com/spcent/plumego/middleware/requestid"
+	"github.com/birdordev/plumego/core"
+	plumelog "github.com/birdordev/plumego/log"
+	"github.com/birdordev/plumego/middleware/accesslog"
+	"github.com/birdordev/plumego/middleware/recovery"
+	"github.com/birdordev/plumego/middleware/requestid"
 	"%s/internal/config"
 )
 
@@ -253,7 +253,7 @@ import (
 	"%s/internal/handler"
 	"%s/internal/resource"
 
-	"github.com/spcent/plumego/x/rest"
+	"github.com/birdordev/plumego/x/rest"
 )
 
 // RegisterRoutes wires all HTTP routes for the application.
@@ -304,13 +304,13 @@ import (
 
 	"%s/internal/handler"
 
-	"github.com/spcent/plumego/contract"
-	"github.com/spcent/plumego/middleware"
-	tenantcore "github.com/spcent/plumego/x/tenant/core"
-	"github.com/spcent/plumego/x/tenant/policy"
-	"github.com/spcent/plumego/x/tenant/quota"
-	"github.com/spcent/plumego/x/tenant/ratelimit"
-	"github.com/spcent/plumego/x/tenant/resolve"
+	"github.com/birdordev/plumego/contract"
+	"github.com/birdordev/plumego/middleware"
+	tenantcore "github.com/birdordev/plumego/x/tenant/core"
+	"github.com/birdordev/plumego/x/tenant/policy"
+	"github.com/birdordev/plumego/x/tenant/quota"
+	"github.com/birdordev/plumego/x/tenant/ratelimit"
+	"github.com/birdordev/plumego/x/tenant/resolve"
 )
 
 // RegisterRoutes wires all HTTP routes for the application.
@@ -390,7 +390,7 @@ import (
 
 	"%s/internal/handler"
 
-	"github.com/spcent/plumego/x/gateway"
+	"github.com/birdordev/plumego/x/gateway"
 )
 
 // RegisterRoutes wires all HTTP routes for the application.
@@ -451,8 +451,8 @@ import (
 
 	"%s/internal/handler"
 
-	"github.com/spcent/plumego/contract"
-	"github.com/spcent/plumego/x/websocket"
+	"github.com/birdordev/plumego/contract"
+	"github.com/birdordev/plumego/x/websocket"
 )
 
 // RegisterRoutes wires all HTTP routes for the application.
@@ -500,10 +500,10 @@ import (
 
 	"%s/internal/handler"
 
-	"github.com/spcent/plumego/contract"
-	"github.com/spcent/plumego/x/ai/provider"
-	"github.com/spcent/plumego/x/ai/session"
-	"github.com/spcent/plumego/x/ai/tool"
+	"github.com/birdordev/plumego/contract"
+	"github.com/birdordev/plumego/x/ai/provider"
+	"github.com/birdordev/plumego/x/ai/session"
+	"github.com/birdordev/plumego/x/ai/tool"
 )
 
 // RegisterRoutes wires all HTTP routes for the application.
@@ -602,11 +602,11 @@ import (
 
 	"%s/internal/handler"
 
-	"github.com/spcent/plumego/contract"
-	"github.com/spcent/plumego/middleware/auth"
-	"github.com/spcent/plumego/security/authn"
-	"github.com/spcent/plumego/x/observability"
-	"github.com/spcent/plumego/x/observability/ops"
+	"github.com/birdordev/plumego/contract"
+	"github.com/birdordev/plumego/middleware/auth"
+	"github.com/birdordev/plumego/security/authn"
+	"github.com/birdordev/plumego/x/observability"
+	"github.com/birdordev/plumego/x/observability/ops"
 )
 
 // RegisterRoutes wires all HTTP routes for the application.

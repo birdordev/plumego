@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/spcent/plumego/cmd/plumego/internal/configmgr"
-	"github.com/spcent/plumego/contract"
+	"github.com/birdordev/plumego/cmd/plumego/internal/configmgr"
+	"github.com/birdordev/plumego/contract"
 )
 
 const defaultConfigEditFile = ".env"

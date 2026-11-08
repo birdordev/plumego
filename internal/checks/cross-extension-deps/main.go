@@ -18,7 +18,7 @@ import (
 	"strings"
 )
 
-const modulePath = "github.com/spcent/plumego"
+const modulePath = "github.com/birdordev/plumego"
 
 type violation struct {
 	file       string

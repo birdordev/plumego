@@ -7,10 +7,10 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/spcent/plumego/contract"
-	plumelog "github.com/spcent/plumego/log"
-	"github.com/spcent/plumego/router"
-	tenantcore "github.com/spcent/plumego/x/tenant/core"
+	"github.com/birdordev/plumego/contract"
+	plumelog "github.com/birdordev/plumego/log"
+	"github.com/birdordev/plumego/router"
+	tenantcore "github.com/birdordev/plumego/x/tenant/core"
 	tenantadmin "with-tenant-admin/internal/tenant/admin"
 )
 

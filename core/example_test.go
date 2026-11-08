@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 
-	"github.com/spcent/plumego/core"
+	"github.com/birdordev/plumego/core"
 )
 
 func ExampleNew() {

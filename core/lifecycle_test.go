@@ -14,8 +14,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/spcent/plumego/internal/testutil/nettest"
-	"github.com/spcent/plumego/log"
+	"github.com/birdordev/plumego/internal/testutil/nettest"
+	"github.com/birdordev/plumego/log"
 )
 
 func testListenAddr() string {

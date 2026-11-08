@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/spcent/plumego/log"
-	"github.com/spcent/plumego/x/data/rw"
+	"github.com/birdordev/plumego/log"
+	"github.com/birdordev/plumego/x/data/rw"
 )
 
 type testShardingLogEntry struct {

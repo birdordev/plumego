@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/spcent/plumego/health"
-	"github.com/spcent/plumego/router"
+	"github.com/birdordev/plumego/health"
+	"github.com/birdordev/plumego/router"
 )
 
 // validSecret returns a secret that meets the minimum length requirement.

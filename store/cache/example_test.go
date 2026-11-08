@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/spcent/plumego/store/cache"
+	"github.com/birdordev/plumego/store/cache"
 )
 
 func ExampleMemoryCache_Get() {

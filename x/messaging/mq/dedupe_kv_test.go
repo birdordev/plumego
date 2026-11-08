@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	kvstore "github.com/spcent/plumego/store/kv"
+	kvstore "github.com/birdordev/plumego/store/kv"
 )
 
 func TestKVDeduperLifecycle(t *testing.T) {

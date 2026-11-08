@@ -4,8 +4,8 @@ import (
 	"context"
 	"time"
 
-	"github.com/spcent/plumego/x/ai/metrics"
-	"github.com/spcent/plumego/x/ai/orchestration"
+	"github.com/birdordev/plumego/x/ai/metrics"
+	"github.com/birdordev/plumego/x/ai/orchestration"
 )
 
 // InstrumentedEngine wraps an orchestration Engine with metrics collection.

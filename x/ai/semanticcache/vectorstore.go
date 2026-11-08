@@ -7,8 +7,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/spcent/plumego/x/ai/llmcache"
-	"github.com/spcent/plumego/x/ai/provider"
+	"github.com/birdordev/plumego/x/ai/llmcache"
+	"github.com/birdordev/plumego/x/ai/provider"
 )
 
 // VectorEntry represents a stored vector with metadata.

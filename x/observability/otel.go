@@ -9,8 +9,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/spcent/plumego/contract"
-	mwtracing "github.com/spcent/plumego/middleware/tracing"
+	"github.com/birdordev/plumego/contract"
+	mwtracing "github.com/birdordev/plumego/middleware/tracing"
 )
 
 // Span captures finalized tracing data for inspection or export.
@@ -52,7 +52,7 @@ const defaultMaxSpans = 10000
 
 func NewOpenTelemetryTracer(name string) *OpenTelemetryTracer {
 	if name == "" {
-		name = "github.com/spcent/plumego/x/observability"
+		name = "github.com/birdordev/plumego/x/observability"
 	}
 	return &OpenTelemetryTracer{
 		name:     name,

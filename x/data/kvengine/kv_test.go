@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/spcent/plumego/metrics"
+	"github.com/birdordev/plumego/metrics"
 )
 
 // TestMain handles test setup and cleanup

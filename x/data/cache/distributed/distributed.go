@@ -8,7 +8,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/spcent/plumego/store/cache"
+	"github.com/birdordev/plumego/store/cache"
 )
 
 // ReplicationMode defines how data is replicated across nodes

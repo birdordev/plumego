@@ -5,7 +5,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/spcent/plumego/security/authn"
+	"github.com/birdordev/plumego/security/authn"
 )
 
 // --- mapJWTError tests (covers all branches at 0%) ---

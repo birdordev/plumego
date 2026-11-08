@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/spcent/plumego/health"
+	"github.com/birdordev/plumego/health"
 )
 
 var errManagerClosed = errors.New("manager is closed")

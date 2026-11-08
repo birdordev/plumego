@@ -106,7 +106,7 @@ import (
 	"context"
 	"net/http"%s
 
-	"github.com/spcent/plumego/contract"
+	"github.com/birdordev/plumego/contract"
 )
 
 // %s represents a %s entity.

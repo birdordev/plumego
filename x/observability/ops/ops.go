@@ -9,12 +9,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/spcent/plumego/contract"
-	"github.com/spcent/plumego/log"
-	"github.com/spcent/plumego/middleware"
-	"github.com/spcent/plumego/middleware/auth"
-	"github.com/spcent/plumego/router"
-	"github.com/spcent/plumego/security/authn"
+	"github.com/birdordev/plumego/contract"
+	"github.com/birdordev/plumego/log"
+	"github.com/birdordev/plumego/middleware"
+	"github.com/birdordev/plumego/middleware/auth"
+	"github.com/birdordev/plumego/router"
+	"github.com/birdordev/plumego/security/authn"
 )
 
 const DefaultBasePath = "/ops"

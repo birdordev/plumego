@@ -6,8 +6,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/spcent/plumego/x/ai/orchestration"
-	"github.com/spcent/plumego/x/ai/provider"
+	"github.com/birdordev/plumego/x/ai/orchestration"
+	"github.com/birdordev/plumego/x/ai/provider"
 )
 
 // StreamingParallelStep wraps a ParallelStep to stream results as agents complete.

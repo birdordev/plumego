@@ -3,7 +3,7 @@ package mq
 import (
 	"time"
 
-	"github.com/spcent/plumego/x/messaging/pubsub"
+	"github.com/birdordev/plumego/x/messaging/pubsub"
 )
 
 // HealthStatus represents the health status of the broker.

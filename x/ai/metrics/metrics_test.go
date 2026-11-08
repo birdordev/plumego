@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	stablemetrics "github.com/spcent/plumego/metrics"
+	stablemetrics "github.com/birdordev/plumego/metrics"
 )
 
 // tags is a test-only helper wrapping TagsE for static balanced key-value pairs.

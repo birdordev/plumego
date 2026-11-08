@@ -7,13 +7,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/spcent/plumego/metrics"
+	"github.com/birdordev/plumego/metrics"
 )
 
 // TestNewOpenTelemetryTracerEmptyName tests the default name behavior
 func TestNewOpenTelemetryTracerEmptyName(t *testing.T) {
 	tracer := NewOpenTelemetryTracer("")
-	if tracer.name != "github.com/spcent/plumego/x/observability" {
+	if tracer.name != "github.com/birdordev/plumego/x/observability" {
 		t.Fatalf("expected default name, got: %s", tracer.name)
 	}
 }

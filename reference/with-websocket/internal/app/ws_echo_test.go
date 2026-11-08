@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/spcent/plumego/x/websocket"
+	"github.com/birdordev/plumego/x/websocket"
 	"with-websocket/internal/config"
 	"with-websocket/internal/message"
 )

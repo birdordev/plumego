@@ -3,7 +3,7 @@ package frontend
 import (
 	"net/http"
 
-	"github.com/spcent/plumego/contract"
+	"github.com/birdordev/plumego/contract"
 )
 
 // statusCodeWriter wraps http.ResponseWriter to enforce a specific HTTP status

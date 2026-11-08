@@ -2,7 +2,7 @@ package healthhttp
 
 import (
 	"context"
-	"github.com/spcent/plumego/health"
+	"github.com/birdordev/plumego/health"
 	"testing"
 )
 

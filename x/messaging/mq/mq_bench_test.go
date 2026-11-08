@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/spcent/plumego/x/messaging/pubsub"
+	"github.com/birdordev/plumego/x/messaging/pubsub"
 )
 
 func BenchmarkPublish(b *testing.B) {

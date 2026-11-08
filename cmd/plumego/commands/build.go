@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/spcent/plumego/cmd/plumego/internal/buildtarget"
-	"github.com/spcent/plumego/cmd/plumego/internal/executil"
+	"github.com/birdordev/plumego/cmd/plumego/internal/buildtarget"
+	"github.com/birdordev/plumego/cmd/plumego/internal/executil"
 )
 
 type BuildCmd struct{}

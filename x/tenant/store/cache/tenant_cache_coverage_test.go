@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	storecache "github.com/spcent/plumego/store/cache"
-	tenant "github.com/spcent/plumego/x/tenant/core"
+	storecache "github.com/birdordev/plumego/store/cache"
+	tenant "github.com/birdordev/plumego/x/tenant/core"
 )
 
 // minimalCache implements only storecache.Cache (no Incr/Decr/Append).

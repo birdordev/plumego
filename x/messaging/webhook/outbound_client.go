@@ -13,7 +13,7 @@
 //
 // Example usage:
 //
-//	import "github.com/spcent/plumego/x/messaging/webhook"
+//	import "github.com/birdordev/plumego/x/messaging/webhook"
 //
 //	// Create a webhook sender
 //	sender := webhookout.NewSender(webhookout.Config{

@@ -12,7 +12,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/spcent/plumego/contract"
+	"github.com/birdordev/plumego/contract"
 )
 
 // APIHandler handles the core JSON API endpoints.
@@ -178,8 +178,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/spcent/plumego/contract"
-	"github.com/spcent/plumego/router"
+	"github.com/birdordev/plumego/contract"
+	"github.com/birdordev/plumego/router"
 	"%s/internal/domain/item"
 )
 
@@ -285,7 +285,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/spcent/plumego/x/rest"
+	"github.com/birdordev/plumego/x/rest"
 )
 
 // User is the sample resource exposed by the API template.
@@ -403,7 +403,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/spcent/plumego/contract"
+	"github.com/birdordev/plumego/contract"
 )
 
 // HealthHandler serves liveness and readiness endpoints.
@@ -461,7 +461,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/spcent/plumego/core"
+	"github.com/birdordev/plumego/core"
 )
 
 // Config holds all application configuration.

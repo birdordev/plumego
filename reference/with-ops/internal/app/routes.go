@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/spcent/plumego/x/observability/ops"
+	"github.com/birdordev/plumego/x/observability/ops"
 	"with-ops/internal/handler"
 )
 

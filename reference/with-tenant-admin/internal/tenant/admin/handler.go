@@ -9,9 +9,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/spcent/plumego/contract"
-	plumelog "github.com/spcent/plumego/log"
-	"github.com/spcent/plumego/router"
+	"github.com/birdordev/plumego/contract"
+	plumelog "github.com/birdordev/plumego/log"
+	"github.com/birdordev/plumego/router"
 )
 
 // Handler serves the tenant admin endpoints.

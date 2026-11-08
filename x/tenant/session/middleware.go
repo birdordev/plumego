@@ -6,9 +6,9 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/spcent/plumego/contract"
-	"github.com/spcent/plumego/middleware"
-	"github.com/spcent/plumego/security/authn"
+	"github.com/birdordev/plumego/contract"
+	"github.com/birdordev/plumego/middleware"
+	"github.com/birdordev/plumego/security/authn"
 )
 
 // SessionErrorHandler handles session-related errors.

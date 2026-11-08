@@ -6,7 +6,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/spcent/plumego/log"
+	"github.com/birdordev/plumego/log"
 )
 
 func TestRecoveryInformationalResponseDoesNotCommitFinalStatus(t *testing.T) {

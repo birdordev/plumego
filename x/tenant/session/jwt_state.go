@@ -5,9 +5,9 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/spcent/plumego/security/authn"
-	"github.com/spcent/plumego/security/jwt"
-	kvstore "github.com/spcent/plumego/store/kv"
+	"github.com/birdordev/plumego/security/authn"
+	"github.com/birdordev/plumego/security/jwt"
+	kvstore "github.com/birdordev/plumego/store/kv"
 )
 
 const (

@@ -10,8 +10,8 @@
 // Example usage:
 //
 //	import (
-//		"github.com/spcent/plumego/core"
-//		"github.com/spcent/plumego/x/gateway/transform"
+//		"github.com/birdordev/plumego/core"
+//		"github.com/birdordev/plumego/x/gateway/transform"
 //	)
 //
 //	cfg := core.DefaultConfig()
@@ -40,8 +40,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/spcent/plumego/contract"
-	"github.com/spcent/plumego/internal/httputil"
+	"github.com/birdordev/plumego/contract"
+	"github.com/birdordev/plumego/internal/httputil"
 )
 
 // maxTransformBodyBytes bounds request and response bodies buffered for

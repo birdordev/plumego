@@ -1,6 +1,6 @@
 package validate
 
-import "github.com/spcent/plumego/contract"
+import "github.com/birdordev/plumego/contract"
 
 // ValidationError adapts validator failures to Plumego's contract error shape.
 type ValidationError struct {

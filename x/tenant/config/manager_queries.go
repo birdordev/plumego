@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	tenant "github.com/spcent/plumego/x/tenant/core"
+	tenant "github.com/birdordev/plumego/x/tenant/core"
 )
 
 const tenantSelectColumns = `

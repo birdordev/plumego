@@ -9,10 +9,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/spcent/plumego/contract"
-	"github.com/spcent/plumego/health"
-	plumelog "github.com/spcent/plumego/log"
-	"github.com/spcent/plumego/x/observability"
+	"github.com/birdordev/plumego/contract"
+	"github.com/birdordev/plumego/health"
+	plumelog "github.com/birdordev/plumego/log"
+	"github.com/birdordev/plumego/x/observability"
 )
 
 func discardLogger() plumelog.StructuredLogger {

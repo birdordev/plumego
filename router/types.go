@@ -1,7 +1,7 @@
 package router
 
 import (
-	"github.com/spcent/plumego/contract"
+	"github.com/birdordev/plumego/contract"
 	"net/http"
 )
 

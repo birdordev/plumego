@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/spcent/plumego/contract"
-	"github.com/spcent/plumego/x/ai/orchestration"
+	"github.com/birdordev/plumego/contract"
+	"github.com/birdordev/plumego/x/ai/orchestration"
 )
 
 func TestHandler(t *testing.T) {

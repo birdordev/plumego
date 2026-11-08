@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/spcent/plumego/log"
+	"github.com/birdordev/plumego/log"
 )
 
 func (s *Scheduler) handleFailure(j *job, err error) {

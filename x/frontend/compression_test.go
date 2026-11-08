@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/spcent/plumego/router"
+	"github.com/birdordev/plumego/router"
 )
 
 func TestPrecompressedFiles(t *testing.T) {

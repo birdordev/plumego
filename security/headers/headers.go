@@ -16,8 +16,8 @@
 // Example usage:
 //
 //	import (
-//		"github.com/spcent/plumego/middleware/securityheaders"
-//		"github.com/spcent/plumego/security/headers"
+//		"github.com/birdordev/plumego/middleware/securityheaders"
+//		"github.com/birdordev/plumego/security/headers"
 //	)
 //
 //	policy := headers.Policy{
@@ -49,7 +49,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/spcent/plumego/security/input"
+	"github.com/birdordev/plumego/security/input"
 )
 
 var ErrInvalidPolicy = errors.New("headers: invalid policy")
@@ -61,7 +61,7 @@ var ErrInvalidPolicy = errors.New("headers: invalid policy")
 //
 // Example:
 //
-//	import "github.com/spcent/plumego/security/headers"
+//	import "github.com/birdordev/plumego/security/headers"
 //
 //	hsts := headers.HSTSOptions{
 //		MaxAge:            365 * 24 * time.Hour, // 1 year
@@ -90,7 +90,7 @@ type HSTSOptions struct {
 //
 // Example:
 //
-//	import "github.com/spcent/plumego/security/headers"
+//	import "github.com/birdordev/plumego/security/headers"
 //
 //	policy := headers.Policy{
 //		FrameOptions:          "DENY",
@@ -157,7 +157,7 @@ type Policy struct {
 //
 // Example:
 //
-//	import "github.com/spcent/plumego/security/headers"
+//	import "github.com/birdordev/plumego/security/headers"
 //
 //	policy := headers.DefaultPolicy()
 //	if err := policy.ApplyChecked(w, r); err != nil {
@@ -199,7 +199,7 @@ func (p Policy) Compile() Policy {
 //
 // Example:
 //
-//	import "github.com/spcent/plumego/security/headers"
+//	import "github.com/birdordev/plumego/security/headers"
 //
 //	policy := headers.StrictPolicy()
 //	if err := policy.ApplyChecked(w, r); err != nil {
@@ -230,7 +230,7 @@ func StrictPolicy() Policy {
 //
 // Example:
 //
-//	import "github.com/spcent/plumego/security/headers"
+//	import "github.com/birdordev/plumego/security/headers"
 //
 //	policy := headers.DefaultPolicy()
 //	policy.Apply(w, r)
@@ -456,7 +456,7 @@ func forwardedProtoParam(element string) (string, bool) {
 //
 // Example:
 //
-//	import "github.com/spcent/plumego/security/headers"
+//	import "github.com/birdordev/plumego/security/headers"
 //
 //	csp := headers.NewCSPBuilder().
 //		DefaultSrc("'self'").
@@ -706,7 +706,7 @@ func isCSPDirectiveValue(value string) bool {
 //
 // Example:
 //
-//	import "github.com/spcent/plumego/security/headers"
+//	import "github.com/birdordev/plumego/security/headers"
 //
 //	csp := headers.StrictCSP()
 func StrictCSP() string {

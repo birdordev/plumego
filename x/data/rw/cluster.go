@@ -9,7 +9,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/spcent/plumego/x/data/internal/testx"
+	"github.com/birdordev/plumego/x/data/internal/testx"
 )
 
 var (

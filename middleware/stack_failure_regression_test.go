@@ -11,14 +11,14 @@ import (
 	"testing/synctest"
 	"time"
 
-	"github.com/spcent/plumego/contract"
-	"github.com/spcent/plumego/middleware"
-	"github.com/spcent/plumego/middleware/auth"
-	"github.com/spcent/plumego/middleware/bodylimit"
-	"github.com/spcent/plumego/middleware/cors"
-	"github.com/spcent/plumego/middleware/requestid"
-	"github.com/spcent/plumego/middleware/timeout"
-	"github.com/spcent/plumego/security/authn"
+	"github.com/birdordev/plumego/contract"
+	"github.com/birdordev/plumego/middleware"
+	"github.com/birdordev/plumego/middleware/auth"
+	"github.com/birdordev/plumego/middleware/bodylimit"
+	"github.com/birdordev/plumego/middleware/cors"
+	"github.com/birdordev/plumego/middleware/requestid"
+	"github.com/birdordev/plumego/middleware/timeout"
+	"github.com/birdordev/plumego/security/authn"
 )
 
 type blockedResponseWriter struct {

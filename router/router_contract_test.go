@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/spcent/plumego/contract"
-	"github.com/spcent/plumego/internal/testutil/wait"
+	"github.com/birdordev/plumego/contract"
+	"github.com/birdordev/plumego/internal/testutil/wait"
 )
 
 func TestMethodMismatchReturnsNotFound(t *testing.T) {

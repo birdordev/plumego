@@ -8,7 +8,7 @@ import (
 	"path"
 	"strings"
 
-	"github.com/spcent/plumego/contract"
+	"github.com/birdordev/plumego/contract"
 )
 
 type handler struct {

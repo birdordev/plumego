@@ -3,7 +3,7 @@ package marketplace
 import (
 	"time"
 
-	"github.com/spcent/plumego/x/ai/provider"
+	"github.com/birdordev/plumego/x/ai/provider"
 )
 
 // AgentCategory represents the category of an agent.

@@ -6,9 +6,9 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/spcent/plumego"
-	"github.com/spcent/plumego/contract"
-	"github.com/spcent/plumego/middleware/recovery"
+	"github.com/birdordev/plumego"
+	"github.com/birdordev/plumego/contract"
+	"github.com/birdordev/plumego/middleware/recovery"
 )
 
 func main() {

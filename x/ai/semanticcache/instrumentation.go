@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/spcent/plumego/x/ai/provider"
+	"github.com/birdordev/plumego/x/ai/provider"
 )
 
 // MetricRecord holds a single metric observation for this package.

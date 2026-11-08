@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 
-	"github.com/spcent/plumego/middleware"
+	"github.com/birdordev/plumego/middleware"
 )
 
 // ExampleNewChain demonstrates composing middleware with NewChain and Build.

@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/spcent/plumego/x/ai/provider"
+	"github.com/birdordev/plumego/x/ai/provider"
 )
 
 func ExampleMockProvider() {

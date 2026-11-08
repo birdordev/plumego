@@ -7,9 +7,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 
-	"github.com/spcent/plumego/contract"
-	"github.com/spcent/plumego/router"
-	"github.com/spcent/plumego/x/rest"
+	"github.com/birdordev/plumego/contract"
+	"github.com/birdordev/plumego/router"
+	"github.com/birdordev/plumego/x/rest"
 )
 
 type exampleUser struct {

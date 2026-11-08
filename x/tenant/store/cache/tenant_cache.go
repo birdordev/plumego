@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	storecache "github.com/spcent/plumego/store/cache"
-	"github.com/spcent/plumego/x/tenant/core"
+	storecache "github.com/birdordev/plumego/store/cache"
+	"github.com/birdordev/plumego/x/tenant/core"
 )
 
 // TenantCache wraps a Cache implementation and automatically scopes keys by tenant ID.

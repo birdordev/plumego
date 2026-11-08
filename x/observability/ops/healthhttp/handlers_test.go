@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/spcent/plumego/contract"
-	"github.com/spcent/plumego/health"
+	"github.com/birdordev/plumego/contract"
+	"github.com/birdordev/plumego/health"
 )
 
 type mockChecker struct {

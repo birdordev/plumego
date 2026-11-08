@@ -3,7 +3,7 @@ package multimodal
 import (
 	"context"
 
-	"github.com/spcent/plumego/x/ai/provider"
+	"github.com/birdordev/plumego/x/ai/provider"
 )
 
 // Provider extends the base provider with multimodal capabilities.

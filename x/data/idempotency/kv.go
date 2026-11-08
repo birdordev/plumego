@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	kvstore "github.com/spcent/plumego/store/kv"
+	kvstore "github.com/birdordev/plumego/store/kv"
 )
 
 // KVConfig configures the KV-backed idempotency provider.

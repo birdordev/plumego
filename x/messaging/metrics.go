@@ -4,8 +4,8 @@ import (
 	"context"
 	"time"
 
-	"github.com/spcent/plumego/metrics"
-	"github.com/spcent/plumego/x/messaging/mq"
+	"github.com/birdordev/plumego/metrics"
+	"github.com/birdordev/plumego/x/messaging/mq"
 )
 
 type messagingMetrics interface {

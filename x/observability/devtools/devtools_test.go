@@ -10,10 +10,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/spcent/plumego/contract"
-	"github.com/spcent/plumego/core"
-	"github.com/spcent/plumego/health"
-	"github.com/spcent/plumego/router"
+	"github.com/birdordev/plumego/contract"
+	"github.com/birdordev/plumego/core"
+	"github.com/birdordev/plumego/health"
+	"github.com/birdordev/plumego/router"
 )
 
 func TestNewComponentDefaults(t *testing.T) {

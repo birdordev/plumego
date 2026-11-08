@@ -9,9 +9,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/spcent/plumego/contract"
-	"github.com/spcent/plumego/health"
-	"github.com/spcent/plumego/internal/stringsx"
+	"github.com/birdordev/plumego/contract"
+	"github.com/birdordev/plumego/health"
+	"github.com/birdordev/plumego/internal/stringsx"
 )
 
 type Outbound struct {

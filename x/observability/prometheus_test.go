@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/spcent/plumego/metrics"
+	"github.com/birdordev/plumego/metrics"
 )
 
 func TestPrometheusCollectorObserveAndHandler(t *testing.T) {

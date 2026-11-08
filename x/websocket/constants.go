@@ -6,7 +6,7 @@ import "time"
 //
 // Example:
 //
-//	import "github.com/spcent/plumego/x/websocket"
+//	import "github.com/birdordev/plumego/x/websocket"
 //
 //	// Send a text message
 //	err := conn.WriteMessage(websocket.OpcodeText, []byte("Hello"))

@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/spcent/plumego/x/resilience/ratelimit"
+	"github.com/birdordev/plumego/x/resilience/ratelimit"
 )
 
 // RateLimiter is the rate limiter type used by [RateLimitedSMSProvider] and

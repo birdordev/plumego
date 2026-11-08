@@ -9,7 +9,7 @@ import (
 //
 // Example:
 //
-//	import "github.com/spcent/plumego/security/jwt"
+//	import "github.com/birdordev/plumego/security/jwt"
 //
 //	identity := jwt.IdentityClaims{
 //		Subject: "user-123",
@@ -24,7 +24,7 @@ type IdentityClaims struct {
 //
 // Example:
 //
-//	import "github.com/spcent/plumego/security/jwt"
+//	import "github.com/birdordev/plumego/security/jwt"
 //
 //	authz := jwt.AuthorizationClaims{
 //		Roles:       []string{"admin", "user"},
@@ -39,7 +39,7 @@ type AuthorizationClaims struct {
 //
 // Example:
 //
-//	import "github.com/spcent/plumego/security/jwt"
+//	import "github.com/birdordev/plumego/security/jwt"
 //
 //	claims := jwt.TokenClaims{
 //		TokenID:   "token-123",
@@ -102,7 +102,7 @@ type SigningKeyMetadata struct {
 //
 // Example:
 //
-//	import "github.com/spcent/plumego/security/jwt"
+//	import "github.com/birdordev/plumego/security/jwt"
 //
 //	pair, err := manager.GenerateTokenPair(ctx, identity, authz)
 //	if err != nil {

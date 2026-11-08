@@ -4,9 +4,9 @@ import (
 	"context"
 	"time"
 
-	"github.com/spcent/plumego/contract"
-	plumelog "github.com/spcent/plumego/log"
-	obstracer "github.com/spcent/plumego/x/observability/tracer"
+	"github.com/birdordev/plumego/contract"
+	plumelog "github.com/birdordev/plumego/log"
+	obstracer "github.com/birdordev/plumego/x/observability/tracer"
 )
 
 // CallOption is an opaque caller-owned option passed through interceptors.

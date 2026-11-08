@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/spcent/plumego/store/cache"
+	"github.com/birdordev/plumego/store/cache"
 )
 
 var errMiss = errors.New("cache miss")

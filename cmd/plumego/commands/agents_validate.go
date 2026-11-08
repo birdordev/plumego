@@ -9,9 +9,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/spcent/plumego/cmd/plumego/internal/agentmanifest"
-	"github.com/spcent/plumego/cmd/plumego/internal/executil"
-	"github.com/spcent/plumego/cmd/plumego/internal/gateprofile"
+	"github.com/birdordev/plumego/cmd/plumego/internal/agentmanifest"
+	"github.com/birdordev/plumego/cmd/plumego/internal/executil"
+	"github.com/birdordev/plumego/cmd/plumego/internal/gateprofile"
 )
 
 // runAgentsValidateDiff inspects the current git diff, selects the minimal

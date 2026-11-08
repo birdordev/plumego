@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/spcent/plumego/log"
+	"github.com/birdordev/plumego/log"
 )
 
 func BenchmarkBodyLimitDisabled(b *testing.B) {

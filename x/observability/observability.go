@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"strings"
 
-	mwtracing "github.com/spcent/plumego/middleware/tracing"
+	mwtracing "github.com/birdordev/plumego/middleware/tracing"
 )
 
 // MetricsConfig configures the built-in metrics endpoint and collector wiring.

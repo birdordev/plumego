@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/spcent/plumego/metrics"
+	"github.com/birdordev/plumego/metrics"
 )
 
 // ErrNilMetricRecordSource is returned when an SMS Prometheus exporter is created without a metric source.

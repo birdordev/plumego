@@ -6,8 +6,8 @@ package securityheaders
 import (
 	"net/http"
 
-	"github.com/spcent/plumego/middleware"
-	"github.com/spcent/plumego/security/headers"
+	"github.com/birdordev/plumego/middleware"
+	"github.com/birdordev/plumego/security/headers"
 )
 
 // Config controls security-header middleware behavior.
@@ -28,8 +28,8 @@ func DefaultConfig() Config {
 //
 // Example:
 //
-//	import "github.com/spcent/plumego/middleware/securityheaders"
-//	import "github.com/spcent/plumego/security/headers"
+//	import "github.com/birdordev/plumego/middleware/securityheaders"
+//	import "github.com/birdordev/plumego/security/headers"
 //
 //	// Use default security policy
 //	mw, err := securityheaders.Middleware(securityheaders.Config{})

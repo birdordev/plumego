@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/spcent/plumego/cmd/plumego/internal/testassert"
+	"github.com/birdordev/plumego/cmd/plumego/internal/testassert"
 )
 
 var allTemplates = []string{
@@ -246,7 +246,7 @@ func TestAPITemplate_UsesCanonicalBootstrapWithRestProfile(t *testing.T) {
 
 	routes := getTemplateContent("internal/app/routes.go", "myapp", "example.com/myapp", "api")
 	assertContainsAll(t, routes, []string{
-		`"github.com/spcent/plumego/x/rest"`,
+		`"github.com/birdordev/plumego/x/rest"`,
 		`rest.DefaultResourceSpec("users").WithPrefix("/api/users")`,
 		`rest.NewDBResource[resource.User](spec, resource.NewUserRepository())`,
 		`a.Core.Get(spec.Prefix, http.HandlerFunc(users.Index))`,
@@ -258,7 +258,7 @@ func TestAPITemplate_UsesCanonicalBootstrapWithRestProfile(t *testing.T) {
 func TestScenarioProfiles_GenerateRunnableRoutes(t *testing.T) {
 	restRoutes := getTemplateContent("internal/app/routes.go", "myapp", "example.com/myapp", "rest-api")
 	assertContainsAll(t, restRoutes, []string{
-		`"github.com/spcent/plumego/x/rest"`,
+		`"github.com/birdordev/plumego/x/rest"`,
 		`rest.NewDBResource[resource.User](spec, resource.NewUserRepository())`,
 		`a.Core.Get(spec.Prefix, http.HandlerFunc(users.Index))`,
 		`a.Core.Post(spec.Prefix, http.HandlerFunc(users.Create))`,
@@ -266,11 +266,11 @@ func TestScenarioProfiles_GenerateRunnableRoutes(t *testing.T) {
 
 	tenantRoutes := getTemplateContent("internal/app/routes.go", "myapp", "example.com/myapp", "tenant-api")
 	assertContainsAll(t, tenantRoutes, []string{
-		`"github.com/spcent/plumego/middleware"`,
-		`"github.com/spcent/plumego/x/tenant/resolve"`,
-		`"github.com/spcent/plumego/x/tenant/policy"`,
-		`"github.com/spcent/plumego/x/tenant/quota"`,
-		`"github.com/spcent/plumego/x/tenant/ratelimit"`,
+		`"github.com/birdordev/plumego/middleware"`,
+		`"github.com/birdordev/plumego/x/tenant/resolve"`,
+		`"github.com/birdordev/plumego/x/tenant/policy"`,
+		`"github.com/birdordev/plumego/x/tenant/quota"`,
+		`"github.com/birdordev/plumego/x/tenant/ratelimit"`,
 		`tenantChain := middleware.NewChain(`,
 		`a.Core.Get("/api/models", tenantChain.Build(http.HandlerFunc(models)))`,
 		`tenantcore.TenantIDFromContext(r.Context())`,
@@ -278,7 +278,7 @@ func TestScenarioProfiles_GenerateRunnableRoutes(t *testing.T) {
 
 	gatewayRoutes := getTemplateContent("internal/app/routes.go", "myapp", "example.com/myapp", "gateway")
 	assertContainsAll(t, gatewayRoutes, []string{
-		`"github.com/spcent/plumego/x/gateway"`,
+		`"github.com/birdordev/plumego/x/gateway"`,
 		`gateway.NewGateway(gateway.GatewayConfig{`,
 		`PathRewrite: gateway.ReplacePrefix("/edge", "/api/status")`,
 		`a.Core.Get("/edge", proxy)`,
@@ -286,7 +286,7 @@ func TestScenarioProfiles_GenerateRunnableRoutes(t *testing.T) {
 
 	realtimeRoutes := getTemplateContent("internal/app/routes.go", "myapp", "example.com/myapp", "realtime")
 	assertContainsAll(t, realtimeRoutes, []string{
-		`"github.com/spcent/plumego/x/websocket"`,
+		`"github.com/birdordev/plumego/x/websocket"`,
 		`hub, err := websocket.NewHub(4, 1024)`,
 		`a.Core.Get("/realtime/metrics", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request)`,
 		`hub.Metrics()`,
@@ -294,9 +294,9 @@ func TestScenarioProfiles_GenerateRunnableRoutes(t *testing.T) {
 
 	aiRoutes := getTemplateContent("internal/app/routes.go", "myapp", "example.com/myapp", "ai-service")
 	assertContainsAll(t, aiRoutes, []string{
-		`"github.com/spcent/plumego/x/ai/provider"`,
-		`"github.com/spcent/plumego/x/ai/session"`,
-		`"github.com/spcent/plumego/x/ai/tool"`,
+		`"github.com/birdordev/plumego/x/ai/provider"`,
+		`"github.com/birdordev/plumego/x/ai/session"`,
+		`"github.com/birdordev/plumego/x/ai/tool"`,
 		`provider.NewMockProvider("offline")`,
 		`session.NewManager(session.NewMemoryStorage())`,
 		`tools.Register(tool.NewEchoTool())`,
@@ -305,8 +305,8 @@ func TestScenarioProfiles_GenerateRunnableRoutes(t *testing.T) {
 
 	opsRoutes := getTemplateContent("internal/app/routes.go", "myapp", "example.com/myapp", "ops-service")
 	assertContainsAll(t, opsRoutes, []string{
-		`"github.com/spcent/plumego/x/observability"`,
-		`"github.com/spcent/plumego/x/observability/ops"`,
+		`"github.com/birdordev/plumego/x/observability"`,
+		`"github.com/birdordev/plumego/x/observability/ops"`,
 		`observability.NewPrometheusCollector("app")`,
 		`auth.Authenticate(authn.StaticToken(os.Getenv("OPS_TOKEN"))`,
 		`a.Core.Get("/ops/metrics", opsAuth(metrics))`,
@@ -320,27 +320,27 @@ func TestScenarioProfiles_UseCanonicalScaffoldWithExplicitCapabilityProfile(t *t
 		template string
 		want     []string
 	}{
-		{template: "rest-api", want: []string{`"github.com/spcent/plumego/x/rest"`}},
+		{template: "rest-api", want: []string{`"github.com/birdordev/plumego/x/rest"`}},
 		{template: "tenant-api", want: []string{
-			`"github.com/spcent/plumego/x/tenant/resolve"`,
-			`"github.com/spcent/plumego/x/tenant/policy"`,
-			`"github.com/spcent/plumego/x/tenant/quota"`,
-			`"github.com/spcent/plumego/x/tenant/ratelimit"`,
+			`"github.com/birdordev/plumego/x/tenant/resolve"`,
+			`"github.com/birdordev/plumego/x/tenant/policy"`,
+			`"github.com/birdordev/plumego/x/tenant/quota"`,
+			`"github.com/birdordev/plumego/x/tenant/ratelimit"`,
 		}},
-		{template: "gateway", want: []string{`"github.com/spcent/plumego/x/gateway"`}},
+		{template: "gateway", want: []string{`"github.com/birdordev/plumego/x/gateway"`}},
 		{template: "realtime", want: []string{
-			`"github.com/spcent/plumego/x/websocket"`,
-			`"github.com/spcent/plumego/x/messaging"`,
+			`"github.com/birdordev/plumego/x/websocket"`,
+			`"github.com/birdordev/plumego/x/messaging"`,
 		}},
 		{template: "ai-service", want: []string{
-			`"github.com/spcent/plumego/x/ai/provider"`,
-			`"github.com/spcent/plumego/x/ai/session"`,
-			`"github.com/spcent/plumego/x/ai/streaming"`,
-			`"github.com/spcent/plumego/x/ai/tool"`,
+			`"github.com/birdordev/plumego/x/ai/provider"`,
+			`"github.com/birdordev/plumego/x/ai/session"`,
+			`"github.com/birdordev/plumego/x/ai/streaming"`,
+			`"github.com/birdordev/plumego/x/ai/tool"`,
 		}},
 		{template: "ops-service", want: []string{
-			`"github.com/spcent/plumego/x/observability"`,
-			`"github.com/spcent/plumego/x/observability/ops"`,
+			`"github.com/birdordev/plumego/x/observability"`,
+			`"github.com/birdordev/plumego/x/observability/ops"`,
 		}},
 	}
 
@@ -386,7 +386,7 @@ func TestTemplateContent_UsesLocalResponseDTOs(t *testing.T) {
 			file:     "internal/handler/health.go",
 			template: "minimal",
 			want: []string{
-				`"github.com/spcent/plumego/contract"`,
+				`"github.com/birdordev/plumego/contract"`,
 				"type healthResponse struct",
 				"contract.WriteResponse(",
 			},
@@ -537,8 +537,8 @@ func TestGoModContentUsesDeterministicRequirementAndOptionalReplace(t *testing.T
 
 	assertContainsAll(t, content, []string{
 		"module example.com/myapp",
-		"require github.com/spcent/plumego v0.0.0",
-		"replace github.com/spcent/plumego => /repo/plumego",
+		"require github.com/birdordev/plumego v0.0.0",
+		"replace github.com/birdordev/plumego => /repo/plumego",
 	})
 }
 
@@ -560,8 +560,8 @@ func TestCreateProjectWritesGoModWithoutGoModInit(t *testing.T) {
 	}
 	assertContainsAll(t, string(content), []string{
 		"module example.com/myapp",
-		"require github.com/spcent/plumego v0.0.0",
-		"replace github.com/spcent/plumego => /repo/plumego",
+		"require github.com/birdordev/plumego v0.0.0",
+		"replace github.com/birdordev/plumego => /repo/plumego",
 	})
 }
 

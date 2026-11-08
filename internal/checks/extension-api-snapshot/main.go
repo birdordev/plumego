@@ -15,7 +15,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/spcent/plumego/internal/checks/checkutil"
+	"github.com/birdordev/plumego/internal/checks/checkutil"
 )
 
 const snapshotHeader = "# plumego extension api snapshot v1"

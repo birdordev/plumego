@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/spcent/plumego/x/observability"
+	"github.com/birdordev/plumego/x/observability"
 	"with-observability/internal/handler"
 )
 

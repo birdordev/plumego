@@ -4,8 +4,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/spcent/plumego/x/messaging/mq"
-	mqstore "github.com/spcent/plumego/x/messaging/mq/store"
+	"github.com/birdordev/plumego/x/messaging/mq"
+	mqstore "github.com/birdordev/plumego/x/messaging/mq/store"
 )
 
 func TestTaskQueueEnqueueReserveAck(t *testing.T) {

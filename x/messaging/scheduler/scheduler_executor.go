@@ -1,6 +1,6 @@
 package scheduler
 
-import "github.com/spcent/plumego/log"
+import "github.com/birdordev/plumego/log"
 
 func (s *Scheduler) logError(msg string, err error) {
 	if s.logger == nil || err == nil {

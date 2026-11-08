@@ -10,8 +10,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/spcent/plumego/contract"
-	gatewayproto "github.com/spcent/plumego/x/gateway/protocol"
+	"github.com/birdordev/plumego/contract"
+	gatewayproto "github.com/birdordev/plumego/x/gateway/protocol"
 )
 
 type stubProtocolRequest struct {

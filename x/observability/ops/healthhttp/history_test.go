@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/spcent/plumego/contract"
+	"github.com/birdordev/plumego/contract"
 )
 
 func TestHealthHistoryExportHandler(t *testing.T) {

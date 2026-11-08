@@ -13,7 +13,7 @@
 //
 // Example usage:
 //
-//	import "github.com/spcent/plumego/security/input"
+//	import "github.com/birdordev/plumego/security/input"
 //
 //	// Validate email
 //	if !input.ValidateEmail("user@example.com") {
@@ -64,7 +64,7 @@ var (
 //
 // Example:
 //
-//	import "github.com/spcent/plumego/security/input"
+//	import "github.com/birdordev/plumego/security/input"
 //
 //	if input.IsToken("Content-Type") {
 //		// Valid HTTP token
@@ -95,7 +95,7 @@ func IsToken(value string) bool {
 //
 // Example:
 //
-//	import "github.com/spcent/plumego/security/input"
+//	import "github.com/birdordev/plumego/security/input"
 //
 //	if input.IsHeaderName("X-Custom-Header") {
 //		// Valid header name
@@ -112,7 +112,7 @@ func IsHeaderName(value string) bool {
 //
 // Example:
 //
-//	import "github.com/spcent/plumego/security/input"
+//	import "github.com/birdordev/plumego/security/input"
 //
 //	if input.IsHeaderValue("some value") {
 //		// Safe to use as header value
@@ -161,7 +161,7 @@ func isTchar(ch byte) bool {
 //
 // Example:
 //
-//	import "github.com/spcent/plumego/security/input"
+//	import "github.com/birdordev/plumego/security/input"
 //
 //	if !input.ValidateEmail(userEmail) {
 //		// Reject invalid email
@@ -239,7 +239,7 @@ func isEmailDomainLabel(label string) bool {
 //
 // Example:
 //
-//	import "github.com/spcent/plumego/security/input"
+//	import "github.com/birdordev/plumego/security/input"
 //
 //	if !input.ValidateURL(userURL) {
 //		// Reject invalid or unsafe URL
@@ -401,7 +401,7 @@ func isStrictDecimalPort(port string) bool {
 //
 // Example:
 //
-//	import "github.com/spcent/plumego/security/input"
+//	import "github.com/birdordev/plumego/security/input"
 //
 //	if !input.ValidatePhone(userPhone) {
 //		// Reject invalid phone
@@ -441,7 +441,7 @@ func ValidatePhone(phone string) bool {
 //
 // Example:
 //
-//	import "github.com/spcent/plumego/security/input"
+//	import "github.com/birdordev/plumego/security/input"
 //
 //	cleaned := input.BestEffortSanitizeHTML(userInput)
 func BestEffortSanitizeHTML(s string) string {
@@ -469,7 +469,7 @@ func BestEffortSanitizeHTML(s string) string {
 //
 // Example:
 //
-//	import "github.com/spcent/plumego/security/input"
+//	import "github.com/birdordev/plumego/security/input"
 //
 //	// Still use parameterized queries!
 //	cleaned := input.BestEffortSanitizeSQL(userInput)
@@ -491,7 +491,7 @@ func BestEffortSanitizeSQL(s string) string {
 //
 // Example:
 //
-//	import "github.com/spcent/plumego/security/input"
+//	import "github.com/birdordev/plumego/security/input"
 //
 //	clean := input.StripControlChars(userInput)
 func StripControlChars(s string) string {
@@ -514,7 +514,7 @@ func StripControlChars(s string) string {
 //
 // Example:
 //
-//	import "github.com/spcent/plumego/security/input"
+//	import "github.com/birdordev/plumego/security/input"
 //
 //	if input.ContainsDangerousChars(userInput) {
 //		// Handle potentially dangerous input
@@ -538,7 +538,7 @@ func ContainsDangerousChars(s string) bool {
 //
 // Example:
 //
-//	import "github.com/spcent/plumego/security/input"
+//	import "github.com/birdordev/plumego/security/input"
 //
 //	normalized := input.TrimWhitespace("  hello    world  ")
 //	// Returns: "hello world"

@@ -11,7 +11,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/spcent/plumego/x/ai/tokenizer"
+	"github.com/birdordev/plumego/x/ai/tokenizer"
 )
 
 // defaultHTTPClient returns the HTTP client used when the caller does not

@@ -6,8 +6,8 @@ import (
 	"log"
 	"time"
 
-	"github.com/spcent/plumego/x/messaging/mq"
-	"github.com/spcent/plumego/x/messaging/pubsub"
+	"github.com/birdordev/plumego/x/messaging/mq"
+	"github.com/birdordev/plumego/x/messaging/pubsub"
 )
 
 // Example_basicPubSub demonstrates basic publish/subscribe functionality.

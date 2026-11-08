@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	stablemetrics "github.com/spcent/plumego/metrics"
+	stablemetrics "github.com/birdordev/plumego/metrics"
 )
 
 // AggregateCollectorAdapter bridges the AI metrics Collector interface onto the

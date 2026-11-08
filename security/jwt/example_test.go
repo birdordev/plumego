@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/spcent/plumego/security/jwt"
+	"github.com/birdordev/plumego/security/jwt"
 )
 
 type exampleKeyStore struct {

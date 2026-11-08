@@ -2,7 +2,7 @@ package httpmetrics_test
 
 import (
 	"context"
-	"github.com/spcent/plumego/middleware/httpmetrics"
+	"github.com/birdordev/plumego/middleware/httpmetrics"
 	"net/http"
 	"net/http/httptest"
 	"testing"

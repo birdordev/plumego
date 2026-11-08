@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/spcent/plumego/store/cache"
+	"github.com/birdordev/plumego/store/cache"
 )
 
 func BenchmarkHashRingGet(b *testing.B) {

@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/spcent/plumego/x/ai/provider"
+	"github.com/birdordev/plumego/x/ai/provider"
 )
 
 // ContentType represents the type of content.

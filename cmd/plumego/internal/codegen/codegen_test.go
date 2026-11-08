@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/spcent/plumego/cmd/plumego/internal/testassert"
+	"github.com/birdordev/plumego/cmd/plumego/internal/testassert"
 )
 
 func assertParseableGo(t *testing.T, filename string, content string) {
@@ -165,7 +165,7 @@ func TestGenerateHandlerCode_UsesCanonicalHTTPContract(t *testing.T) {
 	content := generateHandlerCode("Widget", "handlers", []string{"GET", "POST", "PUT", "DELETE"})
 
 	required := []string{
-		`"github.com/spcent/plumego/contract"`,
+		`"github.com/birdordev/plumego/contract"`,
 		`contract.RequestContextFromContext(r.Context()).Params["id"]`,
 		"contract.WriteResponse(",
 		"contract.WriteError(",

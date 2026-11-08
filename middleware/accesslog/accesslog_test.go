@@ -10,10 +10,10 @@ import (
 	"sync"
 	"testing"
 
-	contract "github.com/spcent/plumego/contract"
-	"github.com/spcent/plumego/log"
-	"github.com/spcent/plumego/middleware"
-	mwtracing "github.com/spcent/plumego/middleware/tracing"
+	contract "github.com/birdordev/plumego/contract"
+	"github.com/birdordev/plumego/log"
+	"github.com/birdordev/plumego/middleware"
+	mwtracing "github.com/birdordev/plumego/middleware/tracing"
 )
 
 type logEntry struct {
