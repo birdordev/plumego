@@ -1,0 +1,124 @@
+#!/usr/bin/env bash
+# Task artifact operations behind the root Makefile. Run from the repository root.
+set -euo pipefail
+
+fail() { echo "Error: $*" >&2; exit 1; }
+require() { [ -n "${!1:-}" ] || fail "$1 is required for make $operation."; }
+check() { internal/tools/check-spec "$1"; }
+
+resolve_milestone() {
+  require M
+  local base=${M##*/} candidate
+  ID=$(printf '%s\n' "$base" | sed -nE 's/.*(M-[0-9][0-9][0-9]).*/\1/p')
+  [ -n "$ID" ] || fail "M must include a milestone id like M-001"
+  SPEC="tasks/milestones/$M/$ID.md"
+  [ -f "$SPEC" ] || SPEC="tasks/milestones/${M%.md}.md"
+  if [ ! -f "$SPEC" ]; then
+    for candidate in tasks/milestones/{active,done}/$ID-*/$ID.md; do
+      if [ -f "$candidate" ]; then SPEC=$candidate; break; fi
+    done
+  fi
+  [ -f "$SPEC" ] || fail "$SPEC not found."
+  DIR=$(dirname "$SPEC")
+}
+
+rewrite() {
+  local tmp
+  tmp=$(mktemp)
+  if sed "$1" "$2" > "$tmp"; then
+    cat "$tmp" > "$2"
+    rm -f "$tmp"
+  else
+    rm -f "$tmp"
+    return 1
+  fi
+}
+
+create() {
+  [ ! -e "$2" ] || fail "$2 already exists."
+  cp "$1" "$2"
+}
+
+operation=${1:-}
+case "$operation" in
+  milestone|check-spec|check-plan|check-verify|new-plan|new-verify|milestone-status)
+    resolve_milestone ;;
+esac
+
+case "$operation" in
+  milestone)
+    PLAN="$DIR/plan-$ID.md"
+    [ -f "$PLAN" ] || fail "$PLAN not found. Run: make new-plan M=$M"
+    check "$SPEC"
+    check "$PLAN"
+    codex --yolo "$(cat "$SPEC")"
+    ;;
+  check-spec) check "$SPEC" ;;
+  check-plan|check-verify)
+    kind=${operation#check-}
+    check "$DIR/$kind-$ID.md"
+    ;;
+  check-card|run-card)
+    require C
+    CARD="tasks/cards/${C%.md}.md"
+    check "$CARD"
+    if [ "$operation" = run-card ]; then
+      MODULE=$(sed -n 's/^Primary Module:[[:space:]]*//p' "$CARD" | head -n1 | tr -d '\r')
+      RECIPE=$(sed -n 's|^Recipe:[[:space:]]*specs/change-recipes/\(.*\)\.yaml$|\1|p' "$CARD" | head -n1 | tr -d '\r')
+      [ -n "$MODULE" ] && [ -n "$RECIPE" ] || fail "Card requires Primary Module and Recipe."
+      (cd cmd/plumego && go run . agents bundle --task "$RECIPE" --module "$MODULE" --dir ../.. --output ../../.agent-bundle.yaml)
+      codex --yolo "$(cat "$CARD")"
+    fi
+    ;;
+  new-milestone)
+    require N; require TITLE
+    SLUG=$(printf '%s\n' "$TITLE" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/-/g; s/^-//; s/-$//')
+    DIR="tasks/milestones/active/M-$N-$SLUG"
+    [ ! -e "$DIR" ] || fail "$DIR already exists."
+    mkdir -p "$DIR"
+    DEST="$DIR/M-$N.md"
+    create tasks/milestones/TEMPLATE.md "$DEST"
+    TITLE_ESC=$(printf '%s\n' "$TITLE" | sed 's/[&/\\]/\\&/g')
+    rewrite "s/M-XXX: <Title>/M-$N: $TITLE_ESC/" "$DEST"
+    rewrite "s|milestone/M-XXX-<slug>|milestone/M-$N-<slug>|" "$DEST"
+    echo "Created: $DEST"
+    ;;
+  new-plan|new-verify)
+    kind=${operation#new-}
+    TITLE=$(sed -n 's/^# M-[0-9][0-9][0-9]: \(.*\)$/\1/p' "$SPEC" | head -n1)
+    [ -n "$TITLE" ] || fail "Cannot derive milestone title from $SPEC"
+    DEST="$DIR/$kind-$ID.md"
+    template=$(printf '%s' "$kind" | tr '[:lower:]' '[:upper:]')
+    create "tasks/milestones/${template}_TEMPLATE.md" "$DEST"
+    TITLE_ESC=$(printf '%s\n' "$TITLE" | sed 's/[&/\\]/\\&/g')
+    rewrite "s/M-XXX/$ID/g" "$DEST"
+    rewrite "s/<Title>/$TITLE_ESC/g" "$DEST"
+    echo "Created: $DEST"
+    ;;
+  new-card)
+    require ID; require SLUG; require M
+    if [ -n "${R:-}" ]; then
+      [ -f "specs/change-recipes/$R.yaml" ] || fail "Unknown recipe: $R"
+    fi
+    DEST="tasks/cards/active/$ID-$SLUG.md"
+    create tasks/cards/TEMPLATE.md "$DEST"
+    rewrite "s/^# Card XXXX/# Card $ID/" "$DEST"
+    rewrite "s/^Milestone:/Milestone: $M/" "$DEST"
+    if [ -n "${R:-}" ]; then
+      rewrite "s|^Recipe: .*|Recipe: specs/change-recipes/$R.yaml|" "$DEST"
+    fi
+    echo "Created: $DEST"
+    ;;
+  milestone-status)
+    echo "=== Milestone $ID Status ==="
+    if [ -f "$DIR/plan-$ID.md" ]; then echo "Plan: found"; else echo "Plan: NOT FOUND"; fi
+    CHECKPOINT="$DIR/checkpoint-$ID.json"
+    if [ ! -f "$CHECKPOINT" ]; then
+      echo "Checkpoints: none recorded"
+    else
+      grep -o '"phase":"[^"]*","passed":[^,}]*' "$CHECKPOINT" |
+        sed 's/"phase":"//; s/","passed"://; s/true/ passed/; s/false/ failed/' || echo "Could not parse checkpoint file."
+    fi
+    ;;
+  *) fail "Unknown task operation: $operation" ;;
+esac

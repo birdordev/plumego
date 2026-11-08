@@ -38,8 +38,7 @@ These files define scope, ownership, and validation for safe agent changes:
 
 | File | Purpose | For agents |
 |------|---------|-----------|
-| `AGENTS.md` | Operational guide (human-readable) | Read §1-5 for general context; skip agent-only sections |
-| `CLAUDE.md` | Snapshot of codebase (human-readable) | Reference only; not authoritative for scope |
+| `AGENTS.md` | Shared repository-wide agent entry point and operational guide | Follow the read path and authority order in §1; use §3 for repository navigation |
 | `STABILITY.md` | v1 compatibility guarantee | Check before breaking any public APIs |
 | `COMPATIBILITY.md` | Version upgrade paths | Understand deprecation policy if removing symbols |
 | `specs/task-routing.yaml` | Module ownership map | Find which module owns your change (AUTHORITATIVE) |

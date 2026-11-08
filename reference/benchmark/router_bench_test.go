@@ -6,10 +6,10 @@ import (
 	"strconv"
 	"testing"
 
+	"github.com/birdordev/plumego/router"
 	"github.com/gin-gonic/gin"
 	"github.com/go-chi/chi/v5"
 	"github.com/labstack/echo/v4"
-	"github.com/birdordev/plumego/router"
 )
 
 func init() {

@@ -451,7 +451,6 @@ jobs:
             README.md
             README_CN.md
             AGENTS.md
-            CLAUDE.md
             env.example
             reference/standard-service/README.md
             cmd/plumego/README.md

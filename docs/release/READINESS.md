@@ -73,7 +73,7 @@ This checklist verifies that Plumego v1 is truly "done" before a release. Track 
 - [x] AGENTS.md is comprehensive (maintainer-facing)
 - [x] docs/operations/agent-external-reference.md guides external agents
 - [x] docs/operations/agent-context-budget.md documents agent knowledge
-- [x] CLAUDE.md summarizes codebase snapshot
+- [x] AGENTS.md consolidates repository navigation and shared agent instructions
 - [x] Reference applications demonstrate canonical wiring
 - [x] reference/standard-service is the single source of truth for structure
 
@@ -230,7 +230,7 @@ This checklist verifies that Plumego v1 is truly "done" before a release. Track 
 - [x] Migration guides from competitors are present
 - [x] Extension guide helps with technology choices
 - [x] FAQ/troubleshooting is available
-- [x] Governance model is transparent (AGENTS.md, CLAUDE.md)
+- [x] Governance model is transparent (AGENTS.md and machine-readable specs)
 - [x] Support/contribution guidelines are clear
 
 **Status:** READY

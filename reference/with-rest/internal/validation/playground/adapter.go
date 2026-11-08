@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	validator "github.com/go-playground/validator/v10"
 	plumego "github.com/birdordev/plumego/x/validate"
+	validator "github.com/go-playground/validator/v10"
 )
 
 var _ plumego.Validator = (*Validator)(nil)
