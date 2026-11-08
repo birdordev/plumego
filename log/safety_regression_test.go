@@ -125,9 +125,9 @@ func TestTextMessageCannotForgeEntries(t *testing.T) {
 	logger.Info("request\r\nFORGED\x1b[2J\u2028next\u2029end", Fields{"path": "/ok"})
 	got := output.String()
 	if strings.Count(got, "\n") != 1 || strings.ContainsAny(got, "\r\x1b\u2028\u2029") {
-		t.Fatalf("日志含未转义的控制字符：%q", got)
+		t.Fatalf("log contains unescaped control characters: %q", got)
 	}
 	if !strings.Contains(got, `request\r\nFORGED\x1b[2J`) || !strings.Contains(got, "path=/ok") {
-		t.Fatalf("日志丢失信息：%q", got)
+		t.Fatalf("log lost message or field data: %q", got)
 	}
 }

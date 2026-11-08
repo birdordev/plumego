@@ -274,7 +274,7 @@ func TestLocalDirFSRootBoundary(t *testing.T) {
 	writeTestFile(t, root, "asset.txt", "safe")
 	writeTestFile(t, outside, "asset.txt", "secret")
 	if err := os.Symlink(outside, filepath.Join(root, "escape")); err != nil {
-		t.Skipf("无法创建符号链接：%v", err)
+		t.Skipf("cannot create symlink: %v", err)
 	}
 	if err := os.Symlink("asset.txt", filepath.Join(root, "alias.txt")); err != nil {
 		t.Fatal(err)
@@ -282,12 +282,12 @@ func TestLocalDirFSRootBoundary(t *testing.T) {
 	fsys := localDirFS(root)
 	h := &handler{fs: fsys}
 	if h.localFileExists("escape/asset.txt") || !h.localFileExists("asset.txt") {
-		t.Fatal("压缩原文件检查未遵守根目录边界")
+		t.Fatal("precompressed original check did not enforce the root boundary")
 	}
 	for _, name := range []string{"../asset.txt", "escape/asset.txt", "/asset.txt", `escape\asset.txt`} {
 		if f, err := fsys.Open(name); err == nil {
 			_ = f.Close()
-			t.Fatalf("越界文件被打开：%q", name)
+			t.Fatalf("opened file outside the root boundary: %q", name)
 		}
 	}
 	f, err := fsys.Open("alias.txt")

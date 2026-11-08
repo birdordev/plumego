@@ -175,6 +175,6 @@ arrive as explicit exported `With*` helpers.
   `embed.FS`/`fs.Sub` result through `RegisterFS` as `http.FS`; examples should
   not present `http.Dir` as the embedded-filesystem path.
 
-## 日志与文件安全
+## Security
 
-目录文件通过 `os.OpenInRoot` 打开，在文件打开时限制符号链接逃逸；压缩原文件检查复用同一入口。根目录及其父目录应由部署方控制。
+Directory-backed files are opened through `os.OpenInRoot` to prevent symlink escapes during file opening. Precompressed original checks use the same entrypoint. Deployments must control the root directory and its parents.

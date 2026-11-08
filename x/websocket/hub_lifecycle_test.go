@@ -554,9 +554,9 @@ func TestHubRoomLogsEscapeControls(t *testing.T) {
 		}
 	}
 	if strings.ContainsAny(buf.String(), "\r\x1b") || strings.Contains(buf.String(), "\nFORGED") {
-		t.Fatalf("日志注入：%q", buf.String())
+		t.Fatalf("log injection detected: %q", buf.String())
 	}
 	if !strings.Contains(buf.String(), `room\r\nFORGED\x1b[2J`) {
-		t.Fatal("缺少转义后的房间名")
+		t.Fatal("escaped room name is missing")
 	}
 }

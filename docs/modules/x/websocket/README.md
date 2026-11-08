@@ -214,6 +214,6 @@ snapshots, no exported API changes, and `realtime` owner sign-off.
 - keep security metrics instance-scoped (`SecureRoomAuth.GetMetrics`, `Hub.Metrics`) instead of reintroducing global wrappers
 - treat `x/websocket` as the app-facing websocket transport surface
 
-## 日志与文件安全
+## Security
 
-Hub 调试日志使用带引号的转义格式记录房间名和广播目标，防止自定义房间名校验器允许的控制字符注入日志。
+Hub debug logs quote and escape room names and broadcast targets to prevent log injection when custom room-name validators permit control characters.
