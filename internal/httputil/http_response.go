@@ -3,9 +3,12 @@ package httputil
 import (
 	"bufio"
 	"bytes"
+	"context"
+	"github.com/spcent/plumego/contract"
 	"net"
 	"net/http"
 	"strings"
+	"sync/atomic"
 )
 
 const (
@@ -49,9 +52,9 @@ func SafeWrite(w http.ResponseWriter, body []byte) (int, error) {
 
 // ResponseRecorder captures response data while still writing to the underlying writer.
 type ResponseRecorder struct {
+	route atomic.Pointer[contract.RequestContext]
 	http.ResponseWriter
 	statusCode   int
-	header       http.Header
 	body         *bytes.Buffer
 	bytesWritten int
 	written      bool
@@ -62,9 +65,14 @@ func NewResponseRecorder(w http.ResponseWriter) *ResponseRecorder {
 	return &ResponseRecorder{
 		ResponseWriter: w,
 		statusCode:     http.StatusOK,
-		header:         make(http.Header),
 		body:           &bytes.Buffer{},
 	}
+}
+
+// NewObservationRecorder counts status and bytes without retaining body data.
+// Capture users continue to use NewResponseRecorder.
+func NewObservationRecorder(w http.ResponseWriter) *ResponseRecorder {
+	return &ResponseRecorder{ResponseWriter: w, statusCode: http.StatusOK}
 }
 
 // Unwrap returns the underlying response writer for http.ResponseController.
@@ -72,9 +80,9 @@ func (r *ResponseRecorder) Unwrap() http.ResponseWriter {
 	return r.ResponseWriter
 }
 
-// Header returns the recorded header map.
+// Header exposes the underlying map so implicit responses and trailers retain net/http semantics.
 func (r *ResponseRecorder) Header() http.Header {
-	return r.header
+	return r.ResponseWriter.Header()
 }
 
 // WriteHeader records the status code and writes headers to the underlying writer once.
@@ -82,11 +90,16 @@ func (r *ResponseRecorder) WriteHeader(code int) {
 	if r.written {
 		return
 	}
+	if code < 100 || code > 999 {
+		panic("invalid WriteHeader code")
+	}
+	if code < 200 && code != http.StatusSwitchingProtocols {
+		r.ResponseWriter.WriteHeader(code)
+		return
+	}
 	r.statusCode = code
 	r.written = true
-
-	CopyHeaders(r.ResponseWriter.Header(), r.header)
-	EnsureNoSniff(r.ResponseWriter.Header())
+	EnsureNoSniff(r.Header())
 	r.ResponseWriter.WriteHeader(code)
 }
 
@@ -100,7 +113,9 @@ func (r *ResponseRecorder) Write(b []byte) (int, error) {
 		r.WriteHeader(http.StatusOK)
 	}
 
-	r.body.Write(b)
+	if r.body != nil {
+		r.body.Write(b)
+	}
 	n, err := SafeWrite(r.ResponseWriter, b)
 	r.bytesWritten += n
 	return n, err
@@ -116,6 +131,9 @@ func (r *ResponseRecorder) StatusCode() int {
 
 // Body returns the captured response body bytes.
 func (r *ResponseRecorder) Body() []byte {
+	if r.body == nil {
+		return nil
+	}
 	return r.body.Bytes()
 }
 
@@ -136,6 +154,9 @@ func (r *ResponseRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 // Flush forwards http.Flusher when the wrapped writer supports it.
 func (r *ResponseRecorder) Flush() {
 	if fl, ok := r.ResponseWriter.(http.Flusher); ok {
+		if !r.written {
+			r.WriteHeader(http.StatusOK)
+		}
 		fl.Flush()
 	}
 }
@@ -272,4 +293,36 @@ func DirectClientIP(r *http.Request) string {
 	}
 
 	return strings.TrimSpace(r.RemoteAddr)
+}
+
+// PublishRouteContext visits transport wrappers without accessing response headers.
+// Receivers must synchronize publication and forward to any outer observers.
+func PublishRouteContext(w http.ResponseWriter, ctx context.Context) {
+	for w != nil {
+		if receiver, ok := w.(interface{ SetRouteContext(context.Context) }); ok {
+			receiver.SetRouteContext(ctx)
+			return
+		}
+		wrapper, ok := w.(interface{ Unwrap() http.ResponseWriter })
+		if !ok {
+			return
+		}
+		w = wrapper.Unwrap()
+	}
+}
+
+// SetRouteContext publishes only immutable route identity, including after a timeout.
+func (r *ResponseRecorder) SetRouteContext(ctx context.Context) {
+	rc := contract.RequestContextFromContext(ctx)
+	rc.Params = nil
+	r.route.Store(&rc)
+	PublishRouteContext(r.ResponseWriter, ctx)
+}
+
+// RouteContext returns the latest published route identity without sharing mutable data.
+func (r *ResponseRecorder) RouteContext() contract.RequestContext {
+	if rc := r.route.Load(); rc != nil {
+		return *rc
+	}
+	return contract.RequestContext{}
 }

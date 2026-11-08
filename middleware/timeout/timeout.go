@@ -120,6 +120,7 @@ func Middleware(cfg Config) mw.Middleware {
 			}
 
 			tw := newTimeoutResponseWriter(ctx, cfg)
+			tw.publishRoute = func(ctx context.Context) { internaltransport.PublishRouteContext(w, ctx) }
 			// Clone the outer headers so downstream edits remain private until replay.
 			internaltransport.CopyHeaders(tw.Header(), w.Header())
 			done := make(chan timeoutHandlerResult)
@@ -204,11 +205,12 @@ func newTimeoutResponseWriter(ctx context.Context, cfg Config) *timeoutResponseW
 }
 
 type timeoutResponseWriter struct {
-	ctx        context.Context
-	cfg        Config
-	buffer     *internaltransport.BufferedResponse
-	overflow   bool
-	bypassUsed bool // Whether buffering was abandoned for an oversized response.
+	publishRoute func(context.Context)
+	ctx          context.Context
+	cfg          Config
+	buffer       *internaltransport.BufferedResponse
+	overflow     bool
+	bypassUsed   bool // Whether buffering was abandoned for an oversized response.
 }
 
 func (w *timeoutResponseWriter) Header() http.Header {
@@ -262,4 +264,11 @@ func (w *timeoutResponseWriter) writeTo(dst http.ResponseWriter, r *http.Request
 
 func (w *timeoutResponseWriter) Overflowed() bool {
 	return w.overflow
+}
+
+// SetRouteContext forwards immutable metadata only, never response operations.
+func (w *timeoutResponseWriter) SetRouteContext(ctx context.Context) {
+	if w.publishRoute != nil {
+		w.publishRoute(ctx)
+	}
 }

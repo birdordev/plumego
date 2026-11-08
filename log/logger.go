@@ -50,6 +50,11 @@ type LoggerConfig struct {
 //	logger.Info("server started", log.Fields{"addr": ":8080"})
 //
 // Implementations must treat a nil or absent Fields the same as an empty one.
+// Messages and field keys/values may contain untrusted input. Implementations
+// must encode each record safely: escape control characters and line separators
+// in text, or use a JSON encoder for JSON output. Do not interpolate raw fields
+// into record delimiters. Callers pass original values, not pre-escaped strings,
+// and remain responsible for excluding secrets and sensitive error text.
 type StructuredLogger interface {
 	// WithFields returns a new logger with the given fields merged into every
 	// subsequent log entry. The original logger is not modified.
@@ -263,10 +268,13 @@ func formatTextValue(value reflect.Value, depth int, remaining *int) string {
 	if !value.IsValid() {
 		return "<nil>"
 	}
-	if depth >= 32 || *remaining <= 0 {
+	if *remaining <= 0 {
 		return "[truncated]"
 	}
 	*remaining -= 1
+	if depth >= 32 {
+		return "[truncated]"
+	}
 	if value.Kind() == reflect.Interface {
 		if value.IsNil() {
 			return "<nil>"

@@ -99,7 +99,15 @@ globals.
   bucket gauge use a single atomic count. Eviction is approximate LRU.
 - JWT key rotation publishes the in-memory active key after the backing store
   accepts the active-key pointer. If that write fails, the previous key remains
-  active and a later automatic rotation retries. A successfully stored candidate
-  key may remain available for verification even when activation fails. This
-  does not make arbitrary external `KeyStore` implementations transactional:
-  stores that commit and then return an error must document that ambiguity.
+  active and a later automatic or explicit rotation retries the same candidate.
+  Blob-write retries also reuse the candidate when persistence was not
+  acknowledged. New rotation blobs include internal `rotation_from` ancestry;
+  startup uses it to recover a durable candidate for the current active key.
+  Legacy blobs remain readable and are retained for verification. Candidates
+  are not deleted on errors, since a store may commit before returning an error.
+  A candidate whose blob was never stored cannot survive process restart.
+  Missing active markers retain the existing fresh-key recovery behavior.
+  This does not add transactions or distributed rotation coordination to the
+  minimal `KeyStore` interface; stores must document ambiguous write outcomes.
+
+JWT issuance applies the same compact-token and segment size limits as verification. Oversized claims return ErrInvalidToken without a partial token pair. Limiter rate configuration rejects NaN and infinities with ErrInvalidConfig; zero retains its documented default behavior.

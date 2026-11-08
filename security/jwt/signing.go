@@ -62,5 +62,9 @@ func signJWT(key JWTSigningKey, claims TokenClaims) (string, error) {
 	}
 
 	sigPart := base64.RawURLEncoding.EncodeToString(signature)
-	return signingInput + "." + sigPart, nil
+	token := signingInput + "." + sigPart
+	if _, ok := splitCompactJWT(token); !ok {
+		return "", ErrInvalidToken
+	}
+	return token, nil
 }

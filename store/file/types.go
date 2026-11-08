@@ -80,32 +80,56 @@ type metadataReference struct {
 	length  int
 }
 
-type metadataCloner map[metadataReference]any
+type metadataCopy struct {
+	source any
+	target any
+}
+
+type metadataCloner struct {
+	seen    map[metadataReference]any
+	pending []metadataCopy
+}
 
 func cloneMetadata(metadata map[string]any) map[string]any {
-	return make(metadataCloner).cloneMap(metadata)
+	c := metadataCloner{seen: make(map[metadataReference]any)}
+	root := c.cloneValue(metadata).(map[string]any)
+	// Register containers before scheduling their children. The worklist keeps
+	// call-stack use constant for deep graphs and closes cycles through seen.
+	for len(c.pending) > 0 {
+		last := len(c.pending) - 1
+		work := c.pending[last]
+		c.pending[last] = metadataCopy{}
+		c.pending = c.pending[:last]
+		switch source := work.source.(type) {
+		case map[string]any:
+			target := work.target.(map[string]any)
+			for key, value := range source {
+				target[key] = c.cloneValue(value)
+			}
+		case []any:
+			target := work.target.([]any)
+			for i, value := range source {
+				target[i] = c.cloneValue(value)
+			}
+		}
+	}
+	return root
 }
 
-func (c metadataCloner) cloneMap(metadata map[string]any) map[string]any {
-	if metadata == nil {
-		return nil
-	}
-	ref := metadataReference{kind: reflect.Map, pointer: reflect.ValueOf(metadata).Pointer()}
-	if existing, ok := c[ref]; ok {
-		return existing.(map[string]any)
-	}
-	clone := make(map[string]any, len(metadata))
-	c[ref] = clone
-	for key, value := range metadata {
-		clone[key] = c.cloneValue(value)
-	}
-	return clone
-}
-
-func (c metadataCloner) cloneValue(value any) any {
+func (c *metadataCloner) cloneValue(value any) any {
 	switch typed := value.(type) {
 	case map[string]any:
-		return c.cloneMap(typed)
+		if typed == nil {
+			return map[string]any(nil)
+		}
+		ref := metadataReference{kind: reflect.Map, pointer: reflect.ValueOf(typed).Pointer()}
+		if existing, ok := c.seen[ref]; ok {
+			return existing
+		}
+		clone := make(map[string]any, len(typed))
+		c.seen[ref] = clone
+		c.pending = append(c.pending, metadataCopy{source: typed, target: clone})
+		return clone
 	case map[string]string:
 		if typed == nil {
 			return map[string]string(nil)
@@ -120,14 +144,12 @@ func (c metadataCloner) cloneValue(value any) any {
 			return []any(nil)
 		}
 		ref := metadataReference{kind: reflect.Slice, pointer: reflect.ValueOf(typed).Pointer(), length: len(typed)}
-		if existing, ok := c[ref]; ok {
-			return existing.([]any)
+		if existing, ok := c.seen[ref]; ok {
+			return existing
 		}
 		clone := make([]any, len(typed))
-		c[ref] = clone
-		for i, value := range typed {
-			clone[i] = c.cloneValue(value)
-		}
+		c.seen[ref] = clone
+		c.pending = append(c.pending, metadataCopy{source: typed, target: clone})
 		return clone
 	case []string:
 		return append([]string(nil), typed...)

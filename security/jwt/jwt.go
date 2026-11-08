@@ -96,6 +96,7 @@ type JWTManager struct {
 	mu       sync.RWMutex
 	keyCache map[string]JWTSigningKey
 	active   string
+	pending  *JWTSigningKey // Reused until both persistence and activation are acknowledged.
 }
 
 // NewJWTManager creates a new JWT manager with the given configuration and backing store.

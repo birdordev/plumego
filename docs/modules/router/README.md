@@ -214,3 +214,5 @@ status, content-type detection, and small-response content-length inference.
 Final headers are snapshotted at commitment; later header edits do not replace
 them. `ReadFrom` counts and discards body bytes through the same path; explicit
 flush commits the selected status without inferring a buffered content length.
+
+Successful matches publish immutable route identity to optional response observers through Unwrap-compatible wrappers. The router does not mutate the incoming request; downstream contexts retain their matched metadata.

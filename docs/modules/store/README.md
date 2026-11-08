@@ -90,6 +90,9 @@
 - `store/file` metadata clone helpers detach common nested mutable values such as `map[string]any`, `map[string]string`, `[]any`, `[]string`, and `[]byte`.
   Self-references and cross-references through `map[string]any` and `[]any`
   are preserved within the detached copy instead of recursing indefinitely.
+  Graph traversal uses an explicit worklist, so deep nesting does not grow the
+  call stack or truncate metadata. Memory remains proportional to the copied
+  graph; callers own input-size limits and must not mutate it during cloning.
   Arbitrary custom values remain caller-owned; this is not a general-purpose
   serializer or validation policy.
 - `x/data/file` is the tenant-aware implementation layer for local/S3 storage backends, provider-specific config, metadata persistence, and thumbnail/image-processing helpers.

@@ -3,6 +3,7 @@ package httputil
 import (
 	"bytes"
 	"net/http"
+	"strings"
 )
 
 // BufferedResponseRecorder captures response data without writing through.
@@ -14,6 +15,7 @@ type BufferedResponseRecorder struct {
 	responseWriter http.ResponseWriter
 	statusCode     int
 	header         http.Header
+	committed      http.Header
 	body           *bytes.Buffer
 	bytesWritten   int
 	written        bool
@@ -71,6 +73,7 @@ func (r *BufferedResponseRecorder) WriteHeader(code int) {
 	}
 	r.statusCode = code
 	r.written = true
+	r.committed = r.header.Clone()
 }
 
 // Write records body bytes without writing through to the wrapped writer.
@@ -138,8 +141,26 @@ func (r *BufferedResponseRecorder) WriteTo(dst http.ResponseWriter) (int, error)
 	if r == nil || dst == nil {
 		return 0, nil
 	}
-	ReplaceHeaders(dst.Header(), r.header)
+	if !r.written {
+		r.WriteHeader(http.StatusOK)
+	}
+	ReplaceHeaders(dst.Header(), r.committed)
 	EnsureNoSniff(dst.Header())
 	dst.WriteHeader(r.StatusCode())
-	return SafeWrite(dst, r.Body())
+	n, err := SafeWrite(dst, r.Body())
+	// Trailer values are the only headers allowed to change after commitment.
+	for _, declaration := range r.committed.Values("Trailer") {
+		for _, name := range strings.Split(declaration, ",") {
+			name = http.CanonicalHeaderKey(strings.TrimSpace(name))
+			if values, ok := r.header[name]; ok {
+				dst.Header()[name] = append([]string(nil), values...)
+			}
+		}
+	}
+	for name, values := range r.header {
+		if strings.HasPrefix(name, http.TrailerPrefix) {
+			dst.Header()[name] = append([]string(nil), values...)
+		}
+	}
+	return n, err
 }

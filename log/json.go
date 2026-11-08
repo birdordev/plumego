@@ -192,25 +192,37 @@ func normalizeJSONFieldValue(value any) any {
 }
 
 func normalizeJSONFieldValueAt(value any, depth int, remaining *int) any {
-	if depth >= maxJSONFieldDepth || *remaining <= 0 {
+	if *remaining <= 0 {
 		return "[truncated]"
 	}
 	*remaining -= 1
+	if depth >= maxJSONFieldDepth {
+		return "[truncated]"
+	}
 	switch v := value.(type) {
 	case Fields:
 		return normalizeJSONFieldMap(map[string]any(v), depth, remaining)
 	case map[string]any:
 		return normalizeJSONFieldMap(v, depth, remaining)
 	case map[string]string:
-		normalized := make(map[string]any, len(v))
+		normalized := make(map[string]any, min(len(v), *remaining))
 		for key, nested := range v {
+			if *remaining <= 0 {
+				normalized["[truncated]"] = "[truncated]"
+				break
+			}
+			*remaining -= 1
 			normalized[key] = nested
 		}
 		return normalized
 	case []any:
-		normalized := make([]any, len(v))
-		for i, nested := range v {
-			normalized[i] = normalizeJSONFieldValueAt(nested, depth+1, remaining)
+		normalized := make([]any, 0, min(len(v), *remaining)+1)
+		for _, nested := range v {
+			if *remaining <= 0 {
+				normalized = append(normalized, "[truncated]")
+				break
+			}
+			normalized = append(normalized, normalizeJSONFieldValueAt(nested, depth+1, remaining))
 		}
 		return normalized
 	}
@@ -231,8 +243,12 @@ func normalizeJSONFieldValueAt(value any, depth int, remaining *int) any {
 }
 
 func normalizeJSONFieldMap(fields map[string]any, depth int, remaining *int) map[string]any {
-	normalized := make(map[string]any, len(fields))
+	normalized := make(map[string]any, min(len(fields), *remaining))
 	for key, value := range fields {
+		if *remaining <= 0 {
+			normalized["[truncated]"] = "[truncated]"
+			break
+		}
 		normalized[key] = normalizeJSONFieldValueAt(value, depth+1, remaining)
 	}
 	return normalized

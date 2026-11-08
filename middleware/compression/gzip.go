@@ -187,6 +187,10 @@ func (w *gzipResponseWriter) finalize(panicking bool) {
 	if panicking && !w.headersFlushed && w.gz == nil {
 		return
 	}
+	if !w.wroteHeader && w.buffer != nil {
+		// Header-only handlers still own a final implicit 200 response.
+		w.WriteHeader(http.StatusOK)
+	}
 	if w.pendingCompress && (w.buffer == nil || w.buffer.Len() == 0) {
 		w.pendingCompress = false
 		w.compressionUsed = false
@@ -227,7 +231,12 @@ func (w *gzipResponseWriter) Header() http.Header {
 func (w *gzipResponseWriter) WriteHeader(statusCode int) {
 	if statusCode >= 100 && statusCode < 200 && statusCode != http.StatusSwitchingProtocols {
 		if !w.wroteHeader {
-			internaltransport.CopyHeaders(w.ResponseWriter.Header(), w.Header())
+			// Forward a snapshot without leaving interim-only values in the
+			// underlying header map, which later final commits overlay.
+			dst := w.ResponseWriter.Header()
+			original := dst.Clone()
+			defer internaltransport.ReplaceHeaders(dst, original)
+			internaltransport.CopyHeaders(dst, w.Header())
 			w.ResponseWriter.WriteHeader(statusCode)
 		}
 		return

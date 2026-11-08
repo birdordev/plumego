@@ -294,7 +294,7 @@ func NewLimiterWithConfig(config Config) (*Limiter, error) {
 func normalizeConfig(config Config) (Config, error) {
 	defaults := DefaultConfig()
 
-	if config.Rate < 0 {
+	if math.IsNaN(config.Rate) || math.IsInf(config.Rate, 0) || config.Rate < 0 {
 		return Config{}, fmt.Errorf("%w: rate must be positive, got %f", ErrInvalidConfig, config.Rate)
 	}
 	if config.Capacity < 0 {

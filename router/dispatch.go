@@ -2,6 +2,7 @@ package router
 
 import (
 	"bufio"
+	"context"
 	"io"
 	"net"
 	"net/http"
@@ -265,6 +266,7 @@ func (r *Router) attachRouteContextAndServe(w http.ResponseWriter, req *http.Req
 		return
 	}
 	ctx := contract.WithRouteState(req.Context(), &result.routeState)
+	publishRouteContext(w, ctx)
 	result.Handler.ServeHTTP(w, req.WithContext(ctx))
 }
 
@@ -327,4 +329,19 @@ func appendImplicitHeadMethod(methods []string) []string {
 	methods = append(methods, http.MethodHead)
 	sort.Strings(methods)
 	return methods
+}
+
+// publishRouteContext notifies optional observers without changing request ownership.
+func publishRouteContext(w http.ResponseWriter, ctx context.Context) {
+	for w != nil {
+		if receiver, ok := w.(interface{ SetRouteContext(context.Context) }); ok {
+			receiver.SetRouteContext(ctx)
+			return
+		}
+		wrapper, ok := w.(interface{ Unwrap() http.ResponseWriter })
+		if !ok {
+			return
+		}
+		w = wrapper.Unwrap()
+	}
 }
