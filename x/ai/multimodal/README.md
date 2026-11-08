@@ -42,7 +42,7 @@ Standard text content with full Unicode support.
 ### Creating Messages
 
 ```go
-import "github.com/spcent/plumego/x/ai/multimodal"
+import "github.com/birdordev/plumego/x/ai/multimodal"
 
 // Simple text message
 msg := multimodal.NewTextMessage(multimodal.RoleUser, "Hello, AI!")
@@ -278,7 +278,7 @@ import (
     "context"
     "log"
 
-    "github.com/spcent/plumego/x/ai/multimodal"
+    "github.com/birdordev/plumego/x/ai/multimodal"
 )
 
 func main() {
@@ -334,7 +334,7 @@ import (
     "log"
     "os"
 
-    "github.com/spcent/plumego/x/ai/multimodal"
+    "github.com/birdordev/plumego/x/ai/multimodal"
 )
 
 func main() {
@@ -380,7 +380,7 @@ import (
     "log"
     "os"
 
-    "github.com/spcent/plumego/x/ai/multimodal"
+    "github.com/birdordev/plumego/x/ai/multimodal"
 )
 
 func main() {
@@ -422,7 +422,7 @@ import (
     "context"
     "log"
 
-    "github.com/spcent/plumego/x/ai/multimodal"
+    "github.com/birdordev/plumego/x/ai/multimodal"
 )
 
 func main() {
@@ -469,7 +469,7 @@ import (
     "context"
     "log"
 
-    "github.com/spcent/plumego/x/ai/multimodal"
+    "github.com/birdordev/plumego/x/ai/multimodal"
 )
 
 func main() {

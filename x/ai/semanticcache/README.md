@@ -44,8 +44,8 @@ import (
     "context"
     "time"
 
-    "github.com/spcent/plumego/x/ai/provider"
-    "github.com/spcent/plumego/x/ai/semanticcache"
+    "github.com/birdordev/plumego/x/ai/provider"
+    "github.com/birdordev/plumego/x/ai/semanticcache"
 )
 
 func main() {

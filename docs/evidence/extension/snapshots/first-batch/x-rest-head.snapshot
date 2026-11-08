@@ -1,119 +1,119 @@
 # plumego extension api snapshot v1
-module	github.com/spcent/plumego
+module	github.com/birdordev/plumego
 pattern	./x/rest/...
-symbol	github.com/spcent/plumego/x/rest	func	ApplyResourceSpec	func ApplyResourceSpecfunc(controller *BaseContextResourceController, spec ResourceSpec)
-symbol	github.com/spcent/plumego/x/rest	func	DefaultResourceOptions	func DefaultResourceOptionsfunc() *ResourceOptions
-symbol	github.com/spcent/plumego/x/rest	func	DefaultResourceSpec	func DefaultResourceSpecfunc(name string) ResourceSpec
-symbol	github.com/spcent/plumego/x/rest	func	DefaultRouteOptions	func DefaultRouteOptionsfunc() RouteOptions
-symbol	github.com/spcent/plumego/x/rest	func	NewBaseContextResourceController	func NewBaseContextResourceControllerfunc(resourceName string) *BaseContextResourceController
-symbol	github.com/spcent/plumego/x/rest	func	NewBaseRepository	func NewBaseRepositoryfunc[T any](database db.DB, builder *SQLBuilder) *BaseRepository[T]
-symbol	github.com/spcent/plumego/x/rest	func	NewBaseResourceController	func NewBaseResourceControllerfunc(resourceName string) *BaseResourceController
-symbol	github.com/spcent/plumego/x/rest	func	NewBatchProcessor	func NewBatchProcessorfunc(maxBatchSize int) *BatchProcessor
-symbol	github.com/spcent/plumego/x/rest	func	NewDBResource	func NewDBResourcefunc[T any](spec ResourceSpec, repository Repository[T]) *DBResourceController[T]
-symbol	github.com/spcent/plumego/x/rest	func	NewDBResourceController	func NewDBResourceControllerfunc[T any](resourceName string, repository Repository[T]) *DBResourceController[T]
-symbol	github.com/spcent/plumego/x/rest	func	NewPaginationMeta	func NewPaginationMetafunc(page, pageSize int, totalItems int64) *PaginationMeta
-symbol	github.com/spcent/plumego/x/rest	func	NewParamExtractor	func NewParamExtractorfunc() *ParamExtractor
-symbol	github.com/spcent/plumego/x/rest	func	NewQueryBuilder	func NewQueryBuilderfunc() *QueryBuilder
-symbol	github.com/spcent/plumego/x/rest	func	NewQueryBuilderFromOptions	func NewQueryBuilderFromOptionsfunc(opts *ResourceOptions) *QueryBuilder
-symbol	github.com/spcent/plumego/x/rest	func	NewSQLBuilder	func NewSQLBuilderfunc(table string, idColumn string) *SQLBuilder
-symbol	github.com/spcent/plumego/x/rest	func	NormalizeQueryParams	func NormalizeQueryParamsfunc(params *QueryParams, opts *ResourceOptions) *QueryParams
-symbol	github.com/spcent/plumego/x/rest	func	RegisterDBResource	func RegisterDBResourcefunc[T any](r *router.Router, spec ResourceSpec, repository Repository[T]) *DBResourceController[T]
-symbol	github.com/spcent/plumego/x/rest	func	RegisterResourceRoutes	func RegisterResourceRoutesfunc(r *router.Router, prefix string, controller ResourceController, opts RouteOptions) error
-symbol	github.com/spcent/plumego/x/rest	method	BaseContextResourceController.ApplySpec	func (BaseContextResourceController) ApplySpecfunc(spec ResourceSpec) *BaseContextResourceController
-symbol	github.com/spcent/plumego/x/rest	method	BaseContextResourceController.ParseQueryParams	func (BaseContextResourceController) ParseQueryParamsfunc(r *http.Request) *QueryParams
-symbol	github.com/spcent/plumego/x/rest	method	BaseRepository.Count	func (BaseRepository) Countfunc(ctx context.Context, params *QueryParams) (int64, error)
-symbol	github.com/spcent/plumego/x/rest	method	BaseRepository.Create	func (BaseRepository) Createfunc(ctx context.Context, data *T) error
-symbol	github.com/spcent/plumego/x/rest	method	BaseRepository.DB	func (BaseRepository) DBfunc() db.DB
-symbol	github.com/spcent/plumego/x/rest	method	BaseRepository.Delete	func (BaseRepository) Deletefunc(ctx context.Context, id string) error
-symbol	github.com/spcent/plumego/x/rest	method	BaseRepository.Exists	func (BaseRepository) Existsfunc(ctx context.Context, id string) (bool, error)
-symbol	github.com/spcent/plumego/x/rest	method	BaseRepository.FindAll	func (BaseRepository) FindAllfunc(ctx context.Context, params *QueryParams) ([]T, int64, error)
-symbol	github.com/spcent/plumego/x/rest	method	BaseRepository.FindByID	func (BaseRepository) FindByIDfunc(ctx context.Context, id string) (*T, error)
-symbol	github.com/spcent/plumego/x/rest	method	BaseRepository.Update	func (BaseRepository) Updatefunc(ctx context.Context, id string, data *T) error
-symbol	github.com/spcent/plumego/x/rest	method	BaseResourceController.BatchCreate	func (BaseResourceController) BatchCreatefunc(w http.ResponseWriter, r *http.Request)
-symbol	github.com/spcent/plumego/x/rest	method	BaseResourceController.BatchDelete	func (BaseResourceController) BatchDeletefunc(w http.ResponseWriter, r *http.Request)
-symbol	github.com/spcent/plumego/x/rest	method	BaseResourceController.Create	func (BaseResourceController) Createfunc(w http.ResponseWriter, r *http.Request)
-symbol	github.com/spcent/plumego/x/rest	method	BaseResourceController.Delete	func (BaseResourceController) Deletefunc(w http.ResponseWriter, r *http.Request)
-symbol	github.com/spcent/plumego/x/rest	method	BaseResourceController.Head	func (BaseResourceController) Headfunc(w http.ResponseWriter, r *http.Request)
-symbol	github.com/spcent/plumego/x/rest	method	BaseResourceController.Index	func (BaseResourceController) Indexfunc(w http.ResponseWriter, r *http.Request)
-symbol	github.com/spcent/plumego/x/rest	method	BaseResourceController.Options	func (BaseResourceController) Optionsfunc(w http.ResponseWriter, r *http.Request)
-symbol	github.com/spcent/plumego/x/rest	method	BaseResourceController.Patch	func (BaseResourceController) Patchfunc(w http.ResponseWriter, r *http.Request)
-symbol	github.com/spcent/plumego/x/rest	method	BaseResourceController.Show	func (BaseResourceController) Showfunc(w http.ResponseWriter, r *http.Request)
-symbol	github.com/spcent/plumego/x/rest	method	BaseResourceController.Update	func (BaseResourceController) Updatefunc(w http.ResponseWriter, r *http.Request)
-symbol	github.com/spcent/plumego/x/rest	method	BatchProcessor.Process	func (BatchProcessor) Processfunc( ctx context.Context, items []any, fn func(ctx context.Context, item any) error, ) *BatchResult
-symbol	github.com/spcent/plumego/x/rest	method	DBResourceController.ApplySpec	func (DBResourceController) ApplySpecfunc(spec ResourceSpec) *DBResourceController[T]
-symbol	github.com/spcent/plumego/x/rest	method	DBResourceController.Create	func (DBResourceController) Createfunc(w http.ResponseWriter, r *http.Request)
-symbol	github.com/spcent/plumego/x/rest	method	DBResourceController.Delete	func (DBResourceController) Deletefunc(w http.ResponseWriter, r *http.Request)
-symbol	github.com/spcent/plumego/x/rest	method	DBResourceController.Index	func (DBResourceController) Indexfunc(w http.ResponseWriter, r *http.Request)
-symbol	github.com/spcent/plumego/x/rest	method	DBResourceController.Show	func (DBResourceController) Showfunc(w http.ResponseWriter, r *http.Request)
-symbol	github.com/spcent/plumego/x/rest	method	DBResourceController.Update	func (DBResourceController) Updatefunc(w http.ResponseWriter, r *http.Request)
-symbol	github.com/spcent/plumego/x/rest	method	DBResourceController.WithValidator	func (DBResourceController) WithValidatorfunc(v interface{ Validate(any) error }) *DBResourceController[T]
-symbol	github.com/spcent/plumego/x/rest	method	IdentityTransformer.Transform	func (IdentityTransformer) Transformfunc(_ context.Context, resource any) (any, error)
-symbol	github.com/spcent/plumego/x/rest	method	IdentityTransformer.TransformCollection	func (IdentityTransformer) TransformCollectionfunc(_ context.Context, resources any) (any, error)
-symbol	github.com/spcent/plumego/x/rest	method	NoOpResourceHooks.AfterCreate	func (NoOpResourceHooks) AfterCreatefunc(_ context.Context, _ any) error
-symbol	github.com/spcent/plumego/x/rest	method	NoOpResourceHooks.AfterDelete	func (NoOpResourceHooks) AfterDeletefunc(_ context.Context, _ string) error
-symbol	github.com/spcent/plumego/x/rest	method	NoOpResourceHooks.AfterList	func (NoOpResourceHooks) AfterListfunc(_ context.Context, _ *QueryParams, _ any) error
-symbol	github.com/spcent/plumego/x/rest	method	NoOpResourceHooks.AfterUpdate	func (NoOpResourceHooks) AfterUpdatefunc(_ context.Context, _ string, _ any) error
-symbol	github.com/spcent/plumego/x/rest	method	NoOpResourceHooks.BeforeCreate	func (NoOpResourceHooks) BeforeCreatefunc(_ context.Context, _ any) error
-symbol	github.com/spcent/plumego/x/rest	method	NoOpResourceHooks.BeforeDelete	func (NoOpResourceHooks) BeforeDeletefunc(_ context.Context, _ string) error
-symbol	github.com/spcent/plumego/x/rest	method	NoOpResourceHooks.BeforeList	func (NoOpResourceHooks) BeforeListfunc(_ context.Context, _ *QueryParams) error
-symbol	github.com/spcent/plumego/x/rest	method	NoOpResourceHooks.BeforeUpdate	func (NoOpResourceHooks) BeforeUpdatefunc(_ context.Context, _ string, _ any) error
-symbol	github.com/spcent/plumego/x/rest	method	ParamExtractor.GetID	func (ParamExtractor) GetIDfunc(r *http.Request) string
-symbol	github.com/spcent/plumego/x/rest	method	ParamExtractor.GetParam	func (ParamExtractor) GetParamfunc(r *http.Request, name string) string
-symbol	github.com/spcent/plumego/x/rest	method	ParamExtractor.GetQueryBool	func (ParamExtractor) GetQueryBoolfunc(r *http.Request, name string, defaultValue bool) bool
-symbol	github.com/spcent/plumego/x/rest	method	ParamExtractor.GetQueryInt	func (ParamExtractor) GetQueryIntfunc(r *http.Request, name string, defaultValue int) int
-symbol	github.com/spcent/plumego/x/rest	method	ParamExtractor.GetQueryParam	func (ParamExtractor) GetQueryParamfunc(r *http.Request, name string) string
-symbol	github.com/spcent/plumego/x/rest	method	QueryBuilder.Parse	func (QueryBuilder) Parsefunc(r *http.Request) *QueryParams
-symbol	github.com/spcent/plumego/x/rest	method	QueryBuilder.WithAllowedFilters	func (QueryBuilder) WithAllowedFiltersfunc(fields ...string) *QueryBuilder
-symbol	github.com/spcent/plumego/x/rest	method	QueryBuilder.WithAllowedSorts	func (QueryBuilder) WithAllowedSortsfunc(fields ...string) *QueryBuilder
-symbol	github.com/spcent/plumego/x/rest	method	QueryBuilder.WithPageSize	func (QueryBuilder) WithPageSizefunc(defaultSize, maxSize int) *QueryBuilder
-symbol	github.com/spcent/plumego/x/rest	method	ResourceSpec.Normalized	func (ResourceSpec) Normalizedfunc() ResourceSpec
-symbol	github.com/spcent/plumego/x/rest	method	ResourceSpec.WithPrefix	func (ResourceSpec) WithPrefixfunc(prefix string) ResourceSpec
-symbol	github.com/spcent/plumego/x/rest	method	SQLBuilder.BuildCountQuery	func (SQLBuilder) BuildCountQueryfunc(params *QueryParams) (string, []any)
-symbol	github.com/spcent/plumego/x/rest	method	SQLBuilder.BuildDeleteQuery	func (SQLBuilder) BuildDeleteQueryfunc() string
-symbol	github.com/spcent/plumego/x/rest	method	SQLBuilder.BuildExistsQuery	func (SQLBuilder) BuildExistsQueryfunc() string
-symbol	github.com/spcent/plumego/x/rest	method	SQLBuilder.BuildFindByIDQuery	func (SQLBuilder) BuildFindByIDQueryfunc() string
-symbol	github.com/spcent/plumego/x/rest	method	SQLBuilder.BuildInsertQuery	func (SQLBuilder) BuildInsertQueryfunc() string
-symbol	github.com/spcent/plumego/x/rest	method	SQLBuilder.BuildSelectQuery	func (SQLBuilder) BuildSelectQueryfunc(params *QueryParams) (string, []any)
-symbol	github.com/spcent/plumego/x/rest	method	SQLBuilder.BuildUpdateQuery	func (SQLBuilder) BuildUpdateQueryfunc() string
-symbol	github.com/spcent/plumego/x/rest	method	SQLBuilder.WithColumns	func (SQLBuilder) WithColumnsfunc(columns ...string) *SQLBuilder
-symbol	github.com/spcent/plumego/x/rest	method	SQLBuilder.WithInsertFunc	func (SQLBuilder) WithInsertFuncfunc(fn func(any) ([]any, error)) *SQLBuilder
-symbol	github.com/spcent/plumego/x/rest	method	SQLBuilder.WithScanFunc	func (SQLBuilder) WithScanFuncfunc(fn func(*sql.Rows) (any, error)) *SQLBuilder
-symbol	github.com/spcent/plumego/x/rest	method	SQLBuilder.WithUpdateFunc	func (SQLBuilder) WithUpdateFuncfunc(fn func(any) ([]any, error)) *SQLBuilder
-symbol	github.com/spcent/plumego/x/rest	type	BaseContextResourceController	type BaseContextResourceController struct { BaseResourceController QueryBuilder *QueryBuilder ParamExtractor *ParamExtractor Hooks ResourceHooks Transformer ResourceTransformer Spec ResourceSpec }
-symbol	github.com/spcent/plumego/x/rest	type	BaseModel	type BaseModel struct { ID string `json:"id" db:"id"` CreatedAt time.Time `json:"created_at" db:"created_at"` UpdatedAt time.Time `json:"updated_at" db:"updated_at"` }
-symbol	github.com/spcent/plumego/x/rest	type	BaseRepository	type BaseRepository struct { db db.DB builder *SQLBuilder }
-symbol	github.com/spcent/plumego/x/rest	type	BaseResourceController	type BaseResourceController struct { ResourceName string }
-symbol	github.com/spcent/plumego/x/rest	type	BatchError	type BatchError struct { Index int `json:"index"` ID string `json:"id,omitempty"` Message string `json:"message"` Code string `json:"code,omitempty"` }
-symbol	github.com/spcent/plumego/x/rest	type	BatchProcessor	type BatchProcessor struct { maxBatchSize int }
-symbol	github.com/spcent/plumego/x/rest	type	BatchResult	type BatchResult struct { Successful int `json:"successful"` Failed int `json:"failed"` Total int `json:"total"` Errors []BatchError `json:"errors,omitempty"` Results []map[string]any `json:"results,omitempty"` }
-symbol	github.com/spcent/plumego/x/rest	type	DBResourceController	type DBResourceController struct { *BaseContextResourceController repository Repository[T] validator interface { Validate(any) error } }
-symbol	github.com/spcent/plumego/x/rest	type	IdentityTransformer	type IdentityTransformer struct{}
-symbol	github.com/spcent/plumego/x/rest	type	NoOpResourceHooks	type NoOpResourceHooks struct{}
-symbol	github.com/spcent/plumego/x/rest	type	PaginatedResponse	type PaginatedResponse struct { Data any `json:"data"` Pagination *PaginationMeta `json:"pagination,omitempty"` }
-symbol	github.com/spcent/plumego/x/rest	type	PaginationMeta	type PaginationMeta struct { Page int `json:"page"` PageSize int `json:"page_size"` TotalItems int64 `json:"total_items"` TotalPages int `json:"total_pages"` HasNext bool `json:"has_next"` HasPrev bool `json:"has_prev"` }
-symbol	github.com/spcent/plumego/x/rest	type	ParamExtractor	type ParamExtractor struct{}
-symbol	github.com/spcent/plumego/x/rest	type	QueryBuilder	type QueryBuilder struct { defaultPageSize int maxPageSize int allowedSorts map[string]bool allowedFilters map[string]bool }
-symbol	github.com/spcent/plumego/x/rest	type	QueryParams	type QueryParams struct { Page int PageSize int Offset int Limit int Sort []SortField Filters map[string]string Search string Fields []string Include []string }
-symbol	github.com/spcent/plumego/x/rest	type	Repository	type Repository interface { FindAll(ctx context.Context, params *QueryParams) ([]T, int64, error) FindByID(ctx context.Context, id string) (*T, error) Create(ctx context.Context, data *T) error Update(ctx context.Context, id string, data *T) error Delete(ctx context.Context, id string) error Count(ctx context.Context, params *QueryParams) (int64, error) Exists(ctx context.Context, id string) (bool, error) }
-symbol	github.com/spcent/plumego/x/rest	type	ResourceController	type ResourceController interface { Index(http.ResponseWriter, *http.Request) Show(http.ResponseWriter, *http.Request) Create(http.ResponseWriter, *http.Request) Update(http.ResponseWriter, *http.Request) Delete(http.ResponseWriter, *http.Request) Patch(http.ResponseWriter, *http.Request) Options(http.ResponseWriter, *http.Request) Head(http.ResponseWriter, *http.Request) BatchCreate(http.ResponseWriter, *http.Request) BatchDelete(http.ResponseWriter, *http.Request) }
-symbol	github.com/spcent/plumego/x/rest	type	ResourceHooks	type ResourceHooks interface { BeforeCreate(ctx context.Context, data any) error AfterCreate(ctx context.Context, data any) error BeforeUpdate(ctx context.Context, id string, data any) error AfterUpdate(ctx context.Context, id string, data any) error BeforeDelete(ctx context.Context, id string) error AfterDelete(ctx context.Context, id string) error BeforeList(ctx context.Context, params *QueryParams) error AfterList(ctx context.Context, params *QueryParams, data any) error }
-symbol	github.com/spcent/plumego/x/rest	type	ResourceOptions	type ResourceOptions struct { DefaultPageSize int MaxPageSize int AllowedSorts []string AllowedFilters []string SoftDelete bool SoftDeleteField string EnableHooks bool EnableTransformer bool }
-symbol	github.com/spcent/plumego/x/rest	type	ResourceSpec	type ResourceSpec struct { Name string Prefix string Routes RouteOptions Options *ResourceOptions QueryBuilder *QueryBuilder Hooks ResourceHooks Transformer ResourceTransformer }
-symbol	github.com/spcent/plumego/x/rest	type	ResourceTransformer	type ResourceTransformer interface { Transform(ctx context.Context, resource any) (any, error) TransformCollection(ctx context.Context, resources any) (any, error) }
-symbol	github.com/spcent/plumego/x/rest	type	RouteOptions	type RouteOptions struct { EnableBatch bool EnableHead bool EnableOptions bool }
-symbol	github.com/spcent/plumego/x/rest	type	SQLBuilder	type SQLBuilder struct { table string columns []string idColumn string scanFunc func(*sql.Rows) (any, error) insertFunc func(any) ([]any, error) updateFunc func(any) ([]any, error) }
-symbol	github.com/spcent/plumego/x/rest	type	SoftDeleteModel	type SoftDeleteModel struct { BaseModel DeletedAt *time.Time `json:"deleted_at,omitempty" db:"deleted_at"` }
-symbol	github.com/spcent/plumego/x/rest	type	SortField	type SortField struct { Field string Desc bool }
-symbol	github.com/spcent/plumego/x/rest/versioning	const	CodeUnsupportedVersion	const CodeUnsupportedVersion = "unsupported_version"
-symbol	github.com/spcent/plumego/x/rest/versioning	const	StrategyAcceptHeader	const StrategyAcceptHeader Strategy = iota
-symbol	github.com/spcent/plumego/x/rest/versioning	const	StrategyCustomHeader	const StrategyCustomHeader
-symbol	github.com/spcent/plumego/x/rest/versioning	const	StrategyQueryParam	const StrategyQueryParam
-symbol	github.com/spcent/plumego/x/rest/versioning	const	StrategyURLPath	const StrategyURLPath
-symbol	github.com/spcent/plumego/x/rest/versioning	func	CustomExtractor	func CustomExtractorfunc(extractor Extractor, defaultVersion int, supportedVersions []int) mw.Middleware
-symbol	github.com/spcent/plumego/x/rest/versioning	func	Middleware	func Middlewarefunc(config Config) mw.Middleware
-symbol	github.com/spcent/plumego/x/rest/versioning	func	VersionFromContext	func VersionFromContextfunc(ctx context.Context) int
-symbol	github.com/spcent/plumego/x/rest/versioning	func	WithVersion	func WithVersionfunc(ctx context.Context, version int) context.Context
-symbol	github.com/spcent/plumego/x/rest/versioning	method	Strategy.String	func (Strategy) Stringfunc() string
-symbol	github.com/spcent/plumego/x/rest/versioning	type	Config	type Config struct { Strategy Strategy DefaultVersion int SupportedVersions []int VendorPrefix string PathPrefix string ParamName string HeaderName string StripVersionFromPath bool OnVersionMismatch func(w http.ResponseWriter, r *http.Request, requested int) OnVersionExtracted func(r *http.Request, version int) }
-symbol	github.com/spcent/plumego/x/rest/versioning	type	Extractor	type Extractor func(r *http.Request) int
-symbol	github.com/spcent/plumego/x/rest/versioning	type	Strategy	type Strategy int
+symbol	github.com/birdordev/plumego/x/rest	func	ApplyResourceSpec	func ApplyResourceSpecfunc(controller *BaseContextResourceController, spec ResourceSpec)
+symbol	github.com/birdordev/plumego/x/rest	func	DefaultResourceOptions	func DefaultResourceOptionsfunc() *ResourceOptions
+symbol	github.com/birdordev/plumego/x/rest	func	DefaultResourceSpec	func DefaultResourceSpecfunc(name string) ResourceSpec
+symbol	github.com/birdordev/plumego/x/rest	func	DefaultRouteOptions	func DefaultRouteOptionsfunc() RouteOptions
+symbol	github.com/birdordev/plumego/x/rest	func	NewBaseContextResourceController	func NewBaseContextResourceControllerfunc(resourceName string) *BaseContextResourceController
+symbol	github.com/birdordev/plumego/x/rest	func	NewBaseRepository	func NewBaseRepositoryfunc[T any](database db.DB, builder *SQLBuilder) *BaseRepository[T]
+symbol	github.com/birdordev/plumego/x/rest	func	NewBaseResourceController	func NewBaseResourceControllerfunc(resourceName string) *BaseResourceController
+symbol	github.com/birdordev/plumego/x/rest	func	NewBatchProcessor	func NewBatchProcessorfunc(maxBatchSize int) *BatchProcessor
+symbol	github.com/birdordev/plumego/x/rest	func	NewDBResource	func NewDBResourcefunc[T any](spec ResourceSpec, repository Repository[T]) *DBResourceController[T]
+symbol	github.com/birdordev/plumego/x/rest	func	NewDBResourceController	func NewDBResourceControllerfunc[T any](resourceName string, repository Repository[T]) *DBResourceController[T]
+symbol	github.com/birdordev/plumego/x/rest	func	NewPaginationMeta	func NewPaginationMetafunc(page, pageSize int, totalItems int64) *PaginationMeta
+symbol	github.com/birdordev/plumego/x/rest	func	NewParamExtractor	func NewParamExtractorfunc() *ParamExtractor
+symbol	github.com/birdordev/plumego/x/rest	func	NewQueryBuilder	func NewQueryBuilderfunc() *QueryBuilder
+symbol	github.com/birdordev/plumego/x/rest	func	NewQueryBuilderFromOptions	func NewQueryBuilderFromOptionsfunc(opts *ResourceOptions) *QueryBuilder
+symbol	github.com/birdordev/plumego/x/rest	func	NewSQLBuilder	func NewSQLBuilderfunc(table string, idColumn string) *SQLBuilder
+symbol	github.com/birdordev/plumego/x/rest	func	NormalizeQueryParams	func NormalizeQueryParamsfunc(params *QueryParams, opts *ResourceOptions) *QueryParams
+symbol	github.com/birdordev/plumego/x/rest	func	RegisterDBResource	func RegisterDBResourcefunc[T any](r *router.Router, spec ResourceSpec, repository Repository[T]) *DBResourceController[T]
+symbol	github.com/birdordev/plumego/x/rest	func	RegisterResourceRoutes	func RegisterResourceRoutesfunc(r *router.Router, prefix string, controller ResourceController, opts RouteOptions) error
+symbol	github.com/birdordev/plumego/x/rest	method	BaseContextResourceController.ApplySpec	func (BaseContextResourceController) ApplySpecfunc(spec ResourceSpec) *BaseContextResourceController
+symbol	github.com/birdordev/plumego/x/rest	method	BaseContextResourceController.ParseQueryParams	func (BaseContextResourceController) ParseQueryParamsfunc(r *http.Request) *QueryParams
+symbol	github.com/birdordev/plumego/x/rest	method	BaseRepository.Count	func (BaseRepository) Countfunc(ctx context.Context, params *QueryParams) (int64, error)
+symbol	github.com/birdordev/plumego/x/rest	method	BaseRepository.Create	func (BaseRepository) Createfunc(ctx context.Context, data *T) error
+symbol	github.com/birdordev/plumego/x/rest	method	BaseRepository.DB	func (BaseRepository) DBfunc() db.DB
+symbol	github.com/birdordev/plumego/x/rest	method	BaseRepository.Delete	func (BaseRepository) Deletefunc(ctx context.Context, id string) error
+symbol	github.com/birdordev/plumego/x/rest	method	BaseRepository.Exists	func (BaseRepository) Existsfunc(ctx context.Context, id string) (bool, error)
+symbol	github.com/birdordev/plumego/x/rest	method	BaseRepository.FindAll	func (BaseRepository) FindAllfunc(ctx context.Context, params *QueryParams) ([]T, int64, error)
+symbol	github.com/birdordev/plumego/x/rest	method	BaseRepository.FindByID	func (BaseRepository) FindByIDfunc(ctx context.Context, id string) (*T, error)
+symbol	github.com/birdordev/plumego/x/rest	method	BaseRepository.Update	func (BaseRepository) Updatefunc(ctx context.Context, id string, data *T) error
+symbol	github.com/birdordev/plumego/x/rest	method	BaseResourceController.BatchCreate	func (BaseResourceController) BatchCreatefunc(w http.ResponseWriter, r *http.Request)
+symbol	github.com/birdordev/plumego/x/rest	method	BaseResourceController.BatchDelete	func (BaseResourceController) BatchDeletefunc(w http.ResponseWriter, r *http.Request)
+symbol	github.com/birdordev/plumego/x/rest	method	BaseResourceController.Create	func (BaseResourceController) Createfunc(w http.ResponseWriter, r *http.Request)
+symbol	github.com/birdordev/plumego/x/rest	method	BaseResourceController.Delete	func (BaseResourceController) Deletefunc(w http.ResponseWriter, r *http.Request)
+symbol	github.com/birdordev/plumego/x/rest	method	BaseResourceController.Head	func (BaseResourceController) Headfunc(w http.ResponseWriter, r *http.Request)
+symbol	github.com/birdordev/plumego/x/rest	method	BaseResourceController.Index	func (BaseResourceController) Indexfunc(w http.ResponseWriter, r *http.Request)
+symbol	github.com/birdordev/plumego/x/rest	method	BaseResourceController.Options	func (BaseResourceController) Optionsfunc(w http.ResponseWriter, r *http.Request)
+symbol	github.com/birdordev/plumego/x/rest	method	BaseResourceController.Patch	func (BaseResourceController) Patchfunc(w http.ResponseWriter, r *http.Request)
+symbol	github.com/birdordev/plumego/x/rest	method	BaseResourceController.Show	func (BaseResourceController) Showfunc(w http.ResponseWriter, r *http.Request)
+symbol	github.com/birdordev/plumego/x/rest	method	BaseResourceController.Update	func (BaseResourceController) Updatefunc(w http.ResponseWriter, r *http.Request)
+symbol	github.com/birdordev/plumego/x/rest	method	BatchProcessor.Process	func (BatchProcessor) Processfunc( ctx context.Context, items []any, fn func(ctx context.Context, item any) error, ) *BatchResult
+symbol	github.com/birdordev/plumego/x/rest	method	DBResourceController.ApplySpec	func (DBResourceController) ApplySpecfunc(spec ResourceSpec) *DBResourceController[T]
+symbol	github.com/birdordev/plumego/x/rest	method	DBResourceController.Create	func (DBResourceController) Createfunc(w http.ResponseWriter, r *http.Request)
+symbol	github.com/birdordev/plumego/x/rest	method	DBResourceController.Delete	func (DBResourceController) Deletefunc(w http.ResponseWriter, r *http.Request)
+symbol	github.com/birdordev/plumego/x/rest	method	DBResourceController.Index	func (DBResourceController) Indexfunc(w http.ResponseWriter, r *http.Request)
+symbol	github.com/birdordev/plumego/x/rest	method	DBResourceController.Show	func (DBResourceController) Showfunc(w http.ResponseWriter, r *http.Request)
+symbol	github.com/birdordev/plumego/x/rest	method	DBResourceController.Update	func (DBResourceController) Updatefunc(w http.ResponseWriter, r *http.Request)
+symbol	github.com/birdordev/plumego/x/rest	method	DBResourceController.WithValidator	func (DBResourceController) WithValidatorfunc(v interface{ Validate(any) error }) *DBResourceController[T]
+symbol	github.com/birdordev/plumego/x/rest	method	IdentityTransformer.Transform	func (IdentityTransformer) Transformfunc(_ context.Context, resource any) (any, error)
+symbol	github.com/birdordev/plumego/x/rest	method	IdentityTransformer.TransformCollection	func (IdentityTransformer) TransformCollectionfunc(_ context.Context, resources any) (any, error)
+symbol	github.com/birdordev/plumego/x/rest	method	NoOpResourceHooks.AfterCreate	func (NoOpResourceHooks) AfterCreatefunc(_ context.Context, _ any) error
+symbol	github.com/birdordev/plumego/x/rest	method	NoOpResourceHooks.AfterDelete	func (NoOpResourceHooks) AfterDeletefunc(_ context.Context, _ string) error
+symbol	github.com/birdordev/plumego/x/rest	method	NoOpResourceHooks.AfterList	func (NoOpResourceHooks) AfterListfunc(_ context.Context, _ *QueryParams, _ any) error
+symbol	github.com/birdordev/plumego/x/rest	method	NoOpResourceHooks.AfterUpdate	func (NoOpResourceHooks) AfterUpdatefunc(_ context.Context, _ string, _ any) error
+symbol	github.com/birdordev/plumego/x/rest	method	NoOpResourceHooks.BeforeCreate	func (NoOpResourceHooks) BeforeCreatefunc(_ context.Context, _ any) error
+symbol	github.com/birdordev/plumego/x/rest	method	NoOpResourceHooks.BeforeDelete	func (NoOpResourceHooks) BeforeDeletefunc(_ context.Context, _ string) error
+symbol	github.com/birdordev/plumego/x/rest	method	NoOpResourceHooks.BeforeList	func (NoOpResourceHooks) BeforeListfunc(_ context.Context, _ *QueryParams) error
+symbol	github.com/birdordev/plumego/x/rest	method	NoOpResourceHooks.BeforeUpdate	func (NoOpResourceHooks) BeforeUpdatefunc(_ context.Context, _ string, _ any) error
+symbol	github.com/birdordev/plumego/x/rest	method	ParamExtractor.GetID	func (ParamExtractor) GetIDfunc(r *http.Request) string
+symbol	github.com/birdordev/plumego/x/rest	method	ParamExtractor.GetParam	func (ParamExtractor) GetParamfunc(r *http.Request, name string) string
+symbol	github.com/birdordev/plumego/x/rest	method	ParamExtractor.GetQueryBool	func (ParamExtractor) GetQueryBoolfunc(r *http.Request, name string, defaultValue bool) bool
+symbol	github.com/birdordev/plumego/x/rest	method	ParamExtractor.GetQueryInt	func (ParamExtractor) GetQueryIntfunc(r *http.Request, name string, defaultValue int) int
+symbol	github.com/birdordev/plumego/x/rest	method	ParamExtractor.GetQueryParam	func (ParamExtractor) GetQueryParamfunc(r *http.Request, name string) string
+symbol	github.com/birdordev/plumego/x/rest	method	QueryBuilder.Parse	func (QueryBuilder) Parsefunc(r *http.Request) *QueryParams
+symbol	github.com/birdordev/plumego/x/rest	method	QueryBuilder.WithAllowedFilters	func (QueryBuilder) WithAllowedFiltersfunc(fields ...string) *QueryBuilder
+symbol	github.com/birdordev/plumego/x/rest	method	QueryBuilder.WithAllowedSorts	func (QueryBuilder) WithAllowedSortsfunc(fields ...string) *QueryBuilder
+symbol	github.com/birdordev/plumego/x/rest	method	QueryBuilder.WithPageSize	func (QueryBuilder) WithPageSizefunc(defaultSize, maxSize int) *QueryBuilder
+symbol	github.com/birdordev/plumego/x/rest	method	ResourceSpec.Normalized	func (ResourceSpec) Normalizedfunc() ResourceSpec
+symbol	github.com/birdordev/plumego/x/rest	method	ResourceSpec.WithPrefix	func (ResourceSpec) WithPrefixfunc(prefix string) ResourceSpec
+symbol	github.com/birdordev/plumego/x/rest	method	SQLBuilder.BuildCountQuery	func (SQLBuilder) BuildCountQueryfunc(params *QueryParams) (string, []any)
+symbol	github.com/birdordev/plumego/x/rest	method	SQLBuilder.BuildDeleteQuery	func (SQLBuilder) BuildDeleteQueryfunc() string
+symbol	github.com/birdordev/plumego/x/rest	method	SQLBuilder.BuildExistsQuery	func (SQLBuilder) BuildExistsQueryfunc() string
+symbol	github.com/birdordev/plumego/x/rest	method	SQLBuilder.BuildFindByIDQuery	func (SQLBuilder) BuildFindByIDQueryfunc() string
+symbol	github.com/birdordev/plumego/x/rest	method	SQLBuilder.BuildInsertQuery	func (SQLBuilder) BuildInsertQueryfunc() string
+symbol	github.com/birdordev/plumego/x/rest	method	SQLBuilder.BuildSelectQuery	func (SQLBuilder) BuildSelectQueryfunc(params *QueryParams) (string, []any)
+symbol	github.com/birdordev/plumego/x/rest	method	SQLBuilder.BuildUpdateQuery	func (SQLBuilder) BuildUpdateQueryfunc() string
+symbol	github.com/birdordev/plumego/x/rest	method	SQLBuilder.WithColumns	func (SQLBuilder) WithColumnsfunc(columns ...string) *SQLBuilder
+symbol	github.com/birdordev/plumego/x/rest	method	SQLBuilder.WithInsertFunc	func (SQLBuilder) WithInsertFuncfunc(fn func(any) ([]any, error)) *SQLBuilder
+symbol	github.com/birdordev/plumego/x/rest	method	SQLBuilder.WithScanFunc	func (SQLBuilder) WithScanFuncfunc(fn func(*sql.Rows) (any, error)) *SQLBuilder
+symbol	github.com/birdordev/plumego/x/rest	method	SQLBuilder.WithUpdateFunc	func (SQLBuilder) WithUpdateFuncfunc(fn func(any) ([]any, error)) *SQLBuilder
+symbol	github.com/birdordev/plumego/x/rest	type	BaseContextResourceController	type BaseContextResourceController struct { BaseResourceController QueryBuilder *QueryBuilder ParamExtractor *ParamExtractor Hooks ResourceHooks Transformer ResourceTransformer Spec ResourceSpec }
+symbol	github.com/birdordev/plumego/x/rest	type	BaseModel	type BaseModel struct { ID string `json:"id" db:"id"` CreatedAt time.Time `json:"created_at" db:"created_at"` UpdatedAt time.Time `json:"updated_at" db:"updated_at"` }
+symbol	github.com/birdordev/plumego/x/rest	type	BaseRepository	type BaseRepository struct { db db.DB builder *SQLBuilder }
+symbol	github.com/birdordev/plumego/x/rest	type	BaseResourceController	type BaseResourceController struct { ResourceName string }
+symbol	github.com/birdordev/plumego/x/rest	type	BatchError	type BatchError struct { Index int `json:"index"` ID string `json:"id,omitempty"` Message string `json:"message"` Code string `json:"code,omitempty"` }
+symbol	github.com/birdordev/plumego/x/rest	type	BatchProcessor	type BatchProcessor struct { maxBatchSize int }
+symbol	github.com/birdordev/plumego/x/rest	type	BatchResult	type BatchResult struct { Successful int `json:"successful"` Failed int `json:"failed"` Total int `json:"total"` Errors []BatchError `json:"errors,omitempty"` Results []map[string]any `json:"results,omitempty"` }
+symbol	github.com/birdordev/plumego/x/rest	type	DBResourceController	type DBResourceController struct { *BaseContextResourceController repository Repository[T] validator interface { Validate(any) error } }
+symbol	github.com/birdordev/plumego/x/rest	type	IdentityTransformer	type IdentityTransformer struct{}
+symbol	github.com/birdordev/plumego/x/rest	type	NoOpResourceHooks	type NoOpResourceHooks struct{}
+symbol	github.com/birdordev/plumego/x/rest	type	PaginatedResponse	type PaginatedResponse struct { Data any `json:"data"` Pagination *PaginationMeta `json:"pagination,omitempty"` }
+symbol	github.com/birdordev/plumego/x/rest	type	PaginationMeta	type PaginationMeta struct { Page int `json:"page"` PageSize int `json:"page_size"` TotalItems int64 `json:"total_items"` TotalPages int `json:"total_pages"` HasNext bool `json:"has_next"` HasPrev bool `json:"has_prev"` }
+symbol	github.com/birdordev/plumego/x/rest	type	ParamExtractor	type ParamExtractor struct{}
+symbol	github.com/birdordev/plumego/x/rest	type	QueryBuilder	type QueryBuilder struct { defaultPageSize int maxPageSize int allowedSorts map[string]bool allowedFilters map[string]bool }
+symbol	github.com/birdordev/plumego/x/rest	type	QueryParams	type QueryParams struct { Page int PageSize int Offset int Limit int Sort []SortField Filters map[string]string Search string Fields []string Include []string }
+symbol	github.com/birdordev/plumego/x/rest	type	Repository	type Repository interface { FindAll(ctx context.Context, params *QueryParams) ([]T, int64, error) FindByID(ctx context.Context, id string) (*T, error) Create(ctx context.Context, data *T) error Update(ctx context.Context, id string, data *T) error Delete(ctx context.Context, id string) error Count(ctx context.Context, params *QueryParams) (int64, error) Exists(ctx context.Context, id string) (bool, error) }
+symbol	github.com/birdordev/plumego/x/rest	type	ResourceController	type ResourceController interface { Index(http.ResponseWriter, *http.Request) Show(http.ResponseWriter, *http.Request) Create(http.ResponseWriter, *http.Request) Update(http.ResponseWriter, *http.Request) Delete(http.ResponseWriter, *http.Request) Patch(http.ResponseWriter, *http.Request) Options(http.ResponseWriter, *http.Request) Head(http.ResponseWriter, *http.Request) BatchCreate(http.ResponseWriter, *http.Request) BatchDelete(http.ResponseWriter, *http.Request) }
+symbol	github.com/birdordev/plumego/x/rest	type	ResourceHooks	type ResourceHooks interface { BeforeCreate(ctx context.Context, data any) error AfterCreate(ctx context.Context, data any) error BeforeUpdate(ctx context.Context, id string, data any) error AfterUpdate(ctx context.Context, id string, data any) error BeforeDelete(ctx context.Context, id string) error AfterDelete(ctx context.Context, id string) error BeforeList(ctx context.Context, params *QueryParams) error AfterList(ctx context.Context, params *QueryParams, data any) error }
+symbol	github.com/birdordev/plumego/x/rest	type	ResourceOptions	type ResourceOptions struct { DefaultPageSize int MaxPageSize int AllowedSorts []string AllowedFilters []string SoftDelete bool SoftDeleteField string EnableHooks bool EnableTransformer bool }
+symbol	github.com/birdordev/plumego/x/rest	type	ResourceSpec	type ResourceSpec struct { Name string Prefix string Routes RouteOptions Options *ResourceOptions QueryBuilder *QueryBuilder Hooks ResourceHooks Transformer ResourceTransformer }
+symbol	github.com/birdordev/plumego/x/rest	type	ResourceTransformer	type ResourceTransformer interface { Transform(ctx context.Context, resource any) (any, error) TransformCollection(ctx context.Context, resources any) (any, error) }
+symbol	github.com/birdordev/plumego/x/rest	type	RouteOptions	type RouteOptions struct { EnableBatch bool EnableHead bool EnableOptions bool }
+symbol	github.com/birdordev/plumego/x/rest	type	SQLBuilder	type SQLBuilder struct { table string columns []string idColumn string scanFunc func(*sql.Rows) (any, error) insertFunc func(any) ([]any, error) updateFunc func(any) ([]any, error) }
+symbol	github.com/birdordev/plumego/x/rest	type	SoftDeleteModel	type SoftDeleteModel struct { BaseModel DeletedAt *time.Time `json:"deleted_at,omitempty" db:"deleted_at"` }
+symbol	github.com/birdordev/plumego/x/rest	type	SortField	type SortField struct { Field string Desc bool }
+symbol	github.com/birdordev/plumego/x/rest/versioning	const	CodeUnsupportedVersion	const CodeUnsupportedVersion = "unsupported_version"
+symbol	github.com/birdordev/plumego/x/rest/versioning	const	StrategyAcceptHeader	const StrategyAcceptHeader Strategy = iota
+symbol	github.com/birdordev/plumego/x/rest/versioning	const	StrategyCustomHeader	const StrategyCustomHeader
+symbol	github.com/birdordev/plumego/x/rest/versioning	const	StrategyQueryParam	const StrategyQueryParam
+symbol	github.com/birdordev/plumego/x/rest/versioning	const	StrategyURLPath	const StrategyURLPath
+symbol	github.com/birdordev/plumego/x/rest/versioning	func	CustomExtractor	func CustomExtractorfunc(extractor Extractor, defaultVersion int, supportedVersions []int) mw.Middleware
+symbol	github.com/birdordev/plumego/x/rest/versioning	func	Middleware	func Middlewarefunc(config Config) mw.Middleware
+symbol	github.com/birdordev/plumego/x/rest/versioning	func	VersionFromContext	func VersionFromContextfunc(ctx context.Context) int
+symbol	github.com/birdordev/plumego/x/rest/versioning	func	WithVersion	func WithVersionfunc(ctx context.Context, version int) context.Context
+symbol	github.com/birdordev/plumego/x/rest/versioning	method	Strategy.String	func (Strategy) Stringfunc() string
+symbol	github.com/birdordev/plumego/x/rest/versioning	type	Config	type Config struct { Strategy Strategy DefaultVersion int SupportedVersions []int VendorPrefix string PathPrefix string ParamName string HeaderName string StripVersionFromPath bool OnVersionMismatch func(w http.ResponseWriter, r *http.Request, requested int) OnVersionExtracted func(r *http.Request, version int) }
+symbol	github.com/birdordev/plumego/x/rest/versioning	type	Extractor	type Extractor func(r *http.Request) int
+symbol	github.com/birdordev/plumego/x/rest/versioning	type	Strategy	type Strategy int

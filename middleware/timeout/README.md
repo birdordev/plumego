@@ -5,7 +5,7 @@ Enforces a maximum duration for request processing.
 ## Import
 
 ```go
-import "github.com/spcent/plumego/middleware/timeout"
+import "github.com/birdordev/plumego/middleware/timeout"
 ```
 
 ## Overview

@@ -101,7 +101,7 @@ package ai
 
 import (
     "context"
-    "github.com/spcent/plumego/x/ai/provider"
+    "github.com/birdordev/plumego/x/ai/provider"
 )
 
 type AnthropicAdapter struct {
@@ -143,7 +143,7 @@ func (a *AnthropicAdapter) Complete(ctx context.Context, prompt string) (string,
 查找当前依赖中的废弃符号：
 
 ```bash
-grep -r "Deprecated:" $(go env GOPATH)/pkg/mod/github.com/spcent/plumego@vX.Y.Z/
+grep -r "Deprecated:" $(go env GOPATH)/pkg/mod/github.com/birdordev/plumego@vX.Y.Z/
 ```
 
 在主版本切换之前迁移到替代方案，使升级保持增量式。

@@ -14,7 +14,7 @@ For the broader adoption sequence, read `docs/start/adoption-path.md`.
 Install:
 
 ```bash
-go get github.com/spcent/plumego@latest
+go get github.com/birdordev/plumego@latest
 ```
 
 ## Smallest Runnable Example
@@ -28,8 +28,8 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/spcent/plumego"
-	"github.com/spcent/plumego/contract"
+	"github.com/birdordev/plumego"
+	"github.com/birdordev/plumego/contract"
 )
 
 func main() {
@@ -66,8 +66,8 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/spcent/plumego"
-	"github.com/spcent/plumego/contract"
+	"github.com/birdordev/plumego"
+	"github.com/birdordev/plumego/contract"
 )
 
 func main() {
@@ -101,12 +101,12 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/spcent/plumego/contract"
-	"github.com/spcent/plumego/core"
-	plog "github.com/spcent/plumego/log"
-	"github.com/spcent/plumego/middleware/accesslog"
-	"github.com/spcent/plumego/middleware/recovery"
-	"github.com/spcent/plumego/middleware/requestid"
+	"github.com/birdordev/plumego/contract"
+	"github.com/birdordev/plumego/core"
+	plog "github.com/birdordev/plumego/log"
+	"github.com/birdordev/plumego/middleware/accesslog"
+	"github.com/birdordev/plumego/middleware/recovery"
+	"github.com/birdordev/plumego/middleware/requestid"
 )
 
 func main() {

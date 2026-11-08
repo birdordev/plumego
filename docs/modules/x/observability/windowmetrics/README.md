@@ -1,6 +1,6 @@
 # x/observability/windowmetrics
 
-> **Import path:** `github.com/spcent/plumego/x/observability/windowmetrics` — sub-package of [`x/observability`](../README.md).
+> **Import path:** `github.com/birdordev/plumego/x/observability/windowmetrics` — sub-package of [`x/observability`](../README.md).
 
 ## Purpose
 

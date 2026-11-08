@@ -55,7 +55,7 @@ app.Use(httpmetrics.Middleware(collector))
 ### 导入
 
 ```go
-import "github.com/spcent/plumego/metrics"
+import "github.com/birdordev/plumego/metrics"
 ```
 
 ### 注入 collector
@@ -80,7 +80,7 @@ func NewUserService(repo UserRepository, col metrics.AggregateCollector) *UserSe
 ### 记录自定义观测值
 
 ```go
-import "github.com/spcent/plumego/metrics"
+import "github.com/birdordev/plumego/metrics"
 
 func (s *UserService) Create(ctx context.Context, req CreateRequest) (*User, error) {
     start := time.Now()
@@ -105,7 +105,7 @@ func (s *UserService) Create(ctx context.Context, req CreateRequest) (*User, err
 col := metrics.NewBaseMetricsCollector()
 
 // 挂载到 httpmetrics middleware
-import "github.com/spcent/plumego/middleware/httpmetrics"
+import "github.com/birdordev/plumego/middleware/httpmetrics"
 app.Use(httpmetrics.Middleware(col))
 
 // 或在 handler 内手动记录

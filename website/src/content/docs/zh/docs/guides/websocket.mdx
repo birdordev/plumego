@@ -22,7 +22,7 @@ sidebar:
 import (
     "os"
 
-    "github.com/spcent/plumego/x/websocket"
+    "github.com/birdordev/plumego/x/websocket"
 )
 
 cfg := websocket.DefaultWebSocketConfig()
@@ -48,7 +48,7 @@ if err != nil {
 在应用路由器上挂载 WebSocket 端点：
 
 ```go
-import "github.com/spcent/plumego/router"
+import "github.com/birdordev/plumego/router"
 
 r := router.NewRouter()
 if err := ws.RegisterRoutes(r); err != nil {
@@ -82,7 +82,7 @@ hub.BroadcastAll(websocket.OpcodeText, []byte(`{"type":"ping"}`))
 import (
     "net/http"
     "time"
-    "github.com/spcent/plumego/x/websocket"
+    "github.com/birdordev/plumego/x/websocket"
 )
 
 type ChatHandler struct {

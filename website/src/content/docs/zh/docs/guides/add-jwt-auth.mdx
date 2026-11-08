@@ -25,8 +25,8 @@ sidebar:
 
 ```go
 import (
-    "github.com/spcent/plumego/security/jwt"
-    kvstore "github.com/spcent/plumego/store/kv"
+    "github.com/birdordev/plumego/security/jwt"
+    kvstore "github.com/birdordev/plumego/store/kv"
 )
 
 store, err := kvstore.NewKVStore(kvstore.Options{DataDir: "/var/lib/myapp/jwt"})
@@ -49,8 +49,8 @@ if err != nil {
 
 ```go
 import (
-    authmw "github.com/spcent/plumego/middleware/auth"
-    "github.com/spcent/plumego/security/jwt"
+    authmw "github.com/birdordev/plumego/middleware/auth"
+    "github.com/birdordev/plumego/security/jwt"
 )
 
 // app.Use 全局应用 middleware；对单条路由做更细粒度的控制时，直接包装 handler。

@@ -85,7 +85,7 @@ say (e.g., a benchmark has no "curl examples").
   with `contract.NewErrorBuilder()`. No per-handler JSON structs that invent a
   new envelope shape.
 - [ ] **No unrelated dependencies** — the app's `go.mod` lists only
-  `github.com/spcent/plumego` (via `replace` directive) and the one external
+  `github.com/birdordev/plumego` (via `replace` directive) and the one external
   package the scenario specifically demonstrates. A dependency that is
   incidental to the demo (ORM, utility library, logging framework) must not
   appear. Document the rationale in `go.mod` or `README.md` when a non-obvious

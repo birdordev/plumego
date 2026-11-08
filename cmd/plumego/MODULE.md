@@ -31,15 +31,15 @@ plumego/                           # Main module
 
 ### cmd/plumego/go.mod:
 ```go
-module github.com/spcent/plumego/cmd/plumego
+module github.com/birdordev/plumego/cmd/plumego
 
 go 1.26.0
 
 // Use local plumego package
-replace github.com/spcent/plumego => ../..
+replace github.com/birdordev/plumego => ../..
 
 require (
-    github.com/spcent/plumego v0.0.0-00010101000000-000000000000
+    github.com/birdordev/plumego v0.0.0-00010101000000-000000000000
     gopkg.in/yaml.v3 v3.0.1
 )
 ```
@@ -199,7 +199,7 @@ When releasing the CLI:
 
 2. **Verify tagged CLI installation** before advertising it:
    ```bash
-   GOBIN="$(mktemp -d)" go install github.com/spcent/plumego/cmd/plumego@v1.0.0
+   GOBIN="$(mktemp -d)" go install github.com/birdordev/plumego/cmd/plumego@v1.0.0
    "$(ls "$GOBIN"/plumego)" version
    ```
 
@@ -210,17 +210,17 @@ When releasing the CLI:
 3. **If tagged installation has not been verified**, document source install as
    the supported path:
    ```bash
-   git clone https://github.com/spcent/plumego.git
+   git clone https://github.com/birdordev/plumego.git
    cd plumego/cmd/plumego
    go build -o plumego .
    ```
 
 4. **Projects use core** with:
    ```go
-   import "github.com/spcent/plumego/core"
+   import "github.com/birdordev/plumego/core"
    ```
    ```bash
-   go get github.com/spcent/plumego@v1.0.0
+   go get github.com/birdordev/plumego@v1.0.0
    ```
 
 ## FAQ
@@ -232,7 +232,7 @@ When releasing the CLI:
 **A**: Yes, but you'll get the YAML dependency. If you only need CLI functionality without YAML output, we recommend copying the relevant code.
 
 ### Q: Does this affect go get?
-**A**: No. Users can still `go get github.com/spcent/plumego` and get the core library without CLI dependencies.
+**A**: No. Users can still `go get github.com/birdordev/plumego` and get the core library without CLI dependencies.
 
 ### Q: What about the replace directive?
 **A**: It is required for local development and building from a repository
@@ -244,7 +244,7 @@ release checklist verifies it against the actual tag.
 ```bash
 # Verify core module has no extra dependencies
 cd /home/user/plumego
-go mod graph | grep -v "github.com/spcent/plumego"
+go mod graph | grep -v "github.com/birdordev/plumego"
 # Should output nothing or only Go standard library
 
 # Verify CLI module dependencies

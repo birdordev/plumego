@@ -1,34 +1,34 @@
 # plumego extension api snapshot v1
-module	github.com/spcent/plumego
+module	github.com/birdordev/plumego
 pattern	./x/data/idempotency
-symbol	github.com/spcent/plumego/x/data/idempotency	const	DialectMySQL	const DialectMySQL Dialect = "mysql"
-symbol	github.com/spcent/plumego/x/data/idempotency	const	DialectPostgres	const DialectPostgres Dialect = "postgres"
-symbol	github.com/spcent/plumego/x/data/idempotency	const	StatusCompleted	const StatusCompleted = stable.StatusCompleted
-symbol	github.com/spcent/plumego/x/data/idempotency	const	StatusInProgress	const StatusInProgress = stable.StatusInProgress
-symbol	github.com/spcent/plumego/x/data/idempotency	func	DefaultKVConfig	func DefaultKVConfigfunc() KVConfig
-symbol	github.com/spcent/plumego/x/data/idempotency	func	DefaultSQLConfig	func DefaultSQLConfigfunc() SQLConfig
-symbol	github.com/spcent/plumego/x/data/idempotency	func	NewKVStore	func NewKVStorefunc(store *kvstore.KVStore, cfg KVConfig) *KVStore
-symbol	github.com/spcent/plumego/x/data/idempotency	func	NewSQLStore	func NewSQLStorefunc(db *sql.DB, cfg SQLConfig) *SQLStore
-symbol	github.com/spcent/plumego/x/data/idempotency	func	ValidateKey	func ValidateKeyfunc(key string) error
-symbol	github.com/spcent/plumego/x/data/idempotency	func	ValidateRecord	func ValidateRecordfunc(record Record) error
-symbol	github.com/spcent/plumego/x/data/idempotency	method	KVStore.Complete	func (KVStore) Completefunc(ctx context.Context, key string, response []byte) error
-symbol	github.com/spcent/plumego/x/data/idempotency	method	KVStore.Delete	func (KVStore) Deletefunc(_ context.Context, key string) error
-symbol	github.com/spcent/plumego/x/data/idempotency	method	KVStore.Get	func (KVStore) Getfunc(_ context.Context, key string) (Record, bool, error)
-symbol	github.com/spcent/plumego/x/data/idempotency	method	KVStore.PutIfAbsent	func (KVStore) PutIfAbsentfunc(ctx context.Context, record Record) (bool, error)
-symbol	github.com/spcent/plumego/x/data/idempotency	method	SQLStore.Complete	func (SQLStore) Completefunc(ctx context.Context, key string, response []byte) error
-symbol	github.com/spcent/plumego/x/data/idempotency	method	SQLStore.Delete	func (SQLStore) Deletefunc(ctx context.Context, key string) error
-symbol	github.com/spcent/plumego/x/data/idempotency	method	SQLStore.Get	func (SQLStore) Getfunc(ctx context.Context, key string) (Record, bool, error)
-symbol	github.com/spcent/plumego/x/data/idempotency	method	SQLStore.PutIfAbsent	func (SQLStore) PutIfAbsentfunc(ctx context.Context, record Record) (bool, error)
-symbol	github.com/spcent/plumego/x/data/idempotency	type	Dialect	type Dialect string
-symbol	github.com/spcent/plumego/x/data/idempotency	type	KVConfig	type KVConfig struct { Prefix string Now func() time.Time }
-symbol	github.com/spcent/plumego/x/data/idempotency	type	KVStore	type KVStore struct { }
-symbol	github.com/spcent/plumego/x/data/idempotency	type	Record	type Record = stable.Record
-symbol	github.com/spcent/plumego/x/data/idempotency	type	SQLConfig	type SQLConfig struct { Dialect Dialect Table string Now func() time.Time DuplicateError func(error) bool }
-symbol	github.com/spcent/plumego/x/data/idempotency	type	SQLStore	type SQLStore struct { }
-symbol	github.com/spcent/plumego/x/data/idempotency	type	Status	type Status = stable.Status
-symbol	github.com/spcent/plumego/x/data/idempotency	type	Store	type Store = stable.Store
-symbol	github.com/spcent/plumego/x/data/idempotency	var	ErrExpired	var ErrExpired = stable.ErrExpired
-symbol	github.com/spcent/plumego/x/data/idempotency	var	ErrInvalidConfig	var ErrInvalidConfig = errors.New("idempotency: invalid config")
-symbol	github.com/spcent/plumego/x/data/idempotency	var	ErrInvalidKey	var ErrInvalidKey = stable.ErrInvalidKey
-symbol	github.com/spcent/plumego/x/data/idempotency	var	ErrInvalidRecord	var ErrInvalidRecord = stable.ErrInvalidRecord
-symbol	github.com/spcent/plumego/x/data/idempotency	var	ErrNotFound	var ErrNotFound = stable.ErrNotFound
+symbol	github.com/birdordev/plumego/x/data/idempotency	const	DialectMySQL	const DialectMySQL Dialect = "mysql"
+symbol	github.com/birdordev/plumego/x/data/idempotency	const	DialectPostgres	const DialectPostgres Dialect = "postgres"
+symbol	github.com/birdordev/plumego/x/data/idempotency	const	StatusCompleted	const StatusCompleted = stable.StatusCompleted
+symbol	github.com/birdordev/plumego/x/data/idempotency	const	StatusInProgress	const StatusInProgress = stable.StatusInProgress
+symbol	github.com/birdordev/plumego/x/data/idempotency	func	DefaultKVConfig	func DefaultKVConfigfunc() KVConfig
+symbol	github.com/birdordev/plumego/x/data/idempotency	func	DefaultSQLConfig	func DefaultSQLConfigfunc() SQLConfig
+symbol	github.com/birdordev/plumego/x/data/idempotency	func	NewKVStore	func NewKVStorefunc(store *kvstore.KVStore, cfg KVConfig) *KVStore
+symbol	github.com/birdordev/plumego/x/data/idempotency	func	NewSQLStore	func NewSQLStorefunc(db *sql.DB, cfg SQLConfig) *SQLStore
+symbol	github.com/birdordev/plumego/x/data/idempotency	func	ValidateKey	func ValidateKeyfunc(key string) error
+symbol	github.com/birdordev/plumego/x/data/idempotency	func	ValidateRecord	func ValidateRecordfunc(record Record) error
+symbol	github.com/birdordev/plumego/x/data/idempotency	method	KVStore.Complete	func (KVStore) Completefunc(ctx context.Context, key string, response []byte) error
+symbol	github.com/birdordev/plumego/x/data/idempotency	method	KVStore.Delete	func (KVStore) Deletefunc(_ context.Context, key string) error
+symbol	github.com/birdordev/plumego/x/data/idempotency	method	KVStore.Get	func (KVStore) Getfunc(_ context.Context, key string) (Record, bool, error)
+symbol	github.com/birdordev/plumego/x/data/idempotency	method	KVStore.PutIfAbsent	func (KVStore) PutIfAbsentfunc(ctx context.Context, record Record) (bool, error)
+symbol	github.com/birdordev/plumego/x/data/idempotency	method	SQLStore.Complete	func (SQLStore) Completefunc(ctx context.Context, key string, response []byte) error
+symbol	github.com/birdordev/plumego/x/data/idempotency	method	SQLStore.Delete	func (SQLStore) Deletefunc(ctx context.Context, key string) error
+symbol	github.com/birdordev/plumego/x/data/idempotency	method	SQLStore.Get	func (SQLStore) Getfunc(ctx context.Context, key string) (Record, bool, error)
+symbol	github.com/birdordev/plumego/x/data/idempotency	method	SQLStore.PutIfAbsent	func (SQLStore) PutIfAbsentfunc(ctx context.Context, record Record) (bool, error)
+symbol	github.com/birdordev/plumego/x/data/idempotency	type	Dialect	type Dialect string
+symbol	github.com/birdordev/plumego/x/data/idempotency	type	KVConfig	type KVConfig struct { Prefix string Now func() time.Time }
+symbol	github.com/birdordev/plumego/x/data/idempotency	type	KVStore	type KVStore struct { }
+symbol	github.com/birdordev/plumego/x/data/idempotency	type	Record	type Record = stable.Record
+symbol	github.com/birdordev/plumego/x/data/idempotency	type	SQLConfig	type SQLConfig struct { Dialect Dialect Table string Now func() time.Time DuplicateError func(error) bool }
+symbol	github.com/birdordev/plumego/x/data/idempotency	type	SQLStore	type SQLStore struct { }
+symbol	github.com/birdordev/plumego/x/data/idempotency	type	Status	type Status = stable.Status
+symbol	github.com/birdordev/plumego/x/data/idempotency	type	Store	type Store = stable.Store
+symbol	github.com/birdordev/plumego/x/data/idempotency	var	ErrExpired	var ErrExpired = stable.ErrExpired
+symbol	github.com/birdordev/plumego/x/data/idempotency	var	ErrInvalidConfig	var ErrInvalidConfig = errors.New("idempotency: invalid config")
+symbol	github.com/birdordev/plumego/x/data/idempotency	var	ErrInvalidKey	var ErrInvalidKey = stable.ErrInvalidKey
+symbol	github.com/birdordev/plumego/x/data/idempotency	var	ErrInvalidRecord	var ErrInvalidRecord = stable.ErrInvalidRecord
+symbol	github.com/birdordev/plumego/x/data/idempotency	var	ErrNotFound	var ErrNotFound = stable.ErrNotFound

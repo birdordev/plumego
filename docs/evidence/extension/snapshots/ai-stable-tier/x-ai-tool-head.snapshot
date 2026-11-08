@@ -1,40 +1,40 @@
 # plumego extension api snapshot v1
-module	github.com/spcent/plumego
+module	github.com/birdordev/plumego
 pattern	./x/ai/tool
-symbol	github.com/spcent/plumego/x/ai/tool	func	FormatResultAsString	func FormatResultAsStringfunc(result *Result) string
-symbol	github.com/spcent/plumego/x/ai/tool	func	NewAllowListPolicy	func NewAllowListPolicyfunc(tools []string) *AllowListPolicy
-symbol	github.com/spcent/plumego/x/ai/tool	func	NewBashTool	func NewBashToolfunc(timeout time.Duration) Tool
-symbol	github.com/spcent/plumego/x/ai/tool	func	NewCalculatorTool	func NewCalculatorToolfunc() Tool
-symbol	github.com/spcent/plumego/x/ai/tool	func	NewEchoTool	func NewEchoToolfunc() Tool
-symbol	github.com/spcent/plumego/x/ai/tool	func	NewFuncTool	func NewFuncToolfunc(name, description string, inputSchema map[string]any, fn func(context.Context, map[string]any) (any, error)) *FuncTool
-symbol	github.com/spcent/plumego/x/ai/tool	func	NewReadFileTool	func NewReadFileToolfunc() Tool
-symbol	github.com/spcent/plumego/x/ai/tool	func	NewRegistry	func NewRegistryfunc(opts ...RegistryOption) *Registry
-symbol	github.com/spcent/plumego/x/ai/tool	func	NewTimestampTool	func NewTimestampToolfunc() Tool
-symbol	github.com/spcent/plumego/x/ai/tool	func	NewWriteFileTool	func NewWriteFileToolfunc() Tool
-symbol	github.com/spcent/plumego/x/ai/tool	func	WithPolicy	func WithPolicyfunc(policy Policy) RegistryOption
-symbol	github.com/spcent/plumego/x/ai/tool	method	AllowAllPolicy.CanExecute	func (AllowAllPolicy) CanExecutefunc(ctx context.Context, toolName string) bool
-symbol	github.com/spcent/plumego/x/ai/tool	method	AllowAllPolicy.GetAllowedTools	func (AllowAllPolicy) GetAllowedToolsfunc(ctx context.Context) []string
-symbol	github.com/spcent/plumego/x/ai/tool	method	AllowListPolicy.Add	func (AllowListPolicy) Addfunc(toolName string)
-symbol	github.com/spcent/plumego/x/ai/tool	method	AllowListPolicy.CanExecute	func (AllowListPolicy) CanExecutefunc(ctx context.Context, toolName string) bool
-symbol	github.com/spcent/plumego/x/ai/tool	method	AllowListPolicy.GetAllowedTools	func (AllowListPolicy) GetAllowedToolsfunc(ctx context.Context) []string
-symbol	github.com/spcent/plumego/x/ai/tool	method	AllowListPolicy.Remove	func (AllowListPolicy) Removefunc(toolName string)
-symbol	github.com/spcent/plumego/x/ai/tool	method	FuncTool.Description	func (FuncTool) Descriptionfunc() string
-symbol	github.com/spcent/plumego/x/ai/tool	method	FuncTool.Execute	func (FuncTool) Executefunc(ctx context.Context, input map[string]any) (*Result, error)
-symbol	github.com/spcent/plumego/x/ai/tool	method	FuncTool.InputSchema	func (FuncTool) InputSchemafunc() map[string]any
-symbol	github.com/spcent/plumego/x/ai/tool	method	FuncTool.Name	func (FuncTool) Namefunc() string
-symbol	github.com/spcent/plumego/x/ai/tool	method	Registry.Execute	func (Registry) Executefunc(ctx context.Context, name string, input map[string]any) (*Result, error)
-symbol	github.com/spcent/plumego/x/ai/tool	method	Registry.ExecuteToolUse	func (Registry) ExecuteToolUsefunc(ctx context.Context, toolUse *provider.ToolUse) (*Result, error)
-symbol	github.com/spcent/plumego/x/ai/tool	method	Registry.Get	func (Registry) Getfunc(name string) (Tool, error)
-symbol	github.com/spcent/plumego/x/ai/tool	method	Registry.List	func (Registry) Listfunc() []Tool
-symbol	github.com/spcent/plumego/x/ai/tool	method	Registry.ListForContext	func (Registry) ListForContextfunc(ctx context.Context) []Tool
-symbol	github.com/spcent/plumego/x/ai/tool	method	Registry.Register	func (Registry) Registerfunc(tool Tool) error
-symbol	github.com/spcent/plumego/x/ai/tool	method	Registry.ToProviderTools	func (Registry) ToProviderToolsfunc(ctx context.Context) []provider.Tool
-symbol	github.com/spcent/plumego/x/ai/tool	type	AllowAllPolicy	type AllowAllPolicy struct{}
-symbol	github.com/spcent/plumego/x/ai/tool	type	AllowListPolicy	type AllowListPolicy struct { allowedTools map[string]bool mu sync.RWMutex }
-symbol	github.com/spcent/plumego/x/ai/tool	type	FuncTool	type FuncTool struct { name string description string inputSchema map[string]any fn func(context.Context, map[string]any) (any, error) }
-symbol	github.com/spcent/plumego/x/ai/tool	type	Metrics	type Metrics struct { Duration time.Duration RetryCount int Timestamp time.Time }
-symbol	github.com/spcent/plumego/x/ai/tool	type	Policy	type Policy interface { CanExecute(ctx context.Context, toolName string) bool GetAllowedTools(ctx context.Context) []string }
-symbol	github.com/spcent/plumego/x/ai/tool	type	Registry	type Registry struct { tools map[string]Tool policy Policy mu sync.RWMutex }
-symbol	github.com/spcent/plumego/x/ai/tool	type	RegistryOption	type RegistryOption func(*Registry)
-symbol	github.com/spcent/plumego/x/ai/tool	type	Result	type Result struct { Output any Error error Metrics Metrics IsError bool }
-symbol	github.com/spcent/plumego/x/ai/tool	type	Tool	type Tool interface { Name() string Description() string InputSchema() map[string]any Execute(ctx context.Context, input map[string]any) (*Result, error) }
+symbol	github.com/birdordev/plumego/x/ai/tool	func	FormatResultAsString	func FormatResultAsStringfunc(result *Result) string
+symbol	github.com/birdordev/plumego/x/ai/tool	func	NewAllowListPolicy	func NewAllowListPolicyfunc(tools []string) *AllowListPolicy
+symbol	github.com/birdordev/plumego/x/ai/tool	func	NewBashTool	func NewBashToolfunc(timeout time.Duration) Tool
+symbol	github.com/birdordev/plumego/x/ai/tool	func	NewCalculatorTool	func NewCalculatorToolfunc() Tool
+symbol	github.com/birdordev/plumego/x/ai/tool	func	NewEchoTool	func NewEchoToolfunc() Tool
+symbol	github.com/birdordev/plumego/x/ai/tool	func	NewFuncTool	func NewFuncToolfunc(name, description string, inputSchema map[string]any, fn func(context.Context, map[string]any) (any, error)) *FuncTool
+symbol	github.com/birdordev/plumego/x/ai/tool	func	NewReadFileTool	func NewReadFileToolfunc() Tool
+symbol	github.com/birdordev/plumego/x/ai/tool	func	NewRegistry	func NewRegistryfunc(opts ...RegistryOption) *Registry
+symbol	github.com/birdordev/plumego/x/ai/tool	func	NewTimestampTool	func NewTimestampToolfunc() Tool
+symbol	github.com/birdordev/plumego/x/ai/tool	func	NewWriteFileTool	func NewWriteFileToolfunc() Tool
+symbol	github.com/birdordev/plumego/x/ai/tool	func	WithPolicy	func WithPolicyfunc(policy Policy) RegistryOption
+symbol	github.com/birdordev/plumego/x/ai/tool	method	AllowAllPolicy.CanExecute	func (AllowAllPolicy) CanExecutefunc(ctx context.Context, toolName string) bool
+symbol	github.com/birdordev/plumego/x/ai/tool	method	AllowAllPolicy.GetAllowedTools	func (AllowAllPolicy) GetAllowedToolsfunc(ctx context.Context) []string
+symbol	github.com/birdordev/plumego/x/ai/tool	method	AllowListPolicy.Add	func (AllowListPolicy) Addfunc(toolName string)
+symbol	github.com/birdordev/plumego/x/ai/tool	method	AllowListPolicy.CanExecute	func (AllowListPolicy) CanExecutefunc(ctx context.Context, toolName string) bool
+symbol	github.com/birdordev/plumego/x/ai/tool	method	AllowListPolicy.GetAllowedTools	func (AllowListPolicy) GetAllowedToolsfunc(ctx context.Context) []string
+symbol	github.com/birdordev/plumego/x/ai/tool	method	AllowListPolicy.Remove	func (AllowListPolicy) Removefunc(toolName string)
+symbol	github.com/birdordev/plumego/x/ai/tool	method	FuncTool.Description	func (FuncTool) Descriptionfunc() string
+symbol	github.com/birdordev/plumego/x/ai/tool	method	FuncTool.Execute	func (FuncTool) Executefunc(ctx context.Context, input map[string]any) (*Result, error)
+symbol	github.com/birdordev/plumego/x/ai/tool	method	FuncTool.InputSchema	func (FuncTool) InputSchemafunc() map[string]any
+symbol	github.com/birdordev/plumego/x/ai/tool	method	FuncTool.Name	func (FuncTool) Namefunc() string
+symbol	github.com/birdordev/plumego/x/ai/tool	method	Registry.Execute	func (Registry) Executefunc(ctx context.Context, name string, input map[string]any) (*Result, error)
+symbol	github.com/birdordev/plumego/x/ai/tool	method	Registry.ExecuteToolUse	func (Registry) ExecuteToolUsefunc(ctx context.Context, toolUse *provider.ToolUse) (*Result, error)
+symbol	github.com/birdordev/plumego/x/ai/tool	method	Registry.Get	func (Registry) Getfunc(name string) (Tool, error)
+symbol	github.com/birdordev/plumego/x/ai/tool	method	Registry.List	func (Registry) Listfunc() []Tool
+symbol	github.com/birdordev/plumego/x/ai/tool	method	Registry.ListForContext	func (Registry) ListForContextfunc(ctx context.Context) []Tool
+symbol	github.com/birdordev/plumego/x/ai/tool	method	Registry.Register	func (Registry) Registerfunc(tool Tool) error
+symbol	github.com/birdordev/plumego/x/ai/tool	method	Registry.ToProviderTools	func (Registry) ToProviderToolsfunc(ctx context.Context) []provider.Tool
+symbol	github.com/birdordev/plumego/x/ai/tool	type	AllowAllPolicy	type AllowAllPolicy struct{}
+symbol	github.com/birdordev/plumego/x/ai/tool	type	AllowListPolicy	type AllowListPolicy struct { allowedTools map[string]bool mu sync.RWMutex }
+symbol	github.com/birdordev/plumego/x/ai/tool	type	FuncTool	type FuncTool struct { name string description string inputSchema map[string]any fn func(context.Context, map[string]any) (any, error) }
+symbol	github.com/birdordev/plumego/x/ai/tool	type	Metrics	type Metrics struct { Duration time.Duration RetryCount int Timestamp time.Time }
+symbol	github.com/birdordev/plumego/x/ai/tool	type	Policy	type Policy interface { CanExecute(ctx context.Context, toolName string) bool GetAllowedTools(ctx context.Context) []string }
+symbol	github.com/birdordev/plumego/x/ai/tool	type	Registry	type Registry struct { tools map[string]Tool policy Policy mu sync.RWMutex }
+symbol	github.com/birdordev/plumego/x/ai/tool	type	RegistryOption	type RegistryOption func(*Registry)
+symbol	github.com/birdordev/plumego/x/ai/tool	type	Result	type Result struct { Output any Error error Metrics Metrics IsError bool }
+symbol	github.com/birdordev/plumego/x/ai/tool	type	Tool	type Tool interface { Name() string Description() string InputSchema() map[string]any Execute(ctx context.Context, input map[string]any) (*Result, error) }

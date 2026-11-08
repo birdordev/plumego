@@ -6,7 +6,7 @@ require (
 	github.com/gin-gonic/gin v1.12.0
 	github.com/go-chi/chi/v5 v5.5.0
 	github.com/labstack/echo/v4 v4.16.3
-	github.com/spcent/plumego v0.0.0
+	github.com/birdordev/plumego v0.0.0
 )
 
 require (
@@ -45,4 +45,4 @@ require (
 	google.golang.org/protobuf v1.36.10 // indirect
 )
 
-replace github.com/spcent/plumego => ../..
+replace github.com/birdordev/plumego => ../..

@@ -5,7 +5,7 @@ Records structured access logs for every HTTP request.
 ## Import
 
 ```go
-import "github.com/spcent/plumego/middleware/accesslog"
+import "github.com/birdordev/plumego/middleware/accesslog"
 ```
 
 ## Overview

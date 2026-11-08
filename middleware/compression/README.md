@@ -5,7 +5,7 @@ Conditionally compresses HTTP responses with gzip.
 ## Import
 
 ```go
-import "github.com/spcent/plumego/middleware/compression"
+import "github.com/birdordev/plumego/middleware/compression"
 ```
 
 ## Overview

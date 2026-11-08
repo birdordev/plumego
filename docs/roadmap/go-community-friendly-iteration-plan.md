@@ -602,7 +602,7 @@ Each phase is released as a PR so progress is visible.
 make gates
 
 # Check all links in markdown (new tool or manual spot-check)
-grep -r "http" docs/ README.md | grep -v "github.com/spcent/plumego" | head -20
+grep -r "http" docs/ README.md | grep -v "github.com/birdordev/plumego" | head -20
 
 # Verify examples run
 go run ./examples/hello/main.go &
@@ -754,7 +754,7 @@ make gates
 make validate-diff
 
 # Check all links in docs (manual or add to Makefile)
-grep -r "http" docs/ README.md | grep -v "github.com/spcent/plumego" | wc -l
+grep -r "http" docs/ README.md | grep -v "github.com/birdordev/plumego" | wc -l
 
 # Verify examples compile
 go test ./examples/...
@@ -769,9 +769,9 @@ go run ./internal/checks/dependency-rules
 go run ./internal/checks/reference-layout
 
 # Spot-check key API surfaces (godoc)
-go doc -short github.com/spcent/plumego/core | head -30
-go doc -short github.com/spcent/plumego/router | head -30
-go doc -short github.com/spcent/plumego/contract | head -30
+go doc -short github.com/birdordev/plumego/core | head -30
+go doc -short github.com/birdordev/plumego/router | head -30
+go doc -short github.com/birdordev/plumego/contract | head -30
 ```
 
 ---

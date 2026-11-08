@@ -58,7 +58,7 @@ _ = contract.WriteResponse(w, r, http.StatusOK, user, nil)
 ### store/kv — 基于文件的 KV 存储
 
 ```go
-import kvstore "github.com/spcent/plumego/store/kv"
+import kvstore "github.com/birdordev/plumego/store/kv"
 
 kv, err := kvstore.NewKVStore(kvstore.Options{
     DataDir: "/var/lib/myapp/kv",
@@ -80,7 +80,7 @@ exists := kv.Exists("session:abc")
 ### store/cache — 内存缓存
 
 ```go
-import "github.com/spcent/plumego/store/cache"
+import "github.com/birdordev/plumego/store/cache"
 
 c, err := cache.NewMemoryCacheWithConfig(cache.DefaultConfig())
 if err != nil { ... }
@@ -105,7 +105,7 @@ type Cache interface {
 ### store/db — SQL 助手
 
 ```go
-import "github.com/spcent/plumego/store/db"
+import "github.com/birdordev/plumego/store/db"
 
 sqlDB, err := db.Open(db.DefaultConfig("postgres", dsn))
 if err != nil { ... }
@@ -123,7 +123,7 @@ err = db.WithTransaction(ctx, sqlDB, nil, func(tx *sql.Tx) error {
 ### store/idempotency — 精确一次操作保障
 
 ```go
-import "github.com/spcent/plumego/store/idempotency"
+import "github.com/birdordev/plumego/store/idempotency"
 
 // 实现 Store 接口（或使用 x/data/idempotency 获取持久化 provider）
 var idem idempotency.Store

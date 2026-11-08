@@ -44,7 +44,7 @@ sidebar:
 永远不要将 `APIError` 构造为结构体字面量。使用 builder：
 
 ```go
-import "github.com/spcent/plumego/contract"
+import "github.com/birdordev/plumego/contract"
 
 _ = contract.WriteError(w, r, contract.NewErrorBuilder().
     Type(contract.TypeRequired).
@@ -174,8 +174,8 @@ func (h *Handler) GetUser(w http.ResponseWriter, r *http.Request) {
 
 参考服务的 handler 文件展示了 `WriteError` 和 `NewErrorBuilder` 在完整可运行 handler 中的用法：
 
-- [`reference/standard-service/internal/handler/api.go`](https://github.com/spcent/plumego/blob/main/reference/standard-service/internal/handler/api.go)
-- [`reference/standard-service/internal/handler/health.go`](https://github.com/spcent/plumego/blob/main/reference/standard-service/internal/handler/health.go)
+- [`reference/standard-service/internal/handler/api.go`](https://github.com/birdordev/plumego/blob/main/reference/standard-service/internal/handler/api.go)
+- [`reference/standard-service/internal/handler/health.go`](https://github.com/birdordev/plumego/blob/main/reference/standard-service/internal/handler/health.go)
 
 ## 下一步阅读
 

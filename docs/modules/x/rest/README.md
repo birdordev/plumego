@@ -77,8 +77,8 @@ request through the registered route.
 package users
 
 import (
-	"github.com/spcent/plumego/router"
-	"github.com/spcent/plumego/x/rest"
+	"github.com/birdordev/plumego/router"
+	"github.com/birdordev/plumego/x/rest"
 )
 
 func RegisterRoutes(r *router.Router, repository rest.Repository[User]) {

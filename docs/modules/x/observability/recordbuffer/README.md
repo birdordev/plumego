@@ -1,6 +1,6 @@
 # x/observability/recordbuffer
 
-> **Import path:** `github.com/spcent/plumego/x/observability/recordbuffer` — sub-package of [`x/observability`](../README.md).
+> **Import path:** `github.com/birdordev/plumego/x/observability/recordbuffer` — sub-package of [`x/observability`](../README.md).
 
 ## Purpose
 

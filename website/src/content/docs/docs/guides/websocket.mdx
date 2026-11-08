@@ -22,7 +22,7 @@ Boundary rationale is in the [x/websocket Primer](/docs/modules/x-websocket).
 import (
     "os"
 
-    "github.com/spcent/plumego/x/websocket"
+    "github.com/birdordev/plumego/x/websocket"
 )
 
 cfg := websocket.DefaultWebSocketConfig()
@@ -48,7 +48,7 @@ if err != nil {
 Mount the WebSocket endpoint on your application router:
 
 ```go
-import "github.com/spcent/plumego/router"
+import "github.com/birdordev/plumego/router"
 
 r := router.NewRouter()
 if err := ws.RegisterRoutes(r); err != nil {
@@ -82,7 +82,7 @@ For full control — custom room names, JWT auth, connection metadata — call `
 import (
     "net/http"
     "time"
-    "github.com/spcent/plumego/x/websocket"
+    "github.com/birdordev/plumego/x/websocket"
 )
 
 type ChatHandler struct {

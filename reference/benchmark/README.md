@@ -6,7 +6,7 @@ It keeps comparison-only dependencies (chi, gin, echo) out of the main module.
 ## Prerequisites
 
 - Go 1.24 or newer.
-- A source checkout of `github.com/spcent/plumego`.
+- A source checkout of `github.com/birdordev/plumego`.
 
 ## Run
 

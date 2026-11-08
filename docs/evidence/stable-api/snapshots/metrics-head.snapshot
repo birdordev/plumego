@@ -1,31 +1,31 @@
 # plumego extension api snapshot v1
-module	github.com/spcent/plumego
+module	github.com/birdordev/plumego
 pattern	./metrics/...
-symbol	github.com/spcent/plumego/metrics	const	MetricHTTPRequest	const MetricHTTPRequest = "http_request"
-symbol	github.com/spcent/plumego/metrics	func	NewBaseMetricsCollector	func NewBaseMetricsCollectorfunc() *BaseMetricsCollector
-symbol	github.com/spcent/plumego/metrics	func	NewHTTPRecord	func NewHTTPRecordfunc(method, path string, status int, duration time.Duration) MetricRecord
-symbol	github.com/spcent/plumego/metrics	func	NewMultiCollector	func NewMultiCollectorfunc(collectors ...AggregateCollector) AggregateCollector
-symbol	github.com/spcent/plumego/metrics	func	NewNoopCollector	func NewNoopCollectorfunc() *NoopCollector
-symbol	github.com/spcent/plumego/metrics	method	BaseMetricsCollector.Clear	func (BaseMetricsCollector) Clearfunc()
-symbol	github.com/spcent/plumego/metrics	method	BaseMetricsCollector.GetStats	func (BaseMetricsCollector) GetStatsfunc() CollectorStats
-symbol	github.com/spcent/plumego/metrics	method	BaseMetricsCollector.ObserveHTTP	func (BaseMetricsCollector) ObserveHTTPfunc(ctx context.Context, method, path string, status, bytes int, duration time.Duration)
-symbol	github.com/spcent/plumego/metrics	method	BaseMetricsCollector.Record	func (BaseMetricsCollector) Recordfunc(ctx context.Context, record MetricRecord)
-symbol	github.com/spcent/plumego/metrics	method	MultiCollector.Clear	func (MultiCollector) Clearfunc()
-symbol	github.com/spcent/plumego/metrics	method	MultiCollector.GetStats	func (MultiCollector) GetStatsfunc() CollectorStats
-symbol	github.com/spcent/plumego/metrics	method	MultiCollector.ObserveHTTP	func (MultiCollector) ObserveHTTPfunc(ctx context.Context, method, path string, status, bytes int, duration time.Duration)
-symbol	github.com/spcent/plumego/metrics	method	MultiCollector.Record	func (MultiCollector) Recordfunc(ctx context.Context, record MetricRecord)
-symbol	github.com/spcent/plumego/metrics	method	NoopCollector.Clear	func (NoopCollector) Clearfunc()
-symbol	github.com/spcent/plumego/metrics	method	NoopCollector.GetStats	func (NoopCollector) GetStatsfunc() CollectorStats
-symbol	github.com/spcent/plumego/metrics	method	NoopCollector.ObserveHTTP	func (NoopCollector) ObserveHTTPfunc(ctx context.Context, method, path string, status, bytes int, duration time.Duration)
-symbol	github.com/spcent/plumego/metrics	method	NoopCollector.Record	func (NoopCollector) Recordfunc(ctx context.Context, record MetricRecord)
-symbol	github.com/spcent/plumego/metrics	type	AggregateCollector	type AggregateCollector interface { Record(ctx context.Context, record MetricRecord) ObserveHTTP(ctx context.Context, method, path string, status, bytes int, duration time.Duration) GetStats() CollectorStats Clear() }
-symbol	github.com/spcent/plumego/metrics	type	BaseMetricsCollector	type BaseMetricsCollector struct { }
-symbol	github.com/spcent/plumego/metrics	type	CollectorStats	type CollectorStats struct { TotalRecords int64 `json:"total_records"` ErrorRecords int64 `json:"error_records"` ActiveSeries int `json:"active_series"` StartTime time.Time `json:"start_time"` NameBreakdown map[string]int64 `json:"name_breakdown"` }
-symbol	github.com/spcent/plumego/metrics	type	HTTPObserver	type HTTPObserver interface { ObserveHTTP(ctx context.Context, method, path string, status, bytes int, duration time.Duration) }
-symbol	github.com/spcent/plumego/metrics	type	MetricLabels	type MetricLabels map[string]string
-symbol	github.com/spcent/plumego/metrics	type	MetricRecord	type MetricRecord struct { Name string Value float64 Labels MetricLabels Timestamp time.Time Duration time.Duration Error error }
-symbol	github.com/spcent/plumego/metrics	type	MultiCollector	type MultiCollector struct { }
-symbol	github.com/spcent/plumego/metrics	type	NoopCollector	type NoopCollector struct{}
-symbol	github.com/spcent/plumego/metrics	type	Recorder	type Recorder interface { Record(ctx context.Context, record MetricRecord) }
-symbol	github.com/spcent/plumego/metrics	type	Resetter	type Resetter interface { Clear() }
-symbol	github.com/spcent/plumego/metrics	type	StatsReader	type StatsReader interface { GetStats() CollectorStats }
+symbol	github.com/birdordev/plumego/metrics	const	MetricHTTPRequest	const MetricHTTPRequest = "http_request"
+symbol	github.com/birdordev/plumego/metrics	func	NewBaseMetricsCollector	func NewBaseMetricsCollectorfunc() *BaseMetricsCollector
+symbol	github.com/birdordev/plumego/metrics	func	NewHTTPRecord	func NewHTTPRecordfunc(method, path string, status int, duration time.Duration) MetricRecord
+symbol	github.com/birdordev/plumego/metrics	func	NewMultiCollector	func NewMultiCollectorfunc(collectors ...AggregateCollector) AggregateCollector
+symbol	github.com/birdordev/plumego/metrics	func	NewNoopCollector	func NewNoopCollectorfunc() *NoopCollector
+symbol	github.com/birdordev/plumego/metrics	method	BaseMetricsCollector.Clear	func (BaseMetricsCollector) Clearfunc()
+symbol	github.com/birdordev/plumego/metrics	method	BaseMetricsCollector.GetStats	func (BaseMetricsCollector) GetStatsfunc() CollectorStats
+symbol	github.com/birdordev/plumego/metrics	method	BaseMetricsCollector.ObserveHTTP	func (BaseMetricsCollector) ObserveHTTPfunc(ctx context.Context, method, path string, status, bytes int, duration time.Duration)
+symbol	github.com/birdordev/plumego/metrics	method	BaseMetricsCollector.Record	func (BaseMetricsCollector) Recordfunc(ctx context.Context, record MetricRecord)
+symbol	github.com/birdordev/plumego/metrics	method	MultiCollector.Clear	func (MultiCollector) Clearfunc()
+symbol	github.com/birdordev/plumego/metrics	method	MultiCollector.GetStats	func (MultiCollector) GetStatsfunc() CollectorStats
+symbol	github.com/birdordev/plumego/metrics	method	MultiCollector.ObserveHTTP	func (MultiCollector) ObserveHTTPfunc(ctx context.Context, method, path string, status, bytes int, duration time.Duration)
+symbol	github.com/birdordev/plumego/metrics	method	MultiCollector.Record	func (MultiCollector) Recordfunc(ctx context.Context, record MetricRecord)
+symbol	github.com/birdordev/plumego/metrics	method	NoopCollector.Clear	func (NoopCollector) Clearfunc()
+symbol	github.com/birdordev/plumego/metrics	method	NoopCollector.GetStats	func (NoopCollector) GetStatsfunc() CollectorStats
+symbol	github.com/birdordev/plumego/metrics	method	NoopCollector.ObserveHTTP	func (NoopCollector) ObserveHTTPfunc(ctx context.Context, method, path string, status, bytes int, duration time.Duration)
+symbol	github.com/birdordev/plumego/metrics	method	NoopCollector.Record	func (NoopCollector) Recordfunc(ctx context.Context, record MetricRecord)
+symbol	github.com/birdordev/plumego/metrics	type	AggregateCollector	type AggregateCollector interface { Record(ctx context.Context, record MetricRecord) ObserveHTTP(ctx context.Context, method, path string, status, bytes int, duration time.Duration) GetStats() CollectorStats Clear() }
+symbol	github.com/birdordev/plumego/metrics	type	BaseMetricsCollector	type BaseMetricsCollector struct { }
+symbol	github.com/birdordev/plumego/metrics	type	CollectorStats	type CollectorStats struct { TotalRecords int64 `json:"total_records"` ErrorRecords int64 `json:"error_records"` ActiveSeries int `json:"active_series"` StartTime time.Time `json:"start_time"` NameBreakdown map[string]int64 `json:"name_breakdown"` }
+symbol	github.com/birdordev/plumego/metrics	type	HTTPObserver	type HTTPObserver interface { ObserveHTTP(ctx context.Context, method, path string, status, bytes int, duration time.Duration) }
+symbol	github.com/birdordev/plumego/metrics	type	MetricLabels	type MetricLabels map[string]string
+symbol	github.com/birdordev/plumego/metrics	type	MetricRecord	type MetricRecord struct { Name string Value float64 Labels MetricLabels Timestamp time.Time Duration time.Duration Error error }
+symbol	github.com/birdordev/plumego/metrics	type	MultiCollector	type MultiCollector struct { }
+symbol	github.com/birdordev/plumego/metrics	type	NoopCollector	type NoopCollector struct{}
+symbol	github.com/birdordev/plumego/metrics	type	Recorder	type Recorder interface { Record(ctx context.Context, record MetricRecord) }
+symbol	github.com/birdordev/plumego/metrics	type	Resetter	type Resetter interface { Clear() }
+symbol	github.com/birdordev/plumego/metrics	type	StatsReader	type StatsReader interface { GetStats() CollectorStats }

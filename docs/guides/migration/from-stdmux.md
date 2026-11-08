@@ -411,7 +411,7 @@ app.Get("/health", func(w http.ResponseWriter, r *http.Request) {
 })
 
 // Or better, use the health module:
-import "github.com/spcent/plumego/health"
+import "github.com/birdordev/plumego/health"
 
 app.Get("/health", func(w http.ResponseWriter, r *http.Request) {
     h := health.Status{Status: health.StatusHealthy}

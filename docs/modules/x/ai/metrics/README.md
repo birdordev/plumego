@@ -1,6 +1,6 @@
 # x/ai/metrics
 
-> **Import path:** `github.com/spcent/plumego/x/ai/metrics` — sub-package of [`x/ai`](../README.md).
+> **Import path:** `github.com/birdordev/plumego/x/ai/metrics` — sub-package of [`x/ai`](../README.md).
 
 ## Purpose
 

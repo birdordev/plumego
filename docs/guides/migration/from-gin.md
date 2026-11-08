@@ -35,7 +35,7 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/spcent/plumego/contract"
+	"github.com/birdordev/plumego/contract"
 )
 
 type CreateUserRequest struct {
@@ -85,7 +85,7 @@ package routes
 import (
 	"net/http"
 
-	"github.com/spcent/plumego/router"
+	"github.com/birdordev/plumego/router"
 )
 
 func RegisterUserRoutes(r *router.Router) error {
@@ -121,7 +121,7 @@ package status
 import (
 	"net/http"
 
-	"github.com/spcent/plumego/contract"
+	"github.com/birdordev/plumego/contract"
 )
 
 type StatusResponse struct {

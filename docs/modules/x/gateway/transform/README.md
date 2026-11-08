@@ -1,6 +1,6 @@
 # x/gateway/transform
 
-> **Import path:** `github.com/spcent/plumego/x/gateway/transform` — sub-package of [`x/gateway`](../README.md).
+> **Import path:** `github.com/birdordev/plumego/x/gateway/transform` — sub-package of [`x/gateway`](../README.md).
 
 ## Purpose
 

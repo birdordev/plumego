@@ -100,7 +100,7 @@ plumego new myapp --template canonical
 To copy it manually from the repository:
 
 1. Rename the module in `go.mod` to your own module path (e.g. `github.com/yourorg/myapp`).
-2. Remove the `replace` directive and pin the real published version of `github.com/spcent/plumego`.
+2. Remove the `replace` directive and pin the real published version of `github.com/birdordev/plumego`.
 3. Replace the `standard-service/` import prefix in all `.go` files with your new module path.
 
 Read `reference/standard-service/PRODUCTION_CHECKLIST.md` before deploying. In

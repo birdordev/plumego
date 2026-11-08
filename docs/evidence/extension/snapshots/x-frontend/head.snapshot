@@ -1,28 +1,28 @@
 # plumego extension api snapshot v1
-module	github.com/spcent/plumego
+module	github.com/birdordev/plumego
 pattern	./x/frontend
-symbol	github.com/spcent/plumego/x/frontend	func	NewHandlerFS	func NewHandlerFSfunc(fsys http.FileSystem, opts ...Option) (http.Handler, error)
-symbol	github.com/spcent/plumego/x/frontend	func	NewMountFS	func NewMountFSfunc(fsys http.FileSystem, opts ...Option) (*Mount, error)
-symbol	github.com/spcent/plumego/x/frontend	func	NewMountFromDir	func NewMountFromDirfunc(dir string, opts ...Option) (*Mount, error)
-symbol	github.com/spcent/plumego/x/frontend	func	RegisterFS	func RegisterFSfunc(r Registrar, fsys http.FileSystem, opts ...Option) error
-symbol	github.com/spcent/plumego/x/frontend	func	RegisterFromDir	func RegisterFromDirfunc(r Registrar, dir string, opts ...Option) error
-symbol	github.com/spcent/plumego/x/frontend	func	WithCacheControl	func WithCacheControlfunc(header string) Option
-symbol	github.com/spcent/plumego/x/frontend	func	WithErrorPage	func WithErrorPagefunc(page string) Option
-symbol	github.com/spcent/plumego/x/frontend	func	WithFallback	func WithFallbackfunc(enabled bool) Option
-symbol	github.com/spcent/plumego/x/frontend	func	WithHeaders	func WithHeadersfunc(headers map[string]string) Option
-symbol	github.com/spcent/plumego/x/frontend	func	WithIndex	func WithIndexfunc(name string) Option
-symbol	github.com/spcent/plumego/x/frontend	func	WithIndexCacheControl	func WithIndexCacheControlfunc(header string) Option
-symbol	github.com/spcent/plumego/x/frontend	func	WithMIMETypes	func WithMIMETypesfunc(mimeTypes map[string]string) Option
-symbol	github.com/spcent/plumego/x/frontend	func	WithNotFoundPage	func WithNotFoundPagefunc(page string) Option
-symbol	github.com/spcent/plumego/x/frontend	func	WithPrecompressed	func WithPrecompressedfunc(enabled bool) Option
-symbol	github.com/spcent/plumego/x/frontend	func	WithPrecompressedVariantMissHandler	func WithPrecompressedVariantMissHandlerfunc(handler func(PrecompressedVariantMiss)) Option
-symbol	github.com/spcent/plumego/x/frontend	func	WithPrecompressedVariantPlan	func WithPrecompressedVariantPlanfunc(variants map[string]PrecompressedVariants) Option
-symbol	github.com/spcent/plumego/x/frontend	func	WithPrefix	func WithPrefixfunc(prefix string) Option
-symbol	github.com/spcent/plumego/x/frontend	method	Mount.Handler	func (Mount) Handlerfunc() http.Handler
-symbol	github.com/spcent/plumego/x/frontend	method	Mount.Prefix	func (Mount) Prefixfunc() string
-symbol	github.com/spcent/plumego/x/frontend	method	Mount.Register	func (Mount) Registerfunc(r Registrar) error
-symbol	github.com/spcent/plumego/x/frontend	type	Mount	type Mount struct { }
-symbol	github.com/spcent/plumego/x/frontend	type	Option	type Option func(*config)
-symbol	github.com/spcent/plumego/x/frontend	type	PrecompressedVariantMiss	type PrecompressedVariantMiss struct { Path string VariantPath string Encoding string Operation string }
-symbol	github.com/spcent/plumego/x/frontend	type	PrecompressedVariants	type PrecompressedVariants struct { Brotli bool Gzip bool }
-symbol	github.com/spcent/plumego/x/frontend	type	Registrar	type Registrar interface { AddRoute(method, path string, handler http.Handler, opts ...router.RouteOption) error }
+symbol	github.com/birdordev/plumego/x/frontend	func	NewHandlerFS	func NewHandlerFSfunc(fsys http.FileSystem, opts ...Option) (http.Handler, error)
+symbol	github.com/birdordev/plumego/x/frontend	func	NewMountFS	func NewMountFSfunc(fsys http.FileSystem, opts ...Option) (*Mount, error)
+symbol	github.com/birdordev/plumego/x/frontend	func	NewMountFromDir	func NewMountFromDirfunc(dir string, opts ...Option) (*Mount, error)
+symbol	github.com/birdordev/plumego/x/frontend	func	RegisterFS	func RegisterFSfunc(r Registrar, fsys http.FileSystem, opts ...Option) error
+symbol	github.com/birdordev/plumego/x/frontend	func	RegisterFromDir	func RegisterFromDirfunc(r Registrar, dir string, opts ...Option) error
+symbol	github.com/birdordev/plumego/x/frontend	func	WithCacheControl	func WithCacheControlfunc(header string) Option
+symbol	github.com/birdordev/plumego/x/frontend	func	WithErrorPage	func WithErrorPagefunc(page string) Option
+symbol	github.com/birdordev/plumego/x/frontend	func	WithFallback	func WithFallbackfunc(enabled bool) Option
+symbol	github.com/birdordev/plumego/x/frontend	func	WithHeaders	func WithHeadersfunc(headers map[string]string) Option
+symbol	github.com/birdordev/plumego/x/frontend	func	WithIndex	func WithIndexfunc(name string) Option
+symbol	github.com/birdordev/plumego/x/frontend	func	WithIndexCacheControl	func WithIndexCacheControlfunc(header string) Option
+symbol	github.com/birdordev/plumego/x/frontend	func	WithMIMETypes	func WithMIMETypesfunc(mimeTypes map[string]string) Option
+symbol	github.com/birdordev/plumego/x/frontend	func	WithNotFoundPage	func WithNotFoundPagefunc(page string) Option
+symbol	github.com/birdordev/plumego/x/frontend	func	WithPrecompressed	func WithPrecompressedfunc(enabled bool) Option
+symbol	github.com/birdordev/plumego/x/frontend	func	WithPrecompressedVariantMissHandler	func WithPrecompressedVariantMissHandlerfunc(handler func(PrecompressedVariantMiss)) Option
+symbol	github.com/birdordev/plumego/x/frontend	func	WithPrecompressedVariantPlan	func WithPrecompressedVariantPlanfunc(variants map[string]PrecompressedVariants) Option
+symbol	github.com/birdordev/plumego/x/frontend	func	WithPrefix	func WithPrefixfunc(prefix string) Option
+symbol	github.com/birdordev/plumego/x/frontend	method	Mount.Handler	func (Mount) Handlerfunc() http.Handler
+symbol	github.com/birdordev/plumego/x/frontend	method	Mount.Prefix	func (Mount) Prefixfunc() string
+symbol	github.com/birdordev/plumego/x/frontend	method	Mount.Register	func (Mount) Registerfunc(r Registrar) error
+symbol	github.com/birdordev/plumego/x/frontend	type	Mount	type Mount struct { }
+symbol	github.com/birdordev/plumego/x/frontend	type	Option	type Option func(*config)
+symbol	github.com/birdordev/plumego/x/frontend	type	PrecompressedVariantMiss	type PrecompressedVariantMiss struct { Path string VariantPath string Encoding string Operation string }
+symbol	github.com/birdordev/plumego/x/frontend	type	PrecompressedVariants	type PrecompressedVariants struct { Brotli bool Gzip bool }
+symbol	github.com/birdordev/plumego/x/frontend	type	Registrar	type Registrar interface { AddRoute(method, path string, handler http.Handler, opts ...router.RouteOption) error }

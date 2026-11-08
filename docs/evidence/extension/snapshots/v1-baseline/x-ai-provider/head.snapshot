@@ -1,121 +1,121 @@
 # plumego extension api snapshot v1
-module	github.com/spcent/plumego
+module	github.com/birdordev/plumego
 pattern	./x/ai/provider
-symbol	github.com/spcent/plumego/x/ai/provider	const	ContentTypeImage	const ContentTypeImage ContentType = "image"
-symbol	github.com/spcent/plumego/x/ai/provider	const	ContentTypeText	const ContentTypeText ContentType = "text"
-symbol	github.com/spcent/plumego/x/ai/provider	const	ContentTypeToolResult	const ContentTypeToolResult ContentType = "tool_result"
-symbol	github.com/spcent/plumego/x/ai/provider	const	ContentTypeToolUse	const ContentTypeToolUse ContentType = "tool_use"
-symbol	github.com/spcent/plumego/x/ai/provider	const	RoleAssistant	const RoleAssistant Role = "assistant"
-symbol	github.com/spcent/plumego/x/ai/provider	const	RoleSystem	const RoleSystem Role = "system"
-symbol	github.com/spcent/plumego/x/ai/provider	const	RoleTool	const RoleTool Role = "tool"
-symbol	github.com/spcent/plumego/x/ai/provider	const	RoleUser	const RoleUser Role = "user"
-symbol	github.com/spcent/plumego/x/ai/provider	const	StopReasonEndTurn	const StopReasonEndTurn StopReason = "end_turn"
-symbol	github.com/spcent/plumego/x/ai/provider	const	StopReasonError	const StopReasonError StopReason = "error"
-symbol	github.com/spcent/plumego/x/ai/provider	const	StopReasonMaxTokens	const StopReasonMaxTokens StopReason = "max_tokens"
-symbol	github.com/spcent/plumego/x/ai/provider	const	StopReasonStopSequence	const StopReasonStopSequence StopReason = "stop_sequence"
-symbol	github.com/spcent/plumego/x/ai/provider	const	StopReasonToolUse	const StopReasonToolUse StopReason = "tool_use"
-symbol	github.com/spcent/plumego/x/ai/provider	const	TaskTypeAnalysis	const TaskTypeAnalysis TaskType = "analysis"
-symbol	github.com/spcent/plumego/x/ai/provider	const	TaskTypeCoding	const TaskTypeCoding TaskType = "coding"
-symbol	github.com/spcent/plumego/x/ai/provider	const	TaskTypeConversation	const TaskTypeConversation TaskType = "conversation"
-symbol	github.com/spcent/plumego/x/ai/provider	const	TaskTypeSummarization	const TaskTypeSummarization TaskType = "summarization"
-symbol	github.com/spcent/plumego/x/ai/provider	const	TaskTypeTranslation	const TaskTypeTranslation TaskType = "translation"
-symbol	github.com/spcent/plumego/x/ai/provider	func	AnyToolChoice	func AnyToolChoicefunc() ToolChoice
-symbol	github.com/spcent/plumego/x/ai/provider	func	AutoToolChoice	func AutoToolChoicefunc() ToolChoice
-symbol	github.com/spcent/plumego/x/ai/provider	func	NewClaudeProvider	func NewClaudeProviderfunc(apiKey string, opts ...ClaudeOption) *ClaudeProvider
-symbol	github.com/spcent/plumego/x/ai/provider	func	NewCostOptimizedRouter	func NewCostOptimizedRouterfunc() *CostOptimizedRouter
-symbol	github.com/spcent/plumego/x/ai/provider	func	NewFallbackRouter	func NewFallbackRouterfunc(primary, fallback Router) *FallbackRouter
-symbol	github.com/spcent/plumego/x/ai/provider	func	NewManager	func NewManagerfunc(opts ...ManagerOption) *Manager
-symbol	github.com/spcent/plumego/x/ai/provider	func	NewMockProvider	func NewMockProviderfunc(name string) *MockProvider
-symbol	github.com/spcent/plumego/x/ai/provider	func	NewOpenAIProvider	func NewOpenAIProviderfunc(apiKey string, opts ...OpenAIOption) *OpenAIProvider
-symbol	github.com/spcent/plumego/x/ai/provider	func	NewSmartRouter	func NewSmartRouterfunc(strategies ...Router) *SmartRouter
-symbol	github.com/spcent/plumego/x/ai/provider	func	NewTaskBasedRouter	func NewTaskBasedRouterfunc() *TaskBasedRouter
-symbol	github.com/spcent/plumego/x/ai/provider	func	NewTextMessage	func NewTextMessagefunc(role Role, text string) Message
-symbol	github.com/spcent/plumego/x/ai/provider	func	NewToolResultMessage	func NewToolResultMessagefunc(toolUseID string, content string, isError bool) Message
-symbol	github.com/spcent/plumego/x/ai/provider	func	NoneToolChoice	func NoneToolChoicefunc() ToolChoice
-symbol	github.com/spcent/plumego/x/ai/provider	func	ToolChoiceTool	func ToolChoiceToolfunc(name string) ToolChoice
-symbol	github.com/spcent/plumego/x/ai/provider	func	WithClaudeBaseURL	func WithClaudeBaseURLfunc(url string) ClaudeOption
-symbol	github.com/spcent/plumego/x/ai/provider	func	WithClaudeHTTPClient	func WithClaudeHTTPClientfunc(client *http.Client) ClaudeOption
-symbol	github.com/spcent/plumego/x/ai/provider	func	WithOpenAIBaseURL	func WithOpenAIBaseURLfunc(url string) OpenAIOption
-symbol	github.com/spcent/plumego/x/ai/provider	func	WithOpenAIHTTPClient	func WithOpenAIHTTPClientfunc(client *http.Client) OpenAIOption
-symbol	github.com/spcent/plumego/x/ai/provider	func	WithRouter	func WithRouterfunc(router Router) ManagerOption
-symbol	github.com/spcent/plumego/x/ai/provider	method	ClaudeProvider.Complete	func (ClaudeProvider) Completefunc(ctx context.Context, req *CompletionRequest) (*CompletionResponse, error)
-symbol	github.com/spcent/plumego/x/ai/provider	method	ClaudeProvider.CompleteStream	func (ClaudeProvider) CompleteStreamfunc(ctx context.Context, req *CompletionRequest) (*StreamReader, error)
-symbol	github.com/spcent/plumego/x/ai/provider	method	ClaudeProvider.CountTokens	func (ClaudeProvider) CountTokensfunc(text string) (int, error)
-symbol	github.com/spcent/plumego/x/ai/provider	method	ClaudeProvider.GetModel	func (ClaudeProvider) GetModelfunc(ctx context.Context, modelID string) (*Model, error)
-symbol	github.com/spcent/plumego/x/ai/provider	method	ClaudeProvider.ListModels	func (ClaudeProvider) ListModelsfunc(ctx context.Context) ([]Model, error)
-symbol	github.com/spcent/plumego/x/ai/provider	method	ClaudeProvider.Name	func (ClaudeProvider) Namefunc() string
-symbol	github.com/spcent/plumego/x/ai/provider	method	CompletionResponse.GetText	func (CompletionResponse) GetTextfunc() string
-symbol	github.com/spcent/plumego/x/ai/provider	method	CompletionResponse.GetToolUses	func (CompletionResponse) GetToolUsesfunc() []*ToolUse
-symbol	github.com/spcent/plumego/x/ai/provider	method	CompletionResponse.HasToolUse	func (CompletionResponse) HasToolUsefunc() bool
-symbol	github.com/spcent/plumego/x/ai/provider	method	CostOptimizedRouter.Route	func (CostOptimizedRouter) Routefunc(ctx context.Context, req *CompletionRequest, providers []Provider) (Provider, error)
-symbol	github.com/spcent/plumego/x/ai/provider	method	DefaultRouter.Route	func (DefaultRouter) Routefunc(ctx context.Context, req *CompletionRequest, providers []Provider) (Provider, error)
-symbol	github.com/spcent/plumego/x/ai/provider	method	FallbackRouter.Route	func (FallbackRouter) Routefunc(ctx context.Context, req *CompletionRequest, providers []Provider) (Provider, error)
-symbol	github.com/spcent/plumego/x/ai/provider	method	LoadBalancerRouter.Route	func (LoadBalancerRouter) Routefunc(ctx context.Context, req *CompletionRequest, providers []Provider) (Provider, error)
-symbol	github.com/spcent/plumego/x/ai/provider	method	Manager.Complete	func (Manager) Completefunc(ctx context.Context, req *CompletionRequest) (*CompletionResponse, error)
-symbol	github.com/spcent/plumego/x/ai/provider	method	Manager.CompleteStream	func (Manager) CompleteStreamfunc(ctx context.Context, req *CompletionRequest) (*StreamReader, error)
-symbol	github.com/spcent/plumego/x/ai/provider	method	Manager.Get	func (Manager) Getfunc(name string) (Provider, error)
-symbol	github.com/spcent/plumego/x/ai/provider	method	Manager.Register	func (Manager) Registerfunc(provider Provider)
-symbol	github.com/spcent/plumego/x/ai/provider	method	Manager.RegisterE	func (Manager) RegisterEfunc(provider Provider) error
-symbol	github.com/spcent/plumego/x/ai/provider	method	Manager.Route	func (Manager) Routefunc(ctx context.Context, req *CompletionRequest) (Provider, error)
-symbol	github.com/spcent/plumego/x/ai/provider	method	Message.GetText	func (Message) GetTextfunc() string
-symbol	github.com/spcent/plumego/x/ai/provider	method	MockProvider.CallCount	func (MockProvider) CallCountfunc() int
-symbol	github.com/spcent/plumego/x/ai/provider	method	MockProvider.Calls	func (MockProvider) Callsfunc() []*CompletionRequest
-symbol	github.com/spcent/plumego/x/ai/provider	method	MockProvider.Complete	func (MockProvider) Completefunc(ctx context.Context, req *CompletionRequest) (*CompletionResponse, error)
-symbol	github.com/spcent/plumego/x/ai/provider	method	MockProvider.CompleteStream	func (MockProvider) CompleteStreamfunc(ctx context.Context, req *CompletionRequest) (*StreamReader, error)
-symbol	github.com/spcent/plumego/x/ai/provider	method	MockProvider.CountTokens	func (MockProvider) CountTokensfunc(text string) (int, error)
-symbol	github.com/spcent/plumego/x/ai/provider	method	MockProvider.GetModel	func (MockProvider) GetModelfunc(_ context.Context, modelID string) (*Model, error)
-symbol	github.com/spcent/plumego/x/ai/provider	method	MockProvider.ListModels	func (MockProvider) ListModelsfunc(_ context.Context) ([]Model, error)
-symbol	github.com/spcent/plumego/x/ai/provider	method	MockProvider.Name	func (MockProvider) Namefunc() string
-symbol	github.com/spcent/plumego/x/ai/provider	method	MockProvider.QueueResponse	func (MockProvider) QueueResponsefunc(resp *CompletionResponse)
-symbol	github.com/spcent/plumego/x/ai/provider	method	MockProvider.Reset	func (MockProvider) Resetfunc()
-symbol	github.com/spcent/plumego/x/ai/provider	method	MockProvider.SetError	func (MockProvider) SetErrorfunc(err error)
-symbol	github.com/spcent/plumego/x/ai/provider	method	MockProvider.SetStreamChunks	func (MockProvider) SetStreamChunksfunc(chunks []*StreamChunk)
-symbol	github.com/spcent/plumego/x/ai/provider	method	OpenAIProvider.Complete	func (OpenAIProvider) Completefunc(ctx context.Context, req *CompletionRequest) (*CompletionResponse, error)
-symbol	github.com/spcent/plumego/x/ai/provider	method	OpenAIProvider.CompleteStream	func (OpenAIProvider) CompleteStreamfunc(ctx context.Context, req *CompletionRequest) (*StreamReader, error)
-symbol	github.com/spcent/plumego/x/ai/provider	method	OpenAIProvider.CountTokens	func (OpenAIProvider) CountTokensfunc(text string) (int, error)
-symbol	github.com/spcent/plumego/x/ai/provider	method	OpenAIProvider.GetModel	func (OpenAIProvider) GetModelfunc(ctx context.Context, modelID string) (*Model, error)
-symbol	github.com/spcent/plumego/x/ai/provider	method	OpenAIProvider.ListModels	func (OpenAIProvider) ListModelsfunc(ctx context.Context) ([]Model, error)
-symbol	github.com/spcent/plumego/x/ai/provider	method	OpenAIProvider.Name	func (OpenAIProvider) Namefunc() string
-symbol	github.com/spcent/plumego/x/ai/provider	method	SmartRouter.Route	func (SmartRouter) Routefunc(ctx context.Context, req *CompletionRequest, providers []Provider) (Provider, error)
-symbol	github.com/spcent/plumego/x/ai/provider	method	StreamReader.Close	func (StreamReader) Closefunc() error
-symbol	github.com/spcent/plumego/x/ai/provider	method	StreamReader.Next	func (StreamReader) Nextfunc() (*StreamChunk, error)
-symbol	github.com/spcent/plumego/x/ai/provider	method	TaskBasedRouter.Route	func (TaskBasedRouter) Routefunc(ctx context.Context, req *CompletionRequest, providers []Provider) (Provider, error)
-symbol	github.com/spcent/plumego/x/ai/provider	type	ClaudeOption	type ClaudeOption func(*ClaudeProvider)
-symbol	github.com/spcent/plumego/x/ai/provider	type	ClaudeProvider	type ClaudeProvider struct { }
-symbol	github.com/spcent/plumego/x/ai/provider	type	CompletionRequest	type CompletionRequest struct { Model string Messages []Message System string Tools []Tool ToolChoice ToolChoice MaxTokens int Temperature float64 TopP float64 TopK int StopSequences []string Stream bool Metadata map[string]string }
-symbol	github.com/spcent/plumego/x/ai/provider	type	CompletionResponse	type CompletionResponse struct { ID string `json:"id"` Model string `json:"model"` Role Role `json:"role,omitempty"` Content []ContentBlock `json:"content"` StopReason StopReason `json:"stop_reason"` Usage tokenizer.TokenUsage `json:"usage"` Metadata map[string]any `json:"metadata,omitempty"` }
-symbol	github.com/spcent/plumego/x/ai/provider	type	ContentBlock	type ContentBlock struct { Type ContentType Text string ToolUse *ToolUse ToolResult *ToolResult Image *Image }
-symbol	github.com/spcent/plumego/x/ai/provider	type	ContentDelta	type ContentDelta struct { Type ContentType Text string ToolUse *ToolUse }
-symbol	github.com/spcent/plumego/x/ai/provider	type	ContentType	type ContentType string
-symbol	github.com/spcent/plumego/x/ai/provider	type	CostOptimizedRouter	type CostOptimizedRouter struct { }
-symbol	github.com/spcent/plumego/x/ai/provider	type	DefaultRouter	type DefaultRouter struct{}
-symbol	github.com/spcent/plumego/x/ai/provider	type	FallbackRouter	type FallbackRouter struct { }
-symbol	github.com/spcent/plumego/x/ai/provider	type	FunctionDef	type FunctionDef struct { Name string Description string Parameters map[string]any Required []string }
-symbol	github.com/spcent/plumego/x/ai/provider	type	Image	type Image struct { Type string Data string MediaType string }
-symbol	github.com/spcent/plumego/x/ai/provider	type	LoadBalancerRouter	type LoadBalancerRouter struct { }
-symbol	github.com/spcent/plumego/x/ai/provider	type	Manager	type Manager struct { }
-symbol	github.com/spcent/plumego/x/ai/provider	type	ManagerOption	type ManagerOption func(*Manager)
-symbol	github.com/spcent/plumego/x/ai/provider	type	Message	type Message struct { Role Role `json:"role"` Content any `json:"content"` Name string `json:"name,omitempty"` ToolCallID string `json:"tool_call_id,omitempty"` }
-symbol	github.com/spcent/plumego/x/ai/provider	type	MockProvider	type MockProvider struct { }
-symbol	github.com/spcent/plumego/x/ai/provider	type	Model	type Model struct { ID string Name string Provider string ContextWindow int MaxOutputTokens int InputPricePerM float64 OutputPricePerM float64 Capabilities []string }
-symbol	github.com/spcent/plumego/x/ai/provider	type	OpenAIOption	type OpenAIOption func(*OpenAIProvider)
-symbol	github.com/spcent/plumego/x/ai/provider	type	OpenAIProvider	type OpenAIProvider struct { }
-symbol	github.com/spcent/plumego/x/ai/provider	type	Provider	type Provider interface { Name() string Complete(ctx context.Context, req *CompletionRequest) (*CompletionResponse, error) CompleteStream(ctx context.Context, req *CompletionRequest) (*StreamReader, error) ListModels(ctx context.Context) ([]Model, error) GetModel(ctx context.Context, modelID string) (*Model, error) CountTokens(text string) (int, error) }
-symbol	github.com/spcent/plumego/x/ai/provider	type	Role	type Role string
-symbol	github.com/spcent/plumego/x/ai/provider	type	Router	type Router interface { Route(ctx context.Context, req *CompletionRequest, providers []Provider) (Provider, error) }
-symbol	github.com/spcent/plumego/x/ai/provider	type	SmartRouter	type SmartRouter struct { }
-symbol	github.com/spcent/plumego/x/ai/provider	type	StopReason	type StopReason string
-symbol	github.com/spcent/plumego/x/ai/provider	type	StreamChunk	type StreamChunk struct { Type string Delta *ContentDelta Usage *tokenizer.TokenUsage StopReason StopReason }
-symbol	github.com/spcent/plumego/x/ai/provider	type	StreamParser	type StreamParser interface { Parse() (*StreamChunk, error) }
-symbol	github.com/spcent/plumego/x/ai/provider	type	StreamReader	type StreamReader struct { }
-symbol	github.com/spcent/plumego/x/ai/provider	type	TaskBasedRouter	type TaskBasedRouter struct { }
-symbol	github.com/spcent/plumego/x/ai/provider	type	TaskType	type TaskType string
-symbol	github.com/spcent/plumego/x/ai/provider	type	Tool	type Tool struct { Type string Function FunctionDef }
-symbol	github.com/spcent/plumego/x/ai/provider	type	ToolChoice	type ToolChoice struct { Type string Name string }
-symbol	github.com/spcent/plumego/x/ai/provider	type	ToolResult	type ToolResult struct { ToolUseID string Content string IsError bool }
-symbol	github.com/spcent/plumego/x/ai/provider	type	ToolUse	type ToolUse struct { ID string Name string Input map[string]any }
-symbol	github.com/spcent/plumego/x/ai/provider	var	ErrProviderNameRequired	var ErrProviderNameRequired = errors.New("provider: provider name is required")
-symbol	github.com/spcent/plumego/x/ai/provider	var	ErrProviderRequired	var ErrProviderRequired = errors.New("provider: provider is required")
-symbol	github.com/spcent/plumego/x/ai/provider	var	ToolChoiceAny	var ToolChoiceAny = ToolChoice{Type: "any"}
-symbol	github.com/spcent/plumego/x/ai/provider	var	ToolChoiceAuto	var ToolChoiceAuto = ToolChoice{Type: "auto"}
-symbol	github.com/spcent/plumego/x/ai/provider	var	ToolChoiceNone	var ToolChoiceNone = ToolChoice{Type: "none"}
+symbol	github.com/birdordev/plumego/x/ai/provider	const	ContentTypeImage	const ContentTypeImage ContentType = "image"
+symbol	github.com/birdordev/plumego/x/ai/provider	const	ContentTypeText	const ContentTypeText ContentType = "text"
+symbol	github.com/birdordev/plumego/x/ai/provider	const	ContentTypeToolResult	const ContentTypeToolResult ContentType = "tool_result"
+symbol	github.com/birdordev/plumego/x/ai/provider	const	ContentTypeToolUse	const ContentTypeToolUse ContentType = "tool_use"
+symbol	github.com/birdordev/plumego/x/ai/provider	const	RoleAssistant	const RoleAssistant Role = "assistant"
+symbol	github.com/birdordev/plumego/x/ai/provider	const	RoleSystem	const RoleSystem Role = "system"
+symbol	github.com/birdordev/plumego/x/ai/provider	const	RoleTool	const RoleTool Role = "tool"
+symbol	github.com/birdordev/plumego/x/ai/provider	const	RoleUser	const RoleUser Role = "user"
+symbol	github.com/birdordev/plumego/x/ai/provider	const	StopReasonEndTurn	const StopReasonEndTurn StopReason = "end_turn"
+symbol	github.com/birdordev/plumego/x/ai/provider	const	StopReasonError	const StopReasonError StopReason = "error"
+symbol	github.com/birdordev/plumego/x/ai/provider	const	StopReasonMaxTokens	const StopReasonMaxTokens StopReason = "max_tokens"
+symbol	github.com/birdordev/plumego/x/ai/provider	const	StopReasonStopSequence	const StopReasonStopSequence StopReason = "stop_sequence"
+symbol	github.com/birdordev/plumego/x/ai/provider	const	StopReasonToolUse	const StopReasonToolUse StopReason = "tool_use"
+symbol	github.com/birdordev/plumego/x/ai/provider	const	TaskTypeAnalysis	const TaskTypeAnalysis TaskType = "analysis"
+symbol	github.com/birdordev/plumego/x/ai/provider	const	TaskTypeCoding	const TaskTypeCoding TaskType = "coding"
+symbol	github.com/birdordev/plumego/x/ai/provider	const	TaskTypeConversation	const TaskTypeConversation TaskType = "conversation"
+symbol	github.com/birdordev/plumego/x/ai/provider	const	TaskTypeSummarization	const TaskTypeSummarization TaskType = "summarization"
+symbol	github.com/birdordev/plumego/x/ai/provider	const	TaskTypeTranslation	const TaskTypeTranslation TaskType = "translation"
+symbol	github.com/birdordev/plumego/x/ai/provider	func	AnyToolChoice	func AnyToolChoicefunc() ToolChoice
+symbol	github.com/birdordev/plumego/x/ai/provider	func	AutoToolChoice	func AutoToolChoicefunc() ToolChoice
+symbol	github.com/birdordev/plumego/x/ai/provider	func	NewClaudeProvider	func NewClaudeProviderfunc(apiKey string, opts ...ClaudeOption) *ClaudeProvider
+symbol	github.com/birdordev/plumego/x/ai/provider	func	NewCostOptimizedRouter	func NewCostOptimizedRouterfunc() *CostOptimizedRouter
+symbol	github.com/birdordev/plumego/x/ai/provider	func	NewFallbackRouter	func NewFallbackRouterfunc(primary, fallback Router) *FallbackRouter
+symbol	github.com/birdordev/plumego/x/ai/provider	func	NewManager	func NewManagerfunc(opts ...ManagerOption) *Manager
+symbol	github.com/birdordev/plumego/x/ai/provider	func	NewMockProvider	func NewMockProviderfunc(name string) *MockProvider
+symbol	github.com/birdordev/plumego/x/ai/provider	func	NewOpenAIProvider	func NewOpenAIProviderfunc(apiKey string, opts ...OpenAIOption) *OpenAIProvider
+symbol	github.com/birdordev/plumego/x/ai/provider	func	NewSmartRouter	func NewSmartRouterfunc(strategies ...Router) *SmartRouter
+symbol	github.com/birdordev/plumego/x/ai/provider	func	NewTaskBasedRouter	func NewTaskBasedRouterfunc() *TaskBasedRouter
+symbol	github.com/birdordev/plumego/x/ai/provider	func	NewTextMessage	func NewTextMessagefunc(role Role, text string) Message
+symbol	github.com/birdordev/plumego/x/ai/provider	func	NewToolResultMessage	func NewToolResultMessagefunc(toolUseID string, content string, isError bool) Message
+symbol	github.com/birdordev/plumego/x/ai/provider	func	NoneToolChoice	func NoneToolChoicefunc() ToolChoice
+symbol	github.com/birdordev/plumego/x/ai/provider	func	ToolChoiceTool	func ToolChoiceToolfunc(name string) ToolChoice
+symbol	github.com/birdordev/plumego/x/ai/provider	func	WithClaudeBaseURL	func WithClaudeBaseURLfunc(url string) ClaudeOption
+symbol	github.com/birdordev/plumego/x/ai/provider	func	WithClaudeHTTPClient	func WithClaudeHTTPClientfunc(client *http.Client) ClaudeOption
+symbol	github.com/birdordev/plumego/x/ai/provider	func	WithOpenAIBaseURL	func WithOpenAIBaseURLfunc(url string) OpenAIOption
+symbol	github.com/birdordev/plumego/x/ai/provider	func	WithOpenAIHTTPClient	func WithOpenAIHTTPClientfunc(client *http.Client) OpenAIOption
+symbol	github.com/birdordev/plumego/x/ai/provider	func	WithRouter	func WithRouterfunc(router Router) ManagerOption
+symbol	github.com/birdordev/plumego/x/ai/provider	method	ClaudeProvider.Complete	func (ClaudeProvider) Completefunc(ctx context.Context, req *CompletionRequest) (*CompletionResponse, error)
+symbol	github.com/birdordev/plumego/x/ai/provider	method	ClaudeProvider.CompleteStream	func (ClaudeProvider) CompleteStreamfunc(ctx context.Context, req *CompletionRequest) (*StreamReader, error)
+symbol	github.com/birdordev/plumego/x/ai/provider	method	ClaudeProvider.CountTokens	func (ClaudeProvider) CountTokensfunc(text string) (int, error)
+symbol	github.com/birdordev/plumego/x/ai/provider	method	ClaudeProvider.GetModel	func (ClaudeProvider) GetModelfunc(ctx context.Context, modelID string) (*Model, error)
+symbol	github.com/birdordev/plumego/x/ai/provider	method	ClaudeProvider.ListModels	func (ClaudeProvider) ListModelsfunc(ctx context.Context) ([]Model, error)
+symbol	github.com/birdordev/plumego/x/ai/provider	method	ClaudeProvider.Name	func (ClaudeProvider) Namefunc() string
+symbol	github.com/birdordev/plumego/x/ai/provider	method	CompletionResponse.GetText	func (CompletionResponse) GetTextfunc() string
+symbol	github.com/birdordev/plumego/x/ai/provider	method	CompletionResponse.GetToolUses	func (CompletionResponse) GetToolUsesfunc() []*ToolUse
+symbol	github.com/birdordev/plumego/x/ai/provider	method	CompletionResponse.HasToolUse	func (CompletionResponse) HasToolUsefunc() bool
+symbol	github.com/birdordev/plumego/x/ai/provider	method	CostOptimizedRouter.Route	func (CostOptimizedRouter) Routefunc(ctx context.Context, req *CompletionRequest, providers []Provider) (Provider, error)
+symbol	github.com/birdordev/plumego/x/ai/provider	method	DefaultRouter.Route	func (DefaultRouter) Routefunc(ctx context.Context, req *CompletionRequest, providers []Provider) (Provider, error)
+symbol	github.com/birdordev/plumego/x/ai/provider	method	FallbackRouter.Route	func (FallbackRouter) Routefunc(ctx context.Context, req *CompletionRequest, providers []Provider) (Provider, error)
+symbol	github.com/birdordev/plumego/x/ai/provider	method	LoadBalancerRouter.Route	func (LoadBalancerRouter) Routefunc(ctx context.Context, req *CompletionRequest, providers []Provider) (Provider, error)
+symbol	github.com/birdordev/plumego/x/ai/provider	method	Manager.Complete	func (Manager) Completefunc(ctx context.Context, req *CompletionRequest) (*CompletionResponse, error)
+symbol	github.com/birdordev/plumego/x/ai/provider	method	Manager.CompleteStream	func (Manager) CompleteStreamfunc(ctx context.Context, req *CompletionRequest) (*StreamReader, error)
+symbol	github.com/birdordev/plumego/x/ai/provider	method	Manager.Get	func (Manager) Getfunc(name string) (Provider, error)
+symbol	github.com/birdordev/plumego/x/ai/provider	method	Manager.Register	func (Manager) Registerfunc(provider Provider)
+symbol	github.com/birdordev/plumego/x/ai/provider	method	Manager.RegisterE	func (Manager) RegisterEfunc(provider Provider) error
+symbol	github.com/birdordev/plumego/x/ai/provider	method	Manager.Route	func (Manager) Routefunc(ctx context.Context, req *CompletionRequest) (Provider, error)
+symbol	github.com/birdordev/plumego/x/ai/provider	method	Message.GetText	func (Message) GetTextfunc() string
+symbol	github.com/birdordev/plumego/x/ai/provider	method	MockProvider.CallCount	func (MockProvider) CallCountfunc() int
+symbol	github.com/birdordev/plumego/x/ai/provider	method	MockProvider.Calls	func (MockProvider) Callsfunc() []*CompletionRequest
+symbol	github.com/birdordev/plumego/x/ai/provider	method	MockProvider.Complete	func (MockProvider) Completefunc(ctx context.Context, req *CompletionRequest) (*CompletionResponse, error)
+symbol	github.com/birdordev/plumego/x/ai/provider	method	MockProvider.CompleteStream	func (MockProvider) CompleteStreamfunc(ctx context.Context, req *CompletionRequest) (*StreamReader, error)
+symbol	github.com/birdordev/plumego/x/ai/provider	method	MockProvider.CountTokens	func (MockProvider) CountTokensfunc(text string) (int, error)
+symbol	github.com/birdordev/plumego/x/ai/provider	method	MockProvider.GetModel	func (MockProvider) GetModelfunc(_ context.Context, modelID string) (*Model, error)
+symbol	github.com/birdordev/plumego/x/ai/provider	method	MockProvider.ListModels	func (MockProvider) ListModelsfunc(_ context.Context) ([]Model, error)
+symbol	github.com/birdordev/plumego/x/ai/provider	method	MockProvider.Name	func (MockProvider) Namefunc() string
+symbol	github.com/birdordev/plumego/x/ai/provider	method	MockProvider.QueueResponse	func (MockProvider) QueueResponsefunc(resp *CompletionResponse)
+symbol	github.com/birdordev/plumego/x/ai/provider	method	MockProvider.Reset	func (MockProvider) Resetfunc()
+symbol	github.com/birdordev/plumego/x/ai/provider	method	MockProvider.SetError	func (MockProvider) SetErrorfunc(err error)
+symbol	github.com/birdordev/plumego/x/ai/provider	method	MockProvider.SetStreamChunks	func (MockProvider) SetStreamChunksfunc(chunks []*StreamChunk)
+symbol	github.com/birdordev/plumego/x/ai/provider	method	OpenAIProvider.Complete	func (OpenAIProvider) Completefunc(ctx context.Context, req *CompletionRequest) (*CompletionResponse, error)
+symbol	github.com/birdordev/plumego/x/ai/provider	method	OpenAIProvider.CompleteStream	func (OpenAIProvider) CompleteStreamfunc(ctx context.Context, req *CompletionRequest) (*StreamReader, error)
+symbol	github.com/birdordev/plumego/x/ai/provider	method	OpenAIProvider.CountTokens	func (OpenAIProvider) CountTokensfunc(text string) (int, error)
+symbol	github.com/birdordev/plumego/x/ai/provider	method	OpenAIProvider.GetModel	func (OpenAIProvider) GetModelfunc(ctx context.Context, modelID string) (*Model, error)
+symbol	github.com/birdordev/plumego/x/ai/provider	method	OpenAIProvider.ListModels	func (OpenAIProvider) ListModelsfunc(ctx context.Context) ([]Model, error)
+symbol	github.com/birdordev/plumego/x/ai/provider	method	OpenAIProvider.Name	func (OpenAIProvider) Namefunc() string
+symbol	github.com/birdordev/plumego/x/ai/provider	method	SmartRouter.Route	func (SmartRouter) Routefunc(ctx context.Context, req *CompletionRequest, providers []Provider) (Provider, error)
+symbol	github.com/birdordev/plumego/x/ai/provider	method	StreamReader.Close	func (StreamReader) Closefunc() error
+symbol	github.com/birdordev/plumego/x/ai/provider	method	StreamReader.Next	func (StreamReader) Nextfunc() (*StreamChunk, error)
+symbol	github.com/birdordev/plumego/x/ai/provider	method	TaskBasedRouter.Route	func (TaskBasedRouter) Routefunc(ctx context.Context, req *CompletionRequest, providers []Provider) (Provider, error)
+symbol	github.com/birdordev/plumego/x/ai/provider	type	ClaudeOption	type ClaudeOption func(*ClaudeProvider)
+symbol	github.com/birdordev/plumego/x/ai/provider	type	ClaudeProvider	type ClaudeProvider struct { }
+symbol	github.com/birdordev/plumego/x/ai/provider	type	CompletionRequest	type CompletionRequest struct { Model string Messages []Message System string Tools []Tool ToolChoice ToolChoice MaxTokens int Temperature float64 TopP float64 TopK int StopSequences []string Stream bool Metadata map[string]string }
+symbol	github.com/birdordev/plumego/x/ai/provider	type	CompletionResponse	type CompletionResponse struct { ID string `json:"id"` Model string `json:"model"` Role Role `json:"role,omitempty"` Content []ContentBlock `json:"content"` StopReason StopReason `json:"stop_reason"` Usage tokenizer.TokenUsage `json:"usage"` Metadata map[string]any `json:"metadata,omitempty"` }
+symbol	github.com/birdordev/plumego/x/ai/provider	type	ContentBlock	type ContentBlock struct { Type ContentType Text string ToolUse *ToolUse ToolResult *ToolResult Image *Image }
+symbol	github.com/birdordev/plumego/x/ai/provider	type	ContentDelta	type ContentDelta struct { Type ContentType Text string ToolUse *ToolUse }
+symbol	github.com/birdordev/plumego/x/ai/provider	type	ContentType	type ContentType string
+symbol	github.com/birdordev/plumego/x/ai/provider	type	CostOptimizedRouter	type CostOptimizedRouter struct { }
+symbol	github.com/birdordev/plumego/x/ai/provider	type	DefaultRouter	type DefaultRouter struct{}
+symbol	github.com/birdordev/plumego/x/ai/provider	type	FallbackRouter	type FallbackRouter struct { }
+symbol	github.com/birdordev/plumego/x/ai/provider	type	FunctionDef	type FunctionDef struct { Name string Description string Parameters map[string]any Required []string }
+symbol	github.com/birdordev/plumego/x/ai/provider	type	Image	type Image struct { Type string Data string MediaType string }
+symbol	github.com/birdordev/plumego/x/ai/provider	type	LoadBalancerRouter	type LoadBalancerRouter struct { }
+symbol	github.com/birdordev/plumego/x/ai/provider	type	Manager	type Manager struct { }
+symbol	github.com/birdordev/plumego/x/ai/provider	type	ManagerOption	type ManagerOption func(*Manager)
+symbol	github.com/birdordev/plumego/x/ai/provider	type	Message	type Message struct { Role Role `json:"role"` Content any `json:"content"` Name string `json:"name,omitempty"` ToolCallID string `json:"tool_call_id,omitempty"` }
+symbol	github.com/birdordev/plumego/x/ai/provider	type	MockProvider	type MockProvider struct { }
+symbol	github.com/birdordev/plumego/x/ai/provider	type	Model	type Model struct { ID string Name string Provider string ContextWindow int MaxOutputTokens int InputPricePerM float64 OutputPricePerM float64 Capabilities []string }
+symbol	github.com/birdordev/plumego/x/ai/provider	type	OpenAIOption	type OpenAIOption func(*OpenAIProvider)
+symbol	github.com/birdordev/plumego/x/ai/provider	type	OpenAIProvider	type OpenAIProvider struct { }
+symbol	github.com/birdordev/plumego/x/ai/provider	type	Provider	type Provider interface { Name() string Complete(ctx context.Context, req *CompletionRequest) (*CompletionResponse, error) CompleteStream(ctx context.Context, req *CompletionRequest) (*StreamReader, error) ListModels(ctx context.Context) ([]Model, error) GetModel(ctx context.Context, modelID string) (*Model, error) CountTokens(text string) (int, error) }
+symbol	github.com/birdordev/plumego/x/ai/provider	type	Role	type Role string
+symbol	github.com/birdordev/plumego/x/ai/provider	type	Router	type Router interface { Route(ctx context.Context, req *CompletionRequest, providers []Provider) (Provider, error) }
+symbol	github.com/birdordev/plumego/x/ai/provider	type	SmartRouter	type SmartRouter struct { }
+symbol	github.com/birdordev/plumego/x/ai/provider	type	StopReason	type StopReason string
+symbol	github.com/birdordev/plumego/x/ai/provider	type	StreamChunk	type StreamChunk struct { Type string Delta *ContentDelta Usage *tokenizer.TokenUsage StopReason StopReason }
+symbol	github.com/birdordev/plumego/x/ai/provider	type	StreamParser	type StreamParser interface { Parse() (*StreamChunk, error) }
+symbol	github.com/birdordev/plumego/x/ai/provider	type	StreamReader	type StreamReader struct { }
+symbol	github.com/birdordev/plumego/x/ai/provider	type	TaskBasedRouter	type TaskBasedRouter struct { }
+symbol	github.com/birdordev/plumego/x/ai/provider	type	TaskType	type TaskType string
+symbol	github.com/birdordev/plumego/x/ai/provider	type	Tool	type Tool struct { Type string Function FunctionDef }
+symbol	github.com/birdordev/plumego/x/ai/provider	type	ToolChoice	type ToolChoice struct { Type string Name string }
+symbol	github.com/birdordev/plumego/x/ai/provider	type	ToolResult	type ToolResult struct { ToolUseID string Content string IsError bool }
+symbol	github.com/birdordev/plumego/x/ai/provider	type	ToolUse	type ToolUse struct { ID string Name string Input map[string]any }
+symbol	github.com/birdordev/plumego/x/ai/provider	var	ErrProviderNameRequired	var ErrProviderNameRequired = errors.New("provider: provider name is required")
+symbol	github.com/birdordev/plumego/x/ai/provider	var	ErrProviderRequired	var ErrProviderRequired = errors.New("provider: provider is required")
+symbol	github.com/birdordev/plumego/x/ai/provider	var	ToolChoiceAny	var ToolChoiceAny = ToolChoice{Type: "any"}
+symbol	github.com/birdordev/plumego/x/ai/provider	var	ToolChoiceAuto	var ToolChoiceAuto = ToolChoice{Type: "auto"}
+symbol	github.com/birdordev/plumego/x/ai/provider	var	ToolChoiceNone	var ToolChoiceNone = ToolChoice{Type: "none"}

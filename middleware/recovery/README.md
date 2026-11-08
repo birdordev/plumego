@@ -5,7 +5,7 @@ Protects the application from crashing when a request handler panics.
 ## Import
 
 ```go
-import "github.com/spcent/plumego/middleware/recovery"
+import "github.com/birdordev/plumego/middleware/recovery"
 ```
 
 ## Overview

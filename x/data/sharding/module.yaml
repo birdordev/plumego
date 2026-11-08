@@ -106,7 +106,7 @@ public_entrypoints:
 allowed_imports:
   - stdlib
   - database/sql
-  - github.com/spcent/plumego/x/data/rw
+  - github.com/birdordev/plumego/x/data/rw
 
 forbidden_imports:
   - core/**

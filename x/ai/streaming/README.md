@@ -42,8 +42,8 @@ import (
     "context"
     "net/http"
 
-    "github.com/spcent/plumego/x/ai/orchestration"
-    "github.com/spcent/plumego/x/ai/streaming"
+    "github.com/birdordev/plumego/x/ai/orchestration"
+    "github.com/birdordev/plumego/x/ai/streaming"
 )
 
 func main() {

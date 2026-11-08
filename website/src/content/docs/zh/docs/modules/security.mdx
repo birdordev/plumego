@@ -67,8 +67,8 @@ _ = contract.WriteResponse(w, r, http.StatusOK,
 
 ```go
 import (
-    "github.com/spcent/plumego/security/jwt"
-    kvstore "github.com/spcent/plumego/store/kv"
+    "github.com/birdordev/plumego/security/jwt"
+    kvstore "github.com/birdordev/plumego/store/kv"
 )
 
 store, _ := kvstore.NewKVStore(kvstore.Options{DataDir: "/var/lib/myapp/jwt"})
@@ -93,7 +93,7 @@ claims, err := manager.VerifyToken(ctx, tokenString, jwt.TokenTypeAccess)
 ### authn — 从 context 读取 identity
 
 ```go
-import "github.com/spcent/plumego/security/authn"
+import "github.com/birdordev/plumego/security/authn"
 
 // 在 handler 中，auth 中间件运行后：
 principal := authn.PrincipalFromContext(r.Context())
@@ -108,8 +108,8 @@ roles  := principal.Roles
 
 ```go
 import (
-    "github.com/spcent/plumego/security/headers"
-    secmw "github.com/spcent/plumego/middleware/security"
+    "github.com/birdordev/plumego/security/headers"
+    secmw "github.com/birdordev/plumego/middleware/security"
 )
 
 policy := headers.DefaultPolicy()   // 合理的默认值
@@ -138,7 +138,7 @@ policy.ContentSecurityPolicy = csp
 ### input — 验证与清洗用户数据
 
 ```go
-import "github.com/spcent/plumego/security/input"
+import "github.com/birdordev/plumego/security/input"
 
 if !input.ValidateEmail(email) { ... }
 if !input.ValidateURL(rawURL)  { ... }
@@ -150,7 +150,7 @@ safe  := input.StripControlChars(rawInput)         // 去除控制字符
 ### password — 哈希与验证密码
 
 ```go
-import "github.com/spcent/plumego/security/password"
+import "github.com/birdordev/plumego/security/password"
 
 hash, _ := password.HashPassword(plaintext)
 err     := password.CheckPassword(hash, plaintext) // 计时安全比较

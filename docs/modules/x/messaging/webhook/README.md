@@ -1,6 +1,6 @@
 # x/messaging/webhook — Webhook Ingress and Egress
 
-> **Import path:** `github.com/spcent/plumego/x/messaging/webhook` — sub-package of [`x/messaging`](../README.md). This primer mirrors the package path under `docs/modules/x/`.
+> **Import path:** `github.com/birdordev/plumego/x/messaging/webhook` — sub-package of [`x/messaging`](../README.md). This primer mirrors the package path under `docs/modules/x/`.
 
 **Purpose:** Webhook ingress, egress, and bridge primitives within the `x/messaging` family. Handles inbound signature verification (GitHub, Stripe, HMAC), outbound delivery service with retry and store, and a pub/sub bridge for routing inbound events to outbound targets.
 

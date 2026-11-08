@@ -1,6 +1,6 @@
 # x/data/pgx
 
-> **Import path:** `github.com/spcent/plumego/x/data/pgx` — sub-package of [`x/data`](../README.md).
+> **Import path:** `github.com/birdordev/plumego/x/data/pgx` — sub-package of [`x/data`](../README.md).
 
 ## Purpose
 

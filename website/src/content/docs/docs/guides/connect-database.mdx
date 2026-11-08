@@ -29,7 +29,7 @@ import (
     "database/sql"
     "net/http"
 
-    "github.com/spcent/plumego/contract"
+    "github.com/birdordev/plumego/contract"
 )
 
 type ItemHandler struct {
@@ -160,14 +160,14 @@ func (a *App) Start() error {
 
 The reference service demonstrates the full dependency-injection pattern for database connections:
 
-- [`reference/standard-service/internal/app/app.go`](https://github.com/spcent/plumego/blob/main/reference/standard-service/internal/app/app.go) — constructor opens the DB and injects it into handler structs
-- [`reference/standard-service/internal/app/routes.go`](https://github.com/spcent/plumego/blob/main/reference/standard-service/internal/app/routes.go) — route wiring that passes populated handler structs
-- [`reference/standard-service/main.go`](https://github.com/spcent/plumego/blob/main/reference/standard-service/main.go) — bootstrap order: open → inject → run → defer close
+- [`reference/standard-service/internal/app/app.go`](https://github.com/birdordev/plumego/blob/main/reference/standard-service/internal/app/app.go) — constructor opens the DB and injects it into handler structs
+- [`reference/standard-service/internal/app/routes.go`](https://github.com/birdordev/plumego/blob/main/reference/standard-service/internal/app/routes.go) — route wiring that passes populated handler structs
+- [`reference/standard-service/main.go`](https://github.com/birdordev/plumego/blob/main/reference/standard-service/main.go) — bootstrap order: open → inject → run → defer close
 
 Run it locally:
 
 ```bash
-git clone https://github.com/spcent/plumego
+git clone https://github.com/birdordev/plumego
 cd plumego/reference/standard-service
 go run .
 ```

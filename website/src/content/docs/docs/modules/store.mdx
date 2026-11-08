@@ -58,7 +58,7 @@ _ = contract.WriteResponse(w, r, http.StatusOK, user, nil)
 ### store/kv — file-backed key-value store
 
 ```go
-import kvstore "github.com/spcent/plumego/store/kv"
+import kvstore "github.com/birdordev/plumego/store/kv"
 
 kv, err := kvstore.NewKVStore(kvstore.Options{
     DataDir: "/var/lib/myapp/kv",
@@ -80,7 +80,7 @@ exists := kv.Exists("session:abc")
 ### store/cache — in-memory cache
 
 ```go
-import "github.com/spcent/plumego/store/cache"
+import "github.com/birdordev/plumego/store/cache"
 
 c, err := cache.NewMemoryCacheWithConfig(cache.DefaultConfig())
 if err != nil { ... }
@@ -105,7 +105,7 @@ type Cache interface {
 ### store/db — SQL helpers
 
 ```go
-import "github.com/spcent/plumego/store/db"
+import "github.com/birdordev/plumego/store/db"
 
 sqlDB, err := db.Open(db.DefaultConfig("postgres", dsn))
 if err != nil { ... }
@@ -123,7 +123,7 @@ err = db.WithTransaction(ctx, sqlDB, nil, func(tx *sql.Tx) error {
 ### store/idempotency — exactly-once operation guard
 
 ```go
-import "github.com/spcent/plumego/store/idempotency"
+import "github.com/birdordev/plumego/store/idempotency"
 
 // Implement the Store interface (or use x/data/idempotency for a durable provider)
 var idem idempotency.Store

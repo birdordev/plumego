@@ -82,9 +82,9 @@ This is the canonical ordering from the reference service:
 
 ```go
 import (
-    "github.com/spcent/plumego/middleware/requestid"
-    "github.com/spcent/plumego/middleware/recovery"
-    "github.com/spcent/plumego/middleware/accesslog"
+    "github.com/birdordev/plumego/middleware/requestid"
+    "github.com/birdordev/plumego/middleware/recovery"
+    "github.com/birdordev/plumego/middleware/accesslog"
 )
 
 app.Use(requestid.Middleware())                            // 1. assign ID first
@@ -104,9 +104,9 @@ Add auth, CORS, rate limiting, and timeout as needed for your service:
 
 ```go
 import (
-    authmw  "github.com/spcent/plumego/middleware/auth"
-    cors    "github.com/spcent/plumego/middleware/cors"
-    to      "github.com/spcent/plumego/middleware/timeout"
+    authmw  "github.com/birdordev/plumego/middleware/auth"
+    cors    "github.com/birdordev/plumego/middleware/cors"
+    to      "github.com/birdordev/plumego/middleware/timeout"
 )
 
 app.Use(cors.Middleware(cors.CORSOptions{AllowedOrigins: []string{"https://myapp.com"}}))

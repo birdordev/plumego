@@ -42,7 +42,7 @@
 `circuitbreaker.New` creates a three-state breaker (Closed → Open → Half-Open):
 
 ```go
-import "github.com/spcent/plumego/x/resilience/circuitbreaker"
+import "github.com/birdordev/plumego/x/resilience/circuitbreaker"
 
 breaker := circuitbreaker.New(circuitbreaker.Config{
     FailureThreshold:  5,               // open after 5 consecutive failures
@@ -77,7 +77,7 @@ Wraps a handler; 5xx responses count as failures:
 
 ```go
 import (
-    "github.com/spcent/plumego/x/resilience/circuitbreaker"
+    "github.com/birdordev/plumego/x/resilience/circuitbreaker"
 )
 
 breaker := circuitbreaker.New(circuitbreaker.Config{FailureThreshold: 3})
@@ -100,7 +100,7 @@ state, it returns HTTP 429.
 manages per-key buckets (e.g., per IP or per tenant ID):
 
 ```go
-import "github.com/spcent/plumego/x/resilience/ratelimit"
+import "github.com/birdordev/plumego/x/resilience/ratelimit"
 
 // Single bucket: 100 tokens/second, burst of 20.
 limiter := ratelimit.New(100, 20)

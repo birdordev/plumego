@@ -1,6 +1,6 @@
 # x/data/sharding
 
-> **Import path:** `github.com/spcent/plumego/x/data/sharding` — sub-package of [`x/data`](../README.md).
+> **Import path:** `github.com/birdordev/plumego/x/data/sharding` — sub-package of [`x/data`](../README.md).
 
 ## Purpose
 

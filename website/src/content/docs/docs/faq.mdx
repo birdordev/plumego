@@ -41,7 +41,7 @@ Use `security/jwt` to issue and verify tokens, then protect routes with `middlew
 
 ### How do I connect a database?
 
-Import `github.com/spcent/plumego/store/db`, open a `*sql.DB` with `db.Open`, inject it through your application’s dependency struct, and pass it to handlers explicitly. The [Connect Database guide](/docs/guides/connect-database) covers connection pooling and context-based helpers.
+Import `github.com/birdordev/plumego/store/db`, open a `*sql.DB` with `db.Open`, inject it through your application’s dependency struct, and pass it to handlers explicitly. The [Connect Database guide](/docs/guides/connect-database) covers connection pooling and context-based helpers.
 
 ## Framework Comparison
 
@@ -168,7 +168,7 @@ Explicit constructor injection keeps dependencies visible at the call site and i
 Use `router.Param(r, "name")` to read named path parameters set by the router:
 
 ```go
-import "github.com/spcent/plumego/router"
+import "github.com/birdordev/plumego/router"
 
 // Route registered as: app.Get("/users/:id", ...)
 func (h *Handler) GetUser(w http.ResponseWriter, r *http.Request) {

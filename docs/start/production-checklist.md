@@ -184,7 +184,7 @@ counter.Increment(map[string]string{"method": "GET", "status": "200"})
 
 **Pattern (with exporter):**
 ```go
-import "github.com/spcent/plumego/x/observability"
+import "github.com/birdordev/plumego/x/observability"
 
 // Wire up Prometheus exporter
 exporter := observability.NewPrometheusExporter()

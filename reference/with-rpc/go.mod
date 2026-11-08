@@ -4,7 +4,7 @@ go 1.26.0
 
 require (
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.33.0
-	github.com/spcent/plumego v0.0.0
+	github.com/birdordev/plumego v0.0.0
 	google.golang.org/grpc v1.84.0
 	google.golang.org/protobuf v1.36.12
 )
@@ -17,4 +17,4 @@ require (
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20261019180522-ce908d29299b // indirect
 )
 
-replace github.com/spcent/plumego => ../..
+replace github.com/birdordev/plumego => ../..

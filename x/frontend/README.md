@@ -65,8 +65,8 @@ registrars.
 
 ```go
 import (
-    "github.com/spcent/plumego/router"
-    "github.com/spcent/plumego/x/frontend"
+    "github.com/birdordev/plumego/router"
+    "github.com/birdordev/plumego/x/frontend"
 )
 
 r := router.NewRouter()

@@ -66,7 +66,7 @@ app.Delete("/api/users/:id", http.HandlerFunc(handler.DeleteUser))
 ### 读取路径参数
 
 ```go
-import "github.com/spcent/plumego/router"
+import "github.com/birdordev/plumego/router"
 
 func (h UserHandler) Get(w http.ResponseWriter, r *http.Request) {
     id := router.Param(r, "id")   // 从匹配路径中提取 :id
@@ -76,7 +76,7 @@ func (h UserHandler) Get(w http.ResponseWriter, r *http.Request) {
 ### 路由分组（共享前缀）
 
 ```go
-import "github.com/spcent/plumego/router"
+import "github.com/birdordev/plumego/router"
 
 r := router.NewRouter()
 
@@ -90,7 +90,7 @@ api.AddRoute("DELETE", "/users/:id", http.HandlerFunc(handler.DeleteUser))
 ### 命名路由与反向解析
 
 ```go
-import "github.com/spcent/plumego/router"
+import "github.com/birdordev/plumego/router"
 
 // 带名称注册
 app.AddRoute(http.MethodGet, "/api/users/:id", http.HandlerFunc(handler.GetUser),

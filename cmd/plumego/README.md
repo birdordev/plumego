@@ -47,7 +47,7 @@ level prefix for warnings, errors, and debug output.
 
 ```bash
 # Clone the repository
-git clone https://github.com/spcent/plumego.git
+git clone https://github.com/birdordev/plumego.git
 cd plumego/cmd/plumego
 
 # Build and install
@@ -65,14 +65,14 @@ normal build target, because it is easy to run a stale binary from the module
 directory.
 
 The CLI currently lives in an independent nested module with a local
-`replace github.com/spcent/plumego => ../..` directive for repository
+`replace github.com/birdordev/plumego => ../..` directive for repository
 development. Until the release checklist verifies tagged module installation,
 the supported install path is building from a checked-out Plumego repository.
 
 ### Tagged Install Verification
 
 Before release notes can advertise `go install
-github.com/spcent/plumego/cmd/plumego@<tag>`, maintainers must run the tagged
+github.com/birdordev/plumego/cmd/plumego@<tag>`, maintainers must run the tagged
 install smoke test from `docs/release/PRE_V1_RELEASE_CHECKLIST.md` against the
 actual release tag and record the result.
 
@@ -123,7 +123,7 @@ inputs, but their v1 hardening output now uses the same canonical bootstrap
 rather than legacy `internal/httpapp`, frontend, or container scaffolds.
 
 When `plumego new` runs from a Plumego source checkout, generated `go.mod` files
-include a local `replace github.com/spcent/plumego => <checkout>` directive so
+include a local `replace github.com/birdordev/plumego => <checkout>` directive so
 pre-release source workflows can build against the checked-out framework.
 
 The `api` template starts from the same canonical bootstrap and adds a minimal

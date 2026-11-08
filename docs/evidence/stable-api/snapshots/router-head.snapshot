@@ -1,30 +1,30 @@
 # plumego extension api snapshot v1
-module	github.com/spcent/plumego
+module	github.com/birdordev/plumego
 pattern	./router
-symbol	github.com/spcent/plumego/router	const	MethodAny	const MethodAny = "ANY"
-symbol	github.com/spcent/plumego/router	func	NewRouter	func NewRouterfunc(opts ...RouterOption) *Router
-symbol	github.com/spcent/plumego/router	func	Param	func Paramfunc(r *http.Request, name string) string
-symbol	github.com/spcent/plumego/router	func	WithCacheCapacity	func WithCacheCapacityfunc(n int) RouterOption
-symbol	github.com/spcent/plumego/router	func	WithMethodNotAllowed	func WithMethodNotAllowedfunc(enabled bool) RouterOption
-symbol	github.com/spcent/plumego/router	func	WithRouteName	func WithRouteNamefunc(name string) RouteOption
-symbol	github.com/spcent/plumego/router	func	WithTags	func WithTagsfunc(tags ...string) RouteOption
-symbol	github.com/spcent/plumego/router	method	Router.AddRoute	func (Router) AddRoutefunc(method, path string, handler http.Handler, opts ...RouteOption) error
-symbol	github.com/spcent/plumego/router	method	Router.Freeze	func (Router) Freezefunc()
-symbol	github.com/spcent/plumego/router	method	Router.Group	func (Router) Groupfunc(prefix string) *Router
-symbol	github.com/spcent/plumego/router	method	Router.HasRoute	func (Router) HasRoutefunc(name string) bool
-symbol	github.com/spcent/plumego/router	method	Router.MethodNotAllowedEnabled	func (Router) MethodNotAllowedEnabledfunc() bool
-symbol	github.com/spcent/plumego/router	method	Router.NamedRoutes	func (Router) NamedRoutesfunc() map[string]*NamedRoute
-symbol	github.com/spcent/plumego/router	method	Router.Print	func (Router) Printfunc(w io.Writer)
-symbol	github.com/spcent/plumego/router	method	Router.Routes	func (Router) Routesfunc() []RouteInfo
-symbol	github.com/spcent/plumego/router	method	Router.ServeHTTP	func (Router) ServeHTTPfunc(w http.ResponseWriter, req *http.Request)
-symbol	github.com/spcent/plumego/router	method	Router.SetMethodNotAllowed	func (Router) SetMethodNotAllowedfunc(enabled bool)
-symbol	github.com/spcent/plumego/router	method	Router.Static	func (Router) Staticfunc(prefix, dir string) error
-symbol	github.com/spcent/plumego/router	method	Router.StaticFS	func (Router) StaticFSfunc(prefix string, fs http.FileSystem) error
-symbol	github.com/spcent/plumego/router	method	Router.URL	func (Router) URLfunc(name string, params ...string) (string, error)
-symbol	github.com/spcent/plumego/router	method	Router.URLMust	func (Router) URLMustfunc(name string, params ...string) string
-symbol	github.com/spcent/plumego/router	type	NamedRoute	type NamedRoute struct { Method string Pattern string ParamPos map[string]int }
-symbol	github.com/spcent/plumego/router	type	RouteInfo	type RouteInfo struct { Method string `json:"method"` Path string `json:"path"` Meta RouteMeta `json:"meta,omitempty"` }
-symbol	github.com/spcent/plumego/router	type	RouteMeta	type RouteMeta struct { Name string `json:"name,omitempty"` Tags []string `json:"tags,omitempty"` }
-symbol	github.com/spcent/plumego/router	type	RouteOption	type RouteOption func(*RouteMeta)
-symbol	github.com/spcent/plumego/router	type	Router	type Router struct { }
-symbol	github.com/spcent/plumego/router	type	RouterOption	type RouterOption func(*Router)
+symbol	github.com/birdordev/plumego/router	const	MethodAny	const MethodAny = "ANY"
+symbol	github.com/birdordev/plumego/router	func	NewRouter	func NewRouterfunc(opts ...RouterOption) *Router
+symbol	github.com/birdordev/plumego/router	func	Param	func Paramfunc(r *http.Request, name string) string
+symbol	github.com/birdordev/plumego/router	func	WithCacheCapacity	func WithCacheCapacityfunc(n int) RouterOption
+symbol	github.com/birdordev/plumego/router	func	WithMethodNotAllowed	func WithMethodNotAllowedfunc(enabled bool) RouterOption
+symbol	github.com/birdordev/plumego/router	func	WithRouteName	func WithRouteNamefunc(name string) RouteOption
+symbol	github.com/birdordev/plumego/router	func	WithTags	func WithTagsfunc(tags ...string) RouteOption
+symbol	github.com/birdordev/plumego/router	method	Router.AddRoute	func (Router) AddRoutefunc(method, path string, handler http.Handler, opts ...RouteOption) error
+symbol	github.com/birdordev/plumego/router	method	Router.Freeze	func (Router) Freezefunc()
+symbol	github.com/birdordev/plumego/router	method	Router.Group	func (Router) Groupfunc(prefix string) *Router
+symbol	github.com/birdordev/plumego/router	method	Router.HasRoute	func (Router) HasRoutefunc(name string) bool
+symbol	github.com/birdordev/plumego/router	method	Router.MethodNotAllowedEnabled	func (Router) MethodNotAllowedEnabledfunc() bool
+symbol	github.com/birdordev/plumego/router	method	Router.NamedRoutes	func (Router) NamedRoutesfunc() map[string]*NamedRoute
+symbol	github.com/birdordev/plumego/router	method	Router.Print	func (Router) Printfunc(w io.Writer)
+symbol	github.com/birdordev/plumego/router	method	Router.Routes	func (Router) Routesfunc() []RouteInfo
+symbol	github.com/birdordev/plumego/router	method	Router.ServeHTTP	func (Router) ServeHTTPfunc(w http.ResponseWriter, req *http.Request)
+symbol	github.com/birdordev/plumego/router	method	Router.SetMethodNotAllowed	func (Router) SetMethodNotAllowedfunc(enabled bool)
+symbol	github.com/birdordev/plumego/router	method	Router.Static	func (Router) Staticfunc(prefix, dir string) error
+symbol	github.com/birdordev/plumego/router	method	Router.StaticFS	func (Router) StaticFSfunc(prefix string, fs http.FileSystem) error
+symbol	github.com/birdordev/plumego/router	method	Router.URL	func (Router) URLfunc(name string, params ...string) (string, error)
+symbol	github.com/birdordev/plumego/router	method	Router.URLMust	func (Router) URLMustfunc(name string, params ...string) string
+symbol	github.com/birdordev/plumego/router	type	NamedRoute	type NamedRoute struct { Method string Pattern string ParamPos map[string]int }
+symbol	github.com/birdordev/plumego/router	type	RouteInfo	type RouteInfo struct { Method string `json:"method"` Path string `json:"path"` Meta RouteMeta `json:"meta,omitempty"` }
+symbol	github.com/birdordev/plumego/router	type	RouteMeta	type RouteMeta struct { Name string `json:"name,omitempty"` Tags []string `json:"tags,omitempty"` }
+symbol	github.com/birdordev/plumego/router	type	RouteOption	type RouteOption func(*RouteMeta)
+symbol	github.com/birdordev/plumego/router	type	Router	type Router struct { }
+symbol	github.com/birdordev/plumego/router	type	RouterOption	type RouterOption func(*Router)

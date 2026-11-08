@@ -31,7 +31,7 @@ The **marketplace** package provides a complete agent and workflow marketplace s
 ### Creating a Manager
 
 ```go
-import "github.com/spcent/plumego/x/ai/marketplace"
+import "github.com/birdordev/plumego/x/ai/marketplace"
 
 // Create with default paths (~/.plumego)
 manager, err := marketplace.NewManager()
@@ -428,8 +428,8 @@ import (
     "log"
     "time"
 
-    "github.com/spcent/plumego/x/ai/marketplace"
-    "github.com/spcent/plumego/x/ai/provider"
+    "github.com/birdordev/plumego/x/ai/marketplace"
+    "github.com/birdordev/plumego/x/ai/provider"
 )
 
 func main() {

@@ -6,7 +6,7 @@ Entry point for all agent types (Claude Code, Codex, Cursor, …); delegates to 
 
 ## Snapshot (v1.1.0 · Go 1.26+ · single module)
 
-`github.com/spcent/plumego` — a stdlib web toolkit for Go. Stable roots have zero runtime deps; `x/*` extensions may use external deps.
+`github.com/birdordev/plumego` — a stdlib web toolkit for Go. Stable roots have zero runtime deps; `x/*` extensions may use external deps.
 
 - **Stable roots (GA):** `core router contract middleware security store health log metrics` — stdlib-only, no `x/*` imports
 - **Extensions:** 14 `x/*` (beta + experimental) — see AGENTS §3

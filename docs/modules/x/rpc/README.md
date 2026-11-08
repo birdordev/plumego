@@ -36,7 +36,7 @@ import (
     "context"
     "net"
 
-    rpcsrv "github.com/spcent/plumego/x/rpc/server"
+    rpcsrv "github.com/birdordev/plumego/x/rpc/server"
 )
 
 // Wrap any runtime that implements server.Runtime.
@@ -78,7 +78,7 @@ and marks the pool as closed for new requests.
 import (
     "context"
 
-    rpcclient "github.com/spcent/plumego/x/rpc/client"
+    rpcclient "github.com/birdordev/plumego/x/rpc/client"
     "google.golang.org/grpc"
     "google.golang.org/grpc/credentials/insecure"
 )
@@ -108,7 +108,7 @@ Three ready-made unary interceptors are provided. Compose them by chaining
 invokers:
 
 ```go
-import rpcclient "github.com/spcent/plumego/x/rpc/client"
+import rpcclient "github.com/birdordev/plumego/x/rpc/client"
 
 logging := rpcclient.LoggingInterceptor(logger)
 retry   := rpcclient.RetryInterceptor(3, "Unavailable", "ResourceExhausted")
@@ -138,7 +138,7 @@ another HTTP-over-RPC handler alongside ordinary REST endpoints.
 
 ```go
 import (
-    rpcgw "github.com/spcent/plumego/x/rpc/gateway"
+    rpcgw "github.com/birdordev/plumego/x/rpc/gateway"
 )
 
 transcoder := rpcgw.New("greeter-service")

@@ -41,7 +41,7 @@ sidebar:
 
 ### 如何连接数据库？
 
-导入 `github.com/spcent/plumego/store/db` 后，用 `db.Open` 打开 `*sql.DB`，通过应用的依赖结构体注入，显式传给 handler。连接池配置和 context 助手见 [连接数据库指南](/zh/docs/guides/connect-database)。
+导入 `github.com/birdordev/plumego/store/db` 后，用 `db.Open` 打开 `*sql.DB`，通过应用的依赖结构体注入，显式传给 handler。连接池配置和 context 助手见 [连接数据库指南](/zh/docs/guides/connect-database)。
 
 ## 框架对比
 
@@ -168,7 +168,7 @@ Plumego 在标准库之上额外提供了：基于 trie 树的路由器、显式
 使用 `router.Param(r, "name")` 读取路由器设置的命名路径参数：
 
 ```go
-import "github.com/spcent/plumego/router"
+import "github.com/birdordev/plumego/router"
 
 // 路由注册为：app.Get("/users/:id", ...)
 func (h *Handler) GetUser(w http.ResponseWriter, r *http.Request) {

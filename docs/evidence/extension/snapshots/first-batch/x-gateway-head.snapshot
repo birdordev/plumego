@@ -1,258 +1,258 @@
 # plumego extension api snapshot v1
-module	github.com/spcent/plumego
+module	github.com/birdordev/plumego
 pattern	./x/gateway/...
-symbol	github.com/spcent/plumego/x/gateway	func	AddForwardedHeaders	func AddForwardedHeadersfunc() RequestModifier
-symbol	github.com/spcent/plumego/x/gateway	func	AddHeader	func AddHeaderfunc(key, value string) RequestModifier
-symbol	github.com/spcent/plumego/x/gateway	func	AddPrefix	func AddPrefixfunc(prefix string) PathRewriteFunc
-symbol	github.com/spcent/plumego/x/gateway	func	AddResponseHeader	func AddResponseHeaderfunc(key, value string) ResponseModifier
-symbol	github.com/spcent/plumego/x/gateway	func	Chain	func Chainfunc(rewriters ...PathRewriteFunc) PathRewriteFunc
-symbol	github.com/spcent/plumego/x/gateway	func	ChainRequestModifiers	func ChainRequestModifiersfunc(modifiers ...RequestModifier) RequestModifier
-symbol	github.com/spcent/plumego/x/gateway	func	ChainResponseModifiers	func ChainResponseModifiersfunc(modifiers ...ResponseModifier) ResponseModifier
-symbol	github.com/spcent/plumego/x/gateway	func	DefaultTransportConfig	func DefaultTransportConfigfunc() *TransportConfig
-symbol	github.com/spcent/plumego/x/gateway	func	DelHeader	func DelHeaderfunc(key string) RequestModifier
-symbol	github.com/spcent/plumego/x/gateway	func	DelResponseHeader	func DelResponseHeaderfunc(key string) ResponseModifier
-symbol	github.com/spcent/plumego/x/gateway	func	New	func Newfunc(config Config) *Proxy
-symbol	github.com/spcent/plumego/x/gateway	func	NewBackend	func NewBackendfunc(urlStr string) (*Backend, error)
-symbol	github.com/spcent/plumego/x/gateway	func	NewBackendPool	func NewBackendPoolfunc(urls []string) (*BackendPool, error)
-symbol	github.com/spcent/plumego/x/gateway	func	NewE	func NewEfunc(config Config) (*Proxy, error)
-symbol	github.com/spcent/plumego/x/gateway	func	NewGateway	func NewGatewayfunc(cfg GatewayConfig) *GatewayProxy
-symbol	github.com/spcent/plumego/x/gateway	func	NewGatewayBackendPool	func NewGatewayBackendPoolfunc(urls []string) (*GatewayBackendPool, error)
-symbol	github.com/spcent/plumego/x/gateway	func	NewGatewayE	func NewGatewayEfunc(cfg GatewayConfig) (*GatewayProxy, error)
-symbol	github.com/spcent/plumego/x/gateway	func	NewGatewayProtocolRegistry	func NewGatewayProtocolRegistryfunc() *GatewayProtocolRegistry
-symbol	github.com/spcent/plumego/x/gateway	func	NewHealthChecker	func NewHealthCheckerfunc(pool *BackendPool, config *HealthCheckConfig) *HealthChecker
-symbol	github.com/spcent/plumego/x/gateway	func	NewIPHashBalancer	func NewIPHashBalancerfunc() *IPHashBalancer
-symbol	github.com/spcent/plumego/x/gateway	func	NewLeastConnectionsBalancer	func NewLeastConnectionsBalancerfunc() *LeastConnectionsBalancer
-symbol	github.com/spcent/plumego/x/gateway	func	NewProxyError	func NewProxyErrorfunc(backend string, err error, attempt int) *ProxyError
-symbol	github.com/spcent/plumego/x/gateway	func	NewRandomBalancer	func NewRandomBalancerfunc() *RandomBalancer
-symbol	github.com/spcent/plumego/x/gateway	func	NewRoundRobinBalancer	func NewRoundRobinBalancerfunc() *RoundRobinBalancer
-symbol	github.com/spcent/plumego/x/gateway	func	NewTransportPool	func NewTransportPoolfunc(config *TransportConfig) *TransportPool
-symbol	github.com/spcent/plumego/x/gateway	func	NewWeightedRoundRobinBalancer	func NewWeightedRoundRobinBalancerfunc() *WeightedRoundRobinBalancer
-symbol	github.com/spcent/plumego/x/gateway	func	RegisterProxy	func RegisterProxyfunc(r *router.Router, path string, cfg GatewayConfig) (*GatewayProxy, error)
-symbol	github.com/spcent/plumego/x/gateway	func	RegisterRoute	func RegisterRoutefunc(r *router.Router, path string, handler http.Handler) error
-symbol	github.com/spcent/plumego/x/gateway	func	RemoveHopByHopHeaders	func RemoveHopByHopHeadersfunc() RequestModifier
-symbol	github.com/spcent/plumego/x/gateway	func	ReplacePrefix	func ReplacePrefixfunc(oldPrefix, newPrefix string) PathRewriteFunc
-symbol	github.com/spcent/plumego/x/gateway	func	RewriteMap	func RewriteMapfunc(rules map[string]string) PathRewriteFunc
-symbol	github.com/spcent/plumego/x/gateway	func	RewriteRegex	func RewriteRegexfunc(pattern RegexRewriter, replacement string) PathRewriteFunc
-symbol	github.com/spcent/plumego/x/gateway	func	SetHeader	func SetHeaderfunc(key, value string) RequestModifier
-symbol	github.com/spcent/plumego/x/gateway	func	SetResponseHeader	func SetResponseHeaderfunc(key, value string) ResponseModifier
-symbol	github.com/spcent/plumego/x/gateway	func	StripPrefix	func StripPrefixfunc(prefix string) PathRewriteFunc
-symbol	github.com/spcent/plumego/x/gateway	method	Backend.Execute	func (Backend) Executefunc(fn func() error) error
-symbol	github.com/spcent/plumego/x/gateway	method	Backend.HasCircuitBreaker	func (Backend) HasCircuitBreakerfunc() bool
-symbol	github.com/spcent/plumego/x/gateway	method	Backend.IsHealthy	func (Backend) IsHealthyfunc() bool
-symbol	github.com/spcent/plumego/x/gateway	method	Backend.RecordFailure	func (Backend) RecordFailurefunc(threshold uint32)
-symbol	github.com/spcent/plumego/x/gateway	method	Backend.RecordSuccess	func (Backend) RecordSuccessfunc()
-symbol	github.com/spcent/plumego/x/gateway	method	Backend.SetCircuitBreaker	func (Backend) SetCircuitBreakerfunc(cb CircuitBreaker)
-symbol	github.com/spcent/plumego/x/gateway	method	Backend.SetHealthy	func (Backend) SetHealthyfunc(healthy bool)
-symbol	github.com/spcent/plumego/x/gateway	method	Backend.Stats	func (Backend) Statsfunc() BackendStats
-symbol	github.com/spcent/plumego/x/gateway	method	BackendPool.AddBackend	func (BackendPool) AddBackendfunc(backend *Backend)
-symbol	github.com/spcent/plumego/x/gateway	method	BackendPool.Backends	func (BackendPool) Backendsfunc() []*Backend
-symbol	github.com/spcent/plumego/x/gateway	method	BackendPool.Count	func (BackendPool) Countfunc() int
-symbol	github.com/spcent/plumego/x/gateway	method	BackendPool.GetBackend	func (BackendPool) GetBackendfunc(url string) *Backend
-symbol	github.com/spcent/plumego/x/gateway	method	BackendPool.HealthyBackends	func (BackendPool) HealthyBackendsfunc() []*Backend
-symbol	github.com/spcent/plumego/x/gateway	method	BackendPool.HealthyCount	func (BackendPool) HealthyCountfunc() int
-symbol	github.com/spcent/plumego/x/gateway	method	BackendPool.RemoveBackend	func (BackendPool) RemoveBackendfunc(url string) bool
-symbol	github.com/spcent/plumego/x/gateway	method	BackendPool.Stats	func (BackendPool) Statsfunc() []BackendStats
-symbol	github.com/spcent/plumego/x/gateway	method	BackendPool.UpdateBackends	func (BackendPool) UpdateBackendsfunc(urls []string) error
-symbol	github.com/spcent/plumego/x/gateway	method	Config.Validate	func (Config) Validatefunc() error
-symbol	github.com/spcent/plumego/x/gateway	method	Config.WithDefaults	func (Config) WithDefaultsfunc() *Config
-symbol	github.com/spcent/plumego/x/gateway	method	HealthCheckConfig.WithDefaults	func (HealthCheckConfig) WithDefaultsfunc() *HealthCheckConfig
-symbol	github.com/spcent/plumego/x/gateway	method	HealthChecker.Check	func (HealthChecker) Checkfunc(backend *Backend) bool
-symbol	github.com/spcent/plumego/x/gateway	method	HealthChecker.CheckAll	func (HealthChecker) CheckAllfunc()
-symbol	github.com/spcent/plumego/x/gateway	method	HealthChecker.Start	func (HealthChecker) Startfunc()
-symbol	github.com/spcent/plumego/x/gateway	method	HealthChecker.Stop	func (HealthChecker) Stopfunc()
-symbol	github.com/spcent/plumego/x/gateway	method	IPHashBalancer.Name	func (IPHashBalancer) Namefunc() string
-symbol	github.com/spcent/plumego/x/gateway	method	IPHashBalancer.Next	func (IPHashBalancer) Nextfunc(pool *BackendPool) (*Backend, error)
-symbol	github.com/spcent/plumego/x/gateway	method	IPHashBalancer.NextWithIP	func (IPHashBalancer) NextWithIPfunc(pool *BackendPool, ip string) (*Backend, error)
-symbol	github.com/spcent/plumego/x/gateway	method	IPHashBalancer.Reset	func (IPHashBalancer) Resetfunc()
-symbol	github.com/spcent/plumego/x/gateway	method	LeastConnectionsBalancer.Acquire	func (LeastConnectionsBalancer) Acquirefunc(backend *Backend)
-symbol	github.com/spcent/plumego/x/gateway	method	LeastConnectionsBalancer.Name	func (LeastConnectionsBalancer) Namefunc() string
-symbol	github.com/spcent/plumego/x/gateway	method	LeastConnectionsBalancer.Next	func (LeastConnectionsBalancer) Nextfunc(pool *BackendPool) (*Backend, error)
-symbol	github.com/spcent/plumego/x/gateway	method	LeastConnectionsBalancer.Release	func (LeastConnectionsBalancer) Releasefunc(backend *Backend)
-symbol	github.com/spcent/plumego/x/gateway	method	LeastConnectionsBalancer.Reset	func (LeastConnectionsBalancer) Resetfunc()
-symbol	github.com/spcent/plumego/x/gateway	method	Proxy.Close	func (Proxy) Closefunc()
-symbol	github.com/spcent/plumego/x/gateway	method	Proxy.Middleware	func (Proxy) Middlewarefunc() func(http.Handler) http.Handler
-symbol	github.com/spcent/plumego/x/gateway	method	Proxy.ServeHTTP	func (Proxy) ServeHTTPfunc(w http.ResponseWriter, r *http.Request)
-symbol	github.com/spcent/plumego/x/gateway	method	Proxy.Stats	func (Proxy) Statsfunc() ProxyStats
-symbol	github.com/spcent/plumego/x/gateway	method	ProxyError.Error	func (ProxyError) Errorfunc() string
-symbol	github.com/spcent/plumego/x/gateway	method	ProxyError.Is	func (ProxyError) Isfunc(target error) bool
-symbol	github.com/spcent/plumego/x/gateway	method	ProxyError.Unwrap	func (ProxyError) Unwrapfunc() error
-symbol	github.com/spcent/plumego/x/gateway	method	RandomBalancer.Name	func (RandomBalancer) Namefunc() string
-symbol	github.com/spcent/plumego/x/gateway	method	RandomBalancer.Next	func (RandomBalancer) Nextfunc(pool *BackendPool) (*Backend, error)
-symbol	github.com/spcent/plumego/x/gateway	method	RandomBalancer.Reset	func (RandomBalancer) Resetfunc()
-symbol	github.com/spcent/plumego/x/gateway	method	RoundRobinBalancer.Name	func (RoundRobinBalancer) Namefunc() string
-symbol	github.com/spcent/plumego/x/gateway	method	RoundRobinBalancer.Next	func (RoundRobinBalancer) Nextfunc(pool *BackendPool) (*Backend, error)
-symbol	github.com/spcent/plumego/x/gateway	method	RoundRobinBalancer.Reset	func (RoundRobinBalancer) Resetfunc()
-symbol	github.com/spcent/plumego/x/gateway	method	TransportPool.Close	func (TransportPool) Closefunc()
-symbol	github.com/spcent/plumego/x/gateway	method	TransportPool.CloseIdleConnections	func (TransportPool) CloseIdleConnectionsfunc()
-symbol	github.com/spcent/plumego/x/gateway	method	TransportPool.Count	func (TransportPool) Countfunc() int
-symbol	github.com/spcent/plumego/x/gateway	method	TransportPool.Get	func (TransportPool) Getfunc(backendURL string) *http.Transport
-symbol	github.com/spcent/plumego/x/gateway	method	TransportPool.Remove	func (TransportPool) Removefunc(backendURL string)
-symbol	github.com/spcent/plumego/x/gateway	method	WeightedRoundRobinBalancer.Name	func (WeightedRoundRobinBalancer) Namefunc() string
-symbol	github.com/spcent/plumego/x/gateway	method	WeightedRoundRobinBalancer.Next	func (WeightedRoundRobinBalancer) Nextfunc(pool *BackendPool) (*Backend, error)
-symbol	github.com/spcent/plumego/x/gateway	method	WeightedRoundRobinBalancer.Reset	func (WeightedRoundRobinBalancer) Resetfunc()
-symbol	github.com/spcent/plumego/x/gateway	type	Backend	type Backend struct { URL string ParsedURL *url.URL Weight int Metadata map[string]string healthy atomic.Bool consecutiveFailures atomic.Uint32 totalRequests atomic.Uint64 totalFailures atomic.Uint64 totalSuccesses atomic.Uint64 circuitBreaker CircuitBreaker }
-symbol	github.com/spcent/plumego/x/gateway	type	BackendPool	type BackendPool struct { backends []*Backend mu sync.RWMutex }
-symbol	github.com/spcent/plumego/x/gateway	type	BackendStats	type BackendStats struct { URL string Healthy bool Weight int TotalRequests uint64 TotalFailures uint64 TotalSuccesses uint64 ConsecutiveFailures uint32 }
-symbol	github.com/spcent/plumego/x/gateway	type	BufferPool	type BufferPool interface { Get() []byte Put([]byte) }
-symbol	github.com/spcent/plumego/x/gateway	type	CircuitBreaker	type CircuitBreaker interface { Call(fn func() error) error State() circuitbreaker.State Stats() circuitbreaker.Stats Reset() Trip() }
-symbol	github.com/spcent/plumego/x/gateway	type	CircuitBreakerConfig	type CircuitBreakerConfig struct { FailureThreshold float64 SuccessThreshold uint64 Timeout time.Duration MinRequests uint64 }
-symbol	github.com/spcent/plumego/x/gateway	type	Config	type Config struct { Targets []string ServiceName string Discovery ServiceDiscovery LoadBalancer LoadBalancer Transport *TransportConfig PathRewrite PathRewriteFunc ModifyRequest RequestModifier ModifyResponse ResponseModifier ErrorHandler ErrorHandlerFunc HealthCheck *HealthCheckConfig FailureThreshold uint32 Timeout time.Duration RetryCount int RetryBackoff time.Duration WebSocketEnabled bool PreserveHost bool AddForwardedHeaders bool RemoveHopByHop bool BufferPool BufferPool CircuitBreakerEnabled bool CircuitBreakerConfig *CircuitBreakerConfig }
-symbol	github.com/spcent/plumego/x/gateway	type	ErrorHandlerFunc	type ErrorHandlerFunc func(w http.ResponseWriter, r *http.Request, err error)
-symbol	github.com/spcent/plumego/x/gateway	type	GatewayBackend	type GatewayBackend = Backend
-symbol	github.com/spcent/plumego/x/gateway	type	GatewayBackendPool	type GatewayBackendPool = BackendPool
-symbol	github.com/spcent/plumego/x/gateway	type	GatewayConfig	type GatewayConfig = Config
-symbol	github.com/spcent/plumego/x/gateway	type	GatewayHTTPRequest	type GatewayHTTPRequest = protocol.HTTPRequest
-symbol	github.com/spcent/plumego/x/gateway	type	GatewayPathRewriteFunc	type GatewayPathRewriteFunc = PathRewriteFunc
-symbol	github.com/spcent/plumego/x/gateway	type	GatewayProtocolAdapter	type GatewayProtocolAdapter = protocol.ProtocolAdapter
-symbol	github.com/spcent/plumego/x/gateway	type	GatewayProtocolRegistry	type GatewayProtocolRegistry = protocol.Registry
-symbol	github.com/spcent/plumego/x/gateway	type	GatewayProtocolRequest	type GatewayProtocolRequest = protocol.Request
-symbol	github.com/spcent/plumego/x/gateway	type	GatewayProtocolResponse	type GatewayProtocolResponse = protocol.Response
-symbol	github.com/spcent/plumego/x/gateway	type	GatewayProtocolResponseWriter	type GatewayProtocolResponseWriter = protocol.ResponseWriter
-symbol	github.com/spcent/plumego/x/gateway	type	GatewayProxy	type GatewayProxy = Proxy
-symbol	github.com/spcent/plumego/x/gateway	type	GatewayServiceDiscovery	type GatewayServiceDiscovery = ServiceDiscovery
-symbol	github.com/spcent/plumego/x/gateway	type	GatewayTransportConfig	type GatewayTransportConfig = TransportConfig
-symbol	github.com/spcent/plumego/x/gateway	type	GatewayTransportPool	type GatewayTransportPool = TransportPool
-symbol	github.com/spcent/plumego/x/gateway	type	HealthCheckConfig	type HealthCheckConfig struct { Interval time.Duration Timeout time.Duration Path string Method string ExpectedStatus int OnHealthChange func(backend *Backend, healthy bool) }
-symbol	github.com/spcent/plumego/x/gateway	type	HealthChecker	type HealthChecker struct { pool *BackendPool config *HealthCheckConfig client *http.Client stopChan chan struct{} stopOnce sync.Once wg sync.WaitGroup }
-symbol	github.com/spcent/plumego/x/gateway	type	IPHashBalancer	type IPHashBalancer struct{}
-symbol	github.com/spcent/plumego/x/gateway	type	LeastConnectionsBalancer	type LeastConnectionsBalancer struct { connections map[string]*atomic.Int64 mu sync.RWMutex }
-symbol	github.com/spcent/plumego/x/gateway	type	LoadBalancer	type LoadBalancer interface { Next(pool *BackendPool) (*Backend, error) Reset() Name() string }
-symbol	github.com/spcent/plumego/x/gateway	type	PathRewriteFunc	type PathRewriteFunc func(path string) string
-symbol	github.com/spcent/plumego/x/gateway	type	Proxy	type Proxy struct { config *Config pool *BackendPool transport *TransportPool balancer LoadBalancer health *HealthChecker discoveryCancel context.CancelFunc discoveryWG sync.WaitGroup closeOnce sync.Once lcBalancer *LeastConnectionsBalancer mu sync.RWMutex }
-symbol	github.com/spcent/plumego/x/gateway	type	ProxyError	type ProxyError struct { Backend string Err error Attempt int }
-symbol	github.com/spcent/plumego/x/gateway	type	ProxyStats	type ProxyStats struct { TotalBackends int HealthyBackends int Strategy string }
-symbol	github.com/spcent/plumego/x/gateway	type	RandomBalancer	type RandomBalancer struct { rng *rand.Rand mu sync.Mutex }
-symbol	github.com/spcent/plumego/x/gateway	type	RegexRewriter	type RegexRewriter interface { ReplaceAllString(src, repl string) string }
-symbol	github.com/spcent/plumego/x/gateway	type	RequestModifier	type RequestModifier func(*http.Request) error
-symbol	github.com/spcent/plumego/x/gateway	type	ResponseModifier	type ResponseModifier func(*http.Response) error
-symbol	github.com/spcent/plumego/x/gateway	type	RoundRobinBalancer	type RoundRobinBalancer struct { counter atomic.Uint64 }
-symbol	github.com/spcent/plumego/x/gateway	type	ServiceDiscovery	type ServiceDiscovery interface { Resolve(ctx context.Context, serviceName string) ([]string, error) Watch(ctx context.Context, serviceName string) (<-chan []string, error) }
-symbol	github.com/spcent/plumego/x/gateway	type	TransportConfig	type TransportConfig struct { MaxIdleConns int MaxIdleConnsPerHost int IdleConnTimeout time.Duration ResponseHeaderTimeout time.Duration TLSHandshakeTimeout time.Duration ExpectContinueTimeout time.Duration DisableKeepAlives bool DisableCompression bool MaxConnsPerHost int DialTimeout time.Duration DialKeepAlive time.Duration TLSClientConfig *tls.Config }
-symbol	github.com/spcent/plumego/x/gateway	type	TransportPool	type TransportPool struct { transports map[string]*http.Transport config *TransportConfig mu sync.RWMutex }
-symbol	github.com/spcent/plumego/x/gateway	type	WeightedRoundRobinBalancer	type WeightedRoundRobinBalancer struct { currentWeight []int mu sync.Mutex }
-symbol	github.com/spcent/plumego/x/gateway	var	ErrBackendRefused	var ErrBackendRefused = errors.New("backend refused connection")
-symbol	github.com/spcent/plumego/x/gateway	var	ErrBackendTimeout	var ErrBackendTimeout = errors.New("backend timeout")
-symbol	github.com/spcent/plumego/x/gateway	var	ErrInvalidConfig	var ErrInvalidConfig = errors.New("invalid proxy configuration")
-symbol	github.com/spcent/plumego/x/gateway	var	ErrNoBackends	var ErrNoBackends = errors.New("no backends configured")
-symbol	github.com/spcent/plumego/x/gateway	var	ErrNoHealthyBackends	var ErrNoHealthyBackends = errors.New("no healthy backends available")
-symbol	github.com/spcent/plumego/x/gateway	var	ErrTooManyRetries	var ErrTooManyRetries = errors.New("too many retries")
-symbol	github.com/spcent/plumego/x/gateway	var	ErrWebSocketUpgrade	var ErrWebSocketUpgrade = errors.New("websocket upgrade failed")
-symbol	github.com/spcent/plumego/x/gateway/cache	func	Middleware	func Middlewarefunc(config Config) func(http.Handler) http.Handler
-symbol	github.com/spcent/plumego/x/gateway/cache	func	NewCompositeKeyStrategy	func NewCompositeKeyStrategyfunc(strategies ...KeyStrategy) *CompositeKeyStrategy
-symbol	github.com/spcent/plumego/x/gateway/cache	func	NewDefaultKeyStrategy	func NewDefaultKeyStrategyfunc() *DefaultKeyStrategy
-symbol	github.com/spcent/plumego/x/gateway/cache	func	NewHeaderAwareKeyStrategy	func NewHeaderAwareKeyStrategyfunc(headers []string) *HeaderAwareKeyStrategy
-symbol	github.com/spcent/plumego/x/gateway/cache	func	NewMemoryStore	func NewMemoryStorefunc(capacity int) *MemoryStore
-symbol	github.com/spcent/plumego/x/gateway/cache	func	NewNoCacheKeyStrategy	func NewNoCacheKeyStrategyfunc() *NoCacheKeyStrategy
-symbol	github.com/spcent/plumego/x/gateway/cache	func	NewPathPatternKeyStrategy	func NewPathPatternKeyStrategyfunc(patterns map[string]KeyStrategy) *PathPatternKeyStrategy
-symbol	github.com/spcent/plumego/x/gateway/cache	func	NewQueryParamKeyStrategy	func NewQueryParamKeyStrategyfunc(ignoreParams []string) *QueryParamKeyStrategy
-symbol	github.com/spcent/plumego/x/gateway/cache	func	NewTenantAwareKeyStrategy	func NewTenantAwareKeyStrategyfunc(tenantIDHeader string) *TenantAwareKeyStrategy
-symbol	github.com/spcent/plumego/x/gateway/cache	func	NewURLOnlyKeyStrategy	func NewURLOnlyKeyStrategyfunc() *URLOnlyKeyStrategy
-symbol	github.com/spcent/plumego/x/gateway/cache	func	NewUserAwareKeyStrategy	func NewUserAwareKeyStrategyfunc(userIDHeader string) *UserAwareKeyStrategy
-symbol	github.com/spcent/plumego/x/gateway/cache	func	Stats	func Statsfunc(store Store) StoreStats
-symbol	github.com/spcent/plumego/x/gateway/cache	method	CachedResponse.IsExpired	func (CachedResponse) IsExpiredfunc() bool
-symbol	github.com/spcent/plumego/x/gateway/cache	method	CompositeKeyStrategy.Generate	func (CompositeKeyStrategy) Generatefunc(r *http.Request) string
-symbol	github.com/spcent/plumego/x/gateway/cache	method	Config.WithDefaults	func (Config) WithDefaultsfunc() *Config
-symbol	github.com/spcent/plumego/x/gateway/cache	method	CustomKeyStrategy.Generate	func (CustomKeyStrategy) Generatefunc(r *http.Request) string
-symbol	github.com/spcent/plumego/x/gateway/cache	method	DefaultKeyStrategy.Generate	func (DefaultKeyStrategy) Generatefunc(r *http.Request) string
-symbol	github.com/spcent/plumego/x/gateway/cache	method	HeaderAwareKeyStrategy.Generate	func (HeaderAwareKeyStrategy) Generatefunc(r *http.Request) string
-symbol	github.com/spcent/plumego/x/gateway/cache	method	MemoryStore.CleanupExpired	func (MemoryStore) CleanupExpiredfunc() int
-symbol	github.com/spcent/plumego/x/gateway/cache	method	MemoryStore.Clear	func (MemoryStore) Clearfunc()
-symbol	github.com/spcent/plumego/x/gateway/cache	method	MemoryStore.Delete	func (MemoryStore) Deletefunc(key string)
-symbol	github.com/spcent/plumego/x/gateway/cache	method	MemoryStore.Get	func (MemoryStore) Getfunc(key string) (*CachedResponse, bool)
-symbol	github.com/spcent/plumego/x/gateway/cache	method	MemoryStore.HitRate	func (MemoryStore) HitRatefunc() float64
-symbol	github.com/spcent/plumego/x/gateway/cache	method	MemoryStore.Keys	func (MemoryStore) Keysfunc() []string
-symbol	github.com/spcent/plumego/x/gateway/cache	method	MemoryStore.Len	func (MemoryStore) Lenfunc() int
-symbol	github.com/spcent/plumego/x/gateway/cache	method	MemoryStore.Resize	func (MemoryStore) Resizefunc(newCapacity int)
-symbol	github.com/spcent/plumego/x/gateway/cache	method	MemoryStore.Set	func (MemoryStore) Setfunc(key string, resp *CachedResponse, ttl time.Duration)
-symbol	github.com/spcent/plumego/x/gateway/cache	method	MemoryStore.Size	func (MemoryStore) Sizefunc() int64
-symbol	github.com/spcent/plumego/x/gateway/cache	method	MemoryStore.Stats	func (MemoryStore) Statsfunc() StoreStats
-symbol	github.com/spcent/plumego/x/gateway/cache	method	NoCacheKeyStrategy.Generate	func (NoCacheKeyStrategy) Generatefunc(r *http.Request) string
-symbol	github.com/spcent/plumego/x/gateway/cache	method	PathPatternKeyStrategy.Generate	func (PathPatternKeyStrategy) Generatefunc(r *http.Request) string
-symbol	github.com/spcent/plumego/x/gateway/cache	method	QueryParamKeyStrategy.Generate	func (QueryParamKeyStrategy) Generatefunc(r *http.Request) string
-symbol	github.com/spcent/plumego/x/gateway/cache	method	TenantAwareKeyStrategy.Generate	func (TenantAwareKeyStrategy) Generatefunc(r *http.Request) string
-symbol	github.com/spcent/plumego/x/gateway/cache	method	URLOnlyKeyStrategy.Generate	func (URLOnlyKeyStrategy) Generatefunc(r *http.Request) string
-symbol	github.com/spcent/plumego/x/gateway/cache	method	UserAwareKeyStrategy.Generate	func (UserAwareKeyStrategy) Generatefunc(r *http.Request) string
-symbol	github.com/spcent/plumego/x/gateway/cache	type	CachedResponse	type CachedResponse struct { StatusCode int Header http.Header Body []byte CachedAt time.Time ExpiresAt time.Time ETag string Size int64 }
-symbol	github.com/spcent/plumego/x/gateway/cache	type	CompositeKeyStrategy	type CompositeKeyStrategy struct { Strategies []KeyStrategy }
-symbol	github.com/spcent/plumego/x/gateway/cache	type	Config	type Config struct { Store Store KeyStrategy KeyStrategy DefaultTTL time.Duration MaxSize int64 Methods []string StatusCodes []int RespectCacheControl bool EnableConditionalRequests bool OnCacheHit func(key string, resp *CachedResponse) OnCacheMiss func(key string) }
-symbol	github.com/spcent/plumego/x/gateway/cache	type	CustomKeyStrategy	type CustomKeyStrategy struct { KeyFunc func(r *http.Request) string }
-symbol	github.com/spcent/plumego/x/gateway/cache	type	DefaultKeyStrategy	type DefaultKeyStrategy struct { IncludeHeaders []string }
-symbol	github.com/spcent/plumego/x/gateway/cache	type	HeaderAwareKeyStrategy	type HeaderAwareKeyStrategy struct { Headers []string }
-symbol	github.com/spcent/plumego/x/gateway/cache	type	KeyStrategy	type KeyStrategy interface { Generate(r *http.Request) string }
-symbol	github.com/spcent/plumego/x/gateway/cache	type	MemoryStore	type MemoryStore struct { capacity int items map[string]*list.Element lruList *list.List mu sync.RWMutex hits uint64 misses uint64 evictions uint64 size int64 }
-symbol	github.com/spcent/plumego/x/gateway/cache	type	NoCacheKeyStrategy	type NoCacheKeyStrategy struct{}
-symbol	github.com/spcent/plumego/x/gateway/cache	type	PathPatternKeyStrategy	type PathPatternKeyStrategy struct { Patterns map[string]KeyStrategy DefaultStrategy KeyStrategy }
-symbol	github.com/spcent/plumego/x/gateway/cache	type	QueryParamKeyStrategy	type QueryParamKeyStrategy struct { IgnoreParams []string }
-symbol	github.com/spcent/plumego/x/gateway/cache	type	Store	type Store interface { Get(key string) (*CachedResponse, bool) Set(key string, resp *CachedResponse, ttl time.Duration) Delete(key string) Clear() Stats() StoreStats }
-symbol	github.com/spcent/plumego/x/gateway/cache	type	StoreStats	type StoreStats struct { Items int Hits uint64 Misses uint64 Evictions uint64 Size int64 }
-symbol	github.com/spcent/plumego/x/gateway/cache	type	TenantAwareKeyStrategy	type TenantAwareKeyStrategy struct { TenantIDHeader string FallbackStrategy KeyStrategy }
-symbol	github.com/spcent/plumego/x/gateway/cache	type	URLOnlyKeyStrategy	type URLOnlyKeyStrategy struct{}
-symbol	github.com/spcent/plumego/x/gateway/cache	type	UserAwareKeyStrategy	type UserAwareKeyStrategy struct { UserIDHeader string FallbackStrategy KeyStrategy }
-symbol	github.com/spcent/plumego/x/gateway/protocol	const	GraphQLIntrospectionQuery	const GraphQLIntrospectionQuery = ` query IntrospectionQuery { __schema { queryType { name } mutationType { name } subscriptionType { name } types { ...FullType } directives { name description locations args { ...InputValue } } } } fragment FullType on __Type { kind name description fields(includeDeprecated: true) { name description args { ...InputValue } type { ...TypeRef } isDeprecated deprecationReason } } `
-symbol	github.com/spcent/plumego/x/gateway/protocol	func	GRPCErrorCode	func GRPCErrorCodefunc(code int) int
-symbol	github.com/spcent/plumego/x/gateway/protocol	func	NewRegistry	func NewRegistryfunc() *Registry
-symbol	github.com/spcent/plumego/x/gateway/protocol	method	GRPCRequest.Body	func (GRPCRequest) Bodyfunc() io.Reader
-symbol	github.com/spcent/plumego/x/gateway/protocol	method	GRPCRequest.Headers	func (GRPCRequest) Headersfunc() map[string][]string
-symbol	github.com/spcent/plumego/x/gateway/protocol	method	GRPCRequest.Metadata	func (GRPCRequest) Metadatafunc() map[string]any
-symbol	github.com/spcent/plumego/x/gateway/protocol	method	GRPCRequest.Method	func (GRPCRequest) Methodfunc() string
-symbol	github.com/spcent/plumego/x/gateway/protocol	method	GRPCResponse.Body	func (GRPCResponse) Bodyfunc() io.Reader
-symbol	github.com/spcent/plumego/x/gateway/protocol	method	GRPCResponse.Headers	func (GRPCResponse) Headersfunc() map[string][]string
-symbol	github.com/spcent/plumego/x/gateway/protocol	method	GRPCResponse.Metadata	func (GRPCResponse) Metadatafunc() map[string]any
-symbol	github.com/spcent/plumego/x/gateway/protocol	method	GRPCResponse.StatusCode	func (GRPCResponse) StatusCodefunc() int
-symbol	github.com/spcent/plumego/x/gateway/protocol	method	GraphQLRequest.Body	func (GraphQLRequest) Bodyfunc() io.Reader
-symbol	github.com/spcent/plumego/x/gateway/protocol	method	GraphQLRequest.Headers	func (GraphQLRequest) Headersfunc() map[string][]string
-symbol	github.com/spcent/plumego/x/gateway/protocol	method	GraphQLRequest.Metadata	func (GraphQLRequest) Metadatafunc() map[string]any
-symbol	github.com/spcent/plumego/x/gateway/protocol	method	GraphQLRequest.Method	func (GraphQLRequest) Methodfunc() string
-symbol	github.com/spcent/plumego/x/gateway/protocol	method	GraphQLResponse.Body	func (GraphQLResponse) Bodyfunc() io.Reader
-symbol	github.com/spcent/plumego/x/gateway/protocol	method	GraphQLResponse.HasErrors	func (GraphQLResponse) HasErrorsfunc() bool
-symbol	github.com/spcent/plumego/x/gateway/protocol	method	GraphQLResponse.Headers	func (GraphQLResponse) Headersfunc() map[string][]string
-symbol	github.com/spcent/plumego/x/gateway/protocol	method	GraphQLResponse.Metadata	func (GraphQLResponse) Metadatafunc() map[string]any
-symbol	github.com/spcent/plumego/x/gateway/protocol	method	GraphQLResponse.StatusCode	func (GraphQLResponse) StatusCodefunc() int
-symbol	github.com/spcent/plumego/x/gateway/protocol	method	Registry.Adapters	func (Registry) Adaptersfunc() []ProtocolAdapter
-symbol	github.com/spcent/plumego/x/gateway/protocol	method	Registry.Count	func (Registry) Countfunc() int
-symbol	github.com/spcent/plumego/x/gateway/protocol	method	Registry.Find	func (Registry) Findfunc(req *HTTPRequest) ProtocolAdapter
-symbol	github.com/spcent/plumego/x/gateway/protocol	method	Registry.Register	func (Registry) Registerfunc(adapter ProtocolAdapter)
-symbol	github.com/spcent/plumego/x/gateway/protocol	type	GRPCAdapter	type GRPCAdapter interface { ProtocolAdapter Service() string Methods() []string }
-symbol	github.com/spcent/plumego/x/gateway/protocol	type	GRPCInvoker	type GRPCInvoker interface { Invoke(ctx context.Context, method string, req Request) (Response, error) }
-symbol	github.com/spcent/plumego/x/gateway/protocol	type	GRPCMetadata	type GRPCMetadata struct { Service string Method string Authority string Timeout string ContentType string Encoding string UserAgent string Custom map[string]string }
-symbol	github.com/spcent/plumego/x/gateway/protocol	type	GRPCRequest	type GRPCRequest struct { MethodName string Meta *GRPCMetadata BodyReader io.Reader HeaderMap map[string][]string }
-symbol	github.com/spcent/plumego/x/gateway/protocol	type	GRPCResponse	type GRPCResponse struct { Status int Meta *GRPCMetadata BodyReader io.Reader HeaderMap map[string][]string }
-symbol	github.com/spcent/plumego/x/gateway/protocol	type	GraphQLAdapter	type GraphQLAdapter interface { ProtocolAdapter Schema() string Validate(query string) error }
-symbol	github.com/spcent/plumego/x/gateway/protocol	type	GraphQLDirective	type GraphQLDirective struct { Name string Arguments map[string]any }
-symbol	github.com/spcent/plumego/x/gateway/protocol	type	GraphQLError	type GraphQLError struct { Message string `json:"message"` Locations []GraphQLLocation `json:"locations,omitempty"` Path []any `json:"path,omitempty"` Extensions map[string]any `json:"extensions,omitempty"` }
-symbol	github.com/spcent/plumego/x/gateway/protocol	type	GraphQLExecutor	type GraphQLExecutor interface { Execute(ctx context.Context, req *GraphQLRequest) (*GraphQLResponse, error) }
-symbol	github.com/spcent/plumego/x/gateway/protocol	type	GraphQLLocation	type GraphQLLocation struct { Line int `json:"line"` Column int `json:"column"` }
-symbol	github.com/spcent/plumego/x/gateway/protocol	type	GraphQLRequest	type GraphQLRequest struct { Query string `json:"query"` OperationName string `json:"operationName,omitempty"` Variables map[string]any `json:"variables,omitempty"` Extensions map[string]any `json:"extensions,omitempty"` HeaderMap map[string][]string `json:"-"` BodyReader io.Reader `json:"-"` }
-symbol	github.com/spcent/plumego/x/gateway/protocol	type	GraphQLResponse	type GraphQLResponse struct { Data any `json:"data,omitempty"` Errors []GraphQLError `json:"errors,omitempty"` Extensions map[string]any `json:"extensions,omitempty"` Status int `json:"-"` HeaderMap map[string][]string `json:"-"` BodyReader io.Reader `json:"-"` }
-symbol	github.com/spcent/plumego/x/gateway/protocol	type	HTTPRequest	type HTTPRequest struct { Method string URL string Headers map[string][]string Body io.Reader Metadata map[string]any }
-symbol	github.com/spcent/plumego/x/gateway/protocol	type	ProtocolAdapter	type ProtocolAdapter interface { Name() string Handles(req *HTTPRequest) bool Transform(ctx context.Context, req *HTTPRequest) (Request, error) Execute(ctx context.Context, req Request) (Response, error) Encode(ctx context.Context, resp Response, writer ResponseWriter) error }
-symbol	github.com/spcent/plumego/x/gateway/protocol	type	Registry	type Registry struct { adapters []ProtocolAdapter }
-symbol	github.com/spcent/plumego/x/gateway/protocol	type	Request	type Request interface { Method() string Headers() map[string][]string Body() io.Reader Metadata() map[string]any }
-symbol	github.com/spcent/plumego/x/gateway/protocol	type	Response	type Response interface { StatusCode() int Headers() map[string][]string Body() io.Reader Metadata() map[string]any }
-symbol	github.com/spcent/plumego/x/gateway/protocol	type	ResponseWriter	type ResponseWriter interface { Header() map[string][]string Write([]byte) (int, error) WriteHeader(statusCode int) }
-symbol	github.com/spcent/plumego/x/gateway/protocolmw	const	CodeProtocolExecutionFail	const CodeProtocolExecutionFail = "protocol_execution_failed"
-symbol	github.com/spcent/plumego/x/gateway/protocolmw	const	CodeProtocolTransformFail	const CodeProtocolTransformFail = "protocol_transform_failed"
-symbol	github.com/spcent/plumego/x/gateway/protocolmw	func	Middleware	func Middlewarefunc(registry *gatewayproto.Registry) func(http.Handler) http.Handler
-symbol	github.com/spcent/plumego/x/gateway/protocolmw	func	MiddlewareWithConfig	func MiddlewareWithConfigfunc(config Config) func(http.Handler) http.Handler
-symbol	github.com/spcent/plumego/x/gateway/protocolmw	type	Config	type Config struct { Registry *gatewayproto.Registry OnAdapterNotFound func(w http.ResponseWriter, r *http.Request) OnTransformError func(w http.ResponseWriter, r *http.Request, err error) OnExecuteError func(w http.ResponseWriter, r *http.Request, err error) OnEncodeError func(w http.ResponseWriter, r *http.Request, err error) }
-symbol	github.com/spcent/plumego/x/gateway/transform	const	CodeTransformFailed	const CodeTransformFailed = "transform_failed"
-symbol	github.com/spcent/plumego/x/gateway/transform	func	AddQueryParam	func AddQueryParamfunc(key, value string) RequestTransformer
-symbol	github.com/spcent/plumego/x/gateway/transform	func	AddRequestHeader	func AddRequestHeaderfunc(key, value string) RequestTransformer
-symbol	github.com/spcent/plumego/x/gateway/transform	func	AddResponseHeader	func AddResponseHeaderfunc(key, value string) ResponseTransformer
-symbol	github.com/spcent/plumego/x/gateway/transform	func	ChainRequest	func ChainRequestfunc(transformers ...RequestTransformer) RequestTransformer
-symbol	github.com/spcent/plumego/x/gateway/transform	func	ChainResponse	func ChainResponsefunc(transformers ...ResponseTransformer) ResponseTransformer
-symbol	github.com/spcent/plumego/x/gateway/transform	func	Middleware	func Middlewarefunc(config Config) func(http.Handler) http.Handler
-symbol	github.com/spcent/plumego/x/gateway/transform	func	ModifyJSONRequest	func ModifyJSONRequestfunc(modifier func(map[string]any) error) RequestTransformer
-symbol	github.com/spcent/plumego/x/gateway/transform	func	ModifyJSONResponse	func ModifyJSONResponsefunc(modifier func(map[string]any) error) ResponseTransformer
-symbol	github.com/spcent/plumego/x/gateway/transform	func	RemoveQueryParam	func RemoveQueryParamfunc(key string) RequestTransformer
-symbol	github.com/spcent/plumego/x/gateway/transform	func	RemoveRequestHeader	func RemoveRequestHeaderfunc(key string) RequestTransformer
-symbol	github.com/spcent/plumego/x/gateway/transform	func	RemoveResponseHeader	func RemoveResponseHeaderfunc(key string) ResponseTransformer
-symbol	github.com/spcent/plumego/x/gateway/transform	func	RenameJSONRequestField	func RenameJSONRequestFieldfunc(from, to string) RequestTransformer
-symbol	github.com/spcent/plumego/x/gateway/transform	func	RenameJSONResponseField	func RenameJSONResponseFieldfunc(from, to string) ResponseTransformer
-symbol	github.com/spcent/plumego/x/gateway/transform	func	RenameRequestHeader	func RenameRequestHeaderfunc(from, to string) RequestTransformer
-symbol	github.com/spcent/plumego/x/gateway/transform	func	RenameResponseHeader	func RenameResponseHeaderfunc(from, to string) ResponseTransformer
-symbol	github.com/spcent/plumego/x/gateway/transform	func	SetRequestMethod	func SetRequestMethodfunc(method string) RequestTransformer
-symbol	github.com/spcent/plumego/x/gateway/transform	func	SetResponseStatus	func SetResponseStatusfunc(statusCode int) ResponseTransformer
-symbol	github.com/spcent/plumego/x/gateway/transform	type	Config	type Config struct { RequestTransformers []RequestTransformer ResponseTransformers []ResponseTransformer OnError func(err error) }
-symbol	github.com/spcent/plumego/x/gateway/transform	type	RequestTransformer	type RequestTransformer func(*http.Request) error
-symbol	github.com/spcent/plumego/x/gateway/transform	type	ResponseTransformer	type ResponseTransformer func(*http.Response) error
+symbol	github.com/birdordev/plumego/x/gateway	func	AddForwardedHeaders	func AddForwardedHeadersfunc() RequestModifier
+symbol	github.com/birdordev/plumego/x/gateway	func	AddHeader	func AddHeaderfunc(key, value string) RequestModifier
+symbol	github.com/birdordev/plumego/x/gateway	func	AddPrefix	func AddPrefixfunc(prefix string) PathRewriteFunc
+symbol	github.com/birdordev/plumego/x/gateway	func	AddResponseHeader	func AddResponseHeaderfunc(key, value string) ResponseModifier
+symbol	github.com/birdordev/plumego/x/gateway	func	Chain	func Chainfunc(rewriters ...PathRewriteFunc) PathRewriteFunc
+symbol	github.com/birdordev/plumego/x/gateway	func	ChainRequestModifiers	func ChainRequestModifiersfunc(modifiers ...RequestModifier) RequestModifier
+symbol	github.com/birdordev/plumego/x/gateway	func	ChainResponseModifiers	func ChainResponseModifiersfunc(modifiers ...ResponseModifier) ResponseModifier
+symbol	github.com/birdordev/plumego/x/gateway	func	DefaultTransportConfig	func DefaultTransportConfigfunc() *TransportConfig
+symbol	github.com/birdordev/plumego/x/gateway	func	DelHeader	func DelHeaderfunc(key string) RequestModifier
+symbol	github.com/birdordev/plumego/x/gateway	func	DelResponseHeader	func DelResponseHeaderfunc(key string) ResponseModifier
+symbol	github.com/birdordev/plumego/x/gateway	func	New	func Newfunc(config Config) *Proxy
+symbol	github.com/birdordev/plumego/x/gateway	func	NewBackend	func NewBackendfunc(urlStr string) (*Backend, error)
+symbol	github.com/birdordev/plumego/x/gateway	func	NewBackendPool	func NewBackendPoolfunc(urls []string) (*BackendPool, error)
+symbol	github.com/birdordev/plumego/x/gateway	func	NewE	func NewEfunc(config Config) (*Proxy, error)
+symbol	github.com/birdordev/plumego/x/gateway	func	NewGateway	func NewGatewayfunc(cfg GatewayConfig) *GatewayProxy
+symbol	github.com/birdordev/plumego/x/gateway	func	NewGatewayBackendPool	func NewGatewayBackendPoolfunc(urls []string) (*GatewayBackendPool, error)
+symbol	github.com/birdordev/plumego/x/gateway	func	NewGatewayE	func NewGatewayEfunc(cfg GatewayConfig) (*GatewayProxy, error)
+symbol	github.com/birdordev/plumego/x/gateway	func	NewGatewayProtocolRegistry	func NewGatewayProtocolRegistryfunc() *GatewayProtocolRegistry
+symbol	github.com/birdordev/plumego/x/gateway	func	NewHealthChecker	func NewHealthCheckerfunc(pool *BackendPool, config *HealthCheckConfig) *HealthChecker
+symbol	github.com/birdordev/plumego/x/gateway	func	NewIPHashBalancer	func NewIPHashBalancerfunc() *IPHashBalancer
+symbol	github.com/birdordev/plumego/x/gateway	func	NewLeastConnectionsBalancer	func NewLeastConnectionsBalancerfunc() *LeastConnectionsBalancer
+symbol	github.com/birdordev/plumego/x/gateway	func	NewProxyError	func NewProxyErrorfunc(backend string, err error, attempt int) *ProxyError
+symbol	github.com/birdordev/plumego/x/gateway	func	NewRandomBalancer	func NewRandomBalancerfunc() *RandomBalancer
+symbol	github.com/birdordev/plumego/x/gateway	func	NewRoundRobinBalancer	func NewRoundRobinBalancerfunc() *RoundRobinBalancer
+symbol	github.com/birdordev/plumego/x/gateway	func	NewTransportPool	func NewTransportPoolfunc(config *TransportConfig) *TransportPool
+symbol	github.com/birdordev/plumego/x/gateway	func	NewWeightedRoundRobinBalancer	func NewWeightedRoundRobinBalancerfunc() *WeightedRoundRobinBalancer
+symbol	github.com/birdordev/plumego/x/gateway	func	RegisterProxy	func RegisterProxyfunc(r *router.Router, path string, cfg GatewayConfig) (*GatewayProxy, error)
+symbol	github.com/birdordev/plumego/x/gateway	func	RegisterRoute	func RegisterRoutefunc(r *router.Router, path string, handler http.Handler) error
+symbol	github.com/birdordev/plumego/x/gateway	func	RemoveHopByHopHeaders	func RemoveHopByHopHeadersfunc() RequestModifier
+symbol	github.com/birdordev/plumego/x/gateway	func	ReplacePrefix	func ReplacePrefixfunc(oldPrefix, newPrefix string) PathRewriteFunc
+symbol	github.com/birdordev/plumego/x/gateway	func	RewriteMap	func RewriteMapfunc(rules map[string]string) PathRewriteFunc
+symbol	github.com/birdordev/plumego/x/gateway	func	RewriteRegex	func RewriteRegexfunc(pattern RegexRewriter, replacement string) PathRewriteFunc
+symbol	github.com/birdordev/plumego/x/gateway	func	SetHeader	func SetHeaderfunc(key, value string) RequestModifier
+symbol	github.com/birdordev/plumego/x/gateway	func	SetResponseHeader	func SetResponseHeaderfunc(key, value string) ResponseModifier
+symbol	github.com/birdordev/plumego/x/gateway	func	StripPrefix	func StripPrefixfunc(prefix string) PathRewriteFunc
+symbol	github.com/birdordev/plumego/x/gateway	method	Backend.Execute	func (Backend) Executefunc(fn func() error) error
+symbol	github.com/birdordev/plumego/x/gateway	method	Backend.HasCircuitBreaker	func (Backend) HasCircuitBreakerfunc() bool
+symbol	github.com/birdordev/plumego/x/gateway	method	Backend.IsHealthy	func (Backend) IsHealthyfunc() bool
+symbol	github.com/birdordev/plumego/x/gateway	method	Backend.RecordFailure	func (Backend) RecordFailurefunc(threshold uint32)
+symbol	github.com/birdordev/plumego/x/gateway	method	Backend.RecordSuccess	func (Backend) RecordSuccessfunc()
+symbol	github.com/birdordev/plumego/x/gateway	method	Backend.SetCircuitBreaker	func (Backend) SetCircuitBreakerfunc(cb CircuitBreaker)
+symbol	github.com/birdordev/plumego/x/gateway	method	Backend.SetHealthy	func (Backend) SetHealthyfunc(healthy bool)
+symbol	github.com/birdordev/plumego/x/gateway	method	Backend.Stats	func (Backend) Statsfunc() BackendStats
+symbol	github.com/birdordev/plumego/x/gateway	method	BackendPool.AddBackend	func (BackendPool) AddBackendfunc(backend *Backend)
+symbol	github.com/birdordev/plumego/x/gateway	method	BackendPool.Backends	func (BackendPool) Backendsfunc() []*Backend
+symbol	github.com/birdordev/plumego/x/gateway	method	BackendPool.Count	func (BackendPool) Countfunc() int
+symbol	github.com/birdordev/plumego/x/gateway	method	BackendPool.GetBackend	func (BackendPool) GetBackendfunc(url string) *Backend
+symbol	github.com/birdordev/plumego/x/gateway	method	BackendPool.HealthyBackends	func (BackendPool) HealthyBackendsfunc() []*Backend
+symbol	github.com/birdordev/plumego/x/gateway	method	BackendPool.HealthyCount	func (BackendPool) HealthyCountfunc() int
+symbol	github.com/birdordev/plumego/x/gateway	method	BackendPool.RemoveBackend	func (BackendPool) RemoveBackendfunc(url string) bool
+symbol	github.com/birdordev/plumego/x/gateway	method	BackendPool.Stats	func (BackendPool) Statsfunc() []BackendStats
+symbol	github.com/birdordev/plumego/x/gateway	method	BackendPool.UpdateBackends	func (BackendPool) UpdateBackendsfunc(urls []string) error
+symbol	github.com/birdordev/plumego/x/gateway	method	Config.Validate	func (Config) Validatefunc() error
+symbol	github.com/birdordev/plumego/x/gateway	method	Config.WithDefaults	func (Config) WithDefaultsfunc() *Config
+symbol	github.com/birdordev/plumego/x/gateway	method	HealthCheckConfig.WithDefaults	func (HealthCheckConfig) WithDefaultsfunc() *HealthCheckConfig
+symbol	github.com/birdordev/plumego/x/gateway	method	HealthChecker.Check	func (HealthChecker) Checkfunc(backend *Backend) bool
+symbol	github.com/birdordev/plumego/x/gateway	method	HealthChecker.CheckAll	func (HealthChecker) CheckAllfunc()
+symbol	github.com/birdordev/plumego/x/gateway	method	HealthChecker.Start	func (HealthChecker) Startfunc()
+symbol	github.com/birdordev/plumego/x/gateway	method	HealthChecker.Stop	func (HealthChecker) Stopfunc()
+symbol	github.com/birdordev/plumego/x/gateway	method	IPHashBalancer.Name	func (IPHashBalancer) Namefunc() string
+symbol	github.com/birdordev/plumego/x/gateway	method	IPHashBalancer.Next	func (IPHashBalancer) Nextfunc(pool *BackendPool) (*Backend, error)
+symbol	github.com/birdordev/plumego/x/gateway	method	IPHashBalancer.NextWithIP	func (IPHashBalancer) NextWithIPfunc(pool *BackendPool, ip string) (*Backend, error)
+symbol	github.com/birdordev/plumego/x/gateway	method	IPHashBalancer.Reset	func (IPHashBalancer) Resetfunc()
+symbol	github.com/birdordev/plumego/x/gateway	method	LeastConnectionsBalancer.Acquire	func (LeastConnectionsBalancer) Acquirefunc(backend *Backend)
+symbol	github.com/birdordev/plumego/x/gateway	method	LeastConnectionsBalancer.Name	func (LeastConnectionsBalancer) Namefunc() string
+symbol	github.com/birdordev/plumego/x/gateway	method	LeastConnectionsBalancer.Next	func (LeastConnectionsBalancer) Nextfunc(pool *BackendPool) (*Backend, error)
+symbol	github.com/birdordev/plumego/x/gateway	method	LeastConnectionsBalancer.Release	func (LeastConnectionsBalancer) Releasefunc(backend *Backend)
+symbol	github.com/birdordev/plumego/x/gateway	method	LeastConnectionsBalancer.Reset	func (LeastConnectionsBalancer) Resetfunc()
+symbol	github.com/birdordev/plumego/x/gateway	method	Proxy.Close	func (Proxy) Closefunc()
+symbol	github.com/birdordev/plumego/x/gateway	method	Proxy.Middleware	func (Proxy) Middlewarefunc() func(http.Handler) http.Handler
+symbol	github.com/birdordev/plumego/x/gateway	method	Proxy.ServeHTTP	func (Proxy) ServeHTTPfunc(w http.ResponseWriter, r *http.Request)
+symbol	github.com/birdordev/plumego/x/gateway	method	Proxy.Stats	func (Proxy) Statsfunc() ProxyStats
+symbol	github.com/birdordev/plumego/x/gateway	method	ProxyError.Error	func (ProxyError) Errorfunc() string
+symbol	github.com/birdordev/plumego/x/gateway	method	ProxyError.Is	func (ProxyError) Isfunc(target error) bool
+symbol	github.com/birdordev/plumego/x/gateway	method	ProxyError.Unwrap	func (ProxyError) Unwrapfunc() error
+symbol	github.com/birdordev/plumego/x/gateway	method	RandomBalancer.Name	func (RandomBalancer) Namefunc() string
+symbol	github.com/birdordev/plumego/x/gateway	method	RandomBalancer.Next	func (RandomBalancer) Nextfunc(pool *BackendPool) (*Backend, error)
+symbol	github.com/birdordev/plumego/x/gateway	method	RandomBalancer.Reset	func (RandomBalancer) Resetfunc()
+symbol	github.com/birdordev/plumego/x/gateway	method	RoundRobinBalancer.Name	func (RoundRobinBalancer) Namefunc() string
+symbol	github.com/birdordev/plumego/x/gateway	method	RoundRobinBalancer.Next	func (RoundRobinBalancer) Nextfunc(pool *BackendPool) (*Backend, error)
+symbol	github.com/birdordev/plumego/x/gateway	method	RoundRobinBalancer.Reset	func (RoundRobinBalancer) Resetfunc()
+symbol	github.com/birdordev/plumego/x/gateway	method	TransportPool.Close	func (TransportPool) Closefunc()
+symbol	github.com/birdordev/plumego/x/gateway	method	TransportPool.CloseIdleConnections	func (TransportPool) CloseIdleConnectionsfunc()
+symbol	github.com/birdordev/plumego/x/gateway	method	TransportPool.Count	func (TransportPool) Countfunc() int
+symbol	github.com/birdordev/plumego/x/gateway	method	TransportPool.Get	func (TransportPool) Getfunc(backendURL string) *http.Transport
+symbol	github.com/birdordev/plumego/x/gateway	method	TransportPool.Remove	func (TransportPool) Removefunc(backendURL string)
+symbol	github.com/birdordev/plumego/x/gateway	method	WeightedRoundRobinBalancer.Name	func (WeightedRoundRobinBalancer) Namefunc() string
+symbol	github.com/birdordev/plumego/x/gateway	method	WeightedRoundRobinBalancer.Next	func (WeightedRoundRobinBalancer) Nextfunc(pool *BackendPool) (*Backend, error)
+symbol	github.com/birdordev/plumego/x/gateway	method	WeightedRoundRobinBalancer.Reset	func (WeightedRoundRobinBalancer) Resetfunc()
+symbol	github.com/birdordev/plumego/x/gateway	type	Backend	type Backend struct { URL string ParsedURL *url.URL Weight int Metadata map[string]string healthy atomic.Bool consecutiveFailures atomic.Uint32 totalRequests atomic.Uint64 totalFailures atomic.Uint64 totalSuccesses atomic.Uint64 circuitBreaker CircuitBreaker }
+symbol	github.com/birdordev/plumego/x/gateway	type	BackendPool	type BackendPool struct { backends []*Backend mu sync.RWMutex }
+symbol	github.com/birdordev/plumego/x/gateway	type	BackendStats	type BackendStats struct { URL string Healthy bool Weight int TotalRequests uint64 TotalFailures uint64 TotalSuccesses uint64 ConsecutiveFailures uint32 }
+symbol	github.com/birdordev/plumego/x/gateway	type	BufferPool	type BufferPool interface { Get() []byte Put([]byte) }
+symbol	github.com/birdordev/plumego/x/gateway	type	CircuitBreaker	type CircuitBreaker interface { Call(fn func() error) error State() circuitbreaker.State Stats() circuitbreaker.Stats Reset() Trip() }
+symbol	github.com/birdordev/plumego/x/gateway	type	CircuitBreakerConfig	type CircuitBreakerConfig struct { FailureThreshold float64 SuccessThreshold uint64 Timeout time.Duration MinRequests uint64 }
+symbol	github.com/birdordev/plumego/x/gateway	type	Config	type Config struct { Targets []string ServiceName string Discovery ServiceDiscovery LoadBalancer LoadBalancer Transport *TransportConfig PathRewrite PathRewriteFunc ModifyRequest RequestModifier ModifyResponse ResponseModifier ErrorHandler ErrorHandlerFunc HealthCheck *HealthCheckConfig FailureThreshold uint32 Timeout time.Duration RetryCount int RetryBackoff time.Duration WebSocketEnabled bool PreserveHost bool AddForwardedHeaders bool RemoveHopByHop bool BufferPool BufferPool CircuitBreakerEnabled bool CircuitBreakerConfig *CircuitBreakerConfig }
+symbol	github.com/birdordev/plumego/x/gateway	type	ErrorHandlerFunc	type ErrorHandlerFunc func(w http.ResponseWriter, r *http.Request, err error)
+symbol	github.com/birdordev/plumego/x/gateway	type	GatewayBackend	type GatewayBackend = Backend
+symbol	github.com/birdordev/plumego/x/gateway	type	GatewayBackendPool	type GatewayBackendPool = BackendPool
+symbol	github.com/birdordev/plumego/x/gateway	type	GatewayConfig	type GatewayConfig = Config
+symbol	github.com/birdordev/plumego/x/gateway	type	GatewayHTTPRequest	type GatewayHTTPRequest = protocol.HTTPRequest
+symbol	github.com/birdordev/plumego/x/gateway	type	GatewayPathRewriteFunc	type GatewayPathRewriteFunc = PathRewriteFunc
+symbol	github.com/birdordev/plumego/x/gateway	type	GatewayProtocolAdapter	type GatewayProtocolAdapter = protocol.ProtocolAdapter
+symbol	github.com/birdordev/plumego/x/gateway	type	GatewayProtocolRegistry	type GatewayProtocolRegistry = protocol.Registry
+symbol	github.com/birdordev/plumego/x/gateway	type	GatewayProtocolRequest	type GatewayProtocolRequest = protocol.Request
+symbol	github.com/birdordev/plumego/x/gateway	type	GatewayProtocolResponse	type GatewayProtocolResponse = protocol.Response
+symbol	github.com/birdordev/plumego/x/gateway	type	GatewayProtocolResponseWriter	type GatewayProtocolResponseWriter = protocol.ResponseWriter
+symbol	github.com/birdordev/plumego/x/gateway	type	GatewayProxy	type GatewayProxy = Proxy
+symbol	github.com/birdordev/plumego/x/gateway	type	GatewayServiceDiscovery	type GatewayServiceDiscovery = ServiceDiscovery
+symbol	github.com/birdordev/plumego/x/gateway	type	GatewayTransportConfig	type GatewayTransportConfig = TransportConfig
+symbol	github.com/birdordev/plumego/x/gateway	type	GatewayTransportPool	type GatewayTransportPool = TransportPool
+symbol	github.com/birdordev/plumego/x/gateway	type	HealthCheckConfig	type HealthCheckConfig struct { Interval time.Duration Timeout time.Duration Path string Method string ExpectedStatus int OnHealthChange func(backend *Backend, healthy bool) }
+symbol	github.com/birdordev/plumego/x/gateway	type	HealthChecker	type HealthChecker struct { pool *BackendPool config *HealthCheckConfig client *http.Client stopChan chan struct{} stopOnce sync.Once wg sync.WaitGroup }
+symbol	github.com/birdordev/plumego/x/gateway	type	IPHashBalancer	type IPHashBalancer struct{}
+symbol	github.com/birdordev/plumego/x/gateway	type	LeastConnectionsBalancer	type LeastConnectionsBalancer struct { connections map[string]*atomic.Int64 mu sync.RWMutex }
+symbol	github.com/birdordev/plumego/x/gateway	type	LoadBalancer	type LoadBalancer interface { Next(pool *BackendPool) (*Backend, error) Reset() Name() string }
+symbol	github.com/birdordev/plumego/x/gateway	type	PathRewriteFunc	type PathRewriteFunc func(path string) string
+symbol	github.com/birdordev/plumego/x/gateway	type	Proxy	type Proxy struct { config *Config pool *BackendPool transport *TransportPool balancer LoadBalancer health *HealthChecker discoveryCancel context.CancelFunc discoveryWG sync.WaitGroup closeOnce sync.Once lcBalancer *LeastConnectionsBalancer mu sync.RWMutex }
+symbol	github.com/birdordev/plumego/x/gateway	type	ProxyError	type ProxyError struct { Backend string Err error Attempt int }
+symbol	github.com/birdordev/plumego/x/gateway	type	ProxyStats	type ProxyStats struct { TotalBackends int HealthyBackends int Strategy string }
+symbol	github.com/birdordev/plumego/x/gateway	type	RandomBalancer	type RandomBalancer struct { rng *rand.Rand mu sync.Mutex }
+symbol	github.com/birdordev/plumego/x/gateway	type	RegexRewriter	type RegexRewriter interface { ReplaceAllString(src, repl string) string }
+symbol	github.com/birdordev/plumego/x/gateway	type	RequestModifier	type RequestModifier func(*http.Request) error
+symbol	github.com/birdordev/plumego/x/gateway	type	ResponseModifier	type ResponseModifier func(*http.Response) error
+symbol	github.com/birdordev/plumego/x/gateway	type	RoundRobinBalancer	type RoundRobinBalancer struct { counter atomic.Uint64 }
+symbol	github.com/birdordev/plumego/x/gateway	type	ServiceDiscovery	type ServiceDiscovery interface { Resolve(ctx context.Context, serviceName string) ([]string, error) Watch(ctx context.Context, serviceName string) (<-chan []string, error) }
+symbol	github.com/birdordev/plumego/x/gateway	type	TransportConfig	type TransportConfig struct { MaxIdleConns int MaxIdleConnsPerHost int IdleConnTimeout time.Duration ResponseHeaderTimeout time.Duration TLSHandshakeTimeout time.Duration ExpectContinueTimeout time.Duration DisableKeepAlives bool DisableCompression bool MaxConnsPerHost int DialTimeout time.Duration DialKeepAlive time.Duration TLSClientConfig *tls.Config }
+symbol	github.com/birdordev/plumego/x/gateway	type	TransportPool	type TransportPool struct { transports map[string]*http.Transport config *TransportConfig mu sync.RWMutex }
+symbol	github.com/birdordev/plumego/x/gateway	type	WeightedRoundRobinBalancer	type WeightedRoundRobinBalancer struct { currentWeight []int mu sync.Mutex }
+symbol	github.com/birdordev/plumego/x/gateway	var	ErrBackendRefused	var ErrBackendRefused = errors.New("backend refused connection")
+symbol	github.com/birdordev/plumego/x/gateway	var	ErrBackendTimeout	var ErrBackendTimeout = errors.New("backend timeout")
+symbol	github.com/birdordev/plumego/x/gateway	var	ErrInvalidConfig	var ErrInvalidConfig = errors.New("invalid proxy configuration")
+symbol	github.com/birdordev/plumego/x/gateway	var	ErrNoBackends	var ErrNoBackends = errors.New("no backends configured")
+symbol	github.com/birdordev/plumego/x/gateway	var	ErrNoHealthyBackends	var ErrNoHealthyBackends = errors.New("no healthy backends available")
+symbol	github.com/birdordev/plumego/x/gateway	var	ErrTooManyRetries	var ErrTooManyRetries = errors.New("too many retries")
+symbol	github.com/birdordev/plumego/x/gateway	var	ErrWebSocketUpgrade	var ErrWebSocketUpgrade = errors.New("websocket upgrade failed")
+symbol	github.com/birdordev/plumego/x/gateway/cache	func	Middleware	func Middlewarefunc(config Config) func(http.Handler) http.Handler
+symbol	github.com/birdordev/plumego/x/gateway/cache	func	NewCompositeKeyStrategy	func NewCompositeKeyStrategyfunc(strategies ...KeyStrategy) *CompositeKeyStrategy
+symbol	github.com/birdordev/plumego/x/gateway/cache	func	NewDefaultKeyStrategy	func NewDefaultKeyStrategyfunc() *DefaultKeyStrategy
+symbol	github.com/birdordev/plumego/x/gateway/cache	func	NewHeaderAwareKeyStrategy	func NewHeaderAwareKeyStrategyfunc(headers []string) *HeaderAwareKeyStrategy
+symbol	github.com/birdordev/plumego/x/gateway/cache	func	NewMemoryStore	func NewMemoryStorefunc(capacity int) *MemoryStore
+symbol	github.com/birdordev/plumego/x/gateway/cache	func	NewNoCacheKeyStrategy	func NewNoCacheKeyStrategyfunc() *NoCacheKeyStrategy
+symbol	github.com/birdordev/plumego/x/gateway/cache	func	NewPathPatternKeyStrategy	func NewPathPatternKeyStrategyfunc(patterns map[string]KeyStrategy) *PathPatternKeyStrategy
+symbol	github.com/birdordev/plumego/x/gateway/cache	func	NewQueryParamKeyStrategy	func NewQueryParamKeyStrategyfunc(ignoreParams []string) *QueryParamKeyStrategy
+symbol	github.com/birdordev/plumego/x/gateway/cache	func	NewTenantAwareKeyStrategy	func NewTenantAwareKeyStrategyfunc(tenantIDHeader string) *TenantAwareKeyStrategy
+symbol	github.com/birdordev/plumego/x/gateway/cache	func	NewURLOnlyKeyStrategy	func NewURLOnlyKeyStrategyfunc() *URLOnlyKeyStrategy
+symbol	github.com/birdordev/plumego/x/gateway/cache	func	NewUserAwareKeyStrategy	func NewUserAwareKeyStrategyfunc(userIDHeader string) *UserAwareKeyStrategy
+symbol	github.com/birdordev/plumego/x/gateway/cache	func	Stats	func Statsfunc(store Store) StoreStats
+symbol	github.com/birdordev/plumego/x/gateway/cache	method	CachedResponse.IsExpired	func (CachedResponse) IsExpiredfunc() bool
+symbol	github.com/birdordev/plumego/x/gateway/cache	method	CompositeKeyStrategy.Generate	func (CompositeKeyStrategy) Generatefunc(r *http.Request) string
+symbol	github.com/birdordev/plumego/x/gateway/cache	method	Config.WithDefaults	func (Config) WithDefaultsfunc() *Config
+symbol	github.com/birdordev/plumego/x/gateway/cache	method	CustomKeyStrategy.Generate	func (CustomKeyStrategy) Generatefunc(r *http.Request) string
+symbol	github.com/birdordev/plumego/x/gateway/cache	method	DefaultKeyStrategy.Generate	func (DefaultKeyStrategy) Generatefunc(r *http.Request) string
+symbol	github.com/birdordev/plumego/x/gateway/cache	method	HeaderAwareKeyStrategy.Generate	func (HeaderAwareKeyStrategy) Generatefunc(r *http.Request) string
+symbol	github.com/birdordev/plumego/x/gateway/cache	method	MemoryStore.CleanupExpired	func (MemoryStore) CleanupExpiredfunc() int
+symbol	github.com/birdordev/plumego/x/gateway/cache	method	MemoryStore.Clear	func (MemoryStore) Clearfunc()
+symbol	github.com/birdordev/plumego/x/gateway/cache	method	MemoryStore.Delete	func (MemoryStore) Deletefunc(key string)
+symbol	github.com/birdordev/plumego/x/gateway/cache	method	MemoryStore.Get	func (MemoryStore) Getfunc(key string) (*CachedResponse, bool)
+symbol	github.com/birdordev/plumego/x/gateway/cache	method	MemoryStore.HitRate	func (MemoryStore) HitRatefunc() float64
+symbol	github.com/birdordev/plumego/x/gateway/cache	method	MemoryStore.Keys	func (MemoryStore) Keysfunc() []string
+symbol	github.com/birdordev/plumego/x/gateway/cache	method	MemoryStore.Len	func (MemoryStore) Lenfunc() int
+symbol	github.com/birdordev/plumego/x/gateway/cache	method	MemoryStore.Resize	func (MemoryStore) Resizefunc(newCapacity int)
+symbol	github.com/birdordev/plumego/x/gateway/cache	method	MemoryStore.Set	func (MemoryStore) Setfunc(key string, resp *CachedResponse, ttl time.Duration)
+symbol	github.com/birdordev/plumego/x/gateway/cache	method	MemoryStore.Size	func (MemoryStore) Sizefunc() int64
+symbol	github.com/birdordev/plumego/x/gateway/cache	method	MemoryStore.Stats	func (MemoryStore) Statsfunc() StoreStats
+symbol	github.com/birdordev/plumego/x/gateway/cache	method	NoCacheKeyStrategy.Generate	func (NoCacheKeyStrategy) Generatefunc(r *http.Request) string
+symbol	github.com/birdordev/plumego/x/gateway/cache	method	PathPatternKeyStrategy.Generate	func (PathPatternKeyStrategy) Generatefunc(r *http.Request) string
+symbol	github.com/birdordev/plumego/x/gateway/cache	method	QueryParamKeyStrategy.Generate	func (QueryParamKeyStrategy) Generatefunc(r *http.Request) string
+symbol	github.com/birdordev/plumego/x/gateway/cache	method	TenantAwareKeyStrategy.Generate	func (TenantAwareKeyStrategy) Generatefunc(r *http.Request) string
+symbol	github.com/birdordev/plumego/x/gateway/cache	method	URLOnlyKeyStrategy.Generate	func (URLOnlyKeyStrategy) Generatefunc(r *http.Request) string
+symbol	github.com/birdordev/plumego/x/gateway/cache	method	UserAwareKeyStrategy.Generate	func (UserAwareKeyStrategy) Generatefunc(r *http.Request) string
+symbol	github.com/birdordev/plumego/x/gateway/cache	type	CachedResponse	type CachedResponse struct { StatusCode int Header http.Header Body []byte CachedAt time.Time ExpiresAt time.Time ETag string Size int64 }
+symbol	github.com/birdordev/plumego/x/gateway/cache	type	CompositeKeyStrategy	type CompositeKeyStrategy struct { Strategies []KeyStrategy }
+symbol	github.com/birdordev/plumego/x/gateway/cache	type	Config	type Config struct { Store Store KeyStrategy KeyStrategy DefaultTTL time.Duration MaxSize int64 Methods []string StatusCodes []int RespectCacheControl bool EnableConditionalRequests bool OnCacheHit func(key string, resp *CachedResponse) OnCacheMiss func(key string) }
+symbol	github.com/birdordev/plumego/x/gateway/cache	type	CustomKeyStrategy	type CustomKeyStrategy struct { KeyFunc func(r *http.Request) string }
+symbol	github.com/birdordev/plumego/x/gateway/cache	type	DefaultKeyStrategy	type DefaultKeyStrategy struct { IncludeHeaders []string }
+symbol	github.com/birdordev/plumego/x/gateway/cache	type	HeaderAwareKeyStrategy	type HeaderAwareKeyStrategy struct { Headers []string }
+symbol	github.com/birdordev/plumego/x/gateway/cache	type	KeyStrategy	type KeyStrategy interface { Generate(r *http.Request) string }
+symbol	github.com/birdordev/plumego/x/gateway/cache	type	MemoryStore	type MemoryStore struct { capacity int items map[string]*list.Element lruList *list.List mu sync.RWMutex hits uint64 misses uint64 evictions uint64 size int64 }
+symbol	github.com/birdordev/plumego/x/gateway/cache	type	NoCacheKeyStrategy	type NoCacheKeyStrategy struct{}
+symbol	github.com/birdordev/plumego/x/gateway/cache	type	PathPatternKeyStrategy	type PathPatternKeyStrategy struct { Patterns map[string]KeyStrategy DefaultStrategy KeyStrategy }
+symbol	github.com/birdordev/plumego/x/gateway/cache	type	QueryParamKeyStrategy	type QueryParamKeyStrategy struct { IgnoreParams []string }
+symbol	github.com/birdordev/plumego/x/gateway/cache	type	Store	type Store interface { Get(key string) (*CachedResponse, bool) Set(key string, resp *CachedResponse, ttl time.Duration) Delete(key string) Clear() Stats() StoreStats }
+symbol	github.com/birdordev/plumego/x/gateway/cache	type	StoreStats	type StoreStats struct { Items int Hits uint64 Misses uint64 Evictions uint64 Size int64 }
+symbol	github.com/birdordev/plumego/x/gateway/cache	type	TenantAwareKeyStrategy	type TenantAwareKeyStrategy struct { TenantIDHeader string FallbackStrategy KeyStrategy }
+symbol	github.com/birdordev/plumego/x/gateway/cache	type	URLOnlyKeyStrategy	type URLOnlyKeyStrategy struct{}
+symbol	github.com/birdordev/plumego/x/gateway/cache	type	UserAwareKeyStrategy	type UserAwareKeyStrategy struct { UserIDHeader string FallbackStrategy KeyStrategy }
+symbol	github.com/birdordev/plumego/x/gateway/protocol	const	GraphQLIntrospectionQuery	const GraphQLIntrospectionQuery = ` query IntrospectionQuery { __schema { queryType { name } mutationType { name } subscriptionType { name } types { ...FullType } directives { name description locations args { ...InputValue } } } } fragment FullType on __Type { kind name description fields(includeDeprecated: true) { name description args { ...InputValue } type { ...TypeRef } isDeprecated deprecationReason } } `
+symbol	github.com/birdordev/plumego/x/gateway/protocol	func	GRPCErrorCode	func GRPCErrorCodefunc(code int) int
+symbol	github.com/birdordev/plumego/x/gateway/protocol	func	NewRegistry	func NewRegistryfunc() *Registry
+symbol	github.com/birdordev/plumego/x/gateway/protocol	method	GRPCRequest.Body	func (GRPCRequest) Bodyfunc() io.Reader
+symbol	github.com/birdordev/plumego/x/gateway/protocol	method	GRPCRequest.Headers	func (GRPCRequest) Headersfunc() map[string][]string
+symbol	github.com/birdordev/plumego/x/gateway/protocol	method	GRPCRequest.Metadata	func (GRPCRequest) Metadatafunc() map[string]any
+symbol	github.com/birdordev/plumego/x/gateway/protocol	method	GRPCRequest.Method	func (GRPCRequest) Methodfunc() string
+symbol	github.com/birdordev/plumego/x/gateway/protocol	method	GRPCResponse.Body	func (GRPCResponse) Bodyfunc() io.Reader
+symbol	github.com/birdordev/plumego/x/gateway/protocol	method	GRPCResponse.Headers	func (GRPCResponse) Headersfunc() map[string][]string
+symbol	github.com/birdordev/plumego/x/gateway/protocol	method	GRPCResponse.Metadata	func (GRPCResponse) Metadatafunc() map[string]any
+symbol	github.com/birdordev/plumego/x/gateway/protocol	method	GRPCResponse.StatusCode	func (GRPCResponse) StatusCodefunc() int
+symbol	github.com/birdordev/plumego/x/gateway/protocol	method	GraphQLRequest.Body	func (GraphQLRequest) Bodyfunc() io.Reader
+symbol	github.com/birdordev/plumego/x/gateway/protocol	method	GraphQLRequest.Headers	func (GraphQLRequest) Headersfunc() map[string][]string
+symbol	github.com/birdordev/plumego/x/gateway/protocol	method	GraphQLRequest.Metadata	func (GraphQLRequest) Metadatafunc() map[string]any
+symbol	github.com/birdordev/plumego/x/gateway/protocol	method	GraphQLRequest.Method	func (GraphQLRequest) Methodfunc() string
+symbol	github.com/birdordev/plumego/x/gateway/protocol	method	GraphQLResponse.Body	func (GraphQLResponse) Bodyfunc() io.Reader
+symbol	github.com/birdordev/plumego/x/gateway/protocol	method	GraphQLResponse.HasErrors	func (GraphQLResponse) HasErrorsfunc() bool
+symbol	github.com/birdordev/plumego/x/gateway/protocol	method	GraphQLResponse.Headers	func (GraphQLResponse) Headersfunc() map[string][]string
+symbol	github.com/birdordev/plumego/x/gateway/protocol	method	GraphQLResponse.Metadata	func (GraphQLResponse) Metadatafunc() map[string]any
+symbol	github.com/birdordev/plumego/x/gateway/protocol	method	GraphQLResponse.StatusCode	func (GraphQLResponse) StatusCodefunc() int
+symbol	github.com/birdordev/plumego/x/gateway/protocol	method	Registry.Adapters	func (Registry) Adaptersfunc() []ProtocolAdapter
+symbol	github.com/birdordev/plumego/x/gateway/protocol	method	Registry.Count	func (Registry) Countfunc() int
+symbol	github.com/birdordev/plumego/x/gateway/protocol	method	Registry.Find	func (Registry) Findfunc(req *HTTPRequest) ProtocolAdapter
+symbol	github.com/birdordev/plumego/x/gateway/protocol	method	Registry.Register	func (Registry) Registerfunc(adapter ProtocolAdapter)
+symbol	github.com/birdordev/plumego/x/gateway/protocol	type	GRPCAdapter	type GRPCAdapter interface { ProtocolAdapter Service() string Methods() []string }
+symbol	github.com/birdordev/plumego/x/gateway/protocol	type	GRPCInvoker	type GRPCInvoker interface { Invoke(ctx context.Context, method string, req Request) (Response, error) }
+symbol	github.com/birdordev/plumego/x/gateway/protocol	type	GRPCMetadata	type GRPCMetadata struct { Service string Method string Authority string Timeout string ContentType string Encoding string UserAgent string Custom map[string]string }
+symbol	github.com/birdordev/plumego/x/gateway/protocol	type	GRPCRequest	type GRPCRequest struct { MethodName string Meta *GRPCMetadata BodyReader io.Reader HeaderMap map[string][]string }
+symbol	github.com/birdordev/plumego/x/gateway/protocol	type	GRPCResponse	type GRPCResponse struct { Status int Meta *GRPCMetadata BodyReader io.Reader HeaderMap map[string][]string }
+symbol	github.com/birdordev/plumego/x/gateway/protocol	type	GraphQLAdapter	type GraphQLAdapter interface { ProtocolAdapter Schema() string Validate(query string) error }
+symbol	github.com/birdordev/plumego/x/gateway/protocol	type	GraphQLDirective	type GraphQLDirective struct { Name string Arguments map[string]any }
+symbol	github.com/birdordev/plumego/x/gateway/protocol	type	GraphQLError	type GraphQLError struct { Message string `json:"message"` Locations []GraphQLLocation `json:"locations,omitempty"` Path []any `json:"path,omitempty"` Extensions map[string]any `json:"extensions,omitempty"` }
+symbol	github.com/birdordev/plumego/x/gateway/protocol	type	GraphQLExecutor	type GraphQLExecutor interface { Execute(ctx context.Context, req *GraphQLRequest) (*GraphQLResponse, error) }
+symbol	github.com/birdordev/plumego/x/gateway/protocol	type	GraphQLLocation	type GraphQLLocation struct { Line int `json:"line"` Column int `json:"column"` }
+symbol	github.com/birdordev/plumego/x/gateway/protocol	type	GraphQLRequest	type GraphQLRequest struct { Query string `json:"query"` OperationName string `json:"operationName,omitempty"` Variables map[string]any `json:"variables,omitempty"` Extensions map[string]any `json:"extensions,omitempty"` HeaderMap map[string][]string `json:"-"` BodyReader io.Reader `json:"-"` }
+symbol	github.com/birdordev/plumego/x/gateway/protocol	type	GraphQLResponse	type GraphQLResponse struct { Data any `json:"data,omitempty"` Errors []GraphQLError `json:"errors,omitempty"` Extensions map[string]any `json:"extensions,omitempty"` Status int `json:"-"` HeaderMap map[string][]string `json:"-"` BodyReader io.Reader `json:"-"` }
+symbol	github.com/birdordev/plumego/x/gateway/protocol	type	HTTPRequest	type HTTPRequest struct { Method string URL string Headers map[string][]string Body io.Reader Metadata map[string]any }
+symbol	github.com/birdordev/plumego/x/gateway/protocol	type	ProtocolAdapter	type ProtocolAdapter interface { Name() string Handles(req *HTTPRequest) bool Transform(ctx context.Context, req *HTTPRequest) (Request, error) Execute(ctx context.Context, req Request) (Response, error) Encode(ctx context.Context, resp Response, writer ResponseWriter) error }
+symbol	github.com/birdordev/plumego/x/gateway/protocol	type	Registry	type Registry struct { adapters []ProtocolAdapter }
+symbol	github.com/birdordev/plumego/x/gateway/protocol	type	Request	type Request interface { Method() string Headers() map[string][]string Body() io.Reader Metadata() map[string]any }
+symbol	github.com/birdordev/plumego/x/gateway/protocol	type	Response	type Response interface { StatusCode() int Headers() map[string][]string Body() io.Reader Metadata() map[string]any }
+symbol	github.com/birdordev/plumego/x/gateway/protocol	type	ResponseWriter	type ResponseWriter interface { Header() map[string][]string Write([]byte) (int, error) WriteHeader(statusCode int) }
+symbol	github.com/birdordev/plumego/x/gateway/protocolmw	const	CodeProtocolExecutionFail	const CodeProtocolExecutionFail = "protocol_execution_failed"
+symbol	github.com/birdordev/plumego/x/gateway/protocolmw	const	CodeProtocolTransformFail	const CodeProtocolTransformFail = "protocol_transform_failed"
+symbol	github.com/birdordev/plumego/x/gateway/protocolmw	func	Middleware	func Middlewarefunc(registry *gatewayproto.Registry) func(http.Handler) http.Handler
+symbol	github.com/birdordev/plumego/x/gateway/protocolmw	func	MiddlewareWithConfig	func MiddlewareWithConfigfunc(config Config) func(http.Handler) http.Handler
+symbol	github.com/birdordev/plumego/x/gateway/protocolmw	type	Config	type Config struct { Registry *gatewayproto.Registry OnAdapterNotFound func(w http.ResponseWriter, r *http.Request) OnTransformError func(w http.ResponseWriter, r *http.Request, err error) OnExecuteError func(w http.ResponseWriter, r *http.Request, err error) OnEncodeError func(w http.ResponseWriter, r *http.Request, err error) }
+symbol	github.com/birdordev/plumego/x/gateway/transform	const	CodeTransformFailed	const CodeTransformFailed = "transform_failed"
+symbol	github.com/birdordev/plumego/x/gateway/transform	func	AddQueryParam	func AddQueryParamfunc(key, value string) RequestTransformer
+symbol	github.com/birdordev/plumego/x/gateway/transform	func	AddRequestHeader	func AddRequestHeaderfunc(key, value string) RequestTransformer
+symbol	github.com/birdordev/plumego/x/gateway/transform	func	AddResponseHeader	func AddResponseHeaderfunc(key, value string) ResponseTransformer
+symbol	github.com/birdordev/plumego/x/gateway/transform	func	ChainRequest	func ChainRequestfunc(transformers ...RequestTransformer) RequestTransformer
+symbol	github.com/birdordev/plumego/x/gateway/transform	func	ChainResponse	func ChainResponsefunc(transformers ...ResponseTransformer) ResponseTransformer
+symbol	github.com/birdordev/plumego/x/gateway/transform	func	Middleware	func Middlewarefunc(config Config) func(http.Handler) http.Handler
+symbol	github.com/birdordev/plumego/x/gateway/transform	func	ModifyJSONRequest	func ModifyJSONRequestfunc(modifier func(map[string]any) error) RequestTransformer
+symbol	github.com/birdordev/plumego/x/gateway/transform	func	ModifyJSONResponse	func ModifyJSONResponsefunc(modifier func(map[string]any) error) ResponseTransformer
+symbol	github.com/birdordev/plumego/x/gateway/transform	func	RemoveQueryParam	func RemoveQueryParamfunc(key string) RequestTransformer
+symbol	github.com/birdordev/plumego/x/gateway/transform	func	RemoveRequestHeader	func RemoveRequestHeaderfunc(key string) RequestTransformer
+symbol	github.com/birdordev/plumego/x/gateway/transform	func	RemoveResponseHeader	func RemoveResponseHeaderfunc(key string) ResponseTransformer
+symbol	github.com/birdordev/plumego/x/gateway/transform	func	RenameJSONRequestField	func RenameJSONRequestFieldfunc(from, to string) RequestTransformer
+symbol	github.com/birdordev/plumego/x/gateway/transform	func	RenameJSONResponseField	func RenameJSONResponseFieldfunc(from, to string) ResponseTransformer
+symbol	github.com/birdordev/plumego/x/gateway/transform	func	RenameRequestHeader	func RenameRequestHeaderfunc(from, to string) RequestTransformer
+symbol	github.com/birdordev/plumego/x/gateway/transform	func	RenameResponseHeader	func RenameResponseHeaderfunc(from, to string) ResponseTransformer
+symbol	github.com/birdordev/plumego/x/gateway/transform	func	SetRequestMethod	func SetRequestMethodfunc(method string) RequestTransformer
+symbol	github.com/birdordev/plumego/x/gateway/transform	func	SetResponseStatus	func SetResponseStatusfunc(statusCode int) ResponseTransformer
+symbol	github.com/birdordev/plumego/x/gateway/transform	type	Config	type Config struct { RequestTransformers []RequestTransformer ResponseTransformers []ResponseTransformer OnError func(err error) }
+symbol	github.com/birdordev/plumego/x/gateway/transform	type	RequestTransformer	type RequestTransformer func(*http.Request) error
+symbol	github.com/birdordev/plumego/x/gateway/transform	type	ResponseTransformer	type ResponseTransformer func(*http.Response) error

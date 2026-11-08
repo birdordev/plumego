@@ -1,6 +1,6 @@
 # x/data/file
 
-> **Import path:** `github.com/spcent/plumego/x/data/file` — sub-package of [`x/data`](../README.md).
+> **Import path:** `github.com/birdordev/plumego/x/data/file` — sub-package of [`x/data`](../README.md).
 
 ## Purpose
 

@@ -1,117 +1,117 @@
 # plumego extension api snapshot v1
-module	github.com/spcent/plumego
+module	github.com/birdordev/plumego
 pattern	./store/...
-symbol	github.com/spcent/plumego/store/cache	const	DefaultCleanupInterval	const DefaultCleanupInterval = 5 * time.Minute
-symbol	github.com/spcent/plumego/store/cache	const	DefaultMaxKeyLength	const DefaultMaxKeyLength = 256
-symbol	github.com/spcent/plumego/store/cache	const	DefaultMaxMemoryUsage	const DefaultMaxMemoryUsage = 0
-symbol	github.com/spcent/plumego/store/cache	func	DefaultConfig	func DefaultConfigfunc() Config
-symbol	github.com/spcent/plumego/store/cache	func	NewMemoryCache	func NewMemoryCachefunc() *MemoryCache
-symbol	github.com/spcent/plumego/store/cache	func	NewMemoryCacheWithConfig	func NewMemoryCacheWithConfigfunc(config Config) (*MemoryCache, error)
-symbol	github.com/spcent/plumego/store/cache	method	Config.Validate	func (Config) Validatefunc() error
-symbol	github.com/spcent/plumego/store/cache	method	MemoryCache.Append	func (MemoryCache) Appendfunc(ctx context.Context, key string, data []byte) error
-symbol	github.com/spcent/plumego/store/cache	method	MemoryCache.Clear	func (MemoryCache) Clearfunc(ctx context.Context) error
-symbol	github.com/spcent/plumego/store/cache	method	MemoryCache.Close	func (MemoryCache) Closefunc() error
-symbol	github.com/spcent/plumego/store/cache	method	MemoryCache.Decr	func (MemoryCache) Decrfunc(ctx context.Context, key string, delta int64) (int64, error)
-symbol	github.com/spcent/plumego/store/cache	method	MemoryCache.Delete	func (MemoryCache) Deletefunc(ctx context.Context, key string) error
-symbol	github.com/spcent/plumego/store/cache	method	MemoryCache.Exists	func (MemoryCache) Existsfunc(ctx context.Context, key string) (bool, error)
-symbol	github.com/spcent/plumego/store/cache	method	MemoryCache.Get	func (MemoryCache) Getfunc(ctx context.Context, key string) ([]byte, error)
-symbol	github.com/spcent/plumego/store/cache	method	MemoryCache.Incr	func (MemoryCache) Incrfunc(ctx context.Context, key string, delta int64) (int64, error)
-symbol	github.com/spcent/plumego/store/cache	method	MemoryCache.Set	func (MemoryCache) Setfunc(ctx context.Context, key string, value []byte, ttl time.Duration) error
-symbol	github.com/spcent/plumego/store/cache	method	MemoryCache.Stats	func (MemoryCache) Statsfunc() Stats
-symbol	github.com/spcent/plumego/store/cache	type	AppenderCache	type AppenderCache interface { Append(ctx context.Context, key string, data []byte) error }
-symbol	github.com/spcent/plumego/store/cache	type	AtomicCache	type AtomicCache interface { Cache CounterCache AppenderCache }
-symbol	github.com/spcent/plumego/store/cache	type	Cache	type Cache interface { Get(ctx context.Context, key string) ([]byte, error) Set(ctx context.Context, key string, value []byte, ttl time.Duration) error Delete(ctx context.Context, key string) error Exists(ctx context.Context, key string) (bool, error) Clear(ctx context.Context) error }
-symbol	github.com/spcent/plumego/store/cache	type	Config	type Config struct { MaxKeyLength int MaxMemoryUsage uint64 CleanupInterval time.Duration DefaultTTL time.Duration }
-symbol	github.com/spcent/plumego/store/cache	type	CounterCache	type CounterCache interface { Incr(ctx context.Context, key string, delta int64) (int64, error) Decr(ctx context.Context, key string, delta int64) (int64, error) }
-symbol	github.com/spcent/plumego/store/cache	type	MemoryCache	type MemoryCache struct { }
-symbol	github.com/spcent/plumego/store/cache	type	Stats	type Stats struct { Entries int MemoryUsage uint64 Closed bool }
-symbol	github.com/spcent/plumego/store/cache	var	ErrCacheClosed	var ErrCacheClosed = errors.New("cache: cache is closed")
-symbol	github.com/spcent/plumego/store/cache	var	ErrCacheFull	var ErrCacheFull = errors.New("cache: cache full")
-symbol	github.com/spcent/plumego/store/cache	var	ErrCapabilityUnsupported	var ErrCapabilityUnsupported = errors.New("cache: capability unsupported")
-symbol	github.com/spcent/plumego/store/cache	var	ErrInvalidConfig	var ErrInvalidConfig = errors.New("cache: invalid config")
-symbol	github.com/spcent/plumego/store/cache	var	ErrInvalidKey	var ErrInvalidKey = errors.New("cache: key is required")
-symbol	github.com/spcent/plumego/store/cache	var	ErrKeyTooLong	var ErrKeyTooLong = errors.New("cache: key too long")
-symbol	github.com/spcent/plumego/store/cache	var	ErrNotFound	var ErrNotFound = errors.New("cache: key not found")
-symbol	github.com/spcent/plumego/store/cache	var	ErrNotInteger	var ErrNotInteger = errors.New("cache: value is not an integer")
-symbol	github.com/spcent/plumego/store/db	func	ApplyConfig	func ApplyConfigfunc(db *sql.DB, config Config)
-symbol	github.com/spcent/plumego/store/db	func	DefaultConfig	func DefaultConfigfunc(driver, dsn string) Config
-symbol	github.com/spcent/plumego/store/db	func	ExecContext	func ExecContextfunc(ctx context.Context, db DB, query string, args ...any) (sql.Result, error)
-symbol	github.com/spcent/plumego/store/db	func	Open	func Openfunc(config Config) (*sql.DB, error)
-symbol	github.com/spcent/plumego/store/db	func	OpenWith	func OpenWithfunc(config Config, open OpenFunc) (*sql.DB, error)
-symbol	github.com/spcent/plumego/store/db	func	Ping	func Pingfunc(ctx context.Context, db DB) error
-symbol	github.com/spcent/plumego/store/db	func	QueryContext	func QueryContextfunc(ctx context.Context, db DB, query string, args ...any) (*sql.Rows, error)
-symbol	github.com/spcent/plumego/store/db	func	QueryRow	func QueryRowfunc(ctx context.Context, db DB, query string, args ...any) (*sql.Row, error)
-symbol	github.com/spcent/plumego/store/db	func	QueryRowContext	func QueryRowContextfunc(ctx context.Context, db DB, query string, args ...any) (*sql.Row, error)
-symbol	github.com/spcent/plumego/store/db	func	QueryRowStrict	func QueryRowStrictfunc(ctx context.Context, db DB, query string, scan func(*sql.Rows) error, args ...any) (err error)
-symbol	github.com/spcent/plumego/store/db	func	ScanRow	func ScanRowfunc(row *sql.Row, dest ...any) error
-symbol	github.com/spcent/plumego/store/db	func	ScanRows	func ScanRowsfunc[T any](rows *sql.Rows, scanFunc func(*sql.Rows) (T, error)) (results []T, err error)
-symbol	github.com/spcent/plumego/store/db	func	WithTransaction	func WithTransactionfunc(ctx context.Context, db DB, txOpts *sql.TxOptions, fn func(*sql.Tx) error) error
-symbol	github.com/spcent/plumego/store/db	method	Config.Validate	func (Config) Validatefunc() error
-symbol	github.com/spcent/plumego/store/db	type	Config	type Config struct { Driver string DSN string MaxOpenConns int MaxIdleConns int ConnMaxLifetime time.Duration ConnMaxIdleTime time.Duration }
-symbol	github.com/spcent/plumego/store/db	type	DB	type DB interface { ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error) QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row BeginTx(ctx context.Context, opts *sql.TxOptions) (*sql.Tx, error) PingContext(ctx context.Context) error Close() error }
-symbol	github.com/spcent/plumego/store/db	type	OpenFunc	type OpenFunc func(driver, dsn string) (*sql.DB, error)
-symbol	github.com/spcent/plumego/store/db	var	ErrConnectionFailed	var ErrConnectionFailed = errors.New("db: connection failed")
-symbol	github.com/spcent/plumego/store/db	var	ErrInvalidConfig	var ErrInvalidConfig = errors.New("db: invalid config")
-symbol	github.com/spcent/plumego/store/db	var	ErrMultipleRows	var ErrMultipleRows = errors.New("db: multiple rows returned")
-symbol	github.com/spcent/plumego/store/db	var	ErrNoRows	var ErrNoRows = errors.New("db: no rows returned")
-symbol	github.com/spcent/plumego/store/db	var	ErrPingFailed	var ErrPingFailed = errors.New("db: ping failed")
-symbol	github.com/spcent/plumego/store/db	var	ErrQueryFailed	var ErrQueryFailed = errors.New("db: query failed")
-symbol	github.com/spcent/plumego/store/db	var	ErrTransactionFailed	var ErrTransactionFailed = errors.New("db: transaction failed")
-symbol	github.com/spcent/plumego/store/file	method	Error.Error	func (Error) Errorfunc() string
-symbol	github.com/spcent/plumego/store/file	method	Error.Unwrap	func (Error) Unwrapfunc() error
-symbol	github.com/spcent/plumego/store/file	method	File.Clone	func (File) Clonefunc() File
-symbol	github.com/spcent/plumego/store/file	method	PutOptions.CloneMetadata	func (PutOptions) CloneMetadatafunc() map[string]any
-symbol	github.com/spcent/plumego/store/file	type	Error	type Error struct { Op string Path string Err error }
-symbol	github.com/spcent/plumego/store/file	type	File	type File struct { ID string `json:"id" db:"id"` Name string `json:"name" db:"name"` Path string `json:"path" db:"path"` Size int64 `json:"size" db:"size"` MimeType string `json:"mime_type" db:"mime_type"` Extension string `json:"extension" db:"extension"` Hash string `json:"hash" db:"hash"` StorageType string `json:"storage_type" db:"storage_type"` Metadata map[string]any `json:"metadata,omitempty" db:"metadata"` CreatedAt time.Time `json:"created_at" db:"created_at"` UpdatedAt time.Time `json:"updated_at" db:"updated_at"` LastAccessAt *time.Time `json:"last_access_at,omitempty" db:"last_access_at"` DeletedAt *time.Time `json:"deleted_at,omitempty" db:"deleted_at"` }
-symbol	github.com/spcent/plumego/store/file	type	FileStat	type FileStat struct { Path string Size int64 ModifiedTime time.Time IsDir bool ContentType string }
-symbol	github.com/spcent/plumego/store/file	type	PutOptions	type PutOptions struct { Reader io.Reader FileName string ContentType string Size int64 Metadata map[string]any }
-symbol	github.com/spcent/plumego/store/file	type	Query	type Query struct { MimeType string StartTime time.Time EndTime time.Time Page int PageSize int OrderBy string }
-symbol	github.com/spcent/plumego/store/file	type	Storage	type Storage interface { Put(ctx context.Context, opts PutOptions) (*File, error) Get(ctx context.Context, path string) (io.ReadCloser, error) Delete(ctx context.Context, path string) error Exists(ctx context.Context, path string) (bool, error) Stat(ctx context.Context, path string) (*FileStat, error) List(ctx context.Context, prefix string, limit int) ([]*FileStat, error) Copy(ctx context.Context, srcPath, dstPath string) error }
-symbol	github.com/spcent/plumego/store/file	var	ErrAlreadyExists	var ErrAlreadyExists = errors.New("file: already exists")
-symbol	github.com/spcent/plumego/store/file	var	ErrInvalidPath	var ErrInvalidPath = errors.New("file: invalid path")
-symbol	github.com/spcent/plumego/store/file	var	ErrInvalidSize	var ErrInvalidSize = errors.New("file: invalid size")
-symbol	github.com/spcent/plumego/store/file	var	ErrNotFound	var ErrNotFound = errors.New("file: not found")
-symbol	github.com/spcent/plumego/store/file	var	ErrStorageUnavailable	var ErrStorageUnavailable = errors.New("file: storage unavailable")
-symbol	github.com/spcent/plumego/store/file	var	ErrUnsupportedFormat	var ErrUnsupportedFormat = errors.New("file: unsupported format")
-symbol	github.com/spcent/plumego/store/idempotency	const	StatusCompleted	const StatusCompleted Status = "completed"
-symbol	github.com/spcent/plumego/store/idempotency	const	StatusInProgress	const StatusInProgress Status = "in_progress"
-symbol	github.com/spcent/plumego/store/idempotency	func	ValidateCompletion	func ValidateCompletionfunc(record Record, requestHash string) error
-symbol	github.com/spcent/plumego/store/idempotency	func	ValidateCompletionAt	func ValidateCompletionAtfunc(record Record, requestHash string, now time.Time) error
-symbol	github.com/spcent/plumego/store/idempotency	func	ValidateKey	func ValidateKeyfunc(key string) error
-symbol	github.com/spcent/plumego/store/idempotency	func	ValidateRecord	func ValidateRecordfunc(record Record) error
-symbol	github.com/spcent/plumego/store/idempotency	method	Record.Clone	func (Record) Clonefunc() Record
-symbol	github.com/spcent/plumego/store/idempotency	method	Status.Valid	func (Status) Validfunc() bool
-symbol	github.com/spcent/plumego/store/idempotency	type	HashAwareStore	type HashAwareStore interface { Store CompleteWithRequestHash(ctx context.Context, key, requestHash string, response []byte) error }
-symbol	github.com/spcent/plumego/store/idempotency	type	Record	type Record struct { Key string RequestHash string Status Status Response []byte CreatedAt time.Time UpdatedAt time.Time ExpiresAt time.Time }
-symbol	github.com/spcent/plumego/store/idempotency	type	Status	type Status string
-symbol	github.com/spcent/plumego/store/idempotency	type	Store	type Store interface { Get(ctx context.Context, key string) (Record, bool, error) PutIfAbsent(ctx context.Context, record Record) (bool, error) Complete(ctx context.Context, key string, response []byte) error Delete(ctx context.Context, key string) error }
-symbol	github.com/spcent/plumego/store/idempotency	var	ErrAlreadyCompleted	var ErrAlreadyCompleted = errors.New("idempotency: record already completed")
-symbol	github.com/spcent/plumego/store/idempotency	var	ErrExpired	var ErrExpired = errors.New("idempotency: record expired")
-symbol	github.com/spcent/plumego/store/idempotency	var	ErrInvalidKey	var ErrInvalidKey = errors.New("idempotency: key is required")
-symbol	github.com/spcent/plumego/store/idempotency	var	ErrInvalidRecord	var ErrInvalidRecord = errors.New("idempotency: invalid record")
-symbol	github.com/spcent/plumego/store/idempotency	var	ErrNotFound	var ErrNotFound = errors.New("idempotency: record not found")
-symbol	github.com/spcent/plumego/store/idempotency	var	ErrRequestMismatch	var ErrRequestMismatch = errors.New("idempotency: request hash mismatch")
-symbol	github.com/spcent/plumego/store/kv	func	DefaultConfig	func DefaultConfigfunc(dataDir string) Config
-symbol	github.com/spcent/plumego/store/kv	func	DefaultOptions	func DefaultOptionsfunc(dataDir string) Options
-symbol	github.com/spcent/plumego/store/kv	func	NewKVStore	func NewKVStorefunc(opts Options) (*KVStore, error)
-symbol	github.com/spcent/plumego/store/kv	method	KVStore.Close	func (KVStore) Closefunc() error
-symbol	github.com/spcent/plumego/store/kv	method	KVStore.Delete	func (KVStore) Deletefunc(key string) error
-symbol	github.com/spcent/plumego/store/kv	method	KVStore.DeleteContext	func (KVStore) DeleteContextfunc(ctx context.Context, key string) error
-symbol	github.com/spcent/plumego/store/kv	method	KVStore.ExistsContext	func (KVStore) ExistsContextfunc(ctx context.Context, key string) (bool, error)
-symbol	github.com/spcent/plumego/store/kv	method	KVStore.Get	func (KVStore) Getfunc(key string) ([]byte, error)
-symbol	github.com/spcent/plumego/store/kv	method	KVStore.GetContext	func (KVStore) GetContextfunc(ctx context.Context, key string) ([]byte, error)
-symbol	github.com/spcent/plumego/store/kv	method	KVStore.GetStatsContext	func (KVStore) GetStatsContextfunc(ctx context.Context) (Stats, error)
-symbol	github.com/spcent/plumego/store/kv	method	KVStore.KeysContext	func (KVStore) KeysContextfunc(ctx context.Context) ([]string, error)
-symbol	github.com/spcent/plumego/store/kv	method	KVStore.Set	func (KVStore) Setfunc(key string, value []byte, ttl time.Duration) error
-symbol	github.com/spcent/plumego/store/kv	method	KVStore.SetContext	func (KVStore) SetContextfunc(ctx context.Context, key string, value []byte, ttl time.Duration) error
-symbol	github.com/spcent/plumego/store/kv	method	KVStore.SizeContext	func (KVStore) SizeContextfunc(ctx context.Context) (int, error)
-symbol	github.com/spcent/plumego/store/kv	type	Config	type Config struct { DataDir string `json:"data_dir"` MaxEntries int `json:"max_entries"` MaxMemoryMB int `json:"max_memory_mb"` }
-symbol	github.com/spcent/plumego/store/kv	type	KVStore	type KVStore struct { }
-symbol	github.com/spcent/plumego/store/kv	type	Options	type Options = Config
-symbol	github.com/spcent/plumego/store/kv	type	Stats	type Stats struct { Entries int64 `json:"entries"` Hits int64 `json:"hits"` Misses int64 `json:"misses"` MemoryUsage int64 `json:"memory_usage"` HitRatio float64 `json:"hit_ratio"` }
-symbol	github.com/spcent/plumego/store/kv	var	ErrCorruptState	var ErrCorruptState = errors.New("kv: corrupt state")
-symbol	github.com/spcent/plumego/store/kv	var	ErrInvalidKey	var ErrInvalidKey = errors.New("kv: key is required")
-symbol	github.com/spcent/plumego/store/kv	var	ErrKeyExpired	var ErrKeyExpired = errors.New("kv: key expired")
-symbol	github.com/spcent/plumego/store/kv	var	ErrKeyNotFound	var ErrKeyNotFound = errors.New("kv: key not found")
-symbol	github.com/spcent/plumego/store/kv	var	ErrStoreClosed	var ErrStoreClosed = errors.New("kv: store is closed")
-symbol	github.com/spcent/plumego/store/kv	var	ErrValueTooLarge	var ErrValueTooLarge = errors.New("kv: value too large")
+symbol	github.com/birdordev/plumego/store/cache	const	DefaultCleanupInterval	const DefaultCleanupInterval = 5 * time.Minute
+symbol	github.com/birdordev/plumego/store/cache	const	DefaultMaxKeyLength	const DefaultMaxKeyLength = 256
+symbol	github.com/birdordev/plumego/store/cache	const	DefaultMaxMemoryUsage	const DefaultMaxMemoryUsage = 0
+symbol	github.com/birdordev/plumego/store/cache	func	DefaultConfig	func DefaultConfigfunc() Config
+symbol	github.com/birdordev/plumego/store/cache	func	NewMemoryCache	func NewMemoryCachefunc() *MemoryCache
+symbol	github.com/birdordev/plumego/store/cache	func	NewMemoryCacheWithConfig	func NewMemoryCacheWithConfigfunc(config Config) (*MemoryCache, error)
+symbol	github.com/birdordev/plumego/store/cache	method	Config.Validate	func (Config) Validatefunc() error
+symbol	github.com/birdordev/plumego/store/cache	method	MemoryCache.Append	func (MemoryCache) Appendfunc(ctx context.Context, key string, data []byte) error
+symbol	github.com/birdordev/plumego/store/cache	method	MemoryCache.Clear	func (MemoryCache) Clearfunc(ctx context.Context) error
+symbol	github.com/birdordev/plumego/store/cache	method	MemoryCache.Close	func (MemoryCache) Closefunc() error
+symbol	github.com/birdordev/plumego/store/cache	method	MemoryCache.Decr	func (MemoryCache) Decrfunc(ctx context.Context, key string, delta int64) (int64, error)
+symbol	github.com/birdordev/plumego/store/cache	method	MemoryCache.Delete	func (MemoryCache) Deletefunc(ctx context.Context, key string) error
+symbol	github.com/birdordev/plumego/store/cache	method	MemoryCache.Exists	func (MemoryCache) Existsfunc(ctx context.Context, key string) (bool, error)
+symbol	github.com/birdordev/plumego/store/cache	method	MemoryCache.Get	func (MemoryCache) Getfunc(ctx context.Context, key string) ([]byte, error)
+symbol	github.com/birdordev/plumego/store/cache	method	MemoryCache.Incr	func (MemoryCache) Incrfunc(ctx context.Context, key string, delta int64) (int64, error)
+symbol	github.com/birdordev/plumego/store/cache	method	MemoryCache.Set	func (MemoryCache) Setfunc(ctx context.Context, key string, value []byte, ttl time.Duration) error
+symbol	github.com/birdordev/plumego/store/cache	method	MemoryCache.Stats	func (MemoryCache) Statsfunc() Stats
+symbol	github.com/birdordev/plumego/store/cache	type	AppenderCache	type AppenderCache interface { Append(ctx context.Context, key string, data []byte) error }
+symbol	github.com/birdordev/plumego/store/cache	type	AtomicCache	type AtomicCache interface { Cache CounterCache AppenderCache }
+symbol	github.com/birdordev/plumego/store/cache	type	Cache	type Cache interface { Get(ctx context.Context, key string) ([]byte, error) Set(ctx context.Context, key string, value []byte, ttl time.Duration) error Delete(ctx context.Context, key string) error Exists(ctx context.Context, key string) (bool, error) Clear(ctx context.Context) error }
+symbol	github.com/birdordev/plumego/store/cache	type	Config	type Config struct { MaxKeyLength int MaxMemoryUsage uint64 CleanupInterval time.Duration DefaultTTL time.Duration }
+symbol	github.com/birdordev/plumego/store/cache	type	CounterCache	type CounterCache interface { Incr(ctx context.Context, key string, delta int64) (int64, error) Decr(ctx context.Context, key string, delta int64) (int64, error) }
+symbol	github.com/birdordev/plumego/store/cache	type	MemoryCache	type MemoryCache struct { }
+symbol	github.com/birdordev/plumego/store/cache	type	Stats	type Stats struct { Entries int MemoryUsage uint64 Closed bool }
+symbol	github.com/birdordev/plumego/store/cache	var	ErrCacheClosed	var ErrCacheClosed = errors.New("cache: cache is closed")
+symbol	github.com/birdordev/plumego/store/cache	var	ErrCacheFull	var ErrCacheFull = errors.New("cache: cache full")
+symbol	github.com/birdordev/plumego/store/cache	var	ErrCapabilityUnsupported	var ErrCapabilityUnsupported = errors.New("cache: capability unsupported")
+symbol	github.com/birdordev/plumego/store/cache	var	ErrInvalidConfig	var ErrInvalidConfig = errors.New("cache: invalid config")
+symbol	github.com/birdordev/plumego/store/cache	var	ErrInvalidKey	var ErrInvalidKey = errors.New("cache: key is required")
+symbol	github.com/birdordev/plumego/store/cache	var	ErrKeyTooLong	var ErrKeyTooLong = errors.New("cache: key too long")
+symbol	github.com/birdordev/plumego/store/cache	var	ErrNotFound	var ErrNotFound = errors.New("cache: key not found")
+symbol	github.com/birdordev/plumego/store/cache	var	ErrNotInteger	var ErrNotInteger = errors.New("cache: value is not an integer")
+symbol	github.com/birdordev/plumego/store/db	func	ApplyConfig	func ApplyConfigfunc(db *sql.DB, config Config)
+symbol	github.com/birdordev/plumego/store/db	func	DefaultConfig	func DefaultConfigfunc(driver, dsn string) Config
+symbol	github.com/birdordev/plumego/store/db	func	ExecContext	func ExecContextfunc(ctx context.Context, db DB, query string, args ...any) (sql.Result, error)
+symbol	github.com/birdordev/plumego/store/db	func	Open	func Openfunc(config Config) (*sql.DB, error)
+symbol	github.com/birdordev/plumego/store/db	func	OpenWith	func OpenWithfunc(config Config, open OpenFunc) (*sql.DB, error)
+symbol	github.com/birdordev/plumego/store/db	func	Ping	func Pingfunc(ctx context.Context, db DB) error
+symbol	github.com/birdordev/plumego/store/db	func	QueryContext	func QueryContextfunc(ctx context.Context, db DB, query string, args ...any) (*sql.Rows, error)
+symbol	github.com/birdordev/plumego/store/db	func	QueryRow	func QueryRowfunc(ctx context.Context, db DB, query string, args ...any) (*sql.Row, error)
+symbol	github.com/birdordev/plumego/store/db	func	QueryRowContext	func QueryRowContextfunc(ctx context.Context, db DB, query string, args ...any) (*sql.Row, error)
+symbol	github.com/birdordev/plumego/store/db	func	QueryRowStrict	func QueryRowStrictfunc(ctx context.Context, db DB, query string, scan func(*sql.Rows) error, args ...any) (err error)
+symbol	github.com/birdordev/plumego/store/db	func	ScanRow	func ScanRowfunc(row *sql.Row, dest ...any) error
+symbol	github.com/birdordev/plumego/store/db	func	ScanRows	func ScanRowsfunc[T any](rows *sql.Rows, scanFunc func(*sql.Rows) (T, error)) (results []T, err error)
+symbol	github.com/birdordev/plumego/store/db	func	WithTransaction	func WithTransactionfunc(ctx context.Context, db DB, txOpts *sql.TxOptions, fn func(*sql.Tx) error) error
+symbol	github.com/birdordev/plumego/store/db	method	Config.Validate	func (Config) Validatefunc() error
+symbol	github.com/birdordev/plumego/store/db	type	Config	type Config struct { Driver string DSN string MaxOpenConns int MaxIdleConns int ConnMaxLifetime time.Duration ConnMaxIdleTime time.Duration }
+symbol	github.com/birdordev/plumego/store/db	type	DB	type DB interface { ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error) QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row BeginTx(ctx context.Context, opts *sql.TxOptions) (*sql.Tx, error) PingContext(ctx context.Context) error Close() error }
+symbol	github.com/birdordev/plumego/store/db	type	OpenFunc	type OpenFunc func(driver, dsn string) (*sql.DB, error)
+symbol	github.com/birdordev/plumego/store/db	var	ErrConnectionFailed	var ErrConnectionFailed = errors.New("db: connection failed")
+symbol	github.com/birdordev/plumego/store/db	var	ErrInvalidConfig	var ErrInvalidConfig = errors.New("db: invalid config")
+symbol	github.com/birdordev/plumego/store/db	var	ErrMultipleRows	var ErrMultipleRows = errors.New("db: multiple rows returned")
+symbol	github.com/birdordev/plumego/store/db	var	ErrNoRows	var ErrNoRows = errors.New("db: no rows returned")
+symbol	github.com/birdordev/plumego/store/db	var	ErrPingFailed	var ErrPingFailed = errors.New("db: ping failed")
+symbol	github.com/birdordev/plumego/store/db	var	ErrQueryFailed	var ErrQueryFailed = errors.New("db: query failed")
+symbol	github.com/birdordev/plumego/store/db	var	ErrTransactionFailed	var ErrTransactionFailed = errors.New("db: transaction failed")
+symbol	github.com/birdordev/plumego/store/file	method	Error.Error	func (Error) Errorfunc() string
+symbol	github.com/birdordev/plumego/store/file	method	Error.Unwrap	func (Error) Unwrapfunc() error
+symbol	github.com/birdordev/plumego/store/file	method	File.Clone	func (File) Clonefunc() File
+symbol	github.com/birdordev/plumego/store/file	method	PutOptions.CloneMetadata	func (PutOptions) CloneMetadatafunc() map[string]any
+symbol	github.com/birdordev/plumego/store/file	type	Error	type Error struct { Op string Path string Err error }
+symbol	github.com/birdordev/plumego/store/file	type	File	type File struct { ID string `json:"id" db:"id"` Name string `json:"name" db:"name"` Path string `json:"path" db:"path"` Size int64 `json:"size" db:"size"` MimeType string `json:"mime_type" db:"mime_type"` Extension string `json:"extension" db:"extension"` Hash string `json:"hash" db:"hash"` StorageType string `json:"storage_type" db:"storage_type"` Metadata map[string]any `json:"metadata,omitempty" db:"metadata"` CreatedAt time.Time `json:"created_at" db:"created_at"` UpdatedAt time.Time `json:"updated_at" db:"updated_at"` LastAccessAt *time.Time `json:"last_access_at,omitempty" db:"last_access_at"` DeletedAt *time.Time `json:"deleted_at,omitempty" db:"deleted_at"` }
+symbol	github.com/birdordev/plumego/store/file	type	FileStat	type FileStat struct { Path string Size int64 ModifiedTime time.Time IsDir bool ContentType string }
+symbol	github.com/birdordev/plumego/store/file	type	PutOptions	type PutOptions struct { Reader io.Reader FileName string ContentType string Size int64 Metadata map[string]any }
+symbol	github.com/birdordev/plumego/store/file	type	Query	type Query struct { MimeType string StartTime time.Time EndTime time.Time Page int PageSize int OrderBy string }
+symbol	github.com/birdordev/plumego/store/file	type	Storage	type Storage interface { Put(ctx context.Context, opts PutOptions) (*File, error) Get(ctx context.Context, path string) (io.ReadCloser, error) Delete(ctx context.Context, path string) error Exists(ctx context.Context, path string) (bool, error) Stat(ctx context.Context, path string) (*FileStat, error) List(ctx context.Context, prefix string, limit int) ([]*FileStat, error) Copy(ctx context.Context, srcPath, dstPath string) error }
+symbol	github.com/birdordev/plumego/store/file	var	ErrAlreadyExists	var ErrAlreadyExists = errors.New("file: already exists")
+symbol	github.com/birdordev/plumego/store/file	var	ErrInvalidPath	var ErrInvalidPath = errors.New("file: invalid path")
+symbol	github.com/birdordev/plumego/store/file	var	ErrInvalidSize	var ErrInvalidSize = errors.New("file: invalid size")
+symbol	github.com/birdordev/plumego/store/file	var	ErrNotFound	var ErrNotFound = errors.New("file: not found")
+symbol	github.com/birdordev/plumego/store/file	var	ErrStorageUnavailable	var ErrStorageUnavailable = errors.New("file: storage unavailable")
+symbol	github.com/birdordev/plumego/store/file	var	ErrUnsupportedFormat	var ErrUnsupportedFormat = errors.New("file: unsupported format")
+symbol	github.com/birdordev/plumego/store/idempotency	const	StatusCompleted	const StatusCompleted Status = "completed"
+symbol	github.com/birdordev/plumego/store/idempotency	const	StatusInProgress	const StatusInProgress Status = "in_progress"
+symbol	github.com/birdordev/plumego/store/idempotency	func	ValidateCompletion	func ValidateCompletionfunc(record Record, requestHash string) error
+symbol	github.com/birdordev/plumego/store/idempotency	func	ValidateCompletionAt	func ValidateCompletionAtfunc(record Record, requestHash string, now time.Time) error
+symbol	github.com/birdordev/plumego/store/idempotency	func	ValidateKey	func ValidateKeyfunc(key string) error
+symbol	github.com/birdordev/plumego/store/idempotency	func	ValidateRecord	func ValidateRecordfunc(record Record) error
+symbol	github.com/birdordev/plumego/store/idempotency	method	Record.Clone	func (Record) Clonefunc() Record
+symbol	github.com/birdordev/plumego/store/idempotency	method	Status.Valid	func (Status) Validfunc() bool
+symbol	github.com/birdordev/plumego/store/idempotency	type	HashAwareStore	type HashAwareStore interface { Store CompleteWithRequestHash(ctx context.Context, key, requestHash string, response []byte) error }
+symbol	github.com/birdordev/plumego/store/idempotency	type	Record	type Record struct { Key string RequestHash string Status Status Response []byte CreatedAt time.Time UpdatedAt time.Time ExpiresAt time.Time }
+symbol	github.com/birdordev/plumego/store/idempotency	type	Status	type Status string
+symbol	github.com/birdordev/plumego/store/idempotency	type	Store	type Store interface { Get(ctx context.Context, key string) (Record, bool, error) PutIfAbsent(ctx context.Context, record Record) (bool, error) Complete(ctx context.Context, key string, response []byte) error Delete(ctx context.Context, key string) error }
+symbol	github.com/birdordev/plumego/store/idempotency	var	ErrAlreadyCompleted	var ErrAlreadyCompleted = errors.New("idempotency: record already completed")
+symbol	github.com/birdordev/plumego/store/idempotency	var	ErrExpired	var ErrExpired = errors.New("idempotency: record expired")
+symbol	github.com/birdordev/plumego/store/idempotency	var	ErrInvalidKey	var ErrInvalidKey = errors.New("idempotency: key is required")
+symbol	github.com/birdordev/plumego/store/idempotency	var	ErrInvalidRecord	var ErrInvalidRecord = errors.New("idempotency: invalid record")
+symbol	github.com/birdordev/plumego/store/idempotency	var	ErrNotFound	var ErrNotFound = errors.New("idempotency: record not found")
+symbol	github.com/birdordev/plumego/store/idempotency	var	ErrRequestMismatch	var ErrRequestMismatch = errors.New("idempotency: request hash mismatch")
+symbol	github.com/birdordev/plumego/store/kv	func	DefaultConfig	func DefaultConfigfunc(dataDir string) Config
+symbol	github.com/birdordev/plumego/store/kv	func	DefaultOptions	func DefaultOptionsfunc(dataDir string) Options
+symbol	github.com/birdordev/plumego/store/kv	func	NewKVStore	func NewKVStorefunc(opts Options) (*KVStore, error)
+symbol	github.com/birdordev/plumego/store/kv	method	KVStore.Close	func (KVStore) Closefunc() error
+symbol	github.com/birdordev/plumego/store/kv	method	KVStore.Delete	func (KVStore) Deletefunc(key string) error
+symbol	github.com/birdordev/plumego/store/kv	method	KVStore.DeleteContext	func (KVStore) DeleteContextfunc(ctx context.Context, key string) error
+symbol	github.com/birdordev/plumego/store/kv	method	KVStore.ExistsContext	func (KVStore) ExistsContextfunc(ctx context.Context, key string) (bool, error)
+symbol	github.com/birdordev/plumego/store/kv	method	KVStore.Get	func (KVStore) Getfunc(key string) ([]byte, error)
+symbol	github.com/birdordev/plumego/store/kv	method	KVStore.GetContext	func (KVStore) GetContextfunc(ctx context.Context, key string) ([]byte, error)
+symbol	github.com/birdordev/plumego/store/kv	method	KVStore.GetStatsContext	func (KVStore) GetStatsContextfunc(ctx context.Context) (Stats, error)
+symbol	github.com/birdordev/plumego/store/kv	method	KVStore.KeysContext	func (KVStore) KeysContextfunc(ctx context.Context) ([]string, error)
+symbol	github.com/birdordev/plumego/store/kv	method	KVStore.Set	func (KVStore) Setfunc(key string, value []byte, ttl time.Duration) error
+symbol	github.com/birdordev/plumego/store/kv	method	KVStore.SetContext	func (KVStore) SetContextfunc(ctx context.Context, key string, value []byte, ttl time.Duration) error
+symbol	github.com/birdordev/plumego/store/kv	method	KVStore.SizeContext	func (KVStore) SizeContextfunc(ctx context.Context) (int, error)
+symbol	github.com/birdordev/plumego/store/kv	type	Config	type Config struct { DataDir string `json:"data_dir"` MaxEntries int `json:"max_entries"` MaxMemoryMB int `json:"max_memory_mb"` }
+symbol	github.com/birdordev/plumego/store/kv	type	KVStore	type KVStore struct { }
+symbol	github.com/birdordev/plumego/store/kv	type	Options	type Options = Config
+symbol	github.com/birdordev/plumego/store/kv	type	Stats	type Stats struct { Entries int64 `json:"entries"` Hits int64 `json:"hits"` Misses int64 `json:"misses"` MemoryUsage int64 `json:"memory_usage"` HitRatio float64 `json:"hit_ratio"` }
+symbol	github.com/birdordev/plumego/store/kv	var	ErrCorruptState	var ErrCorruptState = errors.New("kv: corrupt state")
+symbol	github.com/birdordev/plumego/store/kv	var	ErrInvalidKey	var ErrInvalidKey = errors.New("kv: key is required")
+symbol	github.com/birdordev/plumego/store/kv	var	ErrKeyExpired	var ErrKeyExpired = errors.New("kv: key expired")
+symbol	github.com/birdordev/plumego/store/kv	var	ErrKeyNotFound	var ErrKeyNotFound = errors.New("kv: key not found")
+symbol	github.com/birdordev/plumego/store/kv	var	ErrStoreClosed	var ErrStoreClosed = errors.New("kv: store is closed")
+symbol	github.com/birdordev/plumego/store/kv	var	ErrValueTooLarge	var ErrValueTooLarge = errors.New("kv: value too large")

@@ -32,7 +32,7 @@ Every Plumego handler returns errors using the same two functions: `contract.Wri
 Use `NewErrorBuilder` — never construct `APIError` as a struct literal:
 
 ```go
-import "github.com/spcent/plumego/contract"
+import "github.com/birdordev/plumego/contract"
 
 err := contract.NewErrorBuilder().
     Type(contract.TypeRequired).        // sets type, code, category, HTTP status

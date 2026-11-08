@@ -6,9 +6,9 @@ GIT_COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 BUILD_DATE ?= $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
 
 # Build flags
-LDFLAGS = -X github.com/spcent/plumego/cmd/plumego/commands.Version=$(VERSION) \
-          -X github.com/spcent/plumego/cmd/plumego/commands.GitCommit=$(GIT_COMMIT) \
-          -X github.com/spcent/plumego/cmd/plumego/commands.BuildDate=$(BUILD_DATE)
+LDFLAGS = -X github.com/birdordev/plumego/cmd/plumego/commands.Version=$(VERSION) \
+          -X github.com/birdordev/plumego/cmd/plumego/commands.GitCommit=$(GIT_COMMIT) \
+          -X github.com/birdordev/plumego/cmd/plumego/commands.BuildDate=$(BUILD_DATE)
 
 # Output binary
 BINARY = plumego

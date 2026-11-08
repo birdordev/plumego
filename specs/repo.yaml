@@ -1,6 +1,6 @@
 repo:
   name: plumego
-  module: github.com/spcent/plumego
+  module: github.com/birdordev/plumego
   mode: agent-first
   goals:
     - Fast, low-regret iteration by agents

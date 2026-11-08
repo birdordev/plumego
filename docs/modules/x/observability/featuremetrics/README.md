@@ -1,6 +1,6 @@
 # x/observability/featuremetrics
 
-> **Import path:** `github.com/spcent/plumego/x/observability/featuremetrics` — sub-package of [`x/observability`](../README.md).
+> **Import path:** `github.com/birdordev/plumego/x/observability/featuremetrics` — sub-package of [`x/observability`](../README.md).
 
 ## Purpose
 

@@ -5,7 +5,7 @@ Rate-limits and blocks abusive request patterns.
 ## Import
 
 ```go
-import "github.com/spcent/plumego/middleware/abuseguard"
+import "github.com/birdordev/plumego/middleware/abuseguard"
 ```
 
 ## Overview

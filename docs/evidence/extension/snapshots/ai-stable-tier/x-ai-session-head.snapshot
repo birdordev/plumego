@@ -1,30 +1,30 @@
 # plumego extension api snapshot v1
-module	github.com/spcent/plumego
+module	github.com/birdordev/plumego
 pattern	./x/ai/session
-symbol	github.com/spcent/plumego/x/ai/session	func	DefaultConfig	func DefaultConfigfunc() Config
-symbol	github.com/spcent/plumego/x/ai/session	func	NewManager	func NewManagerfunc(storage Storage, opts ...Option) *Manager
-symbol	github.com/spcent/plumego/x/ai/session	func	NewMemoryStorage	func NewMemoryStoragefunc() *MemoryStorage
-symbol	github.com/spcent/plumego/x/ai/session	func	WithConfig	func WithConfigfunc(config Config) Option
-symbol	github.com/spcent/plumego/x/ai/session	func	WithTokenizer	func WithTokenizerfunc(t tokenizer.Tokenizer) Option
-symbol	github.com/spcent/plumego/x/ai/session	method	Manager.AppendMessage	func (Manager) AppendMessagefunc(ctx context.Context, sessionID string, msg provider.Message) error
-symbol	github.com/spcent/plumego/x/ai/session	method	Manager.Create	func (Manager) Createfunc(ctx context.Context, opts CreateOptions) (*Session, error)
-symbol	github.com/spcent/plumego/x/ai/session	method	Manager.Delete	func (Manager) Deletefunc(ctx context.Context, sessionID string) error
-symbol	github.com/spcent/plumego/x/ai/session	method	Manager.Get	func (Manager) Getfunc(ctx context.Context, sessionID string) (*Session, error)
-symbol	github.com/spcent/plumego/x/ai/session	method	Manager.GetActiveContext	func (Manager) GetActiveContextfunc(ctx context.Context, sessionID string, maxTokens int) ([]provider.Message, error)
-symbol	github.com/spcent/plumego/x/ai/session	method	Manager.GetContext	func (Manager) GetContextfunc(ctx context.Context, sessionID string, key string) (any, error)
-symbol	github.com/spcent/plumego/x/ai/session	method	Manager.GetMessages	func (Manager) GetMessagesfunc(ctx context.Context, sessionID string, offset, limit int) ([]provider.Message, error)
-symbol	github.com/spcent/plumego/x/ai/session	method	Manager.SetContext	func (Manager) SetContextfunc(ctx context.Context, sessionID string, key string, value any) error
-symbol	github.com/spcent/plumego/x/ai/session	method	Manager.TrimMessages	func (Manager) TrimMessagesfunc(ctx context.Context, sessionID string, maxTokens int) error
-symbol	github.com/spcent/plumego/x/ai/session	method	Manager.Update	func (Manager) Updatefunc(ctx context.Context, session *Session) error
-symbol	github.com/spcent/plumego/x/ai/session	method	MemoryStorage.Clear	func (MemoryStorage) Clearfunc()
-symbol	github.com/spcent/plumego/x/ai/session	method	MemoryStorage.Count	func (MemoryStorage) Countfunc() int
-symbol	github.com/spcent/plumego/x/ai/session	method	MemoryStorage.Delete	func (MemoryStorage) Deletefunc(ctx context.Context, sessionID string) error
-symbol	github.com/spcent/plumego/x/ai/session	method	MemoryStorage.Load	func (MemoryStorage) Loadfunc(ctx context.Context, sessionID string) (*Session, error)
-symbol	github.com/spcent/plumego/x/ai/session	method	MemoryStorage.Save	func (MemoryStorage) Savefunc(ctx context.Context, session *Session) error
-symbol	github.com/spcent/plumego/x/ai/session	type	Config	type Config struct { DefaultTTL time.Duration MaxMessages int MaxTokens int AutoTrim bool }
-symbol	github.com/spcent/plumego/x/ai/session	type	CreateOptions	type CreateOptions struct { TenantID string UserID string AgentID string Model string TTL time.Duration Metadata map[string]string }
-symbol	github.com/spcent/plumego/x/ai/session	type	Manager	type Manager struct { storage Storage tokenizer tokenizer.Tokenizer config Config mu sync.RWMutex }
-symbol	github.com/spcent/plumego/x/ai/session	type	MemoryStorage	type MemoryStorage struct { sessions map[string]*Session mu sync.RWMutex }
-symbol	github.com/spcent/plumego/x/ai/session	type	Option	type Option func(*Manager)
-symbol	github.com/spcent/plumego/x/ai/session	type	Session	type Session struct { ID string TenantID string UserID string AgentID string Model string Messages []provider.Message Context map[string]any Usage tokenizer.TokenUsage CreatedAt time.Time UpdatedAt time.Time ExpiresAt time.Time Metadata map[string]string }
-symbol	github.com/spcent/plumego/x/ai/session	type	Storage	type Storage interface { Save(ctx context.Context, session *Session) error Load(ctx context.Context, sessionID string) (*Session, error) Delete(ctx context.Context, sessionID string) error }
+symbol	github.com/birdordev/plumego/x/ai/session	func	DefaultConfig	func DefaultConfigfunc() Config
+symbol	github.com/birdordev/plumego/x/ai/session	func	NewManager	func NewManagerfunc(storage Storage, opts ...Option) *Manager
+symbol	github.com/birdordev/plumego/x/ai/session	func	NewMemoryStorage	func NewMemoryStoragefunc() *MemoryStorage
+symbol	github.com/birdordev/plumego/x/ai/session	func	WithConfig	func WithConfigfunc(config Config) Option
+symbol	github.com/birdordev/plumego/x/ai/session	func	WithTokenizer	func WithTokenizerfunc(t tokenizer.Tokenizer) Option
+symbol	github.com/birdordev/plumego/x/ai/session	method	Manager.AppendMessage	func (Manager) AppendMessagefunc(ctx context.Context, sessionID string, msg provider.Message) error
+symbol	github.com/birdordev/plumego/x/ai/session	method	Manager.Create	func (Manager) Createfunc(ctx context.Context, opts CreateOptions) (*Session, error)
+symbol	github.com/birdordev/plumego/x/ai/session	method	Manager.Delete	func (Manager) Deletefunc(ctx context.Context, sessionID string) error
+symbol	github.com/birdordev/plumego/x/ai/session	method	Manager.Get	func (Manager) Getfunc(ctx context.Context, sessionID string) (*Session, error)
+symbol	github.com/birdordev/plumego/x/ai/session	method	Manager.GetActiveContext	func (Manager) GetActiveContextfunc(ctx context.Context, sessionID string, maxTokens int) ([]provider.Message, error)
+symbol	github.com/birdordev/plumego/x/ai/session	method	Manager.GetContext	func (Manager) GetContextfunc(ctx context.Context, sessionID string, key string) (any, error)
+symbol	github.com/birdordev/plumego/x/ai/session	method	Manager.GetMessages	func (Manager) GetMessagesfunc(ctx context.Context, sessionID string, offset, limit int) ([]provider.Message, error)
+symbol	github.com/birdordev/plumego/x/ai/session	method	Manager.SetContext	func (Manager) SetContextfunc(ctx context.Context, sessionID string, key string, value any) error
+symbol	github.com/birdordev/plumego/x/ai/session	method	Manager.TrimMessages	func (Manager) TrimMessagesfunc(ctx context.Context, sessionID string, maxTokens int) error
+symbol	github.com/birdordev/plumego/x/ai/session	method	Manager.Update	func (Manager) Updatefunc(ctx context.Context, session *Session) error
+symbol	github.com/birdordev/plumego/x/ai/session	method	MemoryStorage.Clear	func (MemoryStorage) Clearfunc()
+symbol	github.com/birdordev/plumego/x/ai/session	method	MemoryStorage.Count	func (MemoryStorage) Countfunc() int
+symbol	github.com/birdordev/plumego/x/ai/session	method	MemoryStorage.Delete	func (MemoryStorage) Deletefunc(ctx context.Context, sessionID string) error
+symbol	github.com/birdordev/plumego/x/ai/session	method	MemoryStorage.Load	func (MemoryStorage) Loadfunc(ctx context.Context, sessionID string) (*Session, error)
+symbol	github.com/birdordev/plumego/x/ai/session	method	MemoryStorage.Save	func (MemoryStorage) Savefunc(ctx context.Context, session *Session) error
+symbol	github.com/birdordev/plumego/x/ai/session	type	Config	type Config struct { DefaultTTL time.Duration MaxMessages int MaxTokens int AutoTrim bool }
+symbol	github.com/birdordev/plumego/x/ai/session	type	CreateOptions	type CreateOptions struct { TenantID string UserID string AgentID string Model string TTL time.Duration Metadata map[string]string }
+symbol	github.com/birdordev/plumego/x/ai/session	type	Manager	type Manager struct { storage Storage tokenizer tokenizer.Tokenizer config Config mu sync.RWMutex }
+symbol	github.com/birdordev/plumego/x/ai/session	type	MemoryStorage	type MemoryStorage struct { sessions map[string]*Session mu sync.RWMutex }
+symbol	github.com/birdordev/plumego/x/ai/session	type	Option	type Option func(*Manager)
+symbol	github.com/birdordev/plumego/x/ai/session	type	Session	type Session struct { ID string TenantID string UserID string AgentID string Model string Messages []provider.Message Context map[string]any Usage tokenizer.TokenUsage CreatedAt time.Time UpdatedAt time.Time ExpiresAt time.Time Metadata map[string]string }
+symbol	github.com/birdordev/plumego/x/ai/session	type	Storage	type Storage interface { Save(ctx context.Context, session *Session) error Load(ctx context.Context, sessionID string) (*Session, error) Delete(ctx context.Context, sessionID string) error }

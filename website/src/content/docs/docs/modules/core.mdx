@@ -55,7 +55,7 @@ app.Run()
 ### Import
 
 ```go
-import "github.com/spcent/plumego/core"
+import "github.com/birdordev/plumego/core"
 ```
 
 ### Construct an application
@@ -110,9 +110,9 @@ url := app.URL("user-detail", "id", "42")  // → "/api/users/42"
 
 ```go
 import (
-    "github.com/spcent/plumego/middleware/requestid"
-    "github.com/spcent/plumego/middleware/recovery"
-    "github.com/spcent/plumego/middleware/accesslog"
+    "github.com/birdordev/plumego/middleware/requestid"
+    "github.com/birdordev/plumego/middleware/recovery"
+    "github.com/birdordev/plumego/middleware/accesslog"
 )
 
 recoveryMw, err := recovery.Middleware(recovery.Config{Logger: app.Logger()})

@@ -247,7 +247,7 @@ previous configuration when an env override makes the reload invalid.
 package main
 
 import (
-    "github.com/spcent/plumego/x/data/sharding/config"
+    "github.com/birdordev/plumego/x/data/sharding/config"
 )
 
 func main() {
@@ -276,7 +276,7 @@ import (
     "log"
     "time"
 
-    "github.com/spcent/plumego/x/data/sharding/config"
+    "github.com/birdordev/plumego/x/data/sharding/config"
 )
 
 func main() {
@@ -316,7 +316,7 @@ import (
     "log"
     "time"
 
-    "github.com/spcent/plumego/x/data/sharding/config"
+    "github.com/birdordev/plumego/x/data/sharding/config"
 )
 
 func main() {

@@ -302,13 +302,13 @@ Symbols in experimental extensions (x/ai, x/data, etc.) may change in any minor 
 
 For full API documentation, use:
 ```bash
-go doc github.com/spcent/plumego/core
-go doc github.com/spcent/plumego/contract
-go doc github.com/spcent/plumego/x/rest
+go doc github.com/birdordev/plumego/core
+go doc github.com/birdordev/plumego/contract
+go doc github.com/birdordev/plumego/x/rest
 # etc.
 ```
 
-Or visit [pkg.go.dev](https://pkg.go.dev/github.com/spcent/plumego).
+Or visit [pkg.go.dev](https://pkg.go.dev/github.com/birdordev/plumego).
 
 **Last updated:** v1.1.0  
 **For API changes in newer versions, see COMPATIBILITY.md.**

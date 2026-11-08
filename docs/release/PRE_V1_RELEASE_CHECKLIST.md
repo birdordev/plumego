@@ -50,7 +50,7 @@ directive during development. Before release notes or user docs advertise tagged
 CLI installation, run this smoke test against the concrete tag:
 
 ```bash
-GOBIN="$(mktemp -d)" go install github.com/spcent/plumego/cmd/plumego@<tag>
+GOBIN="$(mktemp -d)" go install github.com/birdordev/plumego/cmd/plumego@<tag>
 "$GOBIN/plumego" version
 ```
 

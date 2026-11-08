@@ -1,43 +1,43 @@
 # plumego extension api snapshot v1
-module	github.com/spcent/plumego
+module	github.com/birdordev/plumego
 pattern	./x/ai/streaming
-symbol	github.com/spcent/plumego/x/ai/streaming	const	StatusCancelled	const StatusCancelled ProgressStatus = "cancelled"
-symbol	github.com/spcent/plumego/x/ai/streaming	const	StatusCompleted	const StatusCompleted ProgressStatus = "completed"
-symbol	github.com/spcent/plumego/x/ai/streaming	const	StatusFailed	const StatusFailed ProgressStatus = "failed"
-symbol	github.com/spcent/plumego/x/ai/streaming	const	StatusStarted	const StatusStarted ProgressStatus = "started"
-symbol	github.com/spcent/plumego/x/ai/streaming	func	DefaultStreamConfig	func DefaultStreamConfigfunc() *StreamConfig
-symbol	github.com/spcent/plumego/x/ai/streaming	func	HandleWithCallback	func HandleWithCallbackfunc( engine *StreamingEngine, callback WorkflowCallback, ) http.HandlerFunc
-symbol	github.com/spcent/plumego/x/ai/streaming	func	NewHandler	func NewHandlerfunc(engine *StreamingEngine) *Handler
-symbol	github.com/spcent/plumego/x/ai/streaming	func	NewStreamManager	func NewStreamManagerfunc() *StreamManager
-symbol	github.com/spcent/plumego/x/ai/streaming	func	NewStreamingEngine	func NewStreamingEnginefunc(engine *orchestration.Engine, config *StreamConfig) *StreamingEngine
-symbol	github.com/spcent/plumego/x/ai/streaming	func	NewStreamingParallelStep	func NewStreamingParallelStepfunc( agents []*orchestration.Agent, workflowID string, stepName string, stepIndex int, streamMgr *StreamManager, config *StreamConfig, ) *StreamingParallelStep
-symbol	github.com/spcent/plumego/x/ai/streaming	func	NewStreamingWorkflow	func NewStreamingWorkflowfunc( name string, workflowID string, streamMgr *StreamManager, config *StreamConfig, ) *StreamingWorkflow
-symbol	github.com/spcent/plumego/x/ai/streaming	func	StreamWorkflow	func StreamWorkflowfunc( w http.ResponseWriter, r *http.Request, workflow *orchestration.Workflow, workflowID string, engine *StreamingEngine, ) error
-symbol	github.com/spcent/plumego/x/ai/streaming	method	Handler.HandleExecute	func (Handler) HandleExecutefunc(w http.ResponseWriter, r *http.Request)
-symbol	github.com/spcent/plumego/x/ai/streaming	method	Handler.HandleStream	func (Handler) HandleStreamfunc(w http.ResponseWriter, r *http.Request)
-symbol	github.com/spcent/plumego/x/ai/streaming	method	ProgressUpdate.MarshalJSON	func (ProgressUpdate) MarshalJSONfunc() ([]byte, error)
-symbol	github.com/spcent/plumego/x/ai/streaming	method	StreamManager.Close	func (StreamManager) Closefunc(workflowID string) error
-symbol	github.com/spcent/plumego/x/ai/streaming	method	StreamManager.Count	func (StreamManager) Countfunc() int
-symbol	github.com/spcent/plumego/x/ai/streaming	method	StreamManager.Get	func (StreamManager) Getfunc(workflowID string) (*sse.Stream, bool)
-symbol	github.com/spcent/plumego/x/ai/streaming	method	StreamManager.Register	func (StreamManager) Registerfunc(workflowID string, stream *sse.Stream)
-symbol	github.com/spcent/plumego/x/ai/streaming	method	StreamManager.RegisterE	func (StreamManager) RegisterEfunc(workflowID string, stream *sse.Stream) error
-symbol	github.com/spcent/plumego/x/ai/streaming	method	StreamManager.SendUpdate	func (StreamManager) SendUpdatefunc(workflowID string, update *ProgressUpdate) error
-symbol	github.com/spcent/plumego/x/ai/streaming	method	StreamManager.Unregister	func (StreamManager) Unregisterfunc(workflowID string)
-symbol	github.com/spcent/plumego/x/ai/streaming	method	StreamingEngine.ExecuteStreaming	func (StreamingEngine) ExecuteStreamingfunc( ctx context.Context, workflow *orchestration.Workflow, workflowID string, stream *sse.Stream, ) ([]*orchestration.AgentResult, error)
-symbol	github.com/spcent/plumego/x/ai/streaming	method	StreamingEngine.StreamManager	func (StreamingEngine) StreamManagerfunc() *StreamManager
-symbol	github.com/spcent/plumego/x/ai/streaming	method	StreamingParallelStep.Execute	func (StreamingParallelStep) Executefunc(ctx context.Context, workflow *orchestration.Workflow) (*orchestration.AgentResult, error)
-symbol	github.com/spcent/plumego/x/ai/streaming	method	StreamingParallelStep.Name	func (StreamingParallelStep) Namefunc() string
-symbol	github.com/spcent/plumego/x/ai/streaming	method	StreamingWorkflow.AddAgentStep	func (StreamingWorkflow) AddAgentStepfunc(agent *orchestration.Agent) *StreamingWorkflow
-symbol	github.com/spcent/plumego/x/ai/streaming	method	StreamingWorkflow.AddParallelStep	func (StreamingWorkflow) AddParallelStepfunc(agents []*orchestration.Agent) *StreamingWorkflow
-symbol	github.com/spcent/plumego/x/ai/streaming	type	Handler	type Handler struct { engine *StreamingEngine }
-symbol	github.com/spcent/plumego/x/ai/streaming	type	ProgressStatus	type ProgressStatus string
-symbol	github.com/spcent/plumego/x/ai/streaming	type	ProgressUpdate	type ProgressUpdate struct { WorkflowID string `json:"workflow_id"` SessionID string `json:"session_id,omitempty"` StepName string `json:"step_name"` StepIndex int `json:"step_index"` StepType string `json:"step_type"` Status ProgressStatus `json:"status"` Progress float64 `json:"progress"` Message string `json:"message,omitempty"` Timestamp time.Time `json:"timestamp"` Result *orchestration.AgentResult `json:"result,omitempty"` Error string `json:"error,omitempty"` ParallelIndex int `json:"parallel_index,omitempty"` ParallelTotal int `json:"parallel_total,omitempty"` }
-symbol	github.com/spcent/plumego/x/ai/streaming	type	StreamConfig	type StreamConfig struct { EnableProgress bool EnableStepLogs bool KeepAlive time.Duration BufferSize int }
-symbol	github.com/spcent/plumego/x/ai/streaming	type	StreamManager	type StreamManager struct { streams map[string]*sse.Stream mu sync.RWMutex }
-symbol	github.com/spcent/plumego/x/ai/streaming	type	StreamingEngine	type StreamingEngine struct { engine *orchestration.Engine streamMgr *StreamManager config *StreamConfig }
-symbol	github.com/spcent/plumego/x/ai/streaming	type	StreamingParallelStep	type StreamingParallelStep struct { Agents []*orchestration.Agent WorkflowID string StepName string StepIndex int StreamMgr *StreamManager Config *StreamConfig }
-symbol	github.com/spcent/plumego/x/ai/streaming	type	StreamingWorkflow	type StreamingWorkflow struct { *orchestration.Workflow WorkflowID string StreamMgr *StreamManager Config *StreamConfig }
-symbol	github.com/spcent/plumego/x/ai/streaming	type	WorkflowCallback	type WorkflowCallback func(ctx context.Context) (*orchestration.Workflow, error)
-symbol	github.com/spcent/plumego/x/ai/streaming	type	WorkflowRequest	type WorkflowRequest struct { WorkflowID string `json:"workflow_id"` Name string `json:"name"` Steps []map[string]any `json:"steps,omitempty"` Metadata map[string]string `json:"metadata,omitempty"` }
-symbol	github.com/spcent/plumego/x/ai/streaming	var	ErrStreamRequired	var ErrStreamRequired = errors.New("streaming: stream is required")
-symbol	github.com/spcent/plumego/x/ai/streaming	var	ErrWorkflowIDRequired	var ErrWorkflowIDRequired = errors.New("streaming: workflow ID is required")
+symbol	github.com/birdordev/plumego/x/ai/streaming	const	StatusCancelled	const StatusCancelled ProgressStatus = "cancelled"
+symbol	github.com/birdordev/plumego/x/ai/streaming	const	StatusCompleted	const StatusCompleted ProgressStatus = "completed"
+symbol	github.com/birdordev/plumego/x/ai/streaming	const	StatusFailed	const StatusFailed ProgressStatus = "failed"
+symbol	github.com/birdordev/plumego/x/ai/streaming	const	StatusStarted	const StatusStarted ProgressStatus = "started"
+symbol	github.com/birdordev/plumego/x/ai/streaming	func	DefaultStreamConfig	func DefaultStreamConfigfunc() *StreamConfig
+symbol	github.com/birdordev/plumego/x/ai/streaming	func	HandleWithCallback	func HandleWithCallbackfunc( engine *StreamingEngine, callback WorkflowCallback, ) http.HandlerFunc
+symbol	github.com/birdordev/plumego/x/ai/streaming	func	NewHandler	func NewHandlerfunc(engine *StreamingEngine) *Handler
+symbol	github.com/birdordev/plumego/x/ai/streaming	func	NewStreamManager	func NewStreamManagerfunc() *StreamManager
+symbol	github.com/birdordev/plumego/x/ai/streaming	func	NewStreamingEngine	func NewStreamingEnginefunc(engine *orchestration.Engine, config *StreamConfig) *StreamingEngine
+symbol	github.com/birdordev/plumego/x/ai/streaming	func	NewStreamingParallelStep	func NewStreamingParallelStepfunc( agents []*orchestration.Agent, workflowID string, stepName string, stepIndex int, streamMgr *StreamManager, config *StreamConfig, ) *StreamingParallelStep
+symbol	github.com/birdordev/plumego/x/ai/streaming	func	NewStreamingWorkflow	func NewStreamingWorkflowfunc( name string, workflowID string, streamMgr *StreamManager, config *StreamConfig, ) *StreamingWorkflow
+symbol	github.com/birdordev/plumego/x/ai/streaming	func	StreamWorkflow	func StreamWorkflowfunc( w http.ResponseWriter, r *http.Request, workflow *orchestration.Workflow, workflowID string, engine *StreamingEngine, ) error
+symbol	github.com/birdordev/plumego/x/ai/streaming	method	Handler.HandleExecute	func (Handler) HandleExecutefunc(w http.ResponseWriter, r *http.Request)
+symbol	github.com/birdordev/plumego/x/ai/streaming	method	Handler.HandleStream	func (Handler) HandleStreamfunc(w http.ResponseWriter, r *http.Request)
+symbol	github.com/birdordev/plumego/x/ai/streaming	method	ProgressUpdate.MarshalJSON	func (ProgressUpdate) MarshalJSONfunc() ([]byte, error)
+symbol	github.com/birdordev/plumego/x/ai/streaming	method	StreamManager.Close	func (StreamManager) Closefunc(workflowID string) error
+symbol	github.com/birdordev/plumego/x/ai/streaming	method	StreamManager.Count	func (StreamManager) Countfunc() int
+symbol	github.com/birdordev/plumego/x/ai/streaming	method	StreamManager.Get	func (StreamManager) Getfunc(workflowID string) (*sse.Stream, bool)
+symbol	github.com/birdordev/plumego/x/ai/streaming	method	StreamManager.Register	func (StreamManager) Registerfunc(workflowID string, stream *sse.Stream)
+symbol	github.com/birdordev/plumego/x/ai/streaming	method	StreamManager.RegisterE	func (StreamManager) RegisterEfunc(workflowID string, stream *sse.Stream) error
+symbol	github.com/birdordev/plumego/x/ai/streaming	method	StreamManager.SendUpdate	func (StreamManager) SendUpdatefunc(workflowID string, update *ProgressUpdate) error
+symbol	github.com/birdordev/plumego/x/ai/streaming	method	StreamManager.Unregister	func (StreamManager) Unregisterfunc(workflowID string)
+symbol	github.com/birdordev/plumego/x/ai/streaming	method	StreamingEngine.ExecuteStreaming	func (StreamingEngine) ExecuteStreamingfunc( ctx context.Context, workflow *orchestration.Workflow, workflowID string, stream *sse.Stream, ) ([]*orchestration.AgentResult, error)
+symbol	github.com/birdordev/plumego/x/ai/streaming	method	StreamingEngine.StreamManager	func (StreamingEngine) StreamManagerfunc() *StreamManager
+symbol	github.com/birdordev/plumego/x/ai/streaming	method	StreamingParallelStep.Execute	func (StreamingParallelStep) Executefunc(ctx context.Context, workflow *orchestration.Workflow) (*orchestration.AgentResult, error)
+symbol	github.com/birdordev/plumego/x/ai/streaming	method	StreamingParallelStep.Name	func (StreamingParallelStep) Namefunc() string
+symbol	github.com/birdordev/plumego/x/ai/streaming	method	StreamingWorkflow.AddAgentStep	func (StreamingWorkflow) AddAgentStepfunc(agent *orchestration.Agent) *StreamingWorkflow
+symbol	github.com/birdordev/plumego/x/ai/streaming	method	StreamingWorkflow.AddParallelStep	func (StreamingWorkflow) AddParallelStepfunc(agents []*orchestration.Agent) *StreamingWorkflow
+symbol	github.com/birdordev/plumego/x/ai/streaming	type	Handler	type Handler struct { engine *StreamingEngine }
+symbol	github.com/birdordev/plumego/x/ai/streaming	type	ProgressStatus	type ProgressStatus string
+symbol	github.com/birdordev/plumego/x/ai/streaming	type	ProgressUpdate	type ProgressUpdate struct { WorkflowID string `json:"workflow_id"` SessionID string `json:"session_id,omitempty"` StepName string `json:"step_name"` StepIndex int `json:"step_index"` StepType string `json:"step_type"` Status ProgressStatus `json:"status"` Progress float64 `json:"progress"` Message string `json:"message,omitempty"` Timestamp time.Time `json:"timestamp"` Result *orchestration.AgentResult `json:"result,omitempty"` Error string `json:"error,omitempty"` ParallelIndex int `json:"parallel_index,omitempty"` ParallelTotal int `json:"parallel_total,omitempty"` }
+symbol	github.com/birdordev/plumego/x/ai/streaming	type	StreamConfig	type StreamConfig struct { EnableProgress bool EnableStepLogs bool KeepAlive time.Duration BufferSize int }
+symbol	github.com/birdordev/plumego/x/ai/streaming	type	StreamManager	type StreamManager struct { streams map[string]*sse.Stream mu sync.RWMutex }
+symbol	github.com/birdordev/plumego/x/ai/streaming	type	StreamingEngine	type StreamingEngine struct { engine *orchestration.Engine streamMgr *StreamManager config *StreamConfig }
+symbol	github.com/birdordev/plumego/x/ai/streaming	type	StreamingParallelStep	type StreamingParallelStep struct { Agents []*orchestration.Agent WorkflowID string StepName string StepIndex int StreamMgr *StreamManager Config *StreamConfig }
+symbol	github.com/birdordev/plumego/x/ai/streaming	type	StreamingWorkflow	type StreamingWorkflow struct { *orchestration.Workflow WorkflowID string StreamMgr *StreamManager Config *StreamConfig }
+symbol	github.com/birdordev/plumego/x/ai/streaming	type	WorkflowCallback	type WorkflowCallback func(ctx context.Context) (*orchestration.Workflow, error)
+symbol	github.com/birdordev/plumego/x/ai/streaming	type	WorkflowRequest	type WorkflowRequest struct { WorkflowID string `json:"workflow_id"` Name string `json:"name"` Steps []map[string]any `json:"steps,omitempty"` Metadata map[string]string `json:"metadata,omitempty"` }
+symbol	github.com/birdordev/plumego/x/ai/streaming	var	ErrStreamRequired	var ErrStreamRequired = errors.New("streaming: stream is required")
+symbol	github.com/birdordev/plumego/x/ai/streaming	var	ErrWorkflowIDRequired	var ErrWorkflowIDRequired = errors.New("streaming: workflow ID is required")

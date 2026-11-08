@@ -1,6 +1,6 @@
 # x/gateway/protocol
 
-> **Import path:** `github.com/spcent/plumego/x/gateway/protocol` — sub-package of [`x/gateway`](../README.md).
+> **Import path:** `github.com/birdordev/plumego/x/gateway/protocol` — sub-package of [`x/gateway`](../README.md).
 
 ## Purpose
 

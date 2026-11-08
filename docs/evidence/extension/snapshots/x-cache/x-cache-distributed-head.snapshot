@@ -1,84 +1,84 @@
 # plumego extension api snapshot v1
-module	github.com/spcent/plumego
+module	github.com/birdordev/plumego
 pattern	./x/cache/distributed
-symbol	github.com/spcent/plumego/x/cache/distributed	const	AsyncReplicationDropClosed	const AsyncReplicationDropClosed AsyncReplicationDropReason = "closed"
-symbol	github.com/spcent/plumego/x/cache/distributed	const	AsyncReplicationDropQueueFull	const AsyncReplicationDropQueueFull AsyncReplicationDropReason = "queue_full"
-symbol	github.com/spcent/plumego/x/cache/distributed	const	FailoverAllNodes	const FailoverAllNodes
-symbol	github.com/spcent/plumego/x/cache/distributed	const	FailoverNextNode	const FailoverNextNode FailoverStrategy = iota
-symbol	github.com/spcent/plumego/x/cache/distributed	const	FailoverRetry	const FailoverRetry
-symbol	github.com/spcent/plumego/x/cache/distributed	const	HealthStatusDegraded	const HealthStatusDegraded
-symbol	github.com/spcent/plumego/x/cache/distributed	const	HealthStatusHealthy	const HealthStatusHealthy HealthStatus = iota
-symbol	github.com/spcent/plumego/x/cache/distributed	const	HealthStatusUnhealthy	const HealthStatusUnhealthy
-symbol	github.com/spcent/plumego/x/cache/distributed	const	ReplicationAsync	const ReplicationAsync
-symbol	github.com/spcent/plumego/x/cache/distributed	const	ReplicationNone	const ReplicationNone ReplicationMode = iota
-symbol	github.com/spcent/plumego/x/cache/distributed	const	ReplicationSync	const ReplicationSync
-symbol	github.com/spcent/plumego/x/cache/distributed	func	DefaultConfig	func DefaultConfigfunc() *Config
-symbol	github.com/spcent/plumego/x/cache/distributed	func	DefaultHashRingConfig	func DefaultHashRingConfigfunc() *ConsistentHashRingConfig
-symbol	github.com/spcent/plumego/x/cache/distributed	func	DefaultHealthCheckerConfig	func DefaultHealthCheckerConfigfunc() *HealthCheckerConfig
-symbol	github.com/spcent/plumego/x/cache/distributed	func	New	func Newfunc(nodes []CacheNode, config *Config) *DistributedCache
-symbol	github.com/spcent/plumego/x/cache/distributed	func	NewConsistentHashRing	func NewConsistentHashRingfunc(config *ConsistentHashRingConfig) *ConsistentHashRing
-symbol	github.com/spcent/plumego/x/cache/distributed	func	NewHealthChecker	func NewHealthCheckerfunc(config *HealthCheckerConfig) *HealthChecker
-symbol	github.com/spcent/plumego/x/cache/distributed	func	NewNode	func NewNodefunc(id string, cacheInstance cache.Cache, opts ...NodeOption) *LocalCacheNode
-symbol	github.com/spcent/plumego/x/cache/distributed	func	NewWithConfig	func NewWithConfigfunc(nodes []CacheNode, config *Config) (*DistributedCache, error)
-symbol	github.com/spcent/plumego/x/cache/distributed	func	WithWeight	func WithWeightfunc(weight int) NodeOption
-symbol	github.com/spcent/plumego/x/cache/distributed	method	Config.Validate	func (Config) Validatefunc() error
-symbol	github.com/spcent/plumego/x/cache/distributed	method	ConsistentHashRing.Add	func (ConsistentHashRing) Addfunc(node CacheNode) error
-symbol	github.com/spcent/plumego/x/cache/distributed	method	ConsistentHashRing.CollisionCount	func (ConsistentHashRing) CollisionCountfunc() uint64
-symbol	github.com/spcent/plumego/x/cache/distributed	method	ConsistentHashRing.Get	func (ConsistentHashRing) Getfunc(key string) (CacheNode, error)
-symbol	github.com/spcent/plumego/x/cache/distributed	method	ConsistentHashRing.GetN	func (ConsistentHashRing) GetNfunc(key string, n int) ([]CacheNode, error)
-symbol	github.com/spcent/plumego/x/cache/distributed	method	ConsistentHashRing.Nodes	func (ConsistentHashRing) Nodesfunc() []CacheNode
-symbol	github.com/spcent/plumego/x/cache/distributed	method	ConsistentHashRing.Remove	func (ConsistentHashRing) Removefunc(nodeID string) error
-symbol	github.com/spcent/plumego/x/cache/distributed	method	ConsistentHashRing.Size	func (ConsistentHashRing) Sizefunc() int
-symbol	github.com/spcent/plumego/x/cache/distributed	method	DistributedCache.AddNode	func (DistributedCache) AddNodefunc(node CacheNode) error
-symbol	github.com/spcent/plumego/x/cache/distributed	method	DistributedCache.Append	func (DistributedCache) Appendfunc(ctx context.Context, key string, data []byte) error
-symbol	github.com/spcent/plumego/x/cache/distributed	method	DistributedCache.Clear	func (DistributedCache) Clearfunc(ctx context.Context) error
-symbol	github.com/spcent/plumego/x/cache/distributed	method	DistributedCache.Close	func (DistributedCache) Closefunc() error
-symbol	github.com/spcent/plumego/x/cache/distributed	method	DistributedCache.Decr	func (DistributedCache) Decrfunc(ctx context.Context, key string, delta int64) (int64, error)
-symbol	github.com/spcent/plumego/x/cache/distributed	method	DistributedCache.Delete	func (DistributedCache) Deletefunc(ctx context.Context, key string) error
-symbol	github.com/spcent/plumego/x/cache/distributed	method	DistributedCache.Exists	func (DistributedCache) Existsfunc(ctx context.Context, key string) (bool, error)
-symbol	github.com/spcent/plumego/x/cache/distributed	method	DistributedCache.Get	func (DistributedCache) Getfunc(ctx context.Context, key string) ([]byte, error)
-symbol	github.com/spcent/plumego/x/cache/distributed	method	DistributedCache.GetMetrics	func (DistributedCache) GetMetricsfunc() *DistributedMetrics
-symbol	github.com/spcent/plumego/x/cache/distributed	method	DistributedCache.Incr	func (DistributedCache) Incrfunc(ctx context.Context, key string, delta int64) (int64, error)
-symbol	github.com/spcent/plumego/x/cache/distributed	method	DistributedCache.NodeHealth	func (DistributedCache) NodeHealthfunc(nodeID string) (HealthStatus, error)
-symbol	github.com/spcent/plumego/x/cache/distributed	method	DistributedCache.Nodes	func (DistributedCache) Nodesfunc() []CacheNode
-symbol	github.com/spcent/plumego/x/cache/distributed	method	DistributedCache.RemoveNode	func (DistributedCache) RemoveNodefunc(nodeID string) error
-symbol	github.com/spcent/plumego/x/cache/distributed	method	DistributedCache.Set	func (DistributedCache) Setfunc(ctx context.Context, key string, value []byte, ttl time.Duration) error
-symbol	github.com/spcent/plumego/x/cache/distributed	method	HealthChecker.AddNode	func (HealthChecker) AddNodefunc(node CacheNode) error
-symbol	github.com/spcent/plumego/x/cache/distributed	method	HealthChecker.GetNodeStatus	func (HealthChecker) GetNodeStatusfunc(nodeID string) (HealthStatus, error)
-symbol	github.com/spcent/plumego/x/cache/distributed	method	HealthChecker.RemoveNode	func (HealthChecker) RemoveNodefunc(nodeID string)
-symbol	github.com/spcent/plumego/x/cache/distributed	method	HealthChecker.Start	func (HealthChecker) Startfunc()
-symbol	github.com/spcent/plumego/x/cache/distributed	method	HealthChecker.Stop	func (HealthChecker) Stopfunc()
-symbol	github.com/spcent/plumego/x/cache/distributed	method	HealthStatus.String	func (HealthStatus) Stringfunc() string
-symbol	github.com/spcent/plumego/x/cache/distributed	method	LocalCacheNode.Cache	func (LocalCacheNode) Cachefunc() cache.Cache
-symbol	github.com/spcent/plumego/x/cache/distributed	method	LocalCacheNode.HealthStatus	func (LocalCacheNode) HealthStatusfunc() HealthStatus
-symbol	github.com/spcent/plumego/x/cache/distributed	method	LocalCacheNode.ID	func (LocalCacheNode) IDfunc() string
-symbol	github.com/spcent/plumego/x/cache/distributed	method	LocalCacheNode.IsHealthy	func (LocalCacheNode) IsHealthyfunc() bool
-symbol	github.com/spcent/plumego/x/cache/distributed	method	LocalCacheNode.UpdateHealth	func (LocalCacheNode) UpdateHealthfunc(status HealthStatus)
-symbol	github.com/spcent/plumego/x/cache/distributed	method	LocalCacheNode.Weight	func (LocalCacheNode) Weightfunc() int
-symbol	github.com/spcent/plumego/x/cache/distributed	type	AsyncReplicationDrop	type AsyncReplicationDrop struct { Operation string Key string NodeID string Reason AsyncReplicationDropReason }
-symbol	github.com/spcent/plumego/x/cache/distributed	type	AsyncReplicationDropReason	type AsyncReplicationDropReason string
-symbol	github.com/spcent/plumego/x/cache/distributed	type	CacheNode	type CacheNode interface { ID() string Cache() cache.Cache Weight() int IsHealthy() bool HealthStatus() HealthStatus UpdateHealth(status HealthStatus) }
-symbol	github.com/spcent/plumego/x/cache/distributed	type	Config	type Config struct { VirtualNodes int ReplicationFactor int ReplicationMode ReplicationMode FailoverStrategy FailoverStrategy HashFunc HashFunc HealthCheckInterval time.Duration HealthCheckTimeout time.Duration HealthProbe HealthProbe FailoverRetryAttempts int FailoverRetryBackoff time.Duration AsyncReplicationTimeout time.Duration AsyncReplicationMaxConcurrency int SyncReplicationMaxConcurrency int AsyncReplicationQueueSize int AsyncReplicationDropHandler func(AsyncReplicationDrop) EnableMetrics bool }
-symbol	github.com/spcent/plumego/x/cache/distributed	type	ConsistentHashRing	type ConsistentHashRing struct { mu sync.RWMutex ring map[uint32]CacheNode sortedHashes []uint32 nodes map[string]CacheNode nodeHashes map[string][]uint32 virtualNodes int hashFunc HashFunc collisions uint64 }
-symbol	github.com/spcent/plumego/x/cache/distributed	type	ConsistentHashRingConfig	type ConsistentHashRingConfig struct { VirtualNodes int HashFunc HashFunc }
-symbol	github.com/spcent/plumego/x/cache/distributed	type	DistributedCache	type DistributedCache struct { ring HashRing healthChecker *HealthChecker replicationMode ReplicationMode replicationFactor int failoverStrategy FailoverStrategy failoverAttempts int failoverBackoff time.Duration asyncTimeout time.Duration asyncConcurrency int syncConcurrency int asyncQueue chan asyncReplicationJob asyncDropHandler func(AsyncReplicationDrop) asyncStop chan struct{} asyncWG sync.WaitGroup asyncClosed atomic.Bool metrics *DistributedMetrics mu sync.RWMutex closeOnce sync.Once }
-symbol	github.com/spcent/plumego/x/cache/distributed	type	DistributedMetrics	type DistributedMetrics struct { mu sync.RWMutex TotalRequests uint64 FailoverCount uint64 ReplicationLag time.Duration ReplicationFailures uint64 HashCollisions uint64 HealthyNodes int UnhealthyNodes int RebalanceEvents uint64 }
-symbol	github.com/spcent/plumego/x/cache/distributed	type	FailoverStrategy	type FailoverStrategy int
-symbol	github.com/spcent/plumego/x/cache/distributed	type	HashFunc	type HashFunc func(data []byte) uint32
-symbol	github.com/spcent/plumego/x/cache/distributed	type	HashRing	type HashRing interface { Add(node CacheNode) error Remove(nodeID string) error Get(key string) (CacheNode, error) GetN(key string, n int) ([]CacheNode, error) Nodes() []CacheNode Size() int }
-symbol	github.com/spcent/plumego/x/cache/distributed	type	HealthChecker	type HealthChecker struct { mu sync.RWMutex nodes map[string]CacheNode checkInterval time.Duration checkTimeout time.Duration stopChan chan struct{} wg sync.WaitGroup failureCallback func(nodeID string, err error) probe HealthProbe startOnce sync.Once stopOnce sync.Once }
-symbol	github.com/spcent/plumego/x/cache/distributed	type	HealthCheckerConfig	type HealthCheckerConfig struct { CheckInterval time.Duration CheckTimeout time.Duration FailureCallback func(nodeID string, err error) Probe HealthProbe }
-symbol	github.com/spcent/plumego/x/cache/distributed	type	HealthProbe	type HealthProbe func(ctx context.Context, node CacheNode) error
-symbol	github.com/spcent/plumego/x/cache/distributed	type	HealthStatus	type HealthStatus int
-symbol	github.com/spcent/plumego/x/cache/distributed	type	LocalCacheNode	type LocalCacheNode struct { id string cache cache.Cache weight int healthStatus atomic.Int32 mu sync.RWMutex }
-symbol	github.com/spcent/plumego/x/cache/distributed	type	NodeConfig	type NodeConfig struct { ID string Cache cache.Cache Weight int }
-symbol	github.com/spcent/plumego/x/cache/distributed	type	NodeOption	type NodeOption func(*LocalCacheNode)
-symbol	github.com/spcent/plumego/x/cache/distributed	type	ReplicationMode	type ReplicationMode int
-symbol	github.com/spcent/plumego/x/cache/distributed	var	ErrClosed	var ErrClosed = errors.New("distributed: cache closed")
-symbol	github.com/spcent/plumego/x/cache/distributed	var	ErrHashRingNodeTooLarge	var ErrHashRingNodeTooLarge = errors.New("distributed: hash ring node virtual-node count too large")
-symbol	github.com/spcent/plumego/x/cache/distributed	var	ErrHashRingSaturated	var ErrHashRingSaturated = errors.New("distributed: hash ring placement saturated")
-symbol	github.com/spcent/plumego/x/cache/distributed	var	ErrInsufficientReplicas	var ErrInsufficientReplicas = errors.New("distributed: insufficient replicas")
-symbol	github.com/spcent/plumego/x/cache/distributed	var	ErrNoNodesAvailable	var ErrNoNodesAvailable = errors.New("distributed: no nodes available")
-symbol	github.com/spcent/plumego/x/cache/distributed	var	ErrNodeAlreadyExists	var ErrNodeAlreadyExists = errors.New("distributed: node already exists")
-symbol	github.com/spcent/plumego/x/cache/distributed	var	ErrNodeNotFound	var ErrNodeNotFound = errors.New("distributed: node not found")
-symbol	github.com/spcent/plumego/x/cache/distributed	var	ErrNodeUnhealthy	var ErrNodeUnhealthy = errors.New("distributed: node is unhealthy")
+symbol	github.com/birdordev/plumego/x/cache/distributed	const	AsyncReplicationDropClosed	const AsyncReplicationDropClosed AsyncReplicationDropReason = "closed"
+symbol	github.com/birdordev/plumego/x/cache/distributed	const	AsyncReplicationDropQueueFull	const AsyncReplicationDropQueueFull AsyncReplicationDropReason = "queue_full"
+symbol	github.com/birdordev/plumego/x/cache/distributed	const	FailoverAllNodes	const FailoverAllNodes
+symbol	github.com/birdordev/plumego/x/cache/distributed	const	FailoverNextNode	const FailoverNextNode FailoverStrategy = iota
+symbol	github.com/birdordev/plumego/x/cache/distributed	const	FailoverRetry	const FailoverRetry
+symbol	github.com/birdordev/plumego/x/cache/distributed	const	HealthStatusDegraded	const HealthStatusDegraded
+symbol	github.com/birdordev/plumego/x/cache/distributed	const	HealthStatusHealthy	const HealthStatusHealthy HealthStatus = iota
+symbol	github.com/birdordev/plumego/x/cache/distributed	const	HealthStatusUnhealthy	const HealthStatusUnhealthy
+symbol	github.com/birdordev/plumego/x/cache/distributed	const	ReplicationAsync	const ReplicationAsync
+symbol	github.com/birdordev/plumego/x/cache/distributed	const	ReplicationNone	const ReplicationNone ReplicationMode = iota
+symbol	github.com/birdordev/plumego/x/cache/distributed	const	ReplicationSync	const ReplicationSync
+symbol	github.com/birdordev/plumego/x/cache/distributed	func	DefaultConfig	func DefaultConfigfunc() *Config
+symbol	github.com/birdordev/plumego/x/cache/distributed	func	DefaultHashRingConfig	func DefaultHashRingConfigfunc() *ConsistentHashRingConfig
+symbol	github.com/birdordev/plumego/x/cache/distributed	func	DefaultHealthCheckerConfig	func DefaultHealthCheckerConfigfunc() *HealthCheckerConfig
+symbol	github.com/birdordev/plumego/x/cache/distributed	func	New	func Newfunc(nodes []CacheNode, config *Config) *DistributedCache
+symbol	github.com/birdordev/plumego/x/cache/distributed	func	NewConsistentHashRing	func NewConsistentHashRingfunc(config *ConsistentHashRingConfig) *ConsistentHashRing
+symbol	github.com/birdordev/plumego/x/cache/distributed	func	NewHealthChecker	func NewHealthCheckerfunc(config *HealthCheckerConfig) *HealthChecker
+symbol	github.com/birdordev/plumego/x/cache/distributed	func	NewNode	func NewNodefunc(id string, cacheInstance cache.Cache, opts ...NodeOption) *LocalCacheNode
+symbol	github.com/birdordev/plumego/x/cache/distributed	func	NewWithConfig	func NewWithConfigfunc(nodes []CacheNode, config *Config) (*DistributedCache, error)
+symbol	github.com/birdordev/plumego/x/cache/distributed	func	WithWeight	func WithWeightfunc(weight int) NodeOption
+symbol	github.com/birdordev/plumego/x/cache/distributed	method	Config.Validate	func (Config) Validatefunc() error
+symbol	github.com/birdordev/plumego/x/cache/distributed	method	ConsistentHashRing.Add	func (ConsistentHashRing) Addfunc(node CacheNode) error
+symbol	github.com/birdordev/plumego/x/cache/distributed	method	ConsistentHashRing.CollisionCount	func (ConsistentHashRing) CollisionCountfunc() uint64
+symbol	github.com/birdordev/plumego/x/cache/distributed	method	ConsistentHashRing.Get	func (ConsistentHashRing) Getfunc(key string) (CacheNode, error)
+symbol	github.com/birdordev/plumego/x/cache/distributed	method	ConsistentHashRing.GetN	func (ConsistentHashRing) GetNfunc(key string, n int) ([]CacheNode, error)
+symbol	github.com/birdordev/plumego/x/cache/distributed	method	ConsistentHashRing.Nodes	func (ConsistentHashRing) Nodesfunc() []CacheNode
+symbol	github.com/birdordev/plumego/x/cache/distributed	method	ConsistentHashRing.Remove	func (ConsistentHashRing) Removefunc(nodeID string) error
+symbol	github.com/birdordev/plumego/x/cache/distributed	method	ConsistentHashRing.Size	func (ConsistentHashRing) Sizefunc() int
+symbol	github.com/birdordev/plumego/x/cache/distributed	method	DistributedCache.AddNode	func (DistributedCache) AddNodefunc(node CacheNode) error
+symbol	github.com/birdordev/plumego/x/cache/distributed	method	DistributedCache.Append	func (DistributedCache) Appendfunc(ctx context.Context, key string, data []byte) error
+symbol	github.com/birdordev/plumego/x/cache/distributed	method	DistributedCache.Clear	func (DistributedCache) Clearfunc(ctx context.Context) error
+symbol	github.com/birdordev/plumego/x/cache/distributed	method	DistributedCache.Close	func (DistributedCache) Closefunc() error
+symbol	github.com/birdordev/plumego/x/cache/distributed	method	DistributedCache.Decr	func (DistributedCache) Decrfunc(ctx context.Context, key string, delta int64) (int64, error)
+symbol	github.com/birdordev/plumego/x/cache/distributed	method	DistributedCache.Delete	func (DistributedCache) Deletefunc(ctx context.Context, key string) error
+symbol	github.com/birdordev/plumego/x/cache/distributed	method	DistributedCache.Exists	func (DistributedCache) Existsfunc(ctx context.Context, key string) (bool, error)
+symbol	github.com/birdordev/plumego/x/cache/distributed	method	DistributedCache.Get	func (DistributedCache) Getfunc(ctx context.Context, key string) ([]byte, error)
+symbol	github.com/birdordev/plumego/x/cache/distributed	method	DistributedCache.GetMetrics	func (DistributedCache) GetMetricsfunc() *DistributedMetrics
+symbol	github.com/birdordev/plumego/x/cache/distributed	method	DistributedCache.Incr	func (DistributedCache) Incrfunc(ctx context.Context, key string, delta int64) (int64, error)
+symbol	github.com/birdordev/plumego/x/cache/distributed	method	DistributedCache.NodeHealth	func (DistributedCache) NodeHealthfunc(nodeID string) (HealthStatus, error)
+symbol	github.com/birdordev/plumego/x/cache/distributed	method	DistributedCache.Nodes	func (DistributedCache) Nodesfunc() []CacheNode
+symbol	github.com/birdordev/plumego/x/cache/distributed	method	DistributedCache.RemoveNode	func (DistributedCache) RemoveNodefunc(nodeID string) error
+symbol	github.com/birdordev/plumego/x/cache/distributed	method	DistributedCache.Set	func (DistributedCache) Setfunc(ctx context.Context, key string, value []byte, ttl time.Duration) error
+symbol	github.com/birdordev/plumego/x/cache/distributed	method	HealthChecker.AddNode	func (HealthChecker) AddNodefunc(node CacheNode) error
+symbol	github.com/birdordev/plumego/x/cache/distributed	method	HealthChecker.GetNodeStatus	func (HealthChecker) GetNodeStatusfunc(nodeID string) (HealthStatus, error)
+symbol	github.com/birdordev/plumego/x/cache/distributed	method	HealthChecker.RemoveNode	func (HealthChecker) RemoveNodefunc(nodeID string)
+symbol	github.com/birdordev/plumego/x/cache/distributed	method	HealthChecker.Start	func (HealthChecker) Startfunc()
+symbol	github.com/birdordev/plumego/x/cache/distributed	method	HealthChecker.Stop	func (HealthChecker) Stopfunc()
+symbol	github.com/birdordev/plumego/x/cache/distributed	method	HealthStatus.String	func (HealthStatus) Stringfunc() string
+symbol	github.com/birdordev/plumego/x/cache/distributed	method	LocalCacheNode.Cache	func (LocalCacheNode) Cachefunc() cache.Cache
+symbol	github.com/birdordev/plumego/x/cache/distributed	method	LocalCacheNode.HealthStatus	func (LocalCacheNode) HealthStatusfunc() HealthStatus
+symbol	github.com/birdordev/plumego/x/cache/distributed	method	LocalCacheNode.ID	func (LocalCacheNode) IDfunc() string
+symbol	github.com/birdordev/plumego/x/cache/distributed	method	LocalCacheNode.IsHealthy	func (LocalCacheNode) IsHealthyfunc() bool
+symbol	github.com/birdordev/plumego/x/cache/distributed	method	LocalCacheNode.UpdateHealth	func (LocalCacheNode) UpdateHealthfunc(status HealthStatus)
+symbol	github.com/birdordev/plumego/x/cache/distributed	method	LocalCacheNode.Weight	func (LocalCacheNode) Weightfunc() int
+symbol	github.com/birdordev/plumego/x/cache/distributed	type	AsyncReplicationDrop	type AsyncReplicationDrop struct { Operation string Key string NodeID string Reason AsyncReplicationDropReason }
+symbol	github.com/birdordev/plumego/x/cache/distributed	type	AsyncReplicationDropReason	type AsyncReplicationDropReason string
+symbol	github.com/birdordev/plumego/x/cache/distributed	type	CacheNode	type CacheNode interface { ID() string Cache() cache.Cache Weight() int IsHealthy() bool HealthStatus() HealthStatus UpdateHealth(status HealthStatus) }
+symbol	github.com/birdordev/plumego/x/cache/distributed	type	Config	type Config struct { VirtualNodes int ReplicationFactor int ReplicationMode ReplicationMode FailoverStrategy FailoverStrategy HashFunc HashFunc HealthCheckInterval time.Duration HealthCheckTimeout time.Duration HealthProbe HealthProbe FailoverRetryAttempts int FailoverRetryBackoff time.Duration AsyncReplicationTimeout time.Duration AsyncReplicationMaxConcurrency int SyncReplicationMaxConcurrency int AsyncReplicationQueueSize int AsyncReplicationDropHandler func(AsyncReplicationDrop) EnableMetrics bool }
+symbol	github.com/birdordev/plumego/x/cache/distributed	type	ConsistentHashRing	type ConsistentHashRing struct { mu sync.RWMutex ring map[uint32]CacheNode sortedHashes []uint32 nodes map[string]CacheNode nodeHashes map[string][]uint32 virtualNodes int hashFunc HashFunc collisions uint64 }
+symbol	github.com/birdordev/plumego/x/cache/distributed	type	ConsistentHashRingConfig	type ConsistentHashRingConfig struct { VirtualNodes int HashFunc HashFunc }
+symbol	github.com/birdordev/plumego/x/cache/distributed	type	DistributedCache	type DistributedCache struct { ring HashRing healthChecker *HealthChecker replicationMode ReplicationMode replicationFactor int failoverStrategy FailoverStrategy failoverAttempts int failoverBackoff time.Duration asyncTimeout time.Duration asyncConcurrency int syncConcurrency int asyncQueue chan asyncReplicationJob asyncDropHandler func(AsyncReplicationDrop) asyncStop chan struct{} asyncWG sync.WaitGroup asyncClosed atomic.Bool metrics *DistributedMetrics mu sync.RWMutex closeOnce sync.Once }
+symbol	github.com/birdordev/plumego/x/cache/distributed	type	DistributedMetrics	type DistributedMetrics struct { mu sync.RWMutex TotalRequests uint64 FailoverCount uint64 ReplicationLag time.Duration ReplicationFailures uint64 HashCollisions uint64 HealthyNodes int UnhealthyNodes int RebalanceEvents uint64 }
+symbol	github.com/birdordev/plumego/x/cache/distributed	type	FailoverStrategy	type FailoverStrategy int
+symbol	github.com/birdordev/plumego/x/cache/distributed	type	HashFunc	type HashFunc func(data []byte) uint32
+symbol	github.com/birdordev/plumego/x/cache/distributed	type	HashRing	type HashRing interface { Add(node CacheNode) error Remove(nodeID string) error Get(key string) (CacheNode, error) GetN(key string, n int) ([]CacheNode, error) Nodes() []CacheNode Size() int }
+symbol	github.com/birdordev/plumego/x/cache/distributed	type	HealthChecker	type HealthChecker struct { mu sync.RWMutex nodes map[string]CacheNode checkInterval time.Duration checkTimeout time.Duration stopChan chan struct{} wg sync.WaitGroup failureCallback func(nodeID string, err error) probe HealthProbe startOnce sync.Once stopOnce sync.Once }
+symbol	github.com/birdordev/plumego/x/cache/distributed	type	HealthCheckerConfig	type HealthCheckerConfig struct { CheckInterval time.Duration CheckTimeout time.Duration FailureCallback func(nodeID string, err error) Probe HealthProbe }
+symbol	github.com/birdordev/plumego/x/cache/distributed	type	HealthProbe	type HealthProbe func(ctx context.Context, node CacheNode) error
+symbol	github.com/birdordev/plumego/x/cache/distributed	type	HealthStatus	type HealthStatus int
+symbol	github.com/birdordev/plumego/x/cache/distributed	type	LocalCacheNode	type LocalCacheNode struct { id string cache cache.Cache weight int healthStatus atomic.Int32 mu sync.RWMutex }
+symbol	github.com/birdordev/plumego/x/cache/distributed	type	NodeConfig	type NodeConfig struct { ID string Cache cache.Cache Weight int }
+symbol	github.com/birdordev/plumego/x/cache/distributed	type	NodeOption	type NodeOption func(*LocalCacheNode)
+symbol	github.com/birdordev/plumego/x/cache/distributed	type	ReplicationMode	type ReplicationMode int
+symbol	github.com/birdordev/plumego/x/cache/distributed	var	ErrClosed	var ErrClosed = errors.New("distributed: cache closed")
+symbol	github.com/birdordev/plumego/x/cache/distributed	var	ErrHashRingNodeTooLarge	var ErrHashRingNodeTooLarge = errors.New("distributed: hash ring node virtual-node count too large")
+symbol	github.com/birdordev/plumego/x/cache/distributed	var	ErrHashRingSaturated	var ErrHashRingSaturated = errors.New("distributed: hash ring placement saturated")
+symbol	github.com/birdordev/plumego/x/cache/distributed	var	ErrInsufficientReplicas	var ErrInsufficientReplicas = errors.New("distributed: insufficient replicas")
+symbol	github.com/birdordev/plumego/x/cache/distributed	var	ErrNoNodesAvailable	var ErrNoNodesAvailable = errors.New("distributed: no nodes available")
+symbol	github.com/birdordev/plumego/x/cache/distributed	var	ErrNodeAlreadyExists	var ErrNodeAlreadyExists = errors.New("distributed: node already exists")
+symbol	github.com/birdordev/plumego/x/cache/distributed	var	ErrNodeNotFound	var ErrNodeNotFound = errors.New("distributed: node not found")
+symbol	github.com/birdordev/plumego/x/cache/distributed	var	ErrNodeUnhealthy	var ErrNodeUnhealthy = errors.New("distributed: node is unhealthy")

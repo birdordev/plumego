@@ -241,8 +241,8 @@ type TransportConfig struct {
 ```go
 import (
     "context"
-    "github.com/spcent/plumego/core"
-    "github.com/spcent/plumego/x/gateway"
+    "github.com/birdordev/plumego/core"
+    "github.com/birdordev/plumego/x/gateway"
 )
 
 cfg := core.DefaultConfig()
@@ -277,9 +277,9 @@ if err := srv.ListenAndServe(); err != nil {
 ```go
 import (
     "context"
-    "github.com/spcent/plumego/core"
-    "github.com/spcent/plumego/x/gateway"
-    "github.com/spcent/plumego/x/gateway/discovery"
+    "github.com/birdordev/plumego/core"
+    "github.com/birdordev/plumego/x/gateway"
+    "github.com/birdordev/plumego/x/gateway/discovery"
 )
 
 // Create Consul discovery client

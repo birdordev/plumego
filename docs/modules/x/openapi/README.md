@@ -77,8 +77,8 @@ Use the Go API directly when generating documents programmatically:
 
 ```go
 import (
-    "github.com/spcent/plumego/x/openapi"
-    "github.com/spcent/plumego/router"
+    "github.com/birdordev/plumego/x/openapi"
+    "github.com/birdordev/plumego/router"
 )
 
 // Collect route metadata (e.g. from app.Core.Routes() after RegisterRoutes).

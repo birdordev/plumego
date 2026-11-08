@@ -5,7 +5,7 @@ Propagates trace/span context through HTTP requests.
 ## Import
 
 ```go
-import "github.com/spcent/plumego/middleware/tracing"
+import "github.com/birdordev/plumego/middleware/tracing"
 ```
 
 ## Overview

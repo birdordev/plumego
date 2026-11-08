@@ -5,7 +5,7 @@ Enforces a maximum request body size.
 ## Import
 
 ```go
-import "github.com/spcent/plumego/middleware/bodylimit"
+import "github.com/birdordev/plumego/middleware/bodylimit"
 ```
 
 ## Overview

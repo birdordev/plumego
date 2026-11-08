@@ -1,6 +1,6 @@
 # x/ai/tokenizer
 
-> **Import path:** `github.com/spcent/plumego/x/ai/tokenizer` — sub-package of [`x/ai`](../README.md).
+> **Import path:** `github.com/birdordev/plumego/x/ai/tokenizer` — sub-package of [`x/ai`](../README.md).
 
 ## Purpose
 

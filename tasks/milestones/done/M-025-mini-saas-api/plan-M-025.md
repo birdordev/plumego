@@ -72,7 +72,7 @@ Copies the canonical `reference/standard-service` shape (style guide §3):
 
 ```text
 use-cases/mini-saas-api/
-  go.mod                      # module mini-saas-api; replace github.com/spcent/plumego => ../..
+  go.mod                      # module mini-saas-api; replace github.com/birdordev/plumego => ../..
   main.go                     # load config, construct app, run with signal context
   README.md                   # purpose, run, curl walkthrough
   AGENTS.md                   # local operating rules (pattern: use-cases/workerfleet)

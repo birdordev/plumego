@@ -54,8 +54,8 @@ type User struct {
 
 ```go
 import (
-    "github.com/spcent/plumego/x/rest"
-    "github.com/spcent/plumego/store/db"
+    "github.com/birdordev/plumego/x/rest"
+    "github.com/birdordev/plumego/store/db"
 )
 
 builder := rest.NewSQLBuilder("users", "id").
@@ -89,8 +89,8 @@ controller := rest.NewDBResourceController[User]("users", repo)
 
 ```go
 import (
-    "github.com/spcent/plumego/router"
-    "github.com/spcent/plumego/x/rest"
+    "github.com/birdordev/plumego/router"
+    "github.com/birdordev/plumego/x/rest"
 )
 
 r := router.NewRouter()
@@ -160,7 +160,7 @@ Builder 配置：
 在自定义 handler 中使用 `rest.QueryBuilder` 解析：
 
 ```go
-import "github.com/spcent/plumego/x/rest"
+import "github.com/birdordev/plumego/x/rest"
 
 func (h UserHandler) List(w http.ResponseWriter, r *http.Request) {
     params := rest.NewQueryBuilder().

@@ -1,6 +1,6 @@
 # x/ai/semanticcache/vectorstore
 
-> **Import path:** `github.com/spcent/plumego/x/ai/semanticcache/vectorstore` — sub-package of [`x/ai/semanticcache`](../README.md).
+> **Import path:** `github.com/birdordev/plumego/x/ai/semanticcache/vectorstore` — sub-package of [`x/ai/semanticcache`](../README.md).
 
 ## Purpose
 

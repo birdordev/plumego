@@ -5,7 +5,7 @@ Injects a canonical request ID into each request for distributed tracing and log
 ## Import
 
 ```go
-import "github.com/spcent/plumego/middleware/requestid"
+import "github.com/birdordev/plumego/middleware/requestid"
 ```
 
 ## Overview

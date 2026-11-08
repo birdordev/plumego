@@ -35,8 +35,8 @@ package users
 import (
 	"net/http"
 
-	"github.com/spcent/plumego/contract"
-	plumego "github.com/spcent/plumego/x/validate"
+	"github.com/birdordev/plumego/contract"
+	plumego "github.com/birdordev/plumego/x/validate"
 )
 
 type CreateUserRequest struct {
@@ -103,7 +103,7 @@ package users
 import (
 	"net/http"
 
-	"github.com/spcent/plumego/contract"
+	"github.com/birdordev/plumego/contract"
 )
 
 func ShowUser(w http.ResponseWriter, r *http.Request) {

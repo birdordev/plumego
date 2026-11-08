@@ -53,7 +53,7 @@ app.Use(requestid.Middleware(), recoveryMw, accesslogMw)
 
 ## 内置中间件目录
 
-所有包位于 `github.com/spcent/plumego/middleware/` 下。
+所有包位于 `github.com/birdordev/plumego/middleware/` 下。
 
 | 包 | 构造函数 | 典型用途 |
 | --- | --- | --- |
@@ -113,7 +113,7 @@ app.Use(authMw)                                      // 8. auth 最后
 任何 `func(http.Handler) http.Handler` 都是合法的中间件，使用 `middleware.Middleware` 类型别名通过 `app.Use` 注册：
 
 ```go
-import mw "github.com/spcent/plumego/middleware"
+import mw "github.com/birdordev/plumego/middleware"
 
 func TenantHeader(next http.Handler) http.Handler {
     return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
