@@ -48,6 +48,24 @@ Follow the read path in `AGENTS.md §1`, then:
 10. Run boundary and repo-wide checks only when the gate profile requires them.
 11. Report validation as a compact command and status summary with residual risk.
 
+### Command entry points
+
+Run `make help` for commands grouped by development, quality gates, website,
+task artifacts, and local setup. The root Makefile handles orchestration;
+`internal/tools/task-workflow` shares milestone resolution and template editing
+for the task commands. Run `python3 internal/tools/task-workflow-test.py` after
+changing those command paths; it uses temporary artifacts and stubbed tools.
+
+`make gates` runs its component checks in order and stops at the first failure,
+even when invoked with `make -j`. Individual checks such as `make api-check`,
+`make boundary-check`, and `make stable-coverage` can be run directly. Lint and
+the website build remain separate: `make lint` and `make website-gates`.
+
+`make website-sync` regenerates website data without staging it. Review the diff
+and explicitly stage the generated files with the corresponding source changes.
+`make website-check-generated` detects changes introduced by regeneration and
+propagates generation failures; temporary check files are removed on exit.
+
 Use targeted `rg` searches when a symbol, package, or rule needs confirmation.
 Avoid broad file dumps after ownership and validation are already clear.
 

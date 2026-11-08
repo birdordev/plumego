@@ -76,13 +76,13 @@ func run() error {
 }
 
 func writeModuleFile(tmp string, root string) error {
-	content := fmt.Sprintf(`module github.com/spcent/plumego-doc-snippets
+	content := fmt.Sprintf(`module github.com/birdordev/plumego-doc-snippets
 
 go 1.26.0
 
-require github.com/spcent/plumego v0.0.0
+require github.com/birdordev/plumego v0.0.0
 
-replace github.com/spcent/plumego => %s
+replace github.com/birdordev/plumego => %s
 `, strconv.Quote(root))
 	return os.WriteFile(filepath.Join(tmp, "go.mod"), []byte(content), 0o644)
 }
@@ -184,7 +184,7 @@ func wrappedFragment(block string) []byte {
 	var body strings.Builder
 	for _, line := range strings.SplitAfter(block, "\n") {
 		trimmed := strings.TrimSpace(line)
-		if trimmed == `import "github.com/spcent/plumego/router"` {
+		if trimmed == `import "github.com/birdordev/plumego/router"` {
 			continue
 		}
 		body.WriteString(line)
@@ -197,9 +197,9 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/spcent/plumego"
-	"github.com/spcent/plumego/core"
-	"github.com/spcent/plumego/router"
+	"github.com/birdordev/plumego"
+	"github.com/birdordev/plumego/core"
+	"github.com/birdordev/plumego/router"
 )
 
 func main() {

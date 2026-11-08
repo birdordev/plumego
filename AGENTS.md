@@ -1,6 +1,6 @@
 # AGENTS.md - plumego
 
-Operational guide for AI coding agents in `github.com/birdordev/plumego`. The root module declares Go 1.26.0+ and is stdlib-only unless an exception is explicitly approved.
+Shared operational entry point for all AI coding agents (including Claude Code, Codex, and Cursor) in `github.com/birdordev/plumego`. The root module declares Go 1.26.0+ and is stdlib-only unless an exception is explicitly approved.
 
 ## 1. Authority
 
@@ -10,7 +10,7 @@ Control-plane docs: `docs/operations/codex-workflow.md`, `docs/operations/agent-
 
 Machine-readable sources: `specs/repo.yaml`, `specs/task-routing.yaml`, `specs/dependency-rules.yaml`, `specs/agent-quality-rules.yaml`, `specs/checks.yaml`, `specs/gate-profiles.yaml`, `specs/stop-condition-handlers.yaml`, `specs/request-flows.yaml`, `specs/extension-maturity.yaml`, `specs/extension-beta-evidence.yaml`, `specs/deprecation-inventory.yaml`, and `specs/change-recipes/`.
 
-Canonical wiring: `reference/standard-service`. Agent entry shim: `CLAUDE.md` delegates to this file; edit `AGENTS.md` first when agent instructions drift. CLI: `(cd cmd/plumego && go run . --help)`; agent helpers live under `plumego agents ...`. Task bundle: `make bundle TASK=<recipe> MODULE=<path>`.
+Canonical wiring: `reference/standard-service`. This file is the authoritative repository-wide agent guide; keep shared instructions here rather than in a separate agent-specific snapshot. CLI: `(cd cmd/plumego && go run . --help)`; agent helpers live under `plumego agents ...`. Task bundle: `make bundle TASK=<recipe> MODULE=<path>`.
 
 ## 2. Non-Negotiables
 
@@ -30,6 +30,8 @@ Canonical wiring: `reference/standard-service`. Agent entry shim: `CLAUDE.md` de
 Root facade: `plumego.go` is a convenience import for application callers only. Its primer is `docs/modules/plumego/README.md`; stable and extension code in this repo must import the owning packages directly.
 
 Stable roots: `core router contract middleware security store health log metrics`.
+
+Repository map: the root Go module contains the stable roots and all `x/*` extensions; standalone reference apps live in `reference/*`, CLI tooling in `cmd/plumego`, validation programs in `internal/checks/`, and the docs site in `website/`. Active work lives in `tasks/milestones/active/` and `tasks/cards/active/`.
 
 Extensions under `x/`: beta families are `frontend gateway messaging observability rest tenant websocket`; experimental families are `ai data fileapi openapi resilience rpc validate`. Selected subpackages may have beta-surface status, currently tracked in `docs/concepts/extension-maturity.md` and `specs/extension-maturity.yaml`; do not infer parent-family promotion from a subpackage.
 
@@ -83,6 +85,8 @@ For module behavior, read the target `<module>/module.yaml` before editing. For 
 
 Prefer `make validate-diff` for the current diff; use `make validate-diff-dry` when you only need to see the selected profile. Validation order is module tests first, then boundary checks, then repo-wide checks when the gate profile requires them.
 
+Run `make fmt` before Go validation to format Go source files in place.
+
 Lint is a zero-finding gate: `make lint` runs golangci-lint (v2 config in `.golangci.yml`, standard linter set). Fix findings in code rather than adding exclusion rules; an intentional exception needs a `//nolint` comment with a reason.
 
 Baseline boundary/manifest checks are:
@@ -99,7 +103,7 @@ go run ./internal/checks/deprecation-inventory -strict
 go run ./internal/checks/public-entrypoints-sync
 ```
 
-`make gates` mirrors CI for the main repo: boundary checks, stable API snapshot comparison for `core`, doc snippet checks, `go vet ./...`, `make reference-vet`, gofmt cleanliness, race tests, `make reference-test`, stable coverage >= 90%, `cmd/plumego` vet/race tests, and `website/src/generated` staleness. Run `make website-gates` separately for the docs website static checks/build.
+`make gates` mirrors CI for the main repo: boundary checks, stable API snapshot comparison for all nine stable roots, doc snippet checks, `go vet ./...`, `make reference-vet`, gofmt cleanliness, race tests, `make reference-test`, stable coverage >= 90%, `cmd/plumego` vet/race tests, and `website/src/generated` staleness. Run `make website-gates` separately for the docs website static checks/build.
 
 Docs-only changes may skip Go gates unless code, config, generated data, or runnable examples changed. Still validate accuracy, links, authority order, and any generated-doc staleness implied by the edited source.
 
@@ -109,9 +113,9 @@ Summarize validation as: command, status, key failure if any, next step.
 
 Update docs only for implemented behavior/API/config/security/lifecycle/boundary changes. Document what exists, not intended future behavior.
 
-Sync targets when affected: `README.md`, `README_CN.md`, `AGENTS.md`, `CLAUDE.md` snapshot facts, `docs/operations/agent-context-budget.md`, `env.example`, affected `docs/modules/` primers, `docs/concepts/extension-maturity.md`, `docs/release/roadmap.md`, `docs/evidence/stable-api/`, and relevant `reference/*/README.md`.
+Sync targets when affected: `README.md`, `README_CN.md`, `AGENTS.md`, `docs/operations/agent-context-budget.md`, `env.example`, affected `docs/modules/` primers, `docs/concepts/extension-maturity.md`, `docs/release/roadmap.md`, `docs/evidence/stable-api/`, and relevant `reference/*/README.md`.
 
-Run `make website-sync` only when editing a source that feeds `website/src/generated/`, then commit the generated files together:
+Run `make website-sync` only when editing a source that feeds `website/src/generated/`; it regenerates files without staging them. Review and stage the generated files with the source changes, then commit them together:
 
 | Source | Generated |
 |---|---|
