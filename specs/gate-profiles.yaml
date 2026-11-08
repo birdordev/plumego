@@ -69,12 +69,18 @@ profiles:
       - "go vet ./..."
 
 # How to select a profile automatically (used by validate-diff):
+# Cross-module behavior takes precedence over any primary-module profile.
+# Stable-root rules apply only to single-module changes, regardless of order.
 selection_rules:
   - id: docs_only
     description: All changed files match doc/spec/task patterns and no .go files changed
     path_patterns: ["docs/**", "*.md", "specs/**", "tasks/**", "website/**"]
     exclude_go_changes: true
     use: docs_only
+
+  - id: cross_module
+    description: Changed paths span multiple distinct modules or touch public API
+    use: cross_module_public_api_release
 
   - id: rms_stable
     description: Changed module is router, middleware, or security
@@ -85,10 +91,6 @@ selection_rules:
     description: Changed module is another stable root
     modules: [core, contract, store, health, log, metrics]
     use: stable_root_change
-
-  - id: cross_module
-    description: Changed paths span multiple distinct modules or touch public API
-    use: cross_module_public_api_release
 
   - id: default
     description: Extension module or unrecognized module

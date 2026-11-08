@@ -16,7 +16,7 @@ import (
 
 func TestNoBodyWriterReadFromDiscardsData(t *testing.T) {
 	rec := httptest.NewRecorder()
-	nbw := noBodyWriter{rec}
+	nbw := noBodyWriter{ResponseWriter: rec}
 
 	// ReadFrom should discard all bytes and return the count without writing to rec.
 	n, err := nbw.ReadFrom(strings.NewReader("hello world"))
@@ -35,7 +35,7 @@ func TestNoBodyWriterReadFromDiscardsData(t *testing.T) {
 func TestNoBodyWriterReadFromWithWrapperBehavior(t *testing.T) {
 	// Verify Unwrap returns the inner ResponseWriter.
 	rec := httptest.NewRecorder()
-	nbw := noBodyWriter{rec}
+	nbw := noBodyWriter{ResponseWriter: rec}
 	if nbw.Unwrap() != rec {
 		t.Fatal("Unwrap did not return the inner ResponseWriter")
 	}

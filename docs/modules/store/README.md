@@ -88,6 +88,10 @@
 - `store/file` is the stable contract layer for file storage interfaces, shared file types, and errors.
 - `store/file` is contract-only and does not bundle a local filesystem, object storage, tenant-aware, or HTTP-facing backend implementation.
 - `store/file` metadata clone helpers detach common nested mutable values such as `map[string]any`, `map[string]string`, `[]any`, `[]string`, and `[]byte`.
+  Self-references and cross-references through `map[string]any` and `[]any`
+  are preserved within the detached copy instead of recursing indefinitely.
+  Arbitrary custom values remain caller-owned; this is not a general-purpose
+  serializer or validation policy.
 - `x/data/file` is the tenant-aware implementation layer for local/S3 storage backends, provider-specific config, metadata persistence, and thumbnail/image-processing helpers.
 - `x/fileapi` is the HTTP transport layer for upload, download, info, delete, list, and temporary URL endpoints.
 - Do not move tenant-aware path policy, metadata query parameter types, backend-specific behavior, or image-processing pipelines into stable `store/file`.

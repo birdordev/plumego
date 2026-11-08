@@ -36,6 +36,7 @@ var errInvalidBase62 = errors.New("invalid base62 request id")
 
 // RequestIDGenerator encapsulates state for request ID generation.
 type RequestIDGenerator struct {
+	initialize sync.Once
 	rng        *mathrand.Rand
 	stateMu    sync.Mutex
 	lastMs     int64
@@ -119,22 +120,22 @@ func (g *RequestIDGenerator) buildID(unixMs int64, seqVal int) string {
 }
 
 func (g *RequestIDGenerator) ensureInitialized() {
-	if g.rng != nil && len(g.randomPool) > 0 {
-		return
-	}
-
-	g.poolMu.Lock()
-	defer g.poolMu.Unlock()
-
-	if g.rng == nil {
-		g.rng = mathrand.New(mathrand.NewSource(cryptoSeed()))
-	}
-	if len(g.randomPool) == 0 {
-		g.randomPool = make([]int32, randomPoolSize)
-	}
-	for i := range g.randomPool {
-		g.randomPool[i] = int32(g.rng.Intn(randMax))
-	}
+	g.initialize.Do(func() {
+		g.poolMu.Lock()
+		defer g.poolMu.Unlock()
+		if g.rng != nil && len(g.randomPool) > 0 {
+			return
+		}
+		if g.rng == nil {
+			g.rng = mathrand.New(mathrand.NewSource(cryptoSeed()))
+		}
+		if len(g.randomPool) == 0 {
+			g.randomPool = make([]int32, randomPoolSize)
+		}
+		for i := range g.randomPool {
+			g.randomPool[i] = int32(g.rng.Intn(randMax))
+		}
+	})
 }
 
 func (g *RequestIDGenerator) randomValue() int {

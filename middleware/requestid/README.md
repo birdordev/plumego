@@ -17,10 +17,10 @@ import "github.com/spcent/plumego/middleware/requestid"
 | Symbol | Description |
 |--------|-------------|
 | `Middleware(opts ...Option)` | Constructor; variadic options |
-| `WithGenerator(fn)` | Custom ID generator (default: UUIDv4) |
+| `WithGenerator(fn)` | Custom ID generator (default: fixed-width base62) |
 | `WithRequestHeader(enabled)` | Write ID back to inbound request header |
-| `NewRequestID()` | Default generator; returns a v4 UUID string |
-| `FromContext(ctx)` | Retrieve request ID from context |
+| `NewRequestID()` | Default generator; returns a 12-character base62 correlation ID |
+| `contract.RequestIDFromContext(ctx)` | Retrieve request ID from context |
 
 ## Usage
 
@@ -41,4 +41,10 @@ app.Use(requestid.Middleware(
 ## Notes
 
 - Request IDs are correlation identifiers only. Do **not** use them for security, authorization, or as tokens.
-- `FromContext` returns the empty string when the context has no request ID.
+- `contract.RequestIDFromContext` returns the empty string when the context has no request ID.
+
+- `RequestIDGenerator` supports concurrent generation, including concurrent
+  first use of its zero value. Initialization completes once before any random
+  pool reads; callers must not copy an initialized generator.
+- The default format contains a timestamp component. It is a correlation ID,
+  not a cryptographic secret or a UUID.

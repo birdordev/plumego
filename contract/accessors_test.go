@@ -1,6 +1,7 @@
 package contract
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -265,18 +266,29 @@ func TestRouteStateAddParam(t *testing.T) {
 	}
 }
 
-func TestRouteStateAddParamSilentlyDropsBeyondMax(t *testing.T) {
+func TestRouteStatePreservesOverflowParameters(t *testing.T) {
 	rs := GetRouteState()
-	defer func() {
-		rs.Reset()
-		PutRouteState(rs)
-	}()
-
+	defer func() { rs.Reset(); PutRouteState(rs) }()
 	for i := 0; i < maxInlineParams+5; i++ {
-		rs.AddParam("k", "v")
+		rs.AddParam(fmt.Sprintf("k%d", i), fmt.Sprintf("v%d", i))
 	}
-	if rs.paramN != maxInlineParams {
-		t.Fatalf("paramN = %d, want %d (max)", rs.paramN, maxInlineParams)
+	ctx := WithRouteState(t.Context(), rs)
+	for i := 0; i < maxInlineParams+5; i++ {
+		if got := RequestParamFromContext(ctx, fmt.Sprintf("k%d", i)); got != fmt.Sprintf("v%d", i) {
+			t.Fatalf("parameter %d = %q", i, got)
+		}
+	}
+	snapshot := RequestContextFromContext(ctx)
+	snapshot.Params["k8"] = "changed"
+	if got := RequestParamFromContext(ctx, "k8"); got != "v8" {
+		t.Fatalf("snapshot shared: %q", got)
+	}
+	rs.Reset()
+	if got := RequestParamFromContext(ctx, "k8"); got != "" {
+		t.Fatalf("reset retained parameter: %q", got)
+	}
+	if rs.overflowParams != nil {
+		t.Fatal("reset retained overflow storage")
 	}
 }
 

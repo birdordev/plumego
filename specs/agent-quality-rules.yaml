@@ -104,15 +104,20 @@ module_quality_focus:
     - visible_middleware_attachment
     - controllable_shutdown
     - not_feature_catalog
+    - partial_start_rollback_errors_and_cleanup_retry
+    - readiness_tracks_lifecycle_state
   router:
     - static_param_group_method_reverse_route_tests
     - no_response_writing
     - no_auth_policy
     - no_business_validation
     - grep_friendly_matching
+    - dead_end_fallback_preserves_complete_match_priority
+    - cold_hot_cache_head_404_405_allow_equivalence
   contract:
     - stable_error_codes
     - stable_response_shape
+    - encode_and_write_failure_response_ownership
     - transport_primitives_only
     - with_from_context_accessors
     - inlined_unexported_zero_value_struct_context_keys
@@ -120,7 +125,7 @@ module_quality_focus:
     - no_new_specific_error_constructors
     - remove_deprecated_symbols_after_migration
   middleware:
-    - next_called_exactly_once
+    - next_called_once_on_pass_through_and_never_after_rejection
     - ordering_and_error_path_tests
     - transport_only
     - no_business_service_injection
@@ -137,7 +142,26 @@ module_quality_focus:
     - concurrent_read_write_safety
     - context_cancellation
     - testable_persistence_behavior
+    - commit_boundary_memory_disk_consistency_and_retry
     - no_core_router_middleware_security_or_x_imports
+  health:
+    - stable_models_separate_from_extension_orchestration
+    - unknown_and_failed_checks_do_not_report_ready
+    - stale_results_cannot_overwrite_newer_state
+    - detached_snapshots_and_final_close
+    - no_backend_error_text_in_health_responses
+  log:
+    - structured_numeric_precision
+    - bounded_cyclic_field_conversion
+    - escaped_text_controls_and_delimiters
+    - no_payload_leak_in_fallback_or_writer_diagnostics
+    - nested_field_ownership_and_shared_writer_synchronization
+  metrics:
+    - synchronized_record_reset_and_snapshot
+    - detached_snapshot_maps
+    - isolated_fanout_labels
+    - concurrent_total_and_reset_invariants
+    - documented_multi_collector_snapshot_atomicity
   x_tenant:
     - tenant_isolation
     - quota_policy_session_negative_tests
@@ -161,12 +185,45 @@ anti_patterns:
   - compatibility_wrapper_without_removal_plan
   - deprecated_symbol_left_after_caller_migration
 
+quality_acceptance:
+  dimensions:
+    - module_ownership
+    - public_contract
+    - state_and_resource_transitions
+    - classifiable_errors_and_cleanup_failures
+    - concurrency_and_mutable_data_ownership
+    - context_cancellation_and_commit_boundary
+    - locally_understandable_control_flow
+    - caller_driven_abstraction
+    - fail_closed_and_sensitive_data_protection
+    - capacity_and_measured_performance
+    - behavioral_tests_and_implemented_docs
+  evidence_statuses:
+    - reproduced
+    - source_confirmed
+    - unverified
+  severity:
+    P0: exploitable_auth_bypass_serious_credential_exposure_or_widespread_irreversible_data_corruption
+    P1: demonstrated_correctness_or_resource_state_failure
+    P2: localized_reliability_contract_maintenance_or_critical_test_gap
+    P3: local_readability_improvement_without_correctness_impact
+  review_policy:
+    - do_not_report_unverified_hypotheses_as_confirmed_defects
+    - test_pass_is_not_complete_module_audit
+    - no_function_line_count_gate
+    - code_identifiers_and_code_comments_in_english
+    - lint_and_website_build_are_separate_from_make_gates
+
 review_output:
   findings_first: true
   finding_fields:
     - severity
     - title
     - file
+    - trigger
+    - observed_behavior
+    - expected_behavior
+    - evidence_status
     - problem
     - impact
     - minimal_fix

@@ -1,11 +1,13 @@
 package router
 
 import (
+	"github.com/spcent/plumego/contract"
 	"net/http"
 )
 
 // matchResult represents the result of route matching.
 type matchResult struct {
+	routeState   contract.RouteState // Immutable after cache publication; contexts retain it.
 	Handler      http.Handler
 	ParamValues  []string
 	ParamKeys    []string

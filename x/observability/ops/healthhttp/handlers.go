@@ -94,7 +94,7 @@ func ComponentHealthHandler(manager Manager, componentName string) http.Handler 
 		ctx, cancel := withCheckTimeout(r.Context(), componentHealthTimeout)
 		defer cancel()
 
-		_ = manager.CheckComponent(ctx, componentName)
+		checkErr := manager.CheckComponent(ctx, componentName)
 
 		componentHealth, exists := manager.GetComponentHealth(componentName)
 		if !exists {
@@ -106,6 +106,11 @@ func ComponentHealthHandler(manager Manager, componentName string) http.Handler 
 			return
 		}
 
+		if checkErr != nil {
+			// A cached success cannot represent a failed or unavailable fresh check.
+			componentHealth.Status = health.StatusUnhealthy
+			componentHealth.Message = "component check failed"
+		}
 		_ = writeHealthResponse(w, r, httpStatusForHealth(componentHealth.Status), componentHealth)
 	})
 }

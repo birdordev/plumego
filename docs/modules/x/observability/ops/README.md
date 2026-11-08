@@ -79,3 +79,10 @@ Recommended ownership:
 - protected runtime diagnostics: `x/observability/ops`
 - telemetry export and adapter wiring: `x/observability`
 - local debug and reload tools: `x/observability/devtools`, not production defaults
+
+
+Component health probes return 503 when the fresh check fails, is canceled,
+is superseded, or cannot run after manager closure. A cached healthy result
+cannot turn such a probe into a successful response. Missing components remain
+404. Failure bodies use a fixed message without backend error text; producing
+that response does not mutate a newer shared component result.

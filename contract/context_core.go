@@ -19,17 +19,18 @@ type RequestContext struct {
 // in RouteState without a heap-allocated map.
 const maxInlineParams = 8
 
-// RouteState carries per-request routing data using inline fixed-size storage.
-// It is stored in the request context by the router and read by the contract
-// accessor functions. Callers must not retain the RouteState pointer beyond the
-// handler's ServeHTTP call; use RequestContextFromContext to obtain an isolated
-// copy for goroutines.
+// RouteState carries routing data in inline storage with overflow support.
+// The router publishes immutable state that remains valid with its contexts.
+// Callers using GetRouteState/PutRouteState explicitly must not reuse pooled
+// state while any reader still holds its context. RequestContextFromContext
+// returns an isolated mutable snapshot.
 type RouteState struct {
-	paramKeys [maxInlineParams]string
-	paramVals [maxInlineParams]string
-	paramN    int
-	pattern   string
-	name      string
+	paramKeys      [maxInlineParams]string
+	paramVals      [maxInlineParams]string
+	overflowParams map[string]string
+	paramN         int
+	pattern        string
+	name           string
 }
 
 // SetPattern records the matched route pattern.
@@ -38,14 +39,19 @@ func (rs *RouteState) SetPattern(p string) { rs.pattern = p }
 // SetName records the route name.
 func (rs *RouteState) SetName(n string) { rs.name = n }
 
-// AddParam appends a key/value route parameter. Extra params beyond
-// maxInlineParams are silently dropped (real routes rarely exceed 8 params).
+// AddParam appends a key/value route parameter. Parameters beyond the inline
+// capacity are retained in request-owned overflow storage.
 func (rs *RouteState) AddParam(key, val string) {
 	if rs.paramN < maxInlineParams {
 		rs.paramKeys[rs.paramN] = key
 		rs.paramVals[rs.paramN] = val
 		rs.paramN++
+		return
 	}
+	if rs.overflowParams == nil {
+		rs.overflowParams = make(map[string]string)
+	}
+	rs.overflowParams[key] = val
 }
 
 // Reset zeros the RouteState so it can be returned to a sync.Pool.
@@ -55,7 +61,7 @@ var routeStatePool = sync.Pool{
 	New: func() any { return new(RouteState) },
 }
 
-// GetRouteState retrieves a pooled RouteState for the router's per-request use.
+// GetRouteState retrieves scratch routing storage for explicitly bounded use.
 // Callers must call PutRouteState when the request is complete.
 func GetRouteState() *RouteState {
 	return routeStatePool.Get().(*RouteState)
@@ -114,10 +120,13 @@ func RequestContextFromContext(ctx context.Context) RequestContext {
 			RoutePattern: rs.pattern,
 			RouteName:    rs.name,
 		}
-		if rs.paramN > 0 {
-			rc.Params = make(map[string]string, rs.paramN)
+		if rs.paramN > 0 || len(rs.overflowParams) > 0 {
+			rc.Params = make(map[string]string, rs.paramN+len(rs.overflowParams))
 			for i := 0; i < rs.paramN; i++ {
 				rc.Params[rs.paramKeys[i]] = rs.paramVals[i]
+			}
+			for key, value := range rs.overflowParams {
+				rc.Params[key] = value
 			}
 		}
 		return rc
@@ -147,7 +156,7 @@ func RequestParamFromContext(ctx context.Context, name string) string {
 				return rs.paramVals[i]
 			}
 		}
-		return ""
+		return rs.overflowParams[name]
 	}
 
 	// Fallback: legacy requestContextKey.

@@ -1,28 +1,104 @@
 package router
 
 import (
+	"bufio"
 	"io"
+	"net"
 	"net/http"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/spcent/plumego/contract"
 )
 
-// noBodyWriter wraps http.ResponseWriter and discards all body writes.
-// It is used for matched HEAD requests, including explicit HEAD routes, MethodAny
-// fallback, and GET fallback (RFC 7231 §4.3.2).
+// noBodyWriter tracks the representation without sending its body. Final headers
+// stay private until completion or flush so implicit status, content sniffing,
+// and small-response Content-Length remain consistent with net/http.
 type noBodyWriter struct {
 	http.ResponseWriter
+	status    int
+	header    http.Header
+	bytes     int64
+	committed bool
 }
 
-func (noBodyWriter) Write(p []byte) (int, error) { return len(p), nil }
-func (w noBodyWriter) ReadFrom(r io.Reader) (int64, error) {
-	return io.Copy(io.Discard, r)
+func (w *noBodyWriter) WriteHeader(status int) {
+	if w.status != 0 || w.committed {
+		return
+	}
+	if status < 100 || status > 999 {
+		panic("invalid WriteHeader code")
+	}
+	if status < 200 && status != http.StatusSwitchingProtocols {
+		w.ResponseWriter.WriteHeader(status)
+		return
+	}
+	w.status = status
+	w.header = w.Header().Clone()
 }
-func (w noBodyWriter) Unwrap() http.ResponseWriter {
-	return w.ResponseWriter
+
+func (w *noBodyWriter) Write(p []byte) (int, error) {
+	if w.status == 0 {
+		w.WriteHeader(http.StatusOK)
+	}
+	if !w.bodyAllowed() {
+		return 0, http.ErrBodyNotAllowed
+	}
+	w.bytes += int64(len(p))
+	if length, err := strconv.ParseInt(w.header.Get("Content-Length"), 10, 64); err == nil && length >= 0 && w.bytes > length {
+		return 0, http.ErrContentLength
+	}
+	_, hasContentType := w.header["Content-Type"]
+	if !w.committed && len(p) > 0 && !hasContentType && w.header.Get("Content-Encoding") == "" {
+		w.header.Set("Content-Type", http.DetectContentType(p))
+	}
+	return len(p), nil
 }
+
+func (w *noBodyWriter) ReadFrom(r io.Reader) (int64, error) {
+	return io.Copy(struct{ io.Writer }{w}, r)
+}
+
+func (w *noBodyWriter) bodyAllowed() bool {
+	return w.status >= 200 && w.status != http.StatusNoContent && w.status != http.StatusNotModified
+}
+
+func (w *noBodyWriter) commit(inferLength bool) {
+	if w.committed {
+		return
+	}
+	if w.status == 0 {
+		w.WriteHeader(http.StatusOK)
+	}
+	if inferLength && w.bodyAllowed() && w.bytes <= 2048 && w.header.Get("Content-Length") == "" && w.header.Get("Transfer-Encoding") == "" {
+		w.header.Set("Content-Length", strconv.FormatInt(w.bytes, 10))
+	}
+	dst := w.Header()
+	clear(dst)
+	for key, values := range w.header {
+		dst[key] = append([]string(nil), values...)
+	}
+	w.ResponseWriter.WriteHeader(w.status)
+	w.committed = true
+}
+
+func (w *noBodyWriter) FlushError() error {
+	w.commit(false)
+	return http.NewResponseController(w.ResponseWriter).Flush()
+}
+
+func (w *noBodyWriter) Flush() { _ = w.FlushError() }
+
+func (w *noBodyWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	conn, rw, err := http.NewResponseController(w.ResponseWriter).Hijack()
+	if err == nil {
+		w.committed = true
+	}
+	return conn, rw, err
+}
+
+func (w *noBodyWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
 
 // ServeHTTP implements http.Handler and handles incoming HTTP requests.
 func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
@@ -54,12 +130,26 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	}
 
 	w = responseWriterForMatch(w, req, result)
+	if head, ok := w.(*noBodyWriter); ok {
+		defer func() {
+			if recovered := recover(); recovered != nil {
+				// Preserve logical commitment for outer recovery middleware.
+				if head.status != 0 {
+					head.commit(true)
+				}
+				panic(recovered)
+			}
+		}()
+	}
 	r.attachRouteContextAndServe(w, req, result)
+	if head, ok := w.(*noBodyWriter); ok {
+		head.commit(true)
+	}
 }
 
 func responseWriterForMatch(w http.ResponseWriter, req *http.Request, result *matchResult) http.ResponseWriter {
 	if req != nil && req.Method == http.MethodHead && result != nil {
-		return noBodyWriter{w}
+		return &noBodyWriter{ResponseWriter: w}
 	}
 	return w
 }
@@ -80,6 +170,15 @@ func (r *Router) cachedMatch(method, path string) *matchResult {
 	}
 	result := r.matchRoute(method, path)
 	if result != nil {
+		// Build metadata before publication. Contexts retain this immutable
+		// match even after eviction, including workers behind inner timeouts.
+		result.routeState.SetPattern(result.RoutePattern)
+		result.routeState.SetName(result.RouteName)
+		for i, key := range result.ParamKeys {
+			if i < len(result.ParamValues) {
+				result.routeState.AddParam(key, result.ParamValues[i])
+			}
+		}
 		cache.Set(key, result)
 	}
 	return result
@@ -159,33 +258,14 @@ func (r *Router) matchRoute(method, path string) *matchResult {
 	return nil
 }
 
-// attachRouteContextAndServe stores route metadata in the request context via
-// a pooled RouteState (zero map allocations for params), calls the handler,
-// then returns the RouteState to the pool.
-//
-// Callers must not retain the RouteState pointer beyond the handler's return.
-// Goroutines that need route params should capture them via
-// contract.RequestContextFromContext before launch.
+// attachRouteContextAndServe shares immutable routing metadata with the request.
+// Its context keeps the match alive beyond cache eviction or an inner timeout.
 func (r *Router) attachRouteContextAndServe(w http.ResponseWriter, req *http.Request, result *matchResult) {
 	if result == nil {
 		return
 	}
-
-	rs := contract.GetRouteState()
-	rs.SetPattern(result.RoutePattern)
-	rs.SetName(result.RouteName)
-	for i, k := range result.ParamKeys {
-		if i >= len(result.ParamValues) {
-			break
-		}
-		rs.AddParam(k, result.ParamValues[i])
-	}
-
-	ctx := contract.WithRouteState(req.Context(), rs)
+	ctx := contract.WithRouteState(req.Context(), &result.routeState)
 	result.Handler.ServeHTTP(w, req.WithContext(ctx))
-
-	rs.Reset()
-	contract.PutRouteState(rs)
 }
 
 func (r *Router) allowedMethods(path string) []string {

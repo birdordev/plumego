@@ -39,7 +39,7 @@ Transport primitives only; preserve error-code and response-shape stability. Ful
 
 ### `middleware`
 
-- Call `next` exactly once.
+- Call `next` exactly once when passing a request through; do not call it after rejecting a request.
 - Test ordering and error paths.
 - Keep behavior transport-only.
 - Do not inject business services, build business DTOs, or branch on domain policy.
@@ -59,6 +59,28 @@ Transport primitives only; preserve error-code and response-shape stability. Ful
 - Propagate context cancellation.
 - Keep persistence behavior testable.
 - Do not import `core`, `router`, `middleware`, `security`, or `x/*`.
+
+### `health`
+
+- Keep stable health models separate from orchestration in `x/observability/ops/healthhttp`.
+- Aggregate unknown and failed checks conservatively; distinguish liveness from readiness.
+- Older checks must not overwrite newer results; closing must not restore readiness.
+- Return detached mutable snapshots and keep backend error text out of health responses.
+
+### `log`
+
+- Preserve structured field types and integer precision.
+- Bound cyclic or deeply nested field conversion; escape text controls and delimiters.
+- Encoding fallbacks and writer-error diagnostics must not expose hidden fields or original payloads.
+- Document ownership of nested field values and concurrent writer behavior.
+- Do not claim automatic credential redaction for arbitrary caller messages or fields.
+
+### `metrics`
+
+- Define synchronization for record, reset, and snapshot operations.
+- Return detached snapshot maps; isolate mutable labels between fanout targets.
+- Test exact totals after concurrent updates and invariants during reset/read interleavings.
+- Document whether multi-collector snapshots are globally atomic or independently sampled.
 
 ### `x/tenant`
 
@@ -111,6 +133,10 @@ Use findings-first output for reviews:
 Findings:
 - [P0/P1/P2] Title
   File:
+  Trigger:
+  Observed behavior:
+  Expected behavior:
+  Evidence status: reproduced / source-confirmed / unverified
   Problem:
   Impact:
   Minimal fix:
@@ -206,3 +232,71 @@ Validation commands run:
 Docs sync impact:
 Residual risk:
 ```
+
+
+## 8. Core Quality Acceptance Standard
+
+Use these criteria together with the module-specific focus above. They do not
+replace `AGENTS.md` or authorize public API changes. Distinguish a required
+correctness fix from an optional readability improvement.
+
+| Dimension | Acceptance evidence |
+|---|---|
+| Ownership | Manifest and imports agree; construction and dependencies are visible; stable packages do not acquire extension responsibilities. |
+| Public contract | Defaults, zero values, invalid input, repeated calls, and concurrency rules are documented where relevant and tested at public entrypoints. |
+| State and resources | Allowed transitions, resource owner, partial success, rollback failure, and retry behavior are explicit and observable. |
+| Errors | Callers can classify relevant errors; primary and cleanup failures are preserved where needed; the resulting state is explainable. |
+| Concurrency | Shared state has a synchronization policy; lock ordering and callback boundaries are clear; mutable inputs and outputs have documented owners. |
+| Cancellation | Blocking work receives the caller context; tests distinguish cancellation before work, during work, and after irreversible commit. |
+| Readability | Names express intent; the main path and side effects are locally understandable; comments explain constraints and reasons. |
+| Abstraction | Interfaces serve actual callers; helpers represent a coherent concept; no speculative wrappers, hidden registries, or unowned compatibility layers. |
+| Security | Unverifiable credentials fail closed; responses, logs, fallback diagnostics, and error chains do not expose credentials. |
+| Capacity and performance | Cache hits preserve semantics; bounded resources and background work have capacity and exit policies; optimization claims have measurements. |
+| Tests and docs | Tests assert observable behavior and invariants; docs describe implementation; changed contracts include regression evidence. |
+
+### State and ownership review
+
+For lifecycle or persistence changes, record a small transition table in the
+card or test describing the starting state, event, success state, failure
+state, retained resources, and legal retry. A returned error must not be
+assumed to mean that nothing committed.
+
+For shared maps, slices, labels, and snapshots, state whether they are copied,
+immutable, or caller-owned. Do not hold a lock across an external callback
+without an explicit blocking, cancellation, and reentrancy policy. A deadline
+on a context does not by itself make mutex acquisition cancellable.
+
+For HTTP changes, test response ownership after final headers are committed,
+informational headers, write failures, and applicable `ResponseWriter`
+capabilities. Router changes must cover dead-end fallback, complete-match
+priority, cold/hot cache equivalence, `HEAD`, 404, 405, and `Allow`.
+
+### Readability decisions
+
+Split a function when it mixes independent responsibilities, resource phases,
+or error policies. Do not use line count alone as a quality gate. Extract a
+helper only when its name conveys a stable concept or removes meaningful
+repetition; keep one obvious canonical path. Keep code, identifiers, and code
+comments in English.
+
+### Severity and evidence
+
+- P0: exploitable authentication bypass, serious credential exposure, or widespread irreversible data corruption.
+- P1: demonstrated correctness failures such as deadlocks, resource leaks, lost cleanup state, incorrect routing, or inconsistent commit semantics.
+- P2: localized reliability defects, ambiguous contracts, demonstrated maintenance obstacles, or missing critical regression coverage.
+- P3: naming, comments, and local structure improvements without a current correctness impact.
+
+Record trigger, observed and expected behavior, impact, file location, minimal
+fix, and missing test for each finding. Label source-confirmed conclusions
+and unverified hypotheses separately from reproduced failures. An unverified
+hypothesis is not a confirmed defect.
+
+### Completion
+
+- A behavior fix has focused regression evidence, preferably failing before the fix and passing afterward.
+- A structural cleanup preserves public behavior and tests the affected contract when risk warrants it.
+- API snapshots, examples, configuration, and module docs are synchronized when affected.
+- Use `make validate-diff-dry` to inspect gate selection and `make validate-diff` to execute it; escalate to `make gates` for cross-module or public-contract work.
+- `make lint` is a separate zero-finding gate. `make gates` does not imply lint or website build validation; use `make website-gates` when affected.
+- Keep the stable coverage gate at >=90%; additionally inspect failure, cancellation, and concurrency paths. A percentage alone is not acceptance evidence.
+- Report actual commands, status, first meaningful failure, next step, skipped checks, and residual risk. Do not mark an entire module audited merely because its tests pass.

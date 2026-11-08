@@ -159,29 +159,6 @@ type Decision struct {
 //
 // The limiter automatically cleans up idle entries to prevent memory leaks.
 // Call Stop() when done to clean up resources.
-type shardCounter struct {
-	counters []atomic.Int64
-}
-
-func (sc *shardCounter) Add(shardIdx int, delta int64) {
-	if shardIdx < 0 || shardIdx >= len(sc.counters) {
-		return
-	}
-	sc.counters[shardIdx].Add(delta)
-}
-
-func (sc *shardCounter) Total() int64 {
-	var total int64
-	for i := range sc.counters {
-		total += sc.counters[i].Load()
-	}
-	return total
-}
-
-func (sc *shardCounter) Load() int64 {
-	return sc.Total()
-}
-
 // LimiterMetrics holds monitoring counters for a Limiter.
 //
 // Allowed, Rejected, and Evictions are cumulative counters that increase
@@ -204,10 +181,10 @@ type limiterMetricCounters struct {
 	Allowed   atomic.Int64
 	Rejected  atomic.Int64
 	Evictions atomic.Int64
-	Buckets   atomic.Int64
 }
 
 type Limiter struct {
+	admissionMu     sync.Mutex // Serializes new-key admission and capacity eviction.
 	shards          []limiterShard
 	rate            float64
 	capacity        float64
@@ -219,7 +196,7 @@ type Limiter struct {
 	stoppedCh       chan struct{}
 	startOnce       sync.Once
 	stopOnce        sync.Once
-	bucketCount     shardCounter
+	bucketCount     atomic.Int64
 	// Metrics for monitoring
 	metrics limiterMetricCounters
 }
@@ -305,8 +282,6 @@ func NewLimiterWithConfig(config Config) (*Limiter, error) {
 		stoppedCh:       make(chan struct{}),
 	}
 
-	limiter.bucketCount.counters = make([]atomic.Int64, normalized.Shards)
-
 	for i := range limiter.shards {
 		limiter.shards[i].buckets = make(map[string]*bucket)
 	}
@@ -373,27 +348,29 @@ func (l *Limiter) Allow(key string) Decision {
 	}
 
 	now := l.now()
-	if l.maxEntries > 0 && l.bucketCount.Load() >= int64(l.maxEntries) {
-		l.evictOldestGlobal()
-	}
 	shard := l.shardFor(key)
-	shardIdx := fnv32a(key) % uint32(len(l.shards))
 
 	// --- critical section: update bucket state only ---
 	shard.mu.Lock()
 	b, ok := shard.buckets[key]
 	if !ok {
-		if l.maxEntries > 0 && l.bucketCount.Load() >= int64(l.maxEntries) {
-			l.evictOldestLocked(shard, int(shardIdx))
+		// Existing keys only take their shard lock. New keys serialize capacity
+		// changes, then recheck because another admission may have added the key.
+		shard.mu.Unlock()
+		l.admissionMu.Lock()
+		shard.mu.Lock()
+		b, ok = shard.buckets[key]
+		if !ok {
+			if l.maxEntries > 0 && l.bucketCount.Load() >= int64(l.maxEntries) {
+				shard.mu.Unlock()
+				l.evictOldestGlobal()
+				shard.mu.Lock()
+			}
+			b = &bucket{tokens: l.capacity, lastRefill: now, lastAccess: now}
+			shard.buckets[key] = b
+			l.bucketCount.Add(1)
 		}
-		b = &bucket{
-			tokens:     l.capacity,
-			lastRefill: now,
-			lastAccess: now,
-		}
-		shard.buckets[key] = b
-		l.bucketCount.Add(int(shardIdx), 1)
-		l.updateBucketMetric()
+		l.admissionMu.Unlock()
 	}
 
 	elapsed := now.Sub(b.lastRefill).Seconds()
@@ -494,8 +471,7 @@ func (l *Limiter) cleanup(now time.Time) {
 		for key, b := range shard.buckets {
 			if now.Sub(b.lastAccess) > l.maxIdle {
 				delete(shard.buckets, key)
-				l.bucketCount.Add(i, -1)
-				l.updateBucketMetric()
+				l.bucketCount.Add(-1)
 			}
 		}
 		shard.mu.Unlock()
@@ -508,25 +484,6 @@ func (l *Limiter) shardFor(key string) *limiterShard {
 	}
 	idx := fnv32a(key) % uint32(len(l.shards))
 	return &l.shards[idx]
-}
-
-func (l *Limiter) evictOldestLocked(shard *limiterShard, shardIdx int) {
-	var oldestKey string
-	var oldestTime time.Time
-	first := true
-	for key, b := range shard.buckets {
-		if first || b.lastAccess.Before(oldestTime) {
-			oldestKey = key
-			oldestTime = b.lastAccess
-			first = false
-		}
-	}
-	if oldestKey != "" {
-		delete(shard.buckets, oldestKey)
-		l.bucketCount.Add(shardIdx, -1)
-		l.metrics.Evictions.Add(1)
-		l.updateBucketMetric()
-	}
 }
 
 func (l *Limiter) evictOldestGlobal() {
@@ -557,15 +514,14 @@ func (l *Limiter) evictOldestGlobal() {
 		return
 	}
 
-	// Phase 2: Double-check and remove the oldest entry
-	// This prevents TOCTOU race where the entry might have been modified
+	// Phase 2: Remove the selected key if it is still present. Its access time
+	// may advance during the scan; eviction is approximate LRU, but admission
+	// must still free a slot. New-key admissions are serialized by admissionMu.
 	oldestShard.mu.Lock()
-	if bucket, exists := oldestShard.buckets[oldestKey]; exists && bucket.lastAccess.Equal(oldestTime) {
+	if _, exists := oldestShard.buckets[oldestKey]; exists {
 		delete(oldestShard.buckets, oldestKey)
-		shardIdx := fnv32a(oldestKey) % uint32(len(l.shards))
-		l.bucketCount.Add(int(shardIdx), -1)
+		l.bucketCount.Add(-1)
 		l.metrics.Evictions.Add(1)
-		l.updateBucketMetric()
 	}
 	oldestShard.mu.Unlock()
 }
@@ -579,7 +535,7 @@ func (l *Limiter) Metrics() LimiterMetrics {
 		Allowed:   l.metrics.Allowed.Load(),
 		Rejected:  l.metrics.Rejected.Load(),
 		Evictions: l.metrics.Evictions.Load(),
-		Buckets:   l.metrics.Buckets.Load(),
+		Buckets:   l.bucketCount.Load(),
 	}
 }
 
@@ -593,10 +549,6 @@ func (l *Limiter) RecordAllow(allowed bool) {
 	} else {
 		l.metrics.Rejected.Add(1)
 	}
-}
-
-func (l *Limiter) updateBucketMetric() {
-	l.metrics.Buckets.Store(l.bucketCount.Load())
 }
 
 func (l *Limiter) ready() bool {

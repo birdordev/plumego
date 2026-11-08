@@ -193,3 +193,24 @@ simplifying or expanding them, rerun the targeted benchmark set:
 Cache key construction is intentionally simple string concatenation; rerun
 `go test -run '^$' -bench BenchmarkOptCacheKey -benchmem ./router` before
 adding pooling or other helper complexity.
+
+
+## Request metadata and response ownership
+
+Matched routing metadata is immutable and prepared before match-cache publication.
+Request contexts retain it even after cache eviction or an inner timeout returns
+before its worker. It is never reset or returned to a pool while readers exist.
+Parameters beyond the eight inline slots are retained, including wildcard
+parameters; cold and warm cache lookups expose the same complete values.
+`RequestContextFromContext` remains the detached mutable snapshot accessor.
+Cache hits reuse the immutable match metadata without a per-request state allocation.
+
+`Routes()` copies mutable tag slices. Registration also copies tags supplied
+by route options, so neither registration inputs nor returned snapshots can
+mutate the registered route table.
+
+HEAD suppresses body bytes while preserving implicit 200 commitment, final
+status, content-type detection, and small-response content-length inference.
+Final headers are snapshotted at commitment; later header edits do not replace
+them. `ReadFrom` counts and discards body bytes through the same path; explicit
+flush commits the selected status without inferring a buffered content length.

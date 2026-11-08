@@ -4,6 +4,10 @@ steps:
   - Read AGENTS.md, the matching specs/task-routing.yaml entry, docs/operations/agent-code-quality-rules.md, specs/repo.yaml, specs/dependency-rules.yaml, specs/agent-quality-rules.yaml, and the touched stable-root manifests.
   - Classify changed files by stable root and identify any extension-family leakage or app-wiring drift.
   - Check for hidden globals, context service-location, net/http compatibility drift, and transport/business responsibility mixing.
+  - Apply the quality acceptance dimensions and module-specific focus from specs/agent-quality-rules.yaml; follow actual ownership into extensions without moving orchestration into stable models.
+  - For stateful paths, record transitions, retained resources, cleanup failures, and legal retry; for shared data, record synchronization and mutable ownership.
+  - Inspect failure, panic, timeout, cancellation, response commit, and cache equivalence where applicable; passing tests alone do not establish a complete audit.
+  - Distinguish reproduced findings, source-confirmed conclusions, and unverified hypotheses; include trigger, observed behavior, and expected behavior.
   - Report findings first, ordered by severity, with file-level references, minimal fix guidance, and missing-test notes.
   - Call out missing negative-path or regression tests when behavior risk is non-trivial.
 stop_conditions:

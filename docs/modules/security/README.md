@@ -88,3 +88,18 @@ HTTP request wiring belongs in `middleware/auth`, `middleware/securityheaders`, 
 `middleware/abuseguard`. Application-specific authorization decisions should be
 constructor-injected into those adapters rather than hidden behind package
 globals.
+
+
+## Failure-state guarantees
+
+- `security/abuse.Limiter` applies eviction only when admitting a new key.
+  Repeated requests for an existing key keep its token balance even when
+  `MaxEntries` is reached. New-key admissions are serialized across shards;
+  existing-key updates retain shard-local locking. Capacity decisions and the
+  bucket gauge use a single atomic count. Eviction is approximate LRU.
+- JWT key rotation publishes the in-memory active key after the backing store
+  accepts the active-key pointer. If that write fails, the previous key remains
+  active and a later automatic rotation retries. A successfully stored candidate
+  key may remain available for verification even when activation fails. This
+  does not make arbitrary external `KeyStore` implementations transactional:
+  stores that commit and then return an error must document that ambiguity.

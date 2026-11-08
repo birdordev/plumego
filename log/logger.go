@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"reflect"
 	"sort"
 	"strconv"
 	"strings"
@@ -222,7 +223,8 @@ func isSafeTextFieldKey(key string) bool {
 }
 
 func formatTextFieldValue(value any) string {
-	text := fmt.Sprint(value)
+	remaining := 1024
+	text := formatTextValue(reflect.ValueOf(value), 0, &remaining)
 	if text == "" || strings.ContainsAny(text, "=\"\\") || strings.IndexFunc(text, func(r rune) bool {
 		return unicode.IsSpace(r) || unicode.IsControl(r)
 	}) >= 0 {
@@ -253,4 +255,118 @@ func (l *defaultLogger) getBackend() *gLogger {
 		l.backend = newGLogger()
 	}
 	return l.backend
+}
+
+// formatTextValue bounds container traversal before fmt can recurse into cycles.
+// Scalars and custom scalar formatters keep their established representation.
+func formatTextValue(value reflect.Value, depth int, remaining *int) string {
+	if !value.IsValid() {
+		return "<nil>"
+	}
+	if depth >= 32 || *remaining <= 0 {
+		return "[truncated]"
+	}
+	*remaining -= 1
+	if value.Kind() == reflect.Interface {
+		if value.IsNil() {
+			return "<nil>"
+		}
+		return formatTextValue(value.Elem(), depth+1, remaining)
+	}
+	if value.CanInterface() {
+		item := value.Interface()
+		// Custom formatters own their execution and must terminate themselves.
+		switch item.(type) {
+		case fmt.Formatter, fmt.Stringer, error:
+			return fmt.Sprint(item)
+		}
+	}
+	switch value.Kind() {
+	case reflect.Pointer:
+		if value.IsNil() {
+			return "<nil>"
+		}
+		switch value.Elem().Kind() {
+		case reflect.Map, reflect.Slice, reflect.Array, reflect.Struct, reflect.Pointer, reflect.Interface:
+			return "&" + formatTextValue(value.Elem(), depth+1, remaining)
+		default:
+			return fmt.Sprintf("%p", value.Interface())
+		}
+	case reflect.Map:
+		type entry struct {
+			value reflect.Value
+			text  string
+		}
+		var entries []entry
+		iter := value.MapRange()
+		truncated := false
+		for iter.Next() {
+			if *remaining <= 0 {
+				truncated = true
+				break
+			}
+			key := iter.Key()
+			entries = append(entries, entry{value: iter.Value(), text: formatTextValue(key, depth+1, remaining)})
+		}
+		sort.Slice(entries, func(i, j int) bool { return entries[i].text < entries[j].text })
+		var out strings.Builder
+		out.WriteString("map[")
+		for i, entry := range entries {
+			if i > 0 {
+				out.WriteByte(' ')
+			}
+			if *remaining <= 0 {
+				truncated = true
+				break
+			}
+			out.WriteString(entry.text)
+			out.WriteByte(':')
+			out.WriteString(formatTextValue(entry.value, depth+1, remaining))
+		}
+		if truncated {
+			out.WriteString("[truncated]")
+		}
+		out.WriteByte(']')
+		return out.String()
+	case reflect.Slice, reflect.Array:
+		// Preserve fmt's special treatment of raw byte slices.
+		if value.Kind() == reflect.Slice && value.Type().Elem().Kind() == reflect.Uint8 {
+			return fmt.Sprint(value.Interface())
+		}
+		var out strings.Builder
+		out.WriteByte('[')
+		for i := 0; i < value.Len(); i++ {
+			if i > 0 {
+				out.WriteByte(' ')
+			}
+			if *remaining <= 0 {
+				out.WriteString("[truncated]")
+				break
+			}
+			out.WriteString(formatTextValue(value.Index(i), depth+1, remaining))
+		}
+		out.WriteByte(']')
+		return out.String()
+	case reflect.Struct:
+		var out strings.Builder
+		out.WriteByte('{')
+		for i := 0; i < value.NumField(); i++ {
+			if i > 0 {
+				out.WriteByte(' ')
+			}
+			if !value.Field(i).CanInterface() {
+				out.WriteString("[unexported]")
+				continue
+			}
+			if *remaining <= 0 {
+				out.WriteString("[truncated]")
+				break
+			}
+			out.WriteString(formatTextValue(value.Field(i), depth+1, remaining))
+		}
+		out.WriteByte('}')
+		return out.String()
+	default:
+		return fmt.Sprint(value.Interface())
+	}
 }

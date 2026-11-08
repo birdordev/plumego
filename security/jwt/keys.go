@@ -79,10 +79,10 @@ func (m *JWTManager) ensureActiveKeyUnsafe(ctx context.Context) error {
 	if err := m.persistKeyUnsafe(ctx, key); err != nil {
 		return err
 	}
-	m.active = key.ID
 	if err := m.storeSet(ctx, activeKeyKey, []byte(key.ID), 0); err != nil {
 		return err
 	}
+	m.active = key.ID
 	return nil
 }
 
@@ -119,10 +119,10 @@ func (m *JWTManager) rotateKeyUnsafe(ctx context.Context) (JWTSigningKey, error)
 	if err := m.persistKeyUnsafe(ctx, key); err != nil {
 		return JWTSigningKey{}, err
 	}
-	m.active = key.ID
 	if err := m.storeSet(ctx, activeKeyKey, []byte(key.ID), 0); err != nil {
 		return JWTSigningKey{}, err
 	}
+	m.active = key.ID
 	return cloneSigningKey(key), nil
 }
 

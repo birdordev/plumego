@@ -45,8 +45,11 @@
 - JSON output preserves integer precision and replaces unsupported field values
   with a fixed placeholder, preserving safe siblings in common nested maps and
   slices. Invalid floating-point values retain their numeric string form.
-- Nested map and slice normalization is bounded; cycles and excessive nesting
-  produce truncation placeholders instead of unbounded recursion.
+- JSON normalization and text container formatting use bounded traversal;
+  cycles and excessive nesting produce truncation placeholders instead of
+  unbounded recursion. Text formatting also bounds pointers and struct fields.
+  Custom `fmt.Formatter`, `fmt.Stringer`, and `error` methods retain their
+  formatting behavior and own their termination; callers must keep them safe.
 - Output-write failure diagnostics are emitted once per logger family and omit
   raw writer errors, which may contain the rejected log payload.
 - Callers own message and field selection: loggers do not automatically redact
