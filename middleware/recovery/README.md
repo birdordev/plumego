@@ -33,5 +33,7 @@ app.Use(mw)
 ## Notes
 
 - Place `recovery` early in the middleware chain (before handlers that may panic).
-- Panic details are logged server-side but never returned in the HTTP response.
+- Only sanitized panic metadata is logged; raw panic values are neither logged nor returned.
+- Informational statuses (`100`, `102`, `103`) do not commit the final response; a later panic can still produce a structured `500`.
+- `http.ErrAbortHandler` is re-thrown unchanged so `net/http` can abort the response. An ordinary panic cannot replace a final response that was already committed.
 - `recovery` does not recover panics inside goroutines launched by handlers.

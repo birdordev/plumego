@@ -78,7 +78,7 @@
 | Package | Missing read | Expired read | Missing delete | Invalid key/path | Closed behavior | Nil context |
 |---|---|---|---|---|---|---|
 | `store/cache` | `Get` returns `ErrNotFound`; `Exists` returns `false, nil` | `Get` returns `ErrNotFound`; `Exists` returns `false, nil` after best-effort cleanup | `Delete` returns nil | Empty or unsafe keys return `ErrInvalidKey`; some validation paths also wrap `ErrInvalidConfig` | Mutations and reads return `ErrCacheClosed` | Accepted as no cancellation signal |
-| `store/kv` | `Get` returns `ErrKeyNotFound`; `ExistsContext` returns false | `Get` prunes and returns `ErrKeyExpired`; read-only context helpers ignore expired entries | `Delete` returns `ErrKeyNotFound` | Empty keys return `ErrInvalidKey`; invalid options return validation errors | Mutations, value reads, and read-only context helpers return `ErrStoreClosed` | Accepted as no cancellation signal |
+| `store/kv` | `Get` returns `ErrKeyNotFound`; `ExistsContext` returns false | `Get` returns `ErrKeyExpired` without pruning; read-only context helpers ignore expired entries | `Delete` returns `ErrKeyNotFound` | Empty keys return `ErrInvalidKey`; invalid options return validation errors | Mutations, value reads, and read-only context helpers return `ErrStoreClosed` | Accepted as no cancellation signal |
 | `store/file` | Concrete backends should report `ErrNotFound` or wrap it in `*file.Error` | Not modeled in the stable interface | Concrete backends should report `ErrNotFound` or wrap it in `*file.Error` | Invalid paths return `ErrInvalidPath` or wrap it in `*file.Error` | Backend-owned | Implementations receive and should honor the caller context |
 | `store/idempotency` | `Get` returns `found=false, nil`; terminal operations return `ErrNotFound` | `Get` returns `found=false, nil`; `Complete` returns `ErrNotFound` after cleanup | `Delete` returns `ErrNotFound` | Empty keys return `ErrInvalidKey` | Backend-owned | Implementations receive and should honor the caller context |
 | `store/db` | `ScanRow` maps `sql.ErrNoRows` to `ErrNoRows`; `QueryRowStrict` returns `ErrNoRows` | Not modeled | Not modeled | Invalid config returns `ErrInvalidConfig`; nil DB returns operation-specific sentinel wrappers | `*sql.DB` lifecycle is caller-owned | Passed through exactly to `database/sql` |
@@ -108,6 +108,8 @@
   synchronous convenience methods; `Exists`, `Keys`, `Size`, and `GetStats`
   were removed in favor of their context-aware forms.
 - `store/kv` context-aware operations check cancellation before lock acquisition and again after lock acquisition; once full-state filesystem persistence begins, that filesystem phase is not interruptible.
+- `store/kv` restores staged changes, including capacity evictions, when cancellation is observed before persistence or a write fails before the state file is replaced. After replacement, a directory-sync failure is still returned, but memory retains the published state. Such an error means durability is unconfirmed, not that the mutation was undone; inspect current state before retrying. A repeated delete of an already published deletion returns `ErrKeyNotFound`.
+- `store/kv` computes one TTL deadline before persistence and uses it in memory and on disk. Slow persistence can consume the TTL; successful writes do not extend only the in-memory lifetime.
 - `store/kv` persists the full in-memory state as JSON on each write, fsyncs the temporary state file, atomically replaces the state file, and syncs the parent directory when the platform supports it; it is intended for small embedded datasets rather than high-throughput durable-engine workloads.
 - `store/kv` does not rewrite the state file during startup normalization; expired or over-capacity records can be pruned from memory without mutating disk until the next caller-initiated write.
 - `store/kv` read operations do not persist expired-key cleanup as a side effect.
@@ -131,8 +133,8 @@
   `x/data/kvengine`.
 - `store/kv` uses a single JSON state file replaced with `os.Rename`; each mutation rewrites the full normalized state and is O(N) in the number of retained entries.
 - Invalid keys in the persisted state file fail load with an `ErrInvalidKey`-wrapped error instead of being silently dropped.
-- `store/kv` does not provide cross-process locking, WAL, snapshots, directory fsync, or crash-recovery tuning.
-- A non-positive TTL means no expiration. `Get` prunes expired keys and returns
+- `store/kv` does not provide cross-process locking, WAL, snapshots, or crash-recovery tuning. Parent-directory sync is attempted after atomic replacement and tolerates unsupported-directory-sync errors.
+- A non-positive TTL means no expiration. `Get` leaves expired entries unchanged and returns
   `ErrKeyExpired`; read-only helpers such as `ExistsContext`, `KeysContext`,
   `SizeContext`, and `GetStatsContext` ignore expired keys without mutating
   persisted state.
@@ -155,6 +157,7 @@
 ## DB Boundary
 
 - `store/db` helpers execute with the exact `context.Context` supplied by the caller.
+- `store/db.WithTransaction` commits successful callbacks and rolls back failed callbacks. Panic and `runtime.Goexit` paths also release the transaction; panics propagate unchanged. Callback and explicit rollback errors remain inspectable with `errors.Is`.
 - `store/db.Open` initializes a `*sql.DB` handle and does not prove connectivity; use `Ping` when startup validation is required.
 - `store/db.QueryRow` mirrors `database/sql.QueryRowContext` and defers query or scan errors until the returned row is scanned.
 - `store/db.QueryRowContext` returns an explicit `ErrQueryFailed`-wrapped error for nil database inputs instead of returning a nil row.

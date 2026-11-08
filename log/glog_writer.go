@@ -222,9 +222,9 @@ func (l *gLogger) logInternal(level Level, calldepth int, messageBuilder func() 
 	}
 }
 
-func (l *gLogger) reportWriteError(err error) {
+func (l *gLogger) reportWriteError(_ error) {
 	l.writeErrOnce.Do(func() {
-		fmt.Fprintf(os.Stderr, "glog: failed to write log output: %v\n", err)
+		_, _ = os.Stderr.WriteString("glog: failed to write log output\n")
 	})
 }
 

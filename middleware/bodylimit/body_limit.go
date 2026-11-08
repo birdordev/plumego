@@ -65,9 +65,10 @@ func Middleware(config Config) mw.Middleware {
 
 type bodyLimitResponseWriter struct {
 	http.ResponseWriter
-	started bool
-	blocked bool
-	pending atomic.Pointer[bodyLimitError]
+	started       bool
+	blocked       bool
+	errorResponse bool
+	pending       atomic.Pointer[bodyLimitError]
 }
 
 type bodyLimitError struct {
@@ -88,6 +89,7 @@ func (w *bodyLimitResponseWriter) WriteHeader(statusCode int) {
 	}
 	if statusCode >= 200 || statusCode == http.StatusSwitchingProtocols {
 		w.started = true
+		w.errorResponse = statusCode >= http.StatusBadRequest
 	}
 	w.ResponseWriter.WriteHeader(statusCode)
 }
@@ -128,6 +130,11 @@ func (w *bodyLimitResponseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) 
 // checkLimitError runs only on the response-owning goroutine. Body reads may
 // continue after an inner timeout returns, so they only publish immutable data.
 func (w *bodyLimitResponseWriter) checkLimitError() {
+	// Once a final error is committed, preserve its entire body even if a
+	// concurrent reader discovers an overrun between WriteHeader and Write.
+	if w.errorResponse {
+		return
+	}
 	if failure := w.pending.Load(); failure != nil && failure.request.Context().Err() == nil {
 		w.writeLimitError(failure.request, failure.maxBytes, failure.seenBytes, failure.at)
 	}

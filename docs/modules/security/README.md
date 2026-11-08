@@ -69,6 +69,8 @@ Use `security/*` for reviewable primitives and policies:
 - `security/jwt` verification fails closed when configured issuer, configured audience, or subject claims are missing or mismatched.
 - `security/jwt` rejects malformed or oversized compact token envelopes before payload decoding.
 - `security/jwt` verification requires a valid JWT header type, matching header/payload key IDs, and valid persisted signing key material.
+- `security/jwt` rejects tokens at or after the expiration boundary, including configured clock skew; verification does not add an extra second of validity. Expiration checks avoid adding skew to untrusted timestamps.
+- `security/jwt` rejects persisted Ed25519 keys whose seed, private key, and public key are inconsistent. Key decoding and validation errors omit persisted field values and storage key names; raw decoder errors are not retained in the error chain.
 - `security/jwt.JWTManager` accepts a minimal key-store interface instead of binding to a concrete stable store implementation.
 - `security/jwt.JWTManager` treats an absent active signing-key marker as recoverable, but fails startup when a persisted active marker cannot be read.
 - `security/jwt.JWTManager.RotateKey` returns signing-key metadata only; HMAC secrets and Ed25519 private keys remain internal.

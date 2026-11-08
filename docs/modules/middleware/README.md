@@ -280,6 +280,8 @@ structured `413` before its next write or when the downstream call returns,
 provided the response has not started and the request context is still active.
 Subsequent writes report their bytes as consumed without appending to the error.
 An overrun after final headers or a flush cannot replace the committed response.
+An already committed error response is allowed to finish its body, including
+a timeout error whose headers were committed before a concurrent overrun.
 
 This keeps body reads safe when an inner timeout returns before the reader
 finishes: late reads cannot write to the original response. Prefer placing

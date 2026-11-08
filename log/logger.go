@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"unicode"
 )
 
 // Compile-time checks that all concrete logger types satisfy StructuredLogger.
@@ -222,7 +223,9 @@ func isSafeTextFieldKey(key string) bool {
 
 func formatTextFieldValue(value any) string {
 	text := fmt.Sprint(value)
-	if text == "" || strings.ContainsAny(text, " \t\r\n=") {
+	if text == "" || strings.ContainsAny(text, "=\"\\") || strings.IndexFunc(text, func(r rune) bool {
+		return unicode.IsSpace(r) || unicode.IsControl(r)
+	}) >= 0 {
 		return strconv.Quote(text)
 	}
 	return text

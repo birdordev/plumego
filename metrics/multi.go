@@ -37,7 +37,14 @@ func (m *MultiCollector) Record(ctx context.Context, record MetricRecord) {
 		if c == nil {
 			continue
 		}
-		c.Record(ctx, record)
+		childRecord := record
+		if record.Labels != nil {
+			childRecord.Labels = make(MetricLabels, len(record.Labels))
+			for key, value := range record.Labels {
+				childRecord.Labels[key] = value
+			}
+		}
+		c.Record(ctx, childRecord)
 	}
 }
 

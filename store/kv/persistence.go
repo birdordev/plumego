@@ -58,18 +58,19 @@ func (kv *KVStore) makeDiskStateLocked() diskState {
 	return state
 }
 
-// persistState writes a diskState to the backing file atomically.
-// It must NOT be called while holding kv.mu.
-func (kv *KVStore) persistState(state diskState) error {
+// persistState atomically replaces the backing file. The bool reports whether
+// replacement succeeded, even if the subsequent directory sync fails.
+// Callers must serialize writes through the same store.
+func (kv *KVStore) persistState(state diskState) (bool, error) {
 	raw, err := json.Marshal(state)
 	if err != nil {
-		return fmt.Errorf("encode state: %w", err)
+		return false, fmt.Errorf("encode state: %w", err)
 	}
 
 	path := filepath.Join(kv.opts.DataDir, stateFileName)
 	tmp, err := os.CreateTemp(kv.opts.DataDir, stateFileName+".*.tmp")
 	if err != nil {
-		return fmt.Errorf("create temp state: %w", err)
+		return false, fmt.Errorf("create temp state: %w", err)
 	}
 	tmpPath := tmp.Name()
 	committed := false
@@ -81,31 +82,33 @@ func (kv *KVStore) persistState(state diskState) error {
 
 	if _, err := tmp.Write(raw); err != nil {
 		_ = tmp.Close()
-		return fmt.Errorf("write temp state: %w", err)
+		return false, fmt.Errorf("write temp state: %w", err)
 	}
 	if err := tmp.Sync(); err != nil {
 		_ = tmp.Close()
-		return fmt.Errorf("sync temp state: %w", err)
+		return false, fmt.Errorf("sync temp state: %w", err)
 	}
 	if err := tmp.Close(); err != nil {
-		return fmt.Errorf("close temp state: %w", err)
+		return false, fmt.Errorf("close temp state: %w", err)
 	}
 	if err := os.Rename(tmpPath, path); err != nil {
-		return fmt.Errorf("replace state: %w", err)
-	}
-	if err := syncDir(kv.opts.DataDir); err != nil {
-		return fmt.Errorf("sync state dir: %w", err)
+		return false, fmt.Errorf("replace state: %w", err)
 	}
 	committed = true
-	return nil
+	syncDirectory := kv.syncStateDir
+	if syncDirectory == nil {
+		syncDirectory = syncDir
+	}
+	if err := syncDirectory(kv.opts.DataDir); err != nil {
+		return true, fmt.Errorf("sync state dir: %w", err)
+	}
+	return true, nil
 }
 
 // persistLocked performs a full persist while holding kv.mu.
-// Prefer the makeDiskStateLocked + persistState pattern to avoid holding
-// the lock during file I/O.
-func (kv *KVStore) persistLocked() error {
+// The write lock must remain held through replacement and state reconciliation.
+func (kv *KVStore) persistLocked() (bool, error) {
 	state := kv.makeDiskStateLocked()
-	// kv.mu is still held here, but persistState works without it.
 	return kv.persistState(state)
 }
 

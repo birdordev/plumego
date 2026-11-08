@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"sync"
 	"time"
 
@@ -52,6 +53,7 @@ type manager struct {
 	mu                sync.RWMutex
 	components        map[string]health.ComponentChecker
 	health            map[string]*health.ComponentHealth
+	checkVersions     map[string]uint64
 	config            Config
 	closed            bool
 	lastCheckDuration time.Duration
@@ -68,9 +70,10 @@ func NewManager(config Config) (Manager, error) {
 
 	now := time.Now()
 	return &manager{
-		components: make(map[string]health.ComponentChecker),
-		health:     make(map[string]*health.ComponentHealth),
-		config:     config,
+		components:    make(map[string]health.ComponentChecker),
+		health:        make(map[string]*health.ComponentHealth),
+		checkVersions: make(map[string]uint64),
+		config:        config,
 		readiness: health.ReadinessStatus{
 			Ready:     false,
 			Reason:    "starting",
@@ -93,6 +96,11 @@ func validateConfig(config Config) error {
 }
 
 func (m *manager) MarkReady() {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if m.closed {
+		return
+	}
 	m.readinessMu.Lock()
 	defer m.readinessMu.Unlock()
 	m.readiness = health.ReadinessStatus{
@@ -114,7 +122,7 @@ func (m *manager) MarkNotReady(reason string) {
 func (m *manager) Readiness() health.ReadinessStatus {
 	m.readinessMu.RLock()
 	defer m.readinessMu.RUnlock()
-	return m.readiness
+	return m.readiness.Clone()
 }
 
 func (m *manager) RegisterComponent(checker health.ComponentChecker) error {
@@ -159,6 +167,7 @@ func (m *manager) UnregisterComponent(name string) error {
 
 	delete(m.components, name)
 	delete(m.health, name)
+	delete(m.checkVersions, name)
 	return nil
 }
 
@@ -189,14 +198,23 @@ func (m *manager) CheckComponent(ctx context.Context, name string) error {
 		ctx = context.Background()
 	}
 
-	m.mu.RLock()
+	m.mu.Lock()
 	if m.closed {
-		m.mu.RUnlock()
+		m.mu.Unlock()
 		return errManagerClosed
 	}
 	checker, exists := m.components[name]
+	expectedHealth := m.health[name]
 	config := m.config
-	m.mu.RUnlock()
+	var checkVersion uint64
+	if exists {
+		if m.checkVersions == nil {
+			m.checkVersions = make(map[string]uint64)
+		}
+		m.checkVersions[name]++
+		checkVersion = m.checkVersions[name]
+	}
+	m.mu.Unlock()
 
 	if !exists {
 		return fmt.Errorf("component %s not found", name)
@@ -214,14 +232,22 @@ func (m *manager) CheckComponent(ctx context.Context, name string) error {
 	message := "component is healthy"
 	if err != nil {
 		status = health.StatusUnhealthy
-		message = err.Error()
+		message = "component check failed"
 	}
 
 	m.mu.Lock()
 	component, healthExists := m.health[name]
+	if m.closed {
+		m.mu.Unlock()
+		return errManagerClosed
+	}
 	if !healthExists {
 		m.mu.Unlock()
 		return fmt.Errorf("health status for component %s not found", name)
+	}
+	if component != expectedHealth || m.checkVersions[name] != checkVersion {
+		m.mu.Unlock()
+		return errors.New("component check was superseded")
 	}
 
 	component.Status = status
@@ -260,13 +286,7 @@ func (m *manager) CheckAllComponents(ctx context.Context) health.HealthStatus {
 	}
 	m.mu.RUnlock()
 
-	if len(components) == 0 {
-		return health.HealthStatus{
-			Status:    health.StatusHealthy,
-			Message:   "no components registered",
-			Timestamp: time.Now(),
-		}
-	}
+	sort.Strings(components)
 
 	start := time.Now()
 	maxConcurrency := optimalConcurrency(len(components))
@@ -304,12 +324,26 @@ func (m *manager) CheckAllComponents(ctx context.Context) health.HealthStatus {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	if m.closed {
+		return health.HealthStatus{Status: health.StatusUnhealthy, Message: errManagerClosed.Error(), Timestamp: time.Now()}
+	}
+	status, message := calculateOverallStatus(m.health)
+	if len(components) == 0 && len(m.health) == 0 {
+		message = "no components registered"
+	}
+	if !allHealthy || ctx.Err() != nil {
+		status = health.StatusUnhealthy
+	}
+	if err := ctx.Err(); err != nil {
+		message = err.Error()
+	}
+	sort.Strings(failedComponents)
 	timestamp := time.Now()
 	readiness := health.ReadinessStatus{
 		Timestamp:  timestamp,
 		Components: make(map[string]bool, len(m.health)),
 	}
-	if allHealthy {
+	if status.IsReady() {
 		readiness.Ready = true
 	} else {
 		readiness.Ready = false
@@ -323,7 +357,6 @@ func (m *manager) CheckAllComponents(ctx context.Context) health.HealthStatus {
 	m.readiness = readiness
 	m.readinessMu.Unlock()
 
-	status, message := calculateOverallStatus(m.health)
 	m.lastCheckDuration = duration
 
 	return health.HealthStatus{
@@ -350,6 +383,9 @@ func optimalConcurrency(componentCount int) int {
 func (m *manager) GetOverallHealth() health.HealthStatus {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
+	if m.closed {
+		return health.HealthStatus{Status: health.StatusUnhealthy, Message: errManagerClosed.Error(), Timestamp: time.Now()}
+	}
 
 	status, message := calculateOverallStatus(m.health)
 	return health.HealthStatus{
@@ -367,6 +403,7 @@ func (m *manager) componentNames() []string {
 	for name := range m.components {
 		names = append(names, name)
 	}
+	sort.Strings(names)
 	return names
 }
 
@@ -397,6 +434,9 @@ func (m *manager) Close() error {
 		return nil
 	}
 	m.closed = true
+	m.readinessMu.Lock()
+	m.readiness = health.ReadinessStatus{Ready: false, Reason: errManagerClosed.Error(), Timestamp: time.Now()}
+	m.readinessMu.Unlock()
 	return nil
 }
 
@@ -412,7 +452,13 @@ func runCheckWithRetry(ctx context.Context, checker health.ComponentChecker, con
 
 	var err error
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		if err := ctx.Err(); err != nil {
+			return attempt - 1, err
+		}
 		err = checker.Check(ctx)
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return attempt, ctxErr
+		}
 		if err == nil {
 			return attempt, nil
 		}
@@ -478,12 +524,13 @@ func calculateOverallStatus(healths map[string]*health.ComponentHealth) (health.
 
 	status := health.StatusDegraded
 	for _, component := range healths {
-		if component.Status == health.StatusUnhealthy {
+		if !component.Status.IsReady() {
 			status = health.StatusUnhealthy
 			break
 		}
 	}
 
+	sort.Strings(messages)
 	message := ""
 	if len(messages) > 0 {
 		message = fmt.Sprintf("Issues detected: %v", messages)

@@ -36,7 +36,8 @@ Overruns are recorded by the reader and emitted by the response-owning goroutine
 before its next write or when the downstream call returns. Reads never write
 to the original response, including reads finishing after an inner timeout.
 An active request receives `413` only if final headers or a flush have not
-already committed a response. Later body writes are suppressed.
+already committed a response. Later body writes are suppressed, except that
+an already committed error response is allowed to finish its body.
 
 Place `securityheaders` outside timeout and bodylimit, and prefer
 `timeout → bodylimit` so body-limit errors use timeout's response buffer.

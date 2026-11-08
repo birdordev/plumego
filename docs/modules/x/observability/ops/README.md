@@ -41,6 +41,10 @@
 
 - keep admin routing explicit and auth-gated
 - keep health manager execution policy in `x/observability/ops/healthhttp`, not stable `health`
+- Health aggregation publishes consistent health and readiness results, including empty and canceled checks. Unknown component states fail closed. Replacing a registered component invalidates in-flight results for its previous registration.
+- Concurrent checks of one component publish only the latest-started check result; an older completion cannot overwrite a newer failure.
+- Checker failures use a fixed message in health models and HTTP diagnostics, while `CheckComponent` still returns the original checker error for programmatic classification. Callers must handle that error without logging credential-bearing text.
+- Readiness snapshots detach component maps. Closing a health manager makes it unhealthy and not ready; in-flight checks and later `MarkReady` calls cannot restore readiness. Checkers must cooperate with their context to bound execution time.
 - use `x/observability/ops` only for protected admin surfaces
 - keep broader observability adapter work in `x/observability`
 - `x/observability/ops/healthhttp` JSON success bodies use `contract.WriteResponse`; raw probe/export exceptions are limited to the `LiveHandler` liveness text response and health history CSV export
