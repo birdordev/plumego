@@ -305,6 +305,11 @@ func (c *Coalescer) executeRequest(w http.ResponseWriter, r *http.Request, key s
 		return
 	}
 
+	// Commit implicit success headers even when the handler wrote no body.
+	if !recorder.wroteHeader {
+		recorder.WriteHeader(http.StatusOK)
+	}
+
 	// Capture response
 	inflight.response = recorder.CapturedResponse()
 }
@@ -370,6 +375,17 @@ func (r *limitedResponseRecorder) Header() http.Header {
 
 func (r *limitedResponseRecorder) WriteHeader(statusCode int) {
 	if r.wroteHeader {
+		return
+	}
+	if statusCode < 100 || statusCode > 999 {
+		panic("invalid WriteHeader code")
+	}
+	if statusCode < 200 && statusCode != http.StatusSwitchingProtocols {
+		dst := r.ResponseWriter.Header()
+		original := dst.Clone()
+		defer internaltransport.ReplaceHeaders(dst, original)
+		internaltransport.CopyHeaders(dst, r.header)
+		r.ResponseWriter.WriteHeader(statusCode)
 		return
 	}
 	r.statusCode = statusCode

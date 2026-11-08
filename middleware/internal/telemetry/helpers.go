@@ -48,7 +48,7 @@ func PrepareRequest(w http.ResponseWriter, r *http.Request) PreparedRequest {
 
 // Complete derives request metrics from the prepared request lifecycle state.
 func (p PreparedRequest) Complete(r *http.Request) RequestMetrics {
-	return BuildRequestMetrics(r, p.Recorder, p.StartedAt, p.RequestID)
+	return BuildRequestMetrics(p.observedRequest(r), p.Recorder, p.StartedAt, p.RequestID)
 }
 
 type TraceSpan interface {
@@ -168,6 +168,14 @@ func (m RequestMetrics) ObservedPath() string {
 	return m.Path
 }
 
+// observedRequest combines downstream route identity with the observer's request.
+func (p PreparedRequest) observedRequest(r *http.Request) *http.Request {
+	if rc := p.Recorder.RouteContext(); rc.RoutePattern != "" {
+		return r.WithContext(contract.WithRequestContext(r.Context(), rc))
+	}
+	return r
+}
+
 // WithObserver wraps the next handler with the canonical PrepareRequest lifecycle
 // and calls observe after the handler completes. It preserves panics raised by
 // downstream code so they bubble correctly through the middleware chain.
@@ -182,7 +190,8 @@ func WithObserver(next http.Handler, w http.ResponseWriter, r *http.Request, obs
 	r = prepared.Request
 
 	defer FinishPreservingPanic(func() {
-		observe(prepared.Complete(r), recorder, r)
+		observed := prepared.observedRequest(r)
+		observe(prepared.Complete(observed), recorder, observed)
 	})
 
 	next.ServeHTTP(recorder, r)

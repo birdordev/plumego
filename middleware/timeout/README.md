@@ -38,3 +38,7 @@ app.Use(timeout.Middleware(cfg))
 - Timeout does not forcibly kill goroutines or wait for downstream exit. Handlers must observe `r.Context().Done()`; body writes after cancellation return the context error.
 - Panics accepted before cancellation are re-thrown for outer recovery middleware. `OnPanic` observes panics discarded because of cancellation exactly once, after response handling finishes. The hook must not block; hook panics are recovered internally.
 - Informational statuses such as `100`, `102`, and `103` are not forwarded by this buffering middleware and do not replace the final response status. Streaming, SSE, and connection upgrades are unsupported.
+
+Buffered responses freeze ordinary headers at the first final WriteHeader or Write. Later ordinary header edits are ignored; declared trailers and TrailerPrefix values are replayed after the body.
+
+Route identity can pass through timeout buffering to outer observers. Publication is synchronized and never writes headers or body, including when downstream routing finishes after cancellation. Observations already completed before a late match retain their original path.

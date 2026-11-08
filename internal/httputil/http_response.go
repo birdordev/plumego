@@ -3,9 +3,12 @@ package httputil
 import (
 	"bufio"
 	"bytes"
+	"context"
+	"github.com/spcent/plumego/contract"
 	"net"
 	"net/http"
 	"strings"
+	"sync/atomic"
 )
 
 const (
@@ -49,6 +52,7 @@ func SafeWrite(w http.ResponseWriter, body []byte) (int, error) {
 
 // ResponseRecorder captures response data while still writing to the underlying writer.
 type ResponseRecorder struct {
+	route atomic.Pointer[contract.RequestContext]
 	http.ResponseWriter
 	statusCode   int
 	header       http.Header
@@ -272,4 +276,36 @@ func DirectClientIP(r *http.Request) string {
 	}
 
 	return strings.TrimSpace(r.RemoteAddr)
+}
+
+// PublishRouteContext visits transport wrappers without accessing response headers.
+// Receivers must synchronize publication and forward to any outer observers.
+func PublishRouteContext(w http.ResponseWriter, ctx context.Context) {
+	for w != nil {
+		if receiver, ok := w.(interface{ SetRouteContext(context.Context) }); ok {
+			receiver.SetRouteContext(ctx)
+			return
+		}
+		wrapper, ok := w.(interface{ Unwrap() http.ResponseWriter })
+		if !ok {
+			return
+		}
+		w = wrapper.Unwrap()
+	}
+}
+
+// SetRouteContext publishes only immutable route identity, including after a timeout.
+func (r *ResponseRecorder) SetRouteContext(ctx context.Context) {
+	rc := contract.RequestContextFromContext(ctx)
+	rc.Params = nil
+	r.route.Store(&rc)
+	PublishRouteContext(r.ResponseWriter, ctx)
+}
+
+// RouteContext returns the latest published route identity without sharing mutable data.
+func (r *ResponseRecorder) RouteContext() contract.RequestContext {
+	if rc := r.route.Load(); rc != nil {
+		return *rc
+	}
+	return contract.RequestContext{}
 }

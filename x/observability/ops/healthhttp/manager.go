@@ -54,6 +54,7 @@ type manager struct {
 	components        map[string]health.ComponentChecker
 	health            map[string]*health.ComponentHealth
 	checkVersions     map[string]uint64
+	aggregateVersion  uint64
 	config            Config
 	closed            bool
 	lastCheckDuration time.Duration
@@ -271,20 +272,22 @@ func (m *manager) CheckAllComponents(ctx context.Context) health.HealthStatus {
 		ctx = context.Background()
 	}
 
-	m.mu.RLock()
+	m.mu.Lock()
 	if m.closed {
-		m.mu.RUnlock()
+		m.mu.Unlock()
 		return health.HealthStatus{
 			Status:    health.StatusUnhealthy,
 			Message:   errManagerClosed.Error(),
 			Timestamp: time.Now(),
 		}
 	}
+	m.aggregateVersion++
+	version := m.aggregateVersion
 	components := make([]string, 0, len(m.components))
 	for name := range m.components {
 		components = append(components, name)
 	}
-	m.mu.RUnlock()
+	m.mu.Unlock()
 
 	sort.Strings(components)
 
@@ -326,6 +329,9 @@ func (m *manager) CheckAllComponents(ctx context.Context) health.HealthStatus {
 
 	if m.closed {
 		return health.HealthStatus{Status: health.StatusUnhealthy, Message: errManagerClosed.Error(), Timestamp: time.Now()}
+	}
+	if version != m.aggregateVersion {
+		return health.HealthStatus{Status: health.StatusUnhealthy, Message: "aggregate check was superseded", Timestamp: time.Now()}
 	}
 	status, message := calculateOverallStatus(m.health)
 	if len(components) == 0 && len(m.health) == 0 {

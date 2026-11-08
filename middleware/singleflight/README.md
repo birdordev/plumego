@@ -34,3 +34,5 @@ app.Use(singleflight.New(cfg).Middleware())
 - Only safe HTTP methods (`GET`, `HEAD`, `OPTIONS`) are coalesced by default.
 - The middleware retries on transient errors up to `MaxRetries` before failing waiters.
 - Response bytes are captured and replayed synchronously to each waiter; consider this for idempotent, cacheable endpoints only.
+
+Informational responses do not commit the final status. Their header snapshots are isolated from final headers. Normal header-only handlers commit implicit 200 responses consistently for leaders and waiters.

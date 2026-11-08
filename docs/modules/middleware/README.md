@@ -381,3 +381,5 @@ visible.
 `CopyHeaders` overlays destination values and preserves destination keys absent
 from `src`. Use `ReplaceHeaders` when replaying a fully buffered response that
 should remove stale destination headers.
+
+Outer access logging, HTTP metrics, and tracing receive the matched route template through synchronized response observers. Metadata publication carries no services and does not mutate the request or response headers. A missing match continues to use the original path.

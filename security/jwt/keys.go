@@ -13,6 +13,13 @@ import (
 	"time"
 )
 
+// storedSigningKey retains rotation ancestry without changing the public key type.
+// Only rotations from an existing active key have recoverable ancestry.
+type storedSigningKey struct {
+	JWTSigningKey
+	RotationFrom *string `json:"rotation_from,omitempty"`
+}
+
 // loadKeys reads signing keys from the KV store and ensures an active key exists.
 func (m *JWTManager) loadKeys(ctx context.Context) error {
 	if err := contextErr(ctx); err != nil {
@@ -26,6 +33,7 @@ func (m *JWTManager) loadKeys(ctx context.Context) error {
 		return err
 	}
 	hasActiveKey := false
+	var candidates []storedSigningKey
 	for _, key := range keys {
 		if err := contextErr(ctx); err != nil {
 			return err
@@ -39,15 +47,19 @@ func (m *JWTManager) loadKeys(ctx context.Context) error {
 			if err != nil {
 				return err
 			}
-			var signingKey JWTSigningKey
-			if err := json.Unmarshal(raw, &signingKey); err != nil {
+			var stored storedSigningKey
+			if err := json.Unmarshal(raw, &stored); err != nil {
 				// Decoder errors can contain persisted values, including key material.
 				return fmt.Errorf("failed to decode signing key: %w", ErrInvalidToken)
 			}
+			signingKey := stored.JWTSigningKey
 			if err := validateSigningKey(signingKey); err != nil {
 				return fmt.Errorf("invalid signing key: %w", err)
 			}
 			m.keyCache[signingKey.ID] = signingKey
+			if stored.RotationFrom != nil {
+				candidates = append(candidates, stored)
+			}
 		}
 	}
 
@@ -57,6 +69,19 @@ func (m *JWTManager) loadKeys(ctx context.Context) error {
 			return fmt.Errorf("failed to read active signing key: %w", err)
 		}
 		m.active = strings.TrimSpace(string(activeRaw))
+	}
+	// Only explicit ancestry identifies an unacknowledged candidate. Legacy
+	// keys and previously active keys must remain available for verification.
+	m.pending = nil
+	for _, candidate := range candidates {
+		key := candidate.JWTSigningKey
+		if *candidate.RotationFrom != m.active || key.ID == m.active || key.Algorithm != m.config.Algorithm {
+			continue
+		}
+		if m.pending == nil || key.CreatedAt.After(m.pending.CreatedAt) || (key.CreatedAt.Equal(m.pending.CreatedAt) && key.ID < m.pending.ID) {
+			key = cloneSigningKey(key)
+			m.pending = &key
+		}
 	}
 
 	return m.ensureActiveKeyUnsafe(ctx)
@@ -72,18 +97,8 @@ func (m *JWTManager) ensureActiveKeyUnsafe(ctx context.Context) error {
 		}
 	}
 
-	key, err := m.generateKeyUnsafe(m.config.Algorithm)
-	if err != nil {
-		return err
-	}
-	if err := m.persistKeyUnsafe(ctx, key); err != nil {
-		return err
-	}
-	if err := m.storeSet(ctx, activeKeyKey, []byte(key.ID), 0); err != nil {
-		return err
-	}
-	m.active = key.ID
-	return nil
+	_, err := m.rotateKeyUnsafe(ctx)
+	return err
 }
 
 // RotateKey generates and activates a new signing key while keeping the previous keys for verification.
@@ -111,18 +126,24 @@ func (m *JWTManager) rotateKeyUnsafe(ctx context.Context) (JWTSigningKey, error)
 	if err := contextErr(ctx); err != nil {
 		return JWTSigningKey{}, err
 	}
-	key, err := m.generateKeyUnsafe(m.config.Algorithm)
-	if err != nil {
-		return JWTSigningKey{}, err
+	if m.pending == nil {
+		key, err := m.generateKeyUnsafe(m.config.Algorithm)
+		if err != nil {
+			return JWTSigningKey{}, err
+		}
+		m.pending = &key
 	}
-
-	if err := m.persistKeyUnsafe(ctx, key); err != nil {
-		return JWTSigningKey{}, err
+	key := *m.pending
+	if _, persisted := m.keyCache[key.ID]; !persisted {
+		if err := m.persistKeyUnsafe(ctx, key); err != nil {
+			return JWTSigningKey{}, err
+		}
 	}
 	if err := m.storeSet(ctx, activeKeyKey, []byte(key.ID), 0); err != nil {
 		return JWTSigningKey{}, err
 	}
 	m.active = key.ID
+	m.pending = nil
 	return cloneSigningKey(key), nil
 }
 
@@ -131,7 +152,12 @@ func (m *JWTManager) persistKeyUnsafe(ctx context.Context, key JWTSigningKey) er
 	if err := contextErr(ctx); err != nil {
 		return err
 	}
-	encoded, err := json.Marshal(key)
+	previous := m.active
+	stored := storedSigningKey{JWTSigningKey: key}
+	if previous != "" {
+		stored.RotationFrom = &previous
+	}
+	encoded, err := json.Marshal(stored)
 	if err != nil {
 		return err
 	}

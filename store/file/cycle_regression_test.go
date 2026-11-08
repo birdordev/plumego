@@ -1,8 +1,13 @@
 package file
 
 import (
+	"context"
+	"os"
+	"os/exec"
 	"reflect"
+	"runtime/debug"
 	"testing"
+	"time"
 )
 
 func TestCloneCyclicMetadata(t *testing.T) {
@@ -33,5 +38,49 @@ func TestCloneCyclicMetadata(t *testing.T) {
 		if root["safe"] != "original" || root["extra"] != nil {
 			t.Fatal("clone mutated input")
 		}
+	}
+}
+
+func TestCloneDeepMetadataWithBoundedStack(t *testing.T) {
+	if os.Getenv("PLUMEGO_METADATA_STACK_PROBE") == "1" {
+		// A small stack isolates regressions without exhausting the test runner.
+		debug.SetMaxStack(256 << 10)
+		const depth = 20000
+		root := map[string]any{}
+		current := root
+		for i := 0; i < depth; i++ {
+			items := make([]any, 1)
+			next := map[string]any{}
+			current["next"] = items
+			items[0] = next
+			current = next
+		}
+		current["value"] = "leaf"
+		current["root"] = root
+		for _, copied := range []map[string]any{(File{Metadata: root}).Clone().Metadata, (PutOptions{Metadata: root}).CloneMetadata()} {
+			leaf := copied
+			for i := 0; i < depth; i++ {
+				leaf = leaf["next"].([]any)[0].(map[string]any)
+			}
+			if leaf["value"] != "leaf" || reflect.ValueOf(leaf["root"]).Pointer() != reflect.ValueOf(copied).Pointer() {
+				t.Fatal("deep graph was truncated or lost its back reference")
+			}
+			leaf["value"] = "changed"
+			if current["value"] != "leaf" {
+				t.Fatal("deep clone mutated the original leaf")
+			}
+		}
+		return
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestCloneDeepMetadataWithBoundedStack$")
+	cmd.Env = append(os.Environ(), "PLUMEGO_METADATA_STACK_PROBE=1")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		if len(output) > 2000 {
+			output = output[:2000]
+		}
+		t.Fatalf("deep metadata subprocess failed: %v\n%s", err, output)
 	}
 }

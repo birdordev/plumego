@@ -36,4 +36,8 @@ app.Use(compression.Middleware(compression.DefaultConfig()))
 - Informational 100/103 responses are forwarded without committing the final
   status or choosing compression. A later final success or error keeps its
   status and appropriate encoding. A 101 protocol switch is a final transition.
+  Each informational response uses a temporary header snapshot; headers deleted
+  afterward do not leak into later informational or final responses. Normal
+  header-only completion commits the final headers with an implicit 200, even
+  after an informational response. Empty responses are not gzip-encoded.
 - The wrapped `ResponseWriter` supports `Unwrap()` for access to the underlying writer.

@@ -86,3 +86,5 @@ is superseded, or cannot run after manager closure. A cached healthy result
 cannot turn such a probe into a successful response. Missing components remain
 404. Failure bodies use a fixed message without backend error text; producing
 that response does not mutate a newer shared component result.
+
+Overlapping aggregate health checks publish readiness only from the newest batch. Superseded batches return an unhealthy check result without replacing newer readiness; component-level version checks remain independent.

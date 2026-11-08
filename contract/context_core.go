@@ -62,7 +62,7 @@ var routeStatePool = sync.Pool{
 }
 
 // GetRouteState retrieves scratch routing storage for explicitly bounded use.
-// Callers must call PutRouteState when the request is complete.
+// Callers must reset and return it only after all context readers have finished.
 func GetRouteState() *RouteState {
 	return routeStatePool.Get().(*RouteState)
 }
@@ -92,8 +92,10 @@ var (
 )
 
 // WithRouteState stores rs in ctx under the internal routeStateKey. The router
-// uses this as the fast path for attaching per-request route data without map
-// allocations. Handlers must not retain the RouteState pointer beyond ServeHTTP.
+// publishes immutable state that remains valid as long as its contexts are held,
+// including downstream work that outlives ServeHTTP. This function does not copy
+// rs. Manual callers must not mutate, reset, or return it to a pool while any
+// context reader can still access it.
 func WithRouteState(ctx context.Context, rs *RouteState) context.Context {
 	return context.WithValue(ctx, routeStateKey{}, rs)
 }
