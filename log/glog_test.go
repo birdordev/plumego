@@ -885,7 +885,7 @@ func TestEdgeCases(t *testing.T) {
 	output = captureOutput(func() {
 		infoDefault(specialMessage)
 	})
-	if !strings.Contains(output, specialMessage) {
+	if !strings.Contains(output, `Test Chinese characters\n\tSpecial chars`) {
 		t.Error("Special characters should be logged correctly")
 	}
 }

@@ -25,7 +25,7 @@ func (h *Hub) dispatchJobs(conns []*Conn, op byte, data []byte, label string) Br
 			result.Dropped++
 			if h.config.RejectOnQueueFull {
 				if h.config.EnableDebugLogging {
-					h.logger.Printf("broadcast queue full: dropped message to %s", label)
+					h.logger.Printf("broadcast queue full: dropped message to %q", label)
 				}
 				if h.config.EnableSecurityMetrics {
 					h.recordSecurityEvent("broadcast_queue_full", map[string]any{

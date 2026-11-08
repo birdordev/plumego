@@ -91,7 +91,7 @@ func (h *Hub) tryJoin(room string, c *Conn, validator RoomNameValidator) error {
 		if _, exists := rs[c]; exists {
 			h.mu.RUnlock()
 			if h.config.EnableDebugLogging {
-				h.logger.Printf("Connection already in room: %s", room)
+				h.logger.Printf("Connection already in room: %q", room)
 			}
 			return nil
 		}
@@ -115,7 +115,7 @@ func (h *Hub) tryJoin(room string, c *Conn, validator RoomNameValidator) error {
 	if rs, ok := h.rooms[room]; ok {
 		if _, exists := rs[c]; exists {
 			if h.config.EnableDebugLogging {
-				h.logger.Printf("Connection already in room: %s", room)
+				h.logger.Printf("Connection already in room: %q", room)
 			}
 			return nil
 		}
@@ -158,7 +158,7 @@ func (h *Hub) tryJoin(room string, c *Conn, validator RoomNameValidator) error {
 	h.accepted.Add(1)
 
 	if h.config.EnableDebugLogging {
-		h.logger.Printf("Connection joined room: %s (registrations: %d, room: %d)", room, h.roomRegistrations.Load(), len(rs))
+		h.logger.Printf("Connection joined room: %q (registrations: %d, room: %d)", room, h.roomRegistrations.Load(), len(rs))
 	}
 
 	return nil

@@ -536,3 +536,27 @@ func TestHub_RemoveConn_NotInAnyRoom_NoOp(t *testing.T) {
 	defer conn.Close()
 	hub.RemoveConn(conn) // must not panic
 }
+
+func TestHubRoomLogsEscapeControls(t *testing.T) {
+	var buf bytes.Buffer
+	hub := mustNewHubConfig(t, HubConfig{
+		EnableDebugLogging: true,
+		Logger:             stdlog.New(&buf, "", 0),
+		RoomNameValidator:  func(string) error { return nil },
+	})
+	defer hub.Stop()
+	c := newMockConn()
+	defer c.Close()
+	room := "room\r\nFORGED\x1b[2J"
+	for i := 0; i < 2; i++ {
+		if err := hub.TryJoin(room, c); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if strings.ContainsAny(buf.String(), "\r\x1b") || strings.Contains(buf.String(), "\nFORGED") {
+		t.Fatalf("日志注入：%q", buf.String())
+	}
+	if !strings.Contains(buf.String(), `room\r\nFORGED\x1b[2J`) {
+		t.Fatal("缺少转义后的房间名")
+	}
+}

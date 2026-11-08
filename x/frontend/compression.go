@@ -118,16 +118,12 @@ func (h *handler) localFileExists(filePath string) bool {
 	if !ok {
 		return false
 	}
-	cleaned, ok := cleanAssetPath(filePath)
-	if !ok {
+	f, err := root.Open(filePath)
+	if err != nil {
 		return false
 	}
-	target := filepath.Join(string(root), filepath.FromSlash(cleaned))
-	realTarget, err := filepath.EvalSymlinks(target)
-	if err != nil || !isPathWithinRoot(string(root), realTarget) {
-		return false
-	}
-	info, err := os.Stat(realTarget)
+	defer func() { _ = f.Close() }()
+	info, err := f.Stat()
 	if err != nil || info.IsDir() {
 		return false
 	}

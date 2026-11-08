@@ -68,3 +68,7 @@
 - never log secrets, tokens, signatures, or private keys
 - keep reusable test logging helpers out of stable `log`; use `x/observability/testlog`
 - attach `request_id` and other transport metadata explicitly at call sites; stable `log` must not read them from context
+
+## 日志与文件安全
+
+文本日志消息中的控制字符及 Unicode 行分隔符会转义，避免伪造日志行；结构化字段保留现有转义规则。自定义 `StructuredLogger` 实现需自行保证安全编码。

@@ -213,3 +213,7 @@ snapshots, no exported API changes, and `realtime` owner sign-off.
 - handle room-password setup errors explicitly; do not hide hash failures behind log-only behavior
 - keep security metrics instance-scoped (`SecureRoomAuth.GetMetrics`, `Hub.Metrics`) instead of reintroducing global wrappers
 - treat `x/websocket` as the app-facing websocket transport surface
+
+## 日志与文件安全
+
+Hub 调试日志使用带引号的转义格式记录房间名和广播目标，防止自定义房间名校验器允许的控制字符注入日志。
