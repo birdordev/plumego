@@ -167,3 +167,7 @@ Validate narrow webhook work with:
 - `go test -race -timeout 60s ./x/messaging/...`
 - `go test -timeout 20s ./x/messaging/...`
 - `go vet ./x/messaging/...`
+
+## Webhook publish failure diagnostics
+
+Inbound GitHub and Stripe publish failures return the canonical generic internal error. Logs retain the error type, topic, and event ID, but exclude the publisher's error text, which may contain backend credentials or payload data. Custom logging backends must safely encode these original field values according to the `log.StructuredLogger` contract.

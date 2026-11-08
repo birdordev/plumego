@@ -2,6 +2,7 @@ package webhook
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"os"
 	"strings"
@@ -176,7 +177,7 @@ func (c *Inbound) webhookInGitHub(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err = c.pub.Publish(topic, msg); err != nil {
-		c.logger.Error("Failed to publish GitHub event", log.Fields{"error": err, "topic": topic, "event_id": delivery})
+		c.logger.Error("Failed to publish GitHub event", log.Fields{"error_type": fmt.Sprintf("%T", err), "topic": topic, "event_id": delivery})
 		_ = contract.WriteError(w, r, contract.NewErrorBuilder().
 			Type(contract.TypeInternal).
 			Code(httpCodePublishFailed).
@@ -274,7 +275,7 @@ func (c *Inbound) webhookInStripe(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err = c.pub.Publish(topic, msg); err != nil {
-		c.logger.Error("Failed to publish Stripe event", log.Fields{"error": err, "topic": topic, "event_id": evtID})
+		c.logger.Error("Failed to publish Stripe event", log.Fields{"error_type": fmt.Sprintf("%T", err), "topic": topic, "event_id": evtID})
 		_ = contract.WriteError(w, r, contract.NewErrorBuilder().
 			Type(contract.TypeInternal).
 			Code(httpCodePublishFailed).

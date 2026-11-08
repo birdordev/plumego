@@ -77,3 +77,5 @@
 Text log messages escape control characters and Unicode line separators to prevent forged log entries. Structured fields retain their existing escaping rules. Custom `StructuredLogger` implementations must provide safe encoding.
 
 JSON normalization stops common map and slice traversal when the per-field node budget is exhausted, instead of allocating placeholders for every remaining element. Truncated containers contain a fixed marker; retained map entries are unspecified because map iteration order is unspecified. This bounds container traversal, not individual string sizes or custom JSON marshalers.
+
+Custom backends receive original, unescaped values. Encode messages and field keys/values at the output boundary; escape control characters and Unicode line separators for text, or use a JSON encoder. Do not interpolate raw values into record delimiters. Callers must exclude secrets before calling the logger; safe encoding does not redact credentials or backend error messages.
