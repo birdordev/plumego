@@ -10,15 +10,15 @@ import "github.com/spcent/plumego/middleware/compression"
 
 ## Overview
 
-`compression.Middleware` buffers small responses to decide whether compression is worthwhile and streams large responses directly when compression savings are confirmed.
+`compression.Middleware` uses the negotiated encoding and response content type to choose compression. Gzip output streams once it starts.
 
 ## Exports
 
 | Symbol | Description |
 |--------|-------------|
 | `Middleware(cfg Config)` | Constructor |
-| `DefaultConfig()` | Sensible defaults (gzip level default, 512 B threshold) |
-| `Config{Level, MinSize, ContentTypes, ExcludePaths}` | Fine-grained control |
+| `DefaultConfig()` | Default pre-stream buffer limit: 10 MiB |
+| `Config{MaxBufferBytes}` | Buffer limit before gzip output starts |
 
 ## Usage
 
@@ -30,5 +30,10 @@ app.Use(compression.Middleware(compression.DefaultConfig()))
 
 - The middleware ignores already-compressed content types (`image/*`, `video/*`, `application/gzip`, etc.).
 - `Content-Encoding: gzip` is set only when compression is actually applied.
-- Responses smaller than `MinSize` are passed through uncompressed to avoid gzip overhead.
+- There is no minimum-size threshold. A response that exceeds `MaxBufferBytes`
+  before gzip starts is passed through; once gzip starts, later writes stay in
+  the same compressed stream.
+- Informational 100/103 responses are forwarded without committing the final
+  status or choosing compression. A later final success or error keeps its
+  status and appropriate encoding. A 101 protocol switch is a final transition.
 - The wrapped `ResponseWriter` supports `Unwrap()` for access to the underlying writer.

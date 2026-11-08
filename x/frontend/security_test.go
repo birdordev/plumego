@@ -268,3 +268,31 @@ func TestRegisterFSRejectsUnsafePathBeforeBackendOpen(t *testing.T) {
 		t.Fatalf("backend opened paths = %#v, want none", fsys.opened)
 	}
 }
+
+func TestLocalDirFSRootBoundary(t *testing.T) {
+	root, outside := t.TempDir(), t.TempDir()
+	writeTestFile(t, root, "asset.txt", "safe")
+	writeTestFile(t, outside, "asset.txt", "secret")
+	if err := os.Symlink(outside, filepath.Join(root, "escape")); err != nil {
+		t.Skipf("cannot create symlink: %v", err)
+	}
+	if err := os.Symlink("asset.txt", filepath.Join(root, "alias.txt")); err != nil {
+		t.Fatal(err)
+	}
+	fsys := localDirFS(root)
+	h := &handler{fs: fsys}
+	if h.localFileExists("escape/asset.txt") || !h.localFileExists("asset.txt") {
+		t.Fatal("precompressed original check did not enforce the root boundary")
+	}
+	for _, name := range []string{"../asset.txt", "escape/asset.txt", "/asset.txt", `escape\asset.txt`} {
+		if f, err := fsys.Open(name); err == nil {
+			_ = f.Close()
+			t.Fatalf("opened file outside the root boundary: %q", name)
+		}
+	}
+	f, err := fsys.Open("alias.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = f.Close()
+}

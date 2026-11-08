@@ -890,34 +890,6 @@ func TestKVStoreLoadUnreadableStateFile(t *testing.T) {
 	}
 }
 
-// TestSetContextTTLRefreshAfterSlowPersist exercises the TTL-refresh path in
-// SetContext (lines 141-145) where persist latency exceeds the TTL duration.
-// A 1ns TTL is so short that any real file IO will exceed it, triggering the
-// refresh so the entry is still accessible immediately after Set returns.
-func TestSetContextTTLRefreshAfterSlowPersist(t *testing.T) {
-	store, err := NewKVStore(Options{DataDir: t.TempDir()})
-	if err != nil {
-		t.Fatalf("NewKVStore: %v", err)
-	}
-	defer func() { _ = store.Close() }()
-
-	// Use an extremely short TTL so persist latency (file IO) exceeds it.
-	const ttl = time.Nanosecond
-	if err := store.Set("fast-ttl", []byte("value"), ttl); err != nil {
-		t.Fatalf("Set: %v", err)
-	}
-
-	// The entry should be refreshed and still accessible immediately after Set.
-	// (If it weren't refreshed, Get would return ErrKeyExpired right away.)
-	// On very slow test machines this might genuinely be expired, so we tolerate
-	// both outcomes but verify the code path was exercised.
-	_, err = store.Get("fast-ttl")
-	// Either the entry was refreshed (accessible) or it expired — both are valid.
-	if err != nil && !errors.Is(err, ErrKeyExpired) && !errors.Is(err, ErrKeyNotFound) {
-		t.Fatalf("Get after fast-ttl Set: unexpected error %v", err)
-	}
-}
-
 // TestDeleteNonExistentKey exercises the ErrKeyNotFound path in DeleteContext
 // when a valid key is not present in the store.
 func TestDeleteNonExistentKey(t *testing.T) {

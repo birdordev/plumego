@@ -225,6 +225,13 @@ func (w *gzipResponseWriter) Header() http.Header {
 }
 
 func (w *gzipResponseWriter) WriteHeader(statusCode int) {
+	if statusCode >= 100 && statusCode < 200 && statusCode != http.StatusSwitchingProtocols {
+		if !w.wroteHeader {
+			internaltransport.CopyHeaders(w.ResponseWriter.Header(), w.Header())
+			w.ResponseWriter.WriteHeader(statusCode)
+		}
+		return
+	}
 	if w.wroteHeader {
 		return
 	}

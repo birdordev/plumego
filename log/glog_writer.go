@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 )
 
 // logBufferPool recycles log header buffers to reduce allocations.
@@ -177,7 +178,7 @@ func (l *gLogger) logInternal(level Level, calldepth int, messageBuilder func() 
 
 	// Format header and message
 	headerBuf := l.formatHeader(level, file, line)
-	message := messageBuilder()
+	message := escapeLogMessage(strings.TrimSuffix(messageBuilder(), "\n"))
 	logLine := append(*headerBuf, message...)
 	logLine = append(logLine, '\n')
 
@@ -222,9 +223,9 @@ func (l *gLogger) logInternal(level Level, calldepth int, messageBuilder func() 
 	}
 }
 
-func (l *gLogger) reportWriteError(err error) {
+func (l *gLogger) reportWriteError(_ error) {
 	l.writeErrOnce.Do(func() {
-		fmt.Fprintf(os.Stderr, "glog: failed to write log output: %v\n", err)
+		_, _ = os.Stderr.WriteString("glog: failed to write log output\n")
 	})
 }
 
@@ -237,4 +238,17 @@ func writeFull(w io.Writer, data []byte) error {
 		return io.ErrShortWrite
 	}
 	return nil
+}
+
+func escapeLogMessage(message string) string {
+	var escaped strings.Builder
+	for _, r := range message {
+		if unicode.IsControl(r) || r == '\u2028' || r == '\u2029' {
+			quoted := strconv.QuoteRune(r)
+			escaped.WriteString(quoted[1 : len(quoted)-1])
+		} else {
+			escaped.WriteRune(r)
+		}
+	}
+	return escaped.String()
 }

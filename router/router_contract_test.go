@@ -806,7 +806,9 @@ func TestHeadFallbackParameterizedRouteSuppressesBodyWithCache(t *testing.T) {
 		if err != nil {
 			t.Fatalf("HEAD fallback write returned error: %v", err)
 		}
-		w.Header().Set("X-Write-N", strconv.Itoa(n))
+		if n != 4 {
+			t.Fatalf("suppressed write count = %d, want 4", n)
+		}
 	}))
 
 	for _, id := range []string{"one", "two"} {
@@ -823,9 +825,6 @@ func TestHeadFallbackParameterizedRouteSuppressesBodyWithCache(t *testing.T) {
 		if body := rec.Body.String(); body != "" {
 			t.Fatalf("expected empty HEAD body, got %q", body)
 		}
-		if got := rec.Header().Get("X-Write-N"); got != "4" {
-			t.Fatalf("expected suppressed write to report 4 bytes, got %q", got)
-		}
 	}
 }
 
@@ -836,7 +835,9 @@ func TestHeadFallbackReadFromDrainsAndUnwrapsResponseWriter(t *testing.T) {
 		if err != nil {
 			t.Fatalf("HEAD fallback ReadFrom returned error: %v", err)
 		}
-		w.Header().Set("X-Copied-N", strconv.FormatInt(n, 10))
+		if n != 11 {
+			t.Fatalf("suppressed copy count = %d, want 11", n)
+		}
 		if err := http.NewResponseController(w).Flush(); err != nil {
 			t.Fatalf("HEAD fallback ResponseController Flush returned error: %v", err)
 		}
@@ -853,9 +854,6 @@ func TestHeadFallbackReadFromDrainsAndUnwrapsResponseWriter(t *testing.T) {
 		if body := rec.Body.String(); body != "" {
 			t.Fatalf("request %d: expected empty HEAD body, got %q", i, body)
 		}
-		if got := rec.Header().Get("X-Copied-N"); got != "11" {
-			t.Fatalf("request %d: expected copied count 11, got %q", i, got)
-		}
 	}
 }
 
@@ -871,7 +869,9 @@ func TestHeadAnyFallbackSuppressesBodyWithCache(t *testing.T) {
 		if err != nil {
 			t.Fatalf("HEAD any fallback write returned error: %v", err)
 		}
-		w.Header().Set("X-Write-N", strconv.Itoa(n))
+		if n != 4 {
+			t.Fatalf("suppressed write count = %d, want 4", n)
+		}
 	}))
 
 	for _, id := range []string{"one", "two"} {
@@ -887,9 +887,6 @@ func TestHeadAnyFallbackSuppressesBodyWithCache(t *testing.T) {
 		}
 		if body := rec.Body.String(); body != "" {
 			t.Fatalf("expected empty HEAD body, got %q", body)
-		}
-		if got := rec.Header().Get("X-Write-N"); got != "4" {
-			t.Fatalf("expected suppressed write to report 4 bytes, got %q", got)
 		}
 	}
 }

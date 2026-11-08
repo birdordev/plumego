@@ -69,6 +69,8 @@ Use `security/*` for reviewable primitives and policies:
 - `security/jwt` verification fails closed when configured issuer, configured audience, or subject claims are missing or mismatched.
 - `security/jwt` rejects malformed or oversized compact token envelopes before payload decoding.
 - `security/jwt` verification requires a valid JWT header type, matching header/payload key IDs, and valid persisted signing key material.
+- `security/jwt` rejects tokens at or after the expiration boundary, including configured clock skew; verification does not add an extra second of validity. Expiration checks avoid adding skew to untrusted timestamps.
+- `security/jwt` rejects persisted Ed25519 keys whose seed, private key, and public key are inconsistent. Key decoding and validation errors omit persisted field values and storage key names; raw decoder errors are not retained in the error chain.
 - `security/jwt.JWTManager` accepts a minimal key-store interface instead of binding to a concrete stable store implementation.
 - `security/jwt.JWTManager` treats an absent active signing-key marker as recoverable, but fails startup when a persisted active marker cannot be read.
 - `security/jwt.JWTManager.RotateKey` returns signing-key metadata only; HMAC secrets and Ed25519 private keys remain internal.
@@ -86,3 +88,18 @@ HTTP request wiring belongs in `middleware/auth`, `middleware/securityheaders`, 
 `middleware/abuseguard`. Application-specific authorization decisions should be
 constructor-injected into those adapters rather than hidden behind package
 globals.
+
+
+## Failure-state guarantees
+
+- `security/abuse.Limiter` applies eviction only when admitting a new key.
+  Repeated requests for an existing key keep its token balance even when
+  `MaxEntries` is reached. New-key admissions are serialized across shards;
+  existing-key updates retain shard-local locking. Capacity decisions and the
+  bucket gauge use a single atomic count. Eviction is approximate LRU.
+- JWT key rotation publishes the in-memory active key after the backing store
+  accepts the active-key pointer. If that write fails, the previous key remains
+  active and a later automatic rotation retries. A successfully stored candidate
+  key may remain available for verification even when activation fails. This
+  does not make arbitrary external `KeyStore` implementations transactional:
+  stores that commit and then return an error must document that ambiguity.

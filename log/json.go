@@ -41,7 +41,7 @@ func newJSONLogger(config LoggerConfig) *jsonLogger {
 }
 
 // WithFields returns a new logger with additional fields merged in.
-// Each derived logger gets its own independent write-error tracker.
+// Derived loggers share the writer lock and write-error tracker.
 // The fields, outputs, level and verbosity are snapshotted at call time.
 func (l *jsonLogger) WithFields(fields Fields) StructuredLogger {
 	// These fields are immutable after construction, so a single lock snapshot
@@ -181,12 +181,26 @@ func (l *jsonLogger) buildEntry(level Level, msg string, fields Fields) map[stri
 	return entry
 }
 
+const (
+	maxJSONFieldDepth = 32
+	maxJSONFieldNodes = 1024
+)
+
 func normalizeJSONFieldValue(value any) any {
+	remaining := maxJSONFieldNodes
+	return normalizeJSONFieldValueAt(value, 0, &remaining)
+}
+
+func normalizeJSONFieldValueAt(value any, depth int, remaining *int) any {
+	if depth >= maxJSONFieldDepth || *remaining <= 0 {
+		return "[truncated]"
+	}
+	*remaining -= 1
 	switch v := value.(type) {
 	case Fields:
-		return normalizeJSONFieldMap(map[string]any(v))
+		return normalizeJSONFieldMap(map[string]any(v), depth, remaining)
 	case map[string]any:
-		return normalizeJSONFieldMap(v)
+		return normalizeJSONFieldMap(v, depth, remaining)
 	case map[string]string:
 		normalized := make(map[string]any, len(v))
 		for key, nested := range v {
@@ -196,33 +210,36 @@ func normalizeJSONFieldValue(value any) any {
 	case []any:
 		normalized := make([]any, len(v))
 		for i, nested := range v {
-			normalized[i] = normalizeJSONFieldValue(nested)
+			normalized[i] = normalizeJSONFieldValueAt(nested, depth+1, remaining)
 		}
 		return normalized
 	}
-
 	data, err := json.Marshal(value)
 	if err != nil {
-		return fmt.Sprint(value)
+		// Only numeric formatting is safe here. Generic formatting can reveal
+		// fields deliberately excluded from JSON or invoke user String methods.
+		switch v := value.(type) {
+		case float32:
+			return fmt.Sprint(v)
+		case float64:
+			return fmt.Sprint(v)
+		}
+		return "[unsupported]"
 	}
-
-	var normalized any
-	if err := json.Unmarshal(data, &normalized); err != nil {
-		return fmt.Sprint(value)
-	}
-	return normalized
+	// Keep validated JSON bytes instead of decoding numbers through float64.
+	return json.RawMessage(data)
 }
 
-func normalizeJSONFieldMap(fields map[string]any) map[string]any {
+func normalizeJSONFieldMap(fields map[string]any, depth int, remaining *int) map[string]any {
 	normalized := make(map[string]any, len(fields))
 	for key, value := range fields {
-		normalized[key] = normalizeJSONFieldValue(value)
+		normalized[key] = normalizeJSONFieldValueAt(value, depth+1, remaining)
 	}
 	return normalized
 }
 
 // writeRaw writes pre-marshalled JSON data to the appropriate output.
-// Must be called with l.mu held.
+// Must be called with the shared writer mutex held.
 func (l *jsonLogger) writeRaw(level Level, data []byte) {
 	w := l.writerFor(level)
 	if err := writeFull(w, data); err != nil {
@@ -262,11 +279,11 @@ func (l *jsonLogger) vAt(level int) bool {
 	return level <= l.verbosity
 }
 
-func (l *jsonLogger) reportWriteError(err error) {
+func (l *jsonLogger) reportWriteError(_ error) {
 	if l.writeErrOnce == nil {
 		l.writeErrOnce = &sync.Once{}
 	}
 	l.writeErrOnce.Do(func() {
-		_, _ = os.Stderr.WriteString("json logger: failed to write log output: " + err.Error() + "\n")
+		_, _ = os.Stderr.WriteString("json logger: failed to write log output\n")
 	})
 }

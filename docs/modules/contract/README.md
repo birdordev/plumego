@@ -140,6 +140,14 @@ Use `WithRequestContext`, `RequestContextFromContext`, and
 Stored maps are defensively copied. Use `RequestParamFromContext` when a caller
 needs one route param and does not need a full `RequestContext` snapshot.
 
+`RouteState` stores the first eight parameters inline and preserves additional
+parameters in overflow storage. Both parameter accessors include overflow
+values; snapshots detach all parameter maps. `Reset` clears both storage paths.
+The router publishes immutable match metadata retained by request contexts. Explicit users of
+`GetRouteState`/`PutRouteState` must keep pooled state alive until every context
+reader has finished and reset it before reuse.
+
+
 `TraceContext` is a string carrier only. Full tracing runtime behavior, typed
 trace/span identifiers, propagation policy, collectors, samplers, and exporters
 belong in `x/observability`.

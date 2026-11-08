@@ -174,3 +174,7 @@ arrive as explicit exported `With*` helpers.
 - Embedded helper guidance must stay explicit: applications pass their own
   `embed.FS`/`fs.Sub` result through `RegisterFS` as `http.FS`; examples should
   not present `http.Dir` as the embedded-filesystem path.
+
+## Security
+
+Directory-backed files are opened through `os.OpenInRoot` to prevent symlink escapes during file opening. Precompressed original checks use the same entrypoint. Deployments must control the root directory and its parents.

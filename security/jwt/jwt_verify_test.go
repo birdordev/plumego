@@ -11,30 +11,27 @@ func TestClockSkewTolerance(t *testing.T) {
 	store := newTestStore(t)
 	cfg := DefaultJWTConfig()
 	cfg.AccessExpiration = 1 * time.Second
-	cfg.ClockSkew = 1 * time.Second // allow 1 second clock skew
+	cfg.ClockSkew = 1 * time.Second
 
 	mgr, err := NewJWTManager(store, cfg)
 	if err != nil {
 		t.Fatalf("failed to create manager: %v", err)
 	}
 
-	pair, _ := mgr.GenerateTokenPair(t.Context(), IdentityClaims{Subject: "user-skew"}, AuthorizationClaims{})
+	issued := time.Unix(1800000000, 0)
+	mgr.now = func() time.Time { return issued }
+	pair, err := mgr.GenerateTokenPair(t.Context(), IdentityClaims{Subject: "user-skew"}, AuthorizationClaims{})
+	if err != nil {
+		t.Fatalf("generate token pair: %v", err)
+	}
 
-	// Sleep inside the skew window (exp + skew = 2s) so the still-valid check
-	// does not sit on the truncation boundary. A longer sleep could tip the
-	// second-truncated timestamp past exp+skew on a loaded machine.
-	time.Sleep(1200 * time.Millisecond)
-
-	// verify token is valid within clock skew
+	mgr.now = func() time.Time { return issued.Add(1500 * time.Millisecond) }
 	_, err = mgr.VerifyToken(t.Context(), pair.AccessToken, TokenTypeAccess)
 	if err != nil {
 		t.Errorf("token should be valid within clock skew: %v", err)
 	}
 
-	// sleep past the window (total 3.3s > 1s expiration + 2s clock skew)
-	time.Sleep(2100 * time.Millisecond)
-
-	// token should be expired
+	mgr.now = func() time.Time { return issued.Add(2 * time.Second) }
 	_, err = mgr.VerifyToken(t.Context(), pair.AccessToken, TokenTypeAccess)
 	if err != ErrTokenExpired {
 		t.Errorf("expected ErrTokenExpired, got %v", err)

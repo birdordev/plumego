@@ -213,3 +213,7 @@ snapshots, no exported API changes, and `realtime` owner sign-off.
 - handle room-password setup errors explicitly; do not hide hash failures behind log-only behavior
 - keep security metrics instance-scoped (`SecureRoomAuth.GetMetrics`, `Hub.Metrics`) instead of reintroducing global wrappers
 - treat `x/websocket` as the app-facing websocket transport surface
+
+## Security
+
+Hub debug logs quote and escape room names and broadcast targets to prevent log injection when custom room-name validators permit control characters.

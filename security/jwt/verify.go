@@ -30,7 +30,7 @@ func (m *JWTManager) VerifyToken(ctx context.Context, token string, expectedType
 	if now < claims.IssuedAt-skew {
 		return nil, ErrInvalidToken
 	}
-	if now > claims.ExpiresAt+skew {
+	if now-skew >= claims.ExpiresAt {
 		return nil, ErrTokenExpired
 	}
 	if now < claims.NotBefore-skew {

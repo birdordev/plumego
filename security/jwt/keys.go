@@ -3,6 +3,7 @@ package jwt
 import (
 	"context"
 	"crypto/ed25519"
+	"crypto/hmac"
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
@@ -40,10 +41,11 @@ func (m *JWTManager) loadKeys(ctx context.Context) error {
 			}
 			var signingKey JWTSigningKey
 			if err := json.Unmarshal(raw, &signingKey); err != nil {
-				return fmt.Errorf("failed to decode signing key %s: %w", key, err)
+				// Decoder errors can contain persisted values, including key material.
+				return fmt.Errorf("failed to decode signing key: %w", ErrInvalidToken)
 			}
 			if err := validateSigningKey(signingKey); err != nil {
-				return fmt.Errorf("invalid signing key %s: %w", key, err)
+				return fmt.Errorf("invalid signing key: %w", err)
 			}
 			m.keyCache[signingKey.ID] = signingKey
 		}
@@ -77,10 +79,10 @@ func (m *JWTManager) ensureActiveKeyUnsafe(ctx context.Context) error {
 	if err := m.persistKeyUnsafe(ctx, key); err != nil {
 		return err
 	}
-	m.active = key.ID
 	if err := m.storeSet(ctx, activeKeyKey, []byte(key.ID), 0); err != nil {
 		return err
 	}
+	m.active = key.ID
 	return nil
 }
 
@@ -117,10 +119,10 @@ func (m *JWTManager) rotateKeyUnsafe(ctx context.Context) (JWTSigningKey, error)
 	if err := m.persistKeyUnsafe(ctx, key); err != nil {
 		return JWTSigningKey{}, err
 	}
-	m.active = key.ID
 	if err := m.storeSet(ctx, activeKeyKey, []byte(key.ID), 0); err != nil {
 		return JWTSigningKey{}, err
 	}
+	m.active = key.ID
 	return cloneSigningKey(key), nil
 }
 
@@ -202,6 +204,10 @@ func validateSigningKey(key JWTSigningKey) error {
 		}
 	case AlgorithmEdDSA:
 		if len(key.Secret) != ed25519.PrivateKeySize || len(key.Public) != ed25519.PublicKeySize {
+			return ErrInvalidToken
+		}
+		derived := ed25519.NewKeyFromSeed(key.Secret[:ed25519.SeedSize])
+		if !hmac.Equal(key.Secret, derived) || !hmac.Equal(key.Public, derived[ed25519.SeedSize:]) {
 			return ErrInvalidToken
 		}
 	default:

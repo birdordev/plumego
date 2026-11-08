@@ -25,6 +25,14 @@ Depends On:
 
 <!-- Max 5 files. List each on its own line. -->
 
+## Impact and Ownership
+
+<!-- Public API, dependencies, behavior, security, docs, and mutable-data ownership.
+     For lifecycle/storage: starting state, event, success/failure state,
+     retained resources, commit boundary, and legal retry.
+     For a finding: trigger, observed/expected behavior, and evidence status
+     (reproduced / source-confirmed / unverified). -->
+
 ## Acceptance Tests
 
 <!-- Pre-written failing test function(s) that define done.
@@ -57,4 +65,6 @@ Depends On:
 
 ## Outcome
 
-<!-- Agent fills this after completion: what changed and why. -->
+<!-- Agent fills this after completion: what changed and why; actual commands
+     and status; skipped checks; residual risks. Tests passing do not establish
+     that an entire module has been audited. -->

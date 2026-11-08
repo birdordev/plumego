@@ -92,6 +92,7 @@ func (r *Router) AddRoute(method, path string, handler http.Handler, opts ...Rou
 		return fmt.Errorf("router add_route %s %s: %w", method, path, err)
 	}
 	meta := routeMetaFromOptions(opts...)
+	meta.Tags = append([]string(nil), meta.Tags...)
 
 	fullPath := r.fullPath(path)
 	if err := r.validateRouteMetaLocked(meta); err != nil {

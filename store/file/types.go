@@ -2,6 +2,7 @@ package file
 
 import (
 	"io"
+	"reflect"
 	"time"
 )
 
@@ -73,31 +74,59 @@ type Query struct {
 	OrderBy   string
 }
 
+type metadataReference struct {
+	kind    reflect.Kind
+	pointer uintptr
+	length  int
+}
+
+type metadataCloner map[metadataReference]any
+
 func cloneMetadata(metadata map[string]any) map[string]any {
+	return make(metadataCloner).cloneMap(metadata)
+}
+
+func (c metadataCloner) cloneMap(metadata map[string]any) map[string]any {
 	if metadata == nil {
 		return nil
 	}
+	ref := metadataReference{kind: reflect.Map, pointer: reflect.ValueOf(metadata).Pointer()}
+	if existing, ok := c[ref]; ok {
+		return existing.(map[string]any)
+	}
 	clone := make(map[string]any, len(metadata))
+	c[ref] = clone
 	for key, value := range metadata {
-		clone[key] = cloneMetadataValue(value)
+		clone[key] = c.cloneValue(value)
 	}
 	return clone
 }
 
-func cloneMetadataValue(value any) any {
+func (c metadataCloner) cloneValue(value any) any {
 	switch typed := value.(type) {
 	case map[string]any:
-		return cloneMetadata(typed)
+		return c.cloneMap(typed)
 	case map[string]string:
+		if typed == nil {
+			return map[string]string(nil)
+		}
 		clone := make(map[string]string, len(typed))
-		for k, v := range typed {
-			clone[k] = v
+		for key, value := range typed {
+			clone[key] = value
 		}
 		return clone
 	case []any:
+		if typed == nil {
+			return []any(nil)
+		}
+		ref := metadataReference{kind: reflect.Slice, pointer: reflect.ValueOf(typed).Pointer(), length: len(typed)}
+		if existing, ok := c[ref]; ok {
+			return existing.([]any)
+		}
 		clone := make([]any, len(typed))
-		for i, v := range typed {
-			clone[i] = cloneMetadataValue(v)
+		c[ref] = clone
+		for i, value := range typed {
+			clone[i] = c.cloneValue(value)
 		}
 		return clone
 	case []string:

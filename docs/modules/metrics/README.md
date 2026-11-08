@@ -37,7 +37,7 @@ other modules can depend on safely.
 - keep collector APIs small
 - keep base collectors generic and transport-agnostic
 - keep only aggregate collector composition in stable `metrics`
-- keep aggregate fan-out nil-safe (filter nil inputs, return nil when no
+- keep aggregate fan-out nil-safe (filter nil inputs, return a no-op when no
   collectors are provided, and make empty fan-out methods no-ops)
 - keep `AggregateCollector` limited to `Record`, shared `ObserveHTTP`, stats, and reset semantics
 - use `NewHTTPRecord(...)` when owner-side collectors need the stable HTTP
@@ -70,8 +70,15 @@ other modules can depend on safely.
   bytes remain available to collectors through the observer method argument, but
   stable base stats do not turn bytes into labels.
 - `NewMultiCollector(...)` is the only stable fan-out helper: nil inputs are
-  ignored, empty internal slots are skipped, zero targets return nil, one target
+  ignored, empty internal slots are skipped, zero targets return a no-op, one target
   is returned unchanged, and multiple targets fan out in order.
+- Each target of a multi-target `Record` call receives its own labels map, so
+  child mutation cannot affect the caller or a sibling collector. Callers must
+  keep input labels stable until dispatch returns; retained error values remain
+  caller-owned. Single-target construction still returns the target unchanged.
+- Base collector updates, resets, and snapshots share one lock boundary. Stats
+  maps are caller-owned. Multi-collector stats combine individual child
+  snapshots; they are not a globally atomic snapshot or reset across children.
 - Nil base and fan-out collector method calls are safe no-ops; nil stats readers
   return initialized empty stats.
 - Multi collectors sum child-maintained active series; if a child omits active

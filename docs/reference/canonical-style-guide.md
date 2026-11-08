@@ -213,7 +213,9 @@ Data source must be visible at the read site — reader must see whether value c
 type Middleware func(http.Handler) http.Handler
 ```
 
-`next` must be called exactly once. No pre/post/error lifecycle splits for ordinary middleware.
+When passing a request through, call `next` exactly once. When rejecting a request,
+finish the response and return without calling `next`. No pre/post/error lifecycle
+splits for ordinary middleware.
 
 Not canonical: business DTO construction, service injection into context, domain success/failure decisions, mutating domain semantics.
 

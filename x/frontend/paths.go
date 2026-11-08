@@ -46,24 +46,7 @@ func (fsys localDirFS) Open(name string) (http.File, error) {
 		return nil, os.ErrNotExist
 	}
 
-	root := string(fsys)
-	target := filepath.Join(root, filepath.FromSlash(cleaned))
-	realTarget, err := filepath.EvalSymlinks(target)
-	if err != nil {
-		return nil, err
-	}
-	if !isPathWithinRoot(root, realTarget) {
-		return nil, os.ErrNotExist
-	}
-	return os.Open(realTarget)
-}
-
-func isPathWithinRoot(root, target string) bool {
-	rel, err := filepath.Rel(root, target)
-	if err != nil {
-		return false
-	}
-	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && !filepath.IsAbs(rel)
+	return os.OpenInRoot(string(fsys), filepath.FromSlash(cleaned))
 }
 
 func validateDirectoryIndex(fsys localDirFS, indexFile string) error {

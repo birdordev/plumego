@@ -52,6 +52,7 @@ func Load(repoRoot string) (*Doc, error) {
 // inputs. primaryModule is the detected owning module (e.g. "middleware");
 // multiModule is true when changes span more than one recognized module.
 // The selection_rules in the doc are evaluated in order; the first match wins.
+// Stable-root rules are eligible only for single-module changes.
 func Select(doc *Doc, changedFiles []string, primaryModule string, multiModule bool) (string, Profile) {
 	hasGo := false
 	for _, f := range changedFiles {
@@ -68,6 +69,10 @@ func Select(doc *Doc, changedFiles []string, primaryModule string, multiModule b
 				return applyRule(doc, rule.Use)
 			}
 		case "rms_stable", "other_stable":
+			// A primary module cannot represent the full scope of a multi-module diff.
+			if multiModule {
+				continue
+			}
 			for _, m := range rule.Modules {
 				if m == primaryModule {
 					return applyRule(doc, rule.Use)

@@ -178,7 +178,9 @@ func (r *Router) Routes() []RouteInfo {
 	infos := make([]RouteInfo, 0)
 	for _, routes := range r.state.routes {
 		for _, entry := range routes {
-			infos = append(infos, RouteInfo(entry))
+			info := RouteInfo(entry)
+			info.Meta.Tags = append([]string(nil), entry.Meta.Tags...)
+			infos = append(infos, info)
 		}
 	}
 

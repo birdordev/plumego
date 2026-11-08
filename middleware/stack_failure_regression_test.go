@@ -213,3 +213,44 @@ func TestCanceledBodyOverrunDoesNotEmitResponse(t *testing.T) {
 		t.Fatalf("canceled overrun wrote a response: %v %q", rec.Header(), rec.Body.String())
 	}
 }
+
+type readOnErrorHeaderWriter struct {
+	*httptest.ResponseRecorder
+	release  chan struct{}
+	readDone chan struct{}
+}
+
+func (w *readOnErrorHeaderWriter) WriteHeader(status int) {
+	w.ResponseRecorder.WriteHeader(status)
+	close(w.release)
+	<-w.readDone
+}
+
+func TestBodyLimitPreservesCommittedTimeoutError(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		release := make(chan struct{})
+		readDone := make(chan struct{})
+		writer := &readOnErrorHeaderWriter{ResponseRecorder: httptest.NewRecorder(), release: release, readDone: readDone}
+		handler := middleware.NewChain(
+			bodylimit.Middleware(bodylimit.Config{MaxBytes: 2}),
+			timeout.Middleware(timeout.Config{Timeout: time.Second}),
+		).Build(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			<-release
+			_, _ = io.ReadAll(r.Body)
+			close(readDone)
+		}))
+		handler.ServeHTTP(writer, httptest.NewRequest(http.MethodPost, "/", strings.NewReader("oversized")))
+		synctest.Wait()
+		var payload struct {
+			Error struct {
+				Code string `json:"code"`
+			} `json:"error"`
+		}
+		if err := json.Unmarshal(writer.Body.Bytes(), &payload); err != nil {
+			t.Fatal(err)
+		}
+		if writer.Code != http.StatusGatewayTimeout || payload.Error.Code != contract.CodeTimeout {
+			t.Fatalf("committed timeout changed: status=%d body=%q", writer.Code, writer.Body.String())
+		}
+	})
+}
