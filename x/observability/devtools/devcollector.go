@@ -7,10 +7,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/spcent/plumego/metrics"
-	"github.com/spcent/plumego/x/observability/featuremetrics"
-	"github.com/spcent/plumego/x/observability/recordbuffer"
-	windowmetrics "github.com/spcent/plumego/x/observability/windowmetrics"
+	"github.com/birdordev/plumego/metrics"
+	"github.com/birdordev/plumego/x/observability/featuremetrics"
+	"github.com/birdordev/plumego/x/observability/recordbuffer"
+	windowmetrics "github.com/birdordev/plumego/x/observability/windowmetrics"
 )
 
 // DevCollectorConfig configures the dev metrics collector.

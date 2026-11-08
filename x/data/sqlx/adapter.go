@@ -7,7 +7,7 @@ import (
 	"database/sql"
 	"fmt"
 
-	storedb "github.com/spcent/plumego/store/db"
+	storedb "github.com/birdordev/plumego/store/db"
 )
 
 // Querier is the context-aware query surface exposed by DB and Tx.

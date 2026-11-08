@@ -1,6 +1,6 @@
 package rest
 
-import "github.com/spcent/plumego/router"
+import "github.com/birdordev/plumego/router"
 
 // ResourceSpec is the canonical reusable specification for a REST resource.
 //

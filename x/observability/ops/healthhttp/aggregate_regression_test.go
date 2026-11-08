@@ -3,7 +3,7 @@ package healthhttp
 import (
 	"context"
 	"errors"
-	"github.com/spcent/plumego/health"
+	"github.com/birdordev/plumego/health"
 	"sync/atomic"
 	"testing"
 )

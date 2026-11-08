@@ -5,9 +5,9 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/spcent/plumego/log"
-	"github.com/spcent/plumego/middleware"
-	"github.com/spcent/plumego/router"
+	"github.com/birdordev/plumego/log"
+	"github.com/birdordev/plumego/middleware"
+	"github.com/birdordev/plumego/router"
 )
 
 // handlerRef wraps http.Handler for atomic.Pointer; the type parameter must be concrete, not an interface.

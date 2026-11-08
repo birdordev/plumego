@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/spcent/plumego/contract"
-	"github.com/spcent/plumego/log"
-	"github.com/spcent/plumego/middleware/recovery"
+	"github.com/birdordev/plumego/contract"
+	"github.com/birdordev/plumego/log"
+	"github.com/birdordev/plumego/middleware/recovery"
 )
 
 func applyMiddleware(h http.Handler, mw func(http.Handler) http.Handler) http.Handler {

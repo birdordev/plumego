@@ -7,7 +7,7 @@ import (
 	"math/rand"
 	"time"
 
-	"github.com/spcent/plumego/log"
+	"github.com/birdordev/plumego/log"
 )
 
 func (s *Scheduler) runLoop() {

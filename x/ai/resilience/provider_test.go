@@ -6,10 +6,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/spcent/plumego/x/ai/provider"
-	"github.com/spcent/plumego/x/ai/tokenizer"
-	sharedcircuitbreaker "github.com/spcent/plumego/x/resilience/circuitbreaker"
-	sharedratelimit "github.com/spcent/plumego/x/resilience/ratelimit"
+	"github.com/birdordev/plumego/x/ai/provider"
+	"github.com/birdordev/plumego/x/ai/tokenizer"
+	sharedcircuitbreaker "github.com/birdordev/plumego/x/resilience/circuitbreaker"
+	sharedratelimit "github.com/birdordev/plumego/x/resilience/ratelimit"
 )
 
 // Mock provider for testing

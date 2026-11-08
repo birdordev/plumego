@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/spcent/plumego/middleware"
-	"github.com/spcent/plumego/middleware/auth"
-	"github.com/spcent/plumego/security/authn"
-	"github.com/spcent/plumego/x/tenant/resolve"
+	"github.com/birdordev/plumego/middleware"
+	"github.com/birdordev/plumego/middleware/auth"
+	"github.com/birdordev/plumego/security/authn"
+	"github.com/birdordev/plumego/x/tenant/resolve"
 	"production-service/internal/handler"
 )
 

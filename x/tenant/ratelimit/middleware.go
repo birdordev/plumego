@@ -9,10 +9,10 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/spcent/plumego/contract"
-	"github.com/spcent/plumego/middleware"
-	tenantcore "github.com/spcent/plumego/x/tenant/core"
-	tenanttransport "github.com/spcent/plumego/x/tenant/transport"
+	"github.com/birdordev/plumego/contract"
+	"github.com/birdordev/plumego/middleware"
+	tenantcore "github.com/birdordev/plumego/x/tenant/core"
+	tenanttransport "github.com/birdordev/plumego/x/tenant/transport"
 )
 
 // Options configures rate limit enforcement.

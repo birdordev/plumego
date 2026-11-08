@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/spcent/plumego/metrics"
+	"github.com/birdordev/plumego/metrics"
 	"production-service/internal/config"
 	"production-service/internal/domain/tenant"
 	"production-service/internal/handler"

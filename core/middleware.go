@@ -3,7 +3,7 @@ package core
 import (
 	"fmt"
 
-	"github.com/spcent/plumego/middleware"
+	"github.com/birdordev/plumego/middleware"
 )
 
 // Use adds middleware to the application's middleware chain.

@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/spcent/plumego/router"
+	"github.com/birdordev/plumego/router"
 )
 
 // Test security and edge cases

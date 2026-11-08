@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/spcent/plumego"
-	"github.com/spcent/plumego/core"
+	"github.com/birdordev/plumego"
+	"github.com/birdordev/plumego/core"
 )
 
 // TestNewReturnsWorkingApp verifies the minimal quick-start path: New()

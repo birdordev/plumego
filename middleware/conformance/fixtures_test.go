@@ -3,8 +3,8 @@ package conformance_test
 import (
 	"net/http"
 
-	"github.com/spcent/plumego/contract"
-	"github.com/spcent/plumego/middleware"
+	"github.com/birdordev/plumego/contract"
+	"github.com/birdordev/plumego/middleware"
 )
 
 func fixtureNoOpMiddleware() middleware.Middleware {

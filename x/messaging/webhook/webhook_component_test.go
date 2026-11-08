@@ -15,9 +15,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/spcent/plumego/contract"
-	"github.com/spcent/plumego/router"
-	"github.com/spcent/plumego/x/messaging/pubsub"
+	"github.com/birdordev/plumego/contract"
+	"github.com/birdordev/plumego/router"
+	"github.com/birdordev/plumego/x/messaging/pubsub"
 )
 
 func TestWebhookBridge(t *testing.T) {

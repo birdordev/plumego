@@ -5,8 +5,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/spcent/plumego/x/ai/orchestration"
-	"github.com/spcent/plumego/x/ai/sse"
+	"github.com/birdordev/plumego/x/ai/orchestration"
+	"github.com/birdordev/plumego/x/ai/sse"
 )
 
 func TestStreamingParallelStep(t *testing.T) {

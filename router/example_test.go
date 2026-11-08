@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 
-	"github.com/spcent/plumego/router"
+	"github.com/birdordev/plumego/router"
 )
 
 func ExampleRouter_Group() {

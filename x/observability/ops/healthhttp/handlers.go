@@ -3,8 +3,8 @@ package healthhttp
 import (
 	"net/http"
 
-	"github.com/spcent/plumego/contract"
-	"github.com/spcent/plumego/health"
+	"github.com/birdordev/plumego/contract"
+	"github.com/birdordev/plumego/health"
 )
 
 // HealthResponse is the JSON body for the main health endpoint.

@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/spcent/plumego/core"
+	"github.com/birdordev/plumego/core"
 )
 
 // Config holds all application configuration.

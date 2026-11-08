@@ -5,10 +5,10 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/spcent/plumego/contract"
-	plumelog "github.com/spcent/plumego/log"
-	"github.com/spcent/plumego/metrics"
-	"github.com/spcent/plumego/x/observability"
+	"github.com/birdordev/plumego/contract"
+	plumelog "github.com/birdordev/plumego/log"
+	"github.com/birdordev/plumego/metrics"
+	"github.com/birdordev/plumego/x/observability"
 )
 
 // APIHandler handles the core JSON API endpoints.

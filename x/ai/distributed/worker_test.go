@@ -6,13 +6,13 @@ import (
 	"testing"
 	"time"
 
-	kv "github.com/spcent/plumego/store/kv"
+	kv "github.com/birdordev/plumego/store/kv"
 
-	"github.com/spcent/plumego/x/ai/orchestration"
-	"github.com/spcent/plumego/x/ai/provider"
-	"github.com/spcent/plumego/x/ai/tokenizer"
-	"github.com/spcent/plumego/x/messaging/mq"
-	"github.com/spcent/plumego/x/messaging/pubsub"
+	"github.com/birdordev/plumego/x/ai/orchestration"
+	"github.com/birdordev/plumego/x/ai/provider"
+	"github.com/birdordev/plumego/x/ai/tokenizer"
+	"github.com/birdordev/plumego/x/messaging/mq"
+	"github.com/birdordev/plumego/x/messaging/pubsub"
 )
 
 // mockProvider for testing

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/spcent/plumego/contract"
+	"github.com/birdordev/plumego/contract"
 )
 
 func TestAuthenticateNegativeMatrix(t *testing.T) {

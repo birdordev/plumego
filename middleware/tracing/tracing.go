@@ -12,8 +12,8 @@ import (
 	"context"
 	"net/http"
 
-	"github.com/spcent/plumego/middleware"
-	internaltelemetry "github.com/spcent/plumego/middleware/internal/telemetry"
+	"github.com/birdordev/plumego/middleware"
+	internaltelemetry "github.com/birdordev/plumego/middleware/internal/telemetry"
 )
 
 // TraceSpan is the span contract returned by [Tracer.Start]. It is an alias

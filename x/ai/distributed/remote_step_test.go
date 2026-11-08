@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/spcent/plumego/x/ai/orchestration"
+	"github.com/birdordev/plumego/x/ai/orchestration"
 )
 
 // failQueue is a minimal TaskQueue that always fails on Enqueue.

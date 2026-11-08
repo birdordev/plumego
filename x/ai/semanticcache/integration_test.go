@@ -4,8 +4,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/spcent/plumego/x/ai/llmcache"
-	"github.com/spcent/plumego/x/ai/provider"
+	"github.com/birdordev/plumego/x/ai/llmcache"
+	"github.com/birdordev/plumego/x/ai/provider"
 )
 
 // TestIntegration_FullStack tests the complete semantic caching stack

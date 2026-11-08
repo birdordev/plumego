@@ -12,8 +12,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/spcent/plumego/cmd/plumego/internal/migrate"
-	"github.com/spcent/plumego/cmd/plumego/internal/output"
+	"github.com/birdordev/plumego/cmd/plumego/internal/migrate"
+	"github.com/birdordev/plumego/cmd/plumego/internal/output"
 	"gopkg.in/yaml.v3"
 )
 

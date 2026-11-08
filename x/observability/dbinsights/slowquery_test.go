@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	testmetrics "github.com/spcent/plumego/x/observability/testmetrics"
+	testmetrics "github.com/birdordev/plumego/x/observability/testmetrics"
 )
 
 func TestDetectorCheck(t *testing.T) {

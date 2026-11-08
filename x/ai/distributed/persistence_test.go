@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	kv "github.com/spcent/plumego/store/kv"
-	"github.com/spcent/plumego/x/ai/orchestration"
+	kv "github.com/birdordev/plumego/store/kv"
+	"github.com/birdordev/plumego/x/ai/orchestration"
 )
 
 func TestKVPersistence_Workflow(t *testing.T) {

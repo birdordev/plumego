@@ -11,8 +11,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/spcent/plumego/cmd/plumego/internal/executil"
-	"github.com/spcent/plumego/cmd/plumego/internal/output"
+	"github.com/birdordev/plumego/cmd/plumego/internal/executil"
+	"github.com/birdordev/plumego/cmd/plumego/internal/output"
 )
 
 func TestAddValidExtensionRunsGoGet(t *testing.T) {
@@ -82,7 +82,7 @@ func TestAddForbiddenImportExitsBeforeGoGet(t *testing.T) {
 	if runner.goGetRan {
 		t.Fatal("go get ran before forbidden import scan passed")
 	}
-	if !strings.Contains(stdout, "forbidden import detected") || !strings.Contains(stdout, "github.com/spcent/plumego/contract") {
+	if !strings.Contains(stdout, "forbidden import detected") || !strings.Contains(stdout, "github.com/birdordev/plumego/contract") {
 		t.Fatalf("expected forbidden import message, got: %s", stdout)
 	}
 }
@@ -154,15 +154,15 @@ handler_shape: "func(http.ResponseWriter, *http.Request)"
 test_commands:
   - go test ./...
 forbidden_imports:
-  - github.com/spcent/plumego/core
-  - github.com/spcent/plumego/router
-  - github.com/spcent/plumego/contract
-  - github.com/spcent/plumego/middleware
-  - github.com/spcent/plumego/security
-  - github.com/spcent/plumego/store
-  - github.com/spcent/plumego/health
-  - github.com/spcent/plumego/log
-  - github.com/spcent/plumego/metrics
+  - github.com/birdordev/plumego/core
+  - github.com/birdordev/plumego/router
+  - github.com/birdordev/plumego/contract
+  - github.com/birdordev/plumego/middleware
+  - github.com/birdordev/plumego/security
+  - github.com/birdordev/plumego/store
+  - github.com/birdordev/plumego/health
+  - github.com/birdordev/plumego/log
+  - github.com/birdordev/plumego/metrics
 no_init_side_effects: true
 no_globals: true
 owner: platform
@@ -181,7 +181,7 @@ func Handler(w http.ResponseWriter, r *http.Request) {}
 
 import (
 	"net/http"
-	"github.com/spcent/plumego/contract"
+	"github.com/birdordev/plumego/contract"
 )
 
 func Handler(w http.ResponseWriter, r *http.Request) {

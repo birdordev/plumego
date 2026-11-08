@@ -9,7 +9,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/spcent/plumego/health"
+	"github.com/birdordev/plumego/health"
 )
 
 type functionChecker struct {

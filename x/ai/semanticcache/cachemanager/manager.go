@@ -8,8 +8,8 @@ import (
 	"os"
 	"time"
 
-	"github.com/spcent/plumego/x/ai/semanticcache/embedding"
-	"github.com/spcent/plumego/x/ai/semanticcache/vectorstore"
+	"github.com/birdordev/plumego/x/ai/semanticcache/embedding"
+	"github.com/birdordev/plumego/x/ai/semanticcache/vectorstore"
 )
 
 // ErrUnsupportedMaintenance reports maintenance operations that require

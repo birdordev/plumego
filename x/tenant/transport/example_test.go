@@ -5,7 +5,7 @@ import (
 	"net/http/httptest"
 	"time"
 
-	"github.com/spcent/plumego/x/tenant/transport"
+	"github.com/birdordev/plumego/x/tenant/transport"
 )
 
 func Example() {

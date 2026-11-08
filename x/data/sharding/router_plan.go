@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/spcent/plumego/x/data/internal/testx"
-	"github.com/spcent/plumego/x/data/rw"
+	"github.com/birdordev/plumego/x/data/internal/testx"
+	"github.com/birdordev/plumego/x/data/rw"
 )
 
 func queryRowError(err error) *sql.Row {

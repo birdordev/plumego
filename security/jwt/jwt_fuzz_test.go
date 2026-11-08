@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	kvstore "github.com/spcent/plumego/store/kv"
+	kvstore "github.com/birdordev/plumego/store/kv"
 )
 
 // FuzzJWTVerifyTokenFailsClosed feeds arbitrary token strings to

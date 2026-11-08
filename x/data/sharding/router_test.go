@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/spcent/plumego/x/data/rw"
+	"github.com/birdordev/plumego/x/data/rw"
 )
 
 // Test stubs for database connections (reused from rw package tests)

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/spcent/plumego/metrics"
+	"github.com/birdordev/plumego/metrics"
 )
 
 const (

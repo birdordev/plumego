@@ -4,8 +4,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/spcent/plumego/x/ai/provider"
-	"github.com/spcent/plumego/x/ai/tokenizer"
+	"github.com/birdordev/plumego/x/ai/provider"
+	"github.com/birdordev/plumego/x/ai/tokenizer"
 )
 
 func TestInstrumentedSemanticCache(t *testing.T) {

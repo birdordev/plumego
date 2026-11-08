@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/spcent/plumego/cmd/plumego/internal/taskbundle"
+	"github.com/birdordev/plumego/cmd/plumego/internal/taskbundle"
 )
 
 func repoRoot(t *testing.T) string {

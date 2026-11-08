@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/spcent/plumego/contract"
+	"github.com/birdordev/plumego/contract"
 )
 
 // noBodyWriter tracks the representation without sending its body. Final headers

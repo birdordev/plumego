@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/spcent/plumego/log"
+	"github.com/birdordev/plumego/log"
 )
 
 var (

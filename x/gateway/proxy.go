@@ -15,8 +15,8 @@
 //	import (
 //		"net/http"
 //
-//		"github.com/spcent/plumego/core"
-//		"github.com/spcent/plumego/x/gateway"
+//		"github.com/birdordev/plumego/core"
+//		"github.com/birdordev/plumego/x/gateway"
 //	)
 //
 //	cfg := core.DefaultConfig()

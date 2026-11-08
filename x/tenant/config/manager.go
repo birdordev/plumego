@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/spcent/plumego/x/tenant/core"
+	"github.com/birdordev/plumego/x/tenant/core"
 )
 
 // DBTenantConfigManager loads tenant configurations from a database.

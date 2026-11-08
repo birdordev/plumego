@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/spcent/plumego/x/messaging/mq"
+	"github.com/birdordev/plumego/x/messaging/mq"
 )
 
 func newTask(id, topic string) mq.Task {

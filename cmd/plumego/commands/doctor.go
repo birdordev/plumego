@@ -7,7 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/spcent/plumego/cmd/plumego/internal/agentmanifest"
+	"github.com/birdordev/plumego/cmd/plumego/internal/agentmanifest"
 )
 
 // DoctorCmd checks repository agent-readiness.

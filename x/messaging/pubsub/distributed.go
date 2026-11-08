@@ -14,7 +14,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/spcent/plumego/contract"
+	"github.com/birdordev/plumego/contract"
 )
 
 // newListener creates a TCP listener for the given address.

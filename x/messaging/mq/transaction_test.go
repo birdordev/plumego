@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/spcent/plumego/internal/testutil/wait"
-	"github.com/spcent/plumego/x/messaging/pubsub"
+	"github.com/birdordev/plumego/internal/testutil/wait"
+	"github.com/birdordev/plumego/x/messaging/pubsub"
 )
 
 func TestTransactionManagerBasic(t *testing.T) {

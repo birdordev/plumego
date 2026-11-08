@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/spcent/plumego/health"
+	"github.com/birdordev/plumego/health"
 )
 
 // HealthHistoryEntry represents a single aggregate health check entry.

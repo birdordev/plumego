@@ -7,7 +7,7 @@ import (
 	"errors"
 	"fmt"
 
-	storedb "github.com/spcent/plumego/store/db"
+	storedb "github.com/birdordev/plumego/store/db"
 )
 
 var ErrPoolNil = errors.New("pgx pool is nil")

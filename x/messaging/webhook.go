@@ -5,9 +5,9 @@ import (
 	"encoding/json"
 	"time"
 
-	"github.com/spcent/plumego/log"
-	"github.com/spcent/plumego/x/messaging/pubsub"
-	"github.com/spcent/plumego/x/messaging/webhook"
+	"github.com/birdordev/plumego/log"
+	"github.com/birdordev/plumego/x/messaging/pubsub"
+	"github.com/birdordev/plumego/x/messaging/webhook"
 )
 
 // WebhookNotifier subscribes to "messaging.result" events on the pubsub bus

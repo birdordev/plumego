@@ -8,9 +8,9 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/spcent/plumego/security/authn"
-	tenantcore "github.com/spcent/plumego/x/tenant/core"
-	tenanttransport "github.com/spcent/plumego/x/tenant/transport"
+	"github.com/birdordev/plumego/security/authn"
+	tenantcore "github.com/birdordev/plumego/x/tenant/core"
+	tenanttransport "github.com/birdordev/plumego/x/tenant/transport"
 )
 
 func TestMiddlewareFromHeader(t *testing.T) {

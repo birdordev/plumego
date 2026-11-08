@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/spcent/plumego/router"
-	"github.com/spcent/plumego/x/gateway/protocol"
+	"github.com/birdordev/plumego/router"
+	"github.com/birdordev/plumego/x/gateway/protocol"
 )
 
 const methodAny = "ANY"

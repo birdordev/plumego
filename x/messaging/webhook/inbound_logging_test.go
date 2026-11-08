@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/spcent/plumego/log"
-	"github.com/spcent/plumego/x/messaging/pubsub"
+	"github.com/birdordev/plumego/log"
+	"github.com/birdordev/plumego/x/messaging/pubsub"
 )
 
 type failingPublishBroker struct {

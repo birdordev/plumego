@@ -1,6 +1,6 @@
 package devserver
 
-import "github.com/spcent/plumego/x/observability/devtools"
+import "github.com/birdordev/plumego/x/observability/devtools"
 
 // RequestAlertThresholds defines default alert thresholds.
 type RequestAlertThresholds struct {

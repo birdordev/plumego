@@ -11,7 +11,7 @@
 //		"context"
 //		"database/sql"
 //
-//		"github.com/spcent/plumego/store/db"
+//		"github.com/birdordev/plumego/store/db"
 //	)
 //
 //	func example(ctx context.Context) error {

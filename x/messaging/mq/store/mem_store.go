@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/spcent/plumego/x/messaging/mq"
+	"github.com/birdordev/plumego/x/messaging/mq"
 )
 
 type MemStore struct {

@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	storefile "github.com/spcent/plumego/store/file"
+	storefile "github.com/birdordev/plumego/store/file"
 )
 
 func generateID() (string, error) {

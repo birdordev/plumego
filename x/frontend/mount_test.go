@@ -10,7 +10,7 @@ import (
 	"testing"
 	"testing/fstest"
 
-	"github.com/spcent/plumego/router"
+	"github.com/birdordev/plumego/router"
 )
 
 func TestRegisterFromDir(t *testing.T) {

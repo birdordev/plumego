@@ -15,7 +15,7 @@ func generateMetricsMiddleware(dir string, opts GenerateOptions) (*GenerateResul
 		Imports: []string{
 			"net/http",
 			"time",
-			"github.com/spcent/plumego/metrics",
+			"github.com/birdordev/plumego/metrics",
 		},
 	}
 
@@ -71,7 +71,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/spcent/plumego/metrics"
+	"github.com/birdordev/plumego/metrics"
 )
 
 // MetricsMiddleware returns transport middleware that records per-request HTTP metrics.
@@ -124,7 +124,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/spcent/plumego/metrics"
+	"github.com/birdordev/plumego/metrics"
 )
 
 type recordingObserver struct {

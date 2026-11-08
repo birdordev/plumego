@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/spcent/plumego/x/ai/tool"
+	"github.com/birdordev/plumego/x/ai/tool"
 )
 
 func ExampleRegistry() {

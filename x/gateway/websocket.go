@@ -20,7 +20,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/spcent/plumego/internal/httputil"
+	"github.com/birdordev/plumego/internal/httputil"
 )
 
 // handleWebSocketProxy handles WebSocket proxying

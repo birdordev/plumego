@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/spcent/plumego/x/rest"
+	"github.com/birdordev/plumego/x/rest"
 )
 
 // User is a minimal domain model for the with-rest demo.

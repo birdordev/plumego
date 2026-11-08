@@ -4,8 +4,8 @@ import (
 	"context"
 	"time"
 
-	"github.com/spcent/plumego/x/ai/llmcache"
-	"github.com/spcent/plumego/x/ai/metrics"
+	"github.com/birdordev/plumego/x/ai/llmcache"
+	"github.com/birdordev/plumego/x/ai/metrics"
 )
 
 // InstrumentedCache wraps a Cache with metrics collection.

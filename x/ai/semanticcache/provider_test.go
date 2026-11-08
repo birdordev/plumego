@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/spcent/plumego/x/ai/llmcache"
-	"github.com/spcent/plumego/x/ai/provider"
-	"github.com/spcent/plumego/x/ai/tokenizer"
+	"github.com/birdordev/plumego/x/ai/llmcache"
+	"github.com/birdordev/plumego/x/ai/provider"
+	"github.com/birdordev/plumego/x/ai/tokenizer"
 )
 
 // MockProvider implements provider.Provider for testing

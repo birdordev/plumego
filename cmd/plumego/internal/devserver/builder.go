@@ -8,9 +8,9 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/spcent/plumego/cmd/plumego/internal/buildtarget"
-	"github.com/spcent/plumego/cmd/plumego/internal/executil"
-	"github.com/spcent/plumego/x/messaging/pubsub"
+	"github.com/birdordev/plumego/cmd/plumego/internal/buildtarget"
+	"github.com/birdordev/plumego/cmd/plumego/internal/executil"
+	"github.com/birdordev/plumego/x/messaging/pubsub"
 )
 
 const maxBuildOutputBytes = 128 * 1024

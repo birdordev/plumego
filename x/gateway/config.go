@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/spcent/plumego/contract"
+	"github.com/birdordev/plumego/contract"
 )
 
 // Config holds the proxy configuration

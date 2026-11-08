@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/spcent/plumego/router"
+	"github.com/birdordev/plumego/router"
 )
 
 func TestCacheControlBehavior(t *testing.T) {

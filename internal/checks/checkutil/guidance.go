@@ -68,7 +68,7 @@ func annotateDepRules(v string) annotation {
 
 		if strings.Contains(imp, "/x/") {
 			// Stable root importing extension package
-			pkg := strings.TrimPrefix(imp, "github.com/spcent/plumego/")
+			pkg := strings.TrimPrefix(imp, "github.com/birdordev/plumego/")
 			module := strings.Split(file, "/")[0]
 			return annotation{
 				fix:   fmt.Sprintf("Move code using %s out of %s. Options: (1) pass behavior via constructor injection, (2) extract the interface to contract/, (3) move the feature to the owning x/* package.", pkg, module),
@@ -76,16 +76,16 @@ func annotateDepRules(v string) annotation {
 				guide: "docs/concepts/core-boundary.md",
 			}
 		}
-		if strings.HasPrefix(imp, "github.com/spcent/plumego") && strings.Contains(imp, "reference/") {
+		if strings.HasPrefix(imp, "github.com/birdordev/plumego") && strings.Contains(imp, "reference/") {
 			return annotation{
 				fix:   "Library packages must not import reference apps. Reference apps are application wiring examples, not library dependencies.",
 				rule:  "specs/dependency-rules.yaml — library_must_not_depend_on_reference",
 				guide: "docs/concepts/agent-first-repo-blueprint.md",
 			}
 		}
-		if imp == "github.com/spcent/plumego" {
+		if imp == "github.com/birdordev/plumego" {
 			return annotation{
-				fix:   "Import the specific sub-package (e.g. github.com/spcent/plumego/contract) rather than the root module path.",
+				fix:   "Import the specific sub-package (e.g. github.com/birdordev/plumego/contract) rather than the root module path.",
 				rule:  "specs/dependency-rules.yaml — forbidden_import_patterns",
 				guide: "AGENTS.md",
 			}

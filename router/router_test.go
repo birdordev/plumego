@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/spcent/plumego/contract"
+	"github.com/birdordev/plumego/contract"
 )
 
 func assertOutputContains(t *testing.T, output string, expected string) {

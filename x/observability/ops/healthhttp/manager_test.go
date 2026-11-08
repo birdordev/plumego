@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/spcent/plumego/health"
+	"github.com/birdordev/plumego/health"
 )
 
 type flakyChecker struct {

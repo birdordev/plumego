@@ -11,7 +11,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/spcent/plumego/contract"
+	"github.com/birdordev/plumego/contract"
 )
 
 // normalizeStaticPrefix ensures the prefix always starts with "/"

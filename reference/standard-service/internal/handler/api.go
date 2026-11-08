@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/spcent/plumego/contract"
-	plumelog "github.com/spcent/plumego/log"
+	"github.com/birdordev/plumego/contract"
+	plumelog "github.com/birdordev/plumego/log"
 )
 
 const codeGreetNameRequired = "greet.name.required"

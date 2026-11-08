@@ -5,7 +5,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/spcent/plumego/cmd/plumego/internal/output"
+	"github.com/birdordev/plumego/cmd/plumego/internal/output"
 )
 
 // RootCmd represents the base command
@@ -254,7 +254,7 @@ Examples:
   plumego serve ./public --addr :3000
 
 Documentation:
-  https://github.com/spcent/plumego/tree/main/docs
+  https://github.com/birdordev/plumego/tree/main/docs
 `)
 	return r.printHelp("Plumego CLI help", map[string]any{
 		"kind": "root",

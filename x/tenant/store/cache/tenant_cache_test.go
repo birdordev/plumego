@@ -4,8 +4,8 @@ import (
 	"testing"
 	"time"
 
-	storecache "github.com/spcent/plumego/store/cache"
-	"github.com/spcent/plumego/x/tenant/core"
+	storecache "github.com/birdordev/plumego/store/cache"
+	"github.com/birdordev/plumego/x/tenant/core"
 )
 
 func TestTenantCache_BasicOperations(t *testing.T) {

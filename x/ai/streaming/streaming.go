@@ -12,8 +12,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/spcent/plumego/x/ai/orchestration"
-	"github.com/spcent/plumego/x/ai/sse"
+	"github.com/birdordev/plumego/x/ai/orchestration"
+	"github.com/birdordev/plumego/x/ai/sse"
 )
 
 // ProgressStatus represents the status of a workflow step.

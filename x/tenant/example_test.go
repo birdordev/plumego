@@ -6,14 +6,14 @@ import (
 	"net/http"
 	"net/http/httptest"
 
-	"github.com/spcent/plumego/middleware"
-	"github.com/spcent/plumego/security/authn"
-	tenantcore "github.com/spcent/plumego/x/tenant/core"
-	"github.com/spcent/plumego/x/tenant/policy"
-	"github.com/spcent/plumego/x/tenant/quota"
-	"github.com/spcent/plumego/x/tenant/ratelimit"
-	"github.com/spcent/plumego/x/tenant/resolve"
-	tenanttransport "github.com/spcent/plumego/x/tenant/transport"
+	"github.com/birdordev/plumego/middleware"
+	"github.com/birdordev/plumego/security/authn"
+	tenantcore "github.com/birdordev/plumego/x/tenant/core"
+	"github.com/birdordev/plumego/x/tenant/policy"
+	"github.com/birdordev/plumego/x/tenant/quota"
+	"github.com/birdordev/plumego/x/tenant/ratelimit"
+	"github.com/birdordev/plumego/x/tenant/resolve"
+	tenanttransport "github.com/birdordev/plumego/x/tenant/transport"
 )
 
 func Example_saasAPIChain() {

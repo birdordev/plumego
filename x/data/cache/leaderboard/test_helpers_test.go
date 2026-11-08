@@ -3,7 +3,7 @@ package leaderboard
 import (
 	"testing"
 
-	storecache "github.com/spcent/plumego/store/cache"
+	storecache "github.com/birdordev/plumego/store/cache"
 )
 
 func mustNewMemoryLeaderboardCache(tb testing.TB, cacheConfig storecache.Config, lbConfig *LeaderboardConfig) *MemoryLeaderboardCache {

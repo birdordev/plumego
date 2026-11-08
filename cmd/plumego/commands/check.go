@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/spcent/plumego/cmd/plumego/internal/checker"
+	"github.com/birdordev/plumego/cmd/plumego/internal/checker"
 )
 
 // CheckCmd validates project health

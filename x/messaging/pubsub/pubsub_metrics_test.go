@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/spcent/plumego/metrics"
+	"github.com/birdordev/plumego/metrics"
 )
 
 // stubCollector embeds NoopCollector for default implementations

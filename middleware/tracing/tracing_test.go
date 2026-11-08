@@ -6,8 +6,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/spcent/plumego/contract"
-	internaltelemetry "github.com/spcent/plumego/middleware/internal/telemetry"
+	"github.com/birdordev/plumego/contract"
+	internaltelemetry "github.com/birdordev/plumego/middleware/internal/telemetry"
 )
 
 type spanContextSpan struct {

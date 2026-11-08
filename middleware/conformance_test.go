@@ -8,14 +8,14 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/spcent/plumego/contract"
-	"github.com/spcent/plumego/log"
-	"github.com/spcent/plumego/middleware"
-	"github.com/spcent/plumego/middleware/abuseguard"
-	"github.com/spcent/plumego/middleware/auth"
-	"github.com/spcent/plumego/middleware/bodylimit"
-	"github.com/spcent/plumego/middleware/recovery"
-	"github.com/spcent/plumego/security/authn"
+	"github.com/birdordev/plumego/contract"
+	"github.com/birdordev/plumego/log"
+	"github.com/birdordev/plumego/middleware"
+	"github.com/birdordev/plumego/middleware/abuseguard"
+	"github.com/birdordev/plumego/middleware/auth"
+	"github.com/birdordev/plumego/middleware/bodylimit"
+	"github.com/birdordev/plumego/middleware/recovery"
+	"github.com/birdordev/plumego/security/authn"
 )
 
 type middlewareErrorEnvelope struct {

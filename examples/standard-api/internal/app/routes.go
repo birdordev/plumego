@@ -4,7 +4,7 @@ import (
 	"context"
 	"net/http"
 
-	"github.com/spcent/plumego/health"
+	"github.com/birdordev/plumego/health"
 	"standard-service/internal/domain/item"
 	"standard-service/internal/handler"
 )

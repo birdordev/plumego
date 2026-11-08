@@ -13,8 +13,8 @@
 //	import (
 //		"time"
 //
-//		"github.com/spcent/plumego/core"
-//		"github.com/spcent/plumego/x/gateway/cache"
+//		"github.com/birdordev/plumego/core"
+//		"github.com/birdordev/plumego/x/gateway/cache"
 //	)
 //
 //	cfg := core.DefaultConfig()
@@ -50,7 +50,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/spcent/plumego/internal/httputil"
+	"github.com/birdordev/plumego/internal/httputil"
 )
 
 // Store is the interface for cache storage backends

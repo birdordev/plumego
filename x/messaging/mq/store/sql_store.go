@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/spcent/plumego/x/messaging/mq"
+	"github.com/birdordev/plumego/x/messaging/mq"
 )
 
 func NewSQL(db *sql.DB, cfg SQLConfig) *SQLStore {

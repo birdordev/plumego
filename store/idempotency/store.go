@@ -7,8 +7,8 @@
 // Typical wiring:
 //
 //	import (
-//		stableidempotency "github.com/spcent/plumego/store/idempotency"
-//		dataidempotency "github.com/spcent/plumego/x/data/idempotency"
+//		stableidempotency "github.com/birdordev/plumego/store/idempotency"
+//		dataidempotency "github.com/birdordev/plumego/x/data/idempotency"
 //	)
 //
 //	store := dataidempotency.NewSQLStore(db, dataidempotency.DefaultSQLConfig()) // concrete implementation

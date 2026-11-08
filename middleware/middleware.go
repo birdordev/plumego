@@ -24,10 +24,10 @@
 //	import (
 //	    "net/http"
 //
-//	    "github.com/spcent/plumego/middleware"
-//	    "github.com/spcent/plumego/middleware/accesslog"
-//	    "github.com/spcent/plumego/middleware/recovery"
-//	    "github.com/spcent/plumego/middleware/requestid"
+//	    "github.com/birdordev/plumego/middleware"
+//	    "github.com/birdordev/plumego/middleware/accesslog"
+//	    "github.com/birdordev/plumego/middleware/recovery"
+//	    "github.com/birdordev/plumego/middleware/requestid"
 //	)
 //
 //	recoveryMw, err := recovery.Middleware(recovery.Config{Logger: logger})

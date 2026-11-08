@@ -9,7 +9,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/spcent/plumego/x/tenant/core"
+	"github.com/birdordev/plumego/x/tenant/core"
 )
 
 // validIdentifier matches safe SQL identifier names (alphanumeric and underscores only).

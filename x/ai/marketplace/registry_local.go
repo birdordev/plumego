@@ -10,7 +10,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/spcent/plumego/internal/semver"
+	"github.com/birdordev/plumego/internal/semver"
 )
 
 // LocalAgentRegistry implements AgentRegistry with local file system storage.

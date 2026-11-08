@@ -5,8 +5,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/spcent/plumego/contract"
-	"github.com/spcent/plumego/middleware/requestid"
+	"github.com/birdordev/plumego/contract"
+	"github.com/birdordev/plumego/middleware/requestid"
 )
 
 func TestRequestIDMiddleware(t *testing.T) {

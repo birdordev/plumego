@@ -4,10 +4,10 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/spcent/plumego/contract"
-	"github.com/spcent/plumego/health"
-	"github.com/spcent/plumego/router"
-	"github.com/spcent/plumego/x/messaging/pubsub"
+	"github.com/birdordev/plumego/contract"
+	"github.com/birdordev/plumego/health"
+	"github.com/birdordev/plumego/router"
+	"github.com/birdordev/plumego/x/messaging/pubsub"
 )
 
 type Handler struct {

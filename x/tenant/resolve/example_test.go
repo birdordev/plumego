@@ -6,8 +6,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 
-	tenantcore "github.com/spcent/plumego/x/tenant/core"
-	"github.com/spcent/plumego/x/tenant/resolve"
+	tenantcore "github.com/birdordev/plumego/x/tenant/core"
+	"github.com/birdordev/plumego/x/tenant/resolve"
 )
 
 func ExampleMiddleware_headerExtraction() {

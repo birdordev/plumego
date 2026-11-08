@@ -15,7 +15,7 @@ var ErrNilValueReader = errors.New("webhookout: config reader is required")
 //
 // Example:
 //
-//	import "github.com/spcent/plumego/x/messaging/webhook"
+//	import "github.com/birdordev/plumego/x/messaging/webhook"
 //
 //	config := webhookout.Config{
 //		DropPolicy: webhookout.BlockWithLimit,
@@ -41,7 +41,7 @@ const (
 //
 // Example:
 //
-//	import "github.com/spcent/plumego/x/messaging/webhook"
+//	import "github.com/birdordev/plumego/x/messaging/webhook"
 //
 //	config := webhookout.Config{
 //		Enabled:             true,
@@ -99,7 +99,7 @@ type Config struct {
 //
 // Example:
 //
-//	import "github.com/spcent/plumego/x/messaging/webhook"
+//	import "github.com/birdordev/plumego/x/messaging/webhook"
 //
 //	config := webhookout.DefaultConfig()
 func DefaultConfig() Config {
@@ -132,7 +132,7 @@ type ValueReader interface {
 //
 // Example:
 //
-//	import "github.com/spcent/plumego/x/messaging/webhook"
+//	import "github.com/birdordev/plumego/x/messaging/webhook"
 //
 //	config, err := webhookout.ConfigFromReader(reader)
 func ConfigFromReader(reader ValueReader) (Config, error) {
@@ -236,7 +236,7 @@ func (envReader) GetString(key, defaultValue string) string {
 //
 // Example:
 //
-//	import "github.com/spcent/plumego/x/messaging/webhook"
+//	import "github.com/birdordev/plumego/x/messaging/webhook"
 //
 //	config := webhookout.DefaultConfig()
 //	if err := config.Validate(); err != nil {

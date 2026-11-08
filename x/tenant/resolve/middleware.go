@@ -3,11 +3,11 @@ package resolve
 import (
 	"net/http"
 
-	"github.com/spcent/plumego/contract"
-	"github.com/spcent/plumego/middleware"
-	"github.com/spcent/plumego/security/authn"
-	tenantcore "github.com/spcent/plumego/x/tenant/core"
-	tenanttransport "github.com/spcent/plumego/x/tenant/transport"
+	"github.com/birdordev/plumego/contract"
+	"github.com/birdordev/plumego/middleware"
+	"github.com/birdordev/plumego/security/authn"
+	tenantcore "github.com/birdordev/plumego/x/tenant/core"
+	tenanttransport "github.com/birdordev/plumego/x/tenant/transport"
 )
 
 // Options configures tenant resolution.

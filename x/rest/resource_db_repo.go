@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/spcent/plumego/store/db"
+	"github.com/birdordev/plumego/store/db"
 )
 
 // SQLBuilder builds SQL queries from QueryParams.

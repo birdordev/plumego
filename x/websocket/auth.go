@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/spcent/plumego/security/password"
+	"github.com/birdordev/plumego/security/password"
 )
 
 // TokenAuthenticator verifies client tokens and returns token claims.
@@ -62,7 +62,7 @@ type RoomRequestAuthorizer interface {
 //
 // Example:
 //
-//	import "github.com/spcent/plumego/x/websocket"
+//	import "github.com/birdordev/plumego/x/websocket"
 //
 //	auth := websocket.NewSimpleRoomAuth()
 //	if err := auth.SetRoomPassword("chat-room", "my-secret-password"); err != nil {
@@ -82,7 +82,7 @@ type SimpleRoomAuth struct {
 //
 // Example:
 //
-//	import "github.com/spcent/plumego/x/websocket"
+//	import "github.com/birdordev/plumego/x/websocket"
 //
 //	auth := websocket.NewSimpleRoomAuth()
 func NewSimpleRoomAuth() *SimpleRoomAuth {
@@ -96,7 +96,7 @@ func NewSimpleRoomAuth() *SimpleRoomAuth {
 //
 // Example:
 //
-//	import "github.com/spcent/plumego/x/websocket"
+//	import "github.com/birdordev/plumego/x/websocket"
 //
 //	auth := websocket.NewSimpleRoomAuth()
 //	if err := auth.SetRoomPassword("chat-room", "my-secret-password"); err != nil {

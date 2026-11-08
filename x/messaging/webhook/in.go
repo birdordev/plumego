@@ -9,12 +9,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/spcent/plumego/contract"
-	"github.com/spcent/plumego/health"
-	"github.com/spcent/plumego/internal/httputil"
-	"github.com/spcent/plumego/log"
-	"github.com/spcent/plumego/router"
-	"github.com/spcent/plumego/x/messaging/pubsub"
+	"github.com/birdordev/plumego/contract"
+	"github.com/birdordev/plumego/health"
+	"github.com/birdordev/plumego/internal/httputil"
+	"github.com/birdordev/plumego/log"
+	"github.com/birdordev/plumego/router"
+	"github.com/birdordev/plumego/x/messaging/pubsub"
 )
 
 type routeRegistrar interface {

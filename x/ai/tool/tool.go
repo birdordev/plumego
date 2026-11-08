@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/spcent/plumego/x/ai/provider"
+	"github.com/birdordev/plumego/x/ai/provider"
 )
 
 // Tool represents a callable function.

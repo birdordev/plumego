@@ -6,7 +6,7 @@ import "time"
 //
 // Example:
 //
-//	import "github.com/spcent/plumego/x/messaging/webhook"
+//	import "github.com/birdordev/plumego/x/messaging/webhook"
 //
 //	target := webhookout.Target{
 //		ID:      "target-123",
@@ -72,7 +72,7 @@ type Target struct {
 //
 // Example:
 //
-//	import "github.com/spcent/plumego/x/messaging/webhook"
+//	import "github.com/birdordev/plumego/x/messaging/webhook"
 //
 //	enabled := true
 //	patch := webhookout.TargetPatch{
@@ -118,7 +118,7 @@ type TargetPatch struct {
 //
 // Example:
 //
-//	import "github.com/spcent/plumego/x/messaging/webhook"
+//	import "github.com/birdordev/plumego/x/messaging/webhook"
 //
 //	enabled := true
 //	filter := webhookout.TargetFilter{
@@ -137,7 +137,7 @@ type TargetFilter struct {
 //
 // Example:
 //
-//	import "github.com/spcent/plumego/x/messaging/webhook"
+//	import "github.com/birdordev/plumego/x/messaging/webhook"
 //
 //	event := webhookout.Event{
 //		ID:         "evt-123",
@@ -173,7 +173,7 @@ type Event struct {
 //
 // Example:
 //
-//	import "github.com/spcent/plumego/x/messaging/webhook"
+//	import "github.com/birdordev/plumego/x/messaging/webhook"
 //
 //	status := webhookout.DeliverySuccess
 //	if err != nil {
@@ -202,7 +202,7 @@ const (
 //
 // Example:
 //
-//	import "github.com/spcent/plumego/x/messaging/webhook"
+//	import "github.com/birdordev/plumego/x/messaging/webhook"
 //
 //	delivery := webhookout.Delivery{
 //		ID:        "del-123",
@@ -261,7 +261,7 @@ type Delivery struct {
 //
 // Example:
 //
-//	import "github.com/spcent/plumego/x/messaging/webhook"
+//	import "github.com/birdordev/plumego/x/messaging/webhook"
 //
 //	filter := webhookout.DeliveryFilter{
 //		TargetID: stringPtr("target-123"),

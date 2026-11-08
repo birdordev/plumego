@@ -1,7 +1,7 @@
 package core
 
 import (
-	"github.com/spcent/plumego/log"
+	"github.com/birdordev/plumego/log"
 )
 
 // AppDependencies carries explicit constructor dependencies for App.

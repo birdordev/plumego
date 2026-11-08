@@ -1,6 +1,6 @@
 package openapi
 
-import "github.com/spcent/plumego/contract"
+import "github.com/birdordev/plumego/contract"
 
 // PathParam creates a required path parameter.
 func PathParam(name string, schema Schema) Param {

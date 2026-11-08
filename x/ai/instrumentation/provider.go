@@ -6,8 +6,8 @@ import (
 	"context"
 	"time"
 
-	"github.com/spcent/plumego/x/ai/metrics"
-	"github.com/spcent/plumego/x/ai/provider"
+	"github.com/birdordev/plumego/x/ai/metrics"
+	"github.com/birdordev/plumego/x/ai/provider"
 )
 
 // InstrumentedProvider wraps a Provider with metrics collection.

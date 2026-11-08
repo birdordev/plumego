@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	storefile "github.com/spcent/plumego/store/file"
+	storefile "github.com/birdordev/plumego/store/file"
 )
 
 func TestNewDBMetadataManager_RejectsNilDB(t *testing.T) {

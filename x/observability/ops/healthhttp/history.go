@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/spcent/plumego/contract"
-	"github.com/spcent/plumego/health"
+	"github.com/birdordev/plumego/contract"
+	"github.com/birdordev/plumego/health"
 )
 
 // HealthHistoryHandler creates a handler that returns tracked health history.

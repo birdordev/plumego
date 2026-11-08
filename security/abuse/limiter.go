@@ -12,7 +12,7 @@
 //
 // Example usage:
 //
-//	import "github.com/spcent/plumego/security/abuse"
+//	import "github.com/birdordev/plumego/security/abuse"
 //
 //	// Create limiter: 100 requests/sec with burst of 200
 //	limiter, err := abuse.NewLimiterWithConfig(abuse.Config{
@@ -66,7 +66,7 @@ const (
 //
 // Example:
 //
-//	import "github.com/spcent/plumego/security/abuse"
+//	import "github.com/birdordev/plumego/security/abuse"
 //
 //	config := abuse.Config{
 //		Rate:            10.0,      // 10 requests per second
@@ -107,7 +107,7 @@ type Config struct {
 //
 // Example:
 //
-//	import "github.com/spcent/plumego/security/abuse"
+//	import "github.com/birdordev/plumego/security/abuse"
 //
 //	limiter := abuse.NewLimiter(abuse.DefaultConfig())
 //	decision := limiter.Allow("192.168.1.1")
@@ -139,7 +139,7 @@ type Decision struct {
 //
 // Example:
 //
-//	import "github.com/spcent/plumego/security/abuse"
+//	import "github.com/birdordev/plumego/security/abuse"
 //
 //	config := abuse.Config{
 //		Rate:     10.0,  // 10 requests per second
@@ -241,7 +241,7 @@ func (c Config) Validate() error {
 //
 // Example:
 //
-//	import "github.com/spcent/plumego/security/abuse"
+//	import "github.com/birdordev/plumego/security/abuse"
 //
 //	config := abuse.Config{
 //		Rate:     10.0,  // 10 requests per second

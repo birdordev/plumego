@@ -10,8 +10,8 @@
 // Example usage:
 //
 //	import (
-//		"github.com/spcent/plumego/x/gateway/discovery"
-//		"github.com/spcent/plumego/middleware/proxy"
+//		"github.com/birdordev/plumego/x/gateway/discovery"
+//		"github.com/birdordev/plumego/middleware/proxy"
 //	)
 //
 //	// Static discovery

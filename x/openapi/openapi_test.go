@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/spcent/plumego/router"
+	"github.com/birdordev/plumego/router"
 )
 
 func TestGenerateEmptyRouteListReturnsEmptyPaths(t *testing.T) {

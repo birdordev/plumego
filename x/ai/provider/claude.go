@@ -10,7 +10,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/spcent/plumego/x/ai/tokenizer"
+	"github.com/birdordev/plumego/x/ai/tokenizer"
 )
 
 const (

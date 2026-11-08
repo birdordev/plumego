@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/spcent/plumego/contract"
-	plumelog "github.com/spcent/plumego/log"
-	tenantcore "github.com/spcent/plumego/x/tenant/core"
+	"github.com/birdordev/plumego/contract"
+	plumelog "github.com/birdordev/plumego/log"
+	tenantcore "github.com/birdordev/plumego/x/tenant/core"
 	"with-tenant-admin/internal/auth"
 	tenantadmin "with-tenant-admin/internal/tenant/admin"
 )

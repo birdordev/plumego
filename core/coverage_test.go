@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/spcent/plumego/log"
-	"github.com/spcent/plumego/middleware"
+	"github.com/birdordev/plumego/log"
+	"github.com/birdordev/plumego/middleware"
 )
 
 // ---- RouteGroup.Patch / RouteGroup.Put (0%) ---------------------------------

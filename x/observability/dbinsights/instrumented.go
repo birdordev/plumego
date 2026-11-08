@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"time"
 
-	storedb "github.com/spcent/plumego/store/db"
+	storedb "github.com/birdordev/plumego/store/db"
 )
 
 // MetricsObserver defines the minimal interface for database metrics collection.

@@ -6,9 +6,9 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/spcent/plumego/contract"
-	plumelog "github.com/spcent/plumego/log"
-	"github.com/spcent/plumego/x/messaging"
+	"github.com/birdordev/plumego/contract"
+	plumelog "github.com/birdordev/plumego/log"
+	"github.com/birdordev/plumego/x/messaging"
 )
 
 // MessagingHandler handles pub/sub event endpoints.

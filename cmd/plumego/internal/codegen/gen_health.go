@@ -15,8 +15,8 @@ func generateHealthHandler(dir string, opts GenerateOptions) (*GenerateResult, e
 		Imports: []string{
 			"net/http",
 			"time",
-			"github.com/spcent/plumego/contract",
-			"github.com/spcent/plumego/health",
+			"github.com/birdordev/plumego/contract",
+			"github.com/birdordev/plumego/health",
 		},
 	}
 
@@ -72,8 +72,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/spcent/plumego/contract"
-	"github.com/spcent/plumego/health"
+	"github.com/birdordev/plumego/contract"
+	"github.com/birdordev/plumego/health"
 )
 
 // HandleHealth returns an HTTP handler that reports aggregate service health.

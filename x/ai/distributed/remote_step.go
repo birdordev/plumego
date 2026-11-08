@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/spcent/plumego/x/ai/orchestration"
+	"github.com/birdordev/plumego/x/ai/orchestration"
 )
 
 // RemoteStep wraps a step for remote execution via task queue.

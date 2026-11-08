@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/spcent/plumego/contract"
+	"github.com/birdordev/plumego/contract"
 )
 
 // PrometheusExporter exports pubsub metrics in Prometheus format

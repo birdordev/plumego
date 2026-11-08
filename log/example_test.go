@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/spcent/plumego/log"
+	"github.com/birdordev/plumego/log"
 )
 
 func ExampleNewLogger() {

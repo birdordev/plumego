@@ -4,7 +4,7 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/spcent/plumego/contract"
+	"github.com/birdordev/plumego/contract"
 )
 
 // Middleware creates a circuit breaker middleware

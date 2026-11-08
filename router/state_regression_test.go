@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/spcent/plumego/contract"
-	"github.com/spcent/plumego/middleware/timeout"
-	"github.com/spcent/plumego/router"
+	"github.com/birdordev/plumego/contract"
+	"github.com/birdordev/plumego/middleware/timeout"
+	"github.com/birdordev/plumego/router"
 )
 
 func TestRouteMetadataSurvivesInnerTimeout(t *testing.T) {

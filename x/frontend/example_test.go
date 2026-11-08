@@ -6,8 +6,8 @@ import (
 	"net/http/httptest"
 	"testing/fstest"
 
-	"github.com/spcent/plumego/router"
-	"github.com/spcent/plumego/x/frontend"
+	"github.com/birdordev/plumego/router"
+	"github.com/birdordev/plumego/x/frontend"
 )
 
 // The dir-based examples serve testdata/site, a tiny fixture standing in for

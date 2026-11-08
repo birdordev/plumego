@@ -14,8 +14,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/spcent/plumego/log"
-	"github.com/spcent/plumego/metrics"
+	"github.com/birdordev/plumego/log"
+	"github.com/birdordev/plumego/metrics"
 	"time"
 )
 

@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/spcent/plumego/x/resilience/circuitbreaker"
+	"github.com/birdordev/plumego/x/resilience/circuitbreaker"
 )
 
 func ExampleNew() {

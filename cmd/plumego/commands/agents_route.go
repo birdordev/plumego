@@ -9,7 +9,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/spcent/plumego/cmd/plumego/internal/agentmanifest"
+	"github.com/birdordev/plumego/cmd/plumego/internal/agentmanifest"
 	"gopkg.in/yaml.v3"
 )
 

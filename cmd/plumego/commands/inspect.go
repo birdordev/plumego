@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/spcent/plumego/cmd/plumego/internal/output"
+	"github.com/birdordev/plumego/cmd/plumego/internal/output"
 )
 
 // maxInspectResponseBytes limits inspect response bodies to 10 MiB

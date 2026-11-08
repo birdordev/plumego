@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/spcent/plumego/x/ai/sse"
-	"github.com/spcent/plumego/x/ai/streaming"
+	"github.com/birdordev/plumego/x/ai/sse"
+	"github.com/birdordev/plumego/x/ai/streaming"
 )
 
 func ExampleStreamManager() {

@@ -3,10 +3,10 @@ package policy
 import (
 	"net/http"
 
-	"github.com/spcent/plumego/contract"
-	mw "github.com/spcent/plumego/middleware"
-	tenantcore "github.com/spcent/plumego/x/tenant/core"
-	tenanttransport "github.com/spcent/plumego/x/tenant/transport"
+	"github.com/birdordev/plumego/contract"
+	mw "github.com/birdordev/plumego/middleware"
+	tenantcore "github.com/birdordev/plumego/x/tenant/core"
+	tenanttransport "github.com/birdordev/plumego/x/tenant/transport"
 )
 
 // Options configures tenant policy checks.

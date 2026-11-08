@@ -15,7 +15,7 @@ func generateEndpoint(dir string, opts GenerateOptions) (*GenerateResult, error)
 		Type:    "endpoint",
 		Name:    opts.Name,
 		Files:   make(map[string][]string),
-		Imports: []string{"encoding/json", "net/http", "github.com/spcent/plumego/contract"},
+		Imports: []string{"encoding/json", "net/http", "github.com/birdordev/plumego/contract"},
 	}
 	outputPath := opts.OutputPath
 	if outputPath == "" {
@@ -63,7 +63,7 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/spcent/plumego/contract"
+	"github.com/birdordev/plumego/contract"
 )
 
 // %s is the domain entity for this endpoint group.
@@ -159,7 +159,7 @@ import (
 	"strings"
 	"testing"
 
-	%s "github.com/spcent/plumego/cmd/plumego/internal/handler"
+	%s "github.com/birdordev/plumego/cmd/plumego/internal/handler"
 )
 
 type mock%sService struct{}

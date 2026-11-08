@@ -15,7 +15,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/spcent/plumego/contract"
+	"github.com/birdordev/plumego/contract"
 )
 
 const depsCacheTTL = 30 * time.Second

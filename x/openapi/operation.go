@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/spcent/plumego/router"
+	"github.com/birdordev/plumego/router"
 )
 
 const openAPIVersion = "3.1.0"

@@ -14,7 +14,7 @@ import (
 	"strings"
 )
 
-const modulePath = "github.com/spcent/plumego"
+const modulePath = "github.com/birdordev/plumego"
 const scannerMaxTokenSize = 1024 * 1024
 
 // NewLineScanner returns a line scanner sized for repository control-plane
@@ -644,12 +644,12 @@ func ValidateReferenceModules(repoRoot string) ([]string, error) {
 		} else if moduleName != entry.Name() {
 			violations = append(violations, fmt.Sprintf("%s/go.mod module %q must equal %q", relDir, moduleName, entry.Name()))
 		}
-		if !strings.Contains(string(data), "require github.com/spcent/plumego ") &&
-			!strings.Contains(string(data), "\n\tgithub.com/spcent/plumego ") {
-			violations = append(violations, relDir+"/go.mod missing github.com/spcent/plumego require")
+		if !strings.Contains(string(data), "require github.com/birdordev/plumego ") &&
+			!strings.Contains(string(data), "\n\tgithub.com/birdordev/plumego ") {
+			violations = append(violations, relDir+"/go.mod missing github.com/birdordev/plumego require")
 		}
-		if !strings.Contains(string(data), "replace github.com/spcent/plumego => ../..") {
-			violations = append(violations, relDir+"/go.mod missing local github.com/spcent/plumego replace")
+		if !strings.Contains(string(data), "replace github.com/birdordev/plumego => ../..") {
+			violations = append(violations, relDir+"/go.mod missing local github.com/birdordev/plumego replace")
 		}
 
 		err = walkGoImports(repoRoot, dir, true, func(relPath, importPath string) {

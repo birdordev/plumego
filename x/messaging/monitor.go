@@ -6,8 +6,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/spcent/plumego/log"
-	"github.com/spcent/plumego/x/messaging/scheduler"
+	"github.com/birdordev/plumego/log"
+	"github.com/birdordev/plumego/x/messaging/scheduler"
 )
 
 // ChannelState describes the current health of a delivery channel.

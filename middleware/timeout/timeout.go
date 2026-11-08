@@ -5,9 +5,9 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/spcent/plumego/contract"
-	internaltransport "github.com/spcent/plumego/internal/httputil"
-	mw "github.com/spcent/plumego/middleware"
+	"github.com/birdordev/plumego/contract"
+	internaltransport "github.com/birdordev/plumego/internal/httputil"
+	mw "github.com/birdordev/plumego/middleware"
 )
 
 const (
@@ -28,7 +28,7 @@ const (
 //
 // Example:
 //
-//	import "github.com/spcent/plumego/middleware/timeout"
+//	import "github.com/birdordev/plumego/middleware/timeout"
 //
 //	// Explicit configuration
 //	config := timeout.Config{
@@ -85,7 +85,7 @@ func DefaultConfig() Config {
 //
 // Example:
 //
-//	import "github.com/spcent/plumego/middleware/timeout"
+//	import "github.com/birdordev/plumego/middleware/timeout"
 //
 //	config := timeout.Config{
 //		Timeout:        10 * time.Second,

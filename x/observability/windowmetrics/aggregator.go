@@ -13,7 +13,7 @@ import (
 //
 // Example:
 //
-//	import "github.com/spcent/plumego/x/observability/windowmetrics"
+//	import "github.com/birdordev/plumego/x/observability/windowmetrics"
 //
 //	agg := windowmetrics.NewAggregator(1 * time.Minute)
 //
@@ -69,7 +69,7 @@ type AggregatorStats struct {
 //
 // Example:
 //
-//	import "github.com/spcent/plumego/x/observability/windowmetrics"
+//	import "github.com/birdordev/plumego/x/observability/windowmetrics"
 //
 //	// Aggregate metrics over a rolling 5-minute window,
 //	// capped to the newest 10,000 samples per metric.
@@ -87,7 +87,7 @@ func NewAggregator(window time.Duration) *Aggregator {
 //
 // Example:
 //
-//	import "github.com/spcent/plumego/x/observability/windowmetrics"
+//	import "github.com/birdordev/plumego/x/observability/windowmetrics"
 //
 //	agg := windowmetrics.NewAggregator(1 * time.Minute)
 //	agg.Record("request_duration", 50.5)
@@ -124,7 +124,7 @@ func (a *Aggregator) Record(name string, value float64) {
 //
 // Example:
 //
-//	import "github.com/spcent/plumego/x/observability/windowmetrics"
+//	import "github.com/birdordev/plumego/x/observability/windowmetrics"
 //
 //	agg := windowmetrics.NewAggregator(1 * time.Minute)
 //	agg.Record("latency", 50.0)
@@ -213,7 +213,7 @@ func (b *bucket) evictExpired(window time.Duration, now time.Time) {
 //
 // Example:
 //
-//	import "github.com/spcent/plumego/x/observability/windowmetrics"
+//	import "github.com/birdordev/plumego/x/observability/windowmetrics"
 //
 //	agg := windowmetrics.NewAggregator(1 * time.Minute)
 //	// ... record metrics ...
@@ -229,7 +229,7 @@ func (a *Aggregator) Clear() {
 //
 // Example:
 //
-//	import "github.com/spcent/plumego/x/observability/windowmetrics"
+//	import "github.com/birdordev/plumego/x/observability/windowmetrics"
 //
 //	agg := windowmetrics.NewAggregator(1 * time.Minute)
 //	agg.Record("latency", 50.0)

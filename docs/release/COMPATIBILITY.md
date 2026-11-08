@@ -138,7 +138,7 @@ To check what your app depends on:
 
 ```bash
 go list -u -m all
-go mod graph | grep spcent/plumego
+go mod graph | grep birdordev/plumego
 ```
 
 ## Future compatibility

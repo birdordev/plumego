@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/spcent/plumego/cmd/plumego/commands"
-	"github.com/spcent/plumego/cmd/plumego/internal/output"
+	"github.com/birdordev/plumego/cmd/plumego/commands"
+	"github.com/birdordev/plumego/cmd/plumego/internal/output"
 )
 
 // Build-time variables injected via -ldflags.

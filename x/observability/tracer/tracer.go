@@ -12,7 +12,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/spcent/plumego/contract"
+	"github.com/birdordev/plumego/contract"
 )
 
 // TraceID represents a unique identifier for tracing context.

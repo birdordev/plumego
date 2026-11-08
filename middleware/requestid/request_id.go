@@ -3,7 +3,7 @@ package requestid
 import (
 	"net/http"
 
-	"github.com/spcent/plumego/middleware"
+	"github.com/birdordev/plumego/middleware"
 )
 
 type config struct {

@@ -10,7 +10,7 @@ func getScenarioProfileContent(template string) string {
 		return `// Package scenario documents the selected scaffold profile.
 package scenario
 
-import "github.com/spcent/plumego/x/rest"
+import "github.com/birdordev/plumego/x/rest"
 
 // Name identifies the scaffold profile.
 const Name = "rest-api"
@@ -26,10 +26,10 @@ func Capabilities() []string {
 package scenario
 
 import (
-	"github.com/spcent/plumego/x/tenant/policy"
-	"github.com/spcent/plumego/x/tenant/quota"
-	"github.com/spcent/plumego/x/tenant/ratelimit"
-	"github.com/spcent/plumego/x/tenant/resolve"
+	"github.com/birdordev/plumego/x/tenant/policy"
+	"github.com/birdordev/plumego/x/tenant/quota"
+	"github.com/birdordev/plumego/x/tenant/ratelimit"
+	"github.com/birdordev/plumego/x/tenant/resolve"
 )
 
 // Name identifies the scaffold profile.
@@ -48,7 +48,7 @@ func Capabilities() []string {
 		return `// Package scenario documents the selected scaffold profile.
 package scenario
 
-import "github.com/spcent/plumego/x/gateway"
+import "github.com/birdordev/plumego/x/gateway"
 
 // Name identifies the scaffold profile.
 const Name = "gateway"
@@ -64,8 +64,8 @@ func Capabilities() []string {
 package scenario
 
 import (
-	"github.com/spcent/plumego/x/messaging"
-	"github.com/spcent/plumego/x/websocket"
+	"github.com/birdordev/plumego/x/messaging"
+	"github.com/birdordev/plumego/x/websocket"
 )
 
 // Name identifies the scaffold profile.
@@ -82,10 +82,10 @@ func Capabilities() []string {
 package scenario
 
 import (
-	"github.com/spcent/plumego/x/ai/provider"
-	"github.com/spcent/plumego/x/ai/session"
-	"github.com/spcent/plumego/x/ai/streaming"
-	"github.com/spcent/plumego/x/ai/tool"
+	"github.com/birdordev/plumego/x/ai/provider"
+	"github.com/birdordev/plumego/x/ai/session"
+	"github.com/birdordev/plumego/x/ai/streaming"
+	"github.com/birdordev/plumego/x/ai/tool"
 )
 
 // Name identifies the scaffold profile.
@@ -105,8 +105,8 @@ func Capabilities() []string {
 package scenario
 
 import (
-	"github.com/spcent/plumego/x/observability"
-	"github.com/spcent/plumego/x/observability/ops"
+	"github.com/birdordev/plumego/x/observability"
+	"github.com/birdordev/plumego/x/observability/ops"
 )
 
 // Name identifies the scaffold profile.
@@ -208,7 +208,7 @@ go build -o bin/app ./cmd/app
 
 ## Documentation
 
-See [Plumego documentation](https://github.com/spcent/plumego) for more information.
+See [Plumego documentation](https://github.com/birdordev/plumego) for more information.
 `, name, template)
 }
 

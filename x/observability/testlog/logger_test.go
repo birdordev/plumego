@@ -3,7 +3,7 @@ package testlog
 import (
 	"testing"
 
-	"github.com/spcent/plumego/contract"
+	"github.com/birdordev/plumego/contract"
 )
 
 func TestLoggerCapturesEntries(t *testing.T) {

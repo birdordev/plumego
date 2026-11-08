@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"testing"
 
-	storecache "github.com/spcent/plumego/store/cache"
+	storecache "github.com/birdordev/plumego/store/cache"
 )
 
 func BenchmarkSkipListInsert(b *testing.B) {

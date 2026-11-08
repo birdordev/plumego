@@ -9,7 +9,7 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/spcent/plumego/cmd/plumego/internal/executil"
+	"github.com/birdordev/plumego/cmd/plumego/internal/executil"
 )
 
 var scenarioProfiles = map[string]struct{}{
@@ -292,9 +292,9 @@ func resolveProjectOptions(options []ProjectOptions) ProjectOptions {
 
 func getGoModContent(module string, opts ProjectOptions) string {
 	opts = resolveProjectOptions([]ProjectOptions{opts})
-	content := fmt.Sprintf("module %s\n\ngo 1.26.0\n\nrequire github.com/spcent/plumego %s\n", module, opts.PlumegoVersion)
+	content := fmt.Sprintf("module %s\n\ngo 1.26.0\n\nrequire github.com/birdordev/plumego %s\n", module, opts.PlumegoVersion)
 	if opts.PlumegoReplace != "" {
-		content += fmt.Sprintf("\nreplace github.com/spcent/plumego => %s\n", filepath.ToSlash(opts.PlumegoReplace))
+		content += fmt.Sprintf("\nreplace github.com/birdordev/plumego => %s\n", filepath.ToSlash(opts.PlumegoReplace))
 	}
 	return content
 }

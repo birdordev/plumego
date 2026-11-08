@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/spcent/plumego/contract"
-	"github.com/spcent/plumego/x/messaging"
+	"github.com/birdordev/plumego/contract"
+	"github.com/birdordev/plumego/x/messaging"
 )
 
 func TestMessagingHandlerPublishResponse(t *testing.T) {

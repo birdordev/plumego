@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/spcent/plumego/x/ai/orchestration"
+	"github.com/birdordev/plumego/x/ai/orchestration"
 )
 
 // DistributedEngine orchestrates distributed workflow execution.

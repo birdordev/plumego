@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/spcent/plumego/metrics"
+	"github.com/birdordev/plumego/metrics"
 )
 
 type labelKey struct {

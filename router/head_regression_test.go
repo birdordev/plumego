@@ -2,8 +2,8 @@ package router
 
 import (
 	"bufio"
-	plumelog "github.com/spcent/plumego/log"
-	"github.com/spcent/plumego/middleware/recovery"
+	plumelog "github.com/birdordev/plumego/log"
+	"github.com/birdordev/plumego/middleware/recovery"
 	"io"
 	"net"
 	"net/http"

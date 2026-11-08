@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/spcent/plumego/x/tenant/core"
+	"github.com/birdordev/plumego/x/tenant/core"
 )
 
 func TestNewDBTenantConfigManager(t *testing.T) {

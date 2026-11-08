@@ -9,12 +9,12 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/spcent/plumego/core"
-	plumelog "github.com/spcent/plumego/log"
-	"github.com/spcent/plumego/middleware/accesslog"
-	"github.com/spcent/plumego/middleware/recovery"
-	"github.com/spcent/plumego/middleware/requestid"
-	"github.com/spcent/plumego/x/messaging"
+	"github.com/birdordev/plumego/core"
+	plumelog "github.com/birdordev/plumego/log"
+	"github.com/birdordev/plumego/middleware/accesslog"
+	"github.com/birdordev/plumego/middleware/recovery"
+	"github.com/birdordev/plumego/middleware/requestid"
+	"github.com/birdordev/plumego/x/messaging"
 	"with-messaging/internal/config"
 	"with-messaging/internal/handler"
 )

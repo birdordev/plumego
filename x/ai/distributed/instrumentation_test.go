@@ -5,10 +5,10 @@ import (
 	"testing"
 	"time"
 
-	kv "github.com/spcent/plumego/store/kv"
-	"github.com/spcent/plumego/x/ai/orchestration"
-	"github.com/spcent/plumego/x/messaging/mq"
-	"github.com/spcent/plumego/x/messaging/pubsub"
+	kv "github.com/birdordev/plumego/store/kv"
+	"github.com/birdordev/plumego/x/ai/orchestration"
+	"github.com/birdordev/plumego/x/messaging/mq"
+	"github.com/birdordev/plumego/x/messaging/pubsub"
 )
 
 func newTestInstrumentedEngine(t *testing.T) (*InstrumentedDistributedEngine, func()) {

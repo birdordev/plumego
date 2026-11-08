@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/spcent/plumego/log"
+	"github.com/birdordev/plumego/log"
 )
 
 // Type conversion utilities for configuration values.

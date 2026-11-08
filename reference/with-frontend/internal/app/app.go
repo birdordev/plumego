@@ -9,10 +9,10 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/spcent/plumego/core"
-	plumelog "github.com/spcent/plumego/log"
-	"github.com/spcent/plumego/middleware/recovery"
-	"github.com/spcent/plumego/middleware/requestid"
+	"github.com/birdordev/plumego/core"
+	plumelog "github.com/birdordev/plumego/log"
+	"github.com/birdordev/plumego/middleware/recovery"
+	"github.com/birdordev/plumego/middleware/requestid"
 	"with-frontend/internal/config"
 )
 

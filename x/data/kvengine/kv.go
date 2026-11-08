@@ -14,7 +14,7 @@
 //
 // Example usage:
 //
-//	import kvengine "github.com/spcent/plumego/x/data/kvengine"
+//	import kvengine "github.com/birdordev/plumego/x/data/kvengine"
 //
 //	// Create or open a store
 //	store, err := kvengine.NewKVStore(kvengine.Options{

@@ -8,8 +8,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/spcent/plumego/contract"
-	"github.com/spcent/plumego/router"
+	"github.com/birdordev/plumego/contract"
+	"github.com/birdordev/plumego/router"
 )
 
 func TestGroupRouteRegistration(t *testing.T) {

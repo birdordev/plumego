@@ -7,9 +7,9 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/spcent/plumego/contract"
-	"github.com/spcent/plumego/x/ai/orchestration"
-	"github.com/spcent/plumego/x/ai/sse"
+	"github.com/birdordev/plumego/contract"
+	"github.com/birdordev/plumego/x/ai/orchestration"
+	"github.com/birdordev/plumego/x/ai/sse"
 )
 
 // WorkflowRequest represents a request to execute a workflow.

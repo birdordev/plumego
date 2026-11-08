@@ -6,7 +6,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	plumelog "github.com/spcent/plumego/log"
+	plumelog "github.com/birdordev/plumego/log"
 )
 
 func TestPoolDialCachesConnection(t *testing.T) {

@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/spcent/plumego/x/ai/provider"
+	"github.com/birdordev/plumego/x/ai/provider"
 )
 
 func TestRegistry_Register(t *testing.T) {

@@ -6,12 +6,12 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/spcent/plumego/log"
-	"github.com/spcent/plumego/middleware"
-	"github.com/spcent/plumego/middleware/accesslog"
-	"github.com/spcent/plumego/middleware/auth"
-	"github.com/spcent/plumego/middleware/recovery"
-	"github.com/spcent/plumego/security/authn"
+	"github.com/birdordev/plumego/log"
+	"github.com/birdordev/plumego/middleware"
+	"github.com/birdordev/plumego/middleware/accesslog"
+	"github.com/birdordev/plumego/middleware/auth"
+	"github.com/birdordev/plumego/middleware/recovery"
+	"github.com/birdordev/plumego/security/authn"
 )
 
 type callCountingHandler struct {

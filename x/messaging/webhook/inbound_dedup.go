@@ -12,7 +12,7 @@
 //
 // Example usage:
 //
-//	import "github.com/spcent/plumego/x/messaging/webhook"
+//	import "github.com/birdordev/plumego/x/messaging/webhook"
 //
 //	// Verify GitHub webhook
 //	secret := []byte("your-webhook-secret")

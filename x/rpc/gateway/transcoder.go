@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/spcent/plumego/contract"
+	"github.com/birdordev/plumego/contract"
 )
 
 // HandlerFunc is a dependency-free RPC-to-HTTP handler shape.

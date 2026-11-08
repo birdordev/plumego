@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	kvstore "github.com/spcent/plumego/store/kv"
+	kvstore "github.com/birdordev/plumego/store/kv"
 )
 
 // KVDeduperConfig configures the KV-backed task deduper.

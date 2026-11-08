@@ -3,8 +3,8 @@ package messaging
 import (
 	"net/http"
 
-	"github.com/spcent/plumego/x/messaging/pubsub"
-	"github.com/spcent/plumego/x/messaging/webhook"
+	"github.com/birdordev/plumego/x/messaging/pubsub"
+	"github.com/birdordev/plumego/x/messaging/webhook"
 )
 
 // Broker is the canonical in-process messaging broker type for application code.

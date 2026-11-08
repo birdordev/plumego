@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/spcent/plumego/cmd/plumego/internal/routeanalyzer"
+	"github.com/birdordev/plumego/cmd/plumego/internal/routeanalyzer"
 )
 
 type RoutesCmd struct{}

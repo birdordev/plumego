@@ -3,7 +3,7 @@ package healthhttp
 import (
 	"net/http"
 
-	"github.com/spcent/plumego/contract"
+	"github.com/birdordev/plumego/contract"
 )
 
 // MetricsHandler creates a handler that exposes tracked health metrics.

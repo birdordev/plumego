@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/spcent/plumego/x/ai/orchestration"
-	"github.com/spcent/plumego/x/ai/sse"
+	"github.com/birdordev/plumego/x/ai/orchestration"
+	"github.com/birdordev/plumego/x/ai/sse"
 )
 
 func TestStreamManager(t *testing.T) {

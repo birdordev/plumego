@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/spcent/plumego/security/authn"
+	"github.com/birdordev/plumego/security/authn"
 )
 
 // TokenType represents the semantic purpose of a JWT.
@@ -16,7 +16,7 @@ import (
 //
 // Example:
 //
-//	import "github.com/spcent/plumego/security/jwt"
+//	import "github.com/birdordev/plumego/security/jwt"
 //
 //	// Verify an access token
 //	claims, err := manager.VerifyToken(ctx, token, jwt.TokenTypeAccess)
@@ -37,7 +37,7 @@ const (
 //
 // Example:
 //
-//	import "github.com/spcent/plumego/security/jwt"
+//	import "github.com/birdordev/plumego/security/jwt"
 //
 //	config := jwt.DefaultJWTConfig()
 //	config.Algorithm = jwt.AlgorithmEdDSA
@@ -74,7 +74,7 @@ const (
 //
 // Example:
 //
-//	import "github.com/spcent/plumego/security/jwt"
+//	import "github.com/birdordev/plumego/security/jwt"
 //
 //	config := jwt.DefaultJWTConfig()
 //	config.Issuer = "my-app"

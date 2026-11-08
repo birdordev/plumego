@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/spcent/plumego/security/authn"
+	"github.com/birdordev/plumego/security/authn"
 )
 
 // Authenticator adapts JWT verification to the authn.RequestAuthenticator interface.

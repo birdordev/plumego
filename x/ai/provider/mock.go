@@ -6,7 +6,7 @@ import (
 	"io"
 	"sync"
 
-	"github.com/spcent/plumego/x/ai/tokenizer"
+	"github.com/birdordev/plumego/x/ai/tokenizer"
 )
 
 // MockProvider is a Provider implementation for use in tests.

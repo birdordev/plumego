@@ -5,8 +5,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/spcent/plumego/x/ai/provider"
-	"github.com/spcent/plumego/x/ai/tokenizer"
+	"github.com/birdordev/plumego/x/ai/provider"
+	"github.com/birdordev/plumego/x/ai/tokenizer"
 )
 
 // mockProvider is a mock provider for testing

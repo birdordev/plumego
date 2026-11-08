@@ -16,10 +16,10 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/spcent/plumego/contract"
-	storefile "github.com/spcent/plumego/store/file"
-	datafile "github.com/spcent/plumego/x/data/file"
-	tenantcore "github.com/spcent/plumego/x/tenant/core"
+	"github.com/birdordev/plumego/contract"
+	storefile "github.com/birdordev/plumego/store/file"
+	datafile "github.com/birdordev/plumego/x/data/file"
+	tenantcore "github.com/birdordev/plumego/x/tenant/core"
 )
 
 // Handler provides HTTP endpoints for file operations.

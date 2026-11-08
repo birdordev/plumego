@@ -3,7 +3,7 @@ package devserver
 import (
 	"context"
 
-	"github.com/spcent/plumego/x/messaging/pubsub"
+	"github.com/birdordev/plumego/x/messaging/pubsub"
 )
 
 // BuilderAPI defines the builder methods exposed to commands and tests.

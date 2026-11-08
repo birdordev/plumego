@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/spcent/plumego/router"
-	"github.com/spcent/plumego/x/openapi"
+	"github.com/birdordev/plumego/router"
+	"github.com/birdordev/plumego/x/openapi"
 )
 
 // ExampleNew demonstrates generating an OpenAPI document from route info.

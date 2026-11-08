@@ -7,7 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	plumelog "github.com/spcent/plumego/log"
+	plumelog "github.com/birdordev/plumego/log"
 )
 
 func discardLogger() plumelog.StructuredLogger {

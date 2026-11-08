@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/spcent/plumego/x/ai/provider"
+	"github.com/birdordev/plumego/x/ai/provider"
 )
 
 // MemoryStorage implements in-memory session storage.

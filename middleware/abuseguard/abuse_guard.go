@@ -12,12 +12,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/spcent/plumego/contract"
-	internaltransport "github.com/spcent/plumego/internal/httputil"
-	"github.com/spcent/plumego/log"
-	mw "github.com/spcent/plumego/middleware"
-	internaltelemetry "github.com/spcent/plumego/middleware/internal/telemetry"
-	"github.com/spcent/plumego/security/abuse"
+	"github.com/birdordev/plumego/contract"
+	internaltransport "github.com/birdordev/plumego/internal/httputil"
+	"github.com/birdordev/plumego/log"
+	mw "github.com/birdordev/plumego/middleware"
+	internaltelemetry "github.com/birdordev/plumego/middleware/internal/telemetry"
+	"github.com/birdordev/plumego/security/abuse"
 )
 
 const (
@@ -34,7 +34,7 @@ const (
 //
 // Example:
 //
-//	import "github.com/spcent/plumego/middleware/abuseguard"
+//	import "github.com/birdordev/plumego/middleware/abuseguard"
 //
 //	config := abuseguard.AbuseGuardConfig{
 //		Rate:            10.0,      // 10 requests per second

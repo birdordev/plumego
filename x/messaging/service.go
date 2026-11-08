@@ -8,13 +8,13 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/spcent/plumego/log"
-	"github.com/spcent/plumego/metrics"
-	"github.com/spcent/plumego/security/input"
-	"github.com/spcent/plumego/x/messaging/mq"
-	"github.com/spcent/plumego/x/messaging/pubsub"
-	"github.com/spcent/plumego/x/messaging/scheduler"
-	"github.com/spcent/plumego/x/messaging/webhook"
+	"github.com/birdordev/plumego/log"
+	"github.com/birdordev/plumego/metrics"
+	"github.com/birdordev/plumego/security/input"
+	"github.com/birdordev/plumego/x/messaging/mq"
+	"github.com/birdordev/plumego/x/messaging/pubsub"
+	"github.com/birdordev/plumego/x/messaging/scheduler"
+	"github.com/birdordev/plumego/x/messaging/webhook"
 )
 
 // Service is the central message-sending coordinator.

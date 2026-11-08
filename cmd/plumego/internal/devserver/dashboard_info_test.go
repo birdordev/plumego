@@ -14,9 +14,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/spcent/plumego/contract"
-	"github.com/spcent/plumego/x/messaging/pubsub"
-	"github.com/spcent/plumego/x/websocket"
+	"github.com/birdordev/plumego/contract"
+	"github.com/birdordev/plumego/x/messaging/pubsub"
+	"github.com/birdordev/plumego/x/websocket"
 )
 
 func TestGetDashboardInfo(t *testing.T) {

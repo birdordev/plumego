@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/spcent/plumego/contract"
+	"github.com/birdordev/plumego/contract"
 )
 
 // ensureHandlerPrepared performs the one-time transition required for using the

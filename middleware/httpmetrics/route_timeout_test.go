@@ -2,9 +2,9 @@ package httpmetrics_test
 
 import (
 	"context"
-	"github.com/spcent/plumego/middleware/httpmetrics"
-	"github.com/spcent/plumego/middleware/timeout"
-	"github.com/spcent/plumego/router"
+	"github.com/birdordev/plumego/middleware/httpmetrics"
+	"github.com/birdordev/plumego/middleware/timeout"
+	"github.com/birdordev/plumego/router"
 	"net/http"
 	"net/http/httptest"
 	"testing"

@@ -15,7 +15,7 @@ func (h *Hub) clearRooms() {
 //
 // Example:
 //
-//	import "github.com/spcent/plumego/x/websocket"
+//	import "github.com/birdordev/plumego/x/websocket"
 //
 //	hub.RangeConns("chat-room", func(c *websocket.Conn) bool {
 //	    if userID, ok := c.GetMetadata("user_id"); ok {
@@ -56,7 +56,7 @@ func (h *Hub) RangeConns(room string, fn func(*Conn) bool) {
 //
 // Example:
 //
-//	import "github.com/spcent/plumego/x/websocket"
+//	import "github.com/birdordev/plumego/x/websocket"
 //
 //	hub, err := websocket.NewHubWithConfig(websocket.HubConfig{WorkerCount: 4, JobQueueSize: 1024})
 //	conn, err := websocket.NewConn(...)
@@ -170,7 +170,7 @@ func (h *Hub) tryJoin(room string, c *Conn, validator RoomNameValidator) error {
 //
 // Example:
 //
-//	import "github.com/spcent/plumego/x/websocket"
+//	import "github.com/birdordev/plumego/x/websocket"
 //
 //	hub, err := websocket.NewHubWithConfig(websocket.HubConfig{WorkerCount: 4, JobQueueSize: 1024})
 //	if err := hub.CanJoin("chat-room"); err != nil {
@@ -211,7 +211,7 @@ func (h *Hub) canJoin(room string, validator RoomNameValidator) error {
 //
 // Example:
 //
-//	import "github.com/spcent/plumego/x/websocket"
+//	import "github.com/birdordev/plumego/x/websocket"
 //
 //	hub, err := websocket.NewHubWithConfig(websocket.HubConfig{WorkerCount: 4, JobQueueSize: 1024})
 //	metrics := hub.Metrics()
@@ -251,7 +251,7 @@ func (h *Hub) Metrics() HubMetrics {
 //
 // Example:
 //
-//	import "github.com/spcent/plumego/x/websocket"
+//	import "github.com/birdordev/plumego/x/websocket"
 //
 //	hub, err := websocket.NewHubWithConfig(websocket.HubConfig{WorkerCount: 4, JobQueueSize: 1024})
 //	conn, err := websocket.NewConn(...)
@@ -284,7 +284,7 @@ func (h *Hub) Leave(room string, c *Conn) {
 //
 // Example:
 //
-//	import "github.com/spcent/plumego/x/websocket"
+//	import "github.com/birdordev/plumego/x/websocket"
 //
 //	hub, err := websocket.NewHubWithConfig(websocket.HubConfig{WorkerCount: 4, JobQueueSize: 1024})
 //	conn, err := websocket.NewConn(...)
@@ -318,7 +318,7 @@ func (h *Hub) RemoveConn(c *Conn) {
 //
 // Example:
 //
-//	import "github.com/spcent/plumego/x/websocket"
+//	import "github.com/birdordev/plumego/x/websocket"
 //
 //	hub, err := websocket.NewHubWithConfig(websocket.HubConfig{WorkerCount: 4, JobQueueSize: 1024})
 //	count := hub.GetRoomCount("chat-room")
@@ -339,7 +339,7 @@ func (h *Hub) GetRoomCount(room string) int {
 //
 // Example:
 //
-//	import "github.com/spcent/plumego/x/websocket"
+//	import "github.com/birdordev/plumego/x/websocket"
 //
 //	hub, err := websocket.NewHubWithConfig(websocket.HubConfig{WorkerCount: 4, JobQueueSize: 1024})
 //	total := hub.GetRoomRegistrationCount()
@@ -358,7 +358,7 @@ func (h *Hub) GetActiveConnectionCount() int {
 //
 // Example:
 //
-//	import "github.com/spcent/plumego/x/websocket"
+//	import "github.com/birdordev/plumego/x/websocket"
 //
 //	hub, err := websocket.NewHubWithConfig(websocket.HubConfig{WorkerCount: 4, JobQueueSize: 1024})
 //	rooms := hub.GetRooms()

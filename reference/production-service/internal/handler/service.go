@@ -8,9 +8,9 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/spcent/plumego/contract"
-	"github.com/spcent/plumego/health"
-	plumelog "github.com/spcent/plumego/log"
+	"github.com/birdordev/plumego/contract"
+	"github.com/birdordev/plumego/health"
+	plumelog "github.com/birdordev/plumego/log"
 )
 
 const codeComponentUnhealthy = "health.component.unhealthy"

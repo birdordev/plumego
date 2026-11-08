@@ -8,7 +8,7 @@ import (
 	"log"
 	"sync/atomic"
 
-	"github.com/spcent/plumego/security/password"
+	"github.com/birdordev/plumego/security/password"
 )
 
 // SecurityConfig defines security-related configurations for WebSocket

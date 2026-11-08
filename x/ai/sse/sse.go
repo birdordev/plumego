@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/spcent/plumego/contract"
+	"github.com/birdordev/plumego/contract"
 )
 
 const defaultErrorEventData = "stream handler failed"

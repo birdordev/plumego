@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	storecache "github.com/spcent/plumego/store/cache"
+	storecache "github.com/birdordev/plumego/store/cache"
 )
 
 type sequenceRNG struct {

@@ -7,9 +7,9 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/spcent/plumego/contract"
-	internaltransport "github.com/spcent/plumego/internal/httputil"
-	"github.com/spcent/plumego/middleware"
+	"github.com/birdordev/plumego/contract"
+	internaltransport "github.com/birdordev/plumego/internal/httputil"
+	"github.com/birdordev/plumego/middleware"
 )
 
 const defaultMaxBodyBytes = 64 << 10
@@ -21,7 +21,7 @@ const defaultMaxBodyBytes = 64 << 10
 //
 // Example:
 //
-//	import "github.com/spcent/plumego/middleware/debug"
+//	import "github.com/birdordev/plumego/middleware/debug"
 //
 //	config := debug.Config{
 //		IncludeRequest: true,  // Include request method and path
@@ -69,7 +69,7 @@ func DefaultConfig() Config {
 //
 // Example:
 //
-//	import "github.com/spcent/plumego/middleware/debug"
+//	import "github.com/birdordev/plumego/middleware/debug"
 //
 //	// Use default configuration
 //	handler := debug.Middleware(debug.DefaultConfig())(myHandler)

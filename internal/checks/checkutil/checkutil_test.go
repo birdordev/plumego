@@ -16,7 +16,7 @@ func TestFindDisallowedImportsReportsAllAndSkipsTests(t *testing.T) {
 
 import (
 	"net/http"
-	"github.com/spcent/plumego/x/tenant/resolve"
+	"github.com/birdordev/plumego/x/tenant/resolve"
 )
 
 func Use(_ http.ResponseWriter) {
@@ -27,7 +27,7 @@ func Use(_ http.ResponseWriter) {
 	// skipped, so it does not produce a second violation.
 	writeFile(t, filepath.Join(repo, "core", "core_test.go"), `package core
 
-import "github.com/spcent/plumego/x/tenant/resolve"
+import "github.com/birdordev/plumego/x/tenant/resolve"
 `)
 
 	violations, err := FindDisallowedImports(repo)
@@ -37,7 +37,7 @@ import "github.com/spcent/plumego/x/tenant/resolve"
 	if len(violations) != 1 {
 		t.Fatalf("expected 1 violation, got %d: %v", len(violations), violations)
 	}
-	if got := violations[0]; got != "core/core.go|github.com/spcent/plumego/x/tenant/resolve" {
+	if got := violations[0]; got != "core/core.go|github.com/birdordev/plumego/x/tenant/resolve" {
 		t.Fatalf("unexpected violation %q", got)
 	}
 }
@@ -52,11 +52,11 @@ import "net/http"
 
 func Use(_ http.ResponseWriter) {}
 `)
-	writeFile(t, filepath.Join(repo, "core", "adapter", "go.mod"), `module github.com/spcent/plumego/core/adapter
+	writeFile(t, filepath.Join(repo, "core", "adapter", "go.mod"), `module github.com/birdordev/plumego/core/adapter
 `)
 	writeFile(t, filepath.Join(repo, "core", "adapter", "adapter.go"), `package adapter
 
-import "github.com/spcent/plumego/x/tenant/resolve"
+import "github.com/birdordev/plumego/x/tenant/resolve"
 
 func Use() {
 	_ = resolve.Options{}
@@ -78,13 +78,13 @@ func TestValidateReferenceModules(t *testing.T) {
 
 go 1.26.0
 
-require github.com/spcent/plumego v0.0.0
+require github.com/birdordev/plumego v0.0.0
 
-replace github.com/spcent/plumego => ../..
+replace github.com/birdordev/plumego => ../..
 `)
 	writeFile(t, filepath.Join(repo, "reference", "standard-service", "main.go"), `package main
 
-import "github.com/spcent/plumego/core"
+import "github.com/birdordev/plumego/core"
 
 func main() {
 	_ = core.DefaultConfig()
@@ -103,15 +103,15 @@ func main() {
 
 func main() {}
 `)
-	writeFile(t, filepath.Join(repo, "reference", "bad-module", "go.mod"), `module github.com/spcent/plumego/reference/bad-module
+	writeFile(t, filepath.Join(repo, "reference", "bad-module", "go.mod"), `module github.com/birdordev/plumego/reference/bad-module
 
 go 1.26.0
 `)
 	writeFile(t, filepath.Join(repo, "reference", "bad-module", "main.go"), `package main
 
 import (
-	_ "github.com/spcent/plumego/internal/config"
-	_ "github.com/spcent/plumego/reference/other/internal/app"
+	_ "github.com/birdordev/plumego/internal/config"
+	_ "github.com/birdordev/plumego/reference/other/internal/app"
 )
 `)
 
@@ -122,11 +122,11 @@ import (
 
 	want := []string{
 		"reference/missing missing go.mod",
-		`reference/bad-module/go.mod module "github.com/spcent/plumego/reference/bad-module" must equal "bad-module"`,
-		"reference/bad-module/go.mod missing github.com/spcent/plumego require",
-		"reference/bad-module/go.mod missing local github.com/spcent/plumego replace",
-		"reference/bad-module/main.go imports repository internal path github.com/spcent/plumego/internal/config",
-		"reference/bad-module/main.go imports repository reference path github.com/spcent/plumego/reference/other/internal/app",
+		`reference/bad-module/go.mod module "github.com/birdordev/plumego/reference/bad-module" must equal "bad-module"`,
+		"reference/bad-module/go.mod missing github.com/birdordev/plumego require",
+		"reference/bad-module/go.mod missing local github.com/birdordev/plumego replace",
+		"reference/bad-module/main.go imports repository internal path github.com/birdordev/plumego/internal/config",
+		"reference/bad-module/main.go imports repository reference path github.com/birdordev/plumego/reference/other/internal/app",
 	}
 	for _, expected := range want {
 		if !hasString(violations, expected) {
@@ -172,7 +172,7 @@ special_rules:
   forbidden_paths:
     - plumego.go
   forbidden_import_patterns:
-    - github.com/spcent/plumego
+    - github.com/birdordev/plumego
 `)
 	writeFile(t, filepath.Join(repo, "x", "messaging", "module.yaml"), `name: x/messaging
 path: x/messaging
@@ -253,19 +253,19 @@ special_rules:
   forbidden_paths:
     - plumego.go
   forbidden_import_patterns:
-    - github.com/spcent/plumego
+    - github.com/birdordev/plumego
 `)
 	writeFile(t, filepath.Join(repo, "x", "gateway", "gateway.go"), `package gateway
 
-import _ "github.com/spcent/plumego/internal/httpx"
+import _ "github.com/birdordev/plumego/internal/httpx"
 `)
 	writeFile(t, filepath.Join(repo, "x", "messaging", "messaging.go"), `package messaging
 
-import _ "github.com/spcent/plumego/internal/httpx"
+import _ "github.com/birdordev/plumego/internal/httpx"
 `)
 	writeFile(t, filepath.Join(repo, "x", "observability", "devtools", "devtools.go"), `package devtools
 
-import _ "github.com/spcent/plumego/internal/config"
+import _ "github.com/birdordev/plumego/internal/config"
 `)
 
 	violations, err := ValidateDeclaredInternalCallers(repo)
@@ -275,8 +275,8 @@ import _ "github.com/spcent/plumego/internal/config"
 
 	joined := strings.Join(violations, "\n")
 	for _, want := range []string{
-		`x/messaging/messaging.go imports github.com/spcent/plumego/internal/httpx but caller "x/messaging" is not listed`,
-		`x/observability/devtools/devtools.go imports github.com/spcent/plumego/internal/config but no specs/dependency-rules.yaml internal module declares it`,
+		`x/messaging/messaging.go imports github.com/birdordev/plumego/internal/httpx but caller "x/messaging" is not listed`,
+		`x/observability/devtools/devtools.go imports github.com/birdordev/plumego/internal/config but no specs/dependency-rules.yaml internal module declares it`,
 		`specs/dependency-rules.yaml module internal/httpx declares caller "x/stale" but no non-test Go import uses it`,
 	} {
 		if !strings.Contains(joined, want) {
@@ -758,7 +758,7 @@ func Upload(w http.ResponseWriter, r *http.Request) {}
 `)
 	writeFile(t, filepath.Join(repo, "health", "admin", "routes.go"), `package admin
 
-import "github.com/spcent/plumego/router"
+import "github.com/birdordev/plumego/router"
 
 func RegisterRoutes(r *router.Router) {}
 `)
@@ -856,7 +856,7 @@ func hasString(values []string, want string) bool {
 func writeRepoSpec(t *testing.T, repo string) {
 	t.Helper()
 	writeFile(t, filepath.Join(repo, "specs", "repo.yaml"), `repo:
-  module: github.com/spcent/plumego
+  module: github.com/birdordev/plumego
 layers:
   stable:
     paths:
@@ -933,7 +933,7 @@ special_rules:
   forbidden_paths:
     - plumego.go
   forbidden_import_patterns:
-    - github.com/spcent/plumego
+    - github.com/birdordev/plumego
 `)
 }
 

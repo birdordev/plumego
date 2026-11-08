@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/spcent/plumego/contract"
+	"github.com/birdordev/plumego/contract"
 	"standard-service/internal/config"
 )
 

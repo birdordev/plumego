@@ -11,9 +11,9 @@ import (
 	"strings"
 	"testing"
 
-	internaltransport "github.com/spcent/plumego/internal/httputil"
-	"github.com/spcent/plumego/log"
-	"github.com/spcent/plumego/middleware/recovery"
+	internaltransport "github.com/birdordev/plumego/internal/httputil"
+	"github.com/birdordev/plumego/log"
+	"github.com/birdordev/plumego/middleware/recovery"
 )
 
 func applyMiddleware(h http.Handler, mw func(http.Handler) http.Handler) http.Handler {

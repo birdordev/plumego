@@ -4,7 +4,7 @@ package config
 import (
 	"os"
 
-	"github.com/spcent/plumego/core"
+	"github.com/birdordev/plumego/core"
 )
 
 // Config holds all runtime configuration for the with-ops reference app.

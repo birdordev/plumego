@@ -185,7 +185,7 @@ func specHelperGoMod(appDir string, target specTarget, modules []goModuleInfo) s
 	b.WriteString("go 1.26.0\n\n")
 	b.WriteString("require (\n")
 	fmt.Fprintf(&b, "\t%s v0.0.0\n", target.ModulePath)
-	b.WriteString("\tgithub.com/spcent/plumego v0.0.0\n")
+	b.WriteString("\tgithub.com/birdordev/plumego v0.0.0\n")
 	b.WriteString("\tgopkg.in/yaml.v3 v3.0.1\n")
 	b.WriteString(")\n\n")
 	for _, key := range keys {
@@ -205,7 +205,7 @@ import (
 
 	apppkg %q
 	configpkg %q
-	"github.com/spcent/plumego/x/openapi"
+	"github.com/birdordev/plumego/x/openapi"
 	"gopkg.in/yaml.v3"
 )
 
