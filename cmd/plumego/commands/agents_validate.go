@@ -23,7 +23,7 @@ func runAgentsValidateDiff(ctx *Context, args []string) error {
 	base := fs.String("base", "HEAD", "Git ref to diff against (e.g. HEAD, origin/main)")
 	dir := fs.String("dir", ".", "Repository root directory")
 	dryRun := fs.Bool("dry-run", false, "Print selected gate commands without executing them")
-	timeoutStr := fs.String("timeout", "120s", "Per-command timeout")
+	timeoutStr := fs.String("timeout", "10m", "Per-command timeout")
 
 	positionals, err := parseInterspersedFlags(fs, args)
 	if err != nil {

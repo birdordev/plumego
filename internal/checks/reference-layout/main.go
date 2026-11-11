@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/birdordev/plumego/internal/checks/checkutil"
 )
@@ -19,6 +20,11 @@ func main() {
 		failf("check top-level layout: %v", err)
 	}
 	violations = append(violations, requiredPathViolations(repoRoot)...)
+	docViolations, err := staleAPIViolations(repoRoot)
+	if err != nil {
+		failf("check canonical documentation: %v", err)
+	}
+	violations = append(violations, docViolations...)
 
 	moduleViolations, err := checkutil.ValidateReferenceModules(repoRoot)
 	if err != nil {
@@ -57,6 +63,12 @@ func main() {
 
 func requiredPathViolations(repoRoot string) []string {
 	required := []string{
+		"README.md",
+		"README_CN.md",
+		"AGENTS.md",
+		"env.example",
+		"cmd/plumego/README.md",
+		"cmd/plumego/go.mod",
 		"docs/reference/canonical-style-guide.md",
 		"docs/start/adoption-path.md",
 		"docs/reference/scaffold-reference-contract.md",
@@ -73,6 +85,10 @@ func requiredPathViolations(repoRoot string) []string {
 		"docs/evidence/stable-api/snapshots/security-head.snapshot",
 		"docs/evidence/stable-api/snapshots/store-head.snapshot",
 		"reference/standard-service",
+		"reference/standard-service/README.md",
+		"reference/standard-service/main.go",
+		"reference/standard-service/internal/app/app.go",
+		"reference/standard-service/internal/app/routes.go",
 		"reference/with-messaging",
 		"reference/with-gateway",
 		"reference/with-websocket",
@@ -97,6 +113,46 @@ func requiredPathViolations(repoRoot string) []string {
 		}
 	}
 	return violations
+}
+
+func staleAPIViolations(repoRoot string) ([]string, error) {
+	data, err := os.ReadFile(filepath.Join(repoRoot, "go.mod"))
+	if err != nil {
+		return nil, err
+	}
+	for line := range strings.Lines(string(data)) {
+		fields := strings.Fields(line)
+		if len(fields) >= 2 && fields[0] == "module" {
+			return staleDocumentationImports(repoRoot, strings.Trim(fields[1], `"`))
+		}
+	}
+	return nil, fmt.Errorf("go.mod has no module directive")
+}
+
+func staleDocumentationImports(repoRoot, module string) ([]string, error) {
+	docs := []string{
+		"README.md", "README_CN.md",
+		"docs/reference/canonical-style-guide.md",
+		"docs/concepts/agent-first-repo-blueprint.md",
+		"reference/standard-service/README.md",
+	}
+	var violations []string
+	for _, path := range docs {
+		data, err := os.ReadFile(filepath.Join(repoRoot, path))
+		if err != nil {
+			return nil, err
+		}
+		lineNumber := 0
+		for line := range strings.Lines(string(data)) {
+			lineNumber++
+			for _, suffix := range []string{"core/components", "components", "plumego", "net", "tenant", "rest"} {
+				if stale := module + "/" + suffix; strings.Contains(line, stale) {
+					violations = append(violations, fmt.Sprintf("%s:%d: stale API reference %s", path, lineNumber, stale))
+				}
+			}
+		}
+	}
+	return violations, nil
 }
 
 func failf(format string, args ...any) {

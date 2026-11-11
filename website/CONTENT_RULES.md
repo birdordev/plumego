@@ -52,13 +52,9 @@ Any page that compares Plumego with Gin, Echo, Chi, or other toolkits must inclu
 
 ## Rule 6 — Chinese content sync transparency
 
-If a `/zh/` page is known to lag its English counterpart, add the following notice at the top of the page body (after the frontmatter):
-
-```md
-> **注意：** 本页中文版本与英文版可能存在差异，建议关键决策前参考[英文版文档](/docs/...)。
-```
-
-The sync scripts (`website/scripts/sync-all.mjs`) should record a timestamp; any `/zh/` page more than 14 days behind the corresponding `/en/` page should display this notice automatically.
+The site displays a notice on Chinese pages flagged by the source-hash check.
+Review the English and Chinese pair before updating its baseline. Follow the
+[translation review workflow](./CONTRIBUTING.md#translation-lag-detection).
 
 ---
 
@@ -157,7 +153,7 @@ If an English documentation page has no corresponding `/zh/` page, the English p
 > **Note:** This page is not available in Chinese. Refer to the English version.
 ```
 
-If a `/zh/` page exists but is known to lag its English counterpart by more than 14 days, apply Rule 6 instead.
+For existing Chinese translations, follow Rule 6.
 
 ---
 

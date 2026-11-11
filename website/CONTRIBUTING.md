@@ -70,9 +70,9 @@ The `slug` must match the file path relative to `src/content/docs/` and without 
 
 ## Editing an existing page
 
-1. Edit the English file under `src/content/docs/docs/`.
-2. Update the matching Chinese file under `src/content/docs/zh/docs/` in the same commit when the change is non-trivial, or open a follow-up issue if the translation can wait.
-3. If the Chinese version is intentionally left behind, the translation-lag checker will surface it automatically after 14 days.
+Edit the English source and review the matching Chinese page in the same change.
+For shared changes such as a repository rename, verify that both pages contain the
+updated commands and links before recording the new baseline.
 
 ---
 
@@ -88,17 +88,25 @@ The `dev`, `build`, and `check` scripts run `pnpm sync` automatically. Run `pnpm
 
 ## Translation lag detection
 
-The sync pipeline runs `scripts/check-translation-lag.mjs` at build time. It compares the git commit timestamp of each en file with its zh counterpart. Pages where the zh version is more than **14 days** behind generate an entry in `src/generated/translation-lag.ts`.
+From `website/`, run `pnpm translations:check` for a read-only list of pairs whose
+English body has changed since the recorded review, or whose baseline is missing.
+The check reports both file paths and fails immediately on a mismatch.
 
-zh pages that import `TranslationNotice` can render a visible banner:
+After comparing the reported pages and updating the Chinese content as needed,
+record the baseline for each reviewed key. Repeat `--update-key` in one command
+when reviewing several pairs:
 
-```mdx
-import TranslationNotice from '../../../components/docs/TranslationNotice.astro';
-
-<TranslationNotice translationKey="getting-started" />
+```bash
+node scripts/check-translation-lag.mjs --update-key getting-started --update-key modules-core
+pnpm sync
+pnpm translations:check
 ```
 
-To add the notice to an existing zh page, import the component and add it immediately after the `# Title` heading.
+Include the content changes, `src/content/docs/translation-source-hashes.json`,
+and any changes to `src/generated/translation-lag.ts` in the same commit. The
+hash excludes frontmatter, so review translated titles and descriptions when
+editing them. The site renders a notice automatically on Chinese pages flagged
+by the generated map.
 
 ---
 
@@ -122,7 +130,7 @@ Files in `src/generated/` are created by the sync scripts. Do not edit them by h
 | `modules.ts` | `specs/repo.yaml`, `specs/task-routing.yaml` | `sync-modules.mjs` |
 | `releases.ts` | `README.md` | `sync-release-meta.mjs` |
 | `roadmap.ts` | `docs/release/roadmap.md` | `sync-roadmap.mjs` |
-| `translation-lag.ts` | git log of `src/content/docs/` | `check-translation-lag.mjs` |
+| `translation-lag.ts` | English MDX bodies and `src/content/docs/translation-source-hashes.json` | `check-translation-lag.mjs` |
 
 ---
 

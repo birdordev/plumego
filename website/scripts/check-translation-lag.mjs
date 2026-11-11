@@ -9,7 +9,6 @@
  *   node ./scripts/check-translation-lag.mjs
  *   node ./scripts/check-translation-lag.mjs --strict
  *   node ./scripts/check-translation-lag.mjs --update-key reference-api-core
- *   node ./scripts/check-translation-lag.mjs --bootstrap-baseline
  *
  * Output:
  *   src/generated/translation-lag.ts  — map of stale translationKey values
@@ -20,6 +19,8 @@ import crypto from 'node:crypto';
 import { readdirSync, statSync, readFileSync } from 'node:fs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
+import { parseArgs } from 'node:util';
 import { writeGeneratedFile, WEBSITE_ROOT } from './_shared.mjs';
 
 const DOCS_EN = path.join(WEBSITE_ROOT, 'src', 'content', 'docs', 'docs');
@@ -109,56 +110,61 @@ async function updateBaselineForKeys(keyMap, keys) {
   await writeBaseline(baseline);
 }
 
-export async function checkTranslationLag(options = {}) {
-  const keyMap = buildKeyMap();
-
-  if (options.bootstrapBaseline) {
-    const keys = [...keyMap.entries()]
-      .filter(([, { enPath, zhPath }]) => enPath && zhPath)
-      .map(([key]) => key);
-    await updateBaselineForKeys(keyMap, keys);
-  }
-
-  if (options.updateKeys?.length) {
-    await updateBaselineForKeys(keyMap, options.updateKeys);
-  }
-
+async function findStaleTranslations(keyMap) {
   const baseline = await readBaseline();
-  const staleMap = {};
+  const stale = [];
 
   for (const [key, { enPath, zhPath }] of keyMap.entries()) {
     if (!enPath || !zhPath) continue;
 
-    const currentHash = sourceHash(enPath);
-    if (baseline[key] !== currentHash) {
-      staleMap[key] = true;
+    if (baseline[key] !== sourceHash(enPath)) {
+      stale.push({ key, enPath, zhPath, hasBaseline: Object.hasOwn(baseline, key) });
     }
   }
-
-  await writeGeneratedFile('translation-lag.ts', staleTranslationsModule(staleMap));
-
-  const flagged = Object.keys(staleMap).length;
-  if (flagged > 0) {
-    console.warn(`[check-translation-lag] ${flagged} zh page(s) need source-hash baseline updates.`);
-    for (const key of Object.keys(staleMap)) {
-      console.warn(`  ${key}: english source content differs from recorded translation baseline`);
-    }
-  } else {
-    console.log('[check-translation-lag] All zh pages match their recorded source baselines.');
-  }
-
-  return flagged;
+  return stale;
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
-  const strict = process.argv.includes('--strict');
-  const bootstrapBaseline = process.argv.includes('--bootstrap-baseline');
-  const updateKeys = process.argv
-    .map((arg, index, args) => (arg === '--update-key' ? args[index + 1] : null))
-    .filter(Boolean);
-
-  const flagged = await checkTranslationLag({ bootstrapBaseline, updateKeys });
-  if (strict && flagged > 0) {
-    process.exit(1);
+export async function syncTranslationLag() {
+  const stale = await findStaleTranslations(buildKeyMap());
+  const staleMap = Object.fromEntries(stale.map(({ key }) => [key, true]));
+  await writeGeneratedFile('translation-lag.ts', staleTranslationsModule(staleMap));
+  if (stale.length > 0) {
+    console.warn(`[translation-lag] ${stale.length} pair(s) need review. Run pnpm translations:check in website for details.`);
   }
+}
+
+async function main() {
+  const { values } = parseArgs({
+    options: {
+      strict: { type: 'boolean' },
+      'update-key': { type: 'string', multiple: true },
+    },
+  });
+  const keyMap = buildKeyMap();
+  if (values['update-key']) {
+    if (values.strict) throw new Error('use --strict and --update-key in separate commands');
+    await updateBaselineForKeys(keyMap, values['update-key']);
+    console.log('[translation-lag] Updated reviewed baselines. Run pnpm sync to regenerate website data.');
+    return;
+  }
+
+  const stale = await findStaleTranslations(keyMap);
+  if (stale.length === 0) {
+    console.log('[translation-lag] All bilingual pages match their recorded source baselines.');
+    return;
+  }
+  console.warn(`[translation-lag] Review ${stale.length} translation pair(s):`);
+  for (const { key, enPath, zhPath, hasBaseline } of stale) {
+    console.warn(`  ${key}: ${hasBaseline ? 'English source changed' : 'missing source baseline'}`);
+    console.warn(`    EN: ${path.relative(WEBSITE_ROOT, enPath)}`);
+    console.warn(`    ZH: ${path.relative(WEBSITE_ROOT, zhPath)}`);
+  }
+  console.warn('After comparing each pair, record the reviewed source with:');
+  console.warn('  node scripts/check-translation-lag.mjs --update-key <key> [--update-key <key> ...]');
+  console.warn('Then run pnpm sync and pnpm translations:check.');
+  if (values.strict) process.exitCode = 1;
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  await main();
 }

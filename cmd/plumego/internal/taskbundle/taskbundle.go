@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/birdordev/plumego/cmd/plumego/internal/agentmanifest"
+	"github.com/birdordev/plumego/cmd/plumego/internal/gateprofile"
 	"gopkg.in/yaml.v3"
 )
 
@@ -105,18 +106,6 @@ type qualityRulesFile struct {
 	AntiPatterns []string `yaml:"anti_patterns"`
 }
 
-// ─── static maps ──────────────────────────────────────────────────────────────
-
-var stableRoots = map[string]bool{
-	"core": true, "router": true, "contract": true,
-	"middleware": true, "security": true, "store": true,
-	"health": true, "log": true, "metrics": true,
-}
-
-var rmsRoots = map[string]bool{
-	"router": true, "middleware": true, "security": true,
-}
-
 // taskToRecipe maps task-routing.yaml keys to change-recipe file names.
 var taskToRecipe = map[string]string{
 	"http_endpoint":               "add-http-endpoint",
@@ -182,7 +171,15 @@ func Generate(repoRoot, taskType, modulePath string) (*Bundle, error) {
 	}
 
 	// Validation profile and commands.
-	b.Validation = selectValidation(manifest, modulePath)
+	profiles, err := gateprofile.Load(repoRoot)
+	if err != nil {
+		return nil, fmt.Errorf("load validation profiles: %w", err)
+	}
+	profileName, profile := gateprofile.Select(profiles, []string{modulePath + "/task.go"}, modulePath, false)
+	b.Validation = validation{GateProfile: profileName}
+	for _, command := range profile.Commands {
+		b.Validation.Commands = append(b.Validation.Commands, strings.ReplaceAll(command, "{module}", modulePath))
+	}
 
 	// Preflight checklist.
 	b.PreflightChecklist = buildPreflight(manifest, modulePath)
@@ -273,46 +270,6 @@ func loadQualityRules(repoRoot string) (mustRules, antiPatterns []string, err er
 		return nil, nil, err
 	}
 	return q.RuleLevels.Must, q.AntiPatterns, nil
-}
-
-// ─── validation profile selection ─────────────────────────────────────────────
-
-func selectValidation(m *agentmanifest.Manifest, modulePath string) validation {
-	modArg := "./" + strings.TrimSuffix(modulePath, "/") + "/..."
-
-	switch {
-	case rmsRoots[m.Name]:
-		return validation{
-			GateProfile: "router_middleware_security",
-			Commands: []string{
-				"go test -race -timeout 60s " + modArg,
-				"go test -timeout 20s " + modArg,
-				"go vet " + modArg,
-				"go run ./internal/checks/dependency-rules",
-			},
-		}
-	case stableRoots[m.Name]:
-		return validation{
-			GateProfile: "stable_root_change",
-			Commands: []string{
-				"go test -race -timeout 60s " + modArg,
-				"go test -timeout 20s " + modArg,
-				"go vet " + modArg,
-				"go run ./internal/checks/dependency-rules",
-				"go run ./internal/checks/agent-workflow",
-				"go run ./internal/checks/module-manifests",
-			},
-		}
-	default:
-		return validation{
-			GateProfile: "single_module_behavior",
-			Commands: []string{
-				"go test -race -timeout 60s " + modArg,
-				"go test -timeout 20s " + modArg,
-				"go vet " + modArg,
-			},
-		}
-	}
 }
 
 // ─── preflight checklist ──────────────────────────────────────────────────────

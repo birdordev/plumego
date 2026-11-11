@@ -39,10 +39,7 @@ Verified Cards:
 
 ## Repo Gate Summary
 
-- `go test -race -timeout 60s ./...`
-- `go test -timeout 20s ./...`
-- `go vet ./...`
-- `gofmt -l .`
+- `make gates`:
 
 ## Checkpoint Summary
 

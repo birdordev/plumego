@@ -1362,6 +1362,9 @@ func validateModuleManifest(repoRoot, path string, schema manifestSchema) ([]str
 		if layer := strings.TrimSpace(doc.Scalars["layer"]); layer != "" && layer != "stable" {
 			violations = append(violations, fmt.Sprintf("%s: stable root modules must declare layer \"stable\"", filepath.ToSlash(path)))
 		}
+		if doc.Scalars["status"] != "ga" {
+			violations = append(violations, fmt.Sprintf("%s: stable root modules must declare status \"ga\"", filepath.ToSlash(path)))
+		}
 	}
 
 	for _, docPath := range doc.Lists["doc_paths"] {

@@ -1,6 +1,7 @@
 package taskbundle_test
 
 import (
+	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -107,8 +108,8 @@ func TestGenerate_StableRootRMS(t *testing.T) {
 	if b.Module.Layer != "stable" {
 		t.Errorf("Module.Layer: want stable, got %s", b.Module.Layer)
 	}
-	if b.Validation.GateProfile != "router_middleware_security" {
-		t.Errorf("Validation.GateProfile: want router_middleware_security, got %s", b.Validation.GateProfile)
+	if b.Validation.GateProfile != "stable_root_change" {
+		t.Errorf("Validation.GateProfile: want stable_root_change, got %s", b.Validation.GateProfile)
 	}
 
 	// RMS profile requires dependency-rules check.
@@ -120,7 +121,7 @@ func TestGenerate_StableRootRMS(t *testing.T) {
 		}
 	}
 	if !hasDepCheck {
-		t.Error("router_middleware_security profile must include dependency-rules check")
+		t.Error("stable_root_change profile must include dependency-rules check")
 	}
 }
 
@@ -187,5 +188,38 @@ func TestGenerate_SymbolChangePatterns(t *testing.T) {
 	}
 	if _, ok := b.CanonicalPatterns["verify_migration"]; !ok {
 		t.Error("symbol_change: want verify_migration pattern")
+	}
+}
+
+func TestGenerateUsesConfiguredValidation(t *testing.T) {
+	root := t.TempDir()
+	for _, name := range []string{"core/module.yaml", "specs/gate-profiles.yaml"} {
+		data, err := os.ReadFile(filepath.Join(repoRoot(t), name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if name == "specs/gate-profiles.yaml" {
+			data = []byte(strings.ReplaceAll(string(data), "go vet ./{module}/...", "go vet -all ./{module}/..."))
+		}
+		path := filepath.Join(root, name)
+		if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, data, 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	bundle, err := taskbundle.Generate(root, "bugfix_triage", "core")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(strings.Join(bundle.Validation.Commands, "\n"), "go vet -all ./core/...") {
+		t.Fatalf("bundle ignored configured commands: %v", bundle.Validation.Commands)
+	}
+	if err := os.Remove(filepath.Join(root, "specs/gate-profiles.yaml")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := taskbundle.Generate(root, "bugfix_triage", "core"); err == nil {
+		t.Fatal("missing gate configuration was ignored")
 	}
 }
