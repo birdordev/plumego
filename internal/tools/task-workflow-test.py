@@ -150,7 +150,9 @@ class WorkflowTest(unittest.TestCase):
         self.stub("bin/git", "exit 0")
         self.stub("bin/pnpm", 'printf "pnpm %s\\n" "$*" >> "$CALLS"')
         self.make("website-gates")
-        self.assertEqual(self.calls(), ["pnpm sync", "pnpm check", "pnpm build"])
+        self.assertEqual(self.calls(), [
+            "pnpm translations:check", "pnpm sync", "pnpm check:site", "pnpm build:site",
+        ])
 
     def test_reference_targets_run_in_each_module(self):
         for module in ("reference/first", "reference/second"):

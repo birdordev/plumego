@@ -61,7 +61,8 @@ Use three composition entry points:
 - `make check`: formatting, tooling, boundaries, canonical assets, API snapshots,
   and documentation snippets.
 - `make gates`: the root and reference suite (`make go-gates`) plus CLI vet and race tests (`make cli-check`).
-- `make website-gates`: generated-data validation, website checks, and build.
+- `make website-gates`: translation check, one regeneration with a freshness
+  check, then content checks and a build from the same generated files.
 
 Compositions stop at the first failure and preserve ordering under `make -j`.
 `make lint` remains a separate zero-finding check. Individual checks such as

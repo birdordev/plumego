@@ -170,7 +170,7 @@ it does not duplicate commands. The Makefile owns reusable repository checks; `m
 | `website_only` | Website checks and build; mixed Go/website diffs retain both gate families |
 | `docs_only` | Markdown accuracy, links, terminology, and authority order |
 | `single_module_behavior` | Owning module race tests and vet |
-| `stable_root_change` | All nine stable roots: module tests/vet plus dependency, workflow, and manifest checks |
+| `stable_root_change` | Race tests and vet for the affected stable root, followed by `make boundary-check` |
 | `cross_module_public_api_release` | `make gates`, including stable coverage and CLI validation |
 
 Use `make validate-diff-dry` to inspect selected commands. Format intentional

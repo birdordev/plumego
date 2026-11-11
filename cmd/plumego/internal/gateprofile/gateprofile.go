@@ -46,6 +46,9 @@ func Load(repoRoot string) (*Doc, error) {
 	if len(doc.SelectionRules) == 0 {
 		return nil, fmt.Errorf("gate profiles have no selection rules")
 	}
+	if doc.SelectionRules[len(doc.SelectionRules)-1].ID != "default" {
+		return nil, fmt.Errorf("gate selection rules must end with the default rule")
+	}
 	for _, rule := range doc.SelectionRules {
 		profile, ok := doc.Profiles[rule.Use]
 		if !ok {
@@ -86,7 +89,7 @@ func Select(doc *Doc, changedFiles []string, primaryModule string, multiModule b
 func selectProfile(doc *Doc, changedFiles []string, primaryModule string, multiModule bool) (string, Profile) {
 	for _, rule := range doc.SelectionRules {
 		switch rule.ID {
-		case "website_only":
+		case "website_only", "docs_only":
 			if allMatch(changedFiles, rule.PathPatterns) {
 				return applyRule(doc, rule.Use)
 			}
@@ -97,10 +100,6 @@ func selectProfile(doc *Doc, changedFiles []string, primaryModule string, multiM
 						return applyRule(doc, rule.Use)
 					}
 				}
-			}
-		case "docs_only":
-			if allMatch(changedFiles, rule.PathPatterns) {
-				return applyRule(doc, rule.Use)
 			}
 		case "stable_root":
 			// A primary module cannot represent the full scope of a multi-module diff.
@@ -116,14 +115,9 @@ func selectProfile(doc *Doc, changedFiles []string, primaryModule string, multiM
 			if multiModule {
 				return applyRule(doc, rule.Use)
 			}
-		case "default":
-			if strings.HasPrefix(primaryModule, "reference/") || strings.HasPrefix(primaryModule, "examples/") {
-				return rule.Use, fallbackProfile(primaryModule)
-			}
-			return applyRule(doc, rule.Use)
 		}
 	}
-	return "single_module_behavior", fallbackProfile(primaryModule)
+	return applyRule(doc, doc.SelectionRules[len(doc.SelectionRules)-1].Use)
 }
 
 func applyRule(doc *Doc, profileName string) (string, Profile) {
@@ -160,30 +154,4 @@ func matchGlob(pattern, path string) bool {
 		return strings.HasSuffix(path, strings.TrimPrefix(pattern, "*"))
 	}
 	return path == pattern
-}
-
-func fallbackProfile(module string) Profile {
-	// reference/* live in nested go.mod directories that cannot
-	// be tested via "./reference/..." from the root module. Use "go -C <dir>" to
-	// change into the module directory before running — supported since Go 1.21.
-	if strings.Contains(module, "/") {
-		return Profile{
-			Description: "nested module (fallback)",
-			Commands: []string{
-				"go -C " + module + " test -race -timeout 60s ./...",
-				"go -C " + module + " vet ./...",
-			},
-		}
-	}
-	arg := "./" + module + "/..."
-	if module == "" {
-		arg = "./..."
-	}
-	return Profile{
-		Description: "single module behavior (fallback)",
-		Commands: []string{
-			"go test -race -timeout 60s " + arg,
-			"go vet " + arg,
-		},
-	}
 }

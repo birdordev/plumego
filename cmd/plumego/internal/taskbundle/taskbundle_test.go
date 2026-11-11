@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 
@@ -99,57 +100,32 @@ func TestGenerate_ExtensionModule(t *testing.T) {
 	}
 }
 
-func TestGenerate_StableRootRMS(t *testing.T) {
-	b, err := taskbundle.Generate(repoRoot(t), "middleware", "middleware")
-	if err != nil {
-		t.Fatalf("Generate: %v", err)
-	}
-
-	if b.Module.Layer != "stable" {
-		t.Errorf("Module.Layer: want stable, got %s", b.Module.Layer)
-	}
-	if b.Validation.GateProfile != "stable_root_change" {
-		t.Errorf("Validation.GateProfile: want stable_root_change, got %s", b.Validation.GateProfile)
-	}
-
-	// RMS profile requires dependency-rules check.
-	hasDepCheck := false
-	for _, cmd := range b.Validation.Commands {
-		if strings.Contains(cmd, "dependency-rules") {
-			hasDepCheck = true
-			break
-		}
-	}
-	if !hasDepCheck {
-		t.Error("stable_root_change profile must include dependency-rules check")
-	}
-}
-
 func TestGenerate_StableRoot(t *testing.T) {
-	b, err := taskbundle.Generate(repoRoot(t), "bugfix_triage", "core")
-	if err != nil {
-		t.Fatalf("Generate: %v", err)
+	tests := []struct {
+		task   string
+		module string
+	}{
+		{task: "middleware", module: "middleware"},
+		{task: "bugfix_triage", module: "core"},
 	}
-
-	if b.Validation.GateProfile != "stable_root_change" {
-		t.Errorf("Validation.GateProfile: want stable_root_change, got %s", b.Validation.GateProfile)
-	}
-
-	// Stable root change needs agent-workflow and module-manifests checks.
-	var hasAgentWorkflow, hasModuleManifests bool
-	for _, cmd := range b.Validation.Commands {
-		if strings.Contains(cmd, "agent-workflow") {
-			hasAgentWorkflow = true
-		}
-		if strings.Contains(cmd, "module-manifests") {
-			hasModuleManifests = true
-		}
-	}
-	if !hasAgentWorkflow {
-		t.Error("stable_root_change must include agent-workflow check")
-	}
-	if !hasModuleManifests {
-		t.Error("stable_root_change must include module-manifests check")
+	for _, tt := range tests {
+		t.Run(tt.module, func(t *testing.T) {
+			b, err := taskbundle.Generate(repoRoot(t), tt.task, tt.module)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if b.Module.Layer != "stable" || b.Validation.GateProfile != "stable_root_change" {
+				t.Fatalf("layer = %q, profile = %q", b.Module.Layer, b.Validation.GateProfile)
+			}
+			want := []string{
+				"go -C " + tt.module + " test -race -timeout 60s ./...",
+				"go -C " + tt.module + " vet ./...",
+				"make boundary-check",
+			}
+			if !slices.Equal(b.Validation.Commands, want) {
+				t.Errorf("commands = %q, want %q", b.Validation.Commands, want)
+			}
+		})
 	}
 }
 
@@ -199,7 +175,7 @@ func TestGenerateUsesConfiguredValidation(t *testing.T) {
 			t.Fatal(err)
 		}
 		if name == "specs/gate-profiles.yaml" {
-			data = []byte(strings.ReplaceAll(string(data), "go vet ./{module}/...", "go vet -all ./{module}/..."))
+			data = []byte(strings.ReplaceAll(string(data), "go -C {module} vet ./...", "go -C {module} vet -all ./..."))
 		}
 		path := filepath.Join(root, name)
 		if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
@@ -213,7 +189,7 @@ func TestGenerateUsesConfiguredValidation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(strings.Join(bundle.Validation.Commands, "\n"), "go vet -all ./core/...") {
+	if !strings.Contains(strings.Join(bundle.Validation.Commands, "\n"), "go -C core vet -all ./...") {
 		t.Fatalf("bundle ignored configured commands: %v", bundle.Validation.Commands)
 	}
 	if err := os.Remove(filepath.Join(root, "specs/gate-profiles.yaml")); err != nil {

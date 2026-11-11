@@ -73,6 +73,7 @@ func TestSelectMultiModuleSkipsSingleModuleRules(t *testing.T) {
 func TestLoadRejectsIncompleteProfiles(t *testing.T) {
 	for name, config := range map[string]string{
 		"missing rules":   "profiles: {}\n",
+		"missing default": "selection_rules:\n  - id: docs_only\n    use: docs_only\n",
 		"missing profile": "selection_rules:\n  - id: default\n    use: missing\n",
 		"empty commands":  "profiles:\n  single_module_behavior: {}\nselection_rules:\n  - id: default\n    use: single_module_behavior\n",
 	} {
@@ -98,7 +99,7 @@ func TestNestedModuleCommandsRunInsideModule(t *testing.T) {
 	}
 	_, profile := Select(doc, []string{"reference/standard-service/main.go"}, "reference/standard-service", false)
 	for _, command := range profile.Commands {
-		if !strings.HasPrefix(command, "go -C reference/standard-service ") {
+		if !strings.HasPrefix(command, "go -C {module} ") {
 			t.Fatalf("invalid nested module command: %q", command)
 		}
 	}

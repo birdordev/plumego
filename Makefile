@@ -110,9 +110,10 @@ website-check-generated: ## Fail if regeneration changes website data
 	cmp -s "$$tmp/before" "$$tmp/after" || { echo "Website data is stale. Run make website-sync and commit the generated files."; exit 1; }
 
 website-gates: ## Check generated data, validate, and build the website
+	cd website && pnpm translations:check
 	$(MAKE) website-check-generated
-	cd website && pnpm check
-	cd website && pnpm build
+	cd website && pnpm check:site
+	cd website && pnpm build:site
 
 ## Task artifacts
 bundle: ## Generate an execution bundle: TASK=<recipe> MODULE=<path>

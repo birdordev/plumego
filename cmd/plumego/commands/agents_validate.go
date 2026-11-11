@@ -94,11 +94,14 @@ func runAgentsValidateDiff(ctx *Context, args []string) error {
 	results := make([]commandResult, 0, len(commands))
 	allPassed := true
 
-	for _, cmdStr := range commands {
+	for i, cmdStr := range commands {
 		ctx.Out.Verbose(fmt.Sprintf("running: %s", cmdStr))
-		name, cmdArgs := agentmanifest.SplitCommand(cmdStr)
+		name, cmdArgs := agentmanifest.SplitCommand(profile.Commands[i])
 		if name == "" {
 			continue
+		}
+		for i, arg := range cmdArgs {
+			cmdArgs[i] = strings.ReplaceAll(arg, "{module}", modPath)
 		}
 
 		start := time.Now()
@@ -147,58 +150,32 @@ func runAgentsValidateDiff(ctx *Context, args []string) error {
 // collectChangedFiles returns the deduplicated set of repo-relative file paths
 // that differ from base, are staged, or are untracked.
 func collectChangedFiles(repoRoot, base string) ([]string, error) {
-	var all []string
-
-	r1, err := executil.Run(context.Background(), executil.Options{
-		Name: "git", Args: []string{"diff", "--name-only", base},
-		Dir: repoRoot, Timeout: 15 * time.Second,
-	})
-	if err == nil {
-		all = append(all, splitLines(r1.Stdout)...)
+	commands := [][]string{
+		{"diff", "--name-only", "-z", "--no-renames", "--end-of-options", base, "--"},
+		// An unstaged edit can cancel a staged change in the base-to-worktree diff.
+		{"diff", "--name-only", "-z", "--no-renames", "--cached", "--"},
+		{"ls-files", "-z", "--others", "--exclude-standard"},
 	}
-
-	// Also pick up staged files not yet committed (when base == HEAD).
-	r2, err2 := executil.Run(context.Background(), executil.Options{
-		Name: "git", Args: []string{"diff", "--name-only", "--cached"},
-		Dir: repoRoot, Timeout: 15 * time.Second,
-	})
-	if err2 == nil {
-		all = append(all, splitLines(r2.Stdout)...)
-	}
-
-	// Untracked files (new files not yet added to git).
-	r3, err3 := executil.Run(context.Background(), executil.Options{
-		Name: "git", Args: []string{"ls-files", "--others", "--exclude-standard"},
-		Dir: repoRoot, Timeout: 15 * time.Second,
-	})
-	if err3 == nil {
-		all = append(all, splitLines(r3.Stdout)...)
-	}
-
-	return dedupStrings(all), nil
-}
-
-func splitLines(s string) []string {
-	var out []string
-	for _, line := range strings.Split(strings.TrimSpace(s), "\n") {
-		line = strings.TrimSpace(line)
-		if line != "" {
-			out = append(out, line)
+	seen := make(map[string]bool)
+	var files []string
+	for _, args := range commands {
+		result, err := executil.Run(context.Background(), executil.Options{
+			Name: "git", Args: args, Dir: repoRoot, Timeout: 15 * time.Second,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("git %s: %w: %s", args[0], err, strings.TrimSpace(result.Stderr))
+		}
+		if result.StdoutTruncated {
+			return nil, fmt.Errorf("git %s returned an incomplete file list", args[0])
+		}
+		for file := range strings.SplitSeq(result.Stdout, "\x00") {
+			if file != "" && !seen[file] {
+				seen[file] = true
+				files = append(files, file)
+			}
 		}
 	}
-	return out
-}
-
-func dedupStrings(ss []string) []string {
-	seen := make(map[string]bool, len(ss))
-	out := make([]string, 0, len(ss))
-	for _, s := range ss {
-		if !seen[s] {
-			seen[s] = true
-			out = append(out, s)
-		}
-	}
-	return out
+	return files, nil
 }
 
 // ─── module detection ─────────────────────────────────────────────────────────
@@ -208,6 +185,10 @@ func dedupStrings(ss []string) []string {
 func detectModules(changedFiles []string) (primary string, multi bool) {
 	moduleSet := map[string]bool{}
 	for _, f := range changedFiles {
+		if !strings.Contains(f, "/") {
+			moduleSet["."] = true
+			continue
+		}
 		if m := moduleFromFilePath(f); m != "" {
 			moduleSet[m] = true
 		}
@@ -244,11 +225,9 @@ func moduleFromFilePath(path string) string {
 	if len(parts) == 0 || parts[0] == "" {
 		return ""
 	}
-	// x/* and reference/* each contain nested go.mod boundaries
-	// at the second directory level — return a two-level module identifier so
-	// the gate profile runs tests from within the correct sub-module directory.
+	// Group extensions by family and standalone projects by directory.
 	switch parts[0] {
-	case "x", "reference":
+	case "x", "reference", "examples":
 		if len(parts) >= 2 {
 			return parts[0] + "/" + parts[1]
 		}

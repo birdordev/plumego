@@ -19,17 +19,15 @@ profiles:
   single_module_behavior:
     description: Single extension or standalone module change
     commands:
-      - "go test -race -timeout 60s ./{module}/..."
-      - "go vet ./{module}/..."
+      - "go -C {module} test -race -timeout 60s ./..."
+      - "go -C {module} vet ./..."
 
   stable_root_change:
     description: Change to any stable root
     commands:
-      - "go test -race -timeout 60s ./{module}/..."
-      - "go vet ./{module}/..."
-      - "go run ./internal/checks/dependency-rules"
-      - "go run ./internal/checks/agent-workflow"
-      - "go run ./internal/checks/module-manifests"
+      - "go -C {module} test -race -timeout 60s ./..."
+      - "go -C {module} vet ./..."
+      - "make boundary-check"
 
   cross_module_public_api_release:
     description: Cross-module change, public API change, or release-relevant change

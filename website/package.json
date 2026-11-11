@@ -7,10 +7,13 @@
   "scripts": {
     "sync": "node ./scripts/sync-all.mjs",
     "dev": "pnpm sync && ASTRO_TELEMETRY_DISABLED=1 astro dev",
-    "build": "pnpm sync && node ./scripts/check-doc-api-symbols.mjs && ASTRO_TELEMETRY_DISABLED=1 astro build && node ./scripts/check-rendered-asides.mjs",
+    "build": "pnpm sync && pnpm check:api && pnpm build:site",
+    "build:site": "ASTRO_TELEMETRY_DISABLED=1 astro build && node ./scripts/check-rendered-asides.mjs",
     "preview": "ASTRO_TELEMETRY_DISABLED=1 astro preview",
     "translations:check": "node ./scripts/check-translation-lag.mjs --strict",
-    "check": "pnpm translations:check && pnpm sync && node ./scripts/check-content-contracts.mjs && node ./scripts/check-doc-api-symbols.mjs && ASTRO_TELEMETRY_DISABLED=1 astro check"
+    "check": "pnpm translations:check && pnpm sync && pnpm check:site",
+    "check:api": "node ./scripts/check-doc-api-symbols.mjs",
+    "check:site": "node ./scripts/check-content-contracts.mjs && pnpm check:api && ASTRO_TELEMETRY_DISABLED=1 astro check"
   },
   "devDependencies": {
     "@astrojs/check": "0.9.10",
