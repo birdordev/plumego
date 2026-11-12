@@ -172,7 +172,7 @@ These behaviors are part of the current stable-root freeze baseline:
 | Groups | nested groups compose normalized prefixes and preserve named route metadata |
 | Matching | among complete matches, static segments take precedence over params, and params take precedence over wildcards. A branch with no matching handler falls back to the next candidate. Cached dispatch and `Allow` use the same matching rules. |
 | Match cache | cache keys use method and normalized path; host does not participate in router matching. Successful registration invalidates cached matches, including when requests are served concurrently. |
-| Reverse routing | `URL` percent-escapes params and returns empty string for unknown routes, missing params, empty params, duplicate keys, unknown keys, or malformed params; `URLMust` panics with the specific reason |
+| Reverse routing | `URL` percent-escapes params and returns empty string for unknown routes, missing params, empty params, duplicate keys, unknown keys, slash-containing single-segment values, or malformed params; `URLMust` panics with the specific reason |
 | Route snapshots | `Routes` returns method/path-sorted route metadata snapshots; uninitialized routers return non-nil empty `Routes` and `NamedRoutes` snapshots |
 | 404 handling | unmatched routes use standard-library `http.NotFound` |
 | Defensive request guard | nil request URL uses standard-library 400 plain-text `bad request` output |
