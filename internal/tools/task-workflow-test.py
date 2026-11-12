@@ -14,7 +14,7 @@ class WorkflowTest(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory(prefix="plumego-make-test-")
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
-        for name in ("Makefile", "internal/tools/task-workflow"):
+        for name in ("Makefile", "internal/tools/task-workflow", ".githooks/pre-push"):
             destination = self.root / name
             destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy(ROOT / name, destination)
@@ -31,6 +31,7 @@ class WorkflowTest(unittest.TestCase):
         self.stub("bin/codex", 'printf "codex\\n" >> "$CALLS"')
         self.stub("bin/go", 'printf "%s\\n" "$*" >> "$CALLS"\ncase "$*" in *"$FAIL_PATTERN"*) test -z "${FAIL_PATTERN:-}" || exit 17 ;; esac')
         self.env["FAIL_PATTERN"] = ""
+        (self.root / "internal/tools/task-workflow-test.py").write_text("# Isolated gate orchestration stub.\n")
 
     def stub(self, name, body):
         path = self.root / name
@@ -96,20 +97,86 @@ class WorkflowTest(unittest.TestCase):
         self.make("run-card", "C=active/missing", succeeds=False)
         self.assertFalse((self.root / "calls").exists())
 
-    def test_snapshot_patterns(self):
+    def test_milestone_validation_uses_the_shared_gate(self):
+        shutil.copy(ROOT / "internal/tools/check-spec", self.root / "internal/tools/check-spec")
+        self.make("new-milestone", "N=901", "TITLE=Validation")
+        folder = next((self.root / "tasks/milestones/active").iterdir())
+        self.make("new-verify", "M=M-901")
+        verify = folder / "verify-M-901.md"
+        self.make("check-spec", "M=M-901")
+        self.make("check-verify", "M=M-901")
+        verify.write_text(verify.read_text().replace("make gates", "go test -race ./..."))
+        self.make("check-verify", "M=M-901", succeeds=False)
+        shutil.move(folder, self.root / "tasks/milestones/done" / folder.name)
+        self.make("check-verify", "M=M-901")
+
+    def test_hook_covers_all_branch_names_and_propagates_failure(self):
+        self.stub("bin/git", 'case "$1" in rev-parse) pwd ;; symbolic-ref) echo "$TEST_BRANCH" ;; esac')
+        self.stub("bin/make", 'printf "%s\n" "$*" >> "$CALLS"; exit "${MAKE_STATUS:-0}"')
+        for branch in ("main", "feat/test", "codex/test", "release/v2", "milestone/M-901"):
+            self.env["TEST_BRANCH"] = branch
+            result = subprocess.run(["bash", ".githooks/pre-push"], cwd=self.root, env=self.env)
+            self.assertEqual(result.returncode, 0)
+            self.assertEqual(self.calls()[-1], "pre-push-check")
+        self.env["MAKE_STATUS"] = "23"
+        result = subprocess.run(["bash", ".githooks/pre-push"], cwd=self.root, env=self.env)
+        self.assertEqual(result.returncode, 23)
+
+    def test_api_check_uses_one_snapshot_tool_invocation(self):
         self.make("api-check")
-        calls = self.calls()
-        self.assertEqual(len(calls), 18)
-        for index, module in enumerate("core router contract middleware security store health log metrics".split()):
-            pattern = f"./{module}" + ("" if module in ("core", "router") else "/...")
-            self.assertIn(f"-module {pattern} -out", calls[index * 2])
-            self.assertIn(f"snapshots/{module}-head.snapshot", calls[index * 2 + 1])
+        self.assertEqual(self.calls(), ["run ./internal/checks/extension-api-snapshot -check-stable"])
 
     def test_gate_failure_stops_even_with_parallel_make(self):
         self.env["FAIL_PATTERN"] = "cross-extension-deps"
         self.make("-j4", "gates", succeeds=False)
         self.assertEqual(self.calls(), ["run ./internal/checks/dependency-rules",
                                        "run ./internal/checks/cross-extension-deps"])
+
+    def test_go_and_website_gate_compositions_are_separate(self):
+        root_gates = self.make("-n", "go-gates")
+        full_gates = self.make("-n", "gates")
+        self.assertNotIn("pnpm", full_gates)
+        self.assertNotIn("cd cmd/plumego && go vet", root_gates)
+        self.assertIn("cd cmd/plumego && go vet", full_gates)
+        self.assertEqual(root_gates.count("go test -race -timeout 60s ./...\n"), 1)
+        self.assertEqual(full_gates.count("go test -race -timeout 60s ./...\n"), 2)
+        for gates in (root_gates, full_gates):
+            self.assertNotIn("go test -timeout 20s ./...\n", gates)
+        self.stub("bin/git", "exit 0")
+        self.stub("bin/pnpm", 'printf "pnpm %s\\n" "$*" >> "$CALLS"')
+        self.make("website-gates")
+        self.assertEqual(self.calls(), [
+            "pnpm translations:check", "pnpm sync", "pnpm check:site", "pnpm build:site",
+        ])
+
+    def test_reference_targets_run_in_each_module(self):
+        for module in ("reference/first", "reference/second"):
+            directory = self.root / module
+            directory.mkdir(parents=True)
+            (directory / "go.mod").touch()
+        self.make("reference-vet", "reference-test")
+        self.assertEqual(self.calls(), [
+            "-C reference/first vet ./...",
+            "-C reference/second vet ./...",
+            "-C reference/first test ./...",
+            "-C reference/second test ./...",
+        ])
+
+    def test_coverage_exports_only_a_passing_profile(self):
+        self.stub("bin/go", r'''case "$1" in
+  test)
+    for arg in "$@"; do
+      case "$arg" in -coverprofile=*) printf 'mode: set\n' > "${arg#-coverprofile=}" ;; esac
+    done ;;
+  tool) printf 'total: (statements) %s%%\n' "$COVERAGE_PERCENT" ;;
+esac''')
+        destination = self.root / "measured.cover"
+        self.env["COVERAGE_PERCENT"] = "89.9"
+        self.make("stable-coverage", f"COVERAGE_FILE={destination}", succeeds=False)
+        self.assertFalse(destination.exists())
+        self.env["COVERAGE_PERCENT"] = "90.0"
+        self.make("stable-coverage", f"COVERAGE_FILE={destination}")
+        self.assertEqual(destination.read_text(), "mode: set\n")
 
     def test_generation_failure_is_not_reported_as_success(self):
         self.stub("bin/git", "exit 0")

@@ -161,61 +161,23 @@ Review priorities:
 
 ## 6. Gate Profiles
 
-### docs-only
+`specs/gate-profiles.yaml` is the command and selection authority for both
+`validate-diff` and task bundles. `specs/checks.yaml` indexes validation owners;
+it does not duplicate commands. The Makefile owns reusable repository checks; `make check` is the shared source and contract composition.
 
-Check accuracy, links, terminology, and authority order. Go gates are not
-required unless code, config, generated data, or runnable examples changed.
+| Profile | Scope |
+|---|---|
+| `website_only` | Website checks and build; mixed Go/website diffs retain both gate families |
+| `docs_only` | Markdown accuracy, links, terminology, and authority order |
+| `single_module_behavior` | Owning module race tests and vet |
+| `stable_root_change` | Race tests and vet for the affected stable root, followed by `make boundary-check api-check` |
+| `cross_module_public_api_release` | `make gates`, including stable coverage and CLI validation |
 
-### single module behavior
-
-```bash
-go test -race -timeout 60s ./<module>/...
-go test -timeout 20s ./<module>/...
-go vet ./<module>/...
-gofmt -w <changed-go-files>
-```
-
-### stable root change
-
-```bash
-go test -race -timeout 60s ./<module>/...
-go test -timeout 20s ./<module>/...
-go vet ./<module>/...
-go run ./internal/checks/dependency-rules
-go run ./internal/checks/agent-workflow
-go run ./internal/checks/module-manifests
-```
-
-### router, middleware, or security
-
-```bash
-go test -race -timeout 60s ./<module>/...
-go test -timeout 20s ./<module>/...
-go vet ./<module>/...
-go run ./internal/checks/dependency-rules
-```
-
-Also confirm:
-
-- `router`: static, param, group, method, and reverse-route tests
-- `middleware`: ordering, error-path, panic, timeout, and cancel tests
-- `security`: invalid-token, invalid-signature, fail-closed, and timing-safe tests
-
-### cross-module, public API, or release-relevant
-
-```bash
-go run ./internal/checks/dependency-rules
-go run ./internal/checks/agent-workflow
-go run ./internal/checks/module-manifests
-go run ./internal/checks/reference-layout
-go run ./internal/checks/extension-maturity
-go run ./internal/checks/extension-beta-evidence
-go run ./internal/checks/deprecation-inventory -strict
-go test -race -timeout 60s ./...
-go test -timeout 20s ./...
-go vet ./...
-gofmt -w .
-```
+Use `make validate-diff-dry` to inspect selected commands. Format intentional
+source changes before validation; checks must not rewrite source files.
+Docs-only exemptions do not apply to executable tooling, configuration, or
+runnable examples. Lint and website build checks remain explicit additions
+(`make lint`, `make website-gates`); `make gates` is the full local Go gate.
 
 ## 7. Handoff Contract
 

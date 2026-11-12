@@ -168,7 +168,7 @@ These behaviors are part of the current stable-root freeze baseline:
 | Post-shutdown | after successful shutdown, the app remains `server_prepared`, `Server()` and `Prepare()` keep returning the same closed `*http.Server`, repeated `Shutdown` is accepted, and `ServeHTTP` can still serve through the prepared handler; caller code must create a new app to prepare a fresh server |
 | TLS | `Prepare` loads configured cert/key material into the returned `*http.Server` |
 | Ownership | logger lifecycle, readiness signaling, debug routes, and feature wiring remain caller-owned |
-| `LifecycleGroup` | The first `Start` freezes registration. Startup failure rolls back every attempted component in reverse order with the startup context and joins startup and cleanup errors. `Stop` can retry pending cleanup. `Ready` probes components only after successful startup, and overlapping operations return without waiting for callbacks. |
+| `LifecycleGroup` | The first `Start` that enters startup freezes registration. A context already canceled leaves the group idle. Startup failure or cancellation during startup rolls back every attempted component in reverse order with the startup context and joins startup and cleanup errors. `Stop` can retry pending cleanup. `Ready` probes components only after successful startup, and overlapping operations return without waiting for callbacks. |
 
 Focused regression coverage lives in `core/freeze_test.go`,
 `core/lifecycle_test.go`, `core/app_test.go`, and `core/routing_test.go`.

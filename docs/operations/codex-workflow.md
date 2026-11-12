@@ -56,10 +56,35 @@ task artifacts, and local setup. The root Makefile handles orchestration;
 for the task commands. Run `python3 internal/tools/task-workflow-test.py` after
 changing those command paths; it uses temporary artifacts and stubbed tools.
 
-`make gates` runs its component checks in order and stops at the first failure,
-even when invoked with `make -j`. Individual checks such as `make api-check`,
-`make boundary-check`, and `make stable-coverage` can be run directly. Lint and
-the website build remain separate: `make lint` and `make website-gates`.
+Use three composition entry points:
+
+- `make check`: formatting, tooling, boundaries, canonical assets, API snapshots,
+  and documentation snippets.
+- `make gates`: the root and reference suite (`make go-gates`) plus CLI vet and race tests (`make cli-check`).
+- `make website-gates`: translation check, one regeneration with a freshness
+  check, then content checks and a build from the same generated files.
+
+Compositions stop at the first failure and preserve ordering under `make -j`.
+`make lint` remains a separate zero-finding check. Individual checks such as
+`make api-check` and `make stable-coverage` remain available for targeted work.
+
+`specs/gate-profiles.yaml` owns diff selection and bundle validation commands.
+`specs/checks.yaml` is an index, and `specs/agent-quality-rules.yaml` owns review
+policy. Cross-module and control-plane diffs call `make gates`. The docs-only
+profile applies to Markdown-only diffs. Website changes select website gates;
+mixed Go/website diffs retain both gate families.
+
+The pre-push hook uses `make pre-push-check` for every branch: formatting, vet,
+snippets, and standard tests. Full validation belongs to CI or an explicit local
+`make gates` run. Go checks do not require Node/pnpm; website checks do.
+CI invokes `make go-gates` and `make cli-check` in separate jobs, and also runs
+fuzz, lint, cross-platform, website, and CodeQL checks.
+
+The single coverage gate measures stable modules at >=90%. CI saves that same
+profile with `make go-gates COVERAGE_FILE=<path>` and uploads it as the
+`coverage-report` artifact and to Codecov. There is no extra all-package coverage
+run, HTML report, or PR coverage comment. A failing threshold does not export
+a new profile; successful runs without `COVERAGE_FILE` leave no output artifact.
 
 `make website-sync` regenerates website data without staging it. Review the diff
 and explicitly stage the generated files with the corresponding source changes.

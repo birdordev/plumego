@@ -244,64 +244,8 @@ review_output:
     - docs_config_or_example_drift
 
 gate_matrix:
-  docs_only:
-    checks:
-      - docs_accuracy
-      - links
-      - terminology
-      - authority_order
-    go_gates_required: false
-  single_module_behavior:
-    commands:
-      - go test -race -timeout 60s ./<module>/...
-      - go test -timeout 20s ./<module>/...
-      - go vet ./<module>/...
-      - gofmt -w <changed-go-files>
-  stable_root_change:
-    commands:
-      - go test -race -timeout 60s ./<module>/...
-      - go test -timeout 20s ./<module>/...
-      - go vet ./<module>/...
-      - go run ./internal/checks/dependency-rules
-      - go run ./internal/checks/agent-workflow
-      - go run ./internal/checks/module-manifests
-  router_middleware_security:
-    commands:
-      - go test -race -timeout 60s ./<module>/...
-      - go test -timeout 20s ./<module>/...
-      - go vet ./<module>/...
-      - go run ./internal/checks/dependency-rules
-    extra_focus:
-      router:
-        - static_route_tests
-        - param_route_tests
-        - group_route_tests
-        - method_matching_tests
-        - reverse_route_tests
-      middleware:
-        - ordering_tests
-        - error_path_tests
-        - panic_tests
-        - timeout_tests
-        - cancel_tests
-      security:
-        - invalid_token_tests
-        - invalid_signature_tests
-        - fail_closed_tests
-        - timing_safe_comparison_tests
-  cross_module_public_api_release:
-    commands:
-      - go run ./internal/checks/dependency-rules
-      - go run ./internal/checks/agent-workflow
-      - go run ./internal/checks/module-manifests
-      - go run ./internal/checks/reference-layout
-      - go run ./internal/checks/extension-maturity
-      - go run ./internal/checks/extension-beta-evidence
-      - go run ./internal/checks/deprecation-inventory -strict
-      - go test -race -timeout 60s ./...
-      - go test -timeout 20s ./...
-      - go vet ./...
-      - gofmt -w .
+  source: specs/gate-profiles.yaml
+  execution: Makefile
 
 handoff:
   required_sections:

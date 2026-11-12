@@ -1,17 +1,16 @@
 # Repository commands. Task implementation lives in internal/tools/task-workflow.
 .DEFAULT_GOAL := help
 
-STABLE_MODULES := core router contract middleware security store health log metrics
 BOUNDARY_CHECKS := dependency-rules cross-extension-deps agent-workflow module-manifests \
 	reference-layout extension-maturity extension-beta-evidence public-entrypoints-sync
 TASK_TARGETS := milestone check-spec check-plan check-verify check-card new-milestone \
 	new-plan new-card new-verify run-card milestone-status
-export M C N TITLE ID SLUG R TASK MODULE
+export M C N TITLE ID SLUG R TASK MODULE COVERAGE_FILE
 
 .PHONY: help validate-diff validate-diff-dry bundle $(TASK_TARGETS) \
-	gates boundary-check api-check doc-check fmt fmt-check vet lint test test-race \
+	gates go-gates check boundary-check api-check doc-check fmt fmt-check vet lint test test-race \
 	reference-vet reference-test stable-coverage cli-check website-check-generated \
-	website-gates website-sync setup-hooks
+	website-gates website-sync setup-hooks tooling-test pre-push-check
 
 help: ## Show available commands
 	@awk 'BEGIN {FS = ":.*## "} /^## / {printf "\n%s\n", substr($$0, 4)} /^[a-z][a-z-]*:.*## / {printf "  %-25s %s\n", $$1, $$2}' Makefile
@@ -43,45 +42,48 @@ test-race: ## Run root module race tests
 
 ## Quality gates
 # Use ordered recursive calls: make -j must not overlap expensive gate suites.
-gates: ## Run repository Go gates and generated-file checks (lint is separate)
-	$(MAKE) boundary-check api-check doc-check fmt-check vet reference-vet test-race reference-test stable-coverage cli-check website-check-generated -j1
-	@echo "All gates passed. Run 'make lint' and 'make website-gates' separately."
+check: ## Run source, boundary, API, documentation, and tooling checks
+	$(MAKE) -j1 fmt-check tooling-test boundary-check api-check doc-check
+
+gates: ## Run complete Go validation (lint and website are separate)
+	$(MAKE) -j1 go-gates cli-check
+
+go-gates: ## Run root and reference Go validation used by CI
+	$(MAKE) -j1 check vet reference-vet test-race reference-test stable-coverage
+
+pre-push-check: ## Run the same quick checks for every branch
+	$(MAKE) -j1 fmt-check vet doc-check test
+
+tooling-test: ## Test repository command orchestration in isolation
+	python3 internal/tools/task-workflow-test.py
 
 boundary-check: ## Validate repository boundaries and manifests
 	@set -e; for check in $(BOUNDARY_CHECKS); do go run ./internal/checks/$$check; done
 	go run ./internal/checks/deprecation-inventory -strict
 
 api-check: ## Compare stable module API snapshots
-	@set -e; tmp=$$(mktemp -d "$${TMPDIR:-/tmp}/plumego-stable-api.XXXXXX"); \
-	trap 'rm -rf "$$tmp"' EXIT; \
-	for module in $(STABLE_MODULES); do \
-	  pattern="./$$module/..."; \
-	  case "$$module" in core|router) pattern="./$$module" ;; esac; \
-	  go run ./internal/checks/extension-api-snapshot -module "$$pattern" -out "$$tmp/$$module.snapshot"; \
-	  go run ./internal/checks/extension-api-snapshot -compare "docs/evidence/stable-api/snapshots/$$module-head.snapshot" "$$tmp/$$module.snapshot"; \
-	done
+	go run ./internal/checks/extension-api-snapshot -check-stable
 
 doc-check: ## Compile and run documentation snippets
 	go run ./internal/tools/doc-snippets
 
 reference-vet: ## Run go vet for standalone reference modules
-	@set -e; for mod in reference/*/go.mod; do \
-	  dir=$$(dirname "$$mod"); echo "==> $$dir"; (cd "$$dir" && go vet ./...); \
-	done
-
 reference-test: ## Test standalone reference modules
+reference-vet reference-test:
 	@set -e; for mod in reference/*/go.mod; do \
-	  dir=$$(dirname "$$mod"); echo "==> $$dir"; (cd "$$dir" && go test ./...); \
+	  dir=$$(dirname "$$mod"); echo "==> $$dir"; \
+	  go -C "$$dir" $(patsubst reference-%,%,$@) ./...; \
 	done
 
-stable-coverage: ## Require at least 90% aggregate stable-module coverage
+stable-coverage: ## Require 90% stable coverage; optionally save COVERAGE_FILE=<path>
 	@set -e; tmp=$$(mktemp -d "$${TMPDIR:-/tmp}/plumego-coverage.XXXXXX"); \
 	trap 'rm -rf "$$tmp"' EXIT; \
 	go test -coverprofile="$$tmp/stable.cover" ./core ./router ./middleware/... ./contract ./security/... ./store/... ./health ./log ./metrics >"$$tmp/test.log" 2>&1 || { cat "$$tmp/test.log"; exit 1; }; \
 	go tool cover -func="$$tmp/stable.cover" >"$$tmp/coverage.txt"; \
 	total=$$(awk '/^total:/ {gsub("%","",$$3); print $$3}' "$$tmp/coverage.txt"); \
 	echo "Stable-module total coverage: $$total%"; \
-	awk -v total="$$total" 'BEGIN {if (total == "" || total+0 < 90) exit 1}' || { cat "$$tmp/test.log"; exit 1; }
+	awk -v total="$$total" 'BEGIN {if (total == "" || total+0 < 90) exit 1}' || { cat "$$tmp/test.log"; exit 1; }; \
+	if [ -n "$$COVERAGE_FILE" ]; then cp "$$tmp/stable.cover" "$$COVERAGE_FILE"; fi
 
 cli-check: ## Run CLI vet and race tests
 	cd cmd/plumego && go vet ./...
@@ -99,9 +101,11 @@ website-check-generated: ## Fail if regeneration changes website data
 	git diff HEAD -- website/src/generated >"$$tmp/after"; \
 	cmp -s "$$tmp/before" "$$tmp/after" || { echo "Website data is stale. Run make website-sync and commit the generated files."; exit 1; }
 
-website-gates: ## Check and build the documentation website
-	cd website && pnpm check
-	cd website && pnpm build
+website-gates: ## Check generated data, validate, and build the website
+	cd website && pnpm translations:check
+	$(MAKE) website-check-generated
+	cd website && pnpm check:site
+	cd website && pnpm build:site
 
 ## Task artifacts
 bundle: ## Generate an execution bundle: TASK=<recipe> MODULE=<path>
@@ -128,4 +132,4 @@ $(TASK_TARGETS):
 setup-hooks: ## Install the local pre-push hook
 	@hook=$$(git rev-parse --git-path hooks/pre-push); \
 	cp .githooks/pre-push "$$hook" && chmod +x "$$hook"
-	@echo "Installed pre-push hook. See .githooks/pre-push for branch policies."
+	@echo "Installed pre-push hook (make pre-push-check)."

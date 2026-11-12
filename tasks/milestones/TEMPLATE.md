@@ -97,8 +97,8 @@
 
 ### Phase 4 — Validate and Ship (sequential)
 
-5. Run the **Acceptance Criteria** commands below; fix any failures.
-6. Run `gofmt -w .` and confirm `gofmt -l .` is empty.
+5. Run `make fmt` before validation.
+6. Run the **Acceptance Criteria** commands below; fix any failures.
 7. Commit: `feat(<module>): <short description> [M-XXX]`
 8. Final commit: `milestone(M-XXX): <Title>` with bullet list of completed tasks.
 9. Push to `milestone/M-XXX-<slug>`.
@@ -111,17 +111,11 @@
 <!-- Exact commands. All must exit 0. Do not abbreviate. -->
 
 ```bash
-go run ./internal/checks/dependency-rules
-go run ./internal/checks/agent-workflow
-go run ./internal/checks/module-manifests
-go run ./internal/checks/reference-layout
 go test -race -timeout 60s ./<primary-module>/...
-go test -timeout 20s ./...
-go vet ./...
-gofmt -l .
+make gates
 ```
 
-Expected: all exit 0; `gofmt -l .` outputs nothing.
+Expected: both commands exit 0.
 
 ---
 
@@ -154,7 +148,6 @@ Expected: all exit 0; `gofmt -l .` outputs nothing.
 ## Done Definition
 
 - [ ] All Acceptance Criteria commands exit 0.
-- [ ] `gofmt -l .` produces no output.
 - [ ] `plan-M-XXX.md` exists in this milestone directory and matches the milestone scope.
 - [ ] `verify-M-XXX.md` is filled in this milestone directory before PR packaging.
 - [ ] Branch `milestone/M-XXX-<slug>` pushed.

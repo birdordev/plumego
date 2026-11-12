@@ -7,89 +7,59 @@ version: 1
 # {module} in commands is substituted with the actual module path.
 
 profiles:
+  website_only:
+    description: Website content, scripts, and configuration
+    commands:
+      - "make website-gates"
+
   docs_only:
-    description: Documentation-only change — no Go files modified
-    go_gates_required: false
+    description: Markdown documentation and task records
     commands: []
-    notes: Check accuracy, links, and authority order only.
 
   single_module_behavior:
-    description: Single extension module or low-risk stable root change
+    description: Single extension or standalone module change
     commands:
-      - "go test -race -timeout 60s ./{module}/..."
-      - "go test -timeout 20s ./{module}/..."
-      - "go vet ./{module}/..."
-
-  router_middleware_security:
-    description: Change to router, middleware, or security stable roots
-    commands:
-      - "go test -race -timeout 60s ./{module}/..."
-      - "go test -timeout 20s ./{module}/..."
-      - "go vet ./{module}/..."
-      - "go run ./internal/checks/dependency-rules"
-    extra_focus:
-      router:
-        - static_route_tests
-        - param_route_tests
-        - group_route_tests
-        - reverse_route_tests
-      middleware:
-        - ordering_tests
-        - error_path_tests
-        - panic_tests
-        - timeout_tests
-        - cancel_tests
-      security:
-        - invalid_token_tests
-        - fail_closed_tests
-        - timing_safe_comparison_tests
+      - "go -C {module} test -race -timeout 60s ./..."
+      - "go -C {module} vet ./..."
 
   stable_root_change:
-    description: Change to core, contract, store, health, log, or metrics
+    description: Change to any stable root
     commands:
-      - "go test -race -timeout 60s ./{module}/..."
-      - "go test -timeout 20s ./{module}/..."
-      - "go vet ./{module}/..."
-      - "go run ./internal/checks/dependency-rules"
-      - "go run ./internal/checks/agent-workflow"
-      - "go run ./internal/checks/module-manifests"
+      - "go -C {module} test -race -timeout 60s ./..."
+      - "go -C {module} vet ./..."
+      - "make boundary-check api-check"
 
   cross_module_public_api_release:
     description: Cross-module change, public API change, or release-relevant change
     commands:
-      - "go run ./internal/checks/dependency-rules"
-      - "go run ./internal/checks/agent-workflow"
-      - "go run ./internal/checks/module-manifests"
-      - "go run ./internal/checks/reference-layout"
-      - "go run ./internal/checks/extension-maturity"
-      - "go run ./internal/checks/extension-beta-evidence"
-      - "go run ./internal/checks/deprecation-inventory -strict"
-      - "go test -race -timeout 60s ./..."
-      - "go test -timeout 20s ./..."
-      - "go vet ./..."
+      - "make gates"
 
 # How to select a profile automatically (used by validate-diff):
 # Cross-module behavior takes precedence over any primary-module profile.
 # Stable-root rules apply only to single-module changes, regardless of order.
 selection_rules:
+  - id: website_only
+    description: Website changes use the website checks instead of Go package paths
+    path_patterns: ["website/**"]
+    use: website_only
+
   - id: docs_only
-    description: All changed files match doc/spec/task patterns and no .go files changed
-    path_patterns: ["docs/**", "*.md", "specs/**", "tasks/**", "website/**"]
-    exclude_go_changes: true
+    description: All changed files are Markdown
+    path_patterns: ["*.md"]
     use: docs_only
+
+  - id: control_plane
+    description: Executable tooling, configuration, and non-Markdown documentation assets require repository validation
+    path_patterns: ["specs/**", ".github/**", ".githooks/**", "internal/**", "cmd/**", "docs/**", "tasks/**", "Makefile", ".golangci.yml", "go.mod", "go.sum", "plumego.go", "env.example"]
+    use: cross_module_public_api_release
 
   - id: cross_module
     description: Changed paths span multiple distinct modules or touch public API
     use: cross_module_public_api_release
 
-  - id: rms_stable
-    description: Changed module is router, middleware, or security
-    modules: [router, middleware, security]
-    use: router_middleware_security
-
-  - id: other_stable
-    description: Changed module is another stable root
-    modules: [core, contract, store, health, log, metrics]
+  - id: stable_root
+    description: All stable roots share one gate profile
+    modules: [core, router, contract, middleware, security, store, health, log, metrics]
     use: stable_root_change
 
   - id: default

@@ -22,10 +22,6 @@ jobs:
   go-quality-gates:
     runs-on: ubuntu-latest
     timeout-minutes: 60
-    permissions:
-      contents: read
-      pull-requests: write
-
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -37,31 +33,8 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: Verify formatting
-        run: |
-          set -euo pipefail
-          files="$(gofmt -l .)"
-          if [ -n "$files" ]; then
-            echo "gofmt check failed. Run: gofmt -w ."
-            echo "$files"
-            exit 1
-          fi
-
-      - name: Run repo boundary checks
-        run: |
-          set -euo pipefail
-          go run ./internal/checks/dependency-rules
-          go run ./internal/checks/cross-extension-deps
-          go run ./internal/checks/agent-workflow
-          go run ./internal/checks/module-manifests
-          go run ./internal/checks/reference-layout
-          go run ./internal/checks/extension-maturity
-          go run ./internal/checks/extension-beta-evidence
-          go run ./internal/checks/deprecation-inventory -strict
-          go run ./internal/checks/public-entrypoints-sync
-
-      - name: Run go vet
-        run: go vet ./...
+      - name: Run Go gates and save the measured coverage profile
+        run: make go-gates COVERAGE_FILE="${{ runner.temp }}/plumego-stable.cover"
 
       - name: Install golangci-lint
         run: |
@@ -72,13 +45,7 @@ jobs:
           curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/HEAD/install.sh | sh -s -- -b "$(go env GOPATH)/bin" v2.14.0
 
       - name: Run golangci-lint
-        run: "$(go env GOPATH)/bin/golangci-lint run ./..."
-
-      - name: Run race tests
-        run: go test -race -timeout 60s ./...
-
-      - name: Run standard tests
-        run: go test -timeout 20s ./...
+        run: PATH="$(go env GOPATH)/bin:$PATH" make lint
 
       - name: Run fuzz smoke tests
         run: |
@@ -94,187 +61,22 @@ jobs:
             done <<< "$targets"
           done
 
-      - name: Block stale APIs in canonical docs
-        run: |
-          set -euo pipefail
-
-          required_paths=(
-            README.md
-            README_CN.md
-            docs/reference/canonical-style-guide.md
-            docs/concepts/agent-first-repo-blueprint.md
-            specs/repo.yaml
-            specs/task-routing.yaml
-            specs/extension-taxonomy.yaml
-            specs/package-hotspots.yaml
-            specs/dependency-rules.yaml
-            env.example
-            reference/standard-service/README.md
-            reference/standard-service/main.go
-            reference/standard-service/internal/app/app.go
-            reference/standard-service/internal/app/routes.go
-          )
-
-          for path in "${required_paths[@]}"; do
-            if [ ! -e "$path" ]; then
-              echo "missing canonical doc asset: $path"
-              exit 1
-            fi
-          done
-
-          canonical_docs=(
-            README.md
-            README_CN.md
-            docs/reference/canonical-style-guide.md
-            docs/concepts/agent-first-repo-blueprint.md
-            reference/standard-service/README.md
-          )
-
-          stale_refs=(
-            github.com/birdordev/plumego/core/components
-            github.com/birdordev/plumego/components
-            github.com/birdordev/plumego/plumego
-            github.com/birdordev/plumego/net
-            github.com/birdordev/plumego/tenant
-            github.com/birdordev/plumego/rest
-          )
-
-          for ref in "${stale_refs[@]}"; do
-            if grep -n -F "$ref" "${canonical_docs[@]}" >/dev/null; then
-              echo "stale API reference found in canonical docs: $ref"
-              exit 1
-            fi
-          done
-
-          echo "canonical docs drift check: PASS"
-
-      - name: Enforce stable-module coverage baseline
-        run: |
-          set -euo pipefail
-          go test -coverprofile=/tmp/plumego-stable.cover ./core ./router ./middleware/... ./contract ./security/... ./store/... ./health ./log ./metrics >/tmp/stable-cover.log
-          total="$(go tool cover -func=/tmp/plumego-stable.cover | awk '/^total:/ {gsub("%","",$3); print $3}')"
-          echo "Stable-module total coverage: ${total}%"
-          min=90.0
-          awk -v total="$total" -v min="$min" 'BEGIN { if (total+0 < min+0) exit 1 }' || {
-            echo "Coverage gate failed: expected >= ${min}%, got ${total}%"
-            echo "--- stable cover log tail ---"
-            tail -n 50 /tmp/stable-cover.log || true
-            exit 1
-          }
-
-      - name: Code coverage analysis
-        id: coverage
-        run: |
-          set -euo pipefail
-
-          go test -coverprofile=/tmp/plumego-full.cover -covermode=atomic -timeout 120s ./...
-          go tool cover -func=/tmp/plumego-full.cover | tee /tmp/coverage-func.txt
-          go tool cover -html=/tmp/plumego-full.cover -o /tmp/coverage.html
-
-          total="$(awk '/^total:/ {print $NF}' /tmp/coverage-func.txt)"
-          echo "total_coverage=${total}" >> "$GITHUB_OUTPUT"
-
-          cat > /tmp/gen-coverage-comment.py << 'PYEOF'
-          import re
-
-          with open('/tmp/coverage-func.txt') as f:
-              lines = f.read().strip().splitlines()
-
-          total_line = next(l for l in lines if l.startswith('total:'))
-          total = total_line.split()[-1]
-          total_num = float(total.rstrip('%'))
-          badge = '✅' if total_num >= 70.0 else '⚠️'
-
-          pkg_lines = [l for l in lines if not l.startswith('total:')]
-
-          def pct(line):
-              m = re.search(r'([\d.]+)%', line)
-              return float(m.group(1)) if m else 999.0
-
-          lowest = sorted(pkg_lines, key=pct)[:15]
-
-          print(f'## Code Coverage Report {badge}')
-          print()
-          print(f'**Total coverage: {total}** (gate: ≥70%)')
-          print()
-          print('<details>')
-          print('<summary>15 packages with lowest coverage</summary>')
-          print()
-          print('```')
-          for l in lowest:
-              print(l)
-          print('```')
-          print()
-          print('</details>')
-          print()
-          print('> Full HTML report available as the `coverage-report` workflow artifact (30-day retention).')
-          PYEOF
-
-          python3 /tmp/gen-coverage-comment.py > /tmp/coverage-comment.md
-          cat /tmp/coverage-comment.md
-
-      - name: Upload coverage artifacts
+      - name: Upload measured coverage
         uses: actions/upload-artifact@v7
         with:
           name: coverage-report
-          path: |
-            /tmp/coverage-func.txt
-            /tmp/coverage.html
+          path: ${{ runner.temp }}/plumego-stable.cover
           retention-days: 30
 
-      - name: Upload coverage to Codecov
+      - name: Publish coverage trend
         uses: codecov/codecov-action@v7
         with:
-          files: /tmp/plumego-full.cover
-          # The local 90% stable-root gate above is authoritative; Codecov is
-          # informational (trend dashboard + badge), so its outages must not
-          # fail the pipeline.
+          files: ${{ runner.temp }}/plumego-stable.cover
           fail_ci_if_error: false
-
-      - name: Comment coverage summary on PR
-        if: github.event_name == 'pull_request'
-        uses: actions/github-script@v9
-        with:
-          script: |
-            const fs = require('fs');
-            const body = fs.readFileSync('/tmp/coverage-comment.md', 'utf8');
-            const marker = '## Code Coverage Report';
-
-            const { data: comments } = await github.rest.issues.listComments({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: context.issue.number,
-            });
-
-            const existing = comments.find(
-              c => c.user.login === 'github-actions[bot]' && c.body.includes(marker)
-            );
-
-            if (existing) {
-              await github.rest.issues.updateComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                comment_id: existing.id,
-                body,
-              });
-            } else {
-              await github.rest.issues.createComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: context.issue.number,
-                body,
-              });
-            }
 
   go-submodule-quality-gates:
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    strategy:
-      fail-fast: false
-      matrix:
-        module:
-          - cmd/plumego
-
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -282,30 +84,10 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v7
         with:
-          go-version-file: ${{ matrix.module }}/go.mod
+          go-version-file: cmd/plumego/go.mod
 
-      - name: Verify formatting
-        working-directory: ${{ matrix.module }}
-        run: |
-          set -euo pipefail
-          files="$(gofmt -l .)"
-          if [ -n "$files" ]; then
-            echo "gofmt check failed in ${{ matrix.module }}. Run: gofmt -w ."
-            echo "$files"
-            exit 1
-          fi
-
-      - name: Run go vet
-        working-directory: ${{ matrix.module }}
-        run: go vet ./...
-
-      - name: Run tests
-        working-directory: ${{ matrix.module }}
-        run: go test -timeout 20s ./...
-
-      - name: Run race tests
-        working-directory: ${{ matrix.module }}
-        run: go test -race -timeout 60s ./...
+      - name: Run CLI vet and tests
+        run: make cli-check
 
   go-cross-platform-gates:
     runs-on: ${{ matrix.os }}
@@ -361,25 +143,8 @@ jobs:
         working-directory: website
         run: pnpm install --frozen-lockfile
 
-      - name: Check generated website data is current
-        working-directory: website
-        run: |
-          set -euo pipefail
-          pnpm sync
-          changed="$(git status --short src/generated)"
-          if [ -n "$changed" ]; then
-            echo "website generated files are stale. Run: cd website && pnpm sync"
-            echo "$changed"
-            exit 1
-          fi
-
-      - name: Run website checks
-        working-directory: website
-        run: pnpm check
-
-      - name: Build website
-        working-directory: website
-        run: pnpm build
+      - name: Validate website
+        run: make website-gates
 
   benchmark-quality-gates:
     if: github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'benchmark')
@@ -399,7 +164,6 @@ jobs:
           go-version-file: reference/benchmark/go.mod
 
       - name: Run benchmarks
-        id: bench
         working-directory: reference/benchmark
         run: |
           set -euo pipefail
@@ -432,117 +196,8 @@ jobs:
       - go-cross-platform-gates
       - website-quality-gates
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 5
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-
-      - name: Setup Go
-        uses: actions/setup-go@v7
-        with:
-          go-version-file: go.mod
-
-      - name: Run v1 release readiness aggregate check
-        run: |
-          set -euo pipefail
-
-          release_files=(
-            README.md
-            README_CN.md
-            AGENTS.md
-            env.example
-            reference/standard-service/README.md
-            cmd/plumego/README.md
-            cmd/plumego/go.mod
-          )
-
-          for path in "${release_files[@]}"; do
-            if [ ! -e "$path" ]; then
-              echo "missing release asset: $path"
-              exit 1
-            fi
-          done
-
-          while IFS= read -r manifest; do
-            [ -n "$manifest" ] || continue
-
-            if ! grep -q '^status:' "$manifest"; then
-              echo "module manifest missing status: $manifest"
-              exit 1
-            fi
-
-            if ! grep -q '^summary:' "$manifest"; then
-              echo "module manifest missing summary: $manifest"
-              exit 1
-            fi
-          done < <(find . -name module.yaml | sort)
-
-          stable_roots=(
-            core/module.yaml
-            router/module.yaml
-            contract/module.yaml
-            middleware/module.yaml
-            security/module.yaml
-            store/module.yaml
-            health/module.yaml
-            log/module.yaml
-            metrics/module.yaml
-          )
-
-          for manifest in "${stable_roots[@]}"; do
-            if ! grep -qx 'status: ga' "$manifest"; then
-              echo "stable root is not marked ga: $manifest"
-              exit 1
-            fi
-          done
-
-          required_paths=(
-            README.md
-            README_CN.md
-            docs/reference/canonical-style-guide.md
-            docs/concepts/agent-first-repo-blueprint.md
-            specs/repo.yaml
-            specs/task-routing.yaml
-            specs/extension-taxonomy.yaml
-            specs/package-hotspots.yaml
-            specs/dependency-rules.yaml
-            env.example
-            reference/standard-service/README.md
-            reference/standard-service/main.go
-            reference/standard-service/internal/app/app.go
-            reference/standard-service/internal/app/routes.go
-          )
-
-          for path in "${required_paths[@]}"; do
-            if [ ! -e "$path" ]; then
-              echo "missing canonical doc asset: $path"
-              exit 1
-            fi
-          done
-
-          canonical_docs=(
-            README.md
-            README_CN.md
-            docs/reference/canonical-style-guide.md
-            docs/concepts/agent-first-repo-blueprint.md
-            reference/standard-service/README.md
-          )
-
-          stale_refs=(
-            github.com/birdordev/plumego/core/components
-            github.com/birdordev/plumego/components
-            github.com/birdordev/plumego/plumego
-            github.com/birdordev/plumego/net
-            github.com/birdordev/plumego/tenant
-            github.com/birdordev/plumego/rest
-          )
-
-          for ref in "${stale_refs[@]}"; do
-            if grep -n -F "$ref" "${canonical_docs[@]}" >/dev/null; then
-              echo "stale API reference found in canonical docs: $ref"
-              exit 1
-            fi
-          done
-
-          echo "v1 release readiness aggregate check: PASS"
+      - name: Confirm required quality jobs passed
+        run: echo "All required quality jobs passed."

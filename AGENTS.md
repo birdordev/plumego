@@ -89,21 +89,9 @@ Run `make fmt` before Go validation to format Go source files in place.
 
 Lint is a zero-finding gate: `make lint` runs golangci-lint (v2 config in `.golangci.yml`, standard linter set). Fix findings in code rather than adding exclusion rules; an intentional exception needs a `//nolint` comment with a reason.
 
-Baseline boundary/manifest checks are:
+`make boundary-check` runs the baseline boundary and manifest checks. `make check` also checks formatting, tooling, stable API snapshots, and documentation snippets.
 
-```bash
-go run ./internal/checks/dependency-rules
-go run ./internal/checks/cross-extension-deps
-go run ./internal/checks/agent-workflow
-go run ./internal/checks/module-manifests
-go run ./internal/checks/reference-layout
-go run ./internal/checks/extension-maturity
-go run ./internal/checks/extension-beta-evidence
-go run ./internal/checks/deprecation-inventory -strict
-go run ./internal/checks/public-entrypoints-sync
-```
-
-`make gates` mirrors CI for the main repo: boundary checks, stable API snapshot comparison for all nine stable roots, doc snippet checks, `go vet ./...`, `make reference-vet`, gofmt cleanliness, race tests, `make reference-test`, stable coverage >= 90%, `cmd/plumego` vet/race tests, and `website/src/generated` staleness. Run `make website-gates` separately for the docs website static checks/build.
+`make gates` runs the shared root and reference suite (`make go-gates`) and the CLI suite (`make cli-check`). The root suite includes `make check`, vet, race tests, reference validation, and stable coverage >= 90%. CI invokes the same suites in separate jobs and publishes the measured coverage profile. Run `make lint` and `make website-gates` separately. CI also runs fuzz smoke tests, cross-platform checks, and CodeQL security analysis. Gate selection and task bundles share `specs/gate-profiles.yaml`; `specs/checks.yaml` indexes the check owners.
 
 Docs-only changes may skip Go gates unless code, config, generated data, or runnable examples changed. Still validate accuracy, links, authority order, and any generated-doc staleness implied by the edited source.
 
@@ -123,9 +111,9 @@ Run `make website-sync` only when editing a source that feeds `website/src/gener
 | `docs/modules/*/README.md` | `modules.ts` |
 | `specs/task-routing.yaml` | `routing.ts` |
 | `README.md` + `specs/task-routing.yaml` | `releases.ts` |
-| `website/src/content/docs/**/*.mdx` | `translation-lag.ts` |
+| Website MDX content + `website/src/content/docs/translation-source-hashes.json` | `translation-lag.ts` |
 
-`translation-lag.ts` derives from git timestamps; regenerate after every `.mdx` commit. Editing `AGENTS.md` alone does not require `make website-sync`.
+`translation-lag.ts` derives from English source hashes and the committed translation baseline. Regenerate after content or baseline changes; update baseline keys only after reviewing the corresponding translations. Editing `AGENTS.md` alone does not require `make website-sync`.
 
 ## 8. Milestones
 

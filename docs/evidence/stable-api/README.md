@@ -24,8 +24,9 @@ tags and release notes.
 ## v1 Audit Status
 
 - All stable root manifests are marked `status: ga`.
-- Checked-in snapshots match the current exported API surface for the patterns
-  recorded in each snapshot file.
+- `make api-check` requires a baseline file for each stable root and
+  compares it with the current exported API. The gate checks the `core` and
+  `router` root packages and includes subpackages for the other stable roots.
 - Stable root production code has no `x/*` imports.
 - Retained stable compatibility paths are recorded in
   `specs/deprecation-inventory.yaml`.
@@ -43,10 +44,10 @@ future symbol-change card migrates every caller in the same change:
 Use the existing API snapshot tool. Example:
 
 ```bash
-go run ./internal/checks/extension-api-snapshot -module ./contract -out docs/evidence/stable-api/snapshots/contract-head.snapshot
+go run ./internal/checks/extension-api-snapshot -module ./core -out docs/evidence/stable-api/snapshots/core-head.snapshot
 ```
 
-For roots with subpackages, use `/...`:
+For the remaining stable roots, use `/...`:
 
 ```bash
 go run ./internal/checks/extension-api-snapshot -module ./middleware/... -out docs/evidence/stable-api/snapshots/middleware-head.snapshot
@@ -66,10 +67,6 @@ go run ./internal/checks/extension-api-snapshot -module ./middleware/... -out do
 Before claiming stable-root freeze readiness:
 
 ```bash
-go run ./internal/checks/dependency-rules
-go run ./internal/checks/agent-workflow
-go run ./internal/checks/module-manifests
-go test -timeout 20s ./core/... ./router/... ./contract/... ./middleware/... ./security/... ./store/... ./health/... ./log/... ./metrics/...
-go test -race -timeout 60s ./core/... ./router/... ./contract/... ./middleware/... ./security/... ./store/... ./health/... ./log/... ./metrics/...
-go vet ./core/... ./router/... ./contract/... ./middleware/... ./security/... ./store/... ./health/... ./log/... ./metrics/...
+make gates
+make test
 ```

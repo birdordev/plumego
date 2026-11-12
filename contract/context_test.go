@@ -1,6 +1,7 @@
 package contract
 
 import (
+	"context"
 	"reflect"
 	"testing"
 )
@@ -108,5 +109,22 @@ func TestRequestContextStableCarrierFields(t *testing.T) {
 		if got := rt.Field(i).Name; got != name {
 			t.Fatalf("RequestContext field %d = %s, want %s", i, got, name)
 		}
+	}
+}
+
+func TestWithRouteStatePreservesContext(t *testing.T) {
+	state := new(RouteState)
+	state.AddParam("id", "7")
+	ctx := WithRouteState(nil, state)
+	if got := RequestParamFromContext(ctx, "id"); got != "7" {
+		t.Fatalf("parameter = %q, want 7", got)
+	}
+
+	parent, cancel := context.WithCancel(WithRequestID(t.Context(), "request-42"))
+	defer cancel()
+	ctx = WithRouteState(parent, state)
+	cancel()
+	if ctx.Err() != context.Canceled || RequestIDFromContext(ctx) != "request-42" {
+		t.Fatal("route state did not preserve parent cancellation and metadata")
 	}
 }

@@ -2,6 +2,7 @@ package health
 
 import (
 	"context"
+	"slices"
 	"time"
 )
 
@@ -48,9 +49,7 @@ func (hs HealthStatus) Clone() HealthStatus {
 			clone.Details[key] = value
 		}
 	}
-	if hs.Dependencies != nil {
-		clone.Dependencies = append([]string(nil), hs.Dependencies...)
-	}
+	clone.Dependencies = slices.Clone(hs.Dependencies)
 	return clone
 }
 

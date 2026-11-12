@@ -1,64 +1,26 @@
 version: 1
 
+# Index of validation authorities, not a second command registry.
 module_defaults:
   validations_from: module.yaml:test_commands
 
 repo:
-  execution_order:
-    - module_tests
-    - boundary_checks
-    - repo_wide_checks
-  control_plane_files:
-    - specs/repo.yaml
-    - specs/task-routing.yaml
-    - docs/operations/agent-context-budget.md
-    - specs/extension-taxonomy.yaml
-    - specs/package-hotspots.yaml
-    - specs/dependency-rules.yaml
-    - specs/agent-quality-rules.yaml
-    - specs/extension-beta-evidence.yaml
-    - specs/deprecation-inventory.yaml
-    - specs/checks.yaml
-  boundary_checks:
-    - go run ./internal/checks/dependency-rules
-    - go run ./internal/checks/cross-extension-deps
-    - go run ./internal/checks/agent-workflow
-    - go run ./internal/checks/module-manifests
-    - go run ./internal/checks/reference-layout
-    - go run ./internal/checks/extension-maturity
-    - go run ./internal/checks/extension-beta-evidence
-    - go run ./internal/checks/deprecation-inventory -strict
-    - go run ./internal/checks/public-entrypoints-sync
-  # evidence_checks run per-extension; substitute <name> and <path> for the target module.
-  # Template:
-  #   go run ./internal/checks/extension-api-snapshot -module ./<path>/... -out /tmp/plumego-<name>-api.snapshot
-  repo_wide_checks:
-    - go test -race -timeout 60s ./...
-    - go test -timeout 20s ./...
-    - go vet ./...
-    - gofmt -w .
-
-profiles:
-  stable_core:
-    - go test -race -timeout 60s ./core/... ./router/... ./contract/... ./middleware/...
-    - go vet ./core/... ./router/... ./contract/... ./middleware/...
-  stable_support:
-    - go test -race -timeout 60s ./security/... ./store/... ./health/... ./log/... ./metrics/...
-    - go vet ./security/... ./store/... ./health/... ./log/... ./metrics/...
-  x_tenant:
-    - go test -race -timeout 60s ./x/tenant/...
-    - go vet ./x/tenant/...
-  evidence_x_rest:
-    - go run ./internal/checks/extension-api-snapshot -module ./x/rest/... -out /tmp/plumego-x-rest-api.snapshot
-  evidence_x_tenant:
-    - go run ./internal/checks/extension-api-snapshot -module ./x/tenant/... -out /tmp/plumego-x-tenant-api.snapshot
-  evidence_x_messaging:
-    - go run ./internal/checks/extension-api-snapshot -module ./x/messaging/... -out /tmp/plumego-x-messaging-api.snapshot
-  evidence_x_gateway:
-    - go run ./internal/checks/extension-api-snapshot -module ./x/gateway/... -out /tmp/plumego-x-gateway-api.snapshot
-  evidence_x_websocket:
-    - go run ./internal/checks/extension-api-snapshot -module ./x/websocket/... -out /tmp/plumego-x-websocket-api.snapshot
-  evidence_x_observability:
-    - go run ./internal/checks/extension-api-snapshot -module ./x/observability/... -out /tmp/plumego-x-observability-api.snapshot
-  evidence_x_frontend:
-    - go run ./internal/checks/extension-api-snapshot -module ./x/frontend/... -out /tmp/plumego-x-frontend-api.snapshot
+  execution_order: [module_tests, boundary_checks, repo_wide_checks]
+  policy: specs/agent-quality-rules.yaml
+  diff_profiles: specs/gate-profiles.yaml
+  execution: Makefile
+  ci: .github/workflows/quality-gates.yml
+  security_analysis: .github/workflows/codeql.yml
+  entrypoints:
+    current_diff: make validate-diff
+    preview: make validate-diff-dry
+    source_contracts: make check
+    full_go: make gates
+    root_and_references: make go-gates
+    lint: make lint
+    website: make website-gates
+    local_push: make pre-push-check
+  extension_evidence:
+    policy: specs/extension-beta-evidence.yaml
+    checker: internal/checks/extension-beta-evidence
+    snapshot_tool: internal/checks/extension-api-snapshot

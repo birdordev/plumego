@@ -390,6 +390,10 @@ func (w *gzipResponseWriter) shouldCompress(statusCode int) bool {
 	if statusCode >= 400 {
 		return false
 	}
+	// Byte ranges describe the original representation.
+	if statusCode == http.StatusPartialContent || w.Header().Get("Content-Range") != "" {
+		return false
+	}
 
 	// Check content type
 	contentType := w.Header().Get("Content-Type")

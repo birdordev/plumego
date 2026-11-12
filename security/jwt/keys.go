@@ -20,14 +20,11 @@ type storedSigningKey struct {
 	RotationFrom *string `json:"rotation_from,omitempty"`
 }
 
-// loadKeys reads signing keys from the KV store and ensures an active key exists.
+// loadKeys reads signing keys before the manager is published to callers.
 func (m *JWTManager) loadKeys(ctx context.Context) error {
 	if err := contextErr(ctx); err != nil {
 		return err
 	}
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
 	keys, err := m.storeKeys(ctx)
 	if err != nil {
 		return err
@@ -84,20 +81,18 @@ func (m *JWTManager) loadKeys(ctx context.Context) error {
 		}
 	}
 
-	return m.ensureActiveKeyUnsafe(ctx)
+	return m.ensureActiveKey(ctx)
 }
 
-func (m *JWTManager) ensureActiveKeyUnsafe(ctx context.Context) error {
+func (m *JWTManager) ensureActiveKey(ctx context.Context) error {
 	if err := contextErr(ctx); err != nil {
 		return err
 	}
-	if m.active != "" {
-		if _, ok := m.keyCache[m.active]; ok {
-			return nil
-		}
+	if _, ok := m.activeSigningKey(); ok {
+		return nil
 	}
 
-	_, err := m.rotateKeyUnsafe(ctx)
+	_, err := m.rotateKeyLocked(ctx)
 	return err
 }
 
@@ -111,48 +106,53 @@ func (m *JWTManager) RotateKeyContext(ctx context.Context) (SigningKeyMetadata, 
 	if err := contextErr(ctx); err != nil {
 		return SigningKeyMetadata{}, err
 	}
-	m.mu.Lock()
-	defer m.mu.Unlock()
+	m.rotationMu.Lock()
+	defer m.rotationMu.Unlock()
 
-	key, err := m.rotateKeyUnsafe(ctx)
+	key, err := m.rotateKeyLocked(ctx)
 	if err != nil {
 		return SigningKeyMetadata{}, err
 	}
 	return signingKeyMetadata(key), nil
 }
 
-// rotateKeyUnsafe is the unsafe version of RotateKey, assuming the caller holds the lock.
-func (m *JWTManager) rotateKeyUnsafe(ctx context.Context) (JWTSigningKey, error) {
+// rotateKeyLocked requires rotationMu after the manager is published.
+func (m *JWTManager) rotateKeyLocked(ctx context.Context) (JWTSigningKey, error) {
 	if err := contextErr(ctx); err != nil {
 		return JWTSigningKey{}, err
 	}
 	if m.pending == nil {
-		key, err := m.generateKeyUnsafe(m.config.Algorithm)
+		key, err := m.generateSigningKey(m.config.Algorithm)
 		if err != nil {
 			return JWTSigningKey{}, err
 		}
 		m.pending = &key
 	}
 	key := *m.pending
-	if _, persisted := m.keyCache[key.ID]; !persisted {
-		if err := m.persistKeyUnsafe(ctx, key); err != nil {
+	m.mu.RLock()
+	_, persisted := m.keyCache[key.ID]
+	previous := m.active
+	m.mu.RUnlock()
+	if !persisted {
+		if err := m.persistKey(ctx, key, previous); err != nil {
 			return JWTSigningKey{}, err
 		}
 	}
 	if err := m.storeSet(ctx, activeKeyKey, []byte(key.ID), 0); err != nil {
 		return JWTSigningKey{}, err
 	}
+	m.mu.Lock()
 	m.active = key.ID
+	m.mu.Unlock()
 	m.pending = nil
 	return cloneSigningKey(key), nil
 }
 
-// persistKeyUnsafe is the unsafe version of persistKey, assuming the caller holds the lock.
-func (m *JWTManager) persistKeyUnsafe(ctx context.Context, key JWTSigningKey) error {
+// persistKey writes a candidate before adding it to the verification cache.
+func (m *JWTManager) persistKey(ctx context.Context, key JWTSigningKey, previous string) error {
 	if err := contextErr(ctx); err != nil {
 		return err
 	}
-	previous := m.active
 	stored := storedSigningKey{JWTSigningKey: key}
 	if previous != "" {
 		stored.RotationFrom = &previous
@@ -164,12 +164,14 @@ func (m *JWTManager) persistKeyUnsafe(ctx context.Context, key JWTSigningKey) er
 	if err := m.storeSet(ctx, keyPrefix+key.ID, encoded, 0); err != nil {
 		return err
 	}
+	m.mu.Lock()
 	m.keyCache[key.ID] = cloneSigningKey(key)
+	m.mu.Unlock()
 	return nil
 }
 
-// generateKeyUnsafe is the unsafe version of generateKey, assuming the caller holds the lock.
-func (m *JWTManager) generateKeyUnsafe(alg Algorithm) (JWTSigningKey, error) {
+// generateSigningKey creates a candidate without changing manager state.
+func (m *JWTManager) generateSigningKey(alg Algorithm) (JWTSigningKey, error) {
 	kid, err := randomID()
 	if err != nil {
 		return JWTSigningKey{}, err
@@ -263,12 +265,12 @@ func (m *JWTManager) storeSet(ctx context.Context, key string, value []byte, ttl
 	return m.store.SetContext(ctx, key, value, ttl)
 }
 
-// ensureRotationUnsafe rotates the active signing key if the configured interval has elapsed.
-func (m *JWTManager) ensureRotationUnsafe(ctx context.Context) error {
+// ensureRotationLocked rotates the active signing key when due. It requires rotationMu.
+func (m *JWTManager) ensureRotationLocked(ctx context.Context) error {
 	if err := contextErr(ctx); err != nil {
 		return err
 	}
-	activeKey, ok := m.keyCache[m.active]
+	activeKey, ok := m.activeSigningKey()
 	if !ok {
 		return ErrUnknownKey
 	}
@@ -276,7 +278,7 @@ func (m *JWTManager) ensureRotationUnsafe(ctx context.Context) error {
 		return nil
 	}
 	if m.currentTime().Sub(activeKey.CreatedAt) >= m.config.RotationInterval {
-		_, err := m.rotateKeyUnsafe(ctx)
+		_, err := m.rotateKeyLocked(ctx)
 		return err
 	}
 	return nil

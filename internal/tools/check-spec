@@ -60,6 +60,14 @@ check() {
   fi
 }
 
+check_repo_gate() {
+  local pattern='make gates'
+  if [[ "$TARGET" == */done/* ]]; then
+    pattern+='|go test -race'
+  fi
+  check "Repository validation command" "$pattern"
+}
+
 warn() {
   local label="$1"; local pattern="$2"; local msg="$3"
   if grep -Eq "$pattern" "$TARGET" 2>/dev/null; then
@@ -214,14 +222,7 @@ validate_milestone() {
 
   echo ""
   echo "Required gate commands in Acceptance Criteria:"
-  check "dependency-rules check"    "dependency-rules"
-  check "agent-workflow check"      "agent-workflow"
-  check "module-manifests check"    "module-manifests"
-  check "reference-layout check"    "reference-layout"
-  check "go test race"              "go test -race"
-  check "go test standard"          "go test -timeout"
-  check "go vet"                    "go vet"
-  check "gofmt"                     "gofmt"
+  check_repo_gate
 
   echo ""
   echo "Module declarations:"
@@ -338,10 +339,7 @@ validate_verify() {
 
   echo ""
   echo "Required repo gates:"
-  check "go test race"                 "go test -race -timeout 60s"
-  check "go test standard"             "go test -timeout 20s"
-  check "go vet"                       "go vet ./"
-  check "gofmt"                        "gofmt -l ."
+  check_repo_gate
 
   echo ""
   echo "Milestone linkage:"

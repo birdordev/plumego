@@ -331,7 +331,7 @@ func TestValidateModuleManifestsReportsSchemaAndPathViolations(t *testing.T) {
 	writeFile(t, filepath.Join(repo, "core", "module.yaml"), `name: wrong
 path: wrong
 layer: unstable
-status: ga
+status: beta
 owner: runtime
 risk: high
 summary: bad manifest
@@ -359,6 +359,7 @@ agent_hints:
 	for _, want := range []string{
 		`required list "non_goals" must not be empty`,
 		`invalid layer "unstable"`,
+		`stable root modules must declare status "ga"`,
 		`path "wrong" does not match directory "core"`,
 		`name "wrong" should match module path "core"`,
 	} {

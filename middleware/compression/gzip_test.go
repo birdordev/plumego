@@ -5,11 +5,14 @@ import (
 	"bytes"
 	"compress/gzip"
 	"io"
+	"mime"
+	"mime/multipart"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	internaltransport "github.com/birdordev/plumego/internal/httputil"
 	"github.com/birdordev/plumego/log"
@@ -1516,4 +1519,49 @@ func gunzipBody(t *testing.T, rr *httptest.ResponseRecorder) string {
 		t.Fatalf("failed to decompress: %v", err)
 	}
 	return string(decompressed)
+}
+
+func TestGzipPreservesRangeResponses(t *testing.T) {
+	const content = "abcdefghijklmnopqrstuvwxyz"
+	handler := Middleware(DefaultConfig())(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain")
+		http.ServeContent(w, r, "sample.txt", time.Time{}, strings.NewReader(content))
+	}))
+
+	for _, ranges := range []string{"bytes=0-3", "bytes=0-3,8-10"} {
+		t.Run(ranges, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "/", nil)
+			req.Header.Set("Accept-Encoding", "gzip")
+			req.Header.Set("Range", ranges)
+			rec := httptest.NewRecorder()
+			handler.ServeHTTP(rec, req)
+			if rec.Code != http.StatusPartialContent || rec.Header().Get("Content-Encoding") != "" {
+				t.Fatalf("status = %d, encoding = %q", rec.Code, rec.Header().Get("Content-Encoding"))
+			}
+			if ranges == "bytes=0-3" {
+				if rec.Header().Get("Content-Range") != "bytes 0-3/26" || rec.Body.String() != "abcd" {
+					t.Fatalf("range = %q, body = %q", rec.Header().Get("Content-Range"), rec.Body.String())
+				}
+				return
+			}
+			mediaType, params, err := mime.ParseMediaType(rec.Header().Get("Content-Type"))
+			if err != nil || mediaType != "multipart/byteranges" {
+				t.Fatalf("media type = %q, error = %v", mediaType, err)
+			}
+			reader := multipart.NewReader(rec.Body, params["boundary"])
+			for _, want := range []struct{ span, body string }{{"bytes 0-3/26", "abcd"}, {"bytes 8-10/26", "ijk"}} {
+				part, err := reader.NextPart()
+				if err != nil {
+					t.Fatal(err)
+				}
+				body, err := io.ReadAll(part)
+				if err != nil || part.Header.Get("Content-Range") != want.span || string(body) != want.body {
+					t.Fatalf("part range = %q, body = %q, error = %v", part.Header.Get("Content-Range"), body, err)
+				}
+			}
+			if _, err := reader.NextPart(); err != io.EOF {
+				t.Fatalf("end of multipart response: %v", err)
+			}
+		})
+	}
 }

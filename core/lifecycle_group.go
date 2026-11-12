@@ -143,14 +143,23 @@ func (g *LifecycleGroup) Add(name string, c Lifecycle) *LifecycleGroup {
 	return g
 }
 
-// Start launches components in registration order. On failure it uses ctx to
-// stop all attempted components in reverse order and returns the startup and
-// rollback errors. Stop can retry failed cleanup.
+// Start launches components in registration order. A nil context uses
+// context.Background. A context canceled before startup leaves the group idle.
+// On startup failure or cancellation during startup, Start uses ctx to stop
+// attempted components in reverse order and returns startup and rollback errors.
+// Stop can retry failed cleanup.
 func (g *LifecycleGroup) Start(ctx context.Context) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	g.mu.Lock()
 	if g.phase != lifecycleIdle {
 		g.mu.Unlock()
 		return errors.New("core: LifecycleGroup already started")
+	}
+	if err := ctx.Err(); err != nil {
+		g.mu.Unlock()
+		return err
 	}
 	g.phase = lifecycleStarting
 	g.mu.Unlock()
@@ -158,19 +167,28 @@ func (g *LifecycleGroup) Start(ctx context.Context) error {
 	finalPhase := lifecycleInactive
 	defer func() { g.setPhase(finalPhase) }()
 
-	for i := range g.entries {
-		e := &g.entries[i]
-		e.pendingStop = true
-		if err := e.c.Start(ctx); err != nil {
-			startErr := fmt.Errorf("core: start %q: %w", e.name, err)
-			if rollbackErr := g.stopPending(ctx); rollbackErr != nil {
-				return errors.Join(startErr, rollbackErr)
-			}
-			return startErr
+	if err := g.startComponents(ctx); err != nil {
+		if rollbackErr := g.stopPending(ctx); rollbackErr != nil {
+			return errors.Join(err, rollbackErr)
 		}
+		return err
 	}
 	finalPhase = lifecycleRunning
 	return nil
+}
+
+func (g *LifecycleGroup) startComponents(ctx context.Context) error {
+	for i := range g.entries {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		e := &g.entries[i]
+		e.pendingStop = true
+		if err := e.c.Start(ctx); err != nil {
+			return fmt.Errorf("core: start %q: %w", e.name, err)
+		}
+	}
+	return ctx.Err()
 }
 
 // Stop cleans up pending components in reverse registration order and joins

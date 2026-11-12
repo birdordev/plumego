@@ -318,3 +318,33 @@ func TestNamedRoutesOnGroups(t *testing.T) {
 		t.Fatalf("expected 201, got %d", rec.Code)
 	}
 }
+
+func TestNamedRouteURLMatchesItsParameterKind(t *testing.T) {
+	r := NewRouter()
+	handler := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		_, _ = w.Write([]byte(Param(req, "value")))
+	})
+	mustAddRoute(r, http.MethodGet, "/item/:value", handler, WithRouteName("item"))
+	mustAddRoute(r, http.MethodGet, "/files/*value", handler, WithRouteName("files"))
+
+	if url, err := r.URL("item", "value", "a/b"); url != "" || err == nil {
+		t.Errorf("single-segment slash: URL = %q, error = %v", url, err)
+	}
+	for _, tc := range []struct{ name, value string }{
+		{"item", "a b"},
+		{"item", "a%2Fb"},
+		{"files", "a/b c"},
+	} {
+		t.Run(tc.name+"/"+tc.value, func(t *testing.T) {
+			url, err := r.URL(tc.name, "value", tc.value)
+			if err != nil {
+				t.Fatal(err)
+			}
+			rec := httptest.NewRecorder()
+			r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, url, nil))
+			if rec.Code != http.StatusOK || rec.Body.String() != tc.value {
+				t.Fatalf("status = %d, parameter = %q, want %q", rec.Code, rec.Body.String(), tc.value)
+			}
+		})
+	}
+}

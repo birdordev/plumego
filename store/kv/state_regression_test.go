@@ -311,3 +311,33 @@ func TestCancellationAfterReplacementDoesNotUndoCommit(t *testing.T) {
 		})
 	}
 }
+
+func TestPersistentKeyMustRoundTripThroughJSON(t *testing.T) {
+	options := Options{DataDir: t.TempDir()}
+	store, err := NewKVStore(options)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	const valid = "键-\uFFFD"
+	const invalid = "键-\xff"
+	if err := store.Set(valid, []byte("original"), 0); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Set(invalid, []byte("replacement"), 0); !errors.Is(err, ErrInvalidKey) {
+		t.Errorf("invalid key: got %v, want ErrInvalidKey", err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := NewKVStore(options)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopened.Close()
+	got, err := reopened.Get(valid)
+	if err != nil || string(got) != "original" {
+		t.Fatalf("reopened value = %q, %v; want original", got, err)
+	}
+}

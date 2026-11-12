@@ -3,6 +3,7 @@
 package gateprofile
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,20 +13,17 @@ import (
 
 // Profile is one named gate configuration.
 type Profile struct {
-	Description     string   `yaml:"description"`
-	GoGatesRequired bool     `yaml:"go_gates_required"`
-	Commands        []string `yaml:"commands"`
-	Notes           string   `yaml:"notes"`
+	Description string   `yaml:"description"`
+	Commands    []string `yaml:"commands"`
 }
 
 // SelectionRule maps a set of conditions to a profile name.
 type SelectionRule struct {
-	ID               string   `yaml:"id"`
-	Description      string   `yaml:"description"`
-	PathPatterns     []string `yaml:"path_patterns"`
-	ExcludeGoChanges bool     `yaml:"exclude_go_changes"`
-	Modules          []string `yaml:"modules"`
-	Use              string   `yaml:"use"`
+	ID           string   `yaml:"id"`
+	Description  string   `yaml:"description"`
+	PathPatterns []string `yaml:"path_patterns"`
+	Modules      []string `yaml:"modules"`
+	Use          string   `yaml:"use"`
 }
 
 // Doc is the decoded gate-profiles.yaml.
@@ -45,6 +43,21 @@ func Load(repoRoot string) (*Doc, error) {
 	if err := yaml.Unmarshal(data, &doc); err != nil {
 		return nil, err
 	}
+	if len(doc.SelectionRules) == 0 {
+		return nil, fmt.Errorf("gate profiles have no selection rules")
+	}
+	if doc.SelectionRules[len(doc.SelectionRules)-1].ID != "default" {
+		return nil, fmt.Errorf("gate selection rules must end with the default rule")
+	}
+	for _, rule := range doc.SelectionRules {
+		profile, ok := doc.Profiles[rule.Use]
+		if !ok {
+			return nil, fmt.Errorf("selection rule %q references missing profile %q", rule.ID, rule.Use)
+		}
+		if rule.Use != "docs_only" && len(profile.Commands) == 0 {
+			return nil, fmt.Errorf("profile %q has no validation commands", rule.Use)
+		}
+	}
 	return &doc, nil
 }
 
@@ -54,21 +67,41 @@ func Load(repoRoot string) (*Doc, error) {
 // The selection_rules in the doc are evaluated in order; the first match wins.
 // Stable-root rules are eligible only for single-module changes.
 func Select(doc *Doc, changedFiles []string, primaryModule string, multiModule bool) (string, Profile) {
-	hasGo := false
-	for _, f := range changedFiles {
-		if strings.HasSuffix(f, ".go") {
-			hasGo = true
-			break
+	name, profile := selectProfile(doc, changedFiles, primaryModule, multiModule)
+	if name != "website_only" {
+		for _, file := range changedFiles {
+			if strings.HasPrefix(file, "website/") {
+				website, ok := doc.Profiles["website_only"]
+				if !ok {
+					break
+				}
+				if name == "docs_only" {
+					return "website_only", website
+				}
+				profile.Commands = append(append([]string(nil), profile.Commands...), website.Commands...)
+				break
+			}
 		}
 	}
+	return name, profile
+}
 
+func selectProfile(doc *Doc, changedFiles []string, primaryModule string, multiModule bool) (string, Profile) {
 	for _, rule := range doc.SelectionRules {
 		switch rule.ID {
-		case "docs_only":
-			if !hasGo && rule.ExcludeGoChanges && allMatch(changedFiles, rule.PathPatterns) {
+		case "website_only", "docs_only":
+			if allMatch(changedFiles, rule.PathPatterns) {
 				return applyRule(doc, rule.Use)
 			}
-		case "rms_stable", "other_stable":
+		case "control_plane":
+			for _, file := range changedFiles {
+				for _, pattern := range rule.PathPatterns {
+					if matchGlob(pattern, file) {
+						return applyRule(doc, rule.Use)
+					}
+				}
+			}
+		case "stable_root":
 			// A primary module cannot represent the full scope of a multi-module diff.
 			if multiModule {
 				continue
@@ -82,11 +115,9 @@ func Select(doc *Doc, changedFiles []string, primaryModule string, multiModule b
 			if multiModule {
 				return applyRule(doc, rule.Use)
 			}
-		case "default":
-			return applyRule(doc, rule.Use)
 		}
 	}
-	return "single_module_behavior", fallbackProfile(primaryModule)
+	return applyRule(doc, doc.SelectionRules[len(doc.SelectionRules)-1].Use)
 }
 
 func applyRule(doc *Doc, profileName string) (string, Profile) {
@@ -123,32 +154,4 @@ func matchGlob(pattern, path string) bool {
 		return strings.HasSuffix(path, strings.TrimPrefix(pattern, "*"))
 	}
 	return path == pattern
-}
-
-func fallbackProfile(module string) Profile {
-	// reference/* live in nested go.mod directories that cannot
-	// be tested via "./reference/..." from the root module. Use "go -C <dir>" to
-	// change into the module directory before running — supported since Go 1.21.
-	if strings.Contains(module, "/") {
-		return Profile{
-			Description: "nested module (fallback)",
-			Commands: []string{
-				"go test -race -timeout 60s -C " + module + " ./...",
-				"go test -timeout 20s -C " + module + " ./...",
-				"go vet -C " + module + " ./...",
-			},
-		}
-	}
-	arg := "./" + module + "/..."
-	if module == "" {
-		arg = "./..."
-	}
-	return Profile{
-		Description: "single module behavior (fallback)",
-		Commands: []string{
-			"go test -race -timeout 60s " + arg,
-			"go test -timeout 20s " + arg,
-			"go vet " + arg,
-		},
-	}
 }

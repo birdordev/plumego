@@ -91,12 +91,16 @@ var (
 	ErrInvalidResponseStatus = errors.New("response status must be 2xx")
 )
 
-// WithRouteState stores rs in ctx under the internal routeStateKey. The router
-// publishes immutable state that remains valid as long as its contexts are held,
+// WithRouteState stores rs in ctx under the internal routeStateKey.
+// A nil context uses context.Background.
+// The router publishes immutable state that remains valid as long as its contexts are held,
 // including downstream work that outlives ServeHTTP. This function does not copy
 // rs. Manual callers must not mutate, reset, or return it to a pool while any
 // context reader can still access it.
 func WithRouteState(ctx context.Context, rs *RouteState) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	return context.WithValue(ctx, routeStateKey{}, rs)
 }
 

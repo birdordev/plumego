@@ -95,29 +95,11 @@
 <summary>Gate output (click to expand)</summary>
 
 ```
-$ go run ./internal/checks/dependency-rules
-<output>
-
-$ go run ./internal/checks/agent-workflow
-<output>
-
-$ go run ./internal/checks/module-manifests
-<output>
-
-$ go run ./internal/checks/reference-layout
-<output>
-
 $ go test -race -timeout 60s ./<primary-module>/...
 <output>
 
-$ go test -timeout 20s ./...
+$ make gates
 <output>
-
-$ go vet ./...
-<output>
-
-$ gofmt -l .
-<output — empty means pass>
 ```
 
 </details>
