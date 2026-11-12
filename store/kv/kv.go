@@ -18,6 +18,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode/utf8"
 )
 
 var (
@@ -345,6 +346,9 @@ func (kv *KVStore) GetStatsContext(ctx context.Context) (Stats, error) {
 func validateKey(key string) error {
 	if key == "" {
 		return ErrInvalidKey
+	}
+	if !utf8.ValidString(key) {
+		return fmt.Errorf("%w: key must be valid UTF-8", ErrInvalidKey)
 	}
 	for i := 0; i < len(key); i++ {
 		c := key[i]

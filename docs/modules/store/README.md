@@ -139,7 +139,7 @@
   measuring, and callers needing durable-engine tuning should use
   `x/data/kvengine`.
 - `store/kv` uses a single JSON state file replaced with `os.Rename`; each mutation rewrites the full normalized state and is O(N) in the number of retained entries.
-- Invalid keys in the persisted state file fail load with an `ErrInvalidKey`-wrapped error instead of being silently dropped.
+- Keys must be valid UTF-8. Mutations reject invalid keys with `ErrInvalidKey` before writing the JSON state file. Invalid keys in the decoded persisted state fail load with an `ErrInvalidKey`-wrapped error.
 - `store/kv` does not provide cross-process locking, WAL, snapshots, or crash-recovery tuning. Parent-directory sync is attempted after atomic replacement and tolerates unsupported-directory-sync errors.
 - A non-positive TTL means no expiration. `Get` leaves expired entries unchanged and returns
   `ErrKeyExpired`; read-only helpers such as `ExistsContext`, `KeysContext`,
