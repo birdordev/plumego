@@ -93,10 +93,12 @@ type JWTManager struct {
 	store  KeyStore
 	now    func() time.Time
 
-	mu       sync.RWMutex
+	mu       sync.RWMutex // Protects keyCache and active.
 	keyCache map[string]JWTSigningKey
 	active   string
-	pending  *JWTSigningKey // Reused until both persistence and activation are acknowledged.
+
+	rotationMu sync.Mutex // Serializes rotation and protects pending.
+	pending    *JWTSigningKey
 }
 
 // NewJWTManager creates a new JWT manager with the given configuration and backing store.
@@ -183,29 +185,28 @@ func (m *JWTManager) GenerateTokenPair(ctx context.Context, identity IdentityCla
 	}, nil
 }
 
-// activeKeyForGeneration returns a clone of the active signing key.
-// It uses a read lock for the common (no-rotation) path to avoid serialising
-// concurrent GenerateTokenPair calls. When rotation is due it upgrades to a
-// write lock and double-checks before executing the store I/O.
-func (m *JWTManager) activeKeyForGeneration(ctx context.Context) (JWTSigningKey, error) {
+// activeSigningKey reads an immutable key snapshot without waiting for store I/O.
+func (m *JWTManager) activeSigningKey() (JWTSigningKey, bool) {
 	m.mu.RLock()
-	activeKey, ok := m.keyCache[m.active]
-	needsRotation := ok && m.config.RotationInterval > 0 &&
-		m.currentTime().Sub(activeKey.CreatedAt) >= m.config.RotationInterval
-	if ok && !needsRotation {
-		cloned := cloneSigningKey(activeKey)
-		m.mu.RUnlock()
-		return cloned, nil
-	}
-	m.mu.RUnlock()
+	defer m.mu.RUnlock()
+	key, ok := m.keyCache[m.active]
+	return key, ok
+}
 
-	// Rotation path or missing key: take write lock and double-check.
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if err := m.ensureRotationUnsafe(ctx); err != nil {
+// activeKeyForGeneration takes the rotation lock only when the key may be due.
+func (m *JWTManager) activeKeyForGeneration(ctx context.Context) (JWTSigningKey, error) {
+	activeKey, ok := m.activeSigningKey()
+	if ok && (m.config.RotationInterval <= 0 ||
+		m.currentTime().Sub(activeKey.CreatedAt) < m.config.RotationInterval) {
+		return cloneSigningKey(activeKey), nil
+	}
+
+	m.rotationMu.Lock()
+	defer m.rotationMu.Unlock()
+	if err := m.ensureRotationLocked(ctx); err != nil {
 		return JWTSigningKey{}, err
 	}
-	activeKey, ok = m.keyCache[m.active]
+	activeKey, ok = m.activeSigningKey()
 	if !ok {
 		return JWTSigningKey{}, ErrUnknownKey
 	}

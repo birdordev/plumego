@@ -133,9 +133,9 @@ func TestValidateSigningKey_EdDSABadPublicKey(t *testing.T) {
 	}
 }
 
-// ===== ensureActiveKeyUnsafe (keys.go) =====
+// ===== ensureActiveKey (keys.go) =====
 
-func TestEnsureActiveKeyUnsafe_NoKeysInStore(t *testing.T) {
+func TestEnsureActiveKey_NoKeysInStore(t *testing.T) {
 	// When the store is empty, NewJWTManager must generate a fresh key.
 	store := newRecordingContextKeyStore()
 	mgr, err := NewJWTManagerContext(t.Context(), store, DefaultJWTConfig())
@@ -150,7 +150,7 @@ func TestEnsureActiveKeyUnsafe_NoKeysInStore(t *testing.T) {
 	}
 }
 
-func TestEnsureActiveKeyUnsafe_ActiveIDNotInCache(t *testing.T) {
+func TestEnsureActiveKey_ActiveIDNotInCache(t *testing.T) {
 	// Seed the store with an active key pointer that references a key we
 	// deliberately omit from the store.  NewJWTManager should detect the mismatch
 	// and generate a replacement.
@@ -172,9 +172,9 @@ func TestEnsureActiveKeyUnsafe_ActiveIDNotInCache(t *testing.T) {
 	}
 }
 
-// ===== ensureRotationUnsafe (keys.go) =====
+// ===== ensureRotationLocked (keys.go) =====
 
-func TestEnsureRotationUnsafe_RotatesWhenIntervalElapsed(t *testing.T) {
+func TestEnsureRotationLocked_RotatesWhenIntervalElapsed(t *testing.T) {
 	store := newTestStore(t)
 	cfg := DefaultJWTConfig()
 	cfg.RotationInterval = time.Hour
@@ -210,7 +210,7 @@ func TestEnsureRotationUnsafe_RotatesWhenIntervalElapsed(t *testing.T) {
 	}
 }
 
-func TestEnsureRotationUnsafe_NoRotationWhenIntervalNotElapsed(t *testing.T) {
+func TestEnsureRotationLocked_NoRotationWhenIntervalNotElapsed(t *testing.T) {
 	store := newTestStore(t)
 	cfg := DefaultJWTConfig()
 	cfg.RotationInterval = time.Hour
@@ -243,7 +243,7 @@ func TestEnsureRotationUnsafe_NoRotationWhenIntervalNotElapsed(t *testing.T) {
 	}
 }
 
-func TestEnsureRotationUnsafe_ZeroIntervalSkipsRotation(t *testing.T) {
+func TestEnsureRotationLocked_ZeroIntervalSkipsRotation(t *testing.T) {
 	store := newTestStore(t)
 	cfg := DefaultJWTConfig()
 	cfg.RotationInterval = 0
@@ -254,13 +254,13 @@ func TestEnsureRotationUnsafe_ZeroIntervalSkipsRotation(t *testing.T) {
 	}
 	initialActive := mgr.active
 
-	// Call ensureRotationUnsafe directly (holds the lock as caller).
-	mgr.mu.Lock()
-	err = mgr.ensureRotationUnsafe(t.Context())
-	mgr.mu.Unlock()
+	// Call ensureRotationLocked directly (holds the lock as caller).
+	mgr.rotationMu.Lock()
+	err = mgr.ensureRotationLocked(t.Context())
+	mgr.rotationMu.Unlock()
 
 	if err != nil {
-		t.Fatalf("ensureRotationUnsafe with RotationInterval=0: %v", err)
+		t.Fatalf("ensureRotationLocked with RotationInterval=0: %v", err)
 	}
 	if mgr.active != initialActive {
 		t.Fatalf("expected no rotation with interval=0, but key changed from %q to %q", initialActive, mgr.active)
@@ -367,7 +367,7 @@ func TestNewJWTManagerContext_NilStore(t *testing.T) {
 	}
 }
 
-// ===== rotateKeyUnsafe / generateKeyUnsafe / persistKeyUnsafe =====
+// ===== rotateKeyLocked / generateSigningKey / persistKey =====
 
 func TestRotateKeyContext_StoreWriteFailsForKeyBlob(t *testing.T) {
 	// Create manager successfully, then inject a write error.
@@ -407,16 +407,16 @@ func TestRotateKeyContext_NewKeyBecomesActive(t *testing.T) {
 	}
 }
 
-func TestGenerateKeyUnsafe_UnsupportedAlgorithm(t *testing.T) {
+func TestGenerateSigningKey_UnsupportedAlgorithm(t *testing.T) {
 	store := newRecordingContextKeyStore()
 	mgr, err := NewJWTManagerContext(t.Context(), store, DefaultJWTConfig())
 	if err != nil {
 		t.Fatalf("NewJWTManagerContext: %v", err)
 	}
-	// Override algorithm to unsupported value and call generateKeyUnsafe directly.
+	// Override algorithm to unsupported value and call generateSigningKey directly.
 	mgr.config.Algorithm = Algorithm("NONE")
 
-	_, err = mgr.generateKeyUnsafe(mgr.config.Algorithm)
+	_, err = mgr.generateSigningKey(mgr.config.Algorithm)
 	if err == nil {
 		t.Fatal("expected error for unsupported algorithm")
 	}
@@ -434,13 +434,13 @@ func TestPersistKeyUnsafe_CancelledContext(t *testing.T) {
 
 	// Generate a key legitimately first.
 	mgr.config.Algorithm = AlgorithmHS256
-	key, err := mgr.generateKeyUnsafe(AlgorithmHS256)
+	key, err := mgr.generateSigningKey(AlgorithmHS256)
 	if err != nil {
-		t.Fatalf("generateKeyUnsafe: %v", err)
+		t.Fatalf("generateSigningKey: %v", err)
 	}
 
-	// persistKeyUnsafe should fail immediately on cancelled context.
-	err = mgr.persistKeyUnsafe(ctx, key)
+	// persistKey should fail immediately on cancelled context.
+	err = mgr.persistKey(ctx, key, "")
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("expected context.Canceled, got %v", err)
 	}
@@ -877,8 +877,8 @@ func TestActiveKeyForGeneration_UnknownKeyAfterLock(t *testing.T) {
 		k.CreatedAt = time.Now().Add(-time.Hour)
 		mgr.keyCache[id] = k
 	}
-	// Also clear the cache so ensureRotationUnsafe finds ErrUnknownKey.
-	// Because ensureRotationUnsafe calls rotateKeyUnsafe which generates a new
+	// Also clear the cache so ensureRotationLocked finds ErrUnknownKey.
+	// Because ensureRotationLocked calls rotateKeyLocked which generates a new
 	// key, we instead inject a store error to prevent the regeneration succeeding
 	// and expose the ErrUnknownKey branch after lock upgrade.
 	mgr.mu.Unlock()
@@ -942,9 +942,9 @@ func TestStoreSet_CancelledContextEarlyReturn(t *testing.T) {
 	}
 }
 
-// ===== rotateKeyUnsafe contextErr branch =====
+// ===== rotateKeyLocked contextErr branch =====
 
-func TestRotateKeyUnsafe_CancelledContextEarlyReturn(t *testing.T) {
+func TestRotateKeyLocked_CancelledContextEarlyReturn(t *testing.T) {
 	store := newRecordingContextKeyStore()
 	mgr, err := NewJWTManagerContext(t.Context(), store, DefaultJWTConfig())
 	if err != nil {
@@ -954,19 +954,19 @@ func TestRotateKeyUnsafe_CancelledContextEarlyReturn(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	mgr.mu.Lock()
-	_, err = mgr.rotateKeyUnsafe(ctx)
-	mgr.mu.Unlock()
+	mgr.rotationMu.Lock()
+	_, err = mgr.rotateKeyLocked(ctx)
+	mgr.rotationMu.Unlock()
 
 	if !errors.Is(err, context.Canceled) {
-		t.Fatalf("rotateKeyUnsafe with cancelled ctx: expected context.Canceled, got %v", err)
+		t.Fatalf("rotateKeyLocked with cancelled ctx: expected context.Canceled, got %v", err)
 	}
 }
 
-// ===== ensureActiveKeyUnsafe – early-exit when active key is already in cache =====
+// ===== ensureActiveKey – early-exit when active key is already in cache =====
 
-func TestEnsureActiveKeyUnsafe_ActiveKeyAlreadyInCache(t *testing.T) {
-	// Reload a manager from an already-populated store so that ensureActiveKeyUnsafe
+func TestEnsureActiveKey_ActiveKeyAlreadyInCache(t *testing.T) {
+	// Reload a manager from an already-populated store so that ensureActiveKey
 	// finds the active key ID present in the cache and returns nil early.
 	store := newRecordingContextKeyStore()
 
@@ -976,7 +976,7 @@ func TestEnsureActiveKeyUnsafe_ActiveKeyAlreadyInCache(t *testing.T) {
 		t.Fatalf("first NewJWTManagerContext: %v", err)
 	}
 
-	// Second initialisation loads existing keys; ensureActiveKeyUnsafe should
+	// Second initialisation loads existing keys; ensureActiveKey should
 	// find active key in cache and hit the `return nil` branch.
 	mgr2, err := NewJWTManagerContext(t.Context(), store, DefaultJWTConfig())
 	if err != nil {
@@ -987,9 +987,9 @@ func TestEnsureActiveKeyUnsafe_ActiveKeyAlreadyInCache(t *testing.T) {
 	}
 }
 
-// ===== ensureActiveKeyUnsafe – contextErr at entry =====
+// ===== ensureActiveKey – contextErr at entry =====
 
-func TestEnsureActiveKeyUnsafe_CancelledContextAtEntry(t *testing.T) {
+func TestEnsureActiveKey_CancelledContextAtEntry(t *testing.T) {
 	store := newRecordingContextKeyStore()
 	mgr, err := NewJWTManagerContext(t.Context(), store, DefaultJWTConfig())
 	if err != nil {
@@ -999,42 +999,44 @@ func TestEnsureActiveKeyUnsafe_CancelledContextAtEntry(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	mgr.mu.Lock()
-	err = mgr.ensureActiveKeyUnsafe(ctx)
-	mgr.mu.Unlock()
+	mgr.rotationMu.Lock()
+	err = mgr.ensureActiveKey(ctx)
+	mgr.rotationMu.Unlock()
 
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("expected context.Canceled, got %v", err)
 	}
 }
 
-// ===== ensureRotationUnsafe – ErrUnknownKey branch (active ID not in cache) =====
+// ===== ensureRotationLocked – ErrUnknownKey branch (active ID not in cache) =====
 
-func TestEnsureRotationUnsafe_UnknownKeyReturnsError(t *testing.T) {
+func TestEnsureRotationLocked_UnknownKeyReturnsError(t *testing.T) {
 	store := newRecordingContextKeyStore()
 	mgr, err := NewJWTManagerContext(t.Context(), store, DefaultJWTConfig())
 	if err != nil {
 		t.Fatalf("NewJWTManagerContext: %v", err)
 	}
 
-	// Wipe the cache and set active to a non-existent ID so ensureRotationUnsafe
+	// Wipe the cache and set active to a non-existent ID so ensureRotationLocked
 	// hits the !ok branch.
 	mgr.mu.Lock()
 	mgr.keyCache = make(map[string]JWTSigningKey)
 	mgr.active = "phantom"
 	mgr.config.RotationInterval = time.Hour // non-zero so we don't skip early
 
-	err = mgr.ensureRotationUnsafe(t.Context())
 	mgr.mu.Unlock()
+	mgr.rotationMu.Lock()
+	err = mgr.ensureRotationLocked(t.Context())
+	mgr.rotationMu.Unlock()
 
 	if !errors.Is(err, ErrUnknownKey) {
 		t.Fatalf("expected ErrUnknownKey, got %v", err)
 	}
 }
 
-// ===== ensureRotationUnsafe – return nil when interval not elapsed =====
+// ===== ensureRotationLocked – return nil when interval not elapsed =====
 
-func TestEnsureRotationUnsafe_ReturnNilWhenNotElapsed(t *testing.T) {
+func TestEnsureRotationLocked_ReturnNilWhenNotElapsed(t *testing.T) {
 	store := newRecordingContextKeyStore()
 	cfg := DefaultJWTConfig()
 	cfg.RotationInterval = time.Hour
@@ -1049,19 +1051,21 @@ func TestEnsureRotationUnsafe_ReturnNilWhenNotElapsed(t *testing.T) {
 	k := mgr.keyCache[mgr.active]
 	k.CreatedAt = time.Now().UTC()
 	mgr.keyCache[mgr.active] = k
-	err = mgr.ensureRotationUnsafe(t.Context())
 	mgr.mu.Unlock()
+	mgr.rotationMu.Lock()
+	err = mgr.ensureRotationLocked(t.Context())
+	mgr.rotationMu.Unlock()
 
 	if err != nil {
-		t.Fatalf("ensureRotationUnsafe: expected nil, got %v", err)
+		t.Fatalf("ensureRotationLocked: expected nil, got %v", err)
 	}
 }
 
-// ===== activeKeyForGeneration – ensureRotationUnsafe error propagated =====
+// ===== activeKeyForGeneration – ensureRotationLocked error propagated =====
 
 func TestActiveKeyForGeneration_RotationErrorPropagated(t *testing.T) {
 	// Build manager, then backdating the key and injecting a store error so
-	// ensureRotationUnsafe fails during the write-lock path.
+	// ensureRotationLocked fails during the write-lock path.
 	store := newRecordingContextKeyStore()
 	cfg := DefaultJWTConfig()
 	cfg.RotationInterval = time.Hour
@@ -1078,7 +1082,7 @@ func TestActiveKeyForGeneration_RotationErrorPropagated(t *testing.T) {
 	mgr.keyCache[mgr.active] = k
 	mgr.mu.Unlock()
 
-	// Inject a write error so rotateKeyUnsafe fails.
+	// Inject a write error so rotateKeyLocked fails.
 	wantErr := errors.New("rotation store fail")
 	store.setContextErr = wantErr
 
@@ -1088,18 +1092,18 @@ func TestActiveKeyForGeneration_RotationErrorPropagated(t *testing.T) {
 	}
 }
 
-// ===== ensureActiveKeyUnsafe – storeSet of activeKeyKey fails (second Set after persist) =====
+// ===== ensureActiveKey – storeSet of activeKeyKey fails (second Set after persist) =====
 
-func TestEnsureActiveKeyUnsafe_ActivePointerSetFails(t *testing.T) {
-	// The manager needs to call ensureActiveKeyUnsafe with a cleared cache.
+func TestEnsureActiveKey_ActivePointerSetFails(t *testing.T) {
+	// The manager needs to call ensureActiveKey with a cleared cache.
 	// We need the first Set (key blob) to succeed but the second Set
 	// (active pointer) to fail.
 	//
 	// The initial startup does 2 Set calls. We want the third call to succeed
-	// (key blob during ensureActiveKeyUnsafe) but the fourth to fail (active pointer).
+	// (key blob during ensureActiveKey) but the fourth to fail (active pointer).
 	//
 	// Reload scenario: start with a pre-populated store, then clear cache to force
-	// ensureActiveKeyUnsafe to re-run, with Set #3 succeeding and Set #4 failing.
+	// ensureActiveKey to re-run, with Set #3 succeeding and Set #4 failing.
 	wantErr := errors.New("active key pointer set fail")
 	store := newCountingSetStore(4, wantErr)
 
@@ -1109,12 +1113,14 @@ func TestEnsureActiveKeyUnsafe_ActivePointerSetFails(t *testing.T) {
 		t.Fatalf("NewJWTManagerContext: %v", err)
 	}
 
-	// Now clear cache to force ensureActiveKeyUnsafe to generate a new key.
+	// Now clear cache to force ensureActiveKey to generate a new key.
 	mgr.mu.Lock()
 	mgr.keyCache = make(map[string]JWTSigningKey)
 	mgr.active = ""
-	err = mgr.ensureActiveKeyUnsafe(t.Context())
 	mgr.mu.Unlock()
+	mgr.rotationMu.Lock()
+	err = mgr.ensureActiveKey(t.Context())
+	mgr.rotationMu.Unlock()
 
 	if !errors.Is(err, wantErr) {
 		t.Fatalf("expected %v, got %v", wantErr, err)
@@ -1137,9 +1143,9 @@ func TestLoadKeys_CancelledContextBeforeAnyWork(t *testing.T) {
 	}
 }
 
-// ===== ensureActiveKeyUnsafe – storeSet of activeKeyKey pointer fails (second Set call) =====
+// ===== ensureActiveKey – storeSet of activeKeyKey pointer fails (second Set call) =====
 
-func TestEnsureActiveKeyUnsafe_StoreSetActivePointerFails(t *testing.T) {
+func TestEnsureActiveKey_StoreSetActivePointerFails(t *testing.T) {
 	// Use a custom store that fails only on the second SetContext call —
 	// the first one persists the key blob, the second writes the active pointer.
 	store := newCountingSetStore(2, errors.New("active pointer write fail"))
@@ -1149,12 +1155,12 @@ func TestEnsureActiveKeyUnsafe_StoreSetActivePointerFails(t *testing.T) {
 	}
 }
 
-// ===== rotateKeyUnsafe – storeSet of activeKeyKey pointer fails =====
+// ===== rotateKeyLocked – storeSet of activeKeyKey pointer fails =====
 
-func TestRotateKeyUnsafe_StoreSetActivePointerFails(t *testing.T) {
+func TestRotateKeyLocked_StoreSetActivePointerFails(t *testing.T) {
 	// Build a manager using a store that succeeds for the initial key setup
 	// (2 calls: key blob + active pointer), then fails on the 3rd Set call
-	// which is the key-blob write in rotateKeyUnsafe's persistKeyUnsafe call.
+	// which is the key-blob write in rotateKeyLocked's persistKey call.
 	// To hit the active-pointer branch, we need to succeed on the blob write
 	// (Set #3) and fail on the active-pointer write (Set #4).
 	wantErr := errors.New("active pointer write fail during rotate")
@@ -1165,10 +1171,10 @@ func TestRotateKeyUnsafe_StoreSetActivePointerFails(t *testing.T) {
 		t.Fatalf("NewJWTManagerContext: %v", err)
 	}
 
-	// rotateKeyUnsafe will be the next Set calls.
-	mgr.mu.Lock()
-	_, err = mgr.rotateKeyUnsafe(t.Context())
-	mgr.mu.Unlock()
+	// rotateKeyLocked will be the next Set calls.
+	mgr.rotationMu.Lock()
+	_, err = mgr.rotateKeyLocked(t.Context())
+	mgr.rotationMu.Unlock()
 
 	if !errors.Is(err, wantErr) {
 		t.Fatalf("expected %v, got %v", wantErr, err)
@@ -1302,11 +1308,11 @@ func TestLoadKeys_HasActiveKeyMarkerButNoKeyBlobs(t *testing.T) {
 	}
 }
 
-// ===== ensureActiveKeyUnsafe – storeSet fails on key blob write =====
+// ===== ensureActiveKey – storeSet fails on key blob write =====
 
-func TestEnsureActiveKeyUnsafe_StoreSetKeyBlobFails(t *testing.T) {
+func TestEnsureActiveKey_StoreSetKeyBlobFails(t *testing.T) {
 	// Build a manager successfully, then clear the cache and inject a store
-	// write error so that ensureActiveKeyUnsafe fails at persistKeyUnsafe.
+	// write error so that ensureActiveKey fails at persistKey.
 	store := newRecordingContextKeyStore()
 	mgr, err := NewJWTManagerContext(t.Context(), store, DefaultJWTConfig())
 	if err != nil {
@@ -1319,8 +1325,10 @@ func TestEnsureActiveKeyUnsafe_StoreSetKeyBlobFails(t *testing.T) {
 	mgr.mu.Lock()
 	mgr.keyCache = make(map[string]JWTSigningKey)
 	mgr.active = ""
-	err = mgr.ensureActiveKeyUnsafe(t.Context())
 	mgr.mu.Unlock()
+	mgr.rotationMu.Lock()
+	err = mgr.ensureActiveKey(t.Context())
+	mgr.rotationMu.Unlock()
 
 	if !errors.Is(err, wantErr) {
 		t.Fatalf("expected %v in chain, got %v", wantErr, err)
@@ -1366,7 +1374,7 @@ func TestLoadKeys_CancelledContextDuringKeyLoad(t *testing.T) {
 	}
 }
 
-// ===== persistKeyUnsafe – JSON encode path (indirect, via EdDSA key) =====
+// ===== persistKey – JSON encode path (indirect, via EdDSA key) =====
 
 func TestPersistKeyUnsafe_EdDSAKeyEncodesAndReloads(t *testing.T) {
 	store := newRecordingContextKeyStore()

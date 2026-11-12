@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -204,5 +205,91 @@ func TestRotationCandidateSurvivesRestart(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+type blockingRotationStore struct {
+	*InMemoryKeyStore
+	entered chan struct{}
+	release chan struct{}
+	block   sync.Once
+}
+
+func (s *blockingRotationStore) SetContext(ctx context.Context, key string, value []byte, ttl time.Duration) error {
+	if s.entered != nil && key == activeKeyKey {
+		s.block.Do(func() {
+			close(s.entered)
+			<-s.release
+		})
+	}
+	return s.InMemoryKeyStore.SetContext(ctx, key, value, ttl)
+}
+
+func TestVerifyContinuesWhileRotationWaitsForStore(t *testing.T) {
+	for _, automatic := range []bool{false, true} {
+		t.Run(fmt.Sprintf("automatic=%t", automatic), func(t *testing.T) {
+			store := &blockingRotationStore{InMemoryKeyStore: NewInMemoryKeyStore()}
+			cfg := DefaultJWTConfig()
+			cfg.RotationInterval = time.Minute
+			manager, err := NewJWTManager(store, cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			identity := IdentityClaims{Subject: "example"}
+			oldPair, err := manager.GenerateTokenPair(t.Context(), identity, AuthorizationClaims{})
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			entered, release := make(chan struct{}), make(chan struct{})
+			store.entered, store.release = entered, release
+			now := manager.currentTime().Add(time.Minute)
+			manager.now = func() time.Time { return now }
+			rotated := make(chan error, 1)
+			go func() {
+				if automatic {
+					_, err := manager.GenerateTokenPair(t.Context(), identity, AuthorizationClaims{})
+					rotated <- err
+					return
+				}
+				_, err := manager.RotateKeyContext(t.Context())
+				rotated <- err
+			}()
+			<-entered
+
+			verified := make(chan error, 1)
+			go func() {
+				_, err := manager.VerifyToken(t.Context(), oldPair.AccessToken, TokenTypeAccess)
+				verified <- err
+			}()
+			select {
+			case err := <-verified:
+				if err != nil {
+					t.Errorf("old token failed verification: %v", err)
+				}
+			case <-time.After(time.Second):
+				t.Error("verification blocked on rotation store")
+			}
+
+			issued := make(chan error, 1)
+			go func() {
+				_, err := manager.GenerateTokenPair(t.Context(), identity, AuthorizationClaims{})
+				issued <- err
+			}()
+			close(release)
+			if err := <-rotated; err != nil {
+				t.Fatal(err)
+			}
+			if err := <-issued; err != nil {
+				t.Fatal(err)
+			}
+			keys, err := store.KeysContext(t.Context())
+			if err != nil || len(keys) != 3 {
+				t.Fatalf("expected two signing keys and the active pointer, got %d entries: %v", len(keys), err)
+			}
+			if _, err := manager.VerifyToken(t.Context(), oldPair.AccessToken, TokenTypeAccess); err != nil {
+				t.Fatalf("old token failed after activation: %v", err)
+			}
+		})
 	}
 }
