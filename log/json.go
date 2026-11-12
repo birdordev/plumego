@@ -2,10 +2,12 @@ package log
 
 import (
 	"context"
+	"encoding"
 	"encoding/json"
 	"fmt"
 	"io"
 	"os"
+	"reflect"
 	"sync"
 	"time"
 )
@@ -226,6 +228,14 @@ func normalizeJSONFieldValueAt(value any, depth int, remaining *int) any {
 		}
 		return normalized
 	}
+	switch value.(type) {
+	case json.Marshaler, encoding.TextMarshaler:
+		// Keep explicit encoding methods on the standard JSON path.
+	default:
+		if normalized, ok := normalizeTypedJSONContainer(reflect.ValueOf(value), depth, remaining); ok {
+			return normalized
+		}
+	}
 	data, err := json.Marshal(value)
 	if err != nil {
 		// Only numeric formatting is safe here. Generic formatting can reveal
@@ -240,6 +250,57 @@ func normalizeJSONFieldValueAt(value any, depth int, remaining *int) any {
 	}
 	// Keep validated JSON bytes instead of decoding numbers through float64.
 	return json.RawMessage(data)
+}
+
+func normalizeTypedJSONContainer(value reflect.Value, depth int, remaining *int) (any, bool) {
+	switch value.Kind() {
+	case reflect.Slice, reflect.Array:
+		element := value.Type().Elem()
+		encodeElementAddress := hasJSONEncodingMethod(reflect.PointerTo(element))
+		if value.Kind() == reflect.Slice {
+			if element.Kind() == reflect.Uint8 && !encodeElementAddress {
+				return nil, false // encoding/json encodes byte slices as base64.
+			}
+			if value.IsNil() {
+				return nil, true
+			}
+		}
+		items := make([]any, 0, min(value.Len(), *remaining)+1)
+		for i := range value.Len() {
+			if *remaining <= 0 {
+				return append(items, "[truncated]"), true
+			}
+			item := value.Index(i)
+			if encodeElementAddress && item.CanAddr() {
+				item = item.Addr()
+			}
+			items = append(items, normalizeJSONFieldValueAt(item.Interface(), depth+1, remaining))
+		}
+		return items, true
+	case reflect.Map:
+		if value.Type().Key().Kind() != reflect.String {
+			return nil, false
+		}
+		if value.IsNil() {
+			return nil, true
+		}
+		fields := make(map[string]any, min(value.Len(), *remaining))
+		for key, item := range value.Seq2() {
+			if *remaining <= 0 {
+				fields["[truncated]"] = "[truncated]"
+				break
+			}
+			fields[key.String()] = normalizeJSONFieldValueAt(item.Interface(), depth+1, remaining)
+		}
+		return fields, true
+	default:
+		return nil, false
+	}
+}
+
+func hasJSONEncodingMethod(typ reflect.Type) bool {
+	return typ.Implements(reflect.TypeFor[json.Marshaler]()) ||
+		typ.Implements(reflect.TypeFor[encoding.TextMarshaler]())
 }
 
 func normalizeJSONFieldMap(fields map[string]any, depth int, remaining *int) map[string]any {
