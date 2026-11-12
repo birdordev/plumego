@@ -120,7 +120,7 @@ func TestGenerate_StableRoot(t *testing.T) {
 			want := []string{
 				"go -C " + tt.module + " test -race -timeout 60s ./...",
 				"go -C " + tt.module + " vet ./...",
-				"make boundary-check",
+				"make boundary-check api-check",
 			}
 			if !slices.Equal(b.Validation.Commands, want) {
 				t.Errorf("commands = %q, want %q", b.Validation.Commands, want)

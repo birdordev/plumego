@@ -1,7 +1,6 @@
 # Repository commands. Task implementation lives in internal/tools/task-workflow.
 .DEFAULT_GOAL := help
 
-STABLE_MODULES := core router contract middleware security store health log metrics
 BOUNDARY_CHECKS := dependency-rules cross-extension-deps agent-workflow module-manifests \
 	reference-layout extension-maturity extension-beta-evidence public-entrypoints-sync
 TASK_TARGETS := milestone check-spec check-plan check-verify check-card new-milestone \
@@ -63,14 +62,7 @@ boundary-check: ## Validate repository boundaries and manifests
 	go run ./internal/checks/deprecation-inventory -strict
 
 api-check: ## Compare stable module API snapshots
-	@set -e; tmp=$$(mktemp -d "$${TMPDIR:-/tmp}/plumego-stable-api.XXXXXX"); \
-	trap 'rm -rf "$$tmp"' EXIT; \
-	for module in $(STABLE_MODULES); do \
-	  pattern="./$$module/..."; \
-	  case "$$module" in core|router) pattern="./$$module" ;; esac; \
-	  go run ./internal/checks/extension-api-snapshot -module "$$pattern" -out "$$tmp/$$module.snapshot"; \
-	  go run ./internal/checks/extension-api-snapshot -compare "docs/evidence/stable-api/snapshots/$$module-head.snapshot" "$$tmp/$$module.snapshot"; \
-	done
+	go run ./internal/checks/extension-api-snapshot -check-stable
 
 doc-check: ## Compile and run documentation snippets
 	go run ./internal/tools/doc-snippets

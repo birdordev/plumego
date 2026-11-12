@@ -27,7 +27,7 @@ profiles:
     commands:
       - "go -C {module} test -race -timeout 60s ./..."
       - "go -C {module} vet ./..."
-      - "make boundary-check"
+      - "make boundary-check api-check"
 
   cross_module_public_api_release:
     description: Cross-module change, public API change, or release-relevant change

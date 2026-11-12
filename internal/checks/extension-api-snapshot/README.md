@@ -1,7 +1,8 @@
 # extension-api-snapshot
 
 `extension-api-snapshot` records the exported Go API surface for an extension
-package tree and compares two recorded snapshots.
+package tree, compares two recorded snapshots, and checks the stable API
+against the repository baselines.
 
 It is a local evidence tool for `docs/reference/extension-stability-policy.md`. It does
 not fetch tags, decide promotion status, or update module manifests.
@@ -24,3 +25,5 @@ go run ./internal/checks/extension-api-snapshot \
 The snapshot is deterministic text. It includes exported top-level constants,
 variables, functions, types, exported struct fields, and methods on exported
 receiver types. It excludes test files and unexported implementation details.
+
+Run `make api-check` to check every stable root against its committed snapshot.

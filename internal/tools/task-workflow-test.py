@@ -122,14 +122,9 @@ class WorkflowTest(unittest.TestCase):
         result = subprocess.run(["bash", ".githooks/pre-push"], cwd=self.root, env=self.env)
         self.assertEqual(result.returncode, 23)
 
-    def test_snapshot_patterns(self):
+    def test_api_check_uses_one_snapshot_tool_invocation(self):
         self.make("api-check")
-        calls = self.calls()
-        self.assertEqual(len(calls), 18)
-        for index, module in enumerate("core router contract middleware security store health log metrics".split()):
-            pattern = f"./{module}" + ("" if module in ("core", "router") else "/...")
-            self.assertIn(f"-module {pattern} -out", calls[index * 2])
-            self.assertIn(f"snapshots/{module}-head.snapshot", calls[index * 2 + 1])
+        self.assertEqual(self.calls(), ["run ./internal/checks/extension-api-snapshot -check-stable"])
 
     def test_gate_failure_stops_even_with_parallel_make(self):
         self.env["FAIL_PATTERN"] = "cross-extension-deps"

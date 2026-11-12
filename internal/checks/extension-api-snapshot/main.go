@@ -24,8 +24,12 @@ func main() {
 	modulePattern := flag.String("module", "", "package pattern to snapshot, for example ./x/rest or ./x/rest/...")
 	outPath := flag.String("out", "", "file to write; stdout is used when empty")
 	compare := flag.Bool("compare", false, "compare two snapshot files passed as positional arguments")
+	checkStable := flag.Bool("check-stable", false, "compare the stable API with its committed snapshots")
 	flag.Parse()
 
+	if *checkStable && (*compare || *modulePattern != "" || *outPath != "" || flag.NArg() != 0) {
+		failf("-check-stable must be used on its own")
+	}
 	if *compare {
 		if flag.NArg() != 2 {
 			failf("-compare requires two snapshot file arguments")
@@ -36,8 +40,8 @@ func main() {
 		return
 	}
 
-	if *modulePattern == "" {
-		failf("-module is required when not comparing snapshots")
+	if !*checkStable && *modulePattern == "" {
+		failf("-module is required when generating a snapshot")
 	}
 
 	repoRoot, err := os.Getwd()
@@ -48,6 +52,12 @@ func main() {
 	modulePath, err := readModulePath(filepath.Join(repoRoot, "go.mod"))
 	if err != nil {
 		failf("read module path: %v", err)
+	}
+	if *checkStable {
+		if err := checkStableSnapshots(repoRoot, modulePath, os.Stdout); err != nil {
+			failf("%v", err)
+		}
+		return
 	}
 
 	lines, err := snapshotPattern(repoRoot, modulePath, *modulePattern)
@@ -394,7 +404,39 @@ func compareSnapshots(leftPath, rightPath string, out io.Writer) error {
 	if err != nil {
 		return err
 	}
+	return compareSymbols(left, right, out)
+}
 
+func checkStableSnapshots(repoRoot, modulePath string, out io.Writer) error {
+	for _, root := range checkutil.StableRoots() {
+		pattern := "./" + root + "/..."
+		if root == "core" || root == "router" {
+			pattern = "./" + root
+		}
+		baselinePath := filepath.Join(repoRoot, "docs", "evidence", "stable-api", "snapshots", root+"-head.snapshot")
+		baseline, err := readSnapshot(baselinePath)
+		if err != nil {
+			return err
+		}
+		lines, err := snapshotPattern(repoRoot, modulePath, pattern)
+		if err != nil {
+			return fmt.Errorf("snapshot %s: %w", pattern, err)
+		}
+		current, err := parseSnapshot(strings.NewReader(strings.Join(lines, "\n")))
+		if err != nil {
+			return fmt.Errorf("parse current snapshot for %s: %w", pattern, err)
+		}
+		if _, err := fmt.Fprintln(out, "==>", pattern); err != nil {
+			return fmt.Errorf("write stable API check output: %w", err)
+		}
+		if err := compareSymbols(baseline, current, out); err != nil {
+			return fmt.Errorf("stable API %s: %w", pattern, err)
+		}
+	}
+	return nil
+}
+
+func compareSymbols(left, right map[string]string, out io.Writer) error {
 	var diffs []string
 	for key, before := range left {
 		after, ok := right[key]
@@ -431,8 +473,16 @@ func readSnapshot(path string) (map[string]string, error) {
 	}
 	defer func() { _ = file.Close() }()
 
+	symbols, err := parseSnapshot(file)
+	if err != nil {
+		return nil, fmt.Errorf("read %s: %w", path, err)
+	}
+	return symbols, nil
+}
+
+func parseSnapshot(r io.Reader) (map[string]string, error) {
 	symbols := make(map[string]string)
-	scanner := checkutil.NewLineScanner(file)
+	scanner := checkutil.NewLineScanner(r)
 	for scanner.Scan() {
 		line := scanner.Text()
 		if !strings.HasPrefix(line, "symbol\t") {
@@ -440,13 +490,13 @@ func readSnapshot(path string) (map[string]string, error) {
 		}
 		parts := strings.SplitN(line, "\t", 5)
 		if len(parts) != 5 {
-			return nil, fmt.Errorf("invalid snapshot line in %s: %s", path, line)
+			return nil, fmt.Errorf("invalid snapshot line: %s", line)
 		}
 		key := strings.Join(parts[:4], "\t")
 		symbols[key] = parts[4]
 	}
 	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("read %s: %w", path, err)
+		return nil, err
 	}
 	return symbols, nil
 }
