@@ -138,3 +138,10 @@ func TestReadinessStatusClonePreservesNilComponents(t *testing.T) {
 		t.Fatalf("Components = %#v, want nil", clone.Components)
 	}
 }
+
+func TestHealthStatusClonePreservesEmptyDependencies(t *testing.T) {
+	status := HealthStatus{Dependencies: []string{}}
+	if dependencies := status.Clone().Dependencies; dependencies == nil || len(dependencies) != 0 {
+		t.Fatalf("dependencies = %#v, want non-nil empty slice", dependencies)
+	}
+}
