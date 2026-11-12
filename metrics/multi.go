@@ -10,8 +10,10 @@ type MultiCollector struct {
 	collectors []AggregateCollector
 }
 
-// NewMultiCollector creates a new multi-collector that forwards to all provided collectors.
-// It returns a no-op collector if no non-nil collectors are provided.
+// NewMultiCollector ignores nil inputs. With no remaining collectors it
+// returns a no-op, and with one it returns that collector unchanged.
+// With multiple collectors it forwards in order and gives each target its
+// own copy of the labels on Record.
 func NewMultiCollector(collectors ...AggregateCollector) AggregateCollector {
 	filtered := make([]AggregateCollector, 0, len(collectors))
 	for _, collector := range collectors {
