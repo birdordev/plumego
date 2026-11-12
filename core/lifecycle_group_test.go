@@ -336,3 +336,63 @@ var (
 	_ Stopper      = (*LifecycleGroup)(nil)
 	_ ReadyChecker = (*LifecycleGroup)(nil)
 )
+
+func TestLifecycleGroupCanceledStartLeavesGroupIdle(t *testing.T) {
+	var events []string
+	group := NewLifecycleGroup().Add("first", &recorder{name: "first", log: &events})
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	if err := group.Start(ctx); !errors.Is(err, context.Canceled) {
+		t.Errorf("Start error = %v, want canceled", err)
+	}
+	if len(events) != 0 {
+		t.Errorf("callbacks before retry: %v", events)
+	}
+	if err := group.Start(t.Context()); err != nil {
+		t.Fatalf("retry Start: %v", err)
+	}
+	if err := group.Stop(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestLifecycleGroupCancellationRollsBackAttemptedComponents(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	var events []string
+	cleanupErr := errors.New("cleanup needs a live context")
+	first := &recorder{name: "first", log: &events}
+	group := NewLifecycleGroup().Add("first", first).
+		Add("second", Component{
+			OnStart: func(context.Context) error {
+				events = append(events, "start:second")
+				cancel()
+				return nil
+			},
+			OnStop: func(ctx context.Context) error {
+				events = append(events, "stop:second")
+				if ctx.Err() != nil {
+					return cleanupErr
+				}
+				return nil
+			},
+		}).
+		Add("third", &recorder{name: "third", log: &events})
+
+	if err := group.Start(ctx); !errors.Is(err, context.Canceled) || !errors.Is(err, cleanupErr) {
+		t.Errorf("Start error = %v, want cancellation and cleanup errors", err)
+	}
+	want := []string{"start:first", "start:second", "stop:second", "stop:first"}
+	if !slices.Equal(events, want) {
+		t.Errorf("callbacks = %v, want %v", events, want)
+	}
+	if err := group.Stop(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	want = append(want, "stop:second")
+	if !slices.Equal(events, want) {
+		t.Errorf("callbacks after retry = %v, want %v", events, want)
+	}
+}
