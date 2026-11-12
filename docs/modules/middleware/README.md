@@ -219,7 +219,7 @@ active and waiting requests represented in that channel.
 
 `compression.Middleware(...)` compresses eligible non-error responses when the client
 accepts gzip. It skips websocket upgrades, SSE, already-compressed responses,
-and common binary content types.
+common binary content types, and range responses (206 or `Content-Range`).
 
 `Config.MaxBufferBytes` controls only the pre-compression buffer. If a
 response exceeds the limit before gzip output has started, the middleware
