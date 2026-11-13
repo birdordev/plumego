@@ -172,6 +172,10 @@ func (l *jsonLogger) buildEntry(level Level, msg string, fields Fields) map[stri
 	combined := mergeFields(baseFields, fields)
 	entry := make(map[string]any, safeMapCapacity(len(combined), 4))
 	for k, v := range combined {
+		switch k {
+		case "time", "level", "msg":
+			continue
+		}
 		entry[k] = normalizeJSONFieldValue(v)
 	}
 
@@ -207,6 +211,9 @@ func normalizeJSONFieldValueAt(value any, depth int, remaining *int) any {
 	case map[string]any:
 		return normalizeJSONFieldMap(v, depth, remaining)
 	case map[string]string:
+		if v == nil {
+			return nil
+		}
 		normalized := make(map[string]any, min(len(v), *remaining))
 		for key, nested := range v {
 			if *remaining <= 0 {
@@ -218,6 +225,9 @@ func normalizeJSONFieldValueAt(value any, depth int, remaining *int) any {
 		}
 		return normalized
 	case []any:
+		if v == nil {
+			return nil
+		}
 		normalized := make([]any, 0, min(len(v), *remaining)+1)
 		for _, nested := range v {
 			if *remaining <= 0 {
@@ -304,6 +314,9 @@ func hasJSONEncodingMethod(typ reflect.Type) bool {
 }
 
 func normalizeJSONFieldMap(fields map[string]any, depth int, remaining *int) map[string]any {
+	if fields == nil {
+		return nil
+	}
 	normalized := make(map[string]any, min(len(fields), *remaining))
 	for key, value := range fields {
 		if *remaining <= 0 {

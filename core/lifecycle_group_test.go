@@ -396,3 +396,18 @@ func TestLifecycleGroupCancellationRollsBackAttemptedComponents(t *testing.T) {
 		t.Errorf("callbacks after retry = %v, want %v", events, want)
 	}
 }
+
+func TestLifecycleGroupStopNormalizesNilContext(t *testing.T) {
+	group := NewLifecycleGroup().Add("component", Component{OnStop: func(ctx context.Context) error {
+		if ctx == nil {
+			t.Error("cleanup received a nil context")
+		}
+		return nil
+	}})
+	if err := group.Start(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if err := group.Stop(nil); err != nil {
+		t.Fatal(err)
+	}
+}

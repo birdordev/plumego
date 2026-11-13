@@ -1,6 +1,8 @@
 package password
 
 import (
+	"errors"
+	"strings"
 	"testing"
 )
 
@@ -79,5 +81,22 @@ func costLabel(cost int) string {
 		return "max"
 	default:
 		return "custom"
+	}
+}
+
+func BenchmarkMalformedStoredHash(b *testing.B) {
+	for _, tc := range []struct {
+		name string
+		size int
+	}{{"1KiB", 1 << 10}, {"1MiB", 1 << 20}} {
+		b.Run(tc.name, func(b *testing.B) {
+			stored := "210000$" + strings.Repeat("A", tc.size) + "$AA=="
+			b.ReportAllocs()
+			for b.Loop() {
+				if err := CheckPassword(stored, "fixture"); !errors.Is(err, ErrInvalidHash) {
+					b.Fatal(err)
+				}
+			}
+		})
 	}
 }

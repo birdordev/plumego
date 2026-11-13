@@ -120,6 +120,11 @@
 - `store/kv` persists the full in-memory state as JSON on each write, fsyncs the temporary state file, atomically replaces the state file, and syncs the parent directory when the platform supports it; it is intended for small embedded datasets rather than high-throughput durable-engine workloads.
 - `store/kv` does not rewrite the state file during startup normalization; expired or over-capacity records can be pruned from memory without mutating disk until the next caller-initiated write.
 - `store/kv` read operations do not persist expired-key cleanup as a side effect.
+- Each KV data directory is owned by one open store across processes. The
+  constructor fails if it cannot acquire the OS lock. Keep `store.lock` in the
+  directory and call `Close` before reopening. The OS also releases the lock
+  when the owning process exits. Platforms without a supported locking
+  primitive return an error at open time.
 - `store/kv` classifies state-file JSON decode failures and invalid persisted keys with `kv.ErrCorruptState`; invalid-key corruption also keeps `kv.ErrInvalidKey` in the error chain for diagnostics.
 - `store/kv` treats invalid persisted keys as state corruption and fails startup instead of silently dropping records.
 - `x/data/kvengine` owns durable-engine behavior such as WAL, snapshots, serializer formats, compression, and shard/flush tuning.
@@ -135,7 +140,8 @@
   error for invalid options; it must not silently write to the process working
   directory.
 - Default capacity for the embedded state file helper is 100000 entries and
-  200 MiB. Callers needing different bounds should pass explicit limits after
+  200 MiB. The configured MiB capacity must fit in an `int64` byte count.
+  Callers needing different bounds should pass explicit limits after
   measuring, and callers needing durable-engine tuning should use
   `x/data/kvengine`.
 - `store/kv` uses a single JSON state file replaced with `os.Rename`; each mutation rewrites the full normalized state and is O(N) in the number of retained entries.

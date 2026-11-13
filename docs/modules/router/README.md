@@ -140,7 +140,8 @@ directly.
   preserves slash boundaries for wildcard params, returns empty string for
   unknown routes, incomplete params, duplicate keys, unknown keys, empty
   required params, or malformed key/value param lists; `URLMust` panics with the
-  specific reverse-routing failure reason.
+  specific reverse-routing failure reason. Literal path segments are URL-escaped
+  so reserved characters round-trip through request parsing.
 - `router.Static` and `router.StaticFS` are primitive GET mounts. Cache headers, SPA fallback, precompressed files, custom headers, and MIME policy belong to `x/frontend`.
 - Static request paths are cleaned with slash-based URL semantics before local
   directory serving converts them to platform filesystem paths.
@@ -204,6 +205,10 @@ Parameters beyond the eight inline slots are retained, including wildcard
 parameters; cold and warm cache lookups expose the same complete values.
 `RequestContextFromContext` remains the detached mutable snapshot accessor.
 Cache hits reuse the immutable match metadata without a per-request state allocation.
+
+Route options run before the registration lock is acquired, so they can read
+router snapshots. If the router freezes while an option is running, the pending
+registration is rejected before publication.
 
 `Routes()` copies mutable tag slices. Registration also copies tags supplied
 by route options, so neither registration inputs nor returned snapshots can

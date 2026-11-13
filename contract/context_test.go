@@ -128,3 +128,25 @@ func TestWithRouteStatePreservesContext(t *testing.T) {
 		t.Fatal("route state did not preserve parent cancellation and metadata")
 	}
 }
+
+func TestRouteStateAccessorsAgreeOnDuplicateParams(t *testing.T) {
+	for _, entries := range []struct{ first, last int }{
+		{0, 1}, {0, maxInlineParams}, {maxInlineParams, maxInlineParams + 1},
+	} {
+		var state RouteState
+		for i := 0; i <= entries.last; i++ {
+			switch i {
+			case entries.first:
+				state.AddParam("id", "first")
+			case entries.last:
+				state.AddParam("id", "last")
+			default:
+				state.AddParam("unused", "value")
+			}
+		}
+		ctx := WithRouteState(t.Context(), &state)
+		if got, snapshot := RequestParamFromContext(ctx, "id"), RequestContextFromContext(ctx).Params["id"]; got != "last" || got != snapshot {
+			t.Errorf("entries %v: direct = %q, snapshot = %q", entries, got, snapshot)
+		}
+	}
+}

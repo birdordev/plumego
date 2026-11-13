@@ -1,6 +1,9 @@
 package health
 
-import "time"
+import (
+	"maps"
+	"time"
+)
 
 // ReadinessStatus describes whether the application is ready to serve traffic.
 // Components maps component names to their readiness decisions when available.
@@ -14,11 +17,6 @@ type ReadinessStatus struct {
 // Clone returns a copy of rs with component readiness decisions detached.
 func (rs ReadinessStatus) Clone() ReadinessStatus {
 	clone := rs
-	if rs.Components != nil {
-		clone.Components = make(map[string]bool, len(rs.Components))
-		for name, ready := range rs.Components {
-			clone.Components[name] = ready
-		}
-	}
+	clone.Components = maps.Clone(rs.Components)
 	return clone
 }

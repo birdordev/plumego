@@ -220,6 +220,8 @@ active and waiting requests represented in that channel.
 `compression.Middleware(...)` compresses eligible non-error responses when the client
 accepts gzip. It skips websocket upgrades, SSE, already-compressed responses,
 common binary content types, and range responses (206 or `Content-Range`).
+Negotiated gzip and identity responses include `Vary: Accept-Encoding` while
+preserving other `Vary` values.
 
 `Config.MaxBufferBytes` controls only the pre-compression buffer. If a
 response exceeds the limit before gzip output has started, the middleware
@@ -230,7 +232,7 @@ If a handler calls `WriteHeader(200)` before setting `Content-Type` or writing a
 body, gzip delays the compression decision until the first body write so it can
 sniff the content type consistently.
 If a handler calls `Flush()` before the first body write, gzip commits the
-current headers and treats later writes as uncompressed pass-through data.
+current status and headers and treats later writes as uncompressed pass-through data.
 
 ### Debug error contract
 
@@ -280,6 +282,9 @@ structured `413` before its next write or when the downstream call returns,
 provided the response has not started and the request context is still active.
 Subsequent writes report their bytes as consumed without appending to the error.
 An overrun after final headers or a flush cannot replace the committed response.
+A zero-length read does not consume or probe the body. Flush follows the
+underlying writer chain and returns its error through `http.ResponseController`.
+A detected overrun suppresses the downstream flush.
 An already committed error response is allowed to finish its body, including
 a timeout error whose headers were committed before a concurrent overrun.
 

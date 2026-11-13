@@ -131,3 +131,69 @@ func TestTextMessageCannotForgeEntries(t *testing.T) {
 		t.Fatalf("log lost message or field data: %q", got)
 	}
 }
+
+type countingJSONField struct{ calls *int }
+
+func (f countingJSONField) MarshalJSON() ([]byte, error) {
+	(*f.calls)++
+	return []byte(`"encoded"`), nil
+}
+
+func TestJSONReservedFieldsSkipCustomEncoding(t *testing.T) {
+	var out bytes.Buffer
+	var reserved, ordinary int
+	NewLogger(LoggerConfig{Format: LoggerFormatJSON, Output: &out}).Info("canonical", Fields{
+		"time": countingJSONField{&reserved}, "level": countingJSONField{&reserved},
+		"msg": countingJSONField{&reserved}, "ordinary": countingJSONField{&ordinary},
+	})
+	if reserved != 0 || ordinary != 1 {
+		t.Fatalf("marshal calls: reserved = %d, ordinary = %d", reserved, ordinary)
+	}
+	var entry map[string]string
+	if err := json.Unmarshal(out.Bytes(), &entry); err != nil {
+		t.Fatal(err)
+	}
+	if entry["msg"] != "canonical" || entry["level"] != "INFO" || entry["time"] == "" || entry["ordinary"] != "encoded" {
+		t.Errorf("entry = %v", entry)
+	}
+}
+
+func TestJSONPreservesNilAndEmptyContainerShapes(t *testing.T) {
+	var output bytes.Buffer
+	logger := NewLogger(LoggerConfig{Format: LoggerFormatJSON, Output: &output})
+	type namedMap map[string]int
+	type namedSlice []string
+	logger.Info("containers", Fields{
+		"nil_fields":       Fields(nil),
+		"nil_map":          map[string]any(nil),
+		"nil_string_map":   map[string]string(nil),
+		"nil_list":         []any(nil),
+		"nil_named_map":    namedMap(nil),
+		"nil_named_list":   namedSlice(nil),
+		"empty_fields":     Fields{},
+		"empty_map":        map[string]any{},
+		"empty_string_map": map[string]string{},
+		"empty_list":       []any{},
+		"empty_named_map":  namedMap{},
+		"empty_named_list": namedSlice{},
+	})
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(output.Bytes(), &fields); err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []string{"nil_fields", "nil_map", "nil_string_map", "nil_list", "nil_named_map", "nil_named_list"} {
+		if got := string(fields[key]); got != "null" {
+			t.Errorf("%s = %s, want null", key, got)
+		}
+	}
+	for _, key := range []string{"empty_fields", "empty_map", "empty_string_map", "empty_named_map"} {
+		if got := string(fields[key]); got != "{}" {
+			t.Errorf("%s = %s, want {}", key, got)
+		}
+	}
+	for _, key := range []string{"empty_list", "empty_named_list"} {
+		if got := string(fields[key]); got != "[]" {
+			t.Errorf("%s = %s, want []", key, got)
+		}
+	}
+}

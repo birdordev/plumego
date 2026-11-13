@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"math"
 	"os"
 	"path/filepath"
+	"strconv"
 	"sync"
 	"testing"
 	"testing/synctest"
@@ -38,16 +40,14 @@ func TestDirectorySyncFailurePreservesPublishedState(t *testing.T) {
 			if !errors.Is(err, syncErr) {
 				t.Fatalf("error = %v, want directory sync error", err)
 			}
-			reopened, err := NewKVStore(Options{DataDir: dir, MaxEntries: 1})
-			if err != nil {
-				t.Fatal(err)
-			}
-			defer reopened.Close()
+			var persisted diskState
+			readState(t, dir, &persisted)
 			for _, key := range []string{"original", "replacement"} {
 				got, gotErr := store.Get(key)
-				disk, diskErr := reopened.Get(key)
-				if !bytes.Equal(got, disk) || !errors.Is(gotErr, diskErr) {
-					t.Fatalf("%s: live value %q (%v), reopened value %q (%v)", key, got, gotErr, disk, diskErr)
+				disk, exists := persisted.Entries[key]
+				if exists && (gotErr != nil || !bytes.Equal(got, disk.Value)) ||
+					!exists && !errors.Is(gotErr, ErrKeyNotFound) {
+					t.Fatalf("%s: live value %q (%v), disk entry %+v (exists=%v)", key, got, gotErr, disk, exists)
 				}
 			}
 			matches, err := filepath.Glob(filepath.Join(dir, stateFileName+".*.tmp"))
@@ -69,6 +69,9 @@ func TestDirectorySyncFailurePreservesPublishedState(t *testing.T) {
 				}
 			}
 			if err := store.Set("subsequent", []byte("value"), 0); err != nil {
+				t.Fatal(err)
+			}
+			if err := store.Close(); err != nil {
 				t.Fatal(err)
 			}
 			final, err := NewKVStore(Options{DataDir: dir, MaxEntries: 1})
@@ -105,6 +108,9 @@ func TestSlowPersistenceKeepsOneExpiration(t *testing.T) {
 		}
 		if exists, err := store.ExistsContext(t.Context(), "ttl"); err != nil || exists {
 			t.Fatalf("expired live entry exists=%v, error=%v", exists, err)
+		}
+		if err := store.Close(); err != nil {
+			t.Fatal(err)
 		}
 		reopened, err := NewKVStore(Options{DataDir: dir})
 		if err != nil {
@@ -149,6 +155,9 @@ func TestWriteFailureRestoresEvictionAndAllowsRetry(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := store.Set("replacement", []byte("new"), 0); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Close(); err != nil {
 		t.Fatal(err)
 	}
 	reopened, err := NewKVStore(Options{DataDir: dir, MaxEntries: 1})
@@ -196,6 +205,9 @@ func TestConcurrentWritesPreserveAllKeysAfterReload(t *testing.T) {
 	close(failures)
 	for err := range failures {
 		t.Error(err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
 	}
 	reopened, err := NewKVStore(Options{DataDir: dir})
 	if err != nil {
@@ -293,12 +305,8 @@ func TestCancellationAfterReplacementDoesNotUndoCommit(t *testing.T) {
 			if err != nil {
 				t.Fatalf("committed mutation error = %v", err)
 			}
-			reopened, err := NewKVStore(Options{DataDir: dir})
-			if err != nil {
-				t.Fatal(err)
-			}
-			defer reopened.Close()
-			for _, current := range []*KVStore{store, reopened} {
+			assertCommitted := func(current *KVStore) {
+				t.Helper()
 				got, err := current.Get("original")
 				if operation == "set" {
 					if err != nil || string(got) != "new" {
@@ -308,6 +316,16 @@ func TestCancellationAfterReplacementDoesNotUndoCommit(t *testing.T) {
 					t.Fatalf("committed delete error = %v", err)
 				}
 			}
+			assertCommitted(store)
+			if err := store.Close(); err != nil {
+				t.Fatal(err)
+			}
+			reopened, err := NewKVStore(Options{DataDir: dir})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer reopened.Close()
+			assertCommitted(reopened)
 		})
 	}
 }
@@ -339,5 +357,28 @@ func TestPersistentKeyMustRoundTripThroughJSON(t *testing.T) {
 	got, err := reopened.Get(valid)
 	if err != nil || string(got) != "original" {
 		t.Fatalf("reopened value = %q, %v; want original", got, err)
+	}
+}
+
+func TestKVRejectsUnrepresentableCapacityBeforeCreatingDirectory(t *testing.T) {
+	if strconv.IntSize < 64 {
+		t.Skip("int cannot represent an overflowing MiB capacity")
+	}
+	maxMiB := int64(math.MaxInt64) / (1 << 20)
+	path := filepath.Join(t.TempDir(), "state")
+	if store, err := NewKVStore(Config{DataDir: path, MaxMemoryMB: int(maxMiB + 1)}); err == nil {
+		_ = store.Close()
+		t.Fatal("constructor accepted overflowing capacity")
+	}
+	if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("data directory after rejected construction: %v", err)
+	}
+	store, err := NewKVStore(Config{DataDir: path, MaxMemoryMB: int(maxMiB)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	if err := store.Set("key", []byte("value"), 0); err != nil {
+		t.Fatal(err)
 	}
 }

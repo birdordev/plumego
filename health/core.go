@@ -2,6 +2,7 @@ package health
 
 import (
 	"context"
+	"maps"
 	"slices"
 	"time"
 )
@@ -43,12 +44,7 @@ type ComponentHealth struct {
 // Values stored in Details are not deep-copied.
 func (hs HealthStatus) Clone() HealthStatus {
 	clone := hs
-	if hs.Details != nil {
-		clone.Details = make(map[string]any, len(hs.Details))
-		for key, value := range hs.Details {
-			clone.Details[key] = value
-		}
-	}
+	clone.Details = maps.Clone(hs.Details)
 	clone.Dependencies = slices.Clone(hs.Dependencies)
 	return clone
 }

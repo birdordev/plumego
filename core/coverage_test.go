@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"errors"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -242,7 +243,7 @@ func TestServerConfigSnapshotRejectsNilMiddleware(t *testing.T) {
 	assertCoreError(t, err, operationPrepareServer, "router or middleware chain not configured")
 }
 
-// ---- Shutdown with non-nil connTracker and no drainStarted (86%) ------------
+// ---- Shutdown with a connection tracker and no open connections ------------
 
 func TestShutdownWithNoOpenConnectionsSkipsDrain(t *testing.T) {
 	app := newTestApp()
@@ -418,24 +419,25 @@ func TestShutdownReturnsWrappedErrorWhenContextExpiresDuringDrain(t *testing.T) 
 		t.Fatal("handler did not start within timeout")
 	}
 
-	// Shut down with an already-cancelled context. http.Server.Shutdown returns
-	// context.Canceled because it cannot wait for the active connection to close.
-	canceledCtx, cancel := context.WithCancel(context.Background())
-	cancel() // cancel immediately before calling Shutdown
+	ctx, cancel := context.WithTimeout(t.Context(), 25*time.Millisecond)
+	defer cancel()
+	shutdownErr := app.Shutdown(ctx)
+	drainReleased := app.connTracker.activeDrain.Load() == nil
 
-	shutdownErr := app.Shutdown(canceledCtx)
-
-	// Unblock the stuck handler so the server and client goroutines can finish.
 	close(handlerUnblock)
 	<-clientDone
 	<-serverDone
 
-	// The shutdown MUST have returned a non-nil wrapped core error because
-	// http.Server.Shutdown returned context.Canceled (not ErrServerClosed).
-	if shutdownErr == nil {
-		t.Fatal("expected Shutdown to return a wrapped error when context was pre-cancelled with active connections")
+	if !errors.Is(shutdownErr, context.DeadlineExceeded) {
+		t.Fatalf("Shutdown = %v, want deadline exceeded with active connections", shutdownErr)
 	}
-	assertCoreError(t, shutdownErr, operationShutdownApp, "context canceled")
+	assertCoreError(t, shutdownErr, operationShutdownApp, "context deadline exceeded")
+	if !drainReleased {
+		t.Fatal("timed-out Shutdown retained drain ownership")
+	}
+	if err := app.Shutdown(t.Context()); err != nil {
+		t.Fatalf("shutdown retry after draining: %v", err)
+	}
 }
 
 // ---- ensureServerPrepared: preparedHandlerSnapshot error path --------------

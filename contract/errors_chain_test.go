@@ -188,3 +188,26 @@ func TestDetailsAlwaysClonesEvenWhenNormalized(t *testing.T) {
 		t.Fatal("Details() must return an isolated copy; mutation of d1 must not affect d2")
 	}
 }
+
+func TestAsAPIErrorFindsPointerErrors(t *testing.T) {
+	want := NewErrorBuilder().Type(TypeNotFound).Build()
+	for _, err := range []error{want, fmt.Errorf("value: %w", want), &want, fmt.Errorf("pointer: %w", &want)} {
+		got, ok := AsAPIError(err)
+		if !ok || got.Status() != want.Status() || got.Type() != want.Type() {
+			t.Fatalf("AsAPIError(%T) = %v, %v", err, got, ok)
+		}
+	}
+	var absent *APIError
+	for _, err := range []error{absent, fmt.Errorf("nil pointer: %w", absent)} {
+		if _, ok := AsAPIError(err); ok {
+			t.Fatal("typed nil API error matched")
+		}
+	}
+	value := NewErrorBuilder().Type(TypeBadRequest).Build()
+	if got, ok := AsAPIError(errors.Join(absent, &want, value)); !ok || got.Type() != value.Type() {
+		t.Fatalf("joined error = %v, %v, want value match", got, ok)
+	}
+	if got, ok := AsAPIError(errors.Join(absent, &want)); !ok || got.Type() != want.Type() {
+		t.Fatalf("joined error = %v, %v, want pointer match", got, ok)
+	}
+}

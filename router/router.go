@@ -200,8 +200,8 @@ func (r *Router) MethodNotAllowedEnabled() bool {
 }
 
 // Freeze prevents the router from accepting new route registrations.
-// The write lock ensures all in-progress AddRoute calls complete before the
-// frozen flag is published, making the trie safe to read without a lock.
+// The write lock serializes publication of routes and the frozen flag,
+// making the trie safe to read without a lock.
 func (r *Router) Freeze() {
 	if !r.ready() {
 		return

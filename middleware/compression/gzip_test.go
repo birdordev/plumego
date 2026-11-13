@@ -1565,3 +1565,60 @@ func TestGzipPreservesRangeResponses(t *testing.T) {
 		})
 	}
 }
+
+func TestFlushAfterExplicitHeaderBeforeBody(t *testing.T) {
+	handler := Middleware(DefaultConfig())(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/plain")
+		w.Header().Set("X-App", "preserve")
+		w.WriteHeader(http.StatusCreated)
+		if err := http.NewResponseController(w).Flush(); err != nil {
+			t.Fatal(err)
+		}
+		_, _ = w.Write([]byte("hello"))
+	}))
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.Header.Set("Accept-Encoding", "gzip")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	res := rec.Result()
+	if !rec.Flushed || res.StatusCode != http.StatusCreated || res.Header.Get("X-App") != "preserve" ||
+		res.Header.Get("Content-Encoding") != "" || rec.Body.String() != "hello" {
+		t.Fatalf("flushed=%v status=%d headers=%v body=%q", rec.Flushed, res.StatusCode, res.Header, rec.Body.String())
+	}
+}
+
+func TestVaryCoversEncodingVariants(t *testing.T) {
+	for _, encoding := range []string{"gzip", "identity", "", "gzip;q=0"} {
+		t.Run(encoding, func(t *testing.T) {
+			for _, vary := range []string{"Origin", "Origin, Accept-Encoding", "*"} {
+				handler := Middleware(DefaultConfig())(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+					w.Header().Set("Vary", vary)
+					w.Header().Set("Content-Type", "text/plain")
+					_, _ = w.Write([]byte("hello"))
+				}))
+				req := httptest.NewRequest(http.MethodGet, "/", nil)
+				if encoding != "" {
+					req.Header.Set("Accept-Encoding", encoding)
+				}
+				rec := httptest.NewRecorder()
+				handler.ServeHTTP(rec, req)
+				res := rec.Result()
+				values := res.Header.Values("Vary")
+				if vary == "*" {
+					if len(values) != 1 || values[0] != "*" {
+						t.Fatalf("Vary = %v, want wildcard only", values)
+					}
+				} else if countHeaderToken(values, "Accept-Encoding") != 1 || !headerValuesContain(values, "Origin") {
+					t.Fatalf("Vary = %v, want Origin and Accept-Encoding once", values)
+				}
+				if encoding == "gzip" {
+					if res.Header.Get("Content-Encoding") != "gzip" || gunzipBody(t, rec) != "hello" {
+						t.Fatalf("unexpected gzip response headers: %v", res.Header)
+					}
+				} else if res.Header.Get("Content-Encoding") != "" || rec.Body.String() != "hello" {
+					t.Fatalf("unexpected identity response: %v %q", res.Header, rec.Body.String())
+				}
+			}
+		})
+	}
+}

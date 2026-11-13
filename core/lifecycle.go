@@ -75,7 +75,9 @@ func (a *App) Shutdown(ctx context.Context) error {
 		return wrapCoreError(fmt.Errorf("server not prepared"), operationShutdownApp, nil)
 	}
 	if connTracker != nil {
-		connTracker.startDrain(ctx)
+		if stopDrain := connTracker.startDrain(ctx); stopDrain != nil {
+			defer stopDrain()
+		}
 	}
 
 	var shutdownErr error
@@ -88,10 +90,11 @@ func (a *App) Shutdown(ctx context.Context) error {
 }
 
 type connectionTracker struct {
-	open         atomic.Int64         // Number of open connections
-	drainStarted atomic.Bool          // Whether drain logging has been started
-	logger       log.StructuredLogger // Logger for connection tracking
-	interval     time.Duration        // Interval at which to log open connection counts
+	open        atomic.Int64 // Number of open connections
+	activeDrain atomic.Pointer[connectionDrain]
+
+	logger   log.StructuredLogger // Logger for connection tracking
+	interval time.Duration        // Interval at which to log open connection counts
 }
 
 func newConnectionTracker(logger log.StructuredLogger, interval time.Duration) *connectionTracker {
@@ -114,20 +117,40 @@ func (t *connectionTracker) decrementOpen() {
 	if t.open.Load() <= 0 {
 		return
 	}
-	if v := t.open.Add(-1); v < 0 {
+	v := t.open.Add(-1)
+	if v < 0 {
 		t.open.CompareAndSwap(v, 0)
+	}
+	if v <= 0 {
+		if attempt := t.activeDrain.Load(); attempt != nil && t.open.Load() <= 0 {
+			t.stopDrain(attempt)
+		}
 	}
 }
 
-func (t *connectionTracker) startDrain(ctx context.Context) bool {
-	if ctx.Err() != nil {
-		return false
+type connectionDrain struct {
+	cancel context.CancelFunc
+}
+
+// startDrain reserves logging for the current Shutdown call. Its owner must
+// stop it on return, even if the caller's context is still live.
+func (t *connectionTracker) startDrain(ctx context.Context) func() {
+	if ctx.Err() != nil || t.open.Load() <= 0 {
+		return nil
 	}
-	if !t.drainStarted.CompareAndSwap(false, true) {
-		return false
+	drainCtx, cancel := context.WithCancel(ctx)
+	attempt := &connectionDrain{cancel: cancel}
+	if !t.activeDrain.CompareAndSwap(nil, attempt) {
+		cancel()
+		return nil
 	}
-	go t.drain(ctx)
-	return true
+	go t.drain(drainCtx)
+	return func() { t.stopDrain(attempt) }
+}
+
+func (t *connectionTracker) stopDrain(attempt *connectionDrain) {
+	attempt.cancel()
+	t.activeDrain.CompareAndSwap(attempt, nil)
 }
 
 func (t *connectionTracker) drain(ctx context.Context) {
@@ -135,17 +158,14 @@ func (t *connectionTracker) drain(ctx context.Context) {
 	defer ticker.Stop()
 
 	for {
-		if t.open.Load() <= 0 {
+		if ctx.Err() != nil || t.open.Load() <= 0 {
 			return
 		}
 		select {
 		case <-ctx.Done():
-			if t.open.Load() > 0 {
-				t.drainStarted.Store(false)
-			}
 			return
 		case <-ticker.C:
-			if t.logger != nil {
+			if t.logger != nil && ctx.Err() == nil {
 				t.logger.Info("draining open connections", log.Fields{"open_connections": t.open.Load()})
 			}
 		}

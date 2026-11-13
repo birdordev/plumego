@@ -189,3 +189,26 @@ func TestInMemoryKeyStore_ConcurrentAccess(t *testing.T) {
 	}
 	wg.Wait()
 }
+
+func TestInMemoryKeyStoreZeroValue(t *testing.T) {
+	var store InMemoryKeyStore
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	if err := store.SetContext(ctx, "key", []byte("discard"), 0); !errors.Is(err, context.Canceled) {
+		t.Fatalf("canceled SetContext = %v", err)
+	}
+
+	for _, key := range []string{"first", "second"} {
+		t.Run(key, func(t *testing.T) {
+			t.Parallel()
+			value := []byte("example")
+			if err := store.SetContext(t.Context(), key, value, 0); err != nil {
+				t.Fatal(err)
+			}
+			value[0] = 'X'
+			if got, err := store.GetContext(t.Context(), key); err != nil || string(got) != "example" {
+				t.Fatalf("stored value = %q, %v", got, err)
+			}
+		})
+	}
+}

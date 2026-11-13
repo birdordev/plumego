@@ -2,11 +2,13 @@ package core
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/birdordev/plumego/contract"
 	"github.com/birdordev/plumego/router"
@@ -487,14 +489,67 @@ func TestConcurrentRouteRegistrationAndPrepareDoesNotRace(t *testing.T) {
 		if prepareErr != nil {
 			t.Fatalf("Prepare returned error: %v", prepareErr)
 		}
-		if routeErr != nil && !strings.Contains(routeErr.Error(), "cannot register route after app has been prepared") {
-			t.Fatalf("unexpected route error: %v", routeErr)
+		if routeErr != nil {
+			msg := routeErr.Error()
+			if !strings.Contains(msg, "cannot register route after app has been prepared") &&
+				!strings.Contains(msg, "router is frozen") {
+				t.Fatalf("unexpected route error: %v", routeErr)
+			}
 		}
 
 		rec := httptest.NewRecorder()
 		app.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/base", nil))
 		if rec.Code != http.StatusNoContent {
 			t.Fatalf("expected base status 204, got %d", rec.Code)
+		}
+		rec = httptest.NewRecorder()
+		app.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/raced", nil))
+		wantStatus := http.StatusCreated
+		if routeErr != nil {
+			wantStatus = http.StatusNotFound
+		}
+		if rec.Code != wantStatus {
+			t.Fatalf("registration error = %v, status = %d, want %d", routeErr, rec.Code, wantStatus)
+		}
+	}
+}
+
+func TestRouteOptionsCanInspectAndPrepareApp(t *testing.T) {
+	for _, group := range []bool{false, true} {
+		for _, prepare := range []bool{false, true} {
+			t.Run(fmt.Sprintf("group=%t/prepare=%t", group, prepare), func(t *testing.T) {
+				app := newTestApp()
+				register := app.AddRoute
+				if group {
+					register = app.Group("/group").AddRoute
+				}
+				done := make(chan error, 1)
+				go func() {
+					var prepareErr error
+					err := register(http.MethodGet, "/new", http.NotFoundHandler(), func(*router.RouteMeta) {
+						_ = app.PreparationState()
+						if prepare {
+							prepareErr = app.Prepare()
+						}
+					})
+					done <- errors.Join(prepareErr, err)
+				}()
+				select {
+				case err := <-done:
+					if prepare {
+						if err == nil || app.PreparationState() != PreparationStateServerPrepared || len(app.Routes()) != 0 {
+							t.Fatalf("registration raced with preparation: %v, state %s, routes %v", err, app.PreparationState(), app.Routes())
+						}
+						if err := register(http.MethodGet, "/late", http.NotFoundHandler()); err == nil {
+							t.Fatal("prepared app accepted a route")
+						}
+					} else if err != nil || len(app.Routes()) != 1 {
+						t.Fatalf("registration: %v, routes %v", err, app.Routes())
+					}
+				case <-time.After(3 * time.Second):
+					t.Fatal("route option could not inspect the app")
+				}
+			})
 		}
 	}
 }

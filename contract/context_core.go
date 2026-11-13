@@ -149,7 +149,8 @@ func RequestContextFromContext(ctx context.Context) RequestContext {
 }
 
 // RequestParamFromContext returns one route parameter from the stored
-// RequestContext without cloning the full params map.
+// RequestContext without cloning the full params map. If a key was added more
+// than once to RouteState, both accessors return its last value.
 func RequestParamFromContext(ctx context.Context, name string) string {
 	if ctx == nil || name == "" {
 		return ""
@@ -157,12 +158,15 @@ func RequestParamFromContext(ctx context.Context, name string) string {
 
 	// Fast path: inline RouteState — linear scan, zero allocations.
 	if rs, ok := ctx.Value(routeStateKey{}).(*RouteState); ok && rs != nil {
-		for i := 0; i < rs.paramN; i++ {
+		if value, ok := rs.overflowParams[name]; ok {
+			return value
+		}
+		for i := rs.paramN - 1; i >= 0; i-- {
 			if rs.paramKeys[i] == name {
 				return rs.paramVals[i]
 			}
 		}
-		return rs.overflowParams[name]
+		return ""
 	}
 
 	// Fallback: legacy requestContextKey.

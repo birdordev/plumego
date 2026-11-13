@@ -70,17 +70,11 @@ func (r *Router) routeRegistrationLifecycleError(method, path string) error {
 }
 
 // AddRoute adds a route to the router with the given method, path, handler, and
-// optional route metadata.
+// optional route metadata. Options run before the registration lock is acquired.
+// Concurrent registrations may evaluate their options concurrently.
 func (r *Router) AddRoute(method, path string, handler http.Handler, opts ...RouteOption) error {
-	if err := r.routeRegistrationReadinessError(method, path); err != nil {
+	if err := r.routeRegistrationLifecycleError(method, path); err != nil {
 		return err
-	}
-
-	r.state.mu.Lock()
-	defer r.state.mu.Unlock()
-
-	if r.state.frozen.Load() {
-		return routeRegistrationFrozenError(method, path)
 	}
 	if err := validateMethod(method); err != nil {
 		return fmt.Errorf("router add_route %s %s: %w", method, path, err)
@@ -93,6 +87,12 @@ func (r *Router) AddRoute(method, path string, handler http.Handler, opts ...Rou
 	}
 	meta := routeMetaFromOptions(opts...)
 	meta.Tags = append([]string(nil), meta.Tags...)
+
+	r.state.mu.Lock()
+	defer r.state.mu.Unlock()
+	if r.state.frozen.Load() {
+		return routeRegistrationFrozenError(method, path)
+	}
 
 	fullPath := r.fullPath(path)
 	if err := r.validateRouteMetaLocked(meta); err != nil {

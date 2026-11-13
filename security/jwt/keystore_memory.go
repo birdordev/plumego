@@ -8,7 +8,7 @@ import (
 
 // InMemoryKeyStore is a thread-safe, non-persistent KeyStore suitable for
 // development, testing, and single-process deployments that do not require
-// key durability across restarts.
+// key durability across restarts. The zero value is ready to use.
 //
 // For production deployments that need key durability or multi-instance
 // coordination, use a persistent store (e.g. a database or distributed cache)
@@ -61,6 +61,9 @@ func (s *InMemoryKeyStore) SetContext(ctx context.Context, key string, value []b
 		expiry = time.Now().Add(ttl)
 	}
 	s.mu.Lock()
+	if s.entries == nil {
+		s.entries = make(map[string]memEntry)
+	}
 	s.entries[key] = memEntry{value: append([]byte(nil), value...), expiry: expiry}
 	s.mu.Unlock()
 	return nil

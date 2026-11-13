@@ -41,10 +41,13 @@
 - Text output sorts field keys and escapes ambiguous keys or values, including
   controls, Unicode whitespace, quotes, and backslashes. Simple
   ASCII keys made of letters, digits, `_`, `-`, `.`, or `/` stay unquoted.
-- JSON output owns the reserved `time`, `level`, and `msg` keys.
+- JSON output owns the reserved `time`, `level`, and `msg` keys. Values
+  supplied for those keys are skipped before field encoding.
 - JSON output preserves integer precision and replaces unsupported field values
   with a fixed placeholder, preserving safe siblings in common nested maps and
-  slices. Invalid floating-point values retain their numeric string form.
+  slices. Ordinary nil maps and slices encode as `null`, while non-nil empty maps and
+  slices keep their empty JSON shape. Invalid floating-point values retain their
+  numeric string form.
 - JSON normalization and text container formatting use bounded traversal;
   cycles and excessive nesting produce truncation placeholders instead of
   unbounded recursion. Text formatting also bounds pointers and struct fields.

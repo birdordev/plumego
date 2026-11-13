@@ -2,10 +2,12 @@ package kvstore
 
 import (
 	"errors"
+	"math"
 	"strings"
 )
 
 const (
+	bytesPerMiB        = 1 << 20
 	defaultMaxEntries  = 100000
 	defaultMaxMemoryMB = 200
 )
@@ -59,6 +61,9 @@ func validateConfig(cfg Config) error {
 	}
 	if cfg.MaxMemoryMB <= 0 {
 		return errors.New("kv: max memory must be positive")
+	}
+	if int64(cfg.MaxMemoryMB) > math.MaxInt64/bytesPerMiB {
+		return errors.New("kv: max memory exceeds representable byte capacity")
 	}
 	return nil
 }

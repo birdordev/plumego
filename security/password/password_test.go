@@ -172,3 +172,27 @@ func TestCheckPasswordInvalidHashFormats(t *testing.T) {
 		})
 	}
 }
+
+func TestStoredHashParserPreservesWrappedBase64(t *testing.T) {
+	const plaintext = "fixture-password"
+	stored, err := HashPasswordWithCost(plaintext, MinimumCost)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parts := strings.Split(stored, "$")
+	for i := 1; i < len(parts); i++ {
+		parts[i] = "\r\n" + parts[i][:4] + "\n" + parts[i][4:] + "\r"
+	}
+	if err := CheckPassword(strings.Join(parts, "$"), plaintext); err != nil {
+		t.Fatalf("wrapped base64 rejected: %v", err)
+	}
+	for _, malformed := range []string{
+		parts[0] + "$" + strings.Repeat("A", 1<<20) + "$" + parts[2],
+		parts[0] + "$" + parts[1] + "$" + strings.Repeat("A", 1<<20),
+		stored + "$extra",
+	} {
+		if err := CheckPassword(malformed, plaintext); !errors.Is(err, ErrInvalidHash) {
+			t.Errorf("invalid stored hash: got %v", err)
+		}
+	}
+}

@@ -2,6 +2,7 @@ package metrics
 
 import (
 	"context"
+	"reflect"
 	"time"
 )
 
@@ -10,16 +11,18 @@ type MultiCollector struct {
 	collectors []AggregateCollector
 }
 
-// NewMultiCollector ignores nil inputs. With no remaining collectors it
+// NewMultiCollector ignores nil interfaces and nil collector pointers. With no remaining collectors it
 // returns a no-op, and with one it returns that collector unchanged.
 // With multiple collectors it forwards in order and gives each target its
 // own copy of the labels on Record.
 func NewMultiCollector(collectors ...AggregateCollector) AggregateCollector {
 	filtered := make([]AggregateCollector, 0, len(collectors))
 	for _, collector := range collectors {
-		if collector != nil {
-			filtered = append(filtered, collector)
+		value := reflect.ValueOf(collector)
+		if !value.IsValid() || (value.Kind() == reflect.Pointer && value.IsNil()) {
+			continue
 		}
+		filtered = append(filtered, collector)
 	}
 	if len(filtered) == 0 {
 		return NewNoopCollector()

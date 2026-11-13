@@ -14,6 +14,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 	"sync"
 	"sync/atomic"
@@ -44,7 +45,8 @@ type KVStore struct {
 	data   map[string]*entry
 	closed bool
 
-	syncStateDir func(string) error
+	directoryLock *os.File
+	syncStateDir  func(string) error
 
 	hits   int64
 	misses int64
@@ -62,23 +64,39 @@ type Stats struct {
 // NewKVStore creates a new embedded KV primitive backed by a single state file.
 //
 // DataDir must be explicitly configured so callers choose where filesystem
-// state is created.
+// state is created. Only one store can open a data directory at a time.
+// Call Close to release it.
 func NewKVStore(opts Options) (*KVStore, error) {
 	setConfigDefaults(&opts)
 	if err := validateConfig(opts); err != nil {
 		return nil, err
 	}
-	if err := os.MkdirAll(opts.DataDir, 0755); err != nil {
+	dir, err := filepath.Abs(opts.DataDir)
+	if err != nil {
+		return nil, fmt.Errorf("resolve data dir: %w", err)
+	}
+	if err := os.MkdirAll(dir, 0755); err != nil {
 		return nil, fmt.Errorf("create data dir: %w", err)
 	}
 
+	opts.DataDir, err = filepath.EvalSymlinks(dir)
+	if err != nil {
+		return nil, fmt.Errorf("resolve data dir: %w", err)
+	}
+	// Keep the sidecar in place so every opener coordinates on the same file.
+	lock, err := openDirectoryLock(filepath.Join(opts.DataDir, "store.lock"))
+	if err != nil {
+		return nil, fmt.Errorf("lock data dir: %w", err)
+	}
+
 	store := &KVStore{
-		opts:         opts,
-		data:         make(map[string]*entry),
-		syncStateDir: syncDir,
+		opts:          opts,
+		data:          make(map[string]*entry),
+		directoryLock: lock,
+		syncStateDir:  syncDir,
 	}
 	if err := store.load(); err != nil {
-		return nil, err
+		return nil, errors.Join(err, store.Close())
 	}
 	store.pruneExpiredLocked(time.Now())
 	store.evictIfNeededLocked()
@@ -371,6 +389,13 @@ func (kv *KVStore) Close() error {
 		return nil
 	}
 	kv.closed = true
+	if kv.directoryLock != nil {
+		err := kv.directoryLock.Close()
+		kv.directoryLock = nil
+		if err != nil {
+			return fmt.Errorf("release data dir lock: %w", err)
+		}
+	}
 	return nil
 }
 
@@ -412,7 +437,7 @@ func (kv *KVStore) pruneExpiredLocked(now time.Time) {
 
 func (kv *KVStore) evictIfNeededLocked() {
 	kv.pruneExpiredLocked(time.Now())
-	maxMemory := int64(kv.opts.MaxMemoryMB) * 1024 * 1024
+	maxMemory := kv.maxMemoryBytes()
 	for len(kv.data) > kv.opts.MaxEntries || kv.memoryUsageLocked() > maxMemory {
 		key := kv.oldestKeyLocked()
 		if key == "" {
@@ -449,7 +474,7 @@ func (kv *KVStore) memoryUsageLocked() int64 {
 }
 
 func (kv *KVStore) maxMemoryBytes() int64 {
-	return int64(kv.opts.MaxMemoryMB) * 1024 * 1024
+	return int64(kv.opts.MaxMemoryMB) * bytesPerMiB
 }
 
 func entrySize(key string, value []byte) int64 {

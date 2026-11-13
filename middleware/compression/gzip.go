@@ -77,12 +77,6 @@ func Middleware(cfg Config) middleware.Middleware {
 
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// Skip if client doesn't support gzip
-			if !acceptsGzip(r.Header.Get("Accept-Encoding")) {
-				next.ServeHTTP(w, r)
-				return
-			}
-
 			// Skip WebSocket upgrades
 			connection := strings.ToLower(r.Header.Get("Connection"))
 			if strings.Contains(connection, "upgrade") || r.Header.Get("Upgrade") != "" {
@@ -97,9 +91,16 @@ func Middleware(cfg Config) middleware.Middleware {
 				return
 			}
 
+			variant := &encodingVaryWriter{ResponseWriter: w}
+			if !acceptsGzip(r.Header.Get("Accept-Encoding")) {
+				next.ServeHTTP(variant, r)
+				variant.prepare()
+				return
+			}
+
 			// Create wrapper
 			gw := &gzipResponseWriter{
-				ResponseWriter: w,
+				ResponseWriter: variant,
 				cfg:            cfg,
 			}
 
@@ -109,6 +110,7 @@ func Middleware(cfg Config) middleware.Middleware {
 					panic(rec)
 				}
 				gw.finalize(false)
+				variant.prepare()
 			}()
 
 			next.ServeHTTP(gw, r)
@@ -345,7 +347,6 @@ func (w *gzipResponseWriter) Write(p []byte) (int, error) {
 	if w.gz == nil && w.buffer.Len() > 0 {
 		// Update headers for compression
 		w.buffer.Header().Del("Content-Length")
-		internaltransport.AddVary(w.buffer.Header(), "Accept-Encoding")
 		w.buffer.Header().Set("Content-Encoding", "gzip")
 		w.flushHeaders()
 		w.gz = gzip.NewWriter(w.ResponseWriter)
@@ -441,18 +442,20 @@ func (w *gzipResponseWriter) flushHeaders() {
 	w.headersFlushed = true
 }
 
-func (w *gzipResponseWriter) Flush() {
-	if !w.compressionUsed {
+func (w *gzipResponseWriter) Flush() { _ = w.FlushError() }
+
+func (w *gzipResponseWriter) FlushError() error {
+	if w.gz == nil {
 		w.commitPassThrough()
+	} else if err := w.gz.Flush(); err != nil {
+		return err
 	}
-	if w.gz != nil {
-		_ = w.gz.Flush()
-	}
-	internaltransport.FlushIfSupported(w.ResponseWriter)
+	return http.NewResponseController(w.ResponseWriter).Flush()
 }
 
 func (w *gzipResponseWriter) commitPassThrough() {
 	w.passThrough = true
+	w.pendingCompress = false
 	w.compressionUsed = false
 	w.wroteHeader = true
 	if w.headersFlushed {

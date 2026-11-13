@@ -59,6 +59,9 @@ func formatErrorParams(params map[string]any) string {
 func (a *App) freezeConfig() {
 	a.mu.Lock()
 	if a.preparationState == PreparationStateMutable {
+		if a.router != nil {
+			a.router.Freeze()
+		}
 		a.preparationState = PreparationStateHandlerPrepared
 	}
 	a.mu.Unlock()

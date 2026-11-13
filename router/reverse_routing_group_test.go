@@ -348,3 +348,33 @@ func TestNamedRouteURLMatchesItsParameterKind(t *testing.T) {
 		})
 	}
 }
+
+func TestNamedRouteURLRoundTripsLiteralSegments(t *testing.T) {
+	for _, pattern := range []string{"/café#menu", "/files?draft", "/100%", "/plain"} {
+		t.Run(pattern, func(t *testing.T) {
+			r := NewRouter()
+			err := r.AddRoute(http.MethodGet, pattern, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(http.StatusNoContent)
+			}), WithRouteName("literal"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			r.Freeze()
+			generated, err := r.URL("literal")
+			if err != nil {
+				t.Fatal(err)
+			}
+			req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, generated, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for range 2 {
+				rec := httptest.NewRecorder()
+				r.ServeHTTP(rec, req)
+				if rec.Code != http.StatusNoContent {
+					t.Fatalf("%q parsed as %q, status = %d", generated, req.URL.Path, rec.Code)
+				}
+			}
+		})
+	}
+}

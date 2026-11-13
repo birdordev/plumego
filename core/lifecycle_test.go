@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/birdordev/plumego/internal/testutil/nettest"
@@ -553,76 +554,20 @@ func TestShutdownUsesLoggerFallbackOnError(t *testing.T) {
 	_ = app.Shutdown(ctx)
 }
 
-func TestShutdownStartsDrainOnce(t *testing.T) {
-	cfg := DefaultConfig()
-	cfg.DrainInterval = time.Hour
-	app := New(cfg, AppDependencies{})
-	mustRegisterRoute(t, app.Get("/ready", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusNoContent)
-	})))
-
+func TestShutdownReleasesDrainOwnership(t *testing.T) {
+	app := newTestApp()
 	if err := app.Prepare(); err != nil {
-		t.Fatalf("Prepare returned error: %v", err)
-	}
-	if app.connTracker == nil {
-		t.Fatal("expected connection tracker")
+		t.Fatal(err)
 	}
 	app.connTracker.open.Store(1)
 
-	ctx, cancel := context.WithCancel(t.Context())
-	defer cancel()
-
-	if err := app.Shutdown(ctx); err != nil {
-		t.Fatalf("first Shutdown returned error: %v", err)
-	}
-	if !app.connTracker.drainStarted.Load() {
-		t.Fatal("expected first Shutdown to start drain logging")
-	}
-	if err := app.Shutdown(ctx); err != nil {
-		t.Fatalf("second Shutdown returned error: %v", err)
-	}
-	if app.connTracker.startDrain(ctx) {
-		t.Fatal("expected drain logging to start at most once")
-	}
-}
-
-func TestShutdownCanceledContextDoesNotConsumeDrainStart(t *testing.T) {
-	cfg := DefaultConfig()
-	cfg.DrainInterval = time.Hour
-	app := New(cfg, AppDependencies{})
-	mustRegisterRoute(t, app.Get("/ready", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusNoContent)
-	})))
-
-	if err := app.Prepare(); err != nil {
-		t.Fatalf("Prepare returned error: %v", err)
-	}
-	if app.connTracker == nil {
-		t.Fatal("expected connection tracker")
-	}
-	app.connTracker.open.Store(1)
-
-	canceledCtx, cancelCanceled := context.WithCancel(t.Context())
-	cancelCanceled()
-
-	if err := app.Shutdown(canceledCtx); err != nil {
-		assertCoreError(t, err, operationShutdownApp, "context canceled")
-	}
-	if app.connTracker.drainStarted.Load() {
-		t.Fatal("expected canceled shutdown context not to consume drain start")
-	}
-
-	liveCtx, cancelLive := context.WithCancel(t.Context())
-	defer cancelLive()
-
-	if err := app.Shutdown(liveCtx); err != nil {
-		t.Fatalf("second Shutdown returned error: %v", err)
-	}
-	if !app.connTracker.drainStarted.Load() {
-		t.Fatal("expected live shutdown context to start drain logging")
-	}
-	if app.connTracker.startDrain(liveCtx) {
-		t.Fatal("expected live shutdown drain to keep once-only latch")
+	for _, ctx := range []context.Context{nil, t.Context()} {
+		if err := app.Shutdown(ctx); err != nil {
+			t.Fatal(err)
+		}
+		if app.connTracker.activeDrain.Load() != nil {
+			t.Fatal("Shutdown returned while still owning drain logging")
+		}
 	}
 }
 
@@ -902,30 +847,53 @@ func TestConnectionTracker(t *testing.T) {
 		// Should return immediately
 	})
 
-	t.Run("drain cancellation with open connections allows retry", func(t *testing.T) {
+	t.Run("only one shutdown owns drain logging and retry can start immediately", func(t *testing.T) {
 		ct := newConnectionTracker(nil, time.Hour)
+		if stop := ct.startDrain(t.Context()); stop != nil {
+			stop()
+			t.Fatal("drain started without open connections")
+		}
 		ct.open.Store(1)
 
-		canceledCtx, cancelCanceled := context.WithCancel(t.Context())
-		if !ct.startDrain(canceledCtx) {
+		canceledCtx, cancel := context.WithCancel(t.Context())
+		cancel()
+		if stop := ct.startDrain(canceledCtx); stop != nil {
+			stop()
+			t.Fatal("drain started with a canceled context")
+		}
+
+		stop := ct.startDrain(t.Context())
+		if stop == nil {
 			t.Fatal("expected first drain attempt to start")
 		}
-		cancelCanceled()
-
-		deadline := time.After(500 * time.Millisecond)
-		for ct.drainStarted.Load() {
-			select {
-			case <-deadline:
-				t.Fatal("expected canceled drain to release start latch")
-			case <-time.After(10 * time.Millisecond):
+		if second := ct.startDrain(t.Context()); second != nil {
+			second()
+			stop()
+			t.Fatal("a second shutdown acquired drain logging")
+		}
+		stop()
+		retry := ct.startDrain(t.Context())
+		if retry == nil {
+			t.Fatal("expected immediate retry to start")
+		}
+		retry()
+	})
+	t.Run("last connection ends drain without waiting for its ticker", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			ct := newConnectionTracker(nil, time.Hour)
+			ct.track(nil, http.StateNew)
+			stop := ct.startDrain(context.Background())
+			if stop == nil {
+				t.Fatal("expected drain to start")
 			}
-		}
-
-		liveCtx, cancelLive := context.WithCancel(t.Context())
-		defer cancelLive()
-		if !ct.startDrain(liveCtx) {
-			t.Fatal("expected live context to retry drain")
-		}
+			defer stop()
+			synctest.Wait()
+			ct.track(nil, http.StateClosed)
+			synctest.Wait()
+			if ct.activeDrain.Load() != nil {
+				t.Fatal("drain still active after the last connection closed")
+			}
+		})
 	})
 }
 

@@ -1,6 +1,8 @@
 package metrics
 
 import (
+	"context"
+	"reflect"
 	"testing"
 	"time"
 )
@@ -328,5 +330,40 @@ func TestMultiCollectorSkipsNilInternalCollectors(t *testing.T) {
 	multi.Clear()
 	if got := collector.GetStats().TotalRecords; got != 0 {
 		t.Fatalf("expected clear to reach non-nil collector, got %d", got)
+	}
+}
+
+type recordingCollector struct {
+	NoopCollector
+	onRecord func(MetricRecord)
+}
+
+func (c *recordingCollector) Record(_ context.Context, record MetricRecord) {
+	c.onRecord(record)
+}
+
+func TestNewMultiCollectorFiltersNilPointers(t *testing.T) {
+	var absent *recordingCollector
+	if result := NewMultiCollector(nil, absent); reflect.TypeOf(result) != reflect.TypeFor[*NoopCollector]() {
+		t.Fatalf("all absent returned %T, want *NoopCollector", result)
+	}
+	var order []string
+	first := &recordingCollector{onRecord: func(record MetricRecord) {
+		order = append(order, "first")
+		record.Labels["test"] = "changed"
+	}}
+	second := &recordingCollector{onRecord: func(record MetricRecord) {
+		order = append(order, "second")
+		if value := record.Labels["test"]; value != "original" {
+			t.Errorf("second collector saw label %q", value)
+		}
+	}}
+	if result := NewMultiCollector(absent, first); result != first {
+		t.Fatalf("single remaining collector = %T, want original instance", result)
+	}
+	labels := MetricLabels{"test": "original"}
+	NewMultiCollector(absent, first, absent, second).Record(t.Context(), MetricRecord{Labels: labels})
+	if !reflect.DeepEqual(order, []string{"first", "second"}) || labels["test"] != "original" {
+		t.Fatalf("fan-out order = %v, original labels = %v", order, labels)
 	}
 }

@@ -353,12 +353,56 @@ func (b *ErrorBuilder) Build() APIError {
 	return normalizeAPIError(b.err)
 }
 
-// AsAPIError unwraps err using errors.As and reports whether an APIError was found.
-// It supports errors wrapped with fmt.Errorf("...: %w", apiErr).
+// AsAPIError searches wrapped errors for an APIError. A value match takes
+// precedence over a pointer match. Nil APIError pointers are ignored.
 func AsAPIError(err error) (APIError, bool) {
-	var target APIError
-	if errors.As(err, &target) {
-		return target, true
+	var pointer *APIError
+	if value, ok := findAPIErrorValue(err, &pointer); ok {
+		return value, true
+	}
+	if pointer != nil {
+		return *pointer, true
+	}
+	return APIError{}, false
+}
+
+func findAPIErrorValue(err error, pointer **APIError) (APIError, bool) {
+	for err != nil {
+		switch current := err.(type) {
+		case APIError:
+			return current, true
+		case *APIError:
+			if current == nil {
+				// Unwrap is a value method and would panic on a nil pointer.
+				return APIError{}, false
+			}
+			if *pointer == nil {
+				*pointer = current
+			}
+		case interface{ As(any) bool }:
+			var value APIError
+			if current.As(&value) {
+				return value, true
+			}
+			if *pointer == nil {
+				var candidate *APIError
+				if current.As(&candidate) {
+					*pointer = candidate
+				}
+			}
+		}
+
+		switch current := err.(type) {
+		case interface{ Unwrap() []error }:
+			for _, child := range current.Unwrap() {
+				if value, ok := findAPIErrorValue(child, pointer); ok {
+					return value, true
+				}
+			}
+			return APIError{}, false
+		default:
+			err = errors.Unwrap(err)
+		}
 	}
 	return APIError{}, false
 }

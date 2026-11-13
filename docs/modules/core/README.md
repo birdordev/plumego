@@ -164,11 +164,11 @@ These behaviors are part of the current stable-root freeze baseline:
 | `Prepare` | freezes handler state, builds one `http.Server`, prepares open HTTP connection tracking, applies the configured TLS HTTP/2 policy, and is idempotent |
 | `Prepare` failure | while the app is still mutable, server-only config errors return before freezing route/middleware mutation |
 | `Server` | returns an error before explicit server preparation and returns the prepared server after `Prepare` |
-| `Shutdown` | requires a prepared server, tolerates nil contexts by using `context.Background()`, delegates shutdown to `http.Server`, starts one open-connection drain attempt at a time, and permits retry after context cancellation while connections remain open |
+| `Shutdown` | requires a prepared server, tolerates nil contexts by using `context.Background()`, delegates shutdown to `http.Server`, starts open-connection drain logging for one shutdown attempt at a time, and releases it when the last connection closes or the owning shutdown returns. A later shutdown can retry while connections remain open |
 | Post-shutdown | after successful shutdown, the app remains `server_prepared`, `Server()` and `Prepare()` keep returning the same closed `*http.Server`, repeated `Shutdown` is accepted, and `ServeHTTP` can still serve through the prepared handler; caller code must create a new app to prepare a fresh server |
 | TLS | `Prepare` loads configured cert/key material into the returned `*http.Server` |
 | Ownership | logger lifecycle, readiness signaling, debug routes, and feature wiring remain caller-owned |
-| `LifecycleGroup` | The first `Start` that enters startup freezes registration. A context already canceled leaves the group idle. Startup failure or cancellation during startup rolls back every attempted component in reverse order with the startup context and joins startup and cleanup errors. `Stop` can retry pending cleanup. `Ready` probes components only after successful startup, and overlapping operations return without waiting for callbacks. |
+| `LifecycleGroup` | The first `Start` that enters startup freezes registration. A context already canceled leaves the group idle. Startup failure or cancellation during startup rolls back every attempted component in reverse order with the startup context and joins startup and cleanup errors. `Stop` can retry pending cleanup and treats a nil context as `context.Background()`. `Ready` probes components only after successful startup, and overlapping operations return without waiting for callbacks. |
 
 Focused regression coverage lives in `core/freeze_test.go`,
 `core/lifecycle_test.go`, `core/app_test.go`, and `core/routing_test.go`.

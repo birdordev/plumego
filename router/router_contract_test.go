@@ -1332,3 +1332,33 @@ func TestCachedRouteKeyUsesMethodAndNormalizedPath(t *testing.T) {
 		t.Fatalf("expected method/path cache entry count 2, got %d", count)
 	}
 }
+
+func TestRouteOptionsCanInspectAndFreezeRouter(t *testing.T) {
+	for _, freeze := range []bool{false, true} {
+		t.Run(strconv.FormatBool(freeze), func(t *testing.T) {
+			r := NewRouter()
+			done := make(chan error, 1)
+			go func() {
+				done <- r.AddRoute(http.MethodGet, "/new", http.NotFoundHandler(), func(meta *RouteMeta) {
+					_ = r.Routes()
+					meta.Name = "new"
+					if freeze {
+						r.Freeze()
+					}
+				})
+			}()
+			select {
+			case err := <-done:
+				if freeze {
+					if err == nil || len(r.Routes()) != 0 || r.HasRoute("new") {
+						t.Fatalf("registration after freeze: error = %v, routes = %v", err, r.Routes())
+					}
+				} else if err != nil || !r.HasRoute("new") {
+					t.Fatalf("registration: error = %v, routes = %v", err, r.Routes())
+				}
+			case <-time.After(3 * time.Second):
+				t.Fatal("route option could not inspect the router")
+			}
+		})
+	}
+}

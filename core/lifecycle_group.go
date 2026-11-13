@@ -192,9 +192,12 @@ func (g *LifecycleGroup) startComponents(ctx context.Context) error {
 }
 
 // Stop cleans up pending components in reverse registration order and joins
-// cleanup errors. A later Stop retries only failed cleanup. If a lifecycle
+// cleanup errors. A nil context uses context.Background. A later Stop retries only failed cleanup. If a lifecycle
 // operation is already executing callbacks, Stop returns an error for retry.
 func (g *LifecycleGroup) Stop(ctx context.Context) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	g.mu.Lock()
 	switch g.phase {
 	case lifecycleIdle:

@@ -82,7 +82,7 @@ Use `security/*` for reviewable primitives and policies:
 - `security/jwt` context and principal helpers defensively copy mutable role and permission slices.
 - `security/jwt` authorizer helpers fail closed for empty policies or empty permission targets unless callers set the explicit `AllowEmpty` compatibility flag.
 - `security/password` exposes sentinel errors for invalid cost, invalid stored hash, and password mismatch so callers can classify failures with `errors.Is`.
-- `security/password` enforces `MinimumCost` and `MaximumCost` bounds for generated and stored PBKDF2 hashes, rejects plaintext password inputs over `MaxPasswordLength` with `ErrPasswordTooLong`, and validates stored salt/hash lengths before verification.
+- `security/password` enforces `MinimumCost` and `MaximumCost` bounds for generated and stored PBKDF2 hashes, rejects plaintext password inputs over `MaxPasswordLength` with `ErrPasswordTooLong`, and decodes stored salt and hash fields with bounded memory before verification.
 
 HTTP request wiring belongs in `middleware/auth`, `middleware/securityheaders`, and
 `middleware/abuseguard`. Application-specific authorization decisions should be

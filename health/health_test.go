@@ -145,3 +145,20 @@ func TestHealthStatusClonePreservesEmptyDependencies(t *testing.T) {
 		t.Fatalf("dependencies = %#v, want non-nil empty slice", dependencies)
 	}
 }
+
+func TestClonePreservesEmptyMapsAndSharesNestedDetails(t *testing.T) {
+	details := (HealthStatus{Details: map[string]any{}}).Clone().Details
+	components := (ReadinessStatus{Components: map[string]bool{}}).Clone().Components
+	if details == nil || len(details) != 0 || components == nil || len(components) != 0 {
+		t.Fatalf("cloned Details = %#v, Components = %#v, want non-nil empty maps", details, components)
+	}
+
+	nested := map[string]string{"state": "before"}
+	original := HealthStatus{Details: map[string]any{"nested": nested}}
+	clone := original.Clone()
+	clone.Details["nested"].(map[string]string)["state"] = "after"
+	delete(clone.Details, "nested")
+	if nested["state"] != "after" || original.Details["nested"] == nil {
+		t.Fatalf("nested details should be shared and top-level map detached: %v", original.Details)
+	}
+}

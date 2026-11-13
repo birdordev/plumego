@@ -44,3 +44,48 @@ func TestOverrunCannotReplaceFlushedResponse(t *testing.T) {
 		t.Fatalf("flushed response changed: status=%d body=%q", rec.Code, rec.Body.String())
 	}
 }
+
+type unwrapOnlyWriter struct{ http.ResponseWriter }
+
+func (w unwrapOnlyWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
+
+type flushErrorWriter struct {
+	http.ResponseWriter
+	err error
+}
+
+func (w flushErrorWriter) FlushError() error { return w.err }
+
+func TestBodyLimitResponseControllerFlush(t *testing.T) {
+	flushErr := errors.New("flush failed")
+	for _, tc := range []struct {
+		name      string
+		wrap      func(*httptest.ResponseRecorder) http.ResponseWriter
+		body      string
+		wantErr   error
+		wantFlush bool
+	}{
+		{"direct", func(r *httptest.ResponseRecorder) http.ResponseWriter { return r }, "x", nil, true},
+		{"unwrap", func(r *httptest.ResponseRecorder) http.ResponseWriter { return unwrapOnlyWriter{r} }, "x", nil, true},
+		{"unsupported", func(r *httptest.ResponseRecorder) http.ResponseWriter { return struct{ http.ResponseWriter }{r} }, "x", http.ErrNotSupported, false},
+		{"underlying error", func(r *httptest.ResponseRecorder) http.ResponseWriter { return flushErrorWriter{r, flushErr} }, "x", flushErr, false},
+		{"overrun", func(r *httptest.ResponseRecorder) http.ResponseWriter { return r }, "xx", errRequestTooLarge, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			handler := Middleware(Config{MaxBytes: 1})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				_, _ = io.ReadAll(r.Body)
+				if err := http.NewResponseController(w).Flush(); !errors.Is(err, tc.wantErr) {
+					t.Errorf("flush error = %v, want %v", err, tc.wantErr)
+				}
+			}))
+			handler.ServeHTTP(tc.wrap(rec), httptest.NewRequest(http.MethodPost, "/", strings.NewReader(tc.body)))
+			if rec.Flushed != tc.wantFlush {
+				t.Errorf("flushed = %t, want %t", rec.Flushed, tc.wantFlush)
+			}
+			if tc.wantErr == errRequestTooLarge && rec.Code != http.StatusRequestEntityTooLarge {
+				t.Errorf("status = %d, want 413", rec.Code)
+			}
+		})
+	}
+}

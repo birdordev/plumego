@@ -598,3 +598,34 @@ func TestBodyLimitProbeReadGetsData(t *testing.T) {
 	// The limit is hit; status may be 413 or 200 depending on which read triggers.
 	// We just need no panic.
 }
+
+func TestBodyLimitEmptyReadDoesNotProbe(t *testing.T) {
+	for _, body := range []string{"x", "xy"} {
+		t.Run(body, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			handler := Middleware(Config{MaxBytes: 1})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if _, err := io.ReadFull(r.Body, make([]byte, 1)); err != nil {
+					t.Fatal(err)
+				}
+				if n, err := r.Body.Read(nil); n != 0 || err != nil {
+					t.Fatalf("empty read = %d, %v", n, err)
+				}
+				want := io.EOF
+				if len(body) > 1 {
+					want = errRequestTooLarge
+				}
+				if n, err := r.Body.Read(make([]byte, 1)); n != 0 || err != want {
+					t.Errorf("nonempty read = %d, %v, want 0, %v", n, err, want)
+				}
+			}))
+			handler.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/", strings.NewReader(body)))
+			wantStatus := http.StatusOK
+			if len(body) > 1 {
+				wantStatus = http.StatusRequestEntityTooLarge
+			}
+			if rec.Code != wantStatus {
+				t.Errorf("status = %d, want %d", rec.Code, wantStatus)
+			}
+		})
+	}
+}

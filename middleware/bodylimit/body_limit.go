@@ -104,14 +104,19 @@ func (w *bodyLimitResponseWriter) Write(p []byte) (int, error) {
 }
 
 func (w *bodyLimitResponseWriter) Flush() {
+	_ = w.FlushError()
+}
+
+func (w *bodyLimitResponseWriter) FlushError() error {
 	w.checkLimitError()
 	if w.blocked {
-		return
+		return errRequestTooLarge
 	}
-	if flusher, ok := w.ResponseWriter.(http.Flusher); ok {
+	err := http.NewResponseController(w.ResponseWriter).Flush()
+	if !errors.Is(err, http.ErrNotSupported) {
 		w.started = true
-		flusher.Flush()
 	}
+	return err
 }
 
 func (w *bodyLimitResponseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
@@ -167,6 +172,9 @@ type limitedBodyReader struct {
 }
 
 func (l *limitedBodyReader) Read(p []byte) (int, error) {
+	if len(p) == 0 {
+		return 0, nil
+	}
 	if l.exceeded {
 		return 0, errRequestTooLarge
 	}

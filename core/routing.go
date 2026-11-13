@@ -13,17 +13,17 @@ import (
 func (a *App) registerRoute(method, path string, handler http.Handler, opts ...router.RouteOption) error {
 	params := map[string]any{"method": method, "path": path}
 
-	a.mu.Lock()
-	defer a.mu.Unlock()
+	a.mu.RLock()
+	state, r := a.preparationState, a.router
+	a.mu.RUnlock()
 
-	if err := validateMutableState(a.preparationState, operationAddRoute, "register route", params); err != nil {
+	if err := validateMutableState(state, operationAddRoute, "register route", params); err != nil {
 		return err
 	}
 	if handler == nil {
 		return wrapCoreError(contract.ErrHandlerNil, operationAddRoute, params)
 	}
 
-	r := a.router
 	if r == nil {
 		return wrapCoreError(fmt.Errorf("router not configured"), operationAddRoute, nil)
 	}
@@ -33,6 +33,8 @@ func (a *App) registerRoute(method, path string, handler http.Handler, opts ...r
 
 // AddRoute registers a route and returns explicit errors for invalid registration.
 // This is useful in strict boot wiring where route registration failures must be surfaced.
+// If preparation freezes the router before a pending route is published, the
+// router returns the registration error.
 func (a *App) AddRoute(method, path string, handler http.Handler, opts ...router.RouteOption) error {
 	return a.registerRoute(method, path, handler, opts...)
 }
@@ -150,10 +152,8 @@ func (g *RouteGroup) AddRoute(method, path string, handler http.Handler, opts ..
 func (g *RouteGroup) addRoute(method, path string, handler http.Handler, opts ...router.RouteOption) error {
 	params := map[string]any{"method": method, "path": path}
 
-	g.app.mu.Lock()
-	defer g.app.mu.Unlock()
-
-	if err := validateMutableState(g.app.preparationState, operationAddRoute, "register route", params); err != nil {
+	state := g.app.PreparationState()
+	if err := validateMutableState(state, operationAddRoute, "register route", params); err != nil {
 		return err
 	}
 	if handler == nil {

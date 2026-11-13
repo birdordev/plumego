@@ -121,7 +121,7 @@ func (r *Router) urlForNamedRoute(name string, params ...string) (string, string
 				return "", fmt.Sprintf("named route %q missing required param %q", name, paramName)
 			}
 		} else {
-			resultParts = append(resultParts, part)
+			resultParts = append(resultParts, url.PathEscape(part))
 		}
 	}
 

@@ -265,12 +265,13 @@ func CheckPassword(hashedPassword, password string) error {
 		return err
 	}
 
-	parts := strings.Split(hashedPassword, "$")
-	if len(parts) != 3 {
+	costText, rest, hasCost := strings.Cut(hashedPassword, "$")
+	saltText, hashText, hasSalt := strings.Cut(rest, "$")
+	if !hasCost || !hasSalt || strings.Contains(hashText, "$") {
 		return ErrInvalidHash
 	}
 
-	cost, err := strconv.Atoi(parts[0])
+	cost, err := strconv.Atoi(costText)
 	if err != nil {
 		return fmt.Errorf("%w: invalid cost", ErrInvalidHash)
 	}
@@ -278,7 +279,7 @@ func CheckPassword(hashedPassword, password string) error {
 		return fmt.Errorf("%w: %w", ErrInvalidHash, err)
 	}
 
-	salt, err := base64.StdEncoding.DecodeString(parts[1])
+	salt, err := decodeStoredField(saltText, saltSize)
 	if err != nil {
 		return fmt.Errorf("%w: decode salt: %w", ErrInvalidHash, err)
 	}
@@ -286,7 +287,7 @@ func CheckPassword(hashedPassword, password string) error {
 		return fmt.Errorf("%w: invalid salt length", ErrInvalidHash)
 	}
 
-	expectedHash, err := base64.StdEncoding.DecodeString(parts[2])
+	expectedHash, err := decodeStoredField(hashText, hashSize)
 	if err != nil {
 		return fmt.Errorf("%w: decode hash: %w", ErrInvalidHash, err)
 	}
@@ -306,6 +307,25 @@ func CheckPassword(hashedPassword, password string) error {
 	}
 
 	return ErrPasswordMismatch
+}
+
+// decodeStoredField bounds decoder allocations and preserves the standard
+// base64 decoder's tolerance of CR and LF in previously stored values.
+func decodeStoredField(value string, maxBytes int) ([]byte, error) {
+	var encoded [((hashSize + 2) / 3) * 4]byte
+	limit := base64.StdEncoding.EncodedLen(maxBytes)
+	n := 0
+	for i := 0; i < len(value); i++ {
+		if value[i] == '\r' || value[i] == '\n' {
+			continue
+		}
+		if n == limit {
+			return nil, ErrInvalidHash
+		}
+		encoded[n] = value[i]
+		n++
+	}
+	return base64.StdEncoding.AppendDecode(nil, encoded[:n])
 }
 
 func deriveKey(password string, salt []byte, cost, keyLen int) ([]byte, error) {
