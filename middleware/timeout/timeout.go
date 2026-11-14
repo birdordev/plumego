@@ -137,6 +137,7 @@ func Middleware(cfg Config) mw.Middleware {
 				}()
 				if ctx.Err() == nil {
 					next.ServeHTTP(tw, r)
+					result.returned = true
 				}
 			}()
 
@@ -157,6 +158,10 @@ func Middleware(cfg Config) mw.Middleware {
 			}
 			if result.panicValue != nil {
 				panic(result.panicValue)
+			}
+			if !result.returned {
+				internaltransport.WriteTransportError(w, r, http.StatusInternalServerError, contract.CodeInternalError, "handler exited before completing the response", nil)
+				return
 			}
 			if tw.Overflowed() {
 				internaltransport.WriteTransportError(w, r, http.StatusInternalServerError, contract.CodeInternalError, "response exceeded buffer limit", nil)
@@ -194,6 +199,7 @@ func (cfg Config) reportLatePanic(r *http.Request, recovered any) {
 
 type timeoutHandlerResult struct {
 	panicValue any
+	returned   bool
 }
 
 func newTimeoutResponseWriter(ctx context.Context, cfg Config) *timeoutResponseWriter {

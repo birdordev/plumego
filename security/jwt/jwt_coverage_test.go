@@ -255,9 +255,9 @@ func TestEnsureRotationLocked_ZeroIntervalSkipsRotation(t *testing.T) {
 	initialActive := mgr.active
 
 	// Call ensureRotationLocked directly (holds the lock as caller).
-	mgr.rotationMu.Lock()
+	mgr.rotationSlot <- struct{}{}
 	err = mgr.ensureRotationLocked(t.Context())
-	mgr.rotationMu.Unlock()
+	mgr.releaseRotation()
 
 	if err != nil {
 		t.Fatalf("ensureRotationLocked with RotationInterval=0: %v", err)
@@ -954,9 +954,9 @@ func TestRotateKeyLocked_CancelledContextEarlyReturn(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	mgr.rotationMu.Lock()
+	mgr.rotationSlot <- struct{}{}
 	_, err = mgr.rotateKeyLocked(ctx)
-	mgr.rotationMu.Unlock()
+	mgr.releaseRotation()
 
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("rotateKeyLocked with cancelled ctx: expected context.Canceled, got %v", err)
@@ -999,9 +999,9 @@ func TestEnsureActiveKey_CancelledContextAtEntry(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	mgr.rotationMu.Lock()
+	mgr.rotationSlot <- struct{}{}
 	err = mgr.ensureActiveKey(ctx)
-	mgr.rotationMu.Unlock()
+	mgr.releaseRotation()
 
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("expected context.Canceled, got %v", err)
@@ -1025,9 +1025,9 @@ func TestEnsureRotationLocked_UnknownKeyReturnsError(t *testing.T) {
 	mgr.config.RotationInterval = time.Hour // non-zero so we don't skip early
 
 	mgr.mu.Unlock()
-	mgr.rotationMu.Lock()
+	mgr.rotationSlot <- struct{}{}
 	err = mgr.ensureRotationLocked(t.Context())
-	mgr.rotationMu.Unlock()
+	mgr.releaseRotation()
 
 	if !errors.Is(err, ErrUnknownKey) {
 		t.Fatalf("expected ErrUnknownKey, got %v", err)
@@ -1052,9 +1052,9 @@ func TestEnsureRotationLocked_ReturnNilWhenNotElapsed(t *testing.T) {
 	k.CreatedAt = time.Now().UTC()
 	mgr.keyCache[mgr.active] = k
 	mgr.mu.Unlock()
-	mgr.rotationMu.Lock()
+	mgr.rotationSlot <- struct{}{}
 	err = mgr.ensureRotationLocked(t.Context())
-	mgr.rotationMu.Unlock()
+	mgr.releaseRotation()
 
 	if err != nil {
 		t.Fatalf("ensureRotationLocked: expected nil, got %v", err)
@@ -1118,9 +1118,9 @@ func TestEnsureActiveKey_ActivePointerSetFails(t *testing.T) {
 	mgr.keyCache = make(map[string]JWTSigningKey)
 	mgr.active = ""
 	mgr.mu.Unlock()
-	mgr.rotationMu.Lock()
+	mgr.rotationSlot <- struct{}{}
 	err = mgr.ensureActiveKey(t.Context())
-	mgr.rotationMu.Unlock()
+	mgr.releaseRotation()
 
 	if !errors.Is(err, wantErr) {
 		t.Fatalf("expected %v, got %v", wantErr, err)
@@ -1172,9 +1172,9 @@ func TestRotateKeyLocked_StoreSetActivePointerFails(t *testing.T) {
 	}
 
 	// rotateKeyLocked will be the next Set calls.
-	mgr.rotationMu.Lock()
+	mgr.rotationSlot <- struct{}{}
 	_, err = mgr.rotateKeyLocked(t.Context())
-	mgr.rotationMu.Unlock()
+	mgr.releaseRotation()
 
 	if !errors.Is(err, wantErr) {
 		t.Fatalf("expected %v, got %v", wantErr, err)
@@ -1326,9 +1326,9 @@ func TestEnsureActiveKey_StoreSetKeyBlobFails(t *testing.T) {
 	mgr.keyCache = make(map[string]JWTSigningKey)
 	mgr.active = ""
 	mgr.mu.Unlock()
-	mgr.rotationMu.Lock()
+	mgr.rotationSlot <- struct{}{}
 	err = mgr.ensureActiveKey(t.Context())
-	mgr.rotationMu.Unlock()
+	mgr.releaseRotation()
 
 	if !errors.Is(err, wantErr) {
 		t.Fatalf("expected %v in chain, got %v", wantErr, err)

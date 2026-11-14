@@ -174,7 +174,7 @@ type APIError struct {
 
 // Error implements the error interface for APIError
 func (e APIError) Error() string {
-	return e.message
+	return e.Message()
 }
 
 // Unwrap returns the underlying cause error stored via ErrorBuilder.Wrap,

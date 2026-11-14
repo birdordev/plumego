@@ -3,8 +3,25 @@ package log
 import (
 	"bytes"
 	"encoding/json"
+	"strings"
 	"testing"
 )
+
+func TestTextByteSlicesUseTraversalBudget(t *testing.T) {
+	type namedBytes []byte
+	var out bytes.Buffer
+	logger := NewLogger(LoggerConfig{Output: &out})
+	large := bytes.Repeat([]byte{255}, 64<<10)
+	for _, value := range []any{large, namedBytes(large)} {
+		out.Reset()
+		logger.Info("bounded", Fields{"blob": value, "short": namedBytes{0, 15, 255}})
+		if got := out.String(); !strings.Contains(got, `[truncated]]"`) ||
+			!strings.Contains(got, `short="[0 15 255]"`) || len(got) > 5000 {
+			t.Errorf("byte slice output: length=%d, truncated=%t, short preserved=%t",
+				len(got), strings.Contains(got, "[truncated]"), strings.Contains(got, "[0 15 255]"))
+		}
+	}
+}
 
 func TestWideJSONBudget(t *testing.T) {
 	wide := make([]any, 100000)

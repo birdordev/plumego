@@ -103,11 +103,10 @@ func (m *JWTManager) RotateKey() (SigningKeyMetadata, error) {
 
 // RotateKeyContext generates and activates a new signing key with caller cancellation.
 func (m *JWTManager) RotateKeyContext(ctx context.Context) (SigningKeyMetadata, error) {
-	if err := contextErr(ctx); err != nil {
+	if err := m.acquireRotation(ctx); err != nil {
 		return SigningKeyMetadata{}, err
 	}
-	m.rotationMu.Lock()
-	defer m.rotationMu.Unlock()
+	defer m.releaseRotation()
 
 	key, err := m.rotateKeyLocked(ctx)
 	if err != nil {
@@ -116,7 +115,33 @@ func (m *JWTManager) RotateKeyContext(ctx context.Context) (SigningKeyMetadata, 
 	return signingKeyMetadata(key), nil
 }
 
-// rotateKeyLocked requires rotationMu after the manager is published.
+func (m *JWTManager) acquireRotation(ctx context.Context) error {
+	if err := contextErr(ctx); err != nil {
+		return err
+	}
+	if m.rotationSlot == nil {
+		return ErrUnknownKey
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	select {
+	case m.rotationSlot <- struct{}{}:
+		if err := ctx.Err(); err != nil {
+			m.releaseRotation()
+			return err
+		}
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func (m *JWTManager) releaseRotation() {
+	<-m.rotationSlot
+}
+
+// rotateKeyLocked requires the rotation slot after the manager is published.
 func (m *JWTManager) rotateKeyLocked(ctx context.Context) (JWTSigningKey, error) {
 	if err := contextErr(ctx); err != nil {
 		return JWTSigningKey{}, err
@@ -265,7 +290,7 @@ func (m *JWTManager) storeSet(ctx context.Context, key string, value []byte, ttl
 	return m.store.SetContext(ctx, key, value, ttl)
 }
 
-// ensureRotationLocked rotates the active signing key when due. It requires rotationMu.
+// ensureRotationLocked rotates the active signing key when due. It requires the rotation slot.
 func (m *JWTManager) ensureRotationLocked(ctx context.Context) error {
 	if err := contextErr(ctx); err != nil {
 		return err

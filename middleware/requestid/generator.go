@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/binary"
 	"errors"
+	"math"
 	mathrand "math/rand"
 	"sync"
 	"sync/atomic"
@@ -184,6 +185,7 @@ func (g *RequestIDGenerator) randomFallback() int {
 }
 
 // DecodeRequestID reverses a fixed-width base62 request ID into components.
+// It rejects values outside the 64-bit range used by the generator.
 // This is provided for diagnostics and demonstrates why generated request IDs
 // must be treated as correlation identifiers rather than secrets.
 func DecodeRequestID(id string) (unixMilli int64, r int, seqVal int, err error) {
@@ -230,6 +232,9 @@ func decodeBase62(id string) (uint64, error) {
 		case ch >= 'a' && ch <= 'z':
 			digit = int(ch-'a') + 36
 		default:
+			return 0, errInvalidBase62
+		}
+		if v > (math.MaxUint64-uint64(digit))/62 {
 			return 0, errInvalidBase62
 		}
 		v = v*62 + uint64(digit)

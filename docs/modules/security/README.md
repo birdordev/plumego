@@ -99,7 +99,9 @@ globals.
   `MaxEntries` is reached. New-key admissions are serialized across shards;
   existing-key updates retain shard-local locking. Capacity decisions and the
   bucket gauge use a single atomic count. Eviction is approximate LRU.
-- JWT rotation serializes key writes separately from verification. Cached keys
+- JWT rotation serializes key writes separately from verification. Explicit
+  rotation and token issuance waiting for rotation honor caller cancellation.
+  Cached keys
   remain available to verify existing tokens while storage I/O is pending.
   Rotation publishes the in-memory active key after the backing store
   accepts the active-key pointer. If that write fails, the previous key remains

@@ -166,6 +166,10 @@ func (l *gLogger) logInternal(level Level, calldepth int, messageBuilder func() 
 	l.mu.RUnlock()
 
 	if !shouldLog {
+		if level == FATAL {
+			l.Flush()
+			os.Exit(1)
+		}
 		return
 	}
 

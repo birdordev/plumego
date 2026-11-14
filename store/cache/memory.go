@@ -316,6 +316,15 @@ func (mc *MemoryCache) Clear(ctx context.Context) error {
 
 // Incr increments the integer value of a key by delta.
 func (mc *MemoryCache) Incr(ctx context.Context, key string, delta int64) (int64, error) {
+	return mc.updateInteger(ctx, key, delta, addInt64)
+}
+
+// Decr decrements the integer value of a key by delta.
+func (mc *MemoryCache) Decr(ctx context.Context, key string, delta int64) (int64, error) {
+	return mc.updateInteger(ctx, key, delta, subtractInt64)
+}
+
+func (mc *MemoryCache) updateInteger(ctx context.Context, key string, delta int64, calculate func(int64, int64) (int64, error)) (int64, error) {
 	if err := mc.operationErr(ctx); err != nil {
 		return 0, err
 	}
@@ -346,7 +355,7 @@ func (mc *MemoryCache) Incr(ctx context.Context, key string, delta int64) (int64
 		}
 	}
 
-	newVal, err := addInt64(currentVal, delta)
+	newVal, err := calculate(currentVal, delta)
 	if err != nil {
 		return 0, err
 	}
@@ -362,14 +371,6 @@ func (mc *MemoryCache) Incr(ctx context.Context, key string, delta int64) (int64
 	}
 
 	return newVal, nil
-}
-
-// Decr decrements the integer value of a key by delta.
-func (mc *MemoryCache) Decr(ctx context.Context, key string, delta int64) (int64, error) {
-	if delta == minInt64 {
-		return 0, fmt.Errorf("%w: integer overflow", ErrNotInteger)
-	}
-	return mc.Incr(ctx, key, -delta)
 }
 
 // Append appends data to the end of an existing value.
@@ -552,4 +553,11 @@ func addInt64(value, delta int64) (int64, error) {
 		return 0, fmt.Errorf("%w: integer overflow", ErrNotInteger)
 	}
 	return value + delta, nil
+}
+
+func subtractInt64(value, delta int64) (int64, error) {
+	if (delta > 0 && value < minInt64+delta) || (delta < 0 && value > maxInt64+delta) {
+		return 0, fmt.Errorf("%w: integer overflow", ErrNotInteger)
+	}
+	return value - delta, nil
 }

@@ -73,7 +73,8 @@ func (w *noBodyWriter) commit(inferLength bool) {
 	if w.status == 0 {
 		w.WriteHeader(http.StatusOK)
 	}
-	if inferLength && w.bodyAllowed() && w.bytes <= 2048 && w.header.Get("Content-Length") == "" && w.header.Get("Transfer-Encoding") == "" {
+	_, hasContentLength := w.header["Content-Length"]
+	if inferLength && w.bodyAllowed() && w.bytes <= 2048 && !hasContentLength && w.header.Get("Transfer-Encoding") == "" {
 		w.header.Set("Content-Length", strconv.FormatInt(w.bytes, 10))
 	}
 	dst := w.Header()

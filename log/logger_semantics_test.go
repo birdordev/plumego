@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -181,31 +182,41 @@ func TestTextStructuredLoggerReportsExternalCaller(t *testing.T) {
 func TestLoggerFatalExits(t *testing.T) {
 	if os.Getenv("PLUMEGO_FATAL_CHILD") == "1" {
 		format := LoggerFormat(os.Getenv("PLUMEGO_FATAL_FORMAT"))
+		level, err := strconv.Atoi(os.Getenv("PLUMEGO_FATAL_LEVEL"))
+		if err != nil {
+			t.Fatal(err)
+		}
 		logger := NewLogger(LoggerConfig{
 			Format:      format,
 			Output:      io.Discard,
 			ErrorOutput: io.Discard,
-			Level:       DEBUG,
+			Level:       Level(level),
 		})
-		logger.Fatal("fatal-exit")
+		if os.Getenv("PLUMEGO_FATAL_CONTEXT") == "true" {
+			logger.FatalCtx(t.Context(), "fatal-exit")
+		} else {
+			logger.Fatal("fatal-exit")
+		}
 		return
 	}
 
 	formats := []LoggerFormat{LoggerFormatText, LoggerFormatJSON, LoggerFormatDiscard}
 	for _, format := range formats {
 		t.Run(string(format), func(t *testing.T) {
-			cmd := exec.Command(os.Args[0], "-test.run=TestLoggerFatalExits", "-test.v")
-			cmd.Env = append(os.Environ(),
-				"PLUMEGO_FATAL_CHILD=1",
-				"PLUMEGO_FATAL_FORMAT="+string(format),
-			)
-			err := cmd.Run()
-			exitErr, ok := err.(*exec.ExitError)
-			if !ok {
-				t.Fatalf("expected exit error, got %v", err)
-			}
-			if code := exitErr.ExitCode(); code != 1 {
-				t.Fatalf("expected exit code 1, got %d", code)
+			for _, level := range []Level{DEBUG, FATAL + 1} {
+				for _, withContext := range []bool{false, true} {
+					cmd := exec.CommandContext(t.Context(), os.Args[0], "-test.run=^TestLoggerFatalExits$", "-test.v")
+					cmd.Env = append(os.Environ(),
+						"PLUMEGO_FATAL_CHILD=1",
+						"PLUMEGO_FATAL_FORMAT="+string(format),
+						"PLUMEGO_FATAL_LEVEL="+strconv.Itoa(int(level)),
+						"PLUMEGO_FATAL_CONTEXT="+strconv.FormatBool(withContext),
+					)
+					err := cmd.Run()
+					if exitErr, ok := err.(*exec.ExitError); !ok || exitErr.ExitCode() != 1 {
+						t.Fatalf("level=%d withContext=%t: expected exit code 1, got %v", level, withContext, err)
+					}
+				}
 			}
 		})
 	}

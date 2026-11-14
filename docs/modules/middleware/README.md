@@ -189,6 +189,8 @@ return the context error.
 
 Timeout clones outer response headers into a private buffer. Successful
 responses replay downstream header changes, including explicit deletion.
+If a handler exits with `runtime.Goexit` while the context is still active,
+timeout discards its buffer and sends a structured `500`.
 Timeout and buffer-limit errors preserve the original outer headers and discard
 downstream header changes and partial bodies. Responses larger than
 `Config.MaxBufferBytes` or `Config.MaxReplayBytes` become a structured `500`

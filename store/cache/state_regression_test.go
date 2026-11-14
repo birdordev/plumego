@@ -54,6 +54,37 @@ func TestFailedMutationPreservesValueAndAccounting(t *testing.T) {
 	}
 }
 
+func TestDecrFullSignedRangePreservesTTL(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		cache, err := NewMemoryCacheWithConfig(Config{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer cache.Close()
+		legacy, err := encodeGobInt64(-1)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := cache.Set(t.Context(), "key", legacy, 2*time.Second); err != nil {
+			t.Fatal(err)
+		}
+		time.Sleep(time.Second)
+		if got, err := cache.Decr(t.Context(), "key", minInt64); err != nil || got != maxInt64 {
+			t.Fatalf("Decr = %d, %v; want %d", got, err, maxInt64)
+		}
+		if _, err := cache.Decr(t.Context(), "key", -1); !errors.Is(err, ErrNotInteger) {
+			t.Fatalf("overflow error = %v", err)
+		}
+		if value, err := cache.Get(t.Context(), "key"); err != nil || string(value) != strconv.FormatInt(maxInt64, 10) {
+			t.Fatalf("value after overflow = %q, %v", value, err)
+		}
+		time.Sleep(time.Second)
+		if _, err := cache.Get(t.Context(), "key"); !errors.Is(err, ErrNotFound) {
+			t.Fatalf("at original deadline: %v", err)
+		}
+	})
+}
+
 func TestConcurrentCountersAndAppendsDoNotLoseUpdates(t *testing.T) {
 	cache, err := NewMemoryCacheWithConfig(Config{})
 	if err != nil {

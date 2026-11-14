@@ -7,8 +7,64 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 )
+
+func TestRotationWaitHonorsCancellation(t *testing.T) {
+	for _, automatic := range []bool{false, true} {
+		t.Run(fmt.Sprintf("automatic=%t", automatic), func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				store := &blockingRotationStore{InMemoryKeyStore: NewInMemoryKeyStore()}
+				cfg := DefaultJWTConfig()
+				cfg.RotationInterval = time.Minute
+				manager, err := NewJWTManager(store, cfg)
+				if err != nil {
+					t.Fatal(err)
+				}
+				now := manager.currentTime().Add(cfg.RotationInterval)
+				manager.now = func() time.Time { return now }
+				store.entered, store.release = make(chan struct{}), make(chan struct{})
+				defer close(store.release)
+				first := make(chan error, 1)
+				go func() {
+					_, err := manager.RotateKeyContext(t.Context())
+					first <- err
+				}()
+				<-store.entered
+
+				ctx, cancel := context.WithCancel(t.Context())
+				defer cancel()
+				waiter := make(chan error, 1)
+				go func() {
+					if automatic {
+						_, err := manager.GenerateTokenPair(ctx, IdentityClaims{Subject: "example"}, AuthorizationClaims{})
+						waiter <- err
+						return
+					}
+					_, err := manager.RotateKeyContext(ctx)
+					waiter <- err
+				}()
+				synctest.Wait()
+				cancel()
+				synctest.Wait()
+				select {
+				case err := <-waiter:
+					if !errors.Is(err, context.Canceled) {
+						t.Errorf("waiting caller returned %v, want context.Canceled", err)
+					}
+				default:
+					t.Error("canceled caller still waits for the active rotation")
+				}
+				select {
+				case err := <-first:
+					t.Errorf("active rotation returned before storage was released: %v", err)
+				default:
+				}
+			})
+		})
+	}
+}
 
 type pointerFailureStore struct {
 	*InMemoryKeyStore

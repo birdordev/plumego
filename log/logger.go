@@ -336,9 +336,8 @@ func formatTextValue(value reflect.Value, depth int, remaining *int) string {
 		out.WriteByte(']')
 		return out.String()
 	case reflect.Slice, reflect.Array:
-		// Preserve fmt's special treatment of raw byte slices.
-		if value.Kind() == reflect.Slice && value.Type().Elem().Kind() == reflect.Uint8 {
-			return fmt.Sprint(value.Interface())
+		if value.Kind() == reflect.Slice && value.Type().Elem() == reflect.TypeFor[byte]() {
+			return formatTextBytes(value, remaining)
 		}
 		var out strings.Builder
 		out.WriteByte('[')
@@ -376,4 +375,27 @@ func formatTextValue(value reflect.Value, depth int, remaining *int) string {
 	default:
 		return fmt.Sprint(value.Interface())
 	}
+}
+
+func formatTextBytes(value reflect.Value, remaining *int) string {
+	count := min(value.Len(), *remaining)
+	*remaining -= count
+	var out strings.Builder
+	out.Grow(4*count + len("[truncated]") + 2)
+	out.WriteByte('[')
+	var digits [3]byte
+	for i := range count {
+		if i > 0 {
+			out.WriteByte(' ')
+		}
+		out.Write(strconv.AppendUint(digits[:0], value.Index(i).Uint(), 10))
+	}
+	if count < value.Len() {
+		if count > 0 {
+			out.WriteByte(' ')
+		}
+		out.WriteString("[truncated]")
+	}
+	out.WriteByte(']')
+	return out.String()
 }

@@ -97,8 +97,8 @@ type JWTManager struct {
 	keyCache map[string]JWTSigningKey
 	active   string
 
-	rotationMu sync.Mutex // Serializes rotation and protects pending.
-	pending    *JWTSigningKey
+	rotationSlot chan struct{} // Serializes rotation and protects pending.
+	pending      *JWTSigningKey
 }
 
 // NewJWTManager creates a new JWT manager with the given configuration and backing store.
@@ -129,10 +129,11 @@ func NewJWTManagerContext(ctx context.Context, store KeyStore, config JWTConfig)
 	}
 
 	mgr := &JWTManager{
-		config:   config,
-		store:    store,
-		now:      time.Now,
-		keyCache: make(map[string]JWTSigningKey),
+		config:       config,
+		store:        store,
+		now:          time.Now,
+		keyCache:     make(map[string]JWTSigningKey),
+		rotationSlot: make(chan struct{}, 1),
 	}
 
 	if err := mgr.loadKeys(ctx); err != nil {
@@ -201,8 +202,10 @@ func (m *JWTManager) activeKeyForGeneration(ctx context.Context) (JWTSigningKey,
 		return cloneSigningKey(activeKey), nil
 	}
 
-	m.rotationMu.Lock()
-	defer m.rotationMu.Unlock()
+	if err := m.acquireRotation(ctx); err != nil {
+		return JWTSigningKey{}, err
+	}
+	defer m.releaseRotation()
 	if err := m.ensureRotationLocked(ctx); err != nil {
 		return JWTSigningKey{}, err
 	}

@@ -12,6 +12,10 @@ import (
 // ---------------------------------------------------------------------------
 
 func TestAPIErrorErrorMethod(t *testing.T) {
+	var zero APIError
+	if got := zero.Error(); got != zero.Message() || got != http.StatusText(http.StatusInternalServerError) {
+		t.Fatalf("zero error = %q, message = %q", got, zero.Message())
+	}
 	err := NewErrorBuilder().
 		Type(TypeValidation).
 		Code(CodeValidationError).

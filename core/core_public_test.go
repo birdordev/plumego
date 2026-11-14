@@ -18,6 +18,42 @@ import (
 	"github.com/birdordev/plumego/router"
 )
 
+func TestPrepareRejectsNilFromIntermediateBuilder(t *testing.T) {
+	app := core.New(core.DefaultConfig(), core.AppDependencies{})
+	var outerCalls, innerCalls int
+	if err := app.Use(func(next http.Handler) http.Handler {
+		outerCalls++
+		return http.HandlerFunc(next.ServeHTTP)
+	}, func(next http.Handler) http.Handler {
+		innerCalls++
+		if innerCalls == 1 {
+			return nil
+		}
+		return next
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := app.Get("/", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	})); err != nil {
+		t.Fatal(err)
+	}
+	if err := app.Prepare(); err == nil || outerCalls != 0 || app.PreparationState() != core.PreparationStateMutable {
+		t.Fatalf("prepare error=%v outer calls=%d phase=%s", err, outerCalls, app.PreparationState())
+	}
+	if _, err := app.Server(); err == nil {
+		t.Fatal("failed preparation published a server")
+	}
+	if err := app.Prepare(); err != nil {
+		t.Fatal(err)
+	}
+	dst := httptest.NewRecorder()
+	app.ServeHTTP(dst, httptest.NewRequest(http.MethodGet, "/", nil))
+	if outerCalls != 1 || innerCalls != 2 || dst.Code != http.StatusNoContent {
+		t.Fatalf("outer calls=%d inner calls=%d status=%d", outerCalls, innerCalls, dst.Code)
+	}
+}
+
 func TestPublicServeHTTPWorkflow(t *testing.T) {
 	app := core.New(core.DefaultConfig(), core.AppDependencies{})
 

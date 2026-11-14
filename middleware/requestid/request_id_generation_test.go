@@ -1,10 +1,25 @@
 package requestid
 
 import (
+	"math"
 	"sync"
 	"testing"
 	"time"
 )
+
+func TestDecodeRequestIDRejectsOverflow(t *testing.T) {
+	const maxID = "0LygHa16AHYF"
+	const overflowID = "0LygHa16AHYG"
+	if got := encodeBase62Fixed(math.MaxUint64, idWidth); got != maxID {
+		t.Fatalf("encoded maximum = %q", got)
+	}
+	if _, random, seq, err := DecodeRequestID(maxID); err != nil || random != randMask || seq != seqMax {
+		t.Fatalf("decode maximum: random=%d seq=%d error=%v", random, seq, err)
+	}
+	if _, _, _, err := DecodeRequestID(overflowID); err != errInvalidBase62 {
+		t.Fatalf("overflow error = %v", err)
+	}
+}
 
 func TestNewRequestIDGeneration(t *testing.T) {
 	ids := make(map[string]bool)

@@ -7,12 +7,55 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"runtime"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/birdordev/plumego/contract"
 )
+
+func TestTimeoutDiscardsResponseWhenHandlerExits(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	for _, tc := range []struct {
+		name   string
+		cancel bool
+		status int
+	}{
+		{"active", false, http.StatusInternalServerError},
+		{"canceled", true, http.StatusOK},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			handler := Middleware(Config{Timeout: time.Second})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("X-Partial", "discard")
+				_, _ = io.WriteString(w, "partial body")
+				if tc.cancel {
+					cancel()
+				}
+				runtime.Goexit()
+			}))
+			dst := &responseWriteCounter{ResponseWriter: httptest.NewRecorder()}
+			handler.ServeHTTP(dst, httptest.NewRequestWithContext(ctx, http.MethodGet, "/", nil))
+			rec := dst.ResponseWriter.(*httptest.ResponseRecorder)
+			if rec.Code != tc.status || rec.Header().Get("X-Partial") != "" {
+				t.Fatalf("status=%d headers=%v", rec.Code, rec.Header())
+			}
+			if tc.cancel {
+				if dst.writes != 0 || rec.Body.Len() != 0 {
+					t.Fatalf("canceled request wrote %d headers and %q", dst.writes, rec.Body.String())
+				}
+			} else {
+				var response struct {
+					Error struct{ Code string }
+				}
+				if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil || response.Error.Code != contract.CodeInternalError || dst.writes != 2 {
+					t.Fatalf("writes=%d body=%q parse error=%v", dst.writes, rec.Body.String(), err)
+				}
+			}
+		})
+	}
+}
 
 type responseWriteCounter struct {
 	http.ResponseWriter

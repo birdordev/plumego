@@ -36,6 +36,14 @@ func TestHeadPreservesImplicitCommit(t *testing.T) {
 			}
 		}},
 		{"empty", func(w http.ResponseWriter, r *http.Request) {}},
+		{"length suppressed", func(w http.ResponseWriter, _ *http.Request) {
+			w.Header()["Content-Length"] = nil
+			_, _ = io.WriteString(w, "hello")
+		}},
+		{"explicit length", func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Length", "5")
+			_, _ = io.WriteString(w, "hello")
+		}},
 		{"transfer encoding", func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Transfer-Encoding", "chunked")
 			_, _ = w.Write([]byte("hello"))
