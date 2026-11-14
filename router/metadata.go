@@ -48,8 +48,9 @@ func (r *Router) registerNamedRoute(name, method, pattern string) {
 
 // URL generates a URL for a named route with the given parameters.
 // It returns an error when the route is unknown, a required parameter is
-// missing or empty, a single-segment parameter contains a slash, parameters are
-// unpaired, or the router is not initialised.
+// missing or empty, a single-segment parameter contains a slash, a wildcard
+// parameter starts or ends with a slash, parameters are unpaired, or the router
+// is not initialised.
 // On error the returned string is always "".
 //
 // Use [URLMust] at startup time when the route names are compile-time constants
@@ -111,6 +112,9 @@ func (r *Router) urlForNamedRoute(name string, params ...string) (string, string
 			if val, ok := paramMap[paramName]; ok {
 				if val == "" {
 					return "", fmt.Sprintf("named route %q has empty required param %q", name, paramName)
+				}
+				if val[0] == '/' || val[len(val)-1] == '/' {
+					return "", fmt.Sprintf("named route %q has a leading or trailing slash in wildcard param %q", name, paramName)
 				}
 				segments := strings.Split(val, "/")
 				for i, seg := range segments {

@@ -157,7 +157,7 @@ func (mc *MemoryCache) checkMemoryLimit(valueSize, existingSize uint64) error {
 		currentMemory -= existingSize
 	}
 
-	if currentMemory+valueSize > mc.config.MaxMemoryUsage {
+	if currentMemory > mc.config.MaxMemoryUsage || valueSize > mc.config.MaxMemoryUsage-currentMemory {
 		return fmt.Errorf("%w: memory limit exceeded (current: %d, adding: %d, limit: %d)",
 			ErrCacheFull, currentMemory, valueSize, mc.config.MaxMemoryUsage)
 	}
@@ -226,18 +226,18 @@ func (mc *MemoryCache) setLockedWithExpiration(key string, value []byte, exp tim
 		return err
 	}
 
-	mc.store.Store(key, cacheItem{
-		value:      cloneBytes(value),
-		expiration: exp,
-	})
+	mc.storeValueLocked(key, cloneBytes(value), exp, existingSize, existingFound)
+	return nil
+}
 
+// storeValueLocked publishes an owned value after capacity has been checked.
+func (mc *MemoryCache) storeValueLocked(key string, value []byte, exp time.Time, existingSize uint64, existingFound bool) {
+	mc.store.Store(key, cacheItem{value: value, expiration: exp})
 	deltaSize := 0
 	if !existingFound {
 		deltaSize = 1
 	}
-	mc.adjustStoredValue(deltaSize, int64(valueSize)-int64(existingSize))
-
-	return nil
+	mc.adjustStoredValue(deltaSize, int64(len(value))-int64(existingSize))
 }
 
 func (mc *MemoryCache) expirationForTTL(ttl time.Duration, now time.Time) time.Time {
@@ -388,6 +388,7 @@ func (mc *MemoryCache) Append(ctx context.Context, key string, data []byte) erro
 
 	// Get existing value
 	var existingData []byte
+	existingFound := false
 	exp := mc.expirationForTTL(0, time.Now())
 	if val, ok := mc.store.Load(key); ok {
 		item := val.(cacheItem)
@@ -395,15 +396,28 @@ func (mc *MemoryCache) Append(ctx context.Context, key string, data []byte) erro
 			mc.removeExpiredItemLocked(key, item)
 		} else {
 			existingData = item.value
+			existingFound = true
 			exp = item.expiration
 		}
 	}
 
-	// Append new data
-	newData := append(cloneBytes(existingData), data...)
+	existingSize := uint64(len(existingData))
+	size := existingSize + uint64(len(data))
+	if size > uint64(^uint(0)>>1) {
+		return fmt.Errorf("%w: appended value length overflows int", ErrCacheFull)
+	}
+	if err := mc.checkMemoryLimit(size, existingSize); err != nil {
+		return err
+	}
 
-	// Store new value
-	return mc.setLockedWithExpiration(key, newData, exp)
+	var value []byte
+	if existingData != nil || len(data) != 0 {
+		value = make([]byte, int(size))
+		copy(value, existingData)
+		copy(value[len(existingData):], data)
+	}
+	mc.storeValueLocked(key, value, exp, existingSize, existingFound)
+	return nil
 }
 
 // Close stops the background cleanup goroutine.

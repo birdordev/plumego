@@ -173,15 +173,14 @@ func (l *defaultLogger) FatalCtx(_ context.Context, msg string, fields ...Fields
 }
 
 func (l *defaultLogger) logWithLevel(level Level, msg string, fields Fields) {
-	combined := mergeFields(l.fields, fields)
-	formatted := l.formatFields(combined)
-	if formatted != "" {
-		msg += " " + formatted
-	}
-
-	// calldepth=3: backend.log adds 1 → logInternal calls runtime.Caller(4)
-	// Frame 0: logInternal, 1: backend.log, 2: logWithLevel, 3: public method (Info/Error/…), 4: actual caller
-	l.getBackend().log(level, 3, msg)
+	// runtime.Caller skips logInternal, logWithLevel, and the public method.
+	l.getBackend().logInternal(level, 3, func() string {
+		formatted := l.formatFields(mergeFields(l.fields, fields))
+		if formatted != "" {
+			return msg + " " + formatted
+		}
+		return msg
+	})
 }
 
 func (l *defaultLogger) formatFields(fields Fields) string {

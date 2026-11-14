@@ -9,22 +9,41 @@ import (
 	"github.com/birdordev/plumego/contract"
 )
 
-// ensureHandlerPrepared performs the one-time transition required for using the
-// app as an http.Handler. It freezes config/router state and builds the handler.
+// ensureHandlerPrepared freezes registration before calling middleware builders.
+// A failed build releases the preparation lock without publishing a handler.
 func (a *App) ensureHandlerPrepared() {
-	a.handlerOnce.Do(func() {
-		a.freezeConfig()
-		r := a.ensureRouter()
-		if r != nil {
-			// Warn when no routes have been registered before Prepare is called.
-			// A service with no routes silently returns 404 or 405 for every
-			// request, which is always a bootstrap programming error.
-			if len(r.Routes()) == 0 {
-				a.Logger().Warn("no routes registered: all requests will receive 404; call app.Get/Post/… before Prepare", nil)
-			}
-		}
-		a.buildHandler()
-	})
+	if a.handlerFast.Load() != nil {
+		return
+	}
+
+	a.handlerPrepareMu.Lock()
+	defer a.handlerPrepareMu.Unlock()
+	if a.handlerFast.Load() != nil {
+		return
+	}
+
+	a.mu.Lock()
+	chain, r := a.middlewareChain, a.router
+	if chain == nil || r == nil {
+		a.mu.Unlock()
+		return
+	}
+	a.freezeRegistration()
+	a.mu.Unlock()
+
+	if len(r.Routes()) == 0 {
+		a.Logger().Warn("no routes registered: all requests will receive 404; call app.Get/Post/… before Prepare", nil)
+	}
+	handler := chain.Build(r)
+	if handler == nil {
+		return
+	}
+
+	a.mu.Lock()
+	a.handler = handler
+	a.preparationState = PreparationStateHandlerPrepared
+	a.handlerFast.Store(&handlerRef{h: handler})
+	a.mu.Unlock()
 }
 
 // ensureServerPrepared constructs the backing http.Server for the explicit
@@ -33,13 +52,12 @@ func (a *App) ensureServerPrepared() error {
 	a.serverPrepareMu.Lock()
 	defer a.serverPrepareMu.Unlock()
 
-	a.mu.Lock()
-	if a.httpServer != nil {
-		a.preparationState = PreparationStateServerPrepared
-		a.mu.Unlock()
+	a.mu.RLock()
+	prepared := a.httpServer != nil
+	a.mu.RUnlock()
+	if prepared {
 		return nil
 	}
-	a.mu.Unlock()
 
 	config, err := a.serverConfigSnapshot()
 	if err != nil {
@@ -55,12 +73,10 @@ func (a *App) ensureServerPrepared() error {
 	}
 
 	a.ensureHandlerPrepared()
-
 	handler, err := a.preparedHandlerSnapshot()
 	if err != nil {
 		return err
 	}
-
 	a.installHTTPServer(config, tlsConfig, handler)
 	return nil
 }
@@ -95,7 +111,6 @@ func (a *App) preparedHandlerSnapshot() (http.Handler, error) {
 func (a *App) installHTTPServer(config AppConfig, tlsConfig *tls.Config, handler http.Handler) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-
 	a.httpServer = &http.Server{
 		Addr:              config.Addr,
 		Handler:           handler,

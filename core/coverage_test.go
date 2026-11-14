@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/birdordev/plumego/log"
-	"github.com/birdordev/plumego/middleware"
 )
 
 // ---- RouteGroup.Patch / RouteGroup.Put (0%) ---------------------------------
@@ -218,12 +217,7 @@ func TestFormatErrorParamsWithEmptyMapReturnsEmpty(t *testing.T) {
 // ---- preparedHandlerSnapshot (83%) ------------------------------------------
 
 func TestPreparedHandlerSnapshotBeforeBuildReturnsError(t *testing.T) {
-	// Create an app and freeze it without building the handler; this is normally
-	// impossible via the public API, so we manipulate internal state directly.
 	app := newTestApp()
-	// freezeConfig moves state to HandlerPrepared without populating handler.
-	app.freezeConfig()
-	// handler is still nil because buildHandler has not been called.
 	_, err := app.preparedHandlerSnapshot()
 	if err == nil {
 		t.Fatal("expected error when handler is nil")
@@ -440,31 +434,26 @@ func TestShutdownReturnsWrappedErrorWhenContextExpiresDuringDrain(t *testing.T) 
 	}
 }
 
-// ---- ensureServerPrepared: preparedHandlerSnapshot error path --------------
+// ---- Handler preparation retry --------------------------------------------
 
-func TestEnsureServerPreparedReturnsHandlerErrorWhenHandlerOnceFiredWithNilChain(t *testing.T) {
-	// This test exercises the defensive `return err` branch after
-	// ensureHandlerPrepared() inside ensureServerPrepared, which can only be
-	// reached when the handlerOnce has already fired (setting handler=nil) but
-	// the chain is subsequently restored so serverConfigSnapshot passes.
+func TestPrepareRetriesWhenMiddlewareReturnsNilHandler(t *testing.T) {
 	app := newTestApp()
-	mustRegisterRoute(t, app.Get("/x", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	})))
-
-	// Nullify the middleware chain so that buildHandler sets handler=nil.
-	app.middlewareChain = nil
-	// Fire the handlerOnce: because chain is nil, buildHandler leaves handler=nil.
-	app.ensureHandlerPrepared()
-
-	// Restore a fresh chain so serverConfigSnapshot no longer rejects the request.
-	app.middlewareChain = middleware.NewChain()
-
-	// ensureServerPrepared now passes serverConfigSnapshot but the handlerOnce
-	// is already consumed; preparedHandlerSnapshot sees handler==nil → error.
-	err := app.ensureServerPrepared()
-	if err == nil {
-		t.Fatal("expected error from ensureServerPrepared when handler is nil after handlerOnce fired")
+	attempts := 0
+	if err := app.Use(func(next http.Handler) http.Handler {
+		attempts++
+		if attempts == 1 {
+			return nil
+		}
+		return next
+	}); err != nil {
+		t.Fatal(err)
 	}
-	assertCoreError(t, err, operationPrepareServer, "handler not configured")
+
+	assertCoreError(t, app.Prepare(), operationPrepareServer, "handler not configured")
+	if err := app.Prepare(); err != nil {
+		t.Fatal(err)
+	}
+	if attempts != 2 {
+		t.Fatalf("middleware builds = %d, want 2", attempts)
+	}
 }

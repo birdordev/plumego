@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -324,5 +326,68 @@ func TestPublicRouterPolicyAndNamedRouteURL(t *testing.T) {
 	}
 	if got := rec.Header().Get("Allow"); !strings.Contains(got, http.MethodGet) {
 		t.Fatalf("Allow header = %q, want GET", got)
+	}
+}
+
+func TestPublicPreparationRetriesMiddlewarePanic(t *testing.T) {
+	app := core.New(core.DefaultConfig(), core.AppDependencies{})
+	handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	})
+	if err := app.Get("/", handler); err != nil {
+		t.Fatal(err)
+	}
+	var builds atomic.Int32
+	if err := app.Use(func(next http.Handler) http.Handler {
+		if builds.Add(1) == 1 {
+			panic("first build failed")
+		}
+		return next
+	}); err != nil {
+		t.Fatal(err)
+	}
+	func() {
+		defer func() {
+			if got := recover(); got != "first build failed" {
+				t.Fatalf("panic = %v", got)
+			}
+		}()
+		_ = app.Prepare()
+	}()
+	if state := app.PreparationState(); state != core.PreparationStateMutable {
+		t.Fatalf("state after failed build = %q", state)
+	}
+	if _, err := app.Server(); err == nil {
+		t.Fatal("server published after failed build")
+	}
+	if err := app.Get("/late", handler); err == nil {
+		t.Fatal("accepted route after registration froze")
+	}
+	if err := app.Use(func(next http.Handler) http.Handler { return next }); err == nil {
+		t.Fatal("accepted middleware after registration froze")
+	}
+
+	start := make(chan struct{})
+	var workers sync.WaitGroup
+	for i := range 12 {
+		workers.Go(func() {
+			<-start
+			if i%2 == 0 {
+				if err := app.Prepare(); err != nil {
+					t.Error(err)
+				}
+				return
+			}
+			rec := httptest.NewRecorder()
+			app.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
+			if rec.Code != http.StatusNoContent {
+				t.Errorf("status = %d", rec.Code)
+			}
+		})
+	}
+	close(start)
+	workers.Wait()
+	if state := app.PreparationState(); state != core.PreparationStateServerPrepared || builds.Load() != 2 {
+		t.Fatalf("state = %q, builds = %d", state, builds.Load())
 	}
 }

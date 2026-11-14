@@ -197,3 +197,26 @@ func TestJSONPreservesNilAndEmptyContainerShapes(t *testing.T) {
 		}
 	}
 }
+
+type countedLogField struct{ calls *int }
+
+func (f countedLogField) String() string {
+	(*f.calls)++
+	return "observed"
+}
+
+func TestTextLoggerSkipsFormattingFilteredFields(t *testing.T) {
+	var output bytes.Buffer
+	calls := 0
+	logger := NewLogger(LoggerConfig{Format: LoggerFormatText, Level: ERROR, Output: &output}).
+		WithFields(Fields{"value": "base"})
+	logger.Info("filtered", Fields{"value": countedLogField{&calls}})
+	if calls != 0 || output.Len() != 0 {
+		t.Fatalf("filtered calls = %d, output = %q", calls, output.String())
+	}
+	logger.Error("written", Fields{"value": countedLogField{&calls}})
+	if got := output.String(); calls != 1 || !strings.Contains(got, "safety_regression_test.go:") ||
+		!strings.Contains(got, "written value=observed") {
+		t.Fatalf("written calls = %d, output = %q", calls, got)
+	}
+}

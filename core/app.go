@@ -22,16 +22,17 @@ type App struct {
 	logger          log.StructuredLogger // Logger instance
 
 	// Runtime state (protected by mutex)
-	mu               sync.RWMutex
-	serverPrepareMu  sync.Mutex
-	preparationState PreparationState // Tracks mutation and preparation phase
+	mu                 sync.RWMutex
+	serverPrepareMu    sync.Mutex
+	preparationState   PreparationState // Last successfully published phase
+	registrationFrozen bool
 
 	// Server components
-	httpServer  *http.Server               // HTTP server instance
-	connTracker *connectionTracker         // Open HTTP connection tracker
-	handler     http.Handler               // Combined handler with middleware applied; guarded by mu
-	handlerOnce sync.Once                  // Ensures handler initialization happens once
-	handlerFast atomic.Pointer[handlerRef] // Hot-path cache of handler; written once by buildHandler
+	httpServer       *http.Server               // HTTP server instance
+	connTracker      *connectionTracker         // Open HTTP connection tracker
+	handler          http.Handler               // Combined handler with middleware applied; guarded by mu
+	handlerPrepareMu sync.Mutex                 // Serializes handler assembly until it succeeds
+	handlerFast      atomic.Pointer[handlerRef] // Published once after successful assembly
 }
 
 // New creates an App from a value-copied config and explicit dependencies.

@@ -447,19 +447,22 @@ func TestScanRowsNil(t *testing.T) {
 }
 
 func TestScanRowsNilScanFunc(t *testing.T) {
-	db := sql.OpenDB(&rowsConnector{rows: &fixedRows{
-		cols:   []string{"id"},
-		values: [][]driver.Value{{1}},
-	}})
+	closeErr := errors.New("close rows failed")
+	driverRows := &fixedRows{cols: []string{"id"}, closeErr: closeErr}
+	db := sql.OpenDB(&rowsConnector{rows: driverRows})
 	defer db.Close()
 
 	rows, err := QueryContext(t.Context(), db, "SELECT id FROM test")
 	if err != nil {
 		t.Fatalf("QueryContext: %v", err)
 	}
+	defer rows.Close()
 	_, err = ScanRows[int](rows, nil)
-	if err == nil || !errors.Is(err, ErrQueryFailed) {
-		t.Fatalf("expected ErrQueryFailed, got %v", err)
+	if !errors.Is(err, ErrQueryFailed) || !errors.Is(err, closeErr) {
+		t.Fatalf("ScanRows = %v, want query and close errors", err)
+	}
+	if inUse := db.Stats().InUse; inUse != 0 || driverRows.closes != 1 {
+		t.Fatalf("connections in use = %d, row closes = %d", inUse, driverRows.closes)
 	}
 }
 
@@ -777,6 +780,7 @@ func (s rowsStmt) Query(args []driver.Value) (driver.Rows, error) {
 }
 
 type fixedRows struct {
+	closes   int
 	cols     []string
 	values   [][]driver.Value
 	idx      int
@@ -788,6 +792,7 @@ func (r *fixedRows) Columns() []string {
 }
 
 func (r *fixedRows) Close() error {
+	r.closes++
 	return r.closeErr
 }
 

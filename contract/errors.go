@@ -233,9 +233,9 @@ func (e APIError) RequestID() string {
 }
 
 // Details returns an isolated copy of the error detail map.
-// Scalar values, slices, and nested maps are deep-copied. Struct values stored
-// in the map are returned as interface copies and do not have their internal
-// reference fields deep-copied.
+// JSON-like slices, arrays, and string-keyed maps are deep-copied, including
+// named container types. Unsupported values such as pointers and structs, and
+// typed containers that cannot be fully cloned, retain their existing references.
 func (e APIError) Details() map[string]any {
 	if e.isNormalized {
 		return cloneAnyMap(e.details)
@@ -550,35 +550,23 @@ func (c detailCloner) cloneValue(value any) any {
 	case []bool:
 		return slices.Clone(v)
 	default:
-		if cloned, ok := cloneReflectDetailValue(value); ok {
-			return cloned
+		if value != nil {
+			if cloned, ok := c.cloneReflectValue(reflect.ValueOf(value)); ok {
+				return cloned.Interface()
+			}
 		}
 		return value
 	}
 }
 
-func cloneReflectDetailValue(value any) (any, bool) {
-	v := reflect.ValueOf(value)
-	if !v.IsValid() {
-		return value, true
-	}
-	cloned, ok := cloneReflectValue(v, 0)
-	if !ok {
-		return value, false
-	}
-	return cloned.Interface(), true
-}
-
-func cloneReflectValue(v reflect.Value, depth int) (reflect.Value, bool) {
-	if depth > 16 {
-		return v, false
-	}
+// cloneReflectValue preserves the concrete type and active container cycles.
+func (c detailCloner) cloneReflectValue(v reflect.Value) (reflect.Value, bool) {
 	switch v.Kind() {
 	case reflect.Interface:
 		if v.IsNil() {
 			return reflect.Zero(v.Type()), true
 		}
-		cloned, ok := cloneReflectValue(v.Elem(), depth+1)
+		cloned, ok := c.cloneReflectValue(v.Elem())
 		if !ok {
 			return v, false
 		}
@@ -598,10 +586,16 @@ func cloneReflectValue(v reflect.Value, depth int) (reflect.Value, bool) {
 		if v.IsNil() {
 			return reflect.Zero(v.Type()), true
 		}
+		key := detailReference{typ: v.Type(), ptr: v.Pointer()}
+		if existing, ok := c[key]; ok {
+			return reflect.ValueOf(existing), true
+		}
 		out := reflect.MakeMapWithSize(v.Type(), v.Len())
+		c[key] = out.Interface()
+		defer delete(c, key)
 		iter := v.MapRange()
 		for iter.Next() {
-			cloned, ok := cloneReflectValue(iter.Value(), depth+1)
+			cloned, ok := c.cloneReflectValue(iter.Value())
 			if !ok {
 				return v, false
 			}
@@ -616,9 +610,15 @@ func cloneReflectValue(v reflect.Value, depth int) (reflect.Value, bool) {
 		if v.IsNil() {
 			return reflect.Zero(v.Type()), true
 		}
+		key := detailReference{typ: v.Type(), ptr: v.Pointer(), len: v.Len()}
+		if existing, ok := c[key]; ok {
+			return reflect.ValueOf(existing), true
+		}
 		out := reflect.MakeSlice(v.Type(), v.Len(), v.Len())
+		c[key] = out.Interface()
+		defer delete(c, key)
 		for i := 0; i < v.Len(); i++ {
-			cloned, ok := cloneReflectValue(v.Index(i), depth+1)
+			cloned, ok := c.cloneReflectValue(v.Index(i))
 			if !ok {
 				return v, false
 			}
@@ -632,7 +632,7 @@ func cloneReflectValue(v reflect.Value, depth int) (reflect.Value, bool) {
 	case reflect.Array:
 		out := reflect.New(v.Type()).Elem()
 		for i := 0; i < v.Len(); i++ {
-			cloned, ok := cloneReflectValue(v.Index(i), depth+1)
+			cloned, ok := c.cloneReflectValue(v.Index(i))
 			if !ok {
 				return v, false
 			}

@@ -137,7 +137,8 @@ directly.
   route also advertises implicit `HEAD`.
 - Named route collisions fail registration; route names must be unique.
 - `URL` consumes params as key/value pairs, percent-escapes segment params,
-  preserves slash boundaries for wildcard params, returns empty string for
+  preserves interior slash boundaries for wildcard params, rejects leading or
+  trailing slashes in wildcard values, and returns empty string for
   unknown routes, incomplete params, duplicate keys, unknown keys, empty
   required params, or malformed key/value param lists; `URLMust` panics with the
   specific reverse-routing failure reason. Literal path segments are URL-escaped

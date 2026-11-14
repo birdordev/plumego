@@ -434,3 +434,73 @@ func countHeaderToken(values []string, want string) int {
 	}
 	return count
 }
+
+func TestCORSVaryIncludesFallbackResponses(t *testing.T) {
+	const allowed = "https://app.example"
+	for _, tc := range []struct {
+		name, method, origin, requestedMethod, headers string
+		preflight, allow, wildcard                     bool
+	}{
+		{name: "allowed", method: http.MethodGet, origin: allowed, allow: true},
+		{name: "denied", method: http.MethodGet, origin: "https://other.example"},
+		{name: "missing origin", method: http.MethodGet},
+		{name: "preflight", method: http.MethodOptions, origin: allowed, requestedMethod: "GET", preflight: true, allow: true},
+		{name: "denied method", method: http.MethodOptions, origin: allowed, requestedMethod: "DELETE"},
+		{name: "denied header", method: http.MethodOptions, origin: allowed, requestedMethod: "GET", headers: "X-Unsupported"},
+		{name: "ordinary options", method: http.MethodOptions, origin: allowed, allow: true},
+		{name: "wildcard", method: http.MethodGet, wildcard: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			req := httptest.NewRequest(tc.method, "/", nil)
+			req.Header.Set("Origin", tc.origin)
+			req.Header.Set("Access-Control-Request-Method", tc.requestedMethod)
+			req.Header.Set("Access-Control-Request-Headers", tc.headers)
+			calls := 0
+			h := Middleware(CORSOptions{AllowedOrigins: []string{allowed}, AllowedMethods: []string{"GET"}})(
+				http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+					calls++
+					w.Header().Set("Vary", "Accept-Encoding")
+					if tc.name == "allowed" {
+						w.Header().Add("Vary", "Origin")
+					}
+					if tc.wildcard {
+						w.Header().Set("Vary", "*")
+					}
+					if err := http.NewResponseController(w).Flush(); err != nil {
+						t.Fatal(err)
+					}
+				}))
+			h.ServeHTTP(rec, req)
+			res := rec.Result()
+			vary := res.Header.Values("Vary")
+			if tc.wildcard {
+				if len(vary) != 1 || vary[0] != "*" {
+					t.Fatalf("Vary = %v", vary)
+				}
+			} else {
+				if countHeaderToken(vary, "Origin") != 1 {
+					t.Errorf("Vary = %v, want Origin once", vary)
+				}
+				if !tc.preflight && !headerValuesContain(vary, "Accept-Encoding") {
+					t.Errorf("Vary = %v, lost downstream value", vary)
+				}
+				if tc.method == http.MethodOptions && (!headerValuesContain(vary, "Access-Control-Request-Method") ||
+					!headerValuesContain(vary, "Access-Control-Request-Headers")) {
+					t.Errorf("Vary = %v, missing preflight dimensions", vary)
+				}
+			}
+			wantStatus, wantCalls := http.StatusOK, 1
+			if tc.preflight {
+				wantStatus, wantCalls = http.StatusNoContent, 0
+			}
+			wantOrigin := ""
+			if tc.allow {
+				wantOrigin = allowed
+			}
+			if res.StatusCode != wantStatus || calls != wantCalls || res.Header.Get("Access-Control-Allow-Origin") != wantOrigin {
+				t.Fatalf("status = %d, next calls = %d, headers = %v", res.StatusCode, calls, res.Header)
+			}
+		})
+	}
+}

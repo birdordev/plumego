@@ -1,4 +1,4 @@
-package compression
+package httputil
 
 import (
 	"bufio"
@@ -7,18 +7,22 @@ import (
 	"net"
 	"net/http"
 	"strings"
-
-	internaltransport "github.com/birdordev/plumego/internal/httputil"
 )
 
-// encodingVaryWriter adds Vary when the final response commits. Placing it
-// outside gzip also covers identity responses and downstream Vary overrides.
-type encodingVaryWriter struct {
+// VaryWriter merges request header names into Vary when the response commits.
+type VaryWriter struct {
 	http.ResponseWriter
 	committed bool
+	fields    []string
 }
 
-func (w *encodingVaryWriter) prepare() {
+// NewVaryWriter wraps w and preserves existing Vary values.
+func NewVaryWriter(w http.ResponseWriter, fields ...string) *VaryWriter {
+	return &VaryWriter{ResponseWriter: w, fields: fields}
+}
+
+// Prepare adds Vary for an implicit response when the handler has returned.
+func (w *VaryWriter) Prepare() {
 	if w.committed {
 		return
 	}
@@ -31,31 +35,31 @@ func (w *encodingVaryWriter) prepare() {
 			}
 		}
 	}
-	internaltransport.AddVary(header, "Accept-Encoding")
+	AddVary(header, w.fields...)
 }
 
-func (w *encodingVaryWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
+func (w *VaryWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
 
-func (w *encodingVaryWriter) WriteHeader(status int) {
+func (w *VaryWriter) WriteHeader(status int) {
 	if status >= 200 || status == http.StatusSwitchingProtocols {
-		w.prepare()
+		w.Prepare()
 	}
 	w.ResponseWriter.WriteHeader(status)
 }
 
-func (w *encodingVaryWriter) Write(p []byte) (int, error) {
-	w.prepare()
+func (w *VaryWriter) Write(p []byte) (int, error) {
+	w.Prepare()
 	return w.ResponseWriter.Write(p)
 }
 
-func (w *encodingVaryWriter) ReadFrom(r io.Reader) (int64, error) {
-	w.prepare()
+func (w *VaryWriter) ReadFrom(r io.Reader) (int64, error) {
+	w.Prepare()
 	return io.Copy(w.ResponseWriter, r)
 }
 
-func (w *encodingVaryWriter) FlushError() error {
+func (w *VaryWriter) FlushError() error {
 	wasCommitted := w.committed
-	w.prepare()
+	w.Prepare()
 	err := http.NewResponseController(w.ResponseWriter).Flush()
 	if errors.Is(err, http.ErrNotSupported) {
 		w.committed = wasCommitted
@@ -63,9 +67,9 @@ func (w *encodingVaryWriter) FlushError() error {
 	return err
 }
 
-func (w *encodingVaryWriter) Flush() { _ = w.FlushError() }
+func (w *VaryWriter) Flush() { _ = w.FlushError() }
 
-func (w *encodingVaryWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+func (w *VaryWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 	conn, rw, err := http.NewResponseController(w.ResponseWriter).Hijack()
 	if errors.Is(err, http.ErrNotSupported) {
 		return nil, nil, http.ErrNotSupported
@@ -76,7 +80,7 @@ func (w *encodingVaryWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 	return conn, rw, err
 }
 
-func (w *encodingVaryWriter) Push(target string, opts *http.PushOptions) error {
+func (w *VaryWriter) Push(target string, opts *http.PushOptions) error {
 	if pusher, ok := w.ResponseWriter.(http.Pusher); ok {
 		return pusher.Push(target, opts)
 	}

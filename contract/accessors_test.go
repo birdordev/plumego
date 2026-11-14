@@ -426,8 +426,8 @@ func TestDetailsCloneArrayType(t *testing.T) {
 	}
 }
 
-func TestDetailsCloneDeeplyNestedMapFallsBackGracefully(t *testing.T) {
-	// Build a map nested 20 levels deep — exceeds the depth limit of 16.
+func TestDetailsCloneDeeplyNestedMap(t *testing.T) {
+	// Build a map nested 20 levels deep.
 	inner := map[string]any{"leaf": "value"}
 	for i := 0; i < 20; i++ {
 		inner = map[string]any{"child": inner}
@@ -559,14 +559,10 @@ func TestDetailsCloneAnyMapAllEmptyKeysReturnsNil(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// cloneReflectValue — depth > 16 branch
+// Deep untyped detail maps
 // ---------------------------------------------------------------------------
 
-func TestCloneReflectValueDepthExceeded(t *testing.T) {
-	// A map nested > 16 levels triggers the depth guard.  cloneReflectValue
-	// returns (v, false) and cloneReflectDetailValue falls back to passthrough.
-	// Build 18 levels deep using map[string]any so each level IS a string-keyed
-	// map — the depth limit fires before it can fully clone.
+func TestDetailsCloneDeepUntypedMap(t *testing.T) {
 	inner := map[string]any{"leaf": "value"}
 	for i := 0; i < 17; i++ {
 		inner = map[string]any{"child": inner}
@@ -578,11 +574,9 @@ func TestCloneReflectValueDepthExceeded(t *testing.T) {
 		Detail("deep", inner).
 		Build()
 
-	// Must not panic. The value is either cloned (if cloneAnyMap handled it) or
-	// passed through; either way the key must be present.
 	got := err.Details()
 	if _, ok := got["deep"]; !ok {
-		t.Fatal("Details(): key 'deep' missing for depth-exceeded nested map")
+		t.Fatal("Details(): key 'deep' missing for nested map")
 	}
 }
 
@@ -853,14 +847,10 @@ func TestDetailsCloneTypedScalarSlices(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// cloneReflectValue — depth > 16 reached via reflect path
-// cloneReflectValue is also reached when a []uint or similar typed slice is
-// stored; depth > 16 is tested here using a recursive reflect construction.
+// Deeply nested detail slices
 // ---------------------------------------------------------------------------
 
-func TestCloneReflectValueDepthGuardViaReflect(t *testing.T) {
-	// []interface{} with 17 levels of wrapping — the reflect Interface branch
-	// recurses, eventually hitting depth > 16.
+func TestDetailsCloneDeepSlices(t *testing.T) {
 	var nested interface{} = "leaf"
 	for i := 0; i < 18; i++ {
 		nested = []interface{}{nested}
@@ -1064,14 +1054,10 @@ func TestCloneReflectValueInterfaceAssignableBranch(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// cloneReflectValue — depth > 16 via recursive map iteration
+// Deeply nested string-keyed detail maps
 // ---------------------------------------------------------------------------
 
-func TestCloneReflectValueDepthGuardViaMapIteration(t *testing.T) {
-	// A map[string]map[string]... chain 18 levels deep. Since each level
-	// is a typed map[string]string-compatible nesting, the reflect Map
-	// branch will recurse and eventually hit depth > 16.
-	// Build as map[string]any so it enters the reflect path on second level.
+func TestDetailsCloneNestedMapIteration(t *testing.T) {
 	inner := map[string]any{"v": "leaf"}
 	for i := 0; i < 18; i++ {
 		inner = map[string]any{"child": map[string]any(inner)}
@@ -1083,8 +1069,6 @@ func TestCloneReflectValueDepthGuardViaMapIteration(t *testing.T) {
 		Detail("deep", inner).
 		Build()
 
-	// cloneAnyMap handles the outer map[string]any level by level.
-	// When the reflect path hits depth > 16, it returns false → passthrough.
 	got := err.Details()
 	if _, ok := got["deep"]; !ok {
 		t.Fatal("Details(): key 'deep' missing for deeply nested typed map")

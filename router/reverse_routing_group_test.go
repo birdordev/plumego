@@ -378,3 +378,33 @@ func TestNamedRouteURLRoundTripsLiteralSegments(t *testing.T) {
 		})
 	}
 }
+
+func TestWildcardURLRejectsUnrepresentableBoundaries(t *testing.T) {
+	r := NewRouter()
+	err := r.AddRoute(http.MethodGet, "/files/*path", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		_, _ = w.Write([]byte(Param(req, "path")))
+	}), WithRouteName("files"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.Freeze()
+
+	for _, value := range []string{"/dir", "dir/", "/", "//dir//"} {
+		if generated, err := r.URL("files", "path", value); generated != "" || err == nil || !strings.Contains(err.Error(), "leading or trailing slash") {
+			t.Errorf("URL(%q) = %q, %v", value, generated, err)
+		}
+	}
+	for _, value := range []string{"dir/a #?%", "dir//nested"} {
+		generated, err := r.URL("files", "path", value)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for range 2 {
+			rec := httptest.NewRecorder()
+			r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, generated, nil))
+			if rec.Code != http.StatusOK || rec.Body.String() != value {
+				t.Fatalf("URL(%q) = %q: status %d, body %q", value, generated, rec.Code, rec.Body.String())
+			}
+		}
+	}
+}

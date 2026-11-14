@@ -14,11 +14,11 @@ func (a *App) registerRoute(method, path string, handler http.Handler, opts ...r
 	params := map[string]any{"method": method, "path": path}
 
 	a.mu.RLock()
-	state, r := a.preparationState, a.router
+	mutable, r := a.registrationMutable(), a.router
 	a.mu.RUnlock()
 
-	if err := validateMutableState(state, operationAddRoute, "register route", params); err != nil {
-		return err
+	if !mutable {
+		return immutableAppError(operationAddRoute, "register route", params)
 	}
 	if handler == nil {
 		return wrapCoreError(contract.ErrHandlerNil, operationAddRoute, params)
@@ -152,9 +152,11 @@ func (g *RouteGroup) AddRoute(method, path string, handler http.Handler, opts ..
 func (g *RouteGroup) addRoute(method, path string, handler http.Handler, opts ...router.RouteOption) error {
 	params := map[string]any{"method": method, "path": path}
 
-	state := g.app.PreparationState()
-	if err := validateMutableState(state, operationAddRoute, "register route", params); err != nil {
-		return err
+	g.app.mu.RLock()
+	mutable := g.app.registrationMutable()
+	g.app.mu.RUnlock()
+	if !mutable {
+		return immutableAppError(operationAddRoute, "register route", params)
 	}
 	if handler == nil {
 		return wrapCoreError(contract.ErrHandlerNil, operationAddRoute, params)

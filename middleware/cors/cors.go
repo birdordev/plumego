@@ -137,85 +137,93 @@ func Middleware(opts CORSOptions) middleware.Middleware {
 
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			origin := r.Header.Get("Origin")
-			if origin == "" {
-				next.ServeHTTP(w, r)
-				return
+			fields := []string{"Origin"}
+			if r.Method == http.MethodOptions {
+				fields = append(fields, "Access-Control-Request-Method", "Access-Control-Request-Headers")
 			}
+			variant := internaltransport.NewVaryWriter(w, fields...)
+			serveCORS(variant, r, next, opts, allowAllOrigins)
+			variant.Prepare()
+		})
+	}
+}
 
-			var allowOriginValue string
-			if allowAllOrigins {
-				if opts.AllowCredentials {
-					allowOriginValue = origin
-				} else {
-					allowOriginValue = "*"
-				}
-			} else if contains(opts.AllowedOrigins, origin) {
-				allowOriginValue = origin
-			} else {
-				next.ServeHTTP(w, r)
-				return
-			}
+func serveCORS(w http.ResponseWriter, r *http.Request, next http.Handler, opts CORSOptions, allowAllOrigins bool) {
+	origin := r.Header.Get("Origin")
+	if origin == "" {
+		next.ServeHTTP(w, r)
+		return
+	}
 
-			if r.Method == http.MethodOptions && r.Header.Get("Access-Control-Request-Method") != "" {
-				requestMethod := strings.TrimSpace(r.Header.Get("Access-Control-Request-Method"))
-				if !containsFold(opts.AllowedMethods, requestMethod) {
+	var allowOriginValue string
+	if allowAllOrigins {
+		if opts.AllowCredentials {
+			allowOriginValue = origin
+		} else {
+			allowOriginValue = "*"
+		}
+	} else if contains(opts.AllowedOrigins, origin) {
+		allowOriginValue = origin
+	} else {
+		next.ServeHTTP(w, r)
+		return
+	}
+
+	if r.Method == http.MethodOptions && r.Header.Get("Access-Control-Request-Method") != "" {
+		requestMethod := strings.TrimSpace(r.Header.Get("Access-Control-Request-Method"))
+		if !containsFold(opts.AllowedMethods, requestMethod) {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		var allowHeadersValue string
+		reqHeaders := r.Header.Get("Access-Control-Request-Headers")
+		if reqHeaders != "" {
+			if contains(opts.AllowedHeaders, "*") {
+				allowed, ok := normalizeRequestedHeaders(reqHeaders)
+				if !ok {
 					next.ServeHTTP(w, r)
 					return
 				}
-
-				var allowHeadersValue string
-				reqHeaders := r.Header.Get("Access-Control-Request-Headers")
-				if reqHeaders != "" {
-					if contains(opts.AllowedHeaders, "*") {
-						allowed, ok := normalizeRequestedHeaders(reqHeaders)
-						if !ok {
-							next.ServeHTTP(w, r)
-							return
-						}
-						allowHeadersValue = strings.Join(allowed, ", ")
-					} else {
-						allowed, ok := allowedRequestedHeaders(reqHeaders, opts.AllowedHeaders)
-						if !ok {
-							next.ServeHTTP(w, r)
-							return
-						}
-						allowHeadersValue = strings.Join(allowed, ", ")
-					}
-				} else {
-					allowHeadersValue = joinOrDefault(opts.AllowedHeaders, "")
+				allowHeadersValue = strings.Join(allowed, ", ")
+			} else {
+				allowed, ok := allowedRequestedHeaders(reqHeaders, opts.AllowedHeaders)
+				if !ok {
+					next.ServeHTTP(w, r)
+					return
 				}
-
-				internaltransport.AddVary(w.Header(), "Origin", "Access-Control-Request-Method", "Access-Control-Request-Headers")
-				w.Header().Set("Access-Control-Allow-Origin", allowOriginValue)
-				if opts.AllowCredentials {
-					w.Header().Set("Access-Control-Allow-Credentials", "true")
-				}
-				w.Header().Set("Access-Control-Allow-Methods", joinOrDefault(opts.AllowedMethods, "GET, POST, OPTIONS"))
-				if allowHeadersValue != "" {
-					w.Header().Set("Access-Control-Allow-Headers", allowHeadersValue)
-				}
-
-				if opts.MaxAge > 0 {
-					w.Header().Set("Access-Control-Max-Age", strconv.FormatInt(int64(opts.MaxAge/time.Second), 10))
-				}
-
-				w.WriteHeader(http.StatusNoContent)
-				return
+				allowHeadersValue = strings.Join(allowed, ", ")
 			}
+		} else {
+			allowHeadersValue = joinOrDefault(opts.AllowedHeaders, "")
+		}
 
-			internaltransport.AddVary(w.Header(), "Origin")
-			w.Header().Set("Access-Control-Allow-Origin", allowOriginValue)
-			if opts.AllowCredentials {
-				w.Header().Set("Access-Control-Allow-Credentials", "true")
-			}
-			if len(opts.ExposeHeaders) > 0 {
-				w.Header().Set("Access-Control-Expose-Headers", joinOrDefault(opts.ExposeHeaders, ""))
-			}
+		w.Header().Set("Access-Control-Allow-Origin", allowOriginValue)
+		if opts.AllowCredentials {
+			w.Header().Set("Access-Control-Allow-Credentials", "true")
+		}
+		w.Header().Set("Access-Control-Allow-Methods", joinOrDefault(opts.AllowedMethods, "GET, POST, OPTIONS"))
+		if allowHeadersValue != "" {
+			w.Header().Set("Access-Control-Allow-Headers", allowHeadersValue)
+		}
 
-			next.ServeHTTP(w, r)
-		})
+		if opts.MaxAge > 0 {
+			w.Header().Set("Access-Control-Max-Age", strconv.FormatInt(int64(opts.MaxAge/time.Second), 10))
+		}
+
+		w.WriteHeader(http.StatusNoContent)
+		return
 	}
+
+	w.Header().Set("Access-Control-Allow-Origin", allowOriginValue)
+	if opts.AllowCredentials {
+		w.Header().Set("Access-Control-Allow-Credentials", "true")
+	}
+	if len(opts.ExposeHeaders) > 0 {
+		w.Header().Set("Access-Control-Expose-Headers", joinOrDefault(opts.ExposeHeaders, ""))
+	}
+
+	next.ServeHTTP(w, r)
 }
 
 func allowedRequestedHeaders(requestHeaders string, allowedHeaders []string) ([]string, bool) {

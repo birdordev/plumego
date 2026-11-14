@@ -5,6 +5,8 @@ import (
 	"strconv"
 	"sync"
 	"testing"
+	"testing/synctest"
+	"time"
 )
 
 func TestFailedMutationPreservesValueAndAccounting(t *testing.T) {
@@ -101,5 +103,49 @@ func TestConcurrentCountersAndAppendsDoNotLoseUpdates(t *testing.T) {
 	}
 	if got := cache.Stats(); got.Entries != 2 || got.MemoryUsage != uint64(len(counter)+len(appended)) {
 		t.Fatalf("stats = %+v", got)
+	}
+}
+
+func TestRejectedAppendPreservesValueAndExpiration(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		c, err := NewMemoryCacheWithConfig(Config{MaxMemoryUsage: 4})
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer c.Close()
+		if err := c.Set(t.Context(), "key", []byte("old"), time.Second); err != nil {
+			t.Fatal(err)
+		}
+		time.Sleep(time.Second / 2)
+		if err := c.Append(t.Context(), "key", []byte("too large")); !errors.Is(err, ErrCacheFull) {
+			t.Fatalf("Append = %v, want ErrCacheFull", err)
+		}
+		if got, err := c.Get(t.Context(), "key"); err != nil || string(got) != "old" {
+			t.Fatalf("Get = %q, %v", got, err)
+		}
+		time.Sleep(time.Second / 2)
+		if _, err := c.Get(t.Context(), "key"); !errors.Is(err, ErrNotFound) {
+			t.Fatalf("Get at original expiry = %v", err)
+		}
+	})
+}
+
+func BenchmarkRejectedAppend(b *testing.B) {
+	for _, size := range []int{1024, 1 << 20} {
+		b.Run(strconv.Itoa(size), func(b *testing.B) {
+			c, err := NewMemoryCacheWithConfig(Config{MaxMemoryUsage: 32})
+			if err != nil {
+				b.Fatal(err)
+			}
+			defer c.Close()
+			data := make([]byte, size)
+			ctx := b.Context()
+			b.ReportAllocs()
+			for b.Loop() {
+				if err := c.Append(ctx, "key", data); !errors.Is(err, ErrCacheFull) {
+					b.Fatal(err)
+				}
+			}
+		})
 	}
 }

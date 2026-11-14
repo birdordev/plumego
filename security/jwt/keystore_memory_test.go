@@ -7,6 +7,7 @@ import (
 	"slices"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 )
 
@@ -211,4 +212,35 @@ func TestInMemoryKeyStoreZeroValue(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestInMemoryKeyStoreExpiryBoundary(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		store := NewInMemoryKeyStore()
+		if err := store.SetContext(t.Context(), "key", []byte("test value"), time.Second); err != nil {
+			t.Fatal(err)
+		}
+		for _, tc := range []struct {
+			advance time.Duration
+			expired bool
+		}{
+			{time.Second - time.Nanosecond, false},
+			{time.Nanosecond, true},
+			{time.Nanosecond, true},
+		} {
+			time.Sleep(tc.advance)
+			keys, err := store.KeysContext(t.Context())
+			if err != nil {
+				t.Fatal(err)
+			}
+			value, err := store.GetContext(t.Context(), "key")
+			if tc.expired {
+				if len(keys) != 0 || value != nil || !errors.Is(err, ErrKeyExpired) {
+					t.Fatalf("expired key: keys = %v, error = %v", keys, err)
+				}
+			} else if len(keys) != 1 || keys[0] != "key" || err != nil || len(value) == 0 {
+				t.Fatalf("active key: keys = %v, error = %v", keys, err)
+			}
+		}
+	})
 }

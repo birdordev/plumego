@@ -28,13 +28,17 @@ type memEntry struct {
 	expiry time.Time // zero means no expiry
 }
 
+func (e memEntry) expiredAt(now time.Time) bool {
+	return !e.expiry.IsZero() && !now.Before(e.expiry)
+}
+
 // NewInMemoryKeyStore returns an initialised InMemoryKeyStore.
 func NewInMemoryKeyStore() *InMemoryKeyStore {
 	return &InMemoryKeyStore{entries: make(map[string]memEntry)}
 }
 
 // GetContext retrieves the value for key. It returns ErrUnknownKey if the key
-// does not exist and ErrKeyExpired if the key exists but has expired.
+// does not exist and ErrKeyExpired at or after the key's expiration time.
 func (s *InMemoryKeyStore) GetContext(ctx context.Context, key string) ([]byte, error) {
 	if err := contextErr(ctx); err != nil {
 		return nil, err
@@ -45,7 +49,7 @@ func (s *InMemoryKeyStore) GetContext(ctx context.Context, key string) ([]byte, 
 	if !ok {
 		return nil, ErrUnknownKey
 	}
-	if !e.expiry.IsZero() && time.Now().After(e.expiry) {
+	if e.expiredAt(time.Now()) {
 		return nil, ErrKeyExpired
 	}
 	return append([]byte(nil), e.value...), nil
@@ -78,7 +82,7 @@ func (s *InMemoryKeyStore) KeysContext(ctx context.Context) ([]string, error) {
 	s.mu.RLock()
 	keys := make([]string, 0, len(s.entries))
 	for k, e := range s.entries {
-		if e.expiry.IsZero() || now.Before(e.expiry) {
+		if !e.expiredAt(now) {
 			keys = append(keys, k)
 		}
 	}

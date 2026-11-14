@@ -145,22 +145,26 @@ func TestBaseMetricsCollectorIgnoresInvalidHTTPStatusForErrorClassification(t *t
 }
 
 func TestBaseMetricsCollectorClear(t *testing.T) {
-	collector := NewBaseMetricsCollector()
-	collector.ObserveHTTP(t.Context(), "GET", "/test", 200, 100, 50*time.Millisecond)
+	for _, initialized := range []bool{false, true} {
+		var collector BaseMetricsCollector
+		if initialized {
+			collector.ObserveHTTP(t.Context(), "GET", "/test", 200, 100, 50*time.Millisecond)
+		}
+		beforeClear := time.Now()
+		collector.Clear()
+		afterClear := time.Now()
 
-	beforeClear := time.Now()
-	collector.Clear()
-	afterClear := time.Now()
-
-	stats := collector.GetStats()
-	if stats.TotalRecords != 0 {
-		t.Fatalf("expected zero total records after clear, got %d", stats.TotalRecords)
-	}
-	if len(stats.NameBreakdown) != 0 {
-		t.Fatalf("expected empty name breakdown after clear, got %#v", stats.NameBreakdown)
-	}
-	if stats.StartTime.Before(beforeClear) || stats.StartTime.After(afterClear) {
-		t.Fatalf("expected start time reset within clear window, got %v", stats.StartTime)
+		stats := collector.GetStats()
+		if stats.TotalRecords != 0 || len(stats.NameBreakdown) != 0 {
+			t.Fatalf("initialized=%v: cleared stats = %+v", initialized, stats)
+		}
+		if stats.StartTime.Before(beforeClear) || stats.StartTime.After(afterClear) {
+			t.Fatalf("initialized=%v: start time = %v, want within clear window", initialized, stats.StartTime)
+		}
+		stats.NameBreakdown["caller"] = 1
+		if len(collector.GetStats().NameBreakdown) != 0 {
+			t.Fatal("snapshot mutation affected collector")
+		}
 	}
 }
 

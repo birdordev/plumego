@@ -1076,3 +1076,44 @@ func TestErrorBuilderTypeDerivesCategory(t *testing.T) {
 		t.Fatalf("expected category %q, got %q", CategoryClient, got.category)
 	}
 }
+
+func TestErrorDetailsCloneDeepNamedContainers(t *testing.T) {
+	type details map[string]any
+	type list []any
+	leaf := details{"value": "original"}
+	root := leaf
+	for range 12 {
+		root = details{"child": list{root}}
+	}
+	findLeaf := func(root details) details {
+		for range 12 {
+			root = root["child"].(list)[0].(details)
+		}
+		return root
+	}
+	apiErr := NewErrorBuilder().Type(TypeBadRequest).Detail("root", root).Build()
+	leaf["value"] = "input changed"
+	got := findLeaf(apiErr.Details()["root"].(details))
+	if got["value"] != "original" {
+		t.Fatalf("cloned leaf = %v", got)
+	}
+	got["value"] = "output changed"
+	if again := findLeaf(apiErr.Details()["root"].(details)); again["value"] != "original" {
+		t.Fatalf("stored leaf = %v", again)
+	}
+
+	cycle := details{}
+	cycle["back"] = list{cycle}
+	apiErr = NewErrorBuilder().Type(TypeBadRequest).Detail("cycle", cycle).Build()
+	cycle["changed"] = true
+	cloned := apiErr.Details()["cycle"].(details)
+	if cloned["back"].(list)[0].(details)["changed"] != nil {
+		t.Fatal("cloned cycle aliases its input")
+	}
+	rec := httptest.NewRecorder()
+	var encodingErr *json.UnsupportedValueError
+	if err := WriteError(rec, nil, apiErr); !errors.As(err, &encodingErr) ||
+		rec.Code != http.StatusBadRequest || !json.Valid(rec.Body.Bytes()) {
+		t.Fatalf("fallback status = %d, body = %q, error = %v", rec.Code, rec.Body.String(), err)
+	}
+}

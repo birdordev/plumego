@@ -180,8 +180,6 @@ func (b *BaseMetricsCollector) Clear() {
 
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	b.ensureInitializedLocked()
-
 	b.stats = newCollectorStats(time.Now())
 }
 

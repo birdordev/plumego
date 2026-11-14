@@ -527,3 +527,58 @@ func TestWriteResponseAcceptsInformationalStatus(t *testing.T) {
 		t.Fatalf("expected ErrInvalidResponseStatus for status 100, got %v", err)
 	}
 }
+
+type responseWriteProbe struct {
+	*httptest.ResponseRecorder
+	headerCalls int
+	short       bool
+	err         error
+}
+
+func (w *responseWriteProbe) WriteHeader(status int) {
+	w.headerCalls++
+	w.ResponseRecorder.WriteHeader(status)
+}
+
+func (w *responseWriteProbe) Write(p []byte) (int, error) {
+	if w.short {
+		p = p[:1]
+	}
+	n, _ := w.ResponseRecorder.Write(p)
+	return n, w.err
+}
+
+func TestJSONResponseReportsShortWrite(t *testing.T) {
+	writerErr := errors.New("write failed")
+	for _, response := range []struct {
+		name   string
+		status int
+		write  func(http.ResponseWriter) error
+	}{
+		{"success", http.StatusOK, func(w http.ResponseWriter) error { return WriteResponse(w, nil, http.StatusOK, "body", nil) }},
+		{"error", http.StatusNotFound, func(w http.ResponseWriter) error {
+			return WriteError(w, nil, NewErrorBuilder().Type(TypeNotFound).Build())
+		}},
+	} {
+		for _, tc := range []struct {
+			name  string
+			short bool
+			err   error
+			want  error
+		}{
+			{"full", false, nil, nil},
+			{"short", true, nil, io.ErrShortWrite},
+			{"writer error", true, writerErr, writerErr},
+		} {
+			t.Run(response.name+"/"+tc.name, func(t *testing.T) {
+				w := &responseWriteProbe{ResponseRecorder: httptest.NewRecorder(), short: tc.short, err: tc.err}
+				if err := response.write(w); !errors.Is(err, tc.want) {
+					t.Fatalf("error = %v, want %v", err, tc.want)
+				}
+				if w.Code != response.status || w.headerCalls != 1 {
+					t.Fatalf("status = %d, header calls = %d", w.Code, w.headerCalls)
+				}
+			})
+		}
+	}
+}

@@ -20,15 +20,6 @@ func immutableAppError(operation, action string, params map[string]any) error {
 	return wrapCoreError(fmt.Errorf("cannot %s after app has been prepared", action), operation, params)
 }
 
-// validateMutableState returns an error if state is not PreparationStateMutable.
-// Call while holding the app mutex so the state read is consistent with callers.
-func validateMutableState(state PreparationState, operation, action string, params map[string]any) error {
-	if state != PreparationStateMutable {
-		return immutableAppError(operation, action, params)
-	}
-	return nil
-}
-
 func wrapCoreError(err error, operation string, params map[string]any) error {
 	if err == nil {
 		return nil
@@ -56,15 +47,17 @@ func formatErrorParams(params map[string]any) string {
 	return strings.Join(parts, " ")
 }
 
-func (a *App) freezeConfig() {
-	a.mu.Lock()
-	if a.preparationState == PreparationStateMutable {
-		if a.router != nil {
-			a.router.Freeze()
-		}
-		a.preparationState = PreparationStateHandlerPrepared
+// registrationMutable must be called with a.mu held.
+func (a *App) registrationMutable() bool {
+	return !a.registrationFrozen && a.preparationState == PreparationStateMutable
+}
+
+// freezeRegistration must be called with a.mu held.
+func (a *App) freezeRegistration() {
+	if !a.registrationFrozen {
+		a.router.Freeze()
+		a.registrationFrozen = true
 	}
-	a.mu.Unlock()
 }
 
 func (a *App) ensureRouter() *router.Router {

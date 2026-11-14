@@ -3,6 +3,7 @@ package contract
 import (
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 )
 
@@ -42,7 +43,8 @@ func writeJSON(w http.ResponseWriter, status int, payload any) error {
 
 // WriteResponse writes a standardized success response and injects request id when available.
 // For body-eligible statuses, nil data and nil meta encode as an empty JSON
-// object because the response envelope omits empty fields.
+// object because the response envelope omits empty fields. A short body write
+// without a writer error returns io.ErrShortWrite.
 func WriteResponse(w http.ResponseWriter, r *http.Request, status int, data any, meta map[string]any) error {
 	resp := response{
 		Data: data,
@@ -59,7 +61,10 @@ func WriteResponse(w http.ResponseWriter, r *http.Request, status int, data any,
 func writeEncodedJSON(w http.ResponseWriter, status int, body []byte) error {
 	w.Header().Set(HeaderContentType, ContentTypeJSON)
 	w.WriteHeader(status)
-	_, err := w.Write(body)
+	n, err := w.Write(body)
+	if err == nil && n != len(body) {
+		return io.ErrShortWrite
+	}
 	return err
 }
 
@@ -86,7 +91,8 @@ type errorResponse struct {
 
 // WriteError writes a structured error response and injects the request id when available.
 // If details cannot be encoded, it writes the same error without details and
-// returns the original encoding error, joined with any write error.
+// returns the original encoding error, joined with any write error. A short
+// body write without a writer error returns io.ErrShortWrite.
 //
 // Prefer building APIError values through NewErrorBuilder() so that required
 // fields are always populated. WriteError still normalizes incomplete APIError

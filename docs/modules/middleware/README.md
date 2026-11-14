@@ -254,7 +254,9 @@ attempt to replace the response.
 preflight attributes match the configured allow lists. Disallowed origins,
 methods, headers, and blank `Access-Control-Request-Headers` lists fall through
 to the next handler without CORS headers; the middleware does not synthesize a
-transport denial response for those cases.
+transport denial response for those cases. Both allowed and fall-through
+responses vary by `Origin`. For OPTIONS, they also vary by
+`Access-Control-Request-Method` and `Access-Control-Request-Headers`.
 Raw option lists are trimmed and blank entries are ignored before matching, so
 common configuration whitespace does not silently disable an origin, method, or
 header.

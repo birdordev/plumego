@@ -6,13 +6,14 @@ import (
 	"github.com/birdordev/plumego/middleware"
 )
 
-// Use adds middleware to the application's middleware chain.
+// Use adds middleware to the application's middleware chain. Builders run
+// during handler preparation and must not call Prepare or ServeHTTP on this app.
 func (a *App) Use(middlewares ...middleware.Middleware) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
-	if err := validateMutableState(a.preparationState, operationUseMiddleware, "add middleware", nil); err != nil {
-		return err
+	if !a.registrationMutable() {
+		return immutableAppError(operationUseMiddleware, "add middleware", nil)
 	}
 
 	chain := a.middlewareChain
@@ -29,29 +30,4 @@ func (a *App) Use(middlewares ...middleware.Middleware) error {
 		chain.Use(mw)
 	}
 	return nil
-}
-
-// buildHandler builds the combined handler with current middleware stack.
-func (a *App) buildHandler() {
-	a.mu.RLock()
-	chain := a.middlewareChain
-	r := a.router
-	a.mu.RUnlock()
-
-	if chain == nil || r == nil {
-		a.mu.Lock()
-		a.handler = nil
-		a.mu.Unlock()
-		return
-	}
-
-	handler := chain.Build(r)
-
-	a.mu.Lock()
-	a.handler = handler
-	a.mu.Unlock()
-
-	if handler != nil {
-		a.handlerFast.Store(&handlerRef{h: handler})
-	}
 }

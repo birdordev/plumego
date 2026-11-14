@@ -334,17 +334,18 @@ func ScanRow(row *sql.Row, dest ...any) error {
 	return nil
 }
 
-// ScanRows is a helper function to scan multiple rows into a slice.
+// ScanRows scans multiple rows into a slice and closes any non-nil rows,
+// including when scanFunc is nil.
 func ScanRows[T any](rows *sql.Rows, scanFunc func(*sql.Rows) (T, error)) (results []T, err error) {
 	if rows == nil {
 		return nil, fmt.Errorf("%w: rows is nil", ErrQueryFailed)
 	}
-	if scanFunc == nil {
-		return nil, fmt.Errorf("%w: scan function is nil", ErrQueryFailed)
-	}
 	defer func() {
 		err = joinRowsCloseError(err, rows.Close())
 	}()
+	if scanFunc == nil {
+		return nil, fmt.Errorf("%w: scan function is nil", ErrQueryFailed)
+	}
 
 	for rows.Next() {
 		result, err := scanFunc(rows)
