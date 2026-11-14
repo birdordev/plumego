@@ -6,8 +6,35 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"testing"
 )
+
+func TestWriteResponseNoBodyFraming(t *testing.T) {
+	for _, status := range []int{http.StatusNoContent, http.StatusResetContent} {
+		t.Run(strconv.Itoa(status), func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Length", "4")
+				if status == http.StatusResetContent {
+					w.Header().Set("Transfer-Encoding", "chunked")
+				}
+				if err := WriteResponse(w, r, status, make(chan int), nil); err != nil {
+					t.Error(err)
+				}
+			}))
+			defer server.Close()
+			resp, err := server.Client().Get(server.URL)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer resp.Body.Close()
+			body, err := io.ReadAll(resp.Body)
+			if err != nil || len(body) != 0 || resp.StatusCode != status || resp.ContentLength != 0 || len(resp.TransferEncoding) != 0 {
+				t.Fatalf("status=%d length=%d transfer=%v body=%q error=%v", resp.StatusCode, resp.ContentLength, resp.TransferEncoding, body, err)
+			}
+		})
+	}
+}
 
 // TestWriteResponseSuccessWithStructData verifies WriteResponse encodes struct data correctly.
 func TestWriteResponseSuccessWithStructData(t *testing.T) {

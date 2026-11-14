@@ -8,6 +8,48 @@ import (
 	"time"
 )
 
+func TestLifecycleGroupStartupPanicRollsBackAndAllowsRetry(t *testing.T) {
+	for _, cleanupPanics := range []bool{false, true} {
+		var stops []string
+		startPanic := errors.New("start panic")
+		group := NewLifecycleGroup().
+			Add("first", Component{OnStop: func(context.Context) error {
+				stops = append(stops, "first")
+				return nil
+			}}).
+			Add("second", Component{
+				OnStart: func(context.Context) error { panic(startPanic) },
+				OnStop: func(context.Context) error {
+					stops = append(stops, "second")
+					if len(stops) == 1 {
+						if cleanupPanics {
+							panic("cleanup panic")
+						}
+						return errors.New("cleanup failed")
+					}
+					return nil
+				},
+			})
+		func() {
+			defer func() {
+				if got := recover(); got != startPanic {
+					t.Errorf("panic = %v, want original startup panic", got)
+				}
+			}()
+			_ = group.Start(t.Context())
+		}()
+		if !slices.Equal(stops, []string{"second", "first"}) {
+			t.Fatalf("rollback order = %v", stops)
+		}
+		if err := group.Stop(t.Context()); err != nil {
+			t.Fatal(err)
+		}
+		if !slices.Equal(stops, []string{"second", "first", "second"}) {
+			t.Fatalf("cleanup retry order = %v", stops)
+		}
+	}
+}
+
 // recorder is a Lifecycle that records the order of Start/Stop calls into a
 // shared slice and can be configured to fail any phase.
 type recorder struct {

@@ -98,8 +98,7 @@ func NewKVStore(opts Options) (*KVStore, error) {
 	if err := store.load(); err != nil {
 		return nil, errors.Join(err, store.Close())
 	}
-	store.pruneExpiredLocked(time.Now())
-	store.evictIfNeededLocked()
+	store.evictIfNeededLocked("")
 	return store, nil
 }
 
@@ -145,7 +144,7 @@ func (kv *KVStore) SetContext(ctx context.Context, key string, value []byte, ttl
 		UpdatedAt: now,
 		Size:      size,
 	}
-	kv.evictIfNeededLocked()
+	kv.evictIfNeededLocked(key)
 	if err := contextErr(ctx); err != nil {
 		kv.data = before
 		return err
@@ -435,11 +434,11 @@ func (kv *KVStore) pruneExpiredLocked(now time.Time) {
 	}
 }
 
-func (kv *KVStore) evictIfNeededLocked() {
+func (kv *KVStore) evictIfNeededLocked(writtenKey string) {
 	kv.pruneExpiredLocked(time.Now())
 	maxMemory := kv.maxMemoryBytes()
 	for len(kv.data) > kv.opts.MaxEntries || kv.memoryUsageLocked() > maxMemory {
-		key := kv.oldestKeyLocked()
+		key := kv.oldestKeyLocked(writtenKey)
 		if key == "" {
 			return
 		}
@@ -447,13 +446,14 @@ func (kv *KVStore) evictIfNeededLocked() {
 	}
 }
 
-func (kv *KVStore) oldestKeyLocked() string {
+func (kv *KVStore) oldestKeyLocked(writtenKey string) string {
 	var (
 		oldestKey string
 		oldestAt  time.Time
 	)
 	for key, item := range kv.data {
-		if oldestKey == "" || item.UpdatedAt.Before(oldestAt) {
+		if oldestKey == "" || item.UpdatedAt.Before(oldestAt) ||
+			(item.UpdatedAt.Equal(oldestAt) && key != writtenKey && (oldestKey == writtenKey || key < oldestKey)) {
 			oldestKey = key
 			oldestAt = item.UpdatedAt
 		}

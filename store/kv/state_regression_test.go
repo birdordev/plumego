@@ -7,6 +7,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"sync"
 	"testing"
@@ -171,6 +172,43 @@ func TestWriteFailureRestoresEvictionAndAllowsRetry(t *testing.T) {
 	if got, err := reopened.Get("replacement"); err != nil || string(got) != "new" {
 		t.Fatalf("replacement after retry = %q, %v", got, err)
 	}
+}
+
+func TestEvictionPrefersWriteAtSameTimestamp(t *testing.T) {
+	dir := t.TempDir()
+	synctest.Test(t, func(t *testing.T) {
+		opts := Options{DataDir: dir, MaxEntries: 2}
+		store, err := NewKVStore(opts)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer store.Close()
+		now := time.Now()
+		for _, key := range []string{"b", "c", "a"} {
+			if err := store.Set(key, []byte(key), 0); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if !time.Now().Equal(now) {
+			t.Fatal("writes did not share one timestamp")
+		}
+		checkKeys := func(store *KVStore) {
+			t.Helper()
+			if got, err := store.KeysContext(t.Context()); err != nil || !slices.Equal(got, []string{"a", "c"}) {
+				t.Fatalf("keys = %v, %v; want [a c]", got, err)
+			}
+		}
+		checkKeys(store)
+		if err := store.Close(); err != nil {
+			t.Fatal(err)
+		}
+		reopened, err := NewKVStore(opts)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer reopened.Close()
+		checkKeys(reopened)
+	})
 }
 
 func TestConcurrentWritesPreserveAllKeysAfterReload(t *testing.T) {

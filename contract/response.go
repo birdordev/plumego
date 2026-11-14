@@ -26,7 +26,13 @@ func writeJSON(w http.ResponseWriter, status int, payload any) error {
 	if !validResponseHTTPStatus(status) {
 		return ErrInvalidResponseStatus
 	}
-	if status == http.StatusNoContent || status == http.StatusResetContent {
+	if status == http.StatusResetContent {
+		w.Header().Del("Transfer-Encoding")
+		w.Header().Set("Content-Length", "0")
+		w.WriteHeader(status)
+		return nil
+	}
+	if status == http.StatusNoContent {
 		w.WriteHeader(status)
 		return nil
 	}

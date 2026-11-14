@@ -1202,7 +1202,7 @@ func TestEvictIfNeededLockedEmptyDataAfterPrune(t *testing.T) {
 	// evictIfNeededLocked should prune the expired entry. After pruning data
 	// is empty so the memory condition is false and the loop never runs the
 	// oldestKeyLocked path -- but we have coverage of the prune-first behavior.
-	store.evictIfNeededLocked()
+	store.evictIfNeededLocked("")
 	store.mu.Unlock()
 
 	// Store should be clean.

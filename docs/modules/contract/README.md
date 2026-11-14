@@ -87,7 +87,8 @@ trace metadata carriers.
 - `WriteResponse` accepts only 2xx HTTP statuses; non-2xx responses must use
   `WriteError` or a module-owned representation when the resource intentionally
   returns a status document such as health/readiness
-- `WriteResponse` writes `204` and `205` without a response body. Encoding
+- `WriteResponse` writes `204` and `205` without a response body. For `205` it
+  sets `Content-Length: 0` and removes `Transfer-Encoding`. Encoding
   failures for other success statuses return before the response is committed.
 - If error details cannot be encoded, `WriteError` sends the same status and
   error envelope without `details`. It returns the encoding error and any

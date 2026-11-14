@@ -147,7 +147,8 @@ func (g *LifecycleGroup) Add(name string, c Lifecycle) *LifecycleGroup {
 // context.Background. A context canceled before startup leaves the group idle.
 // On startup failure or cancellation during startup, Start uses ctx to stop
 // attempted components in reverse order and returns startup and rollback errors.
-// Stop can retry failed cleanup.
+// Abnormal startup exit also rolls back and preserves the original panic, if
+// any. Stop can retry failed cleanup.
 func (g *LifecycleGroup) Start(ctx context.Context) error {
 	if ctx == nil {
 		ctx = context.Background()
@@ -166,15 +167,26 @@ func (g *LifecycleGroup) Start(ctx context.Context) error {
 
 	finalPhase := lifecycleInactive
 	defer func() { g.setPhase(finalPhase) }()
-
-	if err := g.startComponents(ctx); err != nil {
-		if rollbackErr := g.stopPending(ctx); rollbackErr != nil {
-			return errors.Join(err, rollbackErr)
-		}
+	if err := g.startWithRollback(ctx); err != nil {
 		return err
 	}
 	finalPhase = lifecycleRunning
 	return nil
+}
+
+func (g *LifecycleGroup) startWithRollback(ctx context.Context) (err error) {
+	startReturned := false
+	defer func() {
+		if startReturned && err == nil {
+			return
+		}
+		if rollbackErr := g.stopPending(ctx, !startReturned); rollbackErr != nil {
+			err = errors.Join(err, rollbackErr)
+		}
+	}()
+	err = g.startComponents(ctx)
+	startReturned = true
+	return err
 }
 
 func (g *LifecycleGroup) startComponents(ctx context.Context) error {
@@ -210,25 +222,38 @@ func (g *LifecycleGroup) Stop(ctx context.Context) error {
 	g.phase = lifecycleStopping
 	g.mu.Unlock()
 	defer g.setPhase(lifecycleInactive)
-	return g.stopPending(ctx)
+	return g.stopPending(ctx, false)
 }
 
 // stopPending runs only during startup rollback or shutdown. Those phases own
 // the frozen entries and their cleanup flags exclusively.
-func (g *LifecycleGroup) stopPending(ctx context.Context) error {
+func (g *LifecycleGroup) stopPending(ctx context.Context, preserveStartupExit bool) error {
 	var errs []error
 	for i := len(g.entries) - 1; i >= 0; i-- {
 		e := &g.entries[i]
 		if !e.pendingStop {
 			continue
 		}
-		if err := e.c.Stop(ctx); err != nil {
+		if err := e.stop(ctx, preserveStartupExit); err != nil {
 			errs = append(errs, fmt.Errorf("core: stop %q: %w", e.name, err))
 			continue
 		}
 		e.pendingStop = false
 	}
 	return errors.Join(errs...)
+}
+
+func (e *namedLifecycle) stop(ctx context.Context, preserveStartupExit bool) (err error) {
+	if preserveStartupExit {
+		// Keep this entry pending and continue rollback without replacing the
+		// panic already propagating from Start.
+		defer func() {
+			if recover() != nil {
+				err = errors.New("cleanup panicked during startup rollback")
+			}
+		}()
+	}
+	return e.c.Stop(ctx)
 }
 
 // Ready probes components after successful startup. It joins their errors and

@@ -88,10 +88,10 @@ type JWTConfig struct {
 	// Audience is the JWT audience (aud claim)
 	Audience string
 
-	// AccessExpiration is the lifetime of access tokens
+	// AccessExpiration is the lifetime of access tokens, at least one second.
 	AccessExpiration time.Duration
 
-	// RefreshExpiration is the lifetime of refresh tokens
+	// RefreshExpiration is the lifetime of refresh tokens, at least one second.
 	RefreshExpiration time.Duration
 
 	// RotationInterval is how often to rotate signing keys
@@ -106,11 +106,11 @@ type JWTConfig struct {
 
 // Validate checks that the configuration is usable before the manager starts.
 func (c JWTConfig) Validate() error {
-	if c.AccessExpiration <= 0 {
-		return fmt.Errorf("jwt: AccessExpiration must be positive, got %v", c.AccessExpiration)
+	if c.AccessExpiration < time.Second {
+		return fmt.Errorf("jwt: AccessExpiration must be at least one second, got %v", c.AccessExpiration)
 	}
-	if c.RefreshExpiration <= 0 {
-		return fmt.Errorf("jwt: RefreshExpiration must be positive, got %v", c.RefreshExpiration)
+	if c.RefreshExpiration < time.Second {
+		return fmt.Errorf("jwt: RefreshExpiration must be at least one second, got %v", c.RefreshExpiration)
 	}
 	if c.RefreshExpiration < c.AccessExpiration {
 		return fmt.Errorf("jwt: RefreshExpiration (%v) must be >= AccessExpiration (%v)", c.RefreshExpiration, c.AccessExpiration)

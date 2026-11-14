@@ -36,6 +36,45 @@ func TestIdentityVersionIsCallerOwned(t *testing.T) {
 	}
 }
 
+func TestTokenLifetimeSecondPrecision(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		access  time.Duration
+		refresh time.Duration
+	}{
+		{"short access", time.Second - time.Nanosecond, time.Second},
+		{"short refresh", time.Second, time.Second - time.Nanosecond},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := DefaultJWTConfig()
+			cfg.AccessExpiration, cfg.RefreshExpiration = tc.access, tc.refresh
+			if _, err := NewJWTManager(NewInMemoryKeyStore(), cfg); err == nil {
+				t.Fatal("manager accepted a subsecond token lifetime")
+			}
+		})
+	}
+
+	cfg := DefaultJWTConfig()
+	cfg.AccessExpiration, cfg.RefreshExpiration, cfg.ClockSkew = time.Second, time.Second, 0
+	manager, err := NewJWTManager(NewInMemoryKeyStore(), cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Unix(2_000_000_000, 0)
+	manager.now = func() time.Time { return now }
+	pair, err := manager.GenerateTokenPair(t.Context(), IdentityClaims{Subject: "user"}, AuthorizationClaims{})
+	if err != nil || pair.ExpiresIn != 1 {
+		t.Fatalf("expires_in = %d, error = %v", pair.ExpiresIn, err)
+	}
+	if _, err := manager.VerifyToken(t.Context(), pair.AccessToken, TokenTypeAccess); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(time.Second)
+	if _, err := manager.VerifyToken(t.Context(), pair.AccessToken, TokenTypeAccess); !errors.Is(err, ErrTokenExpired) {
+		t.Fatalf("verification at expiry = %v, want ErrTokenExpired", err)
+	}
+}
+
 func TestJWTManagerHonorsCanceledContext(t *testing.T) {
 	store := newTestStore(t)
 	mgr, err := NewJWTManager(store, DefaultJWTConfig())

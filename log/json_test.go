@@ -402,7 +402,13 @@ func TestJSONFormatLoggerReservedFieldsCannotOverrideCoreKeys(t *testing.T) {
 	}
 }
 
+type customFloat float64
+
+func (customFloat) MarshalJSON() ([]byte, error) { return []byte(`"custom"`), nil }
+
 func TestJSONFormatLoggerStringifiesUnsupportedFieldValues(t *testing.T) {
+	type ratio32 float32
+	type ratio64 float64
 	var buf bytes.Buffer
 	logger := newTestJSONLogger(t, LoggerConfig{
 		Output: &buf,
@@ -410,9 +416,14 @@ func TestJSONFormatLoggerStringifiesUnsupportedFieldValues(t *testing.T) {
 	})
 
 	logger.Info("kept", Fields{
-		"safe": "yes",
-		"fn":   func() {},
-		"nan":  math.NaN(),
+		"safe":         "yes",
+		"fn":           func() {},
+		"nan":          math.NaN(),
+		"named_nan":    ratio32(math.NaN()),
+		"positive_inf": ratio64(math.Inf(1)),
+		"negative_inf": ratio32(math.Inf(-1)),
+		"finite":       ratio64(1.25),
+		"custom":       customFloat(math.NaN()),
 	})
 
 	var entry map[string]any
@@ -434,6 +445,11 @@ func TestJSONFormatLoggerStringifiesUnsupportedFieldValues(t *testing.T) {
 	}
 	if got := entry["nan"]; got != "NaN" {
 		t.Fatalf("expected invalid number field to be stringified, got %#v", got)
+	}
+	for key, want := range map[string]any{"named_nan": "NaN", "positive_inf": "+Inf", "negative_inf": "-Inf", "finite": 1.25, "custom": "custom"} {
+		if got := entry[key]; got != want {
+			t.Errorf("%s = %v, want %v", key, got, want)
+		}
 	}
 	if strings.Contains(buf.String(), "failed to marshal log entry") {
 		t.Fatalf("expected bad fields not to collapse entry, got %q", buf.String())

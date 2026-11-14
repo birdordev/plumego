@@ -36,6 +36,10 @@ func TestHeadPreservesImplicitCommit(t *testing.T) {
 			}
 		}},
 		{"empty", func(w http.ResponseWriter, r *http.Request) {}},
+		{"transfer encoding", func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Transfer-Encoding", "chunked")
+			_, _ = w.Write([]byte("hello"))
+		}},
 		{"flush", func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(202)
 			if err := http.NewResponseController(w).Flush(); err != nil {
@@ -58,25 +62,23 @@ func TestHeadPreservesImplicitCommit(t *testing.T) {
 			}
 			_, _ = io.Copy(io.Discard, get.Body)
 			get.Body.Close()
-			req, err := http.NewRequest("HEAD", server.URL, nil)
-			if err != nil {
-				t.Fatal(err)
-			}
-			head, err := server.Client().Do(req)
-			if err != nil {
-				t.Fatal(err)
-			}
-			defer head.Body.Close()
-			body, err := io.ReadAll(head.Body)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if len(body) != 0 || head.StatusCode != get.StatusCode {
-				t.Fatalf("GET=%d HEAD=%d body=%q", get.StatusCode, head.StatusCode, body)
-			}
-			for _, key := range []string{"Content-Type", "Content-Length", "X-Test"} {
-				if got, want := head.Header.Get(key), get.Header.Get(key); got != want {
-					t.Errorf("%s: HEAD=%q GET=%q", key, got, want)
+			for range 2 {
+				head, err := server.Client().Head(server.URL)
+				if err != nil {
+					t.Fatal(err)
+				}
+				body, err := io.ReadAll(head.Body)
+				head.Body.Close()
+				if err != nil {
+					t.Fatal(err)
+				}
+				if len(body) != 0 || head.StatusCode != get.StatusCode {
+					t.Fatalf("GET=%d HEAD=%d body=%q", get.StatusCode, head.StatusCode, body)
+				}
+				for _, key := range []string{"Content-Type", "Content-Length", "X-Test"} {
+					if got, want := head.Header.Get(key), get.Header.Get(key); got != want {
+						t.Errorf("%s: HEAD=%q GET=%q", key, got, want)
+					}
 				}
 			}
 		})

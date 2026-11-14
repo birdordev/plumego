@@ -189,6 +189,9 @@ func (w *gzipResponseWriter) finalize(panicking bool) {
 	if panicking && !w.headersFlushed && w.gz == nil {
 		return
 	}
+	if w.buffer != nil {
+		defer func() { w.buffer.CopyTrailers(w.ResponseWriter.Header()) }()
+	}
 	if !w.wroteHeader && w.buffer != nil {
 		// Header-only handlers still own a final implicit 200 response.
 		w.WriteHeader(http.StatusOK)
@@ -279,15 +282,11 @@ func (w *gzipResponseWriter) Write(p []byte) (int, error) {
 	}
 
 	if !w.wroteHeader {
-		if len(p) > 0 && w.Header().Get("Content-Type") == "" {
-			w.Header().Set("Content-Type", http.DetectContentType(p))
-		}
+		sniffContentType(w.Header(), p)
 		w.WriteHeader(http.StatusOK)
 	}
 	if w.pendingCompress {
-		if len(p) > 0 && w.Header().Get("Content-Type") == "" {
-			w.Header().Set("Content-Type", http.DetectContentType(p))
-		}
+		sniffContentType(w.buffer.FinalHeader(), p)
 		w.resolvePendingCompression()
 	}
 
@@ -312,8 +311,6 @@ func (w *gzipResponseWriter) Write(p []byte) (int, error) {
 		// Write buffered data as-is (no compression)
 		w.compressionUsed = false
 
-		// Remove compression headers
-		w.buffer.Header().Del("Content-Encoding")
 		w.flushHeaders()
 
 		// Write buffered data in chunks to avoid memory spikes
@@ -346,8 +343,10 @@ func (w *gzipResponseWriter) Write(p []byte) (int, error) {
 	// If we have enough data, start compressing
 	if w.gz == nil && w.buffer.Len() > 0 {
 		// Update headers for compression
-		w.buffer.Header().Del("Content-Length")
-		w.buffer.Header().Set("Content-Encoding", "gzip")
+		header := w.buffer.FinalHeader()
+		header.Del("Content-Length")
+		header.Set("Content-Encoding", "gzip")
+		w.ResponseWriter.Header().Del("Content-Length")
 		w.flushHeaders()
 		w.gz = gzip.NewWriter(w.ResponseWriter)
 
@@ -365,14 +364,23 @@ func (w *gzipResponseWriter) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
+func sniffContentType(header http.Header, p []byte) {
+	_, hasContentType := header["Content-Type"]
+	if len(p) > 0 && !hasContentType && header.Get("Content-Encoding") == "" && header.Get("Transfer-Encoding") == "" {
+		header.Set("Content-Type", http.DetectContentType(p))
+	}
+}
+
 func (w *gzipResponseWriter) shouldDeferCompressionDecision(statusCode int) bool {
 	if statusCode >= 400 {
 		return false
 	}
-	if w.Header().Get("Content-Encoding") != "" {
+	header := w.buffer.FinalHeader()
+	if header.Get("Content-Encoding") != "" {
 		return false
 	}
-	return w.Header().Get("Content-Type") == ""
+	_, hasContentType := header["Content-Type"]
+	return !hasContentType
 }
 
 func (w *gzipResponseWriter) resolvePendingCompression() {
@@ -387,23 +395,24 @@ func (w *gzipResponseWriter) resolvePendingCompression() {
 }
 
 func (w *gzipResponseWriter) shouldCompress(statusCode int) bool {
+	header := w.buffer.FinalHeader()
 	// Don't compress error responses
 	if statusCode >= 400 {
 		return false
 	}
 	// Byte ranges describe the original representation.
-	if statusCode == http.StatusPartialContent || w.Header().Get("Content-Range") != "" {
+	if statusCode == http.StatusPartialContent || header.Get("Content-Range") != "" {
 		return false
 	}
 
 	// Check content type
-	contentType := w.Header().Get("Content-Type")
+	contentType := header.Get("Content-Type")
 	if contentType == "" {
 		return false
 	}
 
 	// Skip already compressed content
-	if w.Header().Get("Content-Encoding") != "" {
+	if header.Get("Content-Encoding") != "" {
 		return false
 	}
 
@@ -438,7 +447,8 @@ func (w *gzipResponseWriter) flushHeaders() {
 	if w.headersFlushed {
 		return
 	}
-	internaltransport.CommitHeadersCopy(w.ResponseWriter, w.buffer.Header(), w.buffer.StatusCode())
+	w.buffer.WriteHeader(w.buffer.StatusCode())
+	internaltransport.CommitHeadersCopy(w.ResponseWriter, w.buffer.FinalHeader(), w.buffer.StatusCode())
 	w.headersFlushed = true
 }
 

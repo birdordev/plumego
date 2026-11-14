@@ -7,8 +7,55 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"testing/iotest"
 	"time"
 )
+
+type copyReader struct{ io.Reader }
+
+func TestCORSReaderFromCommitsVaryOnWrite(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		src  io.Reader
+		err  error
+		vary string
+		body string
+	}{
+		{name: "empty", src: strings.NewReader(""), vary: "Accept-Language"},
+		{name: "read error", src: iotest.ErrReader(io.ErrUnexpectedEOF), err: io.ErrUnexpectedEOF, vary: "Accept-Language"},
+		{name: "with body", src: strings.NewReader("ok"), vary: "Accept-Language", body: "ok"},
+		{name: "wildcard", src: strings.NewReader(""), vary: "*"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			handler := Middleware(CORSOptions{})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if tc.body != "" {
+					w.Header().Set("Vary", tc.vary)
+				}
+				n, err := io.Copy(w, copyReader{tc.src})
+				if n != int64(len(tc.body)) || !errors.Is(err, tc.err) {
+					t.Errorf("copy = %d, %v", n, err)
+				}
+				if tc.body == "" {
+					w.Header().Set("Vary", tc.vary)
+					w.WriteHeader(http.StatusNoContent)
+				}
+			}))
+			dst := httptest.NewRecorder()
+			handler.ServeHTTP(dst, httptest.NewRequest(http.MethodGet, "/", nil))
+			got := strings.Join(dst.Result().Header.Values("Vary"), ",")
+			if tc.vary == "*" {
+				if got != "*" {
+					t.Errorf("Vary = %q, want *", got)
+				}
+			} else if !strings.Contains(got, "Origin") || !strings.Contains(got, tc.vary) {
+				t.Errorf("Vary = %q, want Origin and %s", got, tc.vary)
+			}
+			if dst.Body.String() != tc.body {
+				t.Errorf("body = %q, want %q", dst.Body.String(), tc.body)
+			}
+		})
+	}
+}
 
 func dummyHandler(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)

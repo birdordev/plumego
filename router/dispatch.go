@@ -51,7 +51,8 @@ func (w *noBodyWriter) Write(p []byte) (int, error) {
 		return 0, http.ErrContentLength
 	}
 	_, hasContentType := w.header["Content-Type"]
-	if !w.committed && len(p) > 0 && !hasContentType && w.header.Get("Content-Encoding") == "" {
+	if !w.committed && len(p) > 0 && !hasContentType &&
+		w.header.Get("Content-Encoding") == "" && w.header.Get("Transfer-Encoding") == "" {
 		w.header.Set("Content-Type", http.DetectContentType(p))
 	}
 	return len(p), nil

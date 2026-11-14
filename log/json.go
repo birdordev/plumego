@@ -4,10 +4,11 @@ import (
 	"context"
 	"encoding"
 	"encoding/json"
-	"fmt"
 	"io"
+	"math"
 	"os"
 	"reflect"
+	"strconv"
 	"sync"
 	"time"
 )
@@ -250,11 +251,14 @@ func normalizeJSONFieldValueAt(value any, depth int, remaining *int) any {
 	if err != nil {
 		// Only numeric formatting is safe here. Generic formatting can reveal
 		// fields deliberately excluded from JSON or invoke user String methods.
-		switch v := value.(type) {
-		case float32:
-			return fmt.Sprint(v)
-		case float64:
-			return fmt.Sprint(v)
+		if invalid, ok := err.(*json.UnsupportedValueError); ok {
+			switch invalid.Value.Kind() {
+			case reflect.Float32, reflect.Float64:
+				f := invalid.Value.Float()
+				if math.IsNaN(f) || math.IsInf(f, 0) {
+					return strconv.FormatFloat(f, 'g', -1, invalid.Value.Type().Bits())
+				}
+			}
 		}
 		return "[unsupported]"
 	}

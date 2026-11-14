@@ -13,6 +13,96 @@ import (
 	"testing"
 )
 
+func TestFinalHeaderSnapshotAndTrailers(t *testing.T) {
+	for _, coding := range []string{"identity", "gzip"} {
+		for _, flush := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/flush=%t", coding, flush), func(t *testing.T) {
+				server := httptest.NewServer(Middleware(Config{})(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+					w.Header().Set("X-Phase", "early")
+					w.WriteHeader(http.StatusEarlyHints)
+					w.Header().Set("X-Phase", "final")
+					w.Header().Set("Trailer", "X-Checksum")
+					w.WriteHeader(http.StatusCreated)
+					w.Header().Set("X-Phase", "late")
+					w.Header().Set("Content-Type", "application/octet-stream")
+					if flush {
+						if err := http.NewResponseController(w).Flush(); err != nil {
+							t.Error(err)
+						}
+					}
+					if _, err := io.WriteString(w, "payload"); err != nil {
+						t.Error(err)
+					}
+					w.Header().Set("X-Checksum", "done")
+					w.Header().Set(http.TrailerPrefix+"X-Dynamic", "also done")
+				})))
+				defer server.Close()
+
+				var earlyPhase string
+				trace := &httptrace.ClientTrace{Got1xxResponse: func(code int, header textproto.MIMEHeader) error {
+					if code == http.StatusEarlyHints {
+						earlyPhase = header.Get("X-Phase")
+					}
+					return nil
+				}}
+				req, err := http.NewRequestWithContext(httptrace.WithClientTrace(t.Context(), trace), http.MethodGet, server.URL, nil)
+				if err != nil {
+					t.Fatal(err)
+				}
+				req.Header.Set("Accept-Encoding", coding)
+				resp, err := server.Client().Do(req)
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer resp.Body.Close()
+				raw, err := io.ReadAll(resp.Body)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if earlyPhase != "early" || resp.StatusCode != http.StatusCreated || resp.Header.Get("X-Phase") != "final" {
+					t.Fatalf("interim=%q status=%d headers=%v", earlyPhase, resp.StatusCode, resp.Header)
+				}
+				if got := resp.Trailer.Get("X-Checksum"); got != "done" || resp.Trailer.Get("X-Dynamic") != "also done" {
+					t.Fatalf("trailers = %v", resp.Trailer)
+				}
+				if got := resp.Header.Get("Content-Encoding"); (got == "gzip") != (coding == "gzip" && !flush) {
+					t.Fatalf("Content-Encoding = %q", got)
+				} else if got == "gzip" {
+					reader, err := gzip.NewReader(bytes.NewReader(raw))
+					if err != nil {
+						t.Fatal(err)
+					}
+					defer reader.Close()
+					raw, err = io.ReadAll(reader)
+					if err != nil {
+						t.Fatal(err)
+					}
+				}
+				if string(raw) != "payload" {
+					t.Errorf("body = %q", raw)
+				}
+			})
+		}
+	}
+}
+
+func TestIdentityEmptyCopyPreservesVary(t *testing.T) {
+	handler := Middleware(Config{})(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		src := struct{ io.Reader }{bytes.NewReader(nil)}
+		if n, err := io.Copy(w, src); n != 0 || err != nil {
+			t.Errorf("copy = %d, %v", n, err)
+		}
+		w.Header().Set("Vary", "Accept-Language")
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	dst := httptest.NewRecorder()
+	handler.ServeHTTP(dst, httptest.NewRequest(http.MethodGet, "/", nil))
+	values := dst.Result().Header.Values("Vary")
+	if !headerValuesContain(values, "Accept-Language") || !headerValuesContain(values, "Accept-Encoding") {
+		t.Fatalf("Vary = %v", values)
+	}
+}
+
 type statusHistoryWriter struct {
 	header http.Header
 	codes  []int

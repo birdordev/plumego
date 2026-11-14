@@ -53,8 +53,7 @@ func (w *VaryWriter) Write(p []byte) (int, error) {
 }
 
 func (w *VaryWriter) ReadFrom(r io.Reader) (int64, error) {
-	w.Prepare()
-	return io.Copy(w.ResponseWriter, r)
+	return io.Copy(struct{ io.Writer }{w}, r)
 }
 
 func (w *VaryWriter) FlushError() error {

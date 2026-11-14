@@ -61,6 +61,12 @@ func (r *BufferedResponseRecorder) Header() http.Header {
 	return r.header
 }
 
+// FinalHeader returns the committed snapshot for transport-owned adjustments
+// before forwarding. Handler mutations still go through Header.
+func (r *BufferedResponseRecorder) FinalHeader() http.Header {
+	return r.committed
+}
+
 // WriteHeader records the status code without committing it to the wrapped writer.
 func (r *BufferedResponseRecorder) WriteHeader(code int) {
 	if r.written {
@@ -148,19 +154,24 @@ func (r *BufferedResponseRecorder) WriteTo(dst http.ResponseWriter) (int, error)
 	EnsureNoSniff(dst.Header())
 	dst.WriteHeader(r.StatusCode())
 	n, err := SafeWrite(dst, r.Body())
+	r.CopyTrailers(dst.Header())
+	return n, err
+}
+
+// CopyTrailers forwards values supplied by the handler after the final header.
+func (r *BufferedResponseRecorder) CopyTrailers(dst http.Header) {
 	// Trailer values are the only headers allowed to change after commitment.
 	for _, declaration := range r.committed.Values("Trailer") {
 		for _, name := range strings.Split(declaration, ",") {
 			name = http.CanonicalHeaderKey(strings.TrimSpace(name))
 			if values, ok := r.header[name]; ok {
-				dst.Header()[name] = append([]string(nil), values...)
+				dst[name] = append([]string(nil), values...)
 			}
 		}
 	}
 	for name, values := range r.header {
 		if strings.HasPrefix(name, http.TrailerPrefix) {
-			dst.Header()[name] = append([]string(nil), values...)
+			dst[name] = append([]string(nil), values...)
 		}
 	}
-	return n, err
 }
