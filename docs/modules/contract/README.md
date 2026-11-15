@@ -144,6 +144,9 @@ Use `WithRequestContext`, `RequestContextFromContext`, and
 `RequestParamFromContext`; do not write raw context values with exported keys.
 Stored maps are defensively copied. Use `RequestParamFromContext` when a caller
 needs one route param and does not need a full `RequestContext` snapshot.
+Both read accessors use the complete metadata from a non-nil `RouteState`
+when present, even if `WithRequestContext` was called later. They consult
+the stored `RequestContext` only when there is no non-nil `RouteState`.
 
 `RouteState` stores the first eight parameters inline and preserves additional
 parameters in overflow storage. Both parameter accessors include overflow

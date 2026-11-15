@@ -106,6 +106,7 @@ func WithRouteState(ctx context.Context, rs *RouteState) context.Context {
 
 // WithRequestContext stores rc in ctx using the package-internal requestContextKey.
 // Callers should use this accessor instead of writing raw context keys.
+// A non-nil RouteState takes precedence over rc, even when rc is stored later.
 func WithRequestContext(ctx context.Context, rc RequestContext) context.Context {
 	if ctx == nil {
 		ctx = context.Background()
@@ -114,7 +115,8 @@ func WithRequestContext(ctx context.Context, rc RequestContext) context.Context 
 	return context.WithValue(ctx, requestContextKey{}, rc)
 }
 
-// RequestContextFromContext returns the RequestContext stored in the given context.
+// RequestContextFromContext returns metadata from a non-nil RouteState when present,
+// otherwise it returns the RequestContext stored with WithRequestContext.
 func RequestContextFromContext(ctx context.Context) RequestContext {
 	if ctx == nil {
 		return RequestContext{}
@@ -149,8 +151,9 @@ func RequestContextFromContext(ctx context.Context) RequestContext {
 }
 
 // RequestParamFromContext returns one route parameter from the stored
-// RequestContext without cloning the full params map. If a key was added more
-// than once to RouteState, both accessors return its last value.
+// metadata without cloning a params map. When a non-nil RouteState is present,
+// lookups use its parameters exclusively. If a key was added more than once
+// to RouteState, both accessors return its last value.
 func RequestParamFromContext(ctx context.Context, name string) string {
 	if ctx == nil || name == "" {
 		return ""

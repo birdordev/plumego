@@ -667,6 +667,32 @@ func TestRequestParamFromContextRouteStateNotFound(t *testing.T) {
 	}
 }
 
+func TestRouteStateTakesPrecedenceOverLaterRequestContext(t *testing.T) {
+	state := new(RouteState)
+	state.SetPattern("/items/:id")
+	state.AddParam("id", "matched")
+	ctx := WithRouteState(t.Context(), state)
+	ctx = WithRequestContext(ctx, RequestContext{
+		RoutePattern: "/fallback",
+		Params:       map[string]string{"id": "fallback", "extra": "fallback-only"},
+	})
+
+	got := RequestContextFromContext(ctx)
+	if got.RoutePattern != "/items/:id" || got.Params["id"] != "matched" || len(got.Params) != 1 {
+		t.Fatalf("matched metadata = %+v", got)
+	}
+	if id, extra := RequestParamFromContext(ctx, "id"), RequestParamFromContext(ctx, "extra"); id != "matched" || extra != "" {
+		t.Fatalf("matched parameters = %q, %q", id, extra)
+	}
+
+	ctx = WithRouteState(ctx, nil)
+	got = RequestContextFromContext(ctx)
+	if got.RoutePattern != "/fallback" || got.Params["id"] != "fallback" ||
+		RequestParamFromContext(ctx, "extra") != "fallback-only" {
+		t.Fatalf("fallback metadata = %+v", got)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // WithRequestID and RequestIDFromContext — nil context branches
 // ---------------------------------------------------------------------------
