@@ -47,9 +47,10 @@
 - JSON output preserves integer precision and replaces unsupported field values
   with a fixed placeholder, preserving safe siblings in common nested maps and
   slices. Ordinary nil maps and slices encode as `null`, while non-nil empty maps and
-  slices keep their empty JSON shape. Invalid floating-point values retain their
-  numeric string form. A custom field encoder that panics produces the same
-  fixed placeholder as an unsupported value.
+  slices keep their empty JSON shape. Non-finite floating-point scalars use
+  their numeric string form. A composite field that fails standard JSON
+  encoding uses the fixed placeholder. A custom field encoder that panics
+  produces the same placeholder.
 - JSON normalization and text container formatting use bounded traversal;
   cycles and excessive nesting produce truncation placeholders instead of
   unbounded recursion. Text formatting also bounds pointers, struct fields,

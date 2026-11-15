@@ -254,12 +254,14 @@ func normalizeJSONFieldValueAt(value any, depth int, remaining *int) any {
 	if err != nil {
 		// Only numeric formatting is safe here. Generic formatting can reveal
 		// fields deliberately excluded from JSON or invoke user String methods.
-		if invalid, ok := err.(*json.UnsupportedValueError); ok {
-			switch invalid.Value.Kind() {
+		if _, ok := err.(*json.UnsupportedValueError); ok {
+			// The encoder may report a float nested inside a composite value.
+			scalar := reflect.ValueOf(value)
+			switch scalar.Kind() {
 			case reflect.Float32, reflect.Float64:
-				f := invalid.Value.Float()
+				f := scalar.Float()
 				if math.IsNaN(f) || math.IsInf(f, 0) {
-					return strconv.FormatFloat(f, 'g', -1, invalid.Value.Type().Bits())
+					return strconv.FormatFloat(f, 'g', -1, scalar.Type().Bits())
 				}
 			}
 		}

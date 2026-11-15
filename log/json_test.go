@@ -498,6 +498,35 @@ func TestJSONFormatLoggerPreservesSafeNestedFields(t *testing.T) {
 	}
 }
 
+func TestJSONFormatLoggerLimitsNonFiniteFallbackToScalars(t *testing.T) {
+	type report struct {
+		Count int
+		Ratio float64
+	}
+	var buf bytes.Buffer
+	logger := newTestJSONLogger(t, LoggerConfig{Output: &buf, Level: INFO})
+	logger.Info("test", Fields{
+		"object": report{Count: 5, Ratio: math.NaN()},
+		"nested": Fields{"ratio": math.Inf(-1), "count": 5},
+		"safe":   true,
+	})
+
+	var entry struct {
+		Object string `json:"object"`
+		Nested struct {
+			Ratio string `json:"ratio"`
+			Count int    `json:"count"`
+		} `json:"nested"`
+		Safe bool `json:"safe"`
+	}
+	if err := json.Unmarshal(buf.Bytes(), &entry); err != nil {
+		t.Fatal(err)
+	}
+	if entry.Object != "[unsupported]" || entry.Nested.Ratio != "-Inf" || entry.Nested.Count != 5 || !entry.Safe {
+		t.Fatalf("unexpected JSON output: %s", &buf)
+	}
+}
+
 func TestJSONFormatLoggerWithFieldsSharesWriterLock(t *testing.T) {
 	var buf bytes.Buffer
 	base := newTestJSONLogger(t, LoggerConfig{
