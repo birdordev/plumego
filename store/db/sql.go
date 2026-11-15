@@ -207,6 +207,8 @@ func ExecContext(ctx context.Context, db DB, query string, args ...any) (sql.Res
 }
 
 // QueryContext executes a query using the caller-provided context.
+// The caller owns rows returned on success. On error, QueryContext closes any
+// rows returned by the database and retains both the query and close errors.
 func QueryContext(ctx context.Context, db DB, query string, args ...any) (*sql.Rows, error) {
 	if db == nil {
 		return nil, fmt.Errorf("%w: database is nil", ErrQueryFailed)
@@ -214,7 +216,11 @@ func QueryContext(ctx context.Context, db DB, query string, args ...any) (*sql.R
 
 	rows, err := db.QueryContext(ctx, query, args...)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %w", ErrQueryFailed, err)
+		queryErr := fmt.Errorf("%w: %w", ErrQueryFailed, err)
+		if rows != nil {
+			queryErr = joinRowsCloseError(queryErr, rows.Close())
+		}
+		return nil, queryErr
 	}
 	if rows == nil {
 		return nil, fmt.Errorf("%w: query returned nil rows", ErrQueryFailed)

@@ -184,6 +184,9 @@
 - `store/db.Open` initializes a `*sql.DB` handle and does not prove connectivity; use `Ping` when startup validation is required.
 - `store/db.QueryRow` mirrors `database/sql.QueryRowContext` and defers query or scan errors until the returned row is scanned.
 - `store/db.QueryRowContext` returns an explicit `ErrQueryFailed`-wrapped error for nil database inputs instead of returning a nil row.
+- The caller closes rows returned successfully by `store/db.QueryContext`. If
+  an injected database returns both rows and an error, the helper closes those
+  rows and preserves the query and close errors.
 - Query and transaction helpers must not infer deadlines from optional config interfaces.
 - Use `context.WithTimeout` or `context.WithDeadline` at the application or owning extension boundary when an operation deadline is required.
 - tenant configuration schema and migrations belong in `x/tenant/config`, not stable `store/db`

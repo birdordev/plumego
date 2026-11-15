@@ -232,6 +232,36 @@ func TestQueryContextWrapsUnderlyingError(t *testing.T) {
 	}
 }
 
+type partialQueryDB struct {
+	*sql.DB
+	err error
+}
+
+func (db partialQueryDB) QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
+	rows, err := db.DB.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	return rows, db.err
+}
+
+func TestQueryContextClosesRowsReturnedWithAnError(t *testing.T) {
+	queryErr := errors.New("query decorator failed")
+	closeErr := errors.New("close rows failed")
+	result := &fixedRows{cols: []string{"id"}, closeErr: closeErr}
+	pool := sql.OpenDB(&rowsConnector{rows: result})
+	t.Cleanup(func() { _ = pool.Close() })
+	pool.SetMaxOpenConns(1)
+
+	rows, err := QueryContext(t.Context(), partialQueryDB{DB: pool, err: queryErr}, "SELECT id")
+	if rows != nil || !errors.Is(err, ErrQueryFailed) || !errors.Is(err, queryErr) || !errors.Is(err, closeErr) {
+		t.Fatalf("QueryContext returned rows=%v, err=%v", rows, err)
+	}
+	if inUse := pool.Stats().InUse; result.closes != 1 || inUse != 0 {
+		t.Fatalf("rows closed %d times, connections in use = %d", result.closes, inUse)
+	}
+}
+
 func TestQueryRowContext(t *testing.T) {
 	connector := &stubConnector{conn: &stubConn{}}
 	db := sql.OpenDB(connector)
