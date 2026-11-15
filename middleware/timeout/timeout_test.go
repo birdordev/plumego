@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -329,6 +330,39 @@ func TestTimeoutMiddleware_DisabledWhenTimeoutNonPositive(t *testing.T) {
 	}
 	if rr.Body.String() != "disabled" {
 		t.Fatalf("unexpected body: %q", rr.Body.String())
+	}
+}
+
+func TestTimeoutBodylessResponseRejectsWritesBeforeSizeChecks(t *testing.T) {
+	for _, status := range []int{http.StatusNoContent, http.StatusNotModified} {
+		for _, limits := range []struct {
+			name           string
+			buffer, replay int
+		}{
+			{"buffer", 4, 64},
+			{"replay", 64, 4},
+		} {
+			t.Run(fmt.Sprintf("%d/%s", status, limits.name), func(t *testing.T) {
+				handler := Middleware(Config{
+					Timeout:        time.Minute,
+					MaxBufferBytes: limits.buffer,
+					MaxReplayBytes: limits.replay,
+				})(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+					w.Header().Set("ETag", `"test"`)
+					w.WriteHeader(status)
+					for _, body := range []string{"x", "oversized body"} {
+						if n, err := w.Write([]byte(body)); n != 0 || !errors.Is(err, http.ErrBodyNotAllowed) {
+							t.Errorf("Write(%q) = %d, %v", body, n, err)
+						}
+					}
+				}))
+				w := httptest.NewRecorder()
+				handler.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/", nil))
+				if w.Code != status || w.Body.Len() != 0 || w.Result().Header.Get("ETag") != `"test"` {
+					t.Fatalf("status=%d body=%q headers=%v", w.Code, w.Body, w.Result().Header)
+				}
+			})
+		}
 	}
 }
 

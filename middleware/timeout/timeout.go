@@ -234,6 +234,13 @@ func (w *timeoutResponseWriter) Write(p []byte) (int, error) {
 	default:
 	}
 
+	if len(p) > 0 {
+		switch w.buffer.StatusCode() {
+		case http.StatusNoContent, http.StatusNotModified:
+			return 0, http.ErrBodyNotAllowed
+		}
+	}
+
 	if w.overflow {
 		return 0, http.ErrBodyNotAllowed
 	}

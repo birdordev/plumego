@@ -200,6 +200,8 @@ downstream header changes and partial bodies. Responses larger than
 with the request ID from context. Treat these settings as response limits,
 not streaming support. Informational statuses such as `100`, `102`, and `103`
 are ignored while buffering and do not replace the final status.
+Body writes for 204 and 304 return `http.ErrBodyNotAllowed` before either
+response size limit is evaluated.
 
 Panics accepted before cancellation are re-thrown on the request goroutine so
 outer recovery middleware can handle them. `Config.OnPanic` observes panics
