@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"reflect"
 	"strconv"
 	"strings"
 	"testing"
@@ -53,11 +54,14 @@ func TestTextLoggerContainsFormatPanics(t *testing.T) {
 		"both":     logErrorWithString{},
 		"nil":      absent,
 		"sibling":  "kept",
+		"wrapped":  reflect.ValueOf(42),
+		"bad_wrap": reflect.ValueOf(panickingLogStringer{}),
 	})
 	line := output.String()
 	for _, expected := range []string{
 		"stringer=[unsupported]", "error=[unsupported]", "format=[unsupported]",
 		"valid=formatted", "both=error-text", "nil=<nil>", "sibling=kept",
+		"wrapped=42", "bad_wrap=[unsupported]",
 	} {
 		if !strings.Contains(line, expected) {
 			t.Errorf("missing %q in %q", expected, line)
