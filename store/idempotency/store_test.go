@@ -143,6 +143,9 @@ func TestRecordCloneCopiesResponse(t *testing.T) {
 	if (Record{}).Clone().Response != nil {
 		t.Fatal("nil response should clone to nil")
 	}
+	if got := (Record{Response: []byte{}}).Clone().Response; got == nil || len(got) != 0 {
+		t.Fatalf("empty response should clone to a non-nil empty slice, got %#v", got)
+	}
 }
 
 func TestValidateKey(t *testing.T) {

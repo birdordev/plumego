@@ -19,6 +19,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 	"unicode"
@@ -88,11 +89,10 @@ type Record struct {
 }
 
 // Clone returns a copy of r with mutable fields detached from the original.
+// It preserves the distinction between a nil and an empty Response.
 func (r Record) Clone() Record {
 	clone := r
-	if r.Response != nil {
-		clone.Response = append([]byte(nil), r.Response...)
-	}
+	clone.Response = slices.Clone(r.Response)
 	return clone
 }
 
