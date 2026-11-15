@@ -1,6 +1,7 @@
 package requestid
 
 import (
+	"context"
 	"net/http"
 
 	"github.com/birdordev/plumego/contract"
@@ -51,5 +52,5 @@ func EnsureRequestID(r *http.Request, generate func() string) string {
 
 func acceptedRequestID(id string) string {
 	// Use an empty context so rejection cannot fall back to a previously attached ID.
-	return contract.RequestIDFromContext(contract.WithRequestID(nil, id))
+	return contract.RequestIDFromContext(contract.WithRequestID(context.Background(), id))
 }
