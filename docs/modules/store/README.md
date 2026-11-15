@@ -90,6 +90,7 @@
 - `store/file` is the stable contract layer for file storage interfaces, shared file types, and errors.
 - `store/file` is contract-only and does not bundle a local filesystem, object storage, tenant-aware, or HTTP-facing backend implementation.
 - `store/file` metadata clone helpers detach common nested mutable values such as `map[string]any`, `map[string]string`, `[]any`, `[]string`, and `[]byte`.
+  Supported containers preserve the distinction between nil and non-nil empty values.
   Self-references and cross-references through `map[string]any` and `[]any`
   are preserved within the detached copy instead of recursing indefinitely.
   Graph traversal uses an explicit worklist, so deep nesting does not grow the

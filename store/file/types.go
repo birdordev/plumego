@@ -3,6 +3,7 @@ package file
 import (
 	"io"
 	"reflect"
+	"slices"
 	"time"
 )
 
@@ -152,9 +153,9 @@ func (c *metadataCloner) cloneValue(value any) any {
 		c.pending = append(c.pending, metadataCopy{source: typed, target: clone})
 		return clone
 	case []string:
-		return append([]string(nil), typed...)
+		return slices.Clone(typed)
 	case []byte:
-		return append([]byte(nil), typed...)
+		return slices.Clone(typed)
 	default:
 		return value
 	}

@@ -1,6 +1,7 @@
 package file
 
 import (
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -106,6 +107,31 @@ func TestFileCloneCopiesMutableFields(t *testing.T) {
 	}
 	if !clone.DeletedAt.Equal(wantDeleted) {
 		t.Fatalf("clone DeletedAt = %v, want %v", clone.DeletedAt, wantDeleted)
+	}
+}
+
+func TestMetadataClonesPreserveSliceShapeAndOwnership(t *testing.T) {
+	metadata := map[string]any{
+		"nil bytes": []byte(nil), "empty bytes": []byte{}, "bytes": []byte("data"),
+		"nil strings": []string(nil), "empty strings": []string{}, "strings": []string{"item"},
+	}
+	want, err := json.Marshal(metadata)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, clone := range []map[string]any{
+		(File{Metadata: metadata}).Clone().Metadata,
+		(PutOptions{Metadata: metadata}).CloneMetadata(),
+	} {
+		got, err := json.Marshal(clone)
+		if err != nil || string(got) != string(want) {
+			t.Fatalf("clone JSON = %s, err = %v, want %s", got, err, want)
+		}
+		clone["bytes"].([]byte)[0] = 'X'
+		clone["strings"].([]string)[0] = "changed"
+		if string(metadata["bytes"].([]byte)) != "data" || metadata["strings"].([]string)[0] != "item" {
+			t.Fatal("clone mutation changed original metadata")
+		}
 	}
 }
 
