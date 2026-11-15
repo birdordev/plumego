@@ -4,13 +4,13 @@ layer: stable
 status: ga
 owner: security
 risk: high
-summary: Sharded rate limiter with sliding-window counters for abuse detection at the primitive level.
+summary: Sharded per-key token-bucket rate limiter with bounded bucket storage.
 
 strict_boundary: auth_primitives
 
 responsibilities:
-  - Provide a sharded, concurrent-safe rate limiter
-  - Support sliding-window and fixed-window strategies
+  - Provide concurrent-safe per-key token buckets with configurable refill rates and burst capacity
+  - Bound bucket storage through capacity eviction and idle cleanup
   - Export decision metadata for response header construction
 
 non_goals:
