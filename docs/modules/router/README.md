@@ -225,6 +225,7 @@ inference. An explicit `Content-Length` takes precedence.
 
 Static mounts serve seekable files through the standard library, including
 Range handling. A sequential file is served as a full response with its known
-length. HEAD sends the headers without reading the body.
+length. A recognized file extension supplies the media type when no
+`Content-Type` was set. HEAD sends the headers without reading the body.
 
 Successful matches publish immutable route identity to optional response observers through Unwrap-compatible wrappers. The router does not mutate the incoming request; downstream contexts retain their matched metadata.

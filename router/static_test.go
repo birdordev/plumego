@@ -340,42 +340,73 @@ func TestGetFilePathFromRequestRejectsUnsafePaths(t *testing.T) {
 	}
 }
 
-type sequentialFS struct{ fs.FS }
-type sequentialFile struct{ fs.File }
+type sequentialFS struct {
+	fs.FS
+	reads *int
+}
+
+type sequentialFile struct {
+	fs.File
+	reads *int
+}
+
+func (f sequentialFile) Read(dst []byte) (int, error) {
+	(*f.reads)++
+	return f.File.Read(dst)
+}
 
 func (f sequentialFS) Open(name string) (fs.File, error) {
 	file, err := f.FS.Open(name)
 	if err != nil {
 		return nil, err
 	}
-	return sequentialFile{file}, nil
+	return sequentialFile{File: file, reads: f.reads}, nil
 }
 
 func TestStaticFSSequentialAndSeekable(t *testing.T) {
-	files := fstest.MapFS{"note.txt": {Data: []byte("abcd")}}
+	const body = `{"a":1}`
+	files := fstest.MapFS{"note.json": {Data: []byte(body)}}
 	for _, tc := range []struct {
 		name              string
-		files             fs.FS
+		sequential        bool
 		method, byteRange string
 		status            int
 		body, length      string
+		contentType       string
 	}{
-		{"sequential GET", sequentialFS{files}, http.MethodGet, "", 200, "abcd", "4"},
-		{"sequential HEAD", sequentialFS{files}, http.MethodHead, "", 200, "", "4"},
-		{"sequential Range", sequentialFS{files}, http.MethodGet, "bytes=1-2", 200, "abcd", "4"},
-		{"seekable Range", files, http.MethodGet, "bytes=1-2", 206, "bc", "2"},
+		{"sequential GET", true, http.MethodGet, "", 200, body, "7", ""},
+		{"sequential HEAD", true, http.MethodHead, "", 200, "", "7", ""},
+		{"sequential explicit type", true, http.MethodHead, "", 200, "", "7", "application/example"},
+		{"sequential Range", true, http.MethodGet, "bytes=1-2", 200, body, "7", ""},
+		{"seekable Range", false, http.MethodGet, "bytes=1-2", 206, `"a`, "2", ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			r := NewRouter()
-			if err := r.StaticFS("/assets", http.FS(tc.files)); err != nil {
+			var reads int
+			var source fs.FS = files
+			if tc.sequential {
+				source = sequentialFS{FS: files, reads: &reads}
+			}
+			if err := r.StaticFS("/assets", http.FS(source)); err != nil {
 				t.Fatal(err)
 			}
-			req := httptest.NewRequest(tc.method, "/assets/note.txt", nil)
+			req := httptest.NewRequest(tc.method, "/assets/note.json", nil)
 			req.Header.Set("Range", tc.byteRange)
 			dst := httptest.NewRecorder()
+			wantType := "application/json"
+			if tc.contentType != "" {
+				dst.Header().Set("Content-Type", tc.contentType)
+				wantType = tc.contentType
+			}
 			r.ServeHTTP(dst, req)
 			if dst.Code != tc.status || dst.Body.String() != tc.body || dst.Result().Header.Get("Content-Length") != tc.length {
 				t.Fatalf("status=%d headers=%v body=%q", dst.Code, dst.Result().Header, dst.Body)
+			}
+			if got := dst.Result().Header.Get("Content-Type"); got != wantType {
+				t.Fatalf("Content-Type = %q, want %q", got, wantType)
+			}
+			if tc.method == http.MethodHead && reads != 0 {
+				t.Fatalf("HEAD read file contents %d times", reads)
 			}
 		})
 	}

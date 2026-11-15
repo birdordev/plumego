@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"mime"
 	"net/http"
 	"os"
 	"path"
@@ -286,6 +287,11 @@ func serveFileContent(w http.ResponseWriter, req *http.Request, f http.File, inf
 	}
 	if info.Size() >= 0 {
 		w.Header().Set("Content-Length", strconv.FormatInt(info.Size(), 10))
+	}
+	if _, set := w.Header()["Content-Type"]; !set {
+		if contentType := mime.TypeByExtension(filepath.Ext(info.Name())); contentType != "" {
+			w.Header().Set("Content-Type", contentType)
+		}
 	}
 	if req.Method != http.MethodHead {
 		_, _ = io.Copy(w, f)
