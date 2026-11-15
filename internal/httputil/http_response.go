@@ -177,6 +177,13 @@ func (r *ResponseRecorder) FlushError() error {
 // Flush implements http.Flusher.
 func (r *ResponseRecorder) Flush() { _ = r.FlushError() }
 
+// FlushIfSupported forwards Flush to the underlying writer when available.
+func FlushIfSupported(w http.ResponseWriter) {
+	if flusher, ok := w.(http.Flusher); ok {
+		flusher.Flush()
+	}
+}
+
 // HijackIfSupported forwards Hijack to the underlying writer when available.
 func HijackIfSupported(w http.ResponseWriter) (net.Conn, *bufio.ReadWriter, error) {
 	hijacker, ok := w.(http.Hijacker)
