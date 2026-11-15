@@ -7,6 +7,9 @@ import (
 // Object pools for reducing allocations during request processing.
 // All pool helpers are unexported; they are implementation details.
 
+// Bound the retained storage even when an unusually deep path grows a slice.
+const maxPooledRouteSegments = 64
+
 var paramValuesPool = sync.Pool{
 	New: func() any {
 		s := make([]string, 0, defaultPoolSliceCap)
@@ -19,11 +22,7 @@ func getParamValues() *[]string {
 }
 
 func putParamValues(s *[]string) {
-	if s == nil {
-		return
-	}
-	*s = (*s)[:0]
-	paramValuesPool.Put(s)
+	putRouteStrings(&paramValuesPool, s)
 }
 
 var pathPartsPool = sync.Pool{
@@ -38,11 +37,21 @@ func getPathParts() *[]string {
 }
 
 func putPathParts(s *[]string) {
+	putRouteStrings(&pathPartsPool, s)
+}
+
+func putRouteStrings(pool *sync.Pool, s *[]string) {
 	if s == nil {
 		return
 	}
+	if cap(*s) > maxPooledRouteSegments {
+		*s = nil
+		return
+	}
+	// Backtracking may shorten the slice while old path strings remain in its tail.
+	clear((*s)[:cap(*s)])
 	*s = (*s)[:0]
-	pathPartsPool.Put(s)
+	pool.Put(s)
 }
 
 // splitPathToParts splits a path into parts using a pooled slice.

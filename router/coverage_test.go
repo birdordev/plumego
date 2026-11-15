@@ -243,6 +243,37 @@ func TestPutPathPartsWithNilIsNoop(t *testing.T) {
 	putPathParts(nil)
 }
 
+func TestRouteStringPoolsClearReferencesAndDropLargeBuffers(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		put  func(*[]string)
+	}{
+		{"parameters", putParamValues},
+		{"path parts", putPathParts},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			backing := make([]string, maxPooledRouteSegments)
+			backing[0], backing[len(backing)-1] = "path", "previous branch"
+			active := backing[:1]
+			tc.put(&active)
+			for i, value := range backing {
+				if value != "" {
+					t.Fatalf("retained string at index %d: %q", i, value)
+				}
+			}
+			if len(active) != 0 || cap(active) != maxPooledRouteSegments {
+				t.Fatalf("returned slice length=%d cap=%d", len(active), cap(active))
+			}
+
+			oversized := make([]string, 1, maxPooledRouteSegments+1)
+			tc.put(&oversized)
+			if oversized != nil {
+				t.Fatalf("retained oversized buffer with capacity %d", cap(oversized))
+			}
+		})
+	}
+}
+
 // ---- splitPathToParts edge cases (87.5%) ------------------------------------
 
 func TestSplitPathToPartsRootReturnsEmpty(t *testing.T) {
