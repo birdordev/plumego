@@ -361,6 +361,10 @@ effects outside the key. When the leader explicitly commits headers with
 `WriteHeader`, waiter replay uses that committed header snapshot rather than
 later header mutations. Declared and dynamic response trailers are forwarded
 to the leader and replayed for non-HEAD waiters.
+The handler starts with the leader's outer response headers. Its committed
+changes are applied to each waiter's own headers, including deletions and
+new values appended to an existing header. Unchanged outer values stay with
+their own requests.
 
 `Config.OnCoalesced` is called once for each waiter that successfully receives a
 coalesced response. The callback `count` argument is a per-callback event count

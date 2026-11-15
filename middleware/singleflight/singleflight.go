@@ -40,6 +40,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -149,10 +150,12 @@ type inFlightRequest struct {
 
 // capturedResponse represents a captured HTTP response
 type capturedResponse struct {
-	statusCode int
-	header     http.Header
-	body       []byte
-	trailers   http.Header
+	statusCode     int
+	header         http.Header
+	addedValues    http.Header
+	deletedHeaders []string
+	body           []byte
+	trailers       http.Header
 }
 
 // New creates a new request coalescer with the provided configuration.
@@ -359,10 +362,18 @@ func (c *Coalescer) isSafeMethod(method string) bool {
 // writeResponse writes a captured response to the client.
 // addCoalescedHeader controls whether the X-Coalesced response header is set.
 func writeResponse(w http.ResponseWriter, r *http.Request, resp *capturedResponse, addCoalescedHeader bool) error {
-	internaltransport.ReplaceHeaders(w.Header(), resp.header)
-	if addCoalescedHeader {
-		w.Header().Set("X-Coalesced", "true")
+	header := w.Header()
+	for _, key := range resp.deletedHeaders {
+		delete(header, key)
 	}
+	internaltransport.CopyHeaders(header, resp.header)
+	for key, values := range resp.addedValues {
+		header[key] = append(header[key], values...)
+	}
+	if addCoalescedHeader {
+		header.Set("X-Coalesced", "true")
+	}
+	internaltransport.EnsureNoSniff(header)
 	w.WriteHeader(resp.statusCode)
 	if r.Method == http.MethodHead {
 		return nil
@@ -385,6 +396,7 @@ type limitedResponseRecorder struct {
 	http.ResponseWriter
 	statusCode   int
 	header       http.Header
+	initial      http.Header
 	committed    http.Header
 	body         []byte
 	maxBytes     int
@@ -396,10 +408,16 @@ type limitedResponseRecorder struct {
 }
 
 func newLimitedResponseRecorder(w http.ResponseWriter, maxBytes int) *limitedResponseRecorder {
+	initial := w.Header().Clone()
+	header := initial.Clone()
+	if header == nil {
+		header = make(http.Header)
+	}
 	return &limitedResponseRecorder{
 		ResponseWriter: w,
 		statusCode:     http.StatusOK,
-		header:         make(http.Header),
+		header:         header,
+		initial:        initial,
 		maxBytes:       maxBytes,
 	}
 }
@@ -423,14 +441,17 @@ func (r *limitedResponseRecorder) WriteHeader(statusCode int) {
 		dst := r.ResponseWriter.Header()
 		original := dst.Clone()
 		defer internaltransport.ReplaceHeaders(dst, original)
-		internaltransport.CopyHeaders(dst, r.header)
+		internaltransport.ReplaceHeaders(dst, r.header)
 		r.ResponseWriter.WriteHeader(statusCode)
 		return
 	}
 	r.statusCode = statusCode
 	r.wroteHeader = true
 	r.committed = r.header.Clone()
-	internaltransport.CommitHeadersCopy(r.ResponseWriter, r.header, statusCode)
+	dst := r.ResponseWriter.Header()
+	internaltransport.ReplaceHeaders(dst, r.committed)
+	internaltransport.EnsureNoSniff(dst)
+	r.ResponseWriter.WriteHeader(statusCode)
 }
 
 func (r *limitedResponseRecorder) Write(p []byte) (int, error) {
@@ -484,15 +505,38 @@ func (r *limitedResponseRecorder) Unreplayable() bool {
 }
 
 func (r *limitedResponseRecorder) CapturedResponse() *capturedResponse {
-	header := r.header.Clone()
-	if r.committed != nil {
-		header = r.committed.Clone()
+	final := r.committed
+	if final == nil {
+		final = r.header
 	}
-	return &capturedResponse{
+	response := &capturedResponse{
 		statusCode: r.statusCode,
-		header:     header,
 		body:       r.body,
 	}
+	for key, values := range final {
+		original, exists := r.initial[key]
+		if exists && slices.Equal(original, values) {
+			continue
+		}
+		// A retained prefix belongs to the leader's outer middleware.
+		if len(original) > 0 && len(values) > len(original) && slices.Equal(original, values[:len(original)]) {
+			if response.addedValues == nil {
+				response.addedValues = make(http.Header)
+			}
+			response.addedValues[key] = slices.Clone(values[len(original):])
+			continue
+		}
+		if response.header == nil {
+			response.header = make(http.Header)
+		}
+		response.header[key] = slices.Clone(values)
+	}
+	for key := range r.initial {
+		if _, exists := final[key]; !exists {
+			response.deletedHeaders = append(response.deletedHeaders, key)
+		}
+	}
+	return response
 }
 
 func normalizeMethods(methods []string) []string {

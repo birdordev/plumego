@@ -75,6 +75,62 @@ func TestWaiterCancellationWinsOverOtherReadyOutcomes(t *testing.T) {
 	}
 }
 
+func TestCoalescedResponsesApplyHeaderChangesToEachWaiter(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		release := make(chan struct{})
+		handler := New(Config{}).Middleware()(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			<-release
+			if got := w.Header().Get("X-Request-ID"); got != "leader-id" {
+				t.Errorf("handler request ID=%q, want leader-id", got)
+			}
+			w.Header().Del("X-Delete")
+			w.Header().Set("X-Replace", "shared")
+			w.Header().Add("Vary", "Accept-Encoding")
+			w.Header().Set("Content-Type", "text/plain")
+			w.WriteHeader(http.StatusAccepted)
+			w.Header().Set("X-Late", "uncommitted")
+			_, _ = io.WriteString(w, "body")
+		}))
+		leader := httptest.NewRecorder()
+		leader.Header().Set("X-Request-ID", "leader-id")
+		leader.Header().Set("X-Delete", "leader-only-to-delete")
+		leader.Header().Set("Vary", "Origin")
+		leader.Header().Set("X-Leader-Only", "private")
+		waiter := httptest.NewRecorder()
+		waiter.Header().Set("X-Request-ID", "waiter-id")
+		waiter.Header().Set("X-Delete", "waiter-only-to-delete")
+		waiter.Header().Set("X-Replace", "old")
+		waiter.Header().Set("Vary", "Accept-Language")
+		waiter.Header().Set("X-Waiter-Only", "kept")
+
+		go handler.ServeHTTP(leader, httptest.NewRequest(http.MethodGet, "/", nil))
+		synctest.Wait()
+		go handler.ServeHTTP(waiter, httptest.NewRequest(http.MethodGet, "/", nil))
+		synctest.Wait()
+		close(release)
+		synctest.Wait()
+
+		for _, tc := range []struct {
+			w        *httptest.ResponseRecorder
+			id, vary string
+		}{
+			{leader, "leader-id", "Origin,Accept-Encoding"},
+			{waiter, "waiter-id", "Accept-Language,Accept-Encoding"},
+		} {
+			header := tc.w.Result().Header
+			if header.Get("X-Request-ID") != tc.id || strings.Join(header.Values("Vary"), ",") != tc.vary ||
+				header.Get("X-Delete") != "" || header.Get("X-Replace") != "shared" ||
+				header.Get("Content-Type") != "text/plain" || header.Get("X-Late") != "" ||
+				tc.w.Code != http.StatusAccepted || tc.w.Body.String() != "body" {
+				t.Errorf("%s: status=%d headers=%v body=%q", tc.id, tc.w.Code, header, tc.w.Body)
+			}
+		}
+		if header := waiter.Result().Header; header.Get("X-Waiter-Only") != "kept" || header.Get("X-Leader-Only") != "" {
+			t.Fatalf("waiter headers=%v", header)
+		}
+	})
+}
+
 func TestCoalescedResponsesPreserveTrailers(t *testing.T) {
 	leaderEntered := make(chan struct{})
 	waiterJoined := make(chan struct{})
