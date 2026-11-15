@@ -285,7 +285,7 @@ func formatTextValue(value reflect.Value, depth int, remaining *int) string {
 		// Custom formatters own their execution and must terminate themselves.
 		switch item.(type) {
 		case fmt.Formatter, fmt.Stringer, error:
-			return fmt.Sprint(item)
+			return formatCustomTextField(item)
 		}
 	}
 	switch value.Kind() {
@@ -376,6 +376,41 @@ func formatTextValue(value reflect.Value, depth int, remaining *int) string {
 		return out.String()
 	default:
 		return fmt.Sprint(value.Interface())
+	}
+}
+
+// textFieldFormatState supplies the default %v formatting state in a private
+// buffer, so a failed formatter cannot leave partial output in the log field.
+type textFieldFormatState struct{ strings.Builder }
+
+func (*textFieldFormatState) Width() (int, bool)     { return 0, false }
+func (*textFieldFormatState) Precision() (int, bool) { return 0, false }
+func (*textFieldFormatState) Flag(int) bool          { return false }
+
+func formatCustomTextField(value any) (text string) {
+	defer func() {
+		if recover() != nil {
+			v := reflect.ValueOf(value)
+			if v.Kind() == reflect.Pointer && v.IsNil() {
+				// Match fmt's representation when a method panics on a nil receiver.
+				text = "<nil>"
+			} else {
+				text = "[unsupported]"
+			}
+		}
+	}()
+
+	switch v := value.(type) {
+	case fmt.Formatter:
+		var state textFieldFormatState
+		v.Format(&state, 'v')
+		return state.String()
+	case error:
+		return v.Error()
+	case fmt.Stringer:
+		return v.String()
+	default:
+		return ""
 	}
 }
 

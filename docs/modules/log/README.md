@@ -58,6 +58,8 @@
   node from the same traversal budget.
   Custom `fmt.Formatter`, `fmt.Stringer`, and `error` methods retain their
   formatting behavior and own their termination; callers must keep them safe.
+  If a custom text field method panics, the logger discards its partial
+  output and uses a fixed placeholder.
 - Output-write failure diagnostics are emitted once per logger family and omit
   raw writer errors, which may contain the rejected log payload.
 - JSON sends each record and its trailing newline in a single writer call.

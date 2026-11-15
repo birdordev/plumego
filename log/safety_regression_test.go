@@ -11,6 +11,63 @@ import (
 	"testing"
 )
 
+type panickingLogStringer struct{}
+
+func (panickingLogStringer) String() string { panic("private String diagnostic") }
+
+type panickingLogError struct{}
+
+func (panickingLogError) Error() string { panic("private Error diagnostic") }
+
+type panickingLogFormatter struct{}
+
+func (panickingLogFormatter) Format(state fmt.State, _ rune) {
+	_, _ = state.Write([]byte("partial formatter output"))
+	panic("private Format diagnostic")
+}
+
+type defaultVerbFormatter struct{}
+
+func (defaultVerbFormatter) Format(state fmt.State, verb rune) {
+	_, hasWidth := state.Width()
+	_, hasPrecision := state.Precision()
+	if verb == 'v' && !hasWidth && !hasPrecision && !state.Flag('#') {
+		_, _ = state.Write([]byte("formatted"))
+	}
+}
+
+type logErrorWithString struct{}
+
+func (logErrorWithString) Error() string  { return "error-text" }
+func (logErrorWithString) String() string { return "string-text" }
+
+func TestTextLoggerContainsFormatPanics(t *testing.T) {
+	var output bytes.Buffer
+	logger := NewLogger(LoggerConfig{Format: LoggerFormatText, Output: &output})
+	var absent *panickingLogStringer
+	logger.Info("event", Fields{
+		"stringer": panickingLogStringer{},
+		"error":    panickingLogError{},
+		"format":   panickingLogFormatter{},
+		"valid":    defaultVerbFormatter{},
+		"both":     logErrorWithString{},
+		"nil":      absent,
+		"sibling":  "kept",
+	})
+	line := output.String()
+	for _, expected := range []string{
+		"stringer=[unsupported]", "error=[unsupported]", "format=[unsupported]",
+		"valid=formatted", "both=error-text", "nil=<nil>", "sibling=kept",
+	} {
+		if !strings.Contains(line, expected) {
+			t.Errorf("missing %q in %q", expected, line)
+		}
+	}
+	if strings.Contains(line, "private") || strings.Contains(line, "partial formatter output") {
+		t.Fatalf("unexpected raw diagnostic or partial output: %q", line)
+	}
+}
+
 func TestJSONPreservesLargeIntegerFields(t *testing.T) {
 	var output bytes.Buffer
 	logger := NewLogger(LoggerConfig{Format: LoggerFormatJSON, Output: &output})
