@@ -1,14 +1,54 @@
 package contract
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"strings"
 	"testing"
 )
+
+func TestPutJSONBufferRetainsOnlyBoundedCapacity(t *testing.T) {
+	putJSONBuffer(nil)
+	for _, capacity := range []int{maxPooledJSONBufferCapacity, maxPooledJSONBufferCapacity + 1} {
+		buf := bytes.NewBuffer(make([]byte, 1, capacity))
+		wantLen := buf.Len()
+		if capacity == maxPooledJSONBufferCapacity {
+			wantLen = 0
+		}
+		putJSONBuffer(buf)
+		if got := buf.Len(); got != wantLen {
+			t.Errorf("buffer of capacity %d after put has length %d, want %d", capacity, got, wantLen)
+		}
+	}
+}
+
+func TestLargeJSONResponsePreservesSubsequentJSONWrites(t *testing.T) {
+	for _, payload := range []string{strings.Repeat("a", maxPooledJSONBufferCapacity+1), "small"} {
+		w := httptest.NewRecorder()
+		if err := WriteResponse(w, nil, http.StatusOK, payload, nil); err != nil {
+			t.Fatal(err)
+		}
+		var response struct {
+			Data string `json:"data"`
+		}
+		if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil || response.Data != payload {
+			t.Fatalf("payload length %d: received length %d, decode error = %v", len(payload), len(response.Data), err)
+		}
+	}
+	w := httptest.NewRecorder()
+	if err := WriteError(w, nil, APIError{status: http.StatusBadRequest, message: "invalid request"}); err != nil {
+		t.Fatal(err)
+	}
+	var response errorResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil || response.Error.Message != "invalid request" {
+		t.Fatalf("error message = %q, decode error = %v", response.Error.Message, err)
+	}
+}
 
 func TestWriteResponseNoBodyFraming(t *testing.T) {
 	for _, status := range []int{http.StatusNoContent, http.StatusResetContent} {
