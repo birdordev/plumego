@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/birdordev/plumego/security/headers"
 )
@@ -49,6 +50,20 @@ func TestSecurityHeadersMiddlewareStrictHSTS(t *testing.T) {
 	resp := w.Result()
 	if got := resp.Header.Get("Strict-Transport-Security"); got == "" {
 		t.Fatalf("expected HSTS header to be set")
+	}
+}
+
+func TestSecurityHeadersMiddlewareKeepsHSTSSnapshot(t *testing.T) {
+	options := headers.HSTSOptions{MaxAge: 2 * time.Hour, IncludeSubDomains: true}
+	policy := headers.Policy{StrictTransportSecurity: &options}
+	handler := mustSecurityHeaders(t, Config{Policy: &policy})(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	options = headers.HSTSOptions{}
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "https://example.com", nil))
+	if got := w.Result().Header.Get("Strict-Transport-Security"); got != "max-age=7200; includeSubDomains" {
+		t.Fatalf("HSTS = %q", got)
 	}
 }
 

@@ -10,6 +10,20 @@ import (
 	"time"
 )
 
+func TestCompileDetachesHSTSOptions(t *testing.T) {
+	options := HSTSOptions{MaxAge: time.Hour, IncludeSubDomains: true, Preload: true}
+	policy := Policy{StrictTransportSecurity: &options}.Compile()
+	options = HSTSOptions{}
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "https://example.com", nil)
+	if err := policy.ApplyChecked(w, req); err != nil {
+		t.Fatal(err)
+	}
+	if got := w.Result().Header.Get("Strict-Transport-Security"); got != "max-age=3600; includeSubDomains; preload" {
+		t.Fatalf("HSTS = %q", got)
+	}
+}
+
 func TestDefaultPolicy(t *testing.T) {
 	policy := DefaultPolicy()
 	req := httptest.NewRequest(http.MethodGet, "http://example.com", nil)

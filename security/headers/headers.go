@@ -172,14 +172,19 @@ func DefaultPolicy() Policy {
 }
 
 // Compile precomputes invariant header values (currently HSTS) and returns an
-// optimised copy of the policy. The original is not modified.
+// optimised copy of the policy with detached HSTS options.
 //
 // Call Compile once after the policy is fully configured, typically inside the
 // transport middleware constructor. Uncompiled policies still produce correct
 // output; Compile only avoids redundant string allocation per request.
 func (p Policy) Compile() Policy {
-	if p.StrictTransportSecurity != nil && p.StrictTransportSecurity.MaxAge > 0 {
-		p.compiledHSTS = formatHSTS(*p.StrictTransportSecurity)
+	p.compiledHSTS = ""
+	if p.StrictTransportSecurity != nil {
+		hsts := *p.StrictTransportSecurity
+		p.StrictTransportSecurity = &hsts
+		if hsts.MaxAge > 0 {
+			p.compiledHSTS = formatHSTS(hsts)
+		}
 	}
 	return p
 }
