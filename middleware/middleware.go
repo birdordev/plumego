@@ -116,7 +116,8 @@ func (c *Chain) Snapshot() []Middleware {
 //
 // Build should be called once during startup. The returned handler is safe
 // for concurrent use by multiple goroutines.
-// If a middleware builder returns nil, Build returns nil immediately.
+// If a middleware builder returns nil or a nil http.HandlerFunc, Build returns
+// nil immediately.
 //
 // Execution order: first registered middleware runs outermost (first on request).
 //
@@ -127,6 +128,9 @@ func (c *Chain) Build(h http.Handler) http.Handler {
 	for i := len(c.middlewares) - 1; i >= 0; i-- {
 		h = c.middlewares[i](h)
 		if h == nil {
+			return nil
+		}
+		if fn, ok := h.(http.HandlerFunc); ok && fn == nil {
 			return nil
 		}
 	}

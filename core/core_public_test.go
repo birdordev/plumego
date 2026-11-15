@@ -19,6 +19,12 @@ import (
 )
 
 func TestPrepareRejectsNilFromIntermediateBuilder(t *testing.T) {
+	t.Run("nil interface", func(t *testing.T) { testPrepareRejectsBuilderResult(t, nil) })
+	t.Run("nil HandlerFunc", func(t *testing.T) { testPrepareRejectsBuilderResult(t, http.HandlerFunc(nil)) })
+}
+
+func testPrepareRejectsBuilderResult(t *testing.T, invalid http.Handler) {
+	t.Helper()
 	app := core.New(core.DefaultConfig(), core.AppDependencies{})
 	var outerCalls, innerCalls int
 	if err := app.Use(func(next http.Handler) http.Handler {
@@ -27,7 +33,7 @@ func TestPrepareRejectsNilFromIntermediateBuilder(t *testing.T) {
 	}, func(next http.Handler) http.Handler {
 		innerCalls++
 		if innerCalls == 1 {
-			return nil
+			return invalid
 		}
 		return next
 	}); err != nil {
