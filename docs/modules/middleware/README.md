@@ -359,7 +359,8 @@ without a response body. Do not use coalesce for streaming, SSE, websocket,
 long-polling, or response bodies whose correctness depends on per-request side
 effects outside the key. When the leader explicitly commits headers with
 `WriteHeader`, waiter replay uses that committed header snapshot rather than
-later header mutations.
+later header mutations. Declared and dynamic response trailers are forwarded
+to the leader and replayed for non-HEAD waiters.
 
 `Config.OnCoalesced` is called once for each waiter that successfully receives a
 coalesced response. The callback `count` argument is a per-callback event count

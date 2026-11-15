@@ -160,18 +160,31 @@ func (r *BufferedResponseRecorder) WriteTo(dst http.ResponseWriter) (int, error)
 
 // CopyTrailers forwards values supplied by the handler after the final header.
 func (r *BufferedResponseRecorder) CopyTrailers(dst http.Header) {
+	CopyResponseTrailers(dst, r.committed, r.header)
+}
+
+// CopyResponseTrailers overlays the final trailer values onto dst.
+// A nil destination is allocated only when there is a trailer to copy.
+func CopyResponseTrailers(dst, committed, header http.Header) http.Header {
+	copyValue := func(name string, values []string) {
+		if dst == nil {
+			dst = make(http.Header)
+		}
+		dst[name] = append([]string(nil), values...)
+	}
 	// Trailer values are the only headers allowed to change after commitment.
-	for _, declaration := range r.committed.Values("Trailer") {
+	for _, declaration := range committed.Values("Trailer") {
 		for _, name := range strings.Split(declaration, ",") {
 			name = http.CanonicalHeaderKey(strings.TrimSpace(name))
-			if values, ok := r.header[name]; ok {
-				dst[name] = append([]string(nil), values...)
+			if values, ok := header[name]; ok {
+				copyValue(name, values)
 			}
 		}
 	}
-	for name, values := range r.header {
+	for name, values := range header {
 		if strings.HasPrefix(name, http.TrailerPrefix) {
-			dst[name] = append([]string(nil), values...)
+			copyValue(name, values)
 		}
 	}
+	return dst
 }

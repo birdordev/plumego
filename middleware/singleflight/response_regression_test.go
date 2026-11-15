@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 	"testing/synctest"
@@ -19,7 +20,10 @@ type waiterContext struct {
 	once    sync.Once
 }
 
-func (c *waiterContext) Done() <-chan struct{} { c.once.Do(func() { close(c.entered) }); return nil }
+func (c *waiterContext) Done() <-chan struct{} {
+	c.once.Do(func() { close(c.entered) })
+	return c.Context.Done()
+}
 
 type waiterSelectContext struct {
 	context.Context
@@ -68,6 +72,89 @@ func TestWaiterCancellationWinsOverOtherReadyOutcomes(t *testing.T) {
 				}
 			})
 		})
+	}
+}
+
+func TestCoalescedResponsesPreserveTrailers(t *testing.T) {
+	leaderEntered := make(chan struct{})
+	waiterJoined := make(chan struct{})
+	release := make(chan struct{})
+	releaseLeader := sync.OnceFunc(func() { close(release) })
+	coalesce := New(Config{KeyFunc: func(*http.Request) string { return "same" }}).Middleware()
+	handler := coalesce(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/leader" {
+			t.Error("the waiter executed the downstream handler")
+			return
+		}
+		close(leaderEntered)
+		<-release
+		w.Header().Set("Trailer", "X-Checksum")
+		w.Header().Set("X-Phase", "committed")
+		w.WriteHeader(http.StatusOK)
+		if _, err := io.WriteString(w, "payload"); err != nil {
+			t.Error(err)
+		}
+		w.Header().Add("X-Checksum", "one")
+		w.Header().Add("X-Checksum", "two")
+		w.Header().Set(http.TrailerPrefix+"X-Dynamic", "done")
+		w.Header().Set("X-Phase", "late")
+	}))
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/waiter" {
+			r = r.WithContext(&waiterContext{Context: r.Context(), entered: waiterJoined})
+		}
+		handler.ServeHTTP(w, r)
+	}))
+	defer server.Close()
+	defer releaseLeader()
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	type result struct {
+		response *http.Response
+		err      error
+	}
+	start := func(path string) <-chan result {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, server.URL+path, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		done := make(chan result, 1)
+		go func() {
+			response, err := server.Client().Do(req)
+			done <- result{response, err}
+		}()
+		return done
+	}
+	leader := start("/leader")
+	select {
+	case <-leaderEntered:
+	case <-ctx.Done():
+		t.Fatal("leader did not enter its handler")
+	}
+	waiter := start("/waiter")
+	select {
+	case <-waiterJoined:
+	case <-ctx.Done():
+		t.Fatal("waiter did not join the leader")
+	}
+	releaseLeader()
+
+	for name, done := range map[string]<-chan result{"leader": leader, "waiter": waiter} {
+		got := <-done
+		if got.err != nil {
+			t.Fatalf("%s: %v", name, got.err)
+		}
+		response := got.response
+		body, err := io.ReadAll(response.Body)
+		_ = response.Body.Close()
+		if err != nil || response.StatusCode != http.StatusOK || string(body) != "payload" {
+			t.Fatalf("%s: status=%d body=%q err=%v", name, response.StatusCode, body, err)
+		}
+		if response.Header.Get("X-Phase") != "committed" ||
+			strings.Join(response.Trailer.Values("X-Checksum"), ",") != "one,two" ||
+			response.Trailer.Get("X-Dynamic") != "done" {
+			t.Fatalf("%s: header=%v trailer=%v", name, response.Header, response.Trailer)
+		}
 	}
 }
 

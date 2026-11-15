@@ -152,6 +152,7 @@ type capturedResponse struct {
 	statusCode int
 	header     http.Header
 	body       []byte
+	trailers   http.Header
 }
 
 // New creates a new request coalescer with the provided configuration.
@@ -308,6 +309,18 @@ func (c *Coalescer) executeRequest(w http.ResponseWriter, r *http.Request, key s
 	// Execute request
 	next.ServeHTTP(recorder, r)
 
+	// Commit implicit success headers even when the handler wrote no body.
+	if !recorder.wroteHeader {
+		recorder.WriteHeader(http.StatusOK)
+	}
+	var trailers http.Header
+	if !recorder.hijacked {
+		trailers = internaltransport.CopyResponseTrailers(nil, recorder.committed, recorder.header)
+		if len(trailers) > 0 {
+			internaltransport.CopyHeaders(w.Header(), trailers)
+		}
+	}
+
 	if recorder.writeFailed {
 		inflight.err = errLeaderWrite
 		return
@@ -321,13 +334,9 @@ func (c *Coalescer) executeRequest(w http.ResponseWriter, r *http.Request, key s
 		return
 	}
 
-	// Commit implicit success headers even when the handler wrote no body.
-	if !recorder.wroteHeader {
-		recorder.WriteHeader(http.StatusOK)
-	}
-
 	// Capture response
 	inflight.response = recorder.CapturedResponse()
+	inflight.response.trailers = trailers
 }
 
 func (c *Coalescer) finishRequest(key string, inflight *inFlightRequest) {
@@ -355,12 +364,19 @@ func writeResponse(w http.ResponseWriter, r *http.Request, resp *capturedRespons
 		w.Header().Set("X-Coalesced", "true")
 	}
 	w.WriteHeader(resp.statusCode)
-	if r.Method == http.MethodHead || resp.body == nil {
+	if r.Method == http.MethodHead {
 		return nil
 	}
-	n, err := w.Write(resp.body)
-	if err == nil && n != len(resp.body) {
-		return io.ErrShortWrite
+	var err error
+	if resp.body != nil {
+		var n int
+		n, err = w.Write(resp.body)
+		if err == nil && n != len(resp.body) {
+			err = io.ErrShortWrite
+		}
+	}
+	if len(resp.trailers) > 0 {
+		internaltransport.CopyHeaders(w.Header(), resp.trailers)
 	}
 	return err
 }
@@ -376,6 +392,7 @@ type limitedResponseRecorder struct {
 	overflow     bool
 	unreplayable bool
 	writeFailed  bool
+	hijacked     bool
 }
 
 func newLimitedResponseRecorder(w http.ResponseWriter, maxBytes int) *limitedResponseRecorder {
@@ -454,6 +471,7 @@ func (r *limitedResponseRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) 
 	}
 	r.wroteHeader = true
 	r.unreplayable = true
+	r.hijacked = true
 	return conn, rw, nil
 }
 
