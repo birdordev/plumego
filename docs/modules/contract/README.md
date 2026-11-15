@@ -93,7 +93,9 @@ trace metadata carriers.
 - Error detail names at the top level must be nonempty. Nested JSON objects
   retain their original keys, including empty strings.
 - If error details cannot be encoded, `WriteError` sends the same status and
-  error envelope without `details`. It returns the encoding error and any
+  error envelope without `details`. A custom detail encoder panic uses this
+  fallback and returns a fixed diagnostic that omits the panic value.
+  `WriteError` returns the encoding diagnostic and any
   write error for diagnostics. The fallback commits the response, so callers
   should log the error without attempting a second response.
 - handlers decode JSON directly with `json.NewDecoder(r.Body).Decode(&dst)`

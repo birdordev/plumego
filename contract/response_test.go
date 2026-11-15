@@ -286,20 +286,52 @@ func TestWriteResponseBodylessSuccessStatuses(t *testing.T) {
 	}
 }
 
-type failingBodyWriter struct {
+type countingResponseWriter struct {
 	*httptest.ResponseRecorder
 	headerWrites int
 	bodyWrites   int
+	writeErr     error
 }
 
-func (w *failingBodyWriter) WriteHeader(status int) {
+func (w *countingResponseWriter) WriteHeader(status int) {
 	w.headerWrites++
 	w.ResponseRecorder.WriteHeader(status)
 }
 
-func (w *failingBodyWriter) Write([]byte) (int, error) {
+func (w *countingResponseWriter) Write(p []byte) (int, error) {
 	w.bodyWrites++
-	return 0, io.ErrClosedPipe
+	if w.writeErr != nil {
+		return 0, w.writeErr
+	}
+	return w.ResponseRecorder.Write(p)
+}
+
+type panickingErrorDetail struct{}
+
+func (panickingErrorDetail) MarshalJSON() ([]byte, error) {
+	panic("private encoder diagnostic")
+}
+
+func TestWriteErrorRecoversDetailEncoderPanic(t *testing.T) {
+	w := &countingResponseWriter{ResponseRecorder: httptest.NewRecorder()}
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req = req.WithContext(WithRequestID(req.Context(), "fallback-id"))
+	err := WriteError(w, req, NewErrorBuilder().Type(TypeBadRequest).
+		Message("bad detail").Detail("value", panickingErrorDetail{}).Build())
+	if err != errErrorDetailEncodingPanic {
+		t.Fatalf("WriteError = %v, want fixed encoding diagnostic", err)
+	}
+	if w.Code != http.StatusBadRequest || w.headerWrites != 1 || w.bodyWrites != 1 {
+		t.Fatalf("status = %d, header writes = %d, body writes = %d", w.Code, w.headerWrites, w.bodyWrites)
+	}
+	var body errorResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body.Error.Code != CodeBadRequest || body.Error.Message != "bad detail" ||
+		body.Error.Details != nil || body.RequestID != "fallback-id" {
+		t.Fatalf("unexpected fallback body: %+v", body)
+	}
 }
 
 func TestResponseWritersReturnWriteFailureWithoutRetry(t *testing.T) {
@@ -320,7 +352,7 @@ func TestResponseWritersReturnWriteFailureWithoutRetry(t *testing.T) {
 		}, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			w := &failingBodyWriter{ResponseRecorder: httptest.NewRecorder()}
+			w := &countingResponseWriter{ResponseRecorder: httptest.NewRecorder(), writeErr: io.ErrClosedPipe}
 			err := tc.write(w)
 			var encodingErr *json.UnsupportedTypeError
 			if !errors.Is(err, io.ErrClosedPipe) || errors.As(err, &encodingErr) != tc.encodingFail {

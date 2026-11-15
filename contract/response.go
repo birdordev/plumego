@@ -95,10 +95,13 @@ type errorResponse struct {
 	RequestID string       `json:"request_id,omitempty"`
 }
 
+var errErrorDetailEncodingPanic = errors.New("error detail encoder panicked")
+
 // WriteError writes a structured error response and injects the request id when available.
 // If details cannot be encoded, it writes the same error without details and
-// returns the original encoding error, joined with any write error. A short
-// body write without a writer error returns io.ErrShortWrite.
+// returns the original encoding error or a fixed diagnostic for an encoder
+// panic, joined with any write error. A short body write without a writer error
+// returns io.ErrShortWrite.
 //
 // Prefer building APIError values through NewErrorBuilder() so that required
 // fields are always populated. WriteError still normalizes incomplete APIError
@@ -125,7 +128,7 @@ func WriteError(w http.ResponseWriter, r *http.Request, err APIError) error {
 	defer putJSONBuffer(buf)
 
 	encoder := json.NewEncoder(buf)
-	if encErr := encoder.Encode(resp); encErr != nil {
+	if encErr := encodeErrorWithDetails(encoder, resp); encErr != nil {
 		resp.Error.Details = nil
 		buf.Reset()
 		if fallbackErr := encoder.Encode(resp); fallbackErr != nil {
@@ -138,6 +141,15 @@ func WriteError(w http.ResponseWriter, r *http.Request, err APIError) error {
 	}
 
 	return writeEncodedJSON(w, err.status, buf.Bytes())
+}
+
+func encodeErrorWithDetails(encoder *json.Encoder, resp errorResponse) (err error) {
+	defer func() {
+		if recover() != nil {
+			err = errErrorDetailEncodingPanic
+		}
+	}()
+	return encoder.Encode(resp)
 }
 
 func errorPayloadFrom(err APIError) errorPayload {
