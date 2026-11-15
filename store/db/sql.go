@@ -245,6 +245,8 @@ func QueryRowContext(ctx context.Context, db DB, query string, args ...any) (*sq
 // If the function returns an error, the transaction is rolled back.
 // Otherwise, the transaction is committed.
 // Panics and goroutine exits also roll back the transaction.
+// If BeginTx returns both a transaction and an error, the transaction is
+// rolled back and both the begin and rollback errors are retained.
 func WithTransaction(ctx context.Context, db DB, txOpts *sql.TxOptions, fn func(*sql.Tx) error) error {
 	if db == nil {
 		return fmt.Errorf("%w: database is nil", ErrTransactionFailed)
@@ -255,7 +257,13 @@ func WithTransaction(ctx context.Context, db DB, txOpts *sql.TxOptions, fn func(
 
 	tx, err := db.BeginTx(ctx, txOpts)
 	if err != nil {
-		return fmt.Errorf("%w: begin transaction failed: %w", ErrTransactionFailed, err)
+		beginErr := fmt.Errorf("%w: begin transaction failed: %w", ErrTransactionFailed, err)
+		if tx != nil {
+			if rollbackErr := tx.Rollback(); rollbackErr != nil {
+				return errors.Join(beginErr, fmt.Errorf("rollback failed: %w", rollbackErr))
+			}
+		}
+		return beginErr
 	}
 	if tx == nil {
 		return fmt.Errorf("%w: begin transaction returned nil transaction", ErrTransactionFailed)

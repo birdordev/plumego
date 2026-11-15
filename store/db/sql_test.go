@@ -377,6 +377,49 @@ func TestWithTransactionRollbackError(t *testing.T) {
 	}
 }
 
+type partialBeginDB struct {
+	*sql.DB
+	err error
+}
+
+func (db partialBeginDB) BeginTx(ctx context.Context, opts *sql.TxOptions) (*sql.Tx, error) {
+	tx, err := db.DB.BeginTx(ctx, opts)
+	if err != nil {
+		return nil, err
+	}
+	return tx, db.err
+}
+
+type countedRollbackTx struct {
+	stubTx
+	rollbacks int
+}
+
+func (tx *countedRollbackTx) Rollback() error {
+	tx.rollbacks++
+	return tx.stubTx.Rollback()
+}
+
+func TestWithTransactionRollsBackTransactionReturnedWithBeginError(t *testing.T) {
+	beginErr := errors.New("begin decorator failed")
+	rollbackErr := errors.New("rollback failed")
+	result := &countedRollbackTx{stubTx: stubTx{rollbackErr: rollbackErr}}
+	pool := sql.OpenDB(&stubConnector{conn: &stubConn{tx: result}})
+	t.Cleanup(func() { _ = pool.Close() })
+	pool.SetMaxOpenConns(1)
+
+	err := WithTransaction(t.Context(), partialBeginDB{DB: pool, err: beginErr}, nil, func(*sql.Tx) error {
+		t.Error("callback ran despite begin failure")
+		return nil
+	})
+	if !errors.Is(err, ErrTransactionFailed) || !errors.Is(err, beginErr) || !errors.Is(err, rollbackErr) {
+		t.Fatalf("WithTransaction error = %v", err)
+	}
+	if inUse := pool.Stats().InUse; result.rollbacks != 1 || inUse != 0 {
+		t.Fatalf("rollbacks=%d connections in use=%d", result.rollbacks, inUse)
+	}
+}
+
 func TestWithTransactionUsesCallerContext(t *testing.T) {
 	ctx := context.WithValue(t.Context(), testContextKey{}, "request")
 	beginErr := errors.New("begin failed")

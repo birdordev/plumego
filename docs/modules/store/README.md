@@ -178,6 +178,8 @@
 
 - `store/db` helpers execute with the exact `context.Context` supplied by the caller.
 - `store/db.WithTransaction` commits successful callbacks and rolls back failed callbacks. Panic and `runtime.Goexit` paths also release the transaction; panics propagate unchanged. Callback and explicit rollback errors remain inspectable with `errors.Is`.
+- If an injected database returns a transaction alongside a begin error,
+  `WithTransaction` rolls back that transaction and preserves both errors.
 - `store/db.OpenWith` owns any non-nil pool returned by the injected opener and
   closes it if opening fails. Its error chain retains both failures when
   closing also fails.
