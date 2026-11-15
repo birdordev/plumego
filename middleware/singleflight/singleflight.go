@@ -584,8 +584,9 @@ func DefaultKeyFunc(r *http.Request) string {
 	return strconv.FormatUint(h.Sum64(), 16)
 }
 
-// HeaderAwareKeyFunc generates a key including specific headers
+// HeaderAwareKeyFunc generates keys using a snapshot of the supplied header names.
 func HeaderAwareKeyFunc(headers []string) KeyFunc {
+	headers = slices.Clone(headers)
 	return func(r *http.Request) string {
 		h := fnv.New64a()
 

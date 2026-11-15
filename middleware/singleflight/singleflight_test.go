@@ -1307,6 +1307,22 @@ func TestHeaderAwareKeyFuncCanonicalizesConfiguredHeaders(t *testing.T) {
 	}
 }
 
+func TestHeaderAwareKeyFuncOwnsConfiguredHeaders(t *testing.T) {
+	headers := []string{"Accept"}
+	keyFunc := HeaderAwareKeyFunc(headers)
+	req := httptest.NewRequest(http.MethodGet, "/variant", nil)
+	req.Header.Set("Accept", "application/json")
+	want := keyFunc(req)
+	headers[0] = "Accept-Language"
+	if got := keyFunc(req); got != want {
+		t.Fatalf("key after changing the input slice = %q, want %q", got, want)
+	}
+	req.Header.Set("Accept", "text/plain")
+	if got := keyFunc(req); got == want {
+		t.Fatal("expected the originally configured header to partition the key")
+	}
+}
+
 func TestCoalesce_ResponseStatusCodes(t *testing.T) {
 	tests := []struct {
 		name       string
