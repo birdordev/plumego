@@ -1,12 +1,63 @@
 package requestid
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/birdordev/plumego/contract"
 )
+
+func TestMiddlewareUsesSameValidatedIDInHeadersContextAndJSON(t *testing.T) {
+	oversized := strings.Repeat("x", 129)
+	for _, tc := range []struct {
+		name, header, generated, want string
+	}{
+		{"valid header", strings.Repeat("a", 128), "generated", strings.Repeat("a", 128)},
+		{"invalid header", oversized, "generated", "generated"},
+		{"invalid custom ID", "", oversized, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var contextID, requestHeader string
+			handler := Middleware(WithGenerator(func() string { return tc.generated }))(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				contextID = contract.RequestIDFromContext(r.Context())
+				requestHeader = r.Header.Get(contract.RequestIDHeader)
+				if err := contract.WriteResponse(w, r, http.StatusOK, "ok", nil); err != nil {
+					t.Fatal(err)
+				}
+			}))
+			req := httptest.NewRequest(http.MethodGet, "/", nil)
+			req.Header.Set(contract.RequestIDHeader, tc.header)
+			w := httptest.NewRecorder()
+			handler.ServeHTTP(w, req)
+			var body struct {
+				ID string `json:"request_id"`
+			}
+			if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+				t.Fatal(err)
+			}
+			header := w.Result().Header.Get(contract.RequestIDHeader)
+			if header == "" || header == oversized || header != requestHeader || header != contextID || header != body.ID {
+				t.Fatalf("response header=%q request header=%q context=%q JSON=%q", header, requestHeader, contextID, body.ID)
+			}
+			if tc.want != "" && header != tc.want {
+				t.Fatalf("request ID=%q, want %q", header, tc.want)
+			}
+		})
+	}
+}
+
+func TestAttachRequestIDIgnoresRejectedIDWithExistingContext(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req = req.WithContext(contract.WithRequestID(req.Context(), "existing"))
+	w := httptest.NewRecorder()
+	if got := AttachRequestID(w, req, strings.Repeat("x", 129), true); got != req ||
+		w.Header().Get(contract.RequestIDHeader) != "" || req.Header.Get(contract.RequestIDHeader) != "" {
+		t.Fatal("rejected ID changed the request or response headers")
+	}
+}
 
 func TestMiddlewareUsesHeader(t *testing.T) {
 	handler := Middleware()(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

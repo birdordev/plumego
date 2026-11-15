@@ -2,7 +2,6 @@ package requestid
 
 import (
 	"net/http"
-	"strings"
 
 	"github.com/birdordev/plumego/contract"
 )
@@ -15,18 +14,15 @@ func RequestIDFromRequest(r *http.Request) string {
 	if id := contract.RequestIDFromContext(r.Context()); id != "" {
 		return id
 	}
-	if id := strings.TrimSpace(r.Header.Get(contract.RequestIDHeader)); id != "" {
-		return id
-	}
-	return ""
+	return acceptedRequestID(r.Header.Get(contract.RequestIDHeader))
 }
 
-// AttachRequestID stores the request id in context and headers.
+// AttachRequestID stores an accepted request id in context and headers.
 func AttachRequestID(w http.ResponseWriter, r *http.Request, id string, includeInRequest bool) *http.Request {
 	if r == nil {
 		return r
 	}
-	id = strings.TrimSpace(id)
+	id = acceptedRequestID(id)
 	if id == "" {
 		return r
 	}
@@ -46,9 +42,14 @@ func EnsureRequestID(r *http.Request, generate func() string) string {
 		return id
 	}
 	if generate != nil {
-		if id := strings.TrimSpace(generate()); id != "" {
+		if id := acceptedRequestID(generate()); id != "" {
 			return id
 		}
 	}
 	return NewRequestID()
+}
+
+func acceptedRequestID(id string) string {
+	// Use an empty context so rejection cannot fall back to a previously attached ID.
+	return contract.RequestIDFromContext(contract.WithRequestID(nil, id))
 }

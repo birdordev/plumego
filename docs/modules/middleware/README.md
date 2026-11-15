@@ -67,6 +67,9 @@
 - keep protocol or payload adaptation in `x/gateway/*`
 - keep request-id generation policy in middleware-owned packages; `contract` should only carry request-id context/header contracts
 - customize request-id generation through `requestid.WithGenerator(...)`; `requestid.NewRequestID()` is a convenience default backed by package-local generator state
+- request-id middleware validates incoming and generated IDs with the context
+  contract before forwarding them. A rejected header triggers ID generation,
+  and a rejected custom ID falls back to the default generator.
 - treat request IDs as correlation identifiers only; the default generated ID is decodable and must not be used as a secret, token, nonce, or authorization value
 - when `requestid.Middleware()` is absent, stable observability middleware may still stamp a fallback request id so access logs, tracing, and HTTP metrics share one correlation path
 
