@@ -2,6 +2,7 @@ package router
 
 import (
 	"bufio"
+	"errors"
 	plumelog "github.com/birdordev/plumego/log"
 	"github.com/birdordev/plumego/middleware/recovery"
 	"io"
@@ -11,6 +12,42 @@ import (
 	"strings"
 	"testing"
 )
+
+type headBasicWriter struct{ http.ResponseWriter }
+type headUnwrapWriter struct{ http.ResponseWriter }
+
+func (w headUnwrapWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
+
+func TestHeadUnsupportedFlushLeavesResponseOpen(t *testing.T) {
+	r := NewRouter()
+	if err := r.AddRoute(http.MethodGet, "/", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if !errors.Is(http.NewResponseController(w).Flush(), http.ErrNotSupported) {
+			t.Error("expected unsupported flush")
+		}
+		w.WriteHeader(http.StatusAccepted)
+	})); err != nil {
+		t.Fatal(err)
+	}
+	for _, method := range []string{http.MethodGet, http.MethodHead} {
+		dst := httptest.NewRecorder()
+		r.ServeHTTP(headBasicWriter{dst}, httptest.NewRequest(method, "/", nil))
+		if dst.Code != http.StatusAccepted {
+			t.Errorf("%s status=%d, want 202", method, dst.Code)
+		}
+	}
+}
+
+func TestHeadFlushThroughUnwrapCommitsSelectedStatus(t *testing.T) {
+	dst := httptest.NewRecorder()
+	writer := &noBodyWriter{ResponseWriter: headUnwrapWriter{dst}}
+	writer.WriteHeader(http.StatusAccepted)
+	if err := http.NewResponseController(writer).Flush(); err != nil {
+		t.Fatal(err)
+	}
+	if dst.Code != http.StatusAccepted || !dst.Flushed {
+		t.Fatalf("status=%d flushed=%t", dst.Code, dst.Flushed)
+	}
+}
 
 func TestHeadPreservesImplicitCommit(t *testing.T) {
 	cases := []struct {

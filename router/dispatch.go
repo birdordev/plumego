@@ -100,8 +100,22 @@ func hasResponseTrailers(header http.Header) bool {
 }
 
 func (w *noBodyWriter) FlushError() error {
-	w.commit(false)
-	return http.NewResponseController(w.ResponseWriter).Flush()
+	// Resolve the capability before committing headers, in ResponseController order.
+	for dst := w.ResponseWriter; ; {
+		switch writer := dst.(type) {
+		case interface{ FlushError() error }:
+			w.commit(false)
+			return writer.FlushError()
+		case http.Flusher:
+			w.commit(false)
+			writer.Flush()
+			return nil
+		case interface{ Unwrap() http.ResponseWriter }:
+			dst = writer.Unwrap()
+		default:
+			return http.ErrNotSupported
+		}
+	}
 }
 
 func (w *noBodyWriter) Flush() { _ = w.FlushError() }
