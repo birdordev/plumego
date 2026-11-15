@@ -477,13 +477,31 @@ func (r *limitedResponseRecorder) Write(p []byte) (int, error) {
 	return n, err
 }
 
-func (r *limitedResponseRecorder) Flush() {
-	r.unreplayable = true
+func (r *limitedResponseRecorder) FlushError() error {
+	var original http.Header
+	var dst http.Header
 	if !r.wroteHeader {
-		r.WriteHeader(http.StatusOK)
+		dst = r.ResponseWriter.Header()
+		original = dst.Clone()
+		internaltransport.ReplaceHeaders(dst, r.header)
+		internaltransport.EnsureNoSniff(dst)
 	}
-	internaltransport.FlushIfSupported(r.ResponseWriter)
+	err := http.NewResponseController(r.ResponseWriter).Flush()
+	if errors.Is(err, http.ErrNotSupported) {
+		if !r.wroteHeader {
+			internaltransport.ReplaceHeaders(dst, original)
+		}
+		return err
+	}
+	if !r.wroteHeader {
+		r.committed = r.header.Clone()
+		r.wroteHeader = true
+	}
+	r.unreplayable = true
+	return err
 }
+
+func (r *limitedResponseRecorder) Flush() { _ = r.FlushError() }
 
 func (r *limitedResponseRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 	conn, rw, err := internaltransport.HijackIfSupported(r.ResponseWriter)

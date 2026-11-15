@@ -346,9 +346,11 @@ while capturing a bounded copy for concurrent waiters with the same coalesce key
 The default `Config.MaxResponseBytes` is 10MB. If the leader response exceeds
 the capture limit, the leader still receives the upstream response, but waiters
 receive a structured upstream failure instead of replaying an unbounded
-in-memory body. If the leader response uses `Flush` or `Hijack`, coalesce also
-treats that leader response as unreplayable: the leader keeps the pass-through
+in-memory body. When the transport supports a leader `Flush` or the leader
+successfully hijacks the connection, coalesce treats the response as unreplayable.
+The leader keeps the pass-through
 transport behavior, while waiters receive the same structured upstream failure.
+An unsupported flush leaves the response eligible for replay.
 Waiters also receive that failure when writing the leader response fails,
 including a short write.
 

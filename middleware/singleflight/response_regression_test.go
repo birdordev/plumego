@@ -300,6 +300,46 @@ func (w *responseWriteRecorder) Write(p []byte) (int, error) {
 	return n, w.writeErr
 }
 
+func TestUnsupportedLeaderFlushPreservesWaiterReplay(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		entered, release := make(chan struct{}), make(chan struct{})
+		leader, waiter := httptest.NewRecorder(), httptest.NewRecorder()
+		leader.Header().Set("X-Initial", "original")
+		calls := 0
+		handler := New(Config{}).Middleware()(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			calls++
+			close(entered)
+			<-release
+			w.Header().Del("X-Initial")
+			w.Header().Set("X-Result", "shared")
+			if err := http.NewResponseController(w).Flush(); !errors.Is(err, http.ErrNotSupported) {
+				t.Errorf("Flush() = %v, want ErrNotSupported", err)
+			}
+			if got := leader.Header().Get("X-Initial"); got != "original" {
+				t.Errorf("unsupported Flush changed underlying headers: X-Initial = %q", got)
+			}
+			w.WriteHeader(http.StatusAccepted)
+			if _, err := io.WriteString(w, "sample"); err != nil {
+				t.Errorf("WriteString() = %v", err)
+			}
+		}))
+		go handler.ServeHTTP(struct{ http.ResponseWriter }{leader}, httptest.NewRequest(http.MethodGet, "/", nil))
+		<-entered
+		go handler.ServeHTTP(waiter, httptest.NewRequest(http.MethodGet, "/", nil))
+		synctest.Wait()
+		close(release)
+		synctest.Wait()
+		if calls != 1 {
+			t.Fatalf("handler calls = %d, want 1", calls)
+		}
+		for name, rec := range map[string]*httptest.ResponseRecorder{"leader": leader, "waiter": waiter} {
+			if rec.Code != http.StatusAccepted || rec.Body.String() != "sample" || rec.Header().Get("X-Result") != "shared" {
+				t.Errorf("%s status=%d, body=%q, headers=%v", name, rec.Code, rec.Body, rec.Header())
+			}
+		}
+	})
+}
+
 func TestLeaderWriteOutcomeControlsWaiterReplay(t *testing.T) {
 	writeErr := errors.New("transport failure")
 	for _, tc := range []struct {
