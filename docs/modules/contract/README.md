@@ -126,8 +126,8 @@ extension-owned refinements.
 - `ErrorBuilder.Build` and `APIError.Details` clone supported map and slice
   values, preserving nested empty containers and nil values. Cyclic detail
   values rejected by JSON encoding trigger the fallback above.
-- Request ids are accepted only when the trimmed value is non-empty, contains no
-  control characters, and is at most 128 bytes. Rejected request ids are not
+- Request ids are accepted only when the trimmed value is non-empty, valid UTF-8,
+  free of control characters, and at most 128 bytes. Rejected request ids are not
   stored or echoed by `WriteResponse` or `WriteError`.
 - `contract` does not own request-id generation policy; middleware or
   application wiring owns generation and header intake.

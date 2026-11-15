@@ -413,6 +413,7 @@ func TestWriteErrorNormalizesExplicitRequestID(t *testing.T) {
 	}{
 		{name: "trim", id: " explicit-req-id ", want: "explicit-req-id"},
 		{name: "unsafe", id: "bad\nrequest", want: ""},
+		{name: "invalid UTF-8", id: "bad\xffrequest", want: ""},
 	}
 
 	for _, tt := range tests {

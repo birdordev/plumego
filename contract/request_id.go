@@ -3,6 +3,7 @@ package contract
 import (
 	"context"
 	"strings"
+	"unicode/utf8"
 )
 
 type requestIDContextKey struct{}
@@ -41,7 +42,7 @@ func RequestIDFromContext(ctx context.Context) string {
 
 func normalizeRequestID(id string) (string, bool) {
 	id = strings.TrimSpace(id)
-	if id == "" || len(id) > maxRequestIDLength || containsControlChar(id) {
+	if id == "" || len(id) > maxRequestIDLength || !utf8.ValidString(id) || containsControlChar(id) {
 		return "", false
 	}
 	return id, true

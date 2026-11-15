@@ -12,10 +12,16 @@ import (
 
 func TestMiddlewareUsesSameValidatedIDInHeadersContextAndJSON(t *testing.T) {
 	oversized := strings.Repeat("x", 129)
+	unicodeBoundary := strings.Repeat("é", 64)
+	invalidUTF8 := "id\xff"
 	for _, tc := range []struct {
 		name, header, generated, want string
 	}{
 		{"valid header", strings.Repeat("a", 128), "generated", strings.Repeat("a", 128)},
+		{"valid Unicode at byte limit", unicodeBoundary, "generated", unicodeBoundary},
+		{"Unicode over byte limit", unicodeBoundary + "x", "generated", "generated"},
+		{"header with invalid UTF-8", invalidUTF8, "generated", "generated"},
+		{"generator with invalid UTF-8", "", invalidUTF8, ""},
 		{"invalid header", oversized, "generated", "generated"},
 		{"invalid custom ID", "", oversized, ""},
 	} {
