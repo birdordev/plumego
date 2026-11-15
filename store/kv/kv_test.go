@@ -452,6 +452,40 @@ func TestKVStoreLoadRejectsCorruptJSON(t *testing.T) {
 	}
 }
 
+func TestKVStoreLoadRejectsMissingEntriesAndReleasesLock(t *testing.T) {
+	for _, raw := range []string{`null`, `{}`, `{"entries":null}`} {
+		t.Run(raw, func(t *testing.T) {
+			opts := DefaultConfig(t.TempDir())
+			statePath := filepath.Join(opts.DataDir, stateFileName)
+			if err := os.WriteFile(statePath, []byte(raw), 0600); err != nil {
+				t.Fatal(err)
+			}
+			store, err := NewKVStore(opts)
+			if store != nil {
+				_ = store.Close()
+			}
+			if store != nil || !errors.Is(err, ErrCorruptState) {
+				t.Fatalf("store=%v error=%v, want ErrCorruptState", store, err)
+			}
+			actual, err := os.ReadFile(statePath)
+			if err != nil || string(actual) != raw {
+				t.Fatalf("state=%q error=%v, want %q", actual, err, raw)
+			}
+			if err := os.WriteFile(statePath, []byte(`{"entries":{}}`), 0600); err != nil {
+				t.Fatal(err)
+			}
+			store, err = NewKVStore(opts)
+			if err != nil {
+				t.Fatalf("open repaired empty snapshot: %v", err)
+			}
+			defer func() { _ = store.Close() }()
+			if n, err := store.SizeContext(t.Context()); err != nil || n != 0 {
+				t.Fatalf("empty snapshot size=%d error=%v", n, err)
+			}
+		})
+	}
+}
+
 func TestKVStoreLoadRejectsInvalidKeys(t *testing.T) {
 	dir := t.TempDir()
 	writeState(t, dir, diskState{Entries: map[string]entry{

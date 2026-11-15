@@ -29,6 +29,9 @@ func (kv *KVStore) load() error {
 	if err := json.Unmarshal(raw, &state); err != nil {
 		return fmt.Errorf("%w: decode state: %w", ErrCorruptState, err)
 	}
+	if state.Entries == nil {
+		return fmt.Errorf("%w: state requires an entries object", ErrCorruptState)
+	}
 	for key, item := range state.Entries {
 		if err := validateKey(key); err != nil {
 			return fmt.Errorf("%w: decode state key %q: %w", ErrCorruptState, key, err)

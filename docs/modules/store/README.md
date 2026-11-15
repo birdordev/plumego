@@ -131,6 +131,8 @@
   when the owning process exits. Platforms without a supported locking
   primitive return an error at open time.
 - `store/kv` classifies state-file JSON decode failures and invalid persisted keys with `kv.ErrCorruptState`; invalid-key corruption also keeps `kv.ErrInvalidKey` in the error chain for diagnostics.
+- An existing snapshot must contain an `entries` object. A missing or null
+  object returns `ErrCorruptState`, and an empty object loads as an empty store.
 - `store/kv` treats invalid persisted keys as state corruption and fails startup instead of silently dropping records.
 - `x/data/kvengine` owns durable-engine behavior such as WAL, snapshots, serializer formats, compression, and shard/flush tuning.
 - Do not add engine-format plumbing, snapshot APIs, or durability-tuning knobs back into stable `store/kv`.
