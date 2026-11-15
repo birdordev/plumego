@@ -55,7 +55,8 @@ func (s *InMemoryKeyStore) GetContext(ctx context.Context, key string) ([]byte, 
 	return append([]byte(nil), e.value...), nil
 }
 
-// SetContext stores value for key. A ttl of zero means the entry never expires.
+// SetContext stores value for key. A positive ttl sets the expiration time.
+// A ttl of zero or less keeps the entry indefinitely.
 func (s *InMemoryKeyStore) SetContext(ctx context.Context, key string, value []byte, ttl time.Duration) error {
 	if err := contextErr(ctx); err != nil {
 		return err
