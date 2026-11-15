@@ -1,10 +1,66 @@
 package httputil
 
 import (
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 )
+
+type flushUnwrapper struct {
+	http.ResponseWriter
+}
+
+func (w flushUnwrapper) Unwrap() http.ResponseWriter { return w.ResponseWriter }
+
+type flushErrorWriter struct {
+	*httptest.ResponseRecorder
+	err error
+}
+
+func (w flushErrorWriter) FlushError() error {
+	w.Flush()
+	return w.err
+}
+
+func TestResponseWriterFlushDelegation(t *testing.T) {
+	for _, wrapper := range []struct {
+		name string
+		wrap func(http.ResponseWriter) http.ResponseWriter
+	}{
+		{"observation", func(w http.ResponseWriter) http.ResponseWriter { return NewObservationRecorder(w) }},
+		{"base", func(w http.ResponseWriter) http.ResponseWriter { return &BaseWrappedResponseWriter{ResponseWriter: w} }},
+	} {
+		t.Run(wrapper.name, func(t *testing.T) {
+			t.Run("unsupported", func(t *testing.T) {
+				rec := httptest.NewRecorder()
+				w := wrapper.wrap(struct{ http.ResponseWriter }{rec})
+				if err := http.NewResponseController(w).Flush(); !errors.Is(err, http.ErrNotSupported) {
+					t.Fatalf("Flush() = %v, want ErrNotSupported", err)
+				}
+				if got := rec.Header().Get(HeaderContentTypeNoSniff); got != "" {
+					t.Fatalf("unsupported Flush changed headers: %q", got)
+				}
+				w.WriteHeader(http.StatusAccepted)
+				if rec.Code != http.StatusAccepted {
+					t.Fatalf("status = %d, want 202", rec.Code)
+				}
+			})
+			t.Run("wrapped error", func(t *testing.T) {
+				rec := httptest.NewRecorder()
+				flushErr := errors.New("flush failed")
+				w := wrapper.wrap(flushUnwrapper{flushErrorWriter{rec, flushErr}})
+				if err := http.NewResponseController(w).Flush(); !errors.Is(err, flushErr) {
+					t.Fatalf("Flush() = %v, want %v", err, flushErr)
+				}
+				w.WriteHeader(http.StatusAccepted)
+				if !rec.Flushed || rec.Code != http.StatusOK {
+					t.Fatalf("flushed = %t, status = %d, want true and 200", rec.Flushed, rec.Code)
+				}
+			})
+		})
+	}
+}
 
 func TestEnsureNoSniff(t *testing.T) {
 	rec := httptest.NewRecorder()

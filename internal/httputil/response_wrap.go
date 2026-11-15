@@ -2,6 +2,7 @@ package httputil
 
 import (
 	"bufio"
+	"errors"
 	"net"
 	"net/http"
 )
@@ -44,13 +45,17 @@ func (w *BaseWrappedResponseWriter) Write(p []byte) (int, error) {
 	return w.ResponseWriter.Write(p)
 }
 
-// Flush delegates Flush to the underlying writer when available.
-func (w *BaseWrappedResponseWriter) Flush() {
-	if !w.wrote {
-		w.WriteHeader(http.StatusOK)
+// FlushError forwards Flush and records implicit commitment when supported.
+func (w *BaseWrappedResponseWriter) FlushError() error {
+	err := http.NewResponseController(w.ResponseWriter).Flush()
+	if !errors.Is(err, http.ErrNotSupported) {
+		w.wrote = true
 	}
-	FlushIfSupported(w.ResponseWriter)
+	return err
 }
+
+// Flush implements http.Flusher.
+func (w *BaseWrappedResponseWriter) Flush() { _ = w.FlushError() }
 
 // Hijack delegates Hijack to the underlying writer when available.
 // It marks the writer as written so that callers know no further header
@@ -64,7 +69,7 @@ func (w *BaseWrappedResponseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error
 	return conn, rw, nil
 }
 
-// Written reports whether WriteHeader has been called.
+// Written reports whether the response has been committed or hijacked.
 func (w *BaseWrappedResponseWriter) Written() bool {
 	return w.wrote
 }

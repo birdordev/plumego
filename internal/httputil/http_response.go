@@ -4,11 +4,13 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"github.com/birdordev/plumego/contract"
+	"errors"
 	"net"
 	"net/http"
 	"strings"
 	"sync/atomic"
+
+	"github.com/birdordev/plumego/contract"
 )
 
 const (
@@ -151,15 +153,29 @@ func (r *ResponseRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 	return hj.Hijack()
 }
 
-// Flush forwards http.Flusher when the wrapped writer supports it.
-func (r *ResponseRecorder) Flush() {
-	if fl, ok := r.ResponseWriter.(http.Flusher); ok {
-		if !r.written {
-			r.WriteHeader(http.StatusOK)
-		}
-		fl.Flush()
+// FlushError forwards Flush and records implicit commitment when supported.
+func (r *ResponseRecorder) FlushError() error {
+	if r.written {
+		return http.NewResponseController(r.ResponseWriter).Flush()
 	}
+	header := r.Header()
+	previous, hadHeader := header[HeaderContentTypeNoSniff]
+	EnsureNoSniff(header)
+	err := http.NewResponseController(r.ResponseWriter).Flush()
+	if errors.Is(err, http.ErrNotSupported) {
+		if hadHeader {
+			header[HeaderContentTypeNoSniff] = previous
+		} else {
+			delete(header, HeaderContentTypeNoSniff)
+		}
+		return err
+	}
+	r.written = true
+	return err
 }
+
+// Flush implements http.Flusher.
+func (r *ResponseRecorder) Flush() { _ = r.FlushError() }
 
 // FlushIfSupported forwards Flush to the underlying writer when available.
 func FlushIfSupported(w http.ResponseWriter) {
