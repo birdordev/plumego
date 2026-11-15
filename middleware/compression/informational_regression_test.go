@@ -51,6 +51,36 @@ func TestBodylessStatusesBypassGzip(t *testing.T) {
 	}
 }
 
+func TestGzipNegotiatesAcrossAcceptEncodingLines(t *testing.T) {
+	handler := Middleware(Config{})(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/plain")
+		_, _ = io.WriteString(w, "sample")
+	}))
+	for _, tc := range []struct {
+		name   string
+		lines  []string
+		coding string
+	}{
+		{"combined", []string{"br, gzip"}, "gzip"},
+		{"separate", []string{"br", "gzip"}, "gzip"},
+		{"explicit refusal", []string{"*", "gzip;q=0"}, ""},
+		{"combined refusal", []string{"*, gzip;q=0"}, ""},
+		{"wildcard", []string{"br", "*;q=0.5"}, "gzip"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "/", nil)
+			for _, line := range tc.lines {
+				req.Header.Add("Accept-Encoding", line)
+			}
+			w := httptest.NewRecorder()
+			handler.ServeHTTP(w, req)
+			if got := w.Result().Header.Get("Content-Encoding"); got != tc.coding {
+				t.Fatalf("Content-Encoding = %q, want %q", got, tc.coding)
+			}
+		})
+	}
+}
+
 func TestFinalHeaderSnapshotAndTrailers(t *testing.T) {
 	for _, coding := range []string{"identity", "gzip"} {
 		for _, flush := range []bool{false, true} {

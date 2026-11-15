@@ -92,7 +92,7 @@ func Middleware(cfg Config) middleware.Middleware {
 			}
 
 			variant := internaltransport.NewVaryWriter(w, "Accept-Encoding")
-			if !acceptsGzip(r.Header.Get("Accept-Encoding")) {
+			if !acceptsGzip(strings.Join(r.Header.Values("Accept-Encoding"), ",")) {
 				next.ServeHTTP(variant, r)
 				variant.Prepare()
 				return

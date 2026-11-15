@@ -223,6 +223,7 @@ active and waiting requests represented in that channel.
 accepts gzip. It skips websocket upgrades, SSE, already-compressed responses,
 common binary content types, range responses (206 or `Content-Range`), and
 bodyless responses with status 204 or 304.
+All `Accept-Encoding` field lines are evaluated as one list.
 Negotiated gzip and identity responses include `Vary: Accept-Encoding` while
 preserving other `Vary` values.
 
