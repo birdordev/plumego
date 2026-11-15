@@ -10,29 +10,54 @@ import "github.com/birdordev/plumego/middleware/singleflight"
 
 ## Overview
 
-`singleflight` groups concurrent requests that share a cache key and lets exactly one execute. The other waiters receive the same response bytes once the leader completes, reducing load on expensive or cache-miss-prone handlers.
+`singleflight` groups concurrent requests by their coalescing key. One leader
+executes the handler, and waiters receive a replay of its captured response.
+HEAD waiters receive the status and headers only.
 
 ## Exports
 
 | Symbol | Description |
 |--------|-------------|
 | `New(config Config)` | Constructor returning `*Coalescer` |
-| `Config{MaxRetries, RetryDelay, KeyFunc, Window, AllowedMethods}` | Coalescing rules |
+| `Config.KeyFunc` | Selects the coalescing key; defaults to `DefaultKeyFunc` |
+| `Config.Methods` | Methods eligible for coalescing; defaults to `GET` and `HEAD` |
+| `Config.Timeout` | Maximum waiter duration; defaults to 30 seconds |
+| `Config.MaxResponseBytes` | Maximum captured response body; defaults to 10 MiB |
+| `Config.OnCoalesced` | Optional callback after a successful replay |
+| `Config.OnError` | Optional error callback |
+| `Config.AddCoalescedHeader` | Opt in to `X-Coalesced: true` on replays |
 | `(*Coalescer) Middleware()` | Returns `func(http.Handler) http.Handler` |
 
 ## Usage
 
 ```go
-cfg := singleflight.Config{
-    KeyFunc: func(r *http.Request) string { return r.URL.Path + "-" + r.Method },
+package example
+
+import (
+	"net/http"
+	"time"
+
+	"github.com/birdordev/plumego/middleware/singleflight"
+)
+
+func coalesce(next http.Handler) http.Handler {
+	cfg := singleflight.Config{
+		Timeout:          2 * time.Second,
+		MaxResponseBytes: 1 << 20,
+	}
+	return singleflight.New(cfg).Middleware()(next)
 }
-app.Use(singleflight.New(cfg).Middleware())
 ```
 
 ## Notes
 
-- Only safe HTTP methods (`GET`, `HEAD`, `OPTIONS`) are coalesced by default.
-- The middleware retries on transient errors up to `MaxRetries` before failing waiters.
-- Response bytes are captured and replayed synchronously to each waiter; consider this for idempotent, cacheable endpoints only.
+- Use coalescing for safe, bounded responses whose variants are represented by
+  the key. See the [middleware guide](../../docs/modules/middleware/README.md)
+  for key selection and sensitive responses.
+- A timed-out waiter receives a structured 504. A canceled waiter returns
+  without a response. A failed or unreplayable leader response yields a
+  structured 502 for waiters.
+- If writing a replay fails after commitment, the error callback receives a
+  fixed diagnostic.
 
 Informational responses do not commit the final status. Their header snapshots are isolated from final headers. Normal header-only handlers commit implicit 200 responses consistently for leaders and waiters.
