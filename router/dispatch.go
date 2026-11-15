@@ -3,6 +3,7 @@ package router
 import (
 	"bufio"
 	"context"
+	"errors"
 	"io"
 	"net"
 	"net/http"
@@ -104,6 +105,14 @@ func (w *noBodyWriter) FlushError() error {
 	for dst := w.ResponseWriter; ; {
 		switch writer := dst.(type) {
 		case interface{ FlushError() error }:
+			if w.status == 0 && !w.committed {
+				err := writer.FlushError()
+				if !errors.Is(err, http.ErrNotSupported) {
+					w.WriteHeader(http.StatusOK)
+					w.committed = true
+				}
+				return err
+			}
 			w.commit(false)
 			return writer.FlushError()
 		case http.Flusher:

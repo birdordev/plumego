@@ -14,6 +14,39 @@ import (
 	"testing"
 )
 
+func TestUnsupportedInitialFlushLeavesFinalResponseOpen(t *testing.T) {
+	const body = "still eligible for compression"
+	h := Middleware(Config{})(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("X-Response", "initial")
+		if err := http.NewResponseController(w).Flush(); !errors.Is(err, http.ErrNotSupported) {
+			t.Errorf("Flush error = %v, want ErrNotSupported", err)
+		}
+		w.Header().Set("X-Response", "final")
+		w.Header().Set("Content-Type", "text/plain")
+		w.WriteHeader(http.StatusAccepted)
+		if _, err := io.WriteString(w, body); err != nil {
+			t.Error(err)
+		}
+	}))
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.Header.Set("Accept-Encoding", "gzip")
+	w := httptest.NewRecorder()
+	h.ServeHTTP(struct{ http.ResponseWriter }{w}, req)
+	res := w.Result()
+	if res.StatusCode != http.StatusAccepted || res.Header.Get("X-Response") != "final" || res.Header.Get("Vary") != "Accept-Encoding" || res.Header.Get("Content-Encoding") != "gzip" {
+		t.Fatalf("status=%d, headers=%v", res.StatusCode, res.Header)
+	}
+	decoded, err := gzip.NewReader(w.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer decoded.Close()
+	got, err := io.ReadAll(decoded)
+	if err != nil || string(got) != body {
+		t.Fatalf("decoded body=%q, err=%v", got, err)
+	}
+}
+
 func TestBodylessStatusesBypassGzip(t *testing.T) {
 	for _, status := range []int{http.StatusNoContent, http.StatusNotModified} {
 		for _, writeBody := range []bool{false, true} {

@@ -3,6 +3,7 @@ package compression
 import (
 	"bufio"
 	"compress/gzip"
+	"errors"
 	"net"
 	"net/http"
 	"strconv"
@@ -459,12 +460,36 @@ func (w *gzipResponseWriter) flushHeaders() {
 func (w *gzipResponseWriter) Flush() { _ = w.FlushError() }
 
 func (w *gzipResponseWriter) FlushError() error {
+	if !w.wroteHeader && !w.headersFlushed && w.gz == nil {
+		return w.flushImplicitResponse()
+	}
 	if w.gz == nil {
 		w.commitPassThrough()
 	} else if err := w.gz.Flush(); err != nil {
 		return err
 	}
 	return http.NewResponseController(w.ResponseWriter).Flush()
+}
+
+func (w *gzipResponseWriter) flushImplicitResponse() error {
+	dst := w.ResponseWriter.Header()
+	original := dst.Clone()
+	if w.buffer != nil {
+		internaltransport.CopyHeaders(dst, w.buffer.Header())
+		internaltransport.EnsureNoSniff(dst)
+	}
+	err := http.NewResponseController(w.ResponseWriter).Flush()
+	if errors.Is(err, http.ErrNotSupported) {
+		internaltransport.ReplaceHeaders(dst, original)
+		return err
+	}
+	if w.buffer != nil {
+		w.buffer.WriteHeader(http.StatusOK)
+	}
+	w.passThrough = true
+	w.wroteHeader = true
+	w.headersFlushed = true
+	return err
 }
 
 func (w *gzipResponseWriter) commitPassThrough() {

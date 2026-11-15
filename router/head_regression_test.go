@@ -35,6 +35,17 @@ func TestHeadUnsupportedFlushLeavesResponseOpen(t *testing.T) {
 			t.Errorf("%s status=%d, want 202", method, dst.Code)
 		}
 	}
+	wrap, err := recovery.Middleware(recovery.Config{Logger: plumelog.NewLogger(plumelog.LoggerConfig{Format: plumelog.LoggerFormatDiscard})})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, method := range []string{http.MethodGet, http.MethodHead} {
+		dst := httptest.NewRecorder()
+		wrap(r).ServeHTTP(headBasicWriter{dst}, httptest.NewRequest(method, "/", nil))
+		if dst.Code != http.StatusAccepted {
+			t.Errorf("%s through recovery status=%d, want 202", method, dst.Code)
+		}
+	}
 }
 
 func TestHeadFlushThroughUnwrapCommitsSelectedStatus(t *testing.T) {

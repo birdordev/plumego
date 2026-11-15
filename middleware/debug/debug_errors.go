@@ -3,6 +3,7 @@ package debug
 import (
 	"bufio"
 	"bytes"
+	"errors"
 	"net"
 	"net/http"
 	"strings"
@@ -62,7 +63,7 @@ func DefaultConfig() Config {
 	}
 }
 
-// DebugErrors replaces empty/plain error responses with structured JSON.
+// Middleware replaces eligible empty or plain-text error responses with structured JSON.
 //
 // This middleware intercepts error responses and replaces them with structured JSON
 // error messages containing additional debugging information.
@@ -88,19 +89,21 @@ func DefaultConfig() Config {
 //   - CONNECT requests
 //   - Responses with non-plain-text content types
 //
-// Error response format:
+// Example response with HTTP status 404 and a request ID:
 //
 //	{
-//	  "status": 404,
-//	  "code": "not_found",
-//	  "message": "Not Found",
-//	  "category": "client",
-//	  "details": {
-//	    "method": "GET",
-//	    "path": "/api/missing",
-//	    "query": "param=value",
-//	    "hint": "Try /api/v1/users"
-//	  }
+//	  "error": {
+//	    "code": "not_found",
+//	    "message": "not found",
+//	    "category": "client",
+//	    "type": "resource_not_found",
+//	    "details": {
+//	      "method": "GET",
+//	      "path": "/api/missing",
+//	      "hint": "Try /api/v1/users"
+//	    }
+//	  },
+//	  "request_id": "req-123"
 //	}
 func Middleware(config Config) middleware.Middleware {
 	cfg := config
@@ -125,14 +128,15 @@ func Middleware(config Config) middleware.Middleware {
 			status := rec.statusCode()
 			body := rec.body.Bytes()
 
-			if status < http.StatusBadRequest || !shouldReplaceError(rec.header, body) {
+			errorType := debugErrorType(status)
+			if errorType == "" || !shouldReplaceError(rec.header, body) {
 				rec.flushTo()
 				return
 			}
 
 			internaltransport.CopyHeaders(w.Header(), rec.header)
 			w.Header().Del("Content-Length")
-			_ = contract.WriteError(w, r, debugErrorPayload(status, r, cfg, body))
+			_ = contract.WriteError(w, r, debugErrorPayload(errorType, status, r, cfg, body))
 		})
 	}
 }
@@ -163,11 +167,21 @@ func (r *debugErrorRecorder) Unwrap() http.ResponseWriter {
 }
 
 func (r *debugErrorRecorder) WriteHeader(status int) {
-	if r.status == 0 {
-		r.status = status
-		if r.passthrough {
-			r.flushHeaders()
-		}
+	if r.status != 0 {
+		return
+	}
+	if status >= 100 && status < 200 && status != http.StatusSwitchingProtocols {
+		dst := r.dst.Header()
+		original := dst.Clone()
+		defer internaltransport.ReplaceHeaders(dst, original)
+		internaltransport.CopyHeaders(dst, r.header)
+		r.dst.WriteHeader(status)
+		return
+	}
+	r.status = status
+	if r.passthrough || status == http.StatusSwitchingProtocols {
+		r.passthrough = true
+		r.flushHeaders()
 	}
 }
 
@@ -194,18 +208,38 @@ func (r *debugErrorRecorder) Write(p []byte) (int, error) {
 	return r.body.Write(p)
 }
 
-func (r *debugErrorRecorder) Flush() {
-	r.commitPassthrough()
-	internaltransport.FlushIfSupported(r.dst)
+func (r *debugErrorRecorder) Flush() { _ = r.FlushError() }
+
+func (r *debugErrorRecorder) FlushError() error {
+	controller := http.NewResponseController(r.dst)
+	if r.status != 0 || r.passthrough {
+		r.commitPassthrough()
+		return controller.Flush()
+	}
+
+	dst := r.dst.Header()
+	original := dst.Clone()
+	internaltransport.CopyHeaders(dst, r.header)
+	internaltransport.EnsureNoSniff(dst)
+	err := controller.Flush()
+	if errors.Is(err, http.ErrNotSupported) {
+		internaltransport.ReplaceHeaders(dst, original)
+		return err
+	}
+	r.status = http.StatusOK
+	r.passthrough = true
+	return err
 }
 
 func (r *debugErrorRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 	if r.body.Len() > 0 || r.status != 0 {
 		r.commitPassthrough()
-	} else {
+	}
+	conn, rw, err := http.NewResponseController(r.dst).Hijack()
+	if err == nil {
 		r.passthrough = true
 	}
-	return internaltransport.HijackIfSupported(r.dst)
+	return conn, rw, err
 }
 
 func (r *debugErrorRecorder) statusCode() int {
@@ -275,7 +309,7 @@ func isStreamingContentType(contentType string) bool {
 	return strings.Contains(contentType, "stream")
 }
 
-func debugErrorPayload(status int, r *http.Request, cfg Config, body []byte) contract.APIError {
+func debugErrorPayload(errorType contract.ErrorType, status int, r *http.Request, cfg Config, body []byte) contract.APIError {
 	message := strings.ToLower(http.StatusText(status))
 	code := strings.ReplaceAll(message, " ", "_")
 
@@ -298,7 +332,7 @@ func debugErrorPayload(status int, r *http.Request, cfg Config, body []byte) con
 	}
 
 	return contract.NewErrorBuilder().
-		Type(debugErrorType(status)).
+		Type(errorType).
 		Code(code).
 		Message(message).
 		Details(details).
@@ -307,17 +341,42 @@ func debugErrorPayload(status int, r *http.Request, cfg Config, body []byte) con
 
 func debugErrorType(status int) contract.ErrorType {
 	switch status {
+	case http.StatusBadRequest:
+		return contract.TypeBadRequest
+	case http.StatusUnauthorized:
+		return contract.TypeUnauthorized
+	case http.StatusForbidden:
+		return contract.TypeForbidden
 	case http.StatusNotFound:
 		return contract.TypeNotFound
 	case http.StatusMethodNotAllowed:
 		return contract.TypeMethodNotAllowed
 	case http.StatusNotAcceptable:
 		return contract.TypeNotAcceptable
+	case http.StatusRequestTimeout:
+		return contract.TypeTimeout
+	case http.StatusConflict:
+		return contract.TypeConflict
+	case http.StatusGone:
+		return contract.TypeGone
+	case http.StatusRequestEntityTooLarge:
+		return contract.TypePayloadTooLarge
+	case http.StatusUnprocessableEntity:
+		return contract.TypeInvalidRequest
+	case http.StatusTooManyRequests:
+		return contract.TypeRateLimited
+	case http.StatusInternalServerError:
+		return contract.TypeInternal
+	case http.StatusNotImplemented:
+		return contract.TypeNotImplemented
+	case http.StatusBadGateway:
+		return contract.TypeBadGateway
+	case http.StatusServiceUnavailable:
+		return contract.TypeUnavailable
+	case http.StatusGatewayTimeout:
+		return contract.TypeGatewayTimeout
 	default:
-		if status >= http.StatusInternalServerError {
-			return contract.TypeInternal
-		}
-		return contract.TypeBadRequest
+		return ""
 	}
 }
 

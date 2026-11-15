@@ -40,7 +40,7 @@ func writeJSON(w http.ResponseWriter, status int, payload any) error {
 	buf := getJSONBuffer()
 	defer putJSONBuffer(buf)
 
-	if err := json.NewEncoder(buf).Encode(payload); err != nil {
+	if err := encodeJSON(json.NewEncoder(buf), payload, errResponseEncodingPanic); err != nil {
 		return err
 	}
 
@@ -95,7 +95,10 @@ type errorResponse struct {
 	RequestID string       `json:"request_id,omitempty"`
 }
 
-var errErrorDetailEncodingPanic = errors.New("error detail encoder panicked")
+var (
+	errResponseEncodingPanic    = errors.New("response encoder panicked")
+	errErrorDetailEncodingPanic = errors.New("error detail encoder panicked")
+)
 
 // WriteError writes a structured error response and injects the request id when available.
 // If details cannot be encoded, it writes the same error without details and
@@ -128,7 +131,7 @@ func WriteError(w http.ResponseWriter, r *http.Request, err APIError) error {
 	defer putJSONBuffer(buf)
 
 	encoder := json.NewEncoder(buf)
-	if encErr := encodeErrorWithDetails(encoder, resp); encErr != nil {
+	if encErr := encodeJSON(encoder, resp, errErrorDetailEncodingPanic); encErr != nil {
 		resp.Error.Details = nil
 		buf.Reset()
 		if fallbackErr := encoder.Encode(resp); fallbackErr != nil {
@@ -143,13 +146,13 @@ func WriteError(w http.ResponseWriter, r *http.Request, err APIError) error {
 	return writeEncodedJSON(w, err.status, buf.Bytes())
 }
 
-func encodeErrorWithDetails(encoder *json.Encoder, resp errorResponse) (err error) {
+func encodeJSON(encoder *json.Encoder, payload any, panicErr error) (err error) {
 	defer func() {
 		if recover() != nil {
-			err = errErrorDetailEncodingPanic
+			err = panicErr
 		}
 	}()
-	return encoder.Encode(resp)
+	return encoder.Encode(payload)
 }
 
 func errorPayloadFrom(err APIError) errorPayload {

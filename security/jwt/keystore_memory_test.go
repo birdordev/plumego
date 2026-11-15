@@ -4,12 +4,40 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"runtime"
 	"slices"
 	"sync"
 	"testing"
 	"testing/synctest"
 	"time"
 )
+
+func TestInMemoryKeyStoreCanceledWhileWaitingToSet(t *testing.T) {
+	store := NewInMemoryKeyStore()
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	result := make(chan error, 1)
+	store.mu.RLock()
+	go func() { result <- store.SetContext(ctx, "fixture", []byte("sample"), 0) }()
+	deadline := time.Now().Add(5 * time.Second)
+	// This read lock keeps the writer queued. A queued writer prevents new readers.
+	for store.mu.TryRLock() {
+		store.mu.RUnlock()
+		if time.Now().After(deadline) {
+			store.mu.RUnlock()
+			t.Fatal("SetContext did not reach the write lock")
+		}
+		runtime.Gosched()
+	}
+	cancel()
+	store.mu.RUnlock()
+	if err := <-result; !errors.Is(err, context.Canceled) {
+		t.Fatalf("SetContext = %v, want context.Canceled", err)
+	}
+	if _, err := store.GetContext(t.Context(), "fixture"); !errors.Is(err, ErrUnknownKey) {
+		t.Fatalf("GetContext = %v, want ErrUnknownKey", err)
+	}
+}
 
 func TestInMemoryKeyStore_SetAndGet(t *testing.T) {
 	store := NewInMemoryKeyStore()

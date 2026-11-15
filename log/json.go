@@ -284,6 +284,24 @@ func marshalJSONField(value any) (data []byte, err error) {
 
 func normalizeTypedJSONContainer(value reflect.Value, depth int, remaining *int) (any, bool) {
 	switch value.Kind() {
+	case reflect.Pointer:
+		if value.IsNil() {
+			return nil, true
+		}
+		elem := value.Elem()
+		if hasJSONEncodingMethod(elem.Type()) {
+			return nil, false
+		}
+		switch elem.Kind() {
+		case reflect.Pointer, reflect.Slice, reflect.Array, reflect.Map:
+			if *remaining <= 0 || depth+1 >= maxJSONFieldDepth {
+				return "[truncated]", true
+			}
+			*remaining -= 1
+			return normalizeTypedJSONContainer(elem, depth+1, remaining)
+		default:
+			return nil, false
+		}
 	case reflect.Slice, reflect.Array:
 		element := value.Type().Elem()
 		encodeElementAddress := hasJSONEncodingMethod(reflect.PointerTo(element))

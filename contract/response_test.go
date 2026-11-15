@@ -352,6 +352,14 @@ func (panickingErrorDetail) MarshalJSON() ([]byte, error) {
 	panic("private encoder diagnostic")
 }
 
+func TestWriteResponseRecoversEncoderPanicBeforeCommit(t *testing.T) {
+	w := &countingResponseWriter{ResponseRecorder: httptest.NewRecorder()}
+	err := WriteResponse(w, nil, http.StatusOK, panickingErrorDetail{}, nil)
+	if err != errResponseEncodingPanic || w.headerWrites != 0 || w.bodyWrites != 0 || w.Header().Get(HeaderContentType) != "" {
+		t.Fatalf("error=%v, header writes=%d, body writes=%d, headers=%v", err, w.headerWrites, w.bodyWrites, w.Header())
+	}
+}
+
 func TestWriteErrorRecoversDetailEncoderPanic(t *testing.T) {
 	w := &countingResponseWriter{ResponseRecorder: httptest.NewRecorder()}
 	req := httptest.NewRequest(http.MethodGet, "/", nil)

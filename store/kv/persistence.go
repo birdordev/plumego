@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"syscall"
@@ -140,11 +141,6 @@ func isUnsupportedDirSync(err error) bool {
 }
 
 func (kv *KVStore) cloneDataLocked() map[string]*entry {
-	cloned := make(map[string]*entry, len(kv.data))
-	for key, item := range kv.data {
-		itemCopy := *item
-		itemCopy.Value = cloneBytes(item.Value)
-		cloned[key] = &itemCopy
-	}
-	return cloned
+	// Published entries are immutable. Mutations only replace or delete map entries.
+	return maps.Clone(kv.data)
 }

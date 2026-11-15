@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"errors"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -502,7 +503,8 @@ func TestDebugErrorType_AllBranches(t *testing.T) {
 		{http.StatusNotAcceptable, contract.TypeNotAcceptable},
 		{http.StatusInternalServerError, contract.TypeInternal},
 		{http.StatusBadRequest, contract.TypeBadRequest},
-		{http.StatusConflict, contract.TypeBadRequest}, // other 4xx → TypeBadRequest
+		{http.StatusConflict, contract.TypeConflict},
+		{http.StatusTeapot, ""},
 	}
 
 	for _, tt := range tests {
@@ -512,6 +514,116 @@ func TestDebugErrorType_AllBranches(t *testing.T) {
 				t.Fatalf("debugErrorType(%d) = %q, want %q", tt.status, got, tt.wantType)
 			}
 		})
+	}
+}
+
+func TestDebugReplacementPreservesStatusAndProtocolHeaders(t *testing.T) {
+	for _, tc := range []struct {
+		status     int
+		key, value string
+		structured bool
+	}{
+		{http.StatusUnauthorized, "WWW-Authenticate", "Bearer", true},
+		{http.StatusTooManyRequests, "Retry-After", "10", true},
+		{http.StatusServiceUnavailable, "Retry-After", "10", true},
+		{http.StatusTeapot, "X-Example", "sample", false},
+	} {
+		t.Run(http.StatusText(tc.status), func(t *testing.T) {
+			h := Middleware(Config{})(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set(tc.key, tc.value)
+				http.Error(w, "sample", tc.status)
+			}))
+			rec := httptest.NewRecorder()
+			h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
+			if res := rec.Result(); res.StatusCode != tc.status || res.Header.Get(tc.key) != tc.value {
+				t.Errorf("status and headers = %d, %v", res.StatusCode, res.Header)
+			}
+			if json.Valid(rec.Body.Bytes()) != tc.structured || (!tc.structured && rec.Body.String() != "sample\n") {
+				t.Errorf("body = %q, want structured = %t", rec.Body, tc.structured)
+			}
+		})
+	}
+}
+
+type debugStatusWriter struct {
+	*httptest.ResponseRecorder
+	interim http.Header
+}
+
+func (w *debugStatusWriter) WriteHeader(status int) {
+	if status == http.StatusEarlyHints {
+		w.interim = w.Header().Clone()
+		return
+	}
+	w.ResponseRecorder.WriteHeader(status)
+}
+
+func TestDebugEarlyHintsDoNotReplaceFinalStatus(t *testing.T) {
+	for _, status := range []int{http.StatusNotFound, http.StatusSwitchingProtocols} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			w := &debugStatusWriter{ResponseRecorder: httptest.NewRecorder()}
+			h := Middleware(Config{})(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Link", "</asset.css>; rel=preload")
+				w.WriteHeader(http.StatusEarlyHints)
+				w.Header().Del("Link")
+				w.Header().Set("X-Final", "yes")
+				w.WriteHeader(status)
+				w.WriteHeader(http.StatusTeapot)
+			}))
+			h.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/", nil))
+			final := w.Result().Header
+			if w.interim.Get("Link") == "" || final.Get("Link") != "" || final.Get("X-Final") != "yes" || w.Code != status {
+				t.Fatalf("interim=%v, final=%v, status=%d", w.interim, final, w.Code)
+			}
+			if got := json.Valid(w.Body.Bytes()); got != (status == http.StatusNotFound) {
+				t.Fatalf("unexpected response body %q", w.Body)
+			}
+		})
+	}
+}
+
+func TestDebugUnsupportedCapabilitiesPreserveCapture(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		call func(*http.ResponseController) error
+	}{
+		{"flush", (*http.ResponseController).Flush},
+		{"hijack", func(c *http.ResponseController) error { _, _, err := c.Hijack(); return err }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := Middleware(Config{})(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("X-Example", "first")
+				if err := tc.call(http.NewResponseController(w)); !errors.Is(err, http.ErrNotSupported) {
+					t.Errorf("capability error = %v, want ErrNotSupported", err)
+				}
+				w.Header().Set("X-Example", "final")
+				http.Error(w, "missing", http.StatusNotFound)
+			}))
+			w := httptest.NewRecorder()
+			h.ServeHTTP(struct{ http.ResponseWriter }{w}, httptest.NewRequest(http.MethodGet, "/", nil))
+			if w.Code != http.StatusNotFound || !json.Valid(w.Body.Bytes()) || w.Result().Header.Get("X-Example") != "final" {
+				t.Fatalf("status=%d, headers=%v, body=%q", w.Code, w.Result().Header, w.Body)
+			}
+		})
+	}
+}
+
+func TestDebugInitialFlushCommitsHeadersAndPassesThrough(t *testing.T) {
+	h := Middleware(Config{})(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("X-Example", "initial")
+		if err := http.NewResponseController(w).Flush(); err != nil {
+			t.Errorf("Flush error = %v", err)
+		}
+		w.Header().Set("X-Example", "late")
+		w.WriteHeader(http.StatusNotFound)
+		if _, err := w.Write([]byte("sample")); err != nil {
+			t.Error(err)
+		}
+	}))
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/", nil))
+	if !w.Flushed || w.Code != http.StatusOK || w.Body.String() != "sample" || w.Result().Header.Get("X-Example") != "initial" {
+		t.Fatalf("flushed=%t, status=%d, headers=%v, body=%q", w.Flushed, w.Code, w.Result().Header, w.Body)
 	}
 }
 

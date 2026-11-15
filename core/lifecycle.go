@@ -144,6 +144,11 @@ func (t *connectionTracker) startDrain(ctx context.Context) func() {
 		cancel()
 		return nil
 	}
+	// The last connection can close before the attempt becomes visible to track.
+	if drainCtx.Err() != nil || t.open.Load() <= 0 {
+		t.stopDrain(attempt)
+		return nil
+	}
 	go t.drain(drainCtx)
 	return func() { t.stopDrain(attempt) }
 }

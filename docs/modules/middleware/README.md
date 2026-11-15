@@ -240,8 +240,10 @@ switch a partially compressed response back to an uncompressed response.
 Gzip snapshots final headers at `WriteHeader` or the first implicit commit.
 When the snapshot omits `Content-Type`, gzip can defer the compression decision
 until the first body write so it can sniff the content type. Handler changes
-after commitment can still supply trailers. A `Flush()` before the first body
-write commits the selected status and headers and sends later writes uncompressed.
+after commitment can still supply trailers. A supported `Flush()` before the
+first body write commits the selected status and headers and sends later writes
+uncompressed. Before a final status is selected, an unsupported flush leaves the
+response open and preserves the normal compression decision for later writes.
 
 ### Debug error contract
 
@@ -253,9 +255,13 @@ debug metadata exposure.
 Debug capture is bounded by `Config.MaxBodyBytes`. If a response
 exceeds the capture limit, the middleware stops debug replacement and passes the
 original response through. It skips websocket upgrades, CONNECT requests, SSE
-requests, and response content types that declare streaming. If a handler calls
-`Flush` or `Hijack`, debug also switches to pass-through behavior and does not
-attempt to replace the response.
+requests, and response content types that declare streaming. JSON replacement
+preserves the original HTTP status and uses the `contract` error envelope. A
+status without a matching canonical error type passes through. Interim `1xx`
+responses are forwarded separately from the final response. Status `101` is
+terminal. Before a final status or body is written, an unsupported `Flush` or
+`Hijack` leaves debug capture active. Successful flushes and hijacks switch to
+pass-through behavior.
 
 ### CORS contract
 
@@ -330,7 +336,7 @@ when a shared invariant belongs there instead of in a package-local test.
 | `bodylimit` | no response buffering | yes | yes | yes | request-body limiting only; post-overrun writes are suppressed |
 | `coalesce` | bounded capture for waiters | yes | yes | yes | use only for bounded safe responses; not for streaming/SSE/websocket |
 | `compression` | pre-compression buffer | yes | yes | yes before compression starts | skips websocket/SSE; gzip output stays gzip once started |
-| `debug` | bounded capture | yes | yes | yes | development-only; skips declared streaming and passes through on capture overflow, flush, or hijack |
+| `debug` | bounded capture | yes | yes | yes | development-only; skips declared streaming, passes through on capture overflow or successful flush/hijack |
 | `httpmetrics` | no | yes | yes | yes | compatible with underlying writer support |
 | `recovery` | no | yes | yes | yes | compatible with underlying writer support; cannot rewrite responses after headers/body are committed |
 | `timeout` | full bounded replay buffer | no | no | no | not for streaming/SSE/websocket; large responses become structured errors |

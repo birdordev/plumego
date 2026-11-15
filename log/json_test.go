@@ -11,6 +11,39 @@ import (
 	"testing"
 )
 
+type customJSONSlice []int
+
+func (*customJSONSlice) MarshalJSON() ([]byte, error) { return []byte(`"custom"`), nil }
+
+func TestJSONBudgetAppliesToContainerPointers(t *testing.T) {
+	seq := make([]int, 2*maxJSONFieldNodes)
+	lookup := map[string][]int{"items": seq}
+	custom := customJSONSlice(seq)
+	var nilSlice *[]int
+	data := []byte("abc")
+	var output bytes.Buffer
+	logger := NewLogger(LoggerConfig{Format: LoggerFormatJSON, Output: &output})
+	logger.Info("sample", Fields{"slice": &seq, "map": &lookup, "custom": &custom, "nil": nilSlice, "bytes": &data})
+	var entry struct {
+		Slice  []any            `json:"slice"`
+		Map    map[string][]any `json:"map"`
+		Custom string           `json:"custom"`
+		Nil    json.RawMessage  `json:"nil"`
+		Bytes  string           `json:"bytes"`
+	}
+	if err := json.Unmarshal(output.Bytes(), &entry); err != nil {
+		t.Fatal(err)
+	}
+	for _, got := range [][]any{entry.Slice, entry.Map["items"]} {
+		if len(got) == 0 || len(got) > maxJSONFieldNodes || got[len(got)-1] != "[truncated]" {
+			t.Errorf("expected a bounded field with a truncation marker, got %d items", len(got))
+		}
+	}
+	if entry.Custom != "custom" || string(entry.Nil) != "null" || entry.Bytes != "YWJj" {
+		t.Fatalf("custom=%q, nil=%s, bytes=%q", entry.Custom, entry.Nil, entry.Bytes)
+	}
+}
+
 type interleavedJSONSink struct {
 	mu          sync.Mutex
 	output      bytes.Buffer

@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"testing/synctest"
@@ -18,6 +19,46 @@ import (
 	"github.com/birdordev/plumego/internal/testutil/nettest"
 	"github.com/birdordev/plumego/log"
 )
+
+type drainStartContext struct {
+	context.Context
+	once            sync.Once
+	entered, resume chan struct{}
+}
+
+func (ctx *drainStartContext) Value(key any) any {
+	ctx.once.Do(func() {
+		close(ctx.entered)
+		<-ctx.resume
+	})
+	return ctx.Context.Value(key)
+}
+
+func TestDrainSlotReleasedWhenLastConnectionClosesBeforePublish(t *testing.T) {
+	tracker := newConnectionTracker(nil, time.Hour)
+	tracker.track(nil, http.StateNew)
+	parent, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	ctx := &drainStartContext{Context: parent, entered: make(chan struct{}), resume: make(chan struct{})}
+	done := make(chan func(), 1)
+	go func() { done <- tracker.startDrain(ctx) }()
+	<-ctx.entered
+	tracker.track(nil, http.StateClosed)
+	close(ctx.resume)
+	if stop := <-done; stop != nil {
+		stop()
+		t.Fatal("attempt acquired a drain slot with no remaining connections")
+	}
+	if tracker.activeDrain.Load() != nil {
+		t.Fatal("inactive drain still owns the slot")
+	}
+	tracker.track(nil, http.StateNew)
+	stop := tracker.startDrain(parent)
+	if stop == nil {
+		t.Fatal("a later attempt could not acquire the slot")
+	}
+	stop()
+}
 
 func testListenAddr() string {
 	if addr := strings.TrimSpace(os.Getenv("PLUMEGO_TEST_ADDR")); addr != "" {

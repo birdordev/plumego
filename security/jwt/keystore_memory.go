@@ -66,11 +66,14 @@ func (s *InMemoryKeyStore) SetContext(ctx context.Context, key string, value []b
 		expiry = time.Now().Add(ttl)
 	}
 	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := contextErr(ctx); err != nil {
+		return err
+	}
 	if s.entries == nil {
 		s.entries = make(map[string]memEntry)
 	}
 	s.entries[key] = memEntry{value: append([]byte(nil), value...), expiry: expiry}
-	s.mu.Unlock()
 	return nil
 }
 
