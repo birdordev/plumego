@@ -210,36 +210,41 @@ func (c *Coalescer) Middleware() func(http.Handler) http.Handler {
 
 // waitForInFlight waits for an in-flight request to complete
 func (c *Coalescer) waitForInFlight(w http.ResponseWriter, r *http.Request, key string, inflight *inFlightRequest) {
-	// Wait for completion or timeout
+	ctx := r.Context()
 	timer := time.NewTimer(c.config.Timeout)
 	defer timer.Stop()
 
+	timedOut := false
 	select {
 	case <-inflight.done:
-		// Request completed - write cached response
-		if inflight.err != nil {
-			c.failWaiter(w, r, key, inflight.err)
-			return
-		}
-		if inflight.response == nil {
-			c.failWaiter(w, r, key, errUpstreamPanic)
-			return
-		}
-
-		writeResponse(w, r, inflight.response, c.config.AddCoalescedHeader)
-
-		// Call hook
-		c.reportCoalesced(key, 1)
-
 	case <-timer.C:
-		// Timeout. Do not wait indefinitely for a slow upstream leader.
-		c.decrementWaiters(inflight)
-
-		internaltransport.WriteTransportError(w, r, http.StatusGatewayTimeout, contract.CodeTimeout, "upstream request timeout", nil)
-	case <-r.Context().Done():
+		timedOut = true
+	case <-ctx.Done():
 		c.decrementWaiters(inflight)
 		return
 	}
+
+	// Completion or timeout can win the select even if cancellation is ready.
+	if ctx.Err() != nil {
+		c.decrementWaiters(inflight)
+		return
+	}
+	if timedOut {
+		c.decrementWaiters(inflight)
+		internaltransport.WriteTransportError(w, r, http.StatusGatewayTimeout, contract.CodeTimeout, "upstream request timeout", nil)
+		return
+	}
+	if inflight.err != nil {
+		c.failWaiter(w, r, key, inflight.err)
+		return
+	}
+	if inflight.response == nil {
+		c.failWaiter(w, r, key, errUpstreamPanic)
+		return
+	}
+
+	writeResponse(w, r, inflight.response, c.config.AddCoalescedHeader)
+	c.reportCoalesced(key, 1)
 }
 
 func (c *Coalescer) failWaiter(w http.ResponseWriter, r *http.Request, key string, err error) {

@@ -10,6 +10,7 @@ import (
 	"sync"
 	"testing"
 	"testing/synctest"
+	"time"
 )
 
 type waiterContext struct {
@@ -19,6 +20,56 @@ type waiterContext struct {
 }
 
 func (c *waiterContext) Done() <-chan struct{} { c.once.Do(func() { close(c.entered) }); return nil }
+
+type waiterSelectContext struct {
+	context.Context
+	beforeSelect func()
+}
+
+func (c waiterSelectContext) Done() <-chan struct{} {
+	c.beforeSelect()
+	return c.Context.Done()
+}
+
+func TestWaiterCancellationWinsOverOtherReadyOutcomes(t *testing.T) {
+	for _, outcome := range []string{"complete", "leader failed", "timeout"} {
+		t.Run(outcome, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				const timeout = time.Second
+				failHook := func(string, error) { t.Error("reported an error for canceled waiter") }
+				replayHook := func(string, int) { t.Error("reported a replay for canceled waiter") }
+				c := New(Config{Timeout: timeout, OnError: failHook, OnCoalesced: replayHook})
+				// Repeated selects exercise both ready choices in the pre-fix code.
+				for range 32 {
+					inflight := &inFlightRequest{done: make(chan struct{})}
+					inflight.waiters.Store(1)
+					ctx, cancel := context.WithCancel(t.Context())
+					req := httptest.NewRequest(http.MethodGet, "/", nil).WithContext(waiterSelectContext{
+						Context: ctx,
+						beforeSelect: func() {
+							cancel()
+							switch outcome {
+							case "complete":
+								inflight.response = &capturedResponse{statusCode: http.StatusOK, body: []byte("leader")}
+								close(inflight.done)
+							case "leader failed":
+								inflight.err = errLeaderWrite
+								close(inflight.done)
+							case "timeout":
+								time.Sleep(timeout) // Advance the synthetic clock before selection.
+							}
+						},
+					})
+					w := &responseWriteRecorder{ResponseRecorder: httptest.NewRecorder()}
+					c.waitForInFlight(w, req, "same", inflight)
+					if w.headers != 0 || w.Body.Len() != 0 || inflight.waiters.Load() != 0 {
+						t.Fatalf("headers=%d body=%q waiters=%d", w.headers, w.Body, inflight.waiters.Load())
+					}
+				}
+			})
+		})
+	}
+}
 
 func TestFinalResponseSemantics(t *testing.T) {
 	for _, status := range []int{0, 200, 404, 500} {
@@ -89,19 +140,19 @@ func TestFinalResponseSemantics(t *testing.T) {
 	}
 }
 
-type leaderWriteRecorder struct {
+type responseWriteRecorder struct {
 	*httptest.ResponseRecorder
 	writeBytes int
 	writeErr   error
 	headers    int
 }
 
-func (w *leaderWriteRecorder) WriteHeader(status int) {
+func (w *responseWriteRecorder) WriteHeader(status int) {
 	w.headers++
 	w.ResponseRecorder.WriteHeader(status)
 }
 
-func (w *leaderWriteRecorder) Write(p []byte) (int, error) {
+func (w *responseWriteRecorder) Write(p []byte) (int, error) {
 	n, _ := w.ResponseRecorder.Write(p[:w.writeBytes])
 	return n, w.writeErr
 }
@@ -121,7 +172,7 @@ func TestLeaderWriteOutcomeControlsWaiterReplay(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
 				entered, release := make(chan struct{}), make(chan struct{})
-				leader := &leaderWriteRecorder{ResponseRecorder: httptest.NewRecorder(), writeBytes: tc.bytes, writeErr: tc.writerErr}
+				leader := &responseWriteRecorder{ResponseRecorder: httptest.NewRecorder(), writeBytes: tc.bytes, writeErr: tc.writerErr}
 				waiter := httptest.NewRecorder()
 				handler := New(Config{}).Middleware()(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 					close(entered)
