@@ -179,6 +179,9 @@ func TestPublicRouteRegistrationErrors(t *testing.T) {
 	if !errors.Is(err, contract.ErrHandlerNil) {
 		t.Fatalf("AddRoute nil error = %v, want ErrHandlerNil", err)
 	}
+	if err := app.Get("/typed-nil", http.HandlerFunc(nil)); err == nil {
+		t.Fatal("Get accepted a nil HandlerFunc")
+	}
 
 	if err := app.Get("/ok", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)

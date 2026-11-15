@@ -79,7 +79,8 @@ func (r *Router) AddRoute(method, path string, handler http.Handler, opts ...Rou
 	if err := validateMethod(method); err != nil {
 		return fmt.Errorf("router add_route %s %s: %w", method, path, err)
 	}
-	if handler == nil {
+	handlerFunc, isHandlerFunc := handler.(http.HandlerFunc)
+	if handler == nil || (isHandlerFunc && handlerFunc == nil) {
 		return fmt.Errorf("router add_route %s %s: nil handler", method, path)
 	}
 	if err := validateRoutePath(path); err != nil {

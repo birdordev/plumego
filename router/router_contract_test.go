@@ -196,6 +196,22 @@ func TestAddRouteRejectsNilHandler(t *testing.T) {
 	}
 }
 
+func TestAddRouteRejectsNilHandlerFuncWithoutPublishing(t *testing.T) {
+	r := NewRouter()
+	const path, name = "/nil", "nil-retry"
+	if err := r.AddRoute(http.MethodGet, path, http.HandlerFunc(nil), WithRouteName(name)); err == nil {
+		t.Fatal("registered a nil HandlerFunc")
+	}
+	if r.HasRoute(name) || len(r.Routes()) != 0 {
+		t.Fatal("failed registration published a route")
+	}
+	handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) })
+	if err := r.AddRoute(http.MethodGet, path, handler, WithRouteName(name)); err != nil {
+		t.Fatal(err)
+	}
+	assertResponseStatus(t, serveRouter(r, http.MethodGet, path), http.StatusNoContent)
+}
+
 func TestAddRouteLifecyclePrecedesInputValidation(t *testing.T) {
 	handler := http.HandlerFunc(func(http.ResponseWriter, *http.Request) {})
 
