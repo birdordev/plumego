@@ -92,6 +92,22 @@ func TestNestedGroup(t *testing.T) {
 	}
 }
 
+func TestEmptyGroupPrefixInheritsParent(t *testing.T) {
+	app := newTestApp()
+	handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	})
+	mustRegisterRoute(t, app.Group("").Get("/status", handler))
+	mustRegisterRoute(t, app.Group("/api").Group("").Get("/status", handler))
+	for _, path := range []string{"/status", "/api/status"} {
+		rec := httptest.NewRecorder()
+		app.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+		if rec.Code != http.StatusNoContent {
+			t.Errorf("GET %s: status = %d, want 204", path, rec.Code)
+		}
+	}
+}
+
 func TestGroupNilHandlerReturnsError(t *testing.T) {
 	app := newTestApp()
 	g := app.Group("/api/v1")

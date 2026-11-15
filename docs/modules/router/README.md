@@ -72,7 +72,7 @@
 
 - preserve deterministic dispatch
 - keep explicit method-plus-path registration behavior
-- require registered route paths and group prefixes to be explicit
+- require non-empty registered route paths and group prefixes to be explicit
   leading-slash patterns, while repeated leading slashes collapse to one stored
   leading slash and internal empty segments remain invalid
 - reject empty or invalid HTTP token methods, and keep route parameter names to
@@ -173,9 +173,9 @@ These behaviors are part of the current stable-root freeze baseline:
 | Surface | Behavior |
 | --- | --- |
 | Registration | one method, one normalized path, one handler per route |
-| Path normalization | route paths and group prefixes must start with `/` unless they are the empty group-root route; repeated leading slashes collapse, all trailing slashes are removed from non-root paths, and internal double slashes remain invalid |
+| Path normalization | non-empty route paths and group prefixes must start with `/`; repeated leading slashes collapse, all trailing slashes are removed from non-root paths, and internal double slashes remain invalid |
 | Params | route parameter names are unique per pattern; `Param(r, name)` and `contract.RequestContextFromContext` expose matched params |
-| Groups | nested groups compose normalized prefixes and preserve named route metadata |
+| Groups | nested groups compose normalized prefixes and preserve named route metadata. An empty group prefix inherits the parent prefix without adding a segment |
 | Matching | among complete matches, static segments take precedence over params, and params take precedence over wildcards. A branch with no matching handler falls back to the next candidate. Cached dispatch and `Allow` use the same matching rules. |
 | Match cache | cache keys use method and normalized path; host does not participate in router matching. Successful registration invalidates cached matches, including when requests are served concurrently. |
 | Reverse routing | `URL` percent-escapes params and returns empty string for unknown routes, missing params, empty params, duplicate keys, unknown keys, slash-containing single-segment values, or malformed params; `URLMust` panics with the specific reason |

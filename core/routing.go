@@ -82,11 +82,12 @@ func (a *App) Any(path string, handler http.Handler, opts ...router.RouteOption)
 
 // Group returns a RouteGroup with the given path prefix.
 // All routes registered on the group share the prefix without repeating it.
+// An empty prefix adds no path segment.
 // Group itself does not register any routes; call Get/Post/Delete/etc. on the
 // returned group to register individual routes.
 //
-// Group panics when prefix does not begin with "/". This mirrors the behaviour of
-// [regexp.MustCompile]: Group is intended for startup wiring where the prefix is a
+// Group panics when a non-empty prefix does not begin with "/".
+// Like [regexp.MustCompile], Group is intended for startup wiring where the prefix is a
 // compile-time constant; a bad value is always a bug, not a runtime condition.
 // All dynamic errors (duplicate routes, frozen app) are still returned as errors
 // from the route registration methods on the returned group.
@@ -111,6 +112,7 @@ type RouteGroup struct {
 }
 
 // Group returns a nested RouteGroup with an additional path prefix appended.
+// An empty prefix inherits the parent prefix. A non-empty prefix must begin with "/".
 func (g *RouteGroup) Group(prefix string) *RouteGroup {
 	return &RouteGroup{app: g.app, r: g.r.Group(prefix)}
 }

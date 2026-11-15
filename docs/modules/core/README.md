@@ -158,6 +158,7 @@ These behaviors are part of the current stable-root freeze baseline:
 | Preparation state | `PreparationState` names the stable mutation, handler-prepared, and server-prepared phases exposed by core; `(*App).PreparationState()` returns the current phase as a read-only snapshot and returns the empty value for zero-value apps |
 | Config validation | `Prepare` rejects invalid server config before freezing route/middleware mutation |
 | Route wiring | `AddRoute` and method helpers delegate to the owned router with explicit method/path handlers |
+| Route groups | `App.Group("")` adds no path prefix. A nested `RouteGroup.Group("")` inherits the parent prefix. A non-empty prefix without a leading `/` panics |
 | Middleware wiring | `Use` preserves registration order, treats an empty middleware list as a no-op, and rejects nil middleware without partial registration |
 | Middleware builder callbacks | The app serializes handler preparation. Wait for the builder to return before calling `Run`, `Prepare`, or `ServeHTTP` on the same app. |
 | `ServeHTTP` | lazily prepares the handler only, skips server-only config validation, freezes later route/middleware mutation, and remains `net/http` compatible |
