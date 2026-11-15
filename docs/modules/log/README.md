@@ -54,7 +54,8 @@
 - JSON normalization and text container formatting use bounded traversal;
   cycles and excessive nesting produce truncation placeholders instead of
   unbounded recursion. Text formatting also bounds pointers, struct fields,
-  and byte slices.
+  and byte slices. Each unexported struct field placeholder consumes one
+  node from the same traversal budget.
   Custom `fmt.Formatter`, `fmt.Stringer`, and `error` methods retain their
   formatting behavior and own their termination; callers must keep them safe.
 - Output-write failure diagnostics are emitted once per logger family and omit

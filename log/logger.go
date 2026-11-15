@@ -360,15 +360,17 @@ func formatTextValue(value reflect.Value, depth int, remaining *int) string {
 			if i > 0 {
 				out.WriteByte(' ')
 			}
-			if !value.Field(i).CanInterface() {
-				out.WriteString("[unexported]")
-				continue
-			}
 			if *remaining <= 0 {
 				out.WriteString("[truncated]")
 				break
 			}
-			out.WriteString(formatTextValue(value.Field(i), depth+1, remaining))
+			field := value.Field(i)
+			if !field.CanInterface() {
+				*remaining -= 1
+				out.WriteString("[unexported]")
+				continue
+			}
+			out.WriteString(formatTextValue(field, depth+1, remaining))
 		}
 		out.WriteByte('}')
 		return out.String()

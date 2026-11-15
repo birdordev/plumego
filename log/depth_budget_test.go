@@ -1,10 +1,39 @@
 package log
 
 import (
+	"bytes"
 	"io"
+	"reflect"
 	"strconv"
+	"strings"
 	"testing"
 )
+
+func TestTextStructBudgetCountsUnexportedFields(t *testing.T) {
+	fields := make([]reflect.StructField, 2048)
+	fields[0] = reflect.StructField{Name: "Visible", Type: reflect.TypeFor[string]()}
+	for i := 1; i < len(fields); i++ {
+		fields[i] = reflect.StructField{
+			Name:    "field" + strconv.Itoa(i),
+			PkgPath: "github.com/birdordev/plumego/log",
+			Type:    reflect.TypeFor[struct{}](),
+		}
+	}
+	value := reflect.New(reflect.StructOf(fields)).Elem()
+	value.Field(0).SetString("visible")
+	var out bytes.Buffer
+	NewLogger(LoggerConfig{Format: LoggerFormatText, Output: &out}).Info(
+		"bounded", Fields{"value": value.Interface(), "sibling": "kept"},
+	)
+
+	line := out.String()
+	if count := strings.Count(line, "[unexported]"); count != 1022 || !strings.Contains(line, "[truncated]") {
+		t.Fatalf("unexported placeholders=%d, truncated=%t", count, strings.Contains(line, "[truncated]"))
+	}
+	if !strings.Contains(line, "visible") || !strings.Contains(line, "sibling=kept") {
+		t.Fatal("expected visible field and sibling to be preserved")
+	}
+}
 
 func TestTextDepthBudget(t *testing.T) {
 	wide := make(map[string]any, 100000)
