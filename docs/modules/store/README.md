@@ -150,7 +150,10 @@
   `x/data/kvengine`.
 - `store/kv` uses a single JSON state file replaced with `os.Rename`; each mutation rewrites the full normalized state and is O(N) in the number of retained entries.
 - Keys must be valid UTF-8. Mutations reject invalid keys with `ErrInvalidKey` before writing the JSON state file. Invalid keys in the decoded persisted state fail load with an `ErrInvalidKey`-wrapped error.
-- `store/kv` does not provide cross-process locking, WAL, snapshots, or crash-recovery tuning. Parent-directory sync is attempted after atomic replacement and tolerates unsupported-directory-sync errors.
+- Opening a KV directory requires the exclusive OS lock described above.
+  Parent-directory sync is attempted after atomic replacement and tolerates
+  unsupported-directory-sync errors. WAL, snapshots, and recovery tuning
+  belong to the durable engine.
 - A non-positive TTL means no expiration. `Get` leaves expired entries unchanged and returns
   `ErrKeyExpired`; read-only helpers such as `ExistsContext`, `KeysContext`,
   `SizeContext`, and `GetStatsContext` ignore expired keys without mutating
@@ -175,6 +178,9 @@
 
 - `store/db` helpers execute with the exact `context.Context` supplied by the caller.
 - `store/db.WithTransaction` commits successful callbacks and rolls back failed callbacks. Panic and `runtime.Goexit` paths also release the transaction; panics propagate unchanged. Callback and explicit rollback errors remain inspectable with `errors.Is`.
+- `store/db.OpenWith` owns any non-nil pool returned by the injected opener and
+  closes it if opening fails. Its error chain retains both failures when
+  closing also fails.
 - `store/db.Open` initializes a `*sql.DB` handle and does not prove connectivity; use `Ping` when startup validation is required.
 - `store/db.QueryRow` mirrors `database/sql.QueryRowContext` and defers query or scan errors until the returned row is scanned.
 - `store/db.QueryRowContext` returns an explicit `ErrQueryFailed`-wrapped error for nil database inputs instead of returning a nil row.

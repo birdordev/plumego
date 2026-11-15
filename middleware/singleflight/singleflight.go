@@ -37,6 +37,7 @@ import (
 	"errors"
 	"hash"
 	"hash/fnv"
+	"io"
 	"net"
 	"net/http"
 	"strconv"
@@ -49,6 +50,7 @@ import (
 	internaltransport "github.com/birdordev/plumego/internal/httputil"
 )
 
+var errLeaderWrite = errors.New("coalesced leader response write failed")
 var errUpstreamPanic = errors.New("upstream request panicked")
 var errResponseTooLarge = errors.New("coalesced response exceeded capture limit")
 var errUnreplayableResponse = errors.New("coalesced response used unreplayable transport operation")
@@ -296,6 +298,10 @@ func (c *Coalescer) executeRequest(w http.ResponseWriter, r *http.Request, key s
 	// Execute request
 	next.ServeHTTP(recorder, r)
 
+	if recorder.writeFailed {
+		inflight.err = errLeaderWrite
+		return
+	}
 	if recorder.Overflowed() {
 		inflight.err = errResponseTooLarge
 		return
@@ -354,6 +360,7 @@ type limitedResponseRecorder struct {
 	wroteHeader  bool
 	overflow     bool
 	unreplayable bool
+	writeFailed  bool
 }
 
 func newLimitedResponseRecorder(w http.ResponseWriter, maxBytes int) *limitedResponseRecorder {
@@ -398,7 +405,15 @@ func (r *limitedResponseRecorder) Write(p []byte) (int, error) {
 	if !r.wroteHeader {
 		r.WriteHeader(http.StatusOK)
 	}
-	if !r.overflow {
+	n, err := internaltransport.SafeWrite(r.ResponseWriter, p)
+	if err == nil && n != len(p) {
+		err = io.ErrShortWrite
+	}
+	if err != nil && !r.writeFailed {
+		r.writeFailed = true
+		r.body = nil
+	}
+	if !r.overflow && !r.writeFailed {
 		if r.maxBytes > 0 && len(r.body)+len(p) > r.maxBytes {
 			r.overflow = true
 			r.body = nil
@@ -406,7 +421,7 @@ func (r *limitedResponseRecorder) Write(p []byte) (int, error) {
 			r.body = append(r.body, p...)
 		}
 	}
-	return internaltransport.SafeWrite(r.ResponseWriter, p)
+	return n, err
 }
 
 func (r *limitedResponseRecorder) Flush() {

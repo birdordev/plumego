@@ -639,9 +639,11 @@ func (d stubDriver) Open(name string) (driver.Conn, error) {
 }
 
 type stubConn struct {
-	pingErr   error
-	pingCount int
-	tx        driver.Tx
+	pingErr    error
+	pingCount  int
+	closeCount int
+	closeErr   error
+	tx         driver.Tx
 }
 
 func (c *stubConn) Prepare(query string) (driver.Stmt, error) {
@@ -649,7 +651,8 @@ func (c *stubConn) Prepare(query string) (driver.Stmt, error) {
 }
 
 func (c *stubConn) Close() error {
-	return nil
+	c.closeCount++
+	return c.closeErr
 }
 
 func (c *stubConn) Begin() (driver.Tx, error) {
@@ -1241,4 +1244,27 @@ func (db *contextRecorderDB) PingContext(context.Context) error {
 
 func (db *contextRecorderDB) Close() error {
 	return nil
+}
+
+func TestOpenWithClosesPartiallyOpenedPool(t *testing.T) {
+	openErr := errors.New("opener failed")
+	closeErr := errors.New("connection close failed")
+	conn := &stubConn{closeErr: closeErr}
+	pool := sql.OpenDB(&stubConnector{conn: conn})
+	t.Cleanup(func() { _ = pool.Close() })
+	if err := pool.PingContext(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	opened, err := OpenWith(DefaultConfig("stub", "local"), func(string, string) (*sql.DB, error) {
+		return pool, openErr
+	})
+	if opened != nil || !errors.Is(err, ErrConnectionFailed) || !errors.Is(err, openErr) || !errors.Is(err, closeErr) {
+		t.Fatalf("database=%v, error=%v", opened, err)
+	}
+	if conn.closeCount != 1 {
+		t.Fatalf("connection closed %d times, want 1", conn.closeCount)
+	}
+	if err := pool.PingContext(t.Context()); err == nil {
+		t.Fatal("discarded database remains open")
+	}
 }

@@ -453,3 +453,30 @@ func TestLifecycleGroupStopNormalizesNilContext(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestLifecycleGroupRollbackPanicPreservesStartupError(t *testing.T) {
+	startErr := errors.New("startup failed")
+	var stops []string
+	secondAttempts := 0
+	g := NewLifecycleGroup().Add("first", Component{OnStop: func(context.Context) error {
+		stops = append(stops, "first")
+		return nil
+	}}).Add("second", Component{
+		OnStart: func(context.Context) error { return startErr },
+		OnStop: func(context.Context) error {
+			stops = append(stops, "second")
+			secondAttempts++
+			if secondAttempts == 1 {
+				panic("rollback failed")
+			}
+			return nil
+		},
+	})
+	err := g.Start(t.Context())
+	if !errors.Is(err, startErr) || err == startErr || !slices.Equal(stops, []string{"second", "first"}) {
+		t.Fatalf("start error=%v, rollback=%v", err, stops)
+	}
+	if err := g.Stop(t.Context()); err != nil || !slices.Equal(stops, []string{"second", "first", "second"}) {
+		t.Fatalf("retry error=%v, stops=%v", err, stops)
+	}
+}

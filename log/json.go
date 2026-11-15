@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding"
 	"encoding/json"
+	"errors"
 	"io"
 	"math"
 	"os"
@@ -12,6 +13,8 @@ import (
 	"sync"
 	"time"
 )
+
+var errJSONFieldPanic = errors.New("log field encoder panicked")
 
 // jsonLogger implements StructuredLogger with JSON output format.
 // It's thread-safe and suitable for structured logging in production environments.
@@ -247,7 +250,7 @@ func normalizeJSONFieldValueAt(value any, depth int, remaining *int) any {
 			return normalized
 		}
 	}
-	data, err := json.Marshal(value)
+	data, err := marshalJSONField(value)
 	if err != nil {
 		// Only numeric formatting is safe here. Generic formatting can reveal
 		// fields deliberately excluded from JSON or invoke user String methods.
@@ -264,6 +267,17 @@ func normalizeJSONFieldValueAt(value any, depth int, remaining *int) any {
 	}
 	// Keep validated JSON bytes instead of decoding numbers through float64.
 	return json.RawMessage(data)
+}
+
+// Marshal only this field so a caller-provided encoder cannot drop the entry.
+func marshalJSONField(value any) (data []byte, err error) {
+	defer func() {
+		if recover() != nil {
+			data = nil
+			err = errJSONFieldPanic
+		}
+	}()
+	return json.Marshal(value)
 }
 
 func normalizeTypedJSONContainer(value reflect.Value, depth int, remaining *int) (any, bool) {

@@ -2,12 +2,14 @@ package singleflight
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"sync"
 	"testing"
+	"testing/synctest"
 )
 
 type waiterContext struct {
@@ -83,6 +85,64 @@ func TestFinalResponseSemantics(t *testing.T) {
 			if status != 0 && (string(body) != "body" || waiter.Body.String() != "body") {
 				t.Fatalf("bodies: %q / %q", body, waiter.Body.String())
 			}
+		})
+	}
+}
+
+type leaderWriteRecorder struct {
+	*httptest.ResponseRecorder
+	writeBytes int
+	writeErr   error
+	headers    int
+}
+
+func (w *leaderWriteRecorder) WriteHeader(status int) {
+	w.headers++
+	w.ResponseRecorder.WriteHeader(status)
+}
+
+func (w *leaderWriteRecorder) Write(p []byte) (int, error) {
+	n, _ := w.ResponseRecorder.Write(p[:w.writeBytes])
+	return n, w.writeErr
+}
+
+func TestLeaderWriteOutcomeControlsWaiterReplay(t *testing.T) {
+	writeErr := errors.New("transport failure")
+	for _, tc := range []struct {
+		name                  string
+		bytes                 int
+		writerErr, handlerErr error
+		status                int
+	}{
+		{"complete", 6, nil, nil, http.StatusOK},
+		{"short", 3, nil, io.ErrShortWrite, http.StatusBadGateway},
+		{"explicit error", 3, writeErr, writeErr, http.StatusBadGateway},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				entered, release := make(chan struct{}), make(chan struct{})
+				leader := &leaderWriteRecorder{ResponseRecorder: httptest.NewRecorder(), writeBytes: tc.bytes, writeErr: tc.writerErr}
+				waiter := httptest.NewRecorder()
+				handler := New(Config{}).Middleware()(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+					close(entered)
+					<-release
+					if n, err := io.WriteString(w, "sample"); n != tc.bytes || !errors.Is(err, tc.handlerErr) {
+						t.Errorf("leader write=%d, %v", n, err)
+					}
+				}))
+				go handler.ServeHTTP(leader, httptest.NewRequest(http.MethodGet, "/", nil))
+				<-entered
+				go handler.ServeHTTP(waiter, httptest.NewRequest(http.MethodGet, "/", nil))
+				synctest.Wait()
+				close(release)
+				synctest.Wait()
+				if leader.headers != 1 || leader.Body.String() != "sample"[:tc.bytes] {
+					t.Fatalf("leader headers=%d, body=%q", leader.headers, leader.Body)
+				}
+				if waiter.Code != tc.status || (tc.status == http.StatusOK && waiter.Body.String() != "sample") {
+					t.Fatalf("waiter status=%d, body=%q", waiter.Code, waiter.Body)
+				}
+			})
 		})
 	}
 }

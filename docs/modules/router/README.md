@@ -221,4 +221,8 @@ Final headers are snapshotted at commitment; later header edits do not replace
 them. `ReadFrom` counts and discards body bytes through the same path; explicit
 flush commits the selected status without inferring a buffered content length.
 
+Static mounts serve seekable files through the standard library, including
+Range handling. A sequential file is served as a full response with its known
+length. HEAD sends the headers without reading the body.
+
 Successful matches publish immutable route identity to optional response observers through Unwrap-compatible wrappers. The router does not mutate the incoming request; downstream contexts retain their matched metadata.

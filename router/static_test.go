@@ -339,3 +339,44 @@ func TestGetFilePathFromRequestRejectsUnsafePaths(t *testing.T) {
 		})
 	}
 }
+
+type sequentialFS struct{ fs.FS }
+type sequentialFile struct{ fs.File }
+
+func (f sequentialFS) Open(name string) (fs.File, error) {
+	file, err := f.FS.Open(name)
+	if err != nil {
+		return nil, err
+	}
+	return sequentialFile{file}, nil
+}
+
+func TestStaticFSSequentialAndSeekable(t *testing.T) {
+	files := fstest.MapFS{"note.txt": {Data: []byte("abcd")}}
+	for _, tc := range []struct {
+		name              string
+		files             fs.FS
+		method, byteRange string
+		status            int
+		body, length      string
+	}{
+		{"sequential GET", sequentialFS{files}, http.MethodGet, "", 200, "abcd", "4"},
+		{"sequential HEAD", sequentialFS{files}, http.MethodHead, "", 200, "", "4"},
+		{"sequential Range", sequentialFS{files}, http.MethodGet, "bytes=1-2", 200, "abcd", "4"},
+		{"seekable Range", files, http.MethodGet, "bytes=1-2", 206, "bc", "2"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := NewRouter()
+			if err := r.StaticFS("/assets", http.FS(tc.files)); err != nil {
+				t.Fatal(err)
+			}
+			req := httptest.NewRequest(tc.method, "/assets/note.txt", nil)
+			req.Header.Set("Range", tc.byteRange)
+			dst := httptest.NewRecorder()
+			r.ServeHTTP(dst, req)
+			if dst.Code != tc.status || dst.Body.String() != tc.body || dst.Result().Header.Get("Content-Length") != tc.length {
+				t.Fatalf("status=%d headers=%v body=%q", dst.Code, dst.Result().Header, dst.Body)
+			}
+		})
+	}
+}

@@ -248,7 +248,7 @@ func TestCoalesce_CoalescedHEADDoesNotReplayBody(t *testing.T) {
 		startedOnce.Do(func() { close(started) })
 		<-release
 		w.Header().Set("X-Head-Test", "present")
-		w.WriteHeader(http.StatusNoContent)
+		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("should-not-replay"))
 	})
 
@@ -280,8 +280,8 @@ func TestCoalesce_CoalescedHEADDoesNotReplayBody(t *testing.T) {
 
 	select {
 	case rec := <-leaderDone:
-		if rec.Code != http.StatusNoContent {
-			t.Fatalf("leader status = %d, want %d", rec.Code, http.StatusNoContent)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("leader status = %d, want %d", rec.Code, http.StatusOK)
 		}
 	case <-time.After(time.Second):
 		t.Fatal("leader request did not finish")
@@ -289,8 +289,8 @@ func TestCoalesce_CoalescedHEADDoesNotReplayBody(t *testing.T) {
 
 	select {
 	case rec := <-waiterDone:
-		if rec.Code != http.StatusNoContent {
-			t.Fatalf("waiter status = %d, want %d", rec.Code, http.StatusNoContent)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("waiter status = %d, want %d", rec.Code, http.StatusOK)
 		}
 		if got := rec.Header().Get("X-Head-Test"); got != "present" {
 			t.Fatalf("waiter X-Head-Test = %q, want present", got)

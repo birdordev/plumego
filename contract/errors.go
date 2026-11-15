@@ -478,7 +478,7 @@ func cloneAnyMap(in map[string]any) map[string]any {
 		return nil
 	}
 	cloner := make(detailCloner)
-	out := cloner.cloneMap(in)
+	out := cloner.cloneMap(in, true)
 	if len(out) == 0 {
 		return nil
 	}
@@ -495,7 +495,7 @@ type detailReference struct {
 	len int
 }
 
-func (c detailCloner) cloneMap(in map[string]any) map[string]any {
+func (c detailCloner) cloneMap(in map[string]any, filterEmptyKey bool) map[string]any {
 	if in == nil {
 		return nil
 	}
@@ -506,7 +506,7 @@ func (c detailCloner) cloneMap(in map[string]any) map[string]any {
 	out := make(map[string]any, len(in))
 	c[key] = out
 	for k, v := range in {
-		if k != "" {
+		if k != "" || !filterEmptyKey {
 			out[k] = c.cloneValue(v)
 		}
 	}
@@ -534,11 +534,13 @@ func cloneDetailSlice[T any](c detailCloner, in []T, clone func(T) T) []T {
 func (c detailCloner) cloneValue(value any) any {
 	switch v := value.(type) {
 	case map[string]any:
-		return c.cloneMap(v)
+		return c.cloneMap(v, false)
 	case []any:
 		return cloneDetailSlice(c, v, c.cloneValue)
 	case []map[string]any:
-		return cloneDetailSlice(c, v, c.cloneMap)
+		return cloneDetailSlice(c, v, func(item map[string]any) map[string]any {
+			return c.cloneMap(item, false)
+		})
 	case []string:
 		return slices.Clone(v)
 	case []int:

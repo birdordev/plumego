@@ -275,10 +275,19 @@ func staticRoutePath(prefix string) string {
 // serveFileContent serves file content with seeking support, using ServeContent
 // when possible, falling back to raw copy for non-seekable files.
 func serveFileContent(w http.ResponseWriter, req *http.Request, f http.File, info os.FileInfo) {
-	if seeker, ok := f.(io.ReadSeeker); ok {
-		http.ServeContent(w, req, info.Name(), info.ModTime(), seeker)
-	} else {
+	// http.FS implements Seek even when the underlying fs.File cannot seek.
+	if _, err := f.Seek(0, io.SeekEnd); err == nil {
+		if _, err := f.Seek(0, io.SeekStart); err != nil {
+			http.Error(w, "cannot rewind static file", http.StatusInternalServerError)
+			return
+		}
+		http.ServeContent(w, req, info.Name(), info.ModTime(), f)
+		return
+	}
+	if info.Size() >= 0 {
 		w.Header().Set("Content-Length", strconv.FormatInt(info.Size(), 10))
+	}
+	if req.Method != http.MethodHead {
 		_, _ = io.Copy(w, f)
 	}
 }

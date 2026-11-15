@@ -180,7 +180,7 @@ func (g *LifecycleGroup) startWithRollback(ctx context.Context) (err error) {
 		if startReturned && err == nil {
 			return
 		}
-		if rollbackErr := g.stopPending(ctx, !startReturned); rollbackErr != nil {
+		if rollbackErr := g.stopPending(ctx, true); rollbackErr != nil {
 			err = errors.Join(err, rollbackErr)
 		}
 	}()
@@ -227,14 +227,14 @@ func (g *LifecycleGroup) Stop(ctx context.Context) error {
 
 // stopPending runs only during startup rollback or shutdown. Those phases own
 // the frozen entries and their cleanup flags exclusively.
-func (g *LifecycleGroup) stopPending(ctx context.Context, preserveStartupExit bool) error {
+func (g *LifecycleGroup) stopPending(ctx context.Context, rollingBack bool) error {
 	var errs []error
 	for i := len(g.entries) - 1; i >= 0; i-- {
 		e := &g.entries[i]
 		if !e.pendingStop {
 			continue
 		}
-		if err := e.stop(ctx, preserveStartupExit); err != nil {
+		if err := e.stop(ctx, rollingBack); err != nil {
 			errs = append(errs, fmt.Errorf("core: stop %q: %w", e.name, err))
 			continue
 		}
@@ -243,10 +243,9 @@ func (g *LifecycleGroup) stopPending(ctx context.Context, preserveStartupExit bo
 	return errors.Join(errs...)
 }
 
-func (e *namedLifecycle) stop(ctx context.Context, preserveStartupExit bool) (err error) {
-	if preserveStartupExit {
-		// Keep this entry pending and continue rollback without replacing the
-		// panic already propagating from Start.
+func (e *namedLifecycle) stop(ctx context.Context, rollingBack bool) (err error) {
+	if rollingBack {
+		// Preserve the startup failure and let rollback visit the remaining entries.
 		defer func() {
 			if recover() != nil {
 				err = errors.New("cleanup panicked during startup rollback")

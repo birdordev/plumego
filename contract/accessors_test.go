@@ -1,6 +1,7 @@
 package contract
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -1142,5 +1143,44 @@ func TestRequestContextFromContextNoKey(t *testing.T) {
 	rc := RequestContextFromContext(t.Context())
 	if rc.RoutePattern != "" || rc.RouteName != "" || len(rc.Params) != 0 {
 		t.Fatalf("expected empty RequestContext, got %+v", rc)
+	}
+}
+
+func TestErrorDetailsPreserveNestedEmptyKeys(t *testing.T) {
+	type namedMap map[string]any
+	plain := map[string]any{"": "plain"}
+	named := namedMap{"": "named"}
+	array := []map[string]any{{"": "array"}}
+	apiErr := NewErrorBuilder().Details(map[string]any{
+		"": "ignored", "plain": plain, "named": named, "array": array,
+	}).Build()
+	plain[""] = "changed"
+	named[""] = "changed"
+	array[0][""] = "changed"
+	snapshot := apiErr.Details()
+	if _, exists := snapshot[""]; exists {
+		t.Fatal("top-level empty key was retained")
+	}
+	snapshot["plain"].(map[string]any)[""] = "changed snapshot"
+
+	dst := httptest.NewRecorder()
+	if err := WriteError(dst, nil, apiErr); err != nil {
+		t.Fatal(err)
+	}
+	var payload struct {
+		Error struct {
+			Details struct {
+				Plain map[string]string
+				Named map[string]string
+				Array []map[string]string
+			}
+		}
+	}
+	if err := json.Unmarshal(dst.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	got := payload.Error.Details
+	if got.Plain[""] != "plain" || got.Named[""] != "named" || len(got.Array) != 1 || got.Array[0][""] != "array" {
+		t.Fatalf("unexpected details: %s", dst.Body.String())
 	}
 }

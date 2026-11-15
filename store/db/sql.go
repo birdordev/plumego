@@ -145,7 +145,8 @@ func Open(config Config) (*sql.DB, error) {
 	return OpenWith(config, sql.Open)
 }
 
-// OpenWith opens a database connection with an injected opener.
+// OpenWith opens a database connection with an injected opener. It takes
+// ownership of any non-nil database returned by open and closes it on failure.
 func OpenWith(config Config, open OpenFunc) (*sql.DB, error) {
 	if err := config.Validate(); err != nil {
 		return nil, err
@@ -156,6 +157,11 @@ func OpenWith(config Config, open OpenFunc) (*sql.DB, error) {
 
 	db, err := open(config.Driver, config.DSN)
 	if err != nil {
+		if db != nil {
+			if closeErr := db.Close(); closeErr != nil {
+				err = errors.Join(err, fmt.Errorf("close partially opened database: %w", closeErr))
+			}
+		}
 		return nil, fmt.Errorf("%w: %w", ErrConnectionFailed, err)
 	}
 	if db == nil {

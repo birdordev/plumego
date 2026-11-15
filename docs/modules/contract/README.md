@@ -90,6 +90,8 @@ trace metadata carriers.
 - `WriteResponse` writes `204` and `205` without a response body. For `205` it
   sets `Content-Length: 0` and removes `Transfer-Encoding`. Encoding
   failures for other success statuses return before the response is committed.
+- Error detail names at the top level must be nonempty. Nested JSON objects
+  retain their original keys, including empty strings.
 - If error details cannot be encoded, `WriteError` sends the same status and
   error envelope without `details`. It returns the encoding error and any
   write error for diagnostics. The fallback commits the response, so callers

@@ -552,3 +552,34 @@ func TestJSONFormatLoggerWithFieldsSharesWriteErrorState(t *testing.T) {
 		t.Fatal("expected derived JSON logger to share write error state")
 	}
 }
+
+type panickingJSONField struct{}
+
+func (panickingJSONField) MarshalJSON() ([]byte, error) {
+	panic("private encoder panic")
+}
+
+type panickingTextField struct{}
+
+func (panickingTextField) MarshalText() ([]byte, error) {
+	panic("private encoder panic")
+}
+
+func TestJSONEncoderPanicIsIsolatedToTheField(t *testing.T) {
+	var out bytes.Buffer
+	logger := newTestJSONLogger(t, LoggerConfig{Output: &out})
+	logger.Info("event", Fields{
+		"good": "keep", "json": panickingJSONField{}, "nested": []any{panickingTextField{}, "keep"},
+	})
+	var entry struct {
+		Good, JSON string
+		Nested     []string
+	}
+	if err := json.Unmarshal(out.Bytes(), &entry); err != nil {
+		t.Fatal(err)
+	}
+	if entry.Good != "keep" || entry.JSON != "[unsupported]" || len(entry.Nested) != 2 ||
+		entry.Nested[0] != "[unsupported]" || entry.Nested[1] != "keep" || strings.Contains(out.String(), "private encoder panic") {
+		t.Fatalf("unexpected log: %s", out.String())
+	}
+}
