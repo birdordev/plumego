@@ -74,12 +74,17 @@ func (r *recorder) Ready(context.Context) error { return nil }
 func TestLifecycleGroupStartsInOrderStopsInReverse(t *testing.T) {
 	var log []string
 	g := NewLifecycleGroup()
+	var absent *Component
 	g.Add("a", &recorder{name: "a", log: &log}).
+		Add("absent", absent).
 		Add("b", &recorder{name: "b", log: &log}).
 		Add("c", &recorder{name: "c", log: &log})
 
 	if err := g.Start(context.Background()); err != nil {
 		t.Fatalf("Start: %v", err)
+	}
+	if err := g.Ready(t.Context()); err != nil {
+		t.Fatalf("Ready: %v", err)
 	}
 	if err := g.Stop(context.Background()); err != nil {
 		t.Fatalf("Stop: %v", err)

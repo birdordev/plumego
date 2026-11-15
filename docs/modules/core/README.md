@@ -172,5 +172,7 @@ These behaviors are part of the current stable-root freeze baseline:
 | Ownership | logger lifecycle, readiness signaling, debug routes, and feature wiring remain caller-owned |
 | `LifecycleGroup` | The first `Start` that enters startup freezes registration. A context already canceled leaves the group idle. A startup error, cancellation during startup, or panic rolls back every attempted component in reverse order with the startup context. Returned errors include rollback failures. A cleanup panic during startup rollback leaves that component pending and cleanup continues in reverse order. A startup panic propagates with its original value. `Stop` can retry pending cleanup and treats a nil context as `context.Background()`. `Ready` probes components only after successful startup, and overlapping operations return without waiting for callbacks. |
 
+`LifecycleGroup.Add` skips nil interfaces and nil `*Component` adapters.
+
 Focused regression coverage lives in `core/freeze_test.go`,
 `core/lifecycle_test.go`, `core/app_test.go`, and `core/routing_test.go`.

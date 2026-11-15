@@ -129,10 +129,11 @@ func NewLifecycleGroup() *LifecycleGroup {
 
 // Add registers a component under name. Components start in the order added and
 // stop in reverse, so register dependencies before their dependents. Add
-// returns the group for chaining. It ignores nil components and additions after
-// the first Start begins.
+// returns the group for chaining. It ignores nil interfaces, nil *Component
+// values, and additions after the first Start begins.
 func (g *LifecycleGroup) Add(name string, c Lifecycle) *LifecycleGroup {
-	if c == nil {
+	adapter, isAdapter := c.(*Component)
+	if c == nil || (isAdapter && adapter == nil) {
 		return g
 	}
 	g.mu.Lock()
