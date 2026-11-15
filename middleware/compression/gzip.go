@@ -372,7 +372,7 @@ func sniffContentType(header http.Header, p []byte) {
 }
 
 func (w *gzipResponseWriter) shouldDeferCompressionDecision(statusCode int) bool {
-	if statusCode >= 400 {
+	if !canCompressStatus(statusCode) {
 		return false
 	}
 	header := w.buffer.FinalHeader()
@@ -381,6 +381,11 @@ func (w *gzipResponseWriter) shouldDeferCompressionDecision(statusCode int) bool
 	}
 	_, hasContentType := header["Content-Type"]
 	return !hasContentType
+}
+
+func canCompressStatus(statusCode int) bool {
+	return statusCode < http.StatusBadRequest &&
+		statusCode != http.StatusNoContent && statusCode != http.StatusNotModified
 }
 
 func (w *gzipResponseWriter) resolvePendingCompression() {
@@ -396,8 +401,7 @@ func (w *gzipResponseWriter) resolvePendingCompression() {
 
 func (w *gzipResponseWriter) shouldCompress(statusCode int) bool {
 	header := w.buffer.FinalHeader()
-	// Don't compress error responses
-	if statusCode >= 400 {
+	if !canCompressStatus(statusCode) {
 		return false
 	}
 	// Byte ranges describe the original representation.

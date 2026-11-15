@@ -221,7 +221,8 @@ active and waiting requests represented in that channel.
 
 `compression.Middleware(...)` compresses eligible non-error responses when the client
 accepts gzip. It skips websocket upgrades, SSE, already-compressed responses,
-common binary content types, and range responses (206 or `Content-Range`).
+common binary content types, range responses (206 or `Content-Range`), and
+bodyless responses with status 204 or 304.
 Negotiated gzip and identity responses include `Vary: Accept-Encoding` while
 preserving other `Vary` values.
 

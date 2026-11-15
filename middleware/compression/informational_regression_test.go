@@ -3,6 +3,7 @@ package compression
 import (
 	"bytes"
 	"compress/gzip"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -12,6 +13,43 @@ import (
 	"reflect"
 	"testing"
 )
+
+func TestBodylessStatusesBypassGzip(t *testing.T) {
+	for _, status := range []int{http.StatusNoContent, http.StatusNotModified} {
+		for _, writeBody := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%d/write=%t", status, writeBody), func(t *testing.T) {
+				server := httptest.NewServer(Middleware(Config{})(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+					w.Header().Set("Content-Type", "text/plain")
+					w.Header().Set("ETag", `"revision"`)
+					w.WriteHeader(status)
+					if writeBody {
+						if n, err := io.WriteString(w, "body"); n != 0 || !errors.Is(err, http.ErrBodyNotAllowed) {
+							t.Errorf("Write = %d, %v", n, err)
+						}
+					}
+				})))
+				defer server.Close()
+				req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, server.URL, nil)
+				if err != nil {
+					t.Fatal(err)
+				}
+				req.Header.Set("Accept-Encoding", "gzip")
+				resp, err := server.Client().Do(req)
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer resp.Body.Close()
+				body, err := io.ReadAll(resp.Body)
+				if err != nil || resp.StatusCode != status || len(body) != 0 || resp.Header.Get("Content-Encoding") != "" {
+					t.Fatalf("status=%d body=%q headers=%v read error=%v", resp.StatusCode, body, resp.Header, err)
+				}
+				if resp.Header.Get("ETag") != `"revision"` {
+					t.Fatalf("headers = %v", resp.Header)
+				}
+			})
+		}
+	}
+}
 
 func TestFinalHeaderSnapshotAndTrailers(t *testing.T) {
 	for _, coding := range []string{"identity", "gzip"} {
