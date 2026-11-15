@@ -60,7 +60,7 @@
 - keep cache and KV constructors explicit about validation errors; do not panic on invalid config
 - `store/cache` reports empty or unsafe request keys with `cache.ErrInvalidKey`, while cache configuration errors remain classified under `cache.ErrInvalidConfig`.
 - `store/cache` and `store/kv` treat `nil` values and non-nil empty byte slices as existing caller-owned values; missing keys remain distinguishable through not-found errors and existence checks.
-- `store/cache.MemoryCache.Delete` is idempotent for missing keys and returns nil after validating the key and lifecycle state; `store/kv.KVStore.Delete` returns `kv.ErrKeyNotFound` when the key is missing.
+- `store/cache.MemoryCache.Delete` is idempotent for missing keys and returns nil after validating the key and lifecycle state; `store/kv.KVStore.Delete` returns `kvstore.ErrKeyNotFound` when the key is missing.
 - `store/cache.Incr` and `store/cache.Decr` create missing keys as integer values, but existing empty byte values are non-integers and return `cache.ErrNotInteger`.
 - Integer updates accept signed `int64` deltas and reject arithmetic results
   outside the `int64` range without replacing the existing value.
@@ -130,7 +130,7 @@
   directory and call `Close` before reopening. The OS also releases the lock
   when the owning process exits. Platforms without a supported locking
   primitive return an error at open time.
-- `store/kv` classifies state-file JSON decode failures and invalid persisted keys with `kv.ErrCorruptState`; invalid-key corruption also keeps `kv.ErrInvalidKey` in the error chain for diagnostics.
+- `store/kv` classifies state-file JSON decode failures and invalid persisted keys with `kvstore.ErrCorruptState`; invalid-key corruption also keeps `kvstore.ErrInvalidKey` in the error chain for diagnostics.
 - An existing snapshot must contain an `entries` object. A missing or null
   object returns `ErrCorruptState`, and an empty object loads as an empty store.
 - `store/kv` treats invalid persisted keys as state corruption and fails startup instead of silently dropping records.
@@ -139,7 +139,8 @@
 - `store/kv` write persistence is synchronous; use caller contexts on
   `SetContext`, `DeleteContext`, and read-only context helpers when
   cancellation must be observed before the filesystem write boundary.
-- `store/kv` uses package name `kv`; examples may alias the import as `kvstore` only to avoid local name collisions.
+- Import `github.com/birdordev/plumego/store/kv` and use its declared package
+  name `kvstore`, or choose an explicit alias such as `kv`.
 - `store/kv.DefaultOptions(dataDir)` is the public helper for the current
   embedded defaults while keeping `DataDir` explicit; callers can start from it
   and then override limits as needed.
