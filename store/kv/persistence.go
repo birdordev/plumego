@@ -25,7 +25,9 @@ func (kv *KVStore) load() error {
 		return fmt.Errorf("read state: %w", err)
 	}
 
-	var state diskState
+	var state struct {
+		Entries map[string]*entry `json:"entries"`
+	}
 	if err := json.Unmarshal(raw, &state); err != nil {
 		return fmt.Errorf("%w: decode state: %w", ErrCorruptState, err)
 	}
@@ -36,7 +38,10 @@ func (kv *KVStore) load() error {
 		if err := validateKey(key); err != nil {
 			return fmt.Errorf("%w: decode state key %q: %w", ErrCorruptState, key, err)
 		}
-		itemCopy := item
+		if item == nil {
+			return fmt.Errorf("%w: snapshot contains a null entry", ErrCorruptState)
+		}
+		itemCopy := *item
 		itemCopy.Value = cloneBytes(item.Value)
 		itemCopy.Size = entrySize(key, item.Value)
 		kv.data[key] = &itemCopy

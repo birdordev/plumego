@@ -452,8 +452,8 @@ func TestKVStoreLoadRejectsCorruptJSON(t *testing.T) {
 	}
 }
 
-func TestKVStoreLoadRejectsMissingEntriesAndReleasesLock(t *testing.T) {
-	for _, raw := range []string{`null`, `{}`, `{"entries":null}`} {
+func TestKVStoreLoadRejectsMalformedEntriesAndReleasesLock(t *testing.T) {
+	for _, raw := range []string{`null`, `{}`, `{"entries":null}`, `{"entries":{"item":null}}`} {
 		t.Run(raw, func(t *testing.T) {
 			opts := DefaultConfig(t.TempDir())
 			statePath := filepath.Join(opts.DataDir, stateFileName)
@@ -483,6 +483,22 @@ func TestKVStoreLoadRejectsMissingEntriesAndReleasesLock(t *testing.T) {
 				t.Fatalf("empty snapshot size=%d error=%v", n, err)
 			}
 		})
+	}
+}
+
+func TestKVStoreLoadAcceptsEntryWithNilValue(t *testing.T) {
+	opts := DefaultConfig(t.TempDir())
+	if err := os.WriteFile(filepath.Join(opts.DataDir, stateFileName),
+		[]byte(`{"entries":{"item":{"value":null,"size":0}}}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	store, err := NewKVStore(opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = store.Close() }()
+	if value, err := store.Get("item"); err != nil || value != nil {
+		t.Fatalf("Get: value=%#v error=%v", value, err)
 	}
 }
 
