@@ -7,7 +7,8 @@ import (
 )
 
 // Use adds middleware to the application's middleware chain. Builders run
-// during handler preparation and must not call Prepare or ServeHTTP on this app.
+// during handler preparation. Calls to Run, Prepare, or ServeHTTP on the same
+// app must occur after the builder returns.
 func (a *App) Use(middlewares ...middleware.Middleware) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
