@@ -163,6 +163,8 @@ directly.
 - For embedded directories, pass a filesystem rooted at the mounted directory
   to `StaticFS`, for example `sub, _ := fs.Sub(public, "public")` followed by
   `r.StaticFS("/assets", http.FS(sub))`.
+- `StaticFS` closes files returned by the provided file system, including a
+  file returned alongside an open error.
 
 ## Frozen behavior matrix
 

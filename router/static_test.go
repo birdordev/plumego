@@ -1,6 +1,7 @@
 package router
 
 import (
+	"errors"
 	"io/fs"
 	"net/http"
 	"net/http/httptest"
@@ -244,6 +245,68 @@ func TestStaticFS(t *testing.T) {
 
 	assertResponseStatus(t, w, http.StatusOK)
 	assertResponseBody(t, w, "console.log('embedded');")
+}
+
+type staticOpenResult struct {
+	file http.File
+	err  error
+}
+
+func (s staticOpenResult) Open(string) (http.File, error) {
+	return s.file, s.err
+}
+
+type closeCountingStaticFile struct {
+	http.File
+	closes int
+}
+
+func (f *closeCountingStaticFile) Close() error {
+	f.closes++
+	return f.File.Close()
+}
+
+func TestStaticFSClosesFilesFromInjectedOpen(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		withFile bool
+		err      error
+		status   int
+	}{
+		{"partial open", true, errors.New("open failed"), http.StatusNotFound},
+		{"missing file", false, fs.ErrNotExist, http.StatusNotFound},
+		{"success", true, nil, http.StatusOK},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			source := staticOpenResult{err: tc.err}
+			var tracked *closeCountingStaticFile
+			if tc.withFile {
+				file, err := http.FS(fstest.MapFS{"note.txt": {Data: []byte("hello")}}).Open("note.txt")
+				if err != nil {
+					t.Fatal(err)
+				}
+				tracked = &closeCountingStaticFile{File: file}
+				defer func() {
+					if tracked.closes == 0 {
+						_ = tracked.Close()
+					}
+				}()
+				source.file = tracked
+			}
+			r := NewRouter()
+			if err := r.StaticFS("/assets", source); err != nil {
+				t.Fatal(err)
+			}
+			w := httptest.NewRecorder()
+			r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/assets/note.txt", nil))
+			if w.Code != tc.status || (tc.status == http.StatusOK && w.Body.String() != "hello") {
+				t.Fatalf("status=%d body=%q", w.Code, w.Body)
+			}
+			if tracked != nil && tracked.closes != 1 {
+				t.Fatalf("closed %d times, want once", tracked.closes)
+			}
+		})
+	}
 }
 
 func TestStaticFSRejectsDirectoryRequest(t *testing.T) {
