@@ -352,11 +352,7 @@ func normalizeJSONFieldMap(fields map[string]any, depth int, remaining *int) map
 // Must be called with the shared writer mutex held.
 func (l *jsonLogger) writeRaw(level Level, data []byte) {
 	w := l.writerFor(level)
-	if err := writeFull(w, data); err != nil {
-		l.reportWriteError(err)
-		return
-	}
-	if err := writeFull(w, []byte("\n")); err != nil {
+	if err := writeFull(w, append(data, '\n')); err != nil {
 		l.reportWriteError(err)
 	}
 }

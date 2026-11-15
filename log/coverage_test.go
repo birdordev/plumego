@@ -256,10 +256,7 @@ func TestJSONLoggerReportWriteErrorViaBrokenWriter(t *testing.T) {
 	raw.Info("second write also fails silently")
 }
 
-func TestJSONLoggerReportWriteErrorOnNewlineViaBrokenWriter(t *testing.T) {
-	// shortWriter succeeds on the first Write call (JSON body) but
-	// triggers io.ErrShortWrite, so writeRaw's writeFull returns an error
-	// causing the error path (including the newline write) to be exercised.
+func TestJSONLoggerReportShortRecordWrite(t *testing.T) {
 	sw := &shortWriter{}
 	raw := NewLogger(LoggerConfig{
 		Format: LoggerFormatJSON,

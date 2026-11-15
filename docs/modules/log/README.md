@@ -60,6 +60,7 @@
   formatting behavior and own their termination; callers must keep them safe.
 - Output-write failure diagnostics are emitted once per logger family and omit
   raw writer errors, which may contain the rejected log payload.
+- JSON sends each record and its trailing newline in a single writer call.
 - Callers own message and field selection: loggers do not automatically redact
   arbitrary valid messages or fields. Do not pass credentials or private keys.
   Field maps are copied shallowly; callers retain ownership of nested values

@@ -11,6 +11,51 @@ import (
 	"testing"
 )
 
+type interleavedJSONSink struct {
+	mu          sync.Mutex
+	output      bytes.Buffer
+	firstWrite  chan struct{}
+	resumeFirst chan struct{}
+}
+
+func (w *interleavedJSONSink) Write(p []byte) (int, error) {
+	w.mu.Lock()
+	first := w.output.Len() == 0
+	n, err := w.output.Write(p)
+	w.mu.Unlock()
+	if first {
+		close(w.firstWrite)
+		<-w.resumeFirst
+	}
+	return n, err
+}
+
+func TestIndependentJSONLoggersWriteWholeRecords(t *testing.T) {
+	sink := &interleavedJSONSink{firstWrite: make(chan struct{}), resumeFirst: make(chan struct{})}
+	first := newTestJSONLogger(t, LoggerConfig{Output: sink})
+	second := newTestJSONLogger(t, LoggerConfig{Output: sink})
+	done := make(chan struct{})
+	go func() {
+		first.Info("first")
+		close(done)
+	}()
+	<-sink.firstWrite
+	second.Info("second")
+	close(sink.resumeFirst)
+	<-done
+
+	lines := strings.Split(strings.TrimSuffix(sink.output.String(), "\n"), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("got %d lines, want two", len(lines))
+	}
+	for i, want := range []string{"first", "second"} {
+		var entry testJSONLogEntry
+		if err := json.Unmarshal([]byte(lines[i]), &entry); err != nil || entry.Msg != want {
+			t.Fatalf("line %d=%q, err=%v, want message %q", i, lines[i], err, want)
+		}
+	}
+}
+
 func newTestJSONLogger(t *testing.T, cfg LoggerConfig) *jsonLogger {
 	t.Helper()
 	cfg.Format = LoggerFormatJSON
