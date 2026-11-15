@@ -472,6 +472,7 @@ func (l *Limiter) cleanup(now time.Time) {
 			if now.Sub(b.lastAccess) > l.maxIdle {
 				delete(shard.buckets, key)
 				l.bucketCount.Add(-1)
+				l.metrics.Evictions.Add(1)
 			}
 		}
 		shard.mu.Unlock()

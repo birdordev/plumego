@@ -677,14 +677,18 @@ func TestLimiterBucketMetricsAfterEvictionAndCleanup(t *testing.T) {
 	if got := limiter.Metrics().Buckets; got != 2 {
 		t.Fatalf("Buckets after eviction = %d, want 2", got)
 	}
-	if got := limiter.Metrics().Evictions; got == 0 {
-		t.Fatalf("expected eviction metric to increment")
+	if got := limiter.Metrics().Evictions; got != 1 {
+		t.Fatalf("Evictions after capacity eviction = %d, want 1", got)
 	}
 
 	currentTime = currentTime.Add(2 * time.Minute)
 	limiter.cleanup(currentTime)
-	if got := limiter.Metrics().Buckets; got != 0 {
-		t.Fatalf("Buckets after cleanup = %d, want 0", got)
+	if stats := limiter.Metrics(); stats.Buckets != 0 || stats.Evictions != 3 {
+		t.Fatalf("after cleanup: Buckets=%d Evictions=%d, want 0 and 3", stats.Buckets, stats.Evictions)
+	}
+	limiter.cleanup(currentTime)
+	if got := limiter.Metrics().Evictions; got != 3 {
+		t.Fatalf("Evictions after repeated cleanup = %d, want 3", got)
 	}
 }
 
