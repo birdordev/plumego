@@ -44,6 +44,20 @@ func TestHeadPreservesImplicitCommit(t *testing.T) {
 			w.Header().Set("Content-Length", "5")
 			_, _ = io.WriteString(w, "hello")
 		}},
+		{"declared trailer", func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Trailer", "X-Checksum")
+			_, _ = io.WriteString(w, "hello")
+			w.Header().Set("X-Checksum", "checksum")
+		}},
+		{"prefixed trailer", func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set(http.TrailerPrefix+"X-Checksum", "checksum")
+			_, _ = io.WriteString(w, "hello")
+		}},
+		{"explicit length with trailer", func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Trailer", "X-Checksum")
+			w.Header().Set("Content-Length", "5")
+			_, _ = io.WriteString(w, "hello")
+		}},
 		{"transfer encoding", func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Transfer-Encoding", "chunked")
 			_, _ = w.Write([]byte("hello"))
@@ -70,6 +84,9 @@ func TestHeadPreservesImplicitCommit(t *testing.T) {
 			}
 			_, _ = io.Copy(io.Discard, get.Body)
 			get.Body.Close()
+			if (tc.name == "declared trailer" || tc.name == "prefixed trailer") && get.Trailer.Get("X-Checksum") != "checksum" {
+				t.Fatalf("GET trailer = %q", get.Trailer.Get("X-Checksum"))
+			}
 			for range 2 {
 				head, err := server.Client().Head(server.URL)
 				if err != nil {

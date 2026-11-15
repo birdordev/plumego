@@ -220,6 +220,8 @@ status, content-type detection, and small-response content-length inference.
 Final headers are snapshotted at commitment; later header edits do not replace
 them. `ReadFrom` counts and discards body bytes through the same path; explicit
 flush commits the selected status without inferring a buffered content length.
+Declared trailers and `http.TrailerPrefix` entries skip automatic length
+inference. An explicit `Content-Length` takes precedence.
 
 Static mounts serve seekable files through the standard library, including
 Range handling. A sequential file is served as a full response with its known

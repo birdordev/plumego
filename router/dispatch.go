@@ -74,7 +74,8 @@ func (w *noBodyWriter) commit(inferLength bool) {
 		w.WriteHeader(http.StatusOK)
 	}
 	_, hasContentLength := w.header["Content-Length"]
-	if inferLength && w.bodyAllowed() && w.bytes <= 2048 && !hasContentLength && w.header.Get("Transfer-Encoding") == "" {
+	if inferLength && w.bodyAllowed() && w.bytes <= 2048 && !hasContentLength &&
+		w.header.Get("Transfer-Encoding") == "" && !hasResponseTrailers(w.header) {
 		w.header.Set("Content-Length", strconv.FormatInt(w.bytes, 10))
 	}
 	dst := w.Header()
@@ -84,6 +85,18 @@ func (w *noBodyWriter) commit(inferLength bool) {
 	}
 	w.ResponseWriter.WriteHeader(w.status)
 	w.committed = true
+}
+
+func hasResponseTrailers(header http.Header) bool {
+	if len(header.Values("Trailer")) > 0 {
+		return true
+	}
+	for key := range header {
+		if strings.HasPrefix(key, http.TrailerPrefix) {
+			return true
+		}
+	}
+	return false
 }
 
 func (w *noBodyWriter) FlushError() error {
