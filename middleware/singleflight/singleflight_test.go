@@ -1368,7 +1368,9 @@ func TestWriteResponse_ReplacesStaleHeadersAndPreservesMultiValue(t *testing.T) 
 	rec := httptest.NewRecorder()
 	rec.Header().Set("X-Test", "stale")
 
-	writeResponse(rec, httptest.NewRequest(http.MethodGet, "/replay", nil), resp, true)
+	if err := writeResponse(rec, httptest.NewRequest(http.MethodGet, "/replay", nil), resp, true); err != nil {
+		t.Fatal(err)
+	}
 
 	if rec.Code != http.StatusAccepted {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusAccepted)
@@ -1395,7 +1397,9 @@ func TestWriteResponse_DoesNotWriteBodyForHEAD(t *testing.T) {
 	}
 	rec := httptest.NewRecorder()
 
-	writeResponse(rec, httptest.NewRequest(http.MethodHead, "/replay", nil), resp, false)
+	if err := writeResponse(rec, httptest.NewRequest(http.MethodHead, "/replay", nil), resp, false); err != nil {
+		t.Fatal(err)
+	}
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)

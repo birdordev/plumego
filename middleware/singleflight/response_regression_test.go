@@ -197,3 +197,57 @@ func TestLeaderWriteOutcomeControlsWaiterReplay(t *testing.T) {
 		})
 	}
 }
+
+func TestWaiterWriteOutcomeControlsReplayHooks(t *testing.T) {
+	const body = "sample"
+	for _, tc := range []struct {
+		name, method string
+		bytes        int
+		writeErr     error
+		wantSuccess  bool
+	}{
+		{"complete", http.MethodGet, len(body), nil, true},
+		{"HEAD", http.MethodHead, 0, errors.New("unexpected body write"), true},
+		{"short", http.MethodGet, 3, nil, false},
+		{"explicit error", http.MethodGet, 3, errors.New("writer diagnostic"), false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				var successes int
+				var failures []error
+				c := New(Config{
+					KeyFunc:     func(*http.Request) string { return "same" },
+					OnCoalesced: func(_ string, count int) { successes += count },
+					OnError:     func(_ string, err error) { failures = append(failures, err) },
+				})
+				release := make(chan struct{})
+				handler := c.Middleware()(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+					<-release
+					_, _ = io.WriteString(w, body)
+				}))
+				go handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/", nil))
+				synctest.Wait()
+				waiter := &responseWriteRecorder{
+					ResponseRecorder: httptest.NewRecorder(),
+					writeBytes:       tc.bytes,
+					writeErr:         tc.writeErr,
+				}
+				go handler.ServeHTTP(waiter, httptest.NewRequest(tc.method, "/", nil))
+				synctest.Wait()
+				close(release)
+				synctest.Wait()
+
+				if waiter.headers != 1 || waiter.Code != http.StatusOK || waiter.Body.String() != body[:tc.bytes] {
+					t.Fatalf("commits=%d status=%d body=%q", waiter.headers, waiter.Code, waiter.Body)
+				}
+				if tc.wantSuccess {
+					if successes != 1 || len(failures) != 0 {
+						t.Fatalf("successes=%d failures=%v", successes, failures)
+					}
+				} else if successes != 0 || len(failures) != 1 || failures[0] != errWaiterWrite {
+					t.Fatalf("successes=%d failures=%v", successes, failures)
+				}
+			})
+		})
+	}
+}

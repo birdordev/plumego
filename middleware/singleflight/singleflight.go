@@ -51,6 +51,7 @@ import (
 )
 
 var errLeaderWrite = errors.New("coalesced leader response write failed")
+var errWaiterWrite = errors.New("coalesced waiter response write failed")
 var errUpstreamPanic = errors.New("upstream request panicked")
 var errResponseTooLarge = errors.New("coalesced response exceeded capture limit")
 var errUnreplayableResponse = errors.New("coalesced response used unreplayable transport operation")
@@ -243,7 +244,11 @@ func (c *Coalescer) waitForInFlight(w http.ResponseWriter, r *http.Request, key 
 		return
 	}
 
-	writeResponse(w, r, inflight.response, c.config.AddCoalescedHeader)
+	if err := writeResponse(w, r, inflight.response, c.config.AddCoalescedHeader); err != nil {
+		// The response is already committed. Report without forwarding raw writer errors.
+		c.reportError(key, errWaiterWrite)
+		return
+	}
 	c.reportCoalesced(key, 1)
 }
 
@@ -344,15 +349,20 @@ func (c *Coalescer) isSafeMethod(method string) bool {
 
 // writeResponse writes a captured response to the client.
 // addCoalescedHeader controls whether the X-Coalesced response header is set.
-func writeResponse(w http.ResponseWriter, r *http.Request, resp *capturedResponse, addCoalescedHeader bool) {
+func writeResponse(w http.ResponseWriter, r *http.Request, resp *capturedResponse, addCoalescedHeader bool) error {
 	internaltransport.ReplaceHeaders(w.Header(), resp.header)
 	if addCoalescedHeader {
 		w.Header().Set("X-Coalesced", "true")
 	}
 	w.WriteHeader(resp.statusCode)
-	if r.Method != http.MethodHead && resp.body != nil {
-		_, _ = w.Write(resp.body)
+	if r.Method == http.MethodHead || resp.body == nil {
+		return nil
 	}
+	n, err := w.Write(resp.body)
+	if err == nil && n != len(resp.body) {
+		return io.ErrShortWrite
+	}
+	return err
 }
 
 type limitedResponseRecorder struct {
