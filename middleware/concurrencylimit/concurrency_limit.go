@@ -1,6 +1,7 @@
 package concurrencylimit
 
 import (
+	"math"
 	"net/http"
 	"time"
 
@@ -18,7 +19,8 @@ type Config struct {
 	MaxConcurrent int
 
 	// QueueDepth is the number of additional requests allowed to wait for a
-	// worker. Negative values are treated as zero.
+	// worker. Negative values are treated as zero. The total capacity for
+	// active and queued requests is capped at math.MaxInt.
 	QueueDepth int
 
 	// QueueTimeout is the maximum time a queued request can wait. A non-positive
@@ -49,7 +51,8 @@ func Middleware(config Config) mw.Middleware {
 	}
 
 	sem := make(chan struct{}, config.MaxConcurrent)
-	queue := make(chan struct{}, config.MaxConcurrent+config.QueueDepth)
+	queueDepth := min(config.QueueDepth, math.MaxInt-config.MaxConcurrent)
+	queue := make(chan struct{}, config.MaxConcurrent+queueDepth)
 
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

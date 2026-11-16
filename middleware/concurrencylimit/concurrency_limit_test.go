@@ -3,6 +3,7 @@ package concurrencylimit
 import (
 	"context"
 	"encoding/json"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -10,6 +11,27 @@ import (
 
 	"github.com/birdordev/plumego/contract"
 )
+
+func TestMiddlewareQueueCapacityAtIntegerLimit(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		depth int
+	}{
+		{"at limit", math.MaxInt - 1},
+		{"above limit", math.MaxInt},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			handler := Middleware(Config{MaxConcurrent: 1, QueueDepth: tc.depth})(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(http.StatusNoContent)
+			}))
+			rec := httptest.NewRecorder()
+			handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
+			if rec.Code != http.StatusNoContent {
+				t.Fatalf("status = %d, want %d", rec.Code, http.StatusNoContent)
+			}
+		})
+	}
+}
 
 func TestMiddlewareAllowsConfiguredQueuedWaiter(t *testing.T) {
 	mw := Middleware(Config{MaxConcurrent: 1, QueueDepth: 1, QueueTimeout: 200 * time.Millisecond})

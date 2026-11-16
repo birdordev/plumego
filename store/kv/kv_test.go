@@ -7,6 +7,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"syscall"
@@ -1292,70 +1293,37 @@ func TestKVStorePersistLockedTempWriteFailure(t *testing.T) {
 	}
 }
 
-// TestMemoryUsageLockedWithExpiredEntries exercises the expired-item skip path
-// inside memoryUsageLocked.  We inject an expired entry directly into kv.data
-// so the loop `continue` branch (line 445) is reached.
-func TestMemoryUsageLockedWithExpiredEntries(t *testing.T) {
-	store, err := NewKVStore(Options{DataDir: t.TempDir()})
+func TestKVStoreStartupTrimsExpiredEntriesAndBothCapacityLimits(t *testing.T) {
+	dir := t.TempDir()
+	older := time.Now().Add(-time.Hour)
+	newer := older.Add(time.Minute)
+	payload := bytes.Repeat([]byte("x"), 400*1024)
+	state := diskState{Entries: map[string]entry{
+		"expired":  {Value: payload, UpdatedAt: newer, ExpireAt: older},
+		"z-oldest": {Value: []byte("small"), UpdatedAt: older},
+		"a":        {Value: payload, UpdatedAt: newer},
+		"b":        {Value: payload, UpdatedAt: newer},
+		"c":        {Value: payload, UpdatedAt: newer},
+	}}
+	writeState(t, dir, state)
+
+	store, err := NewKVStore(Options{DataDir: dir, MaxEntries: 3, MaxMemoryMB: 1})
 	if err != nil {
-		t.Fatalf("NewKVStore: %v", err)
+		t.Fatal(err)
 	}
 	defer func() { _ = store.Close() }()
 
-	// Insert a live entry first.
-	if err := store.Set("live", []byte("hello"), 0); err != nil {
-		t.Fatalf("Set live: %v", err)
+	if keys := mustKeys(t, store); !slices.Equal(keys, []string{"b", "c"}) {
+		t.Fatalf("keys = %v, want [b c]", keys)
 	}
-
-	// Inject an already-expired entry directly.
-	store.mu.Lock()
-	store.data["expired-key"] = &entry{
-		Value:     []byte("byebye"),
-		ExpireAt:  time.Now().Add(-time.Second),
-		UpdatedAt: time.Now().Add(-time.Minute),
-		Size:      entrySize("expired-key", []byte("byebye")),
+	stats, err := store.GetStatsContext(t.Context())
+	if err != nil || stats.Entries != 2 || stats.MemoryUsage != entrySize("b", payload)+entrySize("c", payload) {
+		t.Fatalf("unexpected trimmed stats: %+v, %v", stats, err)
 	}
-	usage := store.memoryUsageLocked()
-	store.mu.Unlock()
-
-	// Only the live entry should count.
-	wantMem := entrySize("live", []byte("hello"))
-	if usage != wantMem {
-		t.Fatalf("memoryUsageLocked = %d, want %d (expired entry should be skipped)", usage, wantMem)
-	}
-}
-
-// TestEvictIfNeededLockedWithOnlyExpiredEntries exercises the oldestKeyLocked
-// returning "" guard in evictIfNeededLocked.  We set MaxEntries=0 internally
-// by injecting into kv.data after construction (since validateConfig requires >0).
-// Instead we set MaxMemoryMB=1 and inject a large expired entry to trigger the
-// memory eviction loop, then prune removes it, so oldestKey will return "".
-func TestEvictIfNeededLockedEmptyDataAfterPrune(t *testing.T) {
-	store, err := NewKVStore(Options{DataDir: t.TempDir(), MaxMemoryMB: 1})
-	if err != nil {
-		t.Fatalf("NewKVStore: %v", err)
-	}
-	defer func() { _ = store.Close() }()
-
-	// Inject a large expired entry that would trigger the memory limit.
-	bigVal := bytes.Repeat([]byte("x"), 512*1024) // 512 KB
-	store.mu.Lock()
-	store.data["expired-big"] = &entry{
-		Value:     bigVal,
-		ExpireAt:  time.Now().Add(-time.Second),
-		UpdatedAt: time.Now().Add(-time.Minute),
-		Size:      entrySize("expired-big", bigVal),
-	}
-	// evictIfNeededLocked should prune the expired entry. After pruning data
-	// is empty so the memory condition is false and the loop never runs the
-	// oldestKeyLocked path -- but we have coverage of the prune-first behavior.
-	store.evictIfNeededLocked("")
-	store.mu.Unlock()
-
-	// Store should be clean.
-	count, _ := store.currentUsage()
-	if count != 0 {
-		t.Fatalf("expected 0 entries after eviction, got %d", count)
+	var onDisk diskState
+	readState(t, dir, &onDisk)
+	if len(onDisk.Entries) != len(state.Entries) {
+		t.Fatalf("startup rewrote snapshot: %d entries on disk, want %d", len(onDisk.Entries), len(state.Entries))
 	}
 }
 

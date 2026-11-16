@@ -68,9 +68,12 @@ func (rc *matchCache) Set(key string, value *matchResult) {
 // Clear removes all entries from the cache.
 func (rc *matchCache) Clear() {
 	rc.mu.Lock()
+	defer rc.mu.Unlock()
+	if rc.size == 0 {
+		return
+	}
 	rc.data = make(map[string]*matchResult, rc.capacity)
 	rc.ring = make([]string, rc.capacity)
 	rc.head = 0
 	rc.size = 0
-	rc.mu.Unlock()
 }

@@ -16,6 +16,21 @@ func assertStringContains(t *testing.T, value string, expected string) {
 	}
 }
 
+func TestMetadataCloneSharesUnsupportedValueTypes(t *testing.T) {
+	tags := map[string]int{"count": 1}
+	metadata := map[string]any{"tags": tags}
+	for _, clone := range []map[string]any{
+		(File{Metadata: metadata}).Clone().Metadata,
+		(PutOptions{Metadata: metadata}).CloneMetadata(),
+	} {
+		clone["tags"].(map[string]int)["count"]++
+		delete(clone, "tags")
+	}
+	if _, ok := metadata["tags"]; !ok || tags["count"] != 3 {
+		t.Fatalf("metadata map = %v, want original map with a shared tags value", metadata)
+	}
+}
+
 // --- Error type tests ---
 
 func TestError_Error_WithPath(t *testing.T) {

@@ -10,11 +10,13 @@
 package kvstore
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"sync"
 	"sync/atomic"
@@ -426,54 +428,46 @@ func cloneBytes(in []byte) []byte {
 	return out
 }
 
-func (kv *KVStore) pruneExpiredLocked(now time.Time) {
+func (kv *KVStore) evictIfNeededLocked(writtenKey string) {
+	now := time.Now()
+	var memoryUsage int64
 	for key, item := range kv.data {
 		if kv.isExpired(item, now) {
 			delete(kv.data, key)
+			continue
+		}
+		memoryUsage += item.Size
+	}
+
+	maxMemory := kv.maxMemoryBytes()
+	if len(kv.data) <= kv.opts.MaxEntries && memoryUsage <= maxMemory {
+		return
+	}
+
+	type candidate struct {
+		key  string
+		item *entry
+	}
+	candidates := make([]candidate, 0, len(kv.data))
+	for key, item := range kv.data {
+		if key != writtenKey {
+			candidates = append(candidates, candidate{key: key, item: item})
 		}
 	}
-}
+	slices.SortFunc(candidates, func(a, b candidate) int {
+		if order := a.item.UpdatedAt.Compare(b.item.UpdatedAt); order != 0 {
+			return order
+		}
+		return cmp.Compare(a.key, b.key)
+	})
 
-func (kv *KVStore) evictIfNeededLocked(writtenKey string) {
-	kv.pruneExpiredLocked(time.Now())
-	maxMemory := kv.maxMemoryBytes()
-	for len(kv.data) > kv.opts.MaxEntries || kv.memoryUsageLocked() > maxMemory {
-		key := kv.oldestKeyLocked(writtenKey)
-		if key == "" {
+	for _, candidate := range candidates {
+		delete(kv.data, candidate.key)
+		memoryUsage -= candidate.item.Size
+		if len(kv.data) <= kv.opts.MaxEntries && memoryUsage <= maxMemory {
 			return
 		}
-		delete(kv.data, key)
 	}
-}
-
-func (kv *KVStore) oldestKeyLocked(writtenKey string) string {
-	var (
-		oldestKey string
-		oldestAt  time.Time
-	)
-	for key, item := range kv.data {
-		if key == writtenKey {
-			continue
-		}
-		if oldestKey == "" || item.UpdatedAt.Before(oldestAt) ||
-			(item.UpdatedAt.Equal(oldestAt) && key < oldestKey) {
-			oldestKey = key
-			oldestAt = item.UpdatedAt
-		}
-	}
-	return oldestKey
-}
-
-func (kv *KVStore) memoryUsageLocked() int64 {
-	var total int64
-	now := time.Now()
-	for _, item := range kv.data {
-		if kv.isExpired(item, now) {
-			continue
-		}
-		total += item.Size
-	}
-	return total
 }
 
 func (kv *KVStore) maxMemoryBytes() int64 {

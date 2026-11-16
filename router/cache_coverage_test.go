@@ -36,11 +36,27 @@ func TestMatcherCacheClear(t *testing.T) {
 	if count := matchCacheEntryCount(cache); count != 0 {
 		t.Errorf("cache entries after Clear = %d, want 0", count)
 	}
+	for _, key := range []string{"key-0", "key-1"} {
+		if _, found := cache.Get(key); found {
+			t.Fatalf("stale key %q survived Clear", key)
+		}
+	}
+	for i := range cache.capacity + 1 {
+		cache.Set(fmt.Sprintf("new-%d", i), &matchResult{})
+	}
+	if _, found := cache.Get("new-0"); found {
+		t.Fatal("first key inserted after Clear should be evicted first")
+	}
+	if _, found := cache.Get("new-1"); !found {
+		t.Fatal("second key inserted after Clear should remain")
+	}
 }
 
 func TestMatcherCacheClearEmptyCache(t *testing.T) {
 	cache := newMatchCache(10)
-	cache.Clear()
+	if allocs := testing.AllocsPerRun(10, cache.Clear); allocs != 0 {
+		t.Errorf("empty Clear allocated %g times, want 0", allocs)
+	}
 
 	if count := matchCacheEntryCount(cache); count != 0 {
 		t.Errorf("cache entries after Clear of empty = %d, want 0", count)

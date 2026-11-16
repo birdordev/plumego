@@ -19,7 +19,7 @@ HEAD waiters receive the status and headers only.
 | Symbol | Description |
 |--------|-------------|
 | `New(config Config)` | Constructor returning `*Coalescer` |
-| `Config.KeyFunc` | Selects the coalescing key; defaults to `DefaultKeyFunc` |
+| `Config.KeyFunc` | Selects the coalescing key; defaults to `DefaultKeyFunc` (method, host, URL, and selected headers) |
 | `Config.Methods` | Methods eligible for coalescing; defaults to `GET` and `HEAD` |
 | `Config.Timeout` | Maximum waiter duration; defaults to 30 seconds |
 | `Config.MaxResponseBytes` | Maximum captured response body; defaults to 10 MiB |
@@ -51,6 +51,9 @@ func coalesce(next http.Handler) http.Handler {
 
 ## Notes
 
+- `DefaultKeyFunc` includes the request method, host, URL, and the
+  `Accept`, `Accept-Encoding`, `Accept-Language`, `Authorization`, `Cookie`,
+  and `Range` header values.
 - Use coalescing for safe, bounded responses whose variants are represented by
   the key. See the [middleware guide](../../docs/modules/middleware/README.md)
   for key selection and sensitive responses.

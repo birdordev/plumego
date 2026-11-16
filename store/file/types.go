@@ -27,7 +27,8 @@ type File struct {
 	DeletedAt    *time.Time     `json:"deleted_at,omitempty" db:"deleted_at"`
 }
 
-// Clone returns a copy of f with mutable fields detached from the original.
+// Clone copies f, including its timestamp pointers and metadata. Metadata
+// values follow the copy rules of [PutOptions.CloneMetadata].
 func (f File) Clone() File {
 	clone := f
 	clone.Metadata = cloneMetadata(f.Metadata)
@@ -48,7 +49,10 @@ type PutOptions struct {
 	Metadata    map[string]any // Additional metadata
 }
 
-// CloneMetadata returns a copy of the upload metadata map.
+// CloneMetadata copies the upload metadata map. It recursively copies
+// map[string]any and []any, and copies the contents of map[string]string,
+// []string, and []byte. Other values are retained as-is and may share
+// mutable state with the original.
 func (o PutOptions) CloneMetadata() map[string]any {
 	return cloneMetadata(o.Metadata)
 }

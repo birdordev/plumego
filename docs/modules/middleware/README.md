@@ -220,7 +220,8 @@ admission and before rejection responses, so an observed cancellation takes
 priority when cancellation and capacity become available together.
 Queue timeout responses include `queue_occupancy` and `queue_capacity` details;
 `queue_occupancy` reports the internal queue channel occupancy, which includes
-active and waiting requests represented in that channel.
+active and waiting requests represented in that channel. If the combined
+configured capacity exceeds `math.MaxInt`, it is capped at `math.MaxInt`.
 
 ### Gzip compression contract
 

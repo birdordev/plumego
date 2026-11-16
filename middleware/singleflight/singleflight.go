@@ -73,8 +73,8 @@ type KeyFunc func(r *http.Request) string
 
 // Config holds coalescing middleware configuration
 type Config struct {
-	// KeyFunc generates cache keys from requests
-	// Default: DefaultKeyFunc (Method + URL)
+	// KeyFunc generates coalescing keys from requests. A nil value uses
+	// [DefaultKeyFunc], which includes the method, host, URL, and selected headers.
 	KeyFunc KeyFunc
 
 	// Methods is the list of HTTP methods to coalesce
@@ -569,7 +569,9 @@ func normalizeMethods(methods []string) []string {
 	return normalized
 }
 
-// DefaultKeyFunc generates a key from method and URL
+// DefaultKeyFunc generates a key from the request method, host, URL string, and
+// the Accept, Accept-Encoding, Accept-Language, Authorization, Cookie, and Range
+// header values.
 func DefaultKeyFunc(r *http.Request) string {
 	h := fnv.New64a()
 	h.Write([]byte(r.Method))

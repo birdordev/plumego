@@ -7,6 +7,27 @@ import (
 	"testing"
 )
 
+func BenchmarkRegisterColdRoutes(b *testing.B) {
+	handler := http.HandlerFunc(func(http.ResponseWriter, *http.Request) {})
+	paths := make([]string, 200)
+	for i := range paths {
+		paths[i] = fmt.Sprintf("/page-%03d", i)
+	}
+	for _, capacity := range []int{100, 4096} {
+		b.Run(fmt.Sprint(capacity), func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				r := NewRouter(WithCacheCapacity(capacity))
+				for _, path := range paths {
+					if err := r.AddRoute(http.MethodGet, path, handler); err != nil {
+						b.Fatal(err)
+					}
+				}
+			}
+		})
+	}
+}
+
 // Benchmarks for optimized router performance.
 // Run with: go test -bench=BenchmarkOpt -benchmem -count=3 ./router/
 

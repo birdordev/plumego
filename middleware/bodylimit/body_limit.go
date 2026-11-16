@@ -84,7 +84,7 @@ func (w *bodyLimitResponseWriter) Unwrap() http.ResponseWriter {
 
 func (w *bodyLimitResponseWriter) WriteHeader(statusCode int) {
 	w.checkLimitError()
-	if w.blocked {
+	if w.blocked || w.started {
 		return
 	}
 	if statusCode >= 200 || statusCode == http.StatusSwitchingProtocols {

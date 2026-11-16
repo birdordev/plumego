@@ -3,11 +3,76 @@ package bodylimit
 import (
 	"errors"
 	"io"
+	"log"
 	"net/http"
 	"net/http/httptest"
+	"net/http/httptrace"
+	"net/textproto"
+	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 )
+
+func TestOverrunUsesFirstFinalStatus(t *testing.T) {
+	const errorBody = "failure explanation"
+	for _, tc := range []struct {
+		name        string
+		statuses    []int
+		initialBody string
+		wantStatus  int
+		wantBody    string
+		wantHints   int32
+	}{
+		{"committed error", []int{400, 200}, "", 400, errorBody, 0},
+		{"committed success", []int{200, 400}, "", 200, "", 0},
+		{"early hints then error", []int{103, 400, 200}, "", 400, errorBody, 1},
+		{"implicit success", []int{400}, "prefix", 200, "prefix", 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			handler := Middleware(Config{MaxBytes: 3})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if tc.wantStatus == http.StatusBadRequest {
+					w.Header().Set("Content-Length", strconv.Itoa(len(errorBody)))
+				}
+				if tc.initialBody != "" {
+					_, _ = io.WriteString(w, tc.initialBody)
+				}
+				for _, status := range tc.statuses {
+					w.WriteHeader(status)
+				}
+				_, _ = io.ReadAll(r.Body)
+				_, _ = io.WriteString(w, errorBody)
+			}))
+			server := httptest.NewUnstartedServer(handler)
+			server.Config.ErrorLog = log.New(io.Discard, "", 0)
+			server.Start()
+			defer server.Close()
+
+			req, err := http.NewRequestWithContext(t.Context(), http.MethodPost, server.URL, strings.NewReader("four"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			var hints atomic.Int32
+			trace := &httptrace.ClientTrace{
+				Got1xxResponse: func(code int, _ textproto.MIMEHeader) error {
+					if code == http.StatusEarlyHints {
+						hints.Add(1)
+					}
+					return nil
+				},
+			}
+			resp, err := server.Client().Do(req.WithContext(httptrace.WithClientTrace(req.Context(), trace)))
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() { _ = resp.Body.Close() }()
+			body, err := io.ReadAll(resp.Body)
+			if err != nil || resp.StatusCode != tc.wantStatus || string(body) != tc.wantBody || hints.Load() != tc.wantHints {
+				t.Fatalf("status=%d body=%q early hints=%d read error=%v", resp.StatusCode, body, hints.Load(), err)
+			}
+		})
+	}
+}
 
 func TestOverrunStopsFlushAndHijack(t *testing.T) {
 	for _, operation := range []string{"flush", "hijack"} {
