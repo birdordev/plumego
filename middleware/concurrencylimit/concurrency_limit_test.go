@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/birdordev/plumego/contract"
@@ -153,55 +154,58 @@ func TestMiddlewareQueuedRequestTimesOut(t *testing.T) {
 }
 
 func TestMiddlewareQueuedRequestReturnsOnContextCancel(t *testing.T) {
-	mw := Middleware(Config{MaxConcurrent: 1, QueueDepth: 1, QueueTimeout: time.Second})
-	blocker := make(chan struct{}, 1)
-	release := make(chan struct{})
-	handlerCalls := make(chan struct{}, 2)
+	synctest.Test(t, func(t *testing.T) {
+		mw := Middleware(Config{MaxConcurrent: 1, QueueDepth: 1, QueueTimeout: time.Second})
+		release := make(chan struct{})
+		calls := 0
 
-	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		handlerCalls <- struct{}{}
+		handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			calls++
+			<-release
+			w.WriteHeader(http.StatusAccepted)
+		}))
+
+		firstDone := serveAsync(handler)
+		defer func() { close(release) }()
+		synctest.Wait()
+
+		ctx, cancel := context.WithCancel(context.Background())
+		req := httptest.NewRequest(http.MethodGet, "/", nil).WithContext(ctx)
+		queuedDone := serveAsyncRequest(handler, req)
+		synctest.Wait()
+		if len(queuedDone) != 0 || calls != 1 {
+			t.Fatal("second request did not queue behind the first")
+		}
+
+		cancel()
+		synctest.Wait()
 		select {
-		case blocker <- struct{}{}:
+		case rec := <-queuedDone:
+			if rec.Body.Len() != 0 || len(rec.Header()) != 0 || calls != 1 {
+				t.Fatal("canceled queued request wrote a response or invoked downstream")
+			}
 		default:
+			t.Fatal("queued request did not return after context cancellation")
 		}
-		<-release
-		w.WriteHeader(http.StatusOK)
-	}))
 
-	firstDone := serveAsync(handler)
-	<-blocker
-
-	ctx, cancel := context.WithCancel(context.Background())
-	req := httptest.NewRequest(http.MethodGet, "/", nil).WithContext(ctx)
-	queuedDone := serveAsyncRequest(handler, req)
-	assertNotDone(t, queuedDone, 20*time.Millisecond)
-
-	cancel()
-	select {
-	case rec := <-queuedDone:
-		if rec.Body.Len() != 0 {
-			t.Fatalf("canceled queued request wrote body %q", rec.Body.String())
+		replacementDone := serveAsync(handler)
+		synctest.Wait()
+		if len(replacementDone) != 0 || calls != 1 {
+			t.Fatal("replacement did not acquire the released queue slot")
 		}
-	case <-time.After(100 * time.Millisecond):
-		t.Fatal("queued request did not return after context cancellation")
-	}
-
-	select {
-	case <-handlerCalls:
-		// First request.
-	default:
-		t.Fatal("expected first handler call")
-	}
-	select {
-	case <-handlerCalls:
-		t.Fatal("canceled queued request invoked downstream handler")
-	default:
-	}
-
-	close(release)
-	if first := <-firstDone; first.Code != http.StatusOK {
-		t.Fatalf("expected first request to succeed, got %d", first.Code)
-	}
+		release <- struct{}{}
+		if first := <-firstDone; first.Code != http.StatusAccepted {
+			t.Fatalf("first request status = %d, want 202", first.Code)
+		}
+		synctest.Wait()
+		if len(replacementDone) != 0 || calls != 2 {
+			t.Fatal("replacement did not acquire the released worker slot")
+		}
+		release <- struct{}{}
+		if replacement := <-replacementDone; replacement.Code != http.StatusAccepted {
+			t.Fatalf("replacement request status = %d, want 202", replacement.Code)
+		}
+	})
 }
 
 // --- NEW COVERAGE TESTS ---

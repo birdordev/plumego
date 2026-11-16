@@ -52,10 +52,9 @@ func (kv *KVStore) load() error {
 		if item == nil {
 			return fmt.Errorf("%w: snapshot contains a null entry", ErrCorruptState)
 		}
-		itemCopy := *item
-		itemCopy.Value = cloneBytes(item.Value)
-		itemCopy.Size = entrySize(key, item.Value)
-		kv.data[key] = &itemCopy
+		// The decoded entry and its value are owned by this load.
+		item.Size = entrySize(key, item.Value)
+		kv.data[key] = item
 	}
 	return nil
 }

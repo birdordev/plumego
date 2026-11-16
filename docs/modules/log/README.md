@@ -77,6 +77,8 @@
   transport metadata from `context.Context`.
 - The glog-style file backend, flag initialization, and rotation helpers are
   internal backend behavior. They are not application bootstrap APIs.
+- When backup retention is enabled, the file backend applies its backup limit
+  per log level. Dotted program and host names do not affect that grouping.
 
 ## Canonical change shape
 

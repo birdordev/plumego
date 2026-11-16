@@ -1123,6 +1123,39 @@ func TestRotationCountsBacktraceAndKeepsItWithRecord(t *testing.T) {
 	}
 }
 
+func TestLogRetentionGroupsBackupsByFilenameLevel(t *testing.T) {
+	dir := t.TempDir()
+	stamp := time.Date(2024, time.January, 1, 0, 0, 0, 123, time.UTC)
+	const program = "service.INFO"
+	const host = "host.WARN.example"
+	oldInfo := logFilename(program, host, levelName(INFO), stamp, 1)
+	legacyInfo := program + "." + host + ".INFO.20240101-010000.1.log"
+	warn := logFilename(program, host, levelName(WARNING), stamp.Add(2*time.Hour), 1)
+	currentInfo := logFilename(program, host, levelName(INFO), stamp.Add(3*time.Hour), 1)
+	unknown := logFilename(program, host, "UNKNOWN", stamp.Add(4*time.Hour), 1)
+
+	for i, name := range []string{oldInfo, legacyInfo, warn, currentInfo, unknown} {
+		path := filepath.Join(dir, name)
+		if err := os.WriteFile(path, []byte("record"), 0600); err != nil {
+			t.Fatal(err)
+		}
+		modTime := stamp.Add(time.Duration(i) * time.Hour)
+		if err := os.Chtimes(path, modTime, modTime); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	cleanupOldLogs(dir, program, rotationConfig{MaxBackups: 1}, map[string]struct{}{currentInfo: {}})
+	if _, err := os.Stat(filepath.Join(dir, oldInfo)); !os.IsNotExist(err) {
+		t.Errorf("oldest INFO backup should be removed, stat error = %v", err)
+	}
+	for _, name := range []string{legacyInfo, warn, currentInfo, unknown} {
+		if _, err := os.Stat(filepath.Join(dir, name)); err != nil {
+			t.Errorf("expected %s to be retained: %v", name, err)
+		}
+	}
+}
+
 func TestLogRetentionCleanup(t *testing.T) {
 	resetGlobalLogger()
 

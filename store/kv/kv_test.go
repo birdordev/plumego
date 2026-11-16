@@ -182,6 +182,11 @@ func TestKVStorePersistenceAcrossReopen(t *testing.T) {
 	if !bytes.Equal(got, []byte("value")) {
 		t.Fatalf("unexpected reopened value %q", got)
 	}
+	got[0] = 'X'
+	got, err = reopened.Get("persist")
+	if err != nil || !bytes.Equal(got, []byte("value")) {
+		t.Fatalf("modified Get result changed reopened value: got %q, err %v", got, err)
+	}
 }
 
 func TestKVStoreKeysAndStats(t *testing.T) {

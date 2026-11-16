@@ -280,8 +280,33 @@ func cleanupOldLogs(logDir, program string, config rotationConfig, current map[s
 }
 
 func levelFromFilename(name string) (Level, bool) {
+	base, ok := strings.CutSuffix(name, ".log")
+	if !ok {
+		return INFO, false
+	}
+	parts := strings.Split(base, ".")
+	if len(parts) < 5 {
+		return INFO, false
+	}
+	pid := parts[len(parts)-1]
+	if pid == "" || strings.Trim(pid, "0123456789") != "" {
+		return INFO, false
+	}
+
+	timestamp := len(parts) - 2
+	// Current filenames include fractional seconds before the PID. Older
+	// archives put the PID immediately after the timestamp.
+	if fraction := parts[timestamp]; len(fraction) > 0 && len(fraction) <= 9 && strings.Trim(fraction, "0123456789") == "" {
+		timestamp--
+	}
+	if timestamp < 3 {
+		return INFO, false
+	}
+	if _, err := time.Parse("20060102-150405", parts[timestamp]); err != nil {
+		return INFO, false
+	}
 	for level := INFO; level <= ERROR; level++ {
-		if strings.Contains(name, "."+levelName(level)+".") {
+		if parts[timestamp-1] == levelName(level) {
 			return level, true
 		}
 	}

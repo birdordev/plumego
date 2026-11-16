@@ -532,7 +532,8 @@ func (l *Limiter) evictOldestGlobal() {
 	oldestShard.mu.Unlock()
 }
 
-// Metrics returns a point-in-time metrics snapshot for monitoring.
+// Metrics returns monitoring counters sampled independently with atomic loads.
+// Concurrent updates may cause the fields to reflect different points in time.
 func (l *Limiter) Metrics() LimiterMetrics {
 	if l == nil {
 		return LimiterMetrics{}

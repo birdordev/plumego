@@ -75,24 +75,30 @@ func Middleware(config Config) mw.Middleware {
 				return
 			}
 
-			timer := time.NewTimer(config.QueueTimeout)
-			defer timer.Stop()
-
 			select {
 			case sem <- struct{}{}:
-				defer func() { <-sem }()
 			case <-r.Context().Done():
 				return
-			case <-timer.C:
-				if r.Context().Err() != nil {
+			default:
+				timer := time.NewTimer(config.QueueTimeout)
+				select {
+				case sem <- struct{}{}:
+					timer.Stop()
+				case <-r.Context().Done():
+					timer.Stop()
+					return
+				case <-timer.C:
+					if r.Context().Err() != nil {
+						return
+					}
+					internaltransport.WriteTransportError(w, r, http.StatusServiceUnavailable, contract.CodeServerQueueTimeout, "request timed out waiting for an available worker", map[string]any{
+						"queue_occupancy": len(queue),
+						"queue_capacity":  cap(queue),
+					})
 					return
 				}
-				internaltransport.WriteTransportError(w, r, http.StatusServiceUnavailable, contract.CodeServerQueueTimeout, "request timed out waiting for an available worker", map[string]any{
-					"queue_occupancy": len(queue),
-					"queue_capacity":  cap(queue),
-				})
-				return
 			}
+			defer func() { <-sem }()
 
 			if r.Context().Err() != nil {
 				return
