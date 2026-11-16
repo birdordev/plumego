@@ -296,7 +296,8 @@ func QueryRow(ctx context.Context, db DB, query string, args ...any) (*sql.Row, 
 	return QueryRowContext(ctx, db, query, args...)
 }
 
-// QueryRowStrict executes a query and enforces single-row semantics.
+// QueryRowStrict executes a query and enforces single-row semantics across all
+// result sets. The scan callback reads the current row without advancing it.
 // Returns ErrNoRows if no rows are returned.
 // Returns ErrMultipleRows if multiple rows are returned.
 func QueryRowStrict(ctx context.Context, db DB, query string, scan func(*sql.Rows) error, args ...any) (err error) {
@@ -315,7 +316,7 @@ func QueryRowStrict(ctx context.Context, db DB, query string, scan func(*sql.Row
 		err = joinRowsCloseError(err, rows.Close())
 	}()
 
-	if !rows.Next() {
+	if !nextResultRow(rows) {
 		if err := rows.Err(); err != nil {
 			return fmt.Errorf("%w: %w", ErrQueryFailed, err)
 		}
@@ -326,7 +327,7 @@ func QueryRowStrict(ctx context.Context, db DB, query string, scan func(*sql.Row
 		return fmt.Errorf("%w: %w", ErrQueryFailed, err)
 	}
 
-	if rows.Next() {
+	if nextResultRow(rows) {
 		return ErrMultipleRows
 	}
 
@@ -335,6 +336,16 @@ func QueryRowStrict(ctx context.Context, db DB, query string, scan func(*sql.Row
 	}
 
 	return nil
+}
+
+// nextResultRow advances to the next row, skipping empty result sets.
+func nextResultRow(rows *sql.Rows) bool {
+	for !rows.Next() {
+		if rows.Err() != nil || !rows.NextResultSet() {
+			return false
+		}
+	}
+	return true
 }
 
 // ScanRow is a helper function to scan a single row into a destination.

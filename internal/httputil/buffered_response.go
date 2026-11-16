@@ -72,9 +72,12 @@ func (r *BufferedResponseRecorder) WriteHeader(code int) {
 	if r.written {
 		return
 	}
+	if code < 100 || code > 999 {
+		panic("invalid WriteHeader code")
+	}
 	// Informational responses cannot be replayed as a final response. Ignore
 	// them while preserving a later final status, including protocol switches.
-	if code >= 100 && code < 200 && code != http.StatusSwitchingProtocols {
+	if code < 200 && code != http.StatusSwitchingProtocols {
 		return
 	}
 	r.statusCode = code

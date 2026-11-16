@@ -108,6 +108,7 @@ func TestBufferedResponseRecorderIgnoresInformationalStatus(t *testing.T) {
 		rec.WriteHeader(http.StatusEarlyHints)
 		rec.WriteHeader(final)
 		rec.WriteHeader(http.StatusAccepted)
+		rec.WriteHeader(1000) // A repeated final status is ignored.
 		if rec.StatusCode() != final {
 			t.Fatalf("status = %d, want %d", rec.StatusCode(), final)
 		}

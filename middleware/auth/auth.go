@@ -40,7 +40,8 @@ func WithAuthErrorHandler(handler AuthErrorHandler) AuthOption {
 	}
 }
 
-// WithAuthRealm sets the WWW-Authenticate realm header value for 401 responses.
+// WithAuthRealm sets the WWW-Authenticate realm for 401 responses written by
+// the default authentication error handler.
 func WithAuthRealm(realm string) AuthOption {
 	return func(o *authOptions) {
 		o.realm = realm
@@ -137,13 +138,11 @@ func defaultAuthErrorHandler(realm string) AuthErrorHandler {
 			err = authn.ErrUnauthenticated
 		}
 
-		var apiErr contract.APIError
-		if errors.As(err, &apiErr) {
-			_ = contract.WriteError(w, r, apiErr)
-			return
+		apiErr, ok := contract.AsAPIError(err)
+		if !ok {
+			apiErr = authErrorToAPIError(err)
 		}
 
-		apiErr = authErrorToAPIError(err)
 		if apiErr.Status() == http.StatusUnauthorized && realm != "" {
 			if challenge := bearerChallenge(realm); challenge != "" {
 				w.Header().Set("WWW-Authenticate", challenge)

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -406,27 +407,42 @@ func TestBearerChallenge_EmptyRealmReturnsEmpty(t *testing.T) {
 	}
 }
 
-// TestDefaultAuthErrorHandler_APIErrorPassThrough verifies the APIError fast path in
-// defaultAuthErrorHandler (when the wrapped error already implements contract.APIError).
-func TestDefaultAuthErrorHandler_APIErrorPassThrough(t *testing.T) {
-	// Build an APIError and wrap it as an error that satisfies errors.As(err, &apiErr).
-	apiErr := contract.NewErrorBuilder().
-		Type(contract.TypeForbidden).
-		Message("already an API error").
-		Build()
-
-	// Provide an authenticator that returns this APIError directly.
-	authenticator := staticAuthenticator{err: apiErr}
-	handler := mustAuthenticate(t, authenticator)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	}))
-
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusForbidden {
-		t.Fatalf("expected 403 from API error passthrough, got %d", rec.Code)
+func TestDefaultAuthErrorHandlerPreservesAPIError(t *testing.T) {
+	forbidden := contract.NewErrorBuilder().Type(contract.TypeForbidden).Message("structured forbidden").Build()
+	unauthorized := contract.NewErrorBuilder().Type(contract.TypeUnauthorized).Message("structured unauthorized").Build()
+	for _, tc := range []struct {
+		name, realm, challenge string
+		err                    error
+		want                   contract.APIError
+	}{
+		{"forbidden value", "sample", "", forbidden, forbidden},
+		{"wrapped forbidden pointer", "sample", "", fmt.Errorf("outer: %w", &forbidden), forbidden},
+		{"unauthorized value", "sample", "Bearer realm=\"sample\"", unauthorized, unauthorized},
+		{"wrapped unauthorized pointer", "sample", "Bearer realm=\"sample\"", fmt.Errorf("outer: %w", &unauthorized), unauthorized},
+		{"unauthorized without realm", "", "", unauthorized, unauthorized},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			handler := mustAuthenticate(t, staticAuthenticator{err: tc.err}, WithAuthRealm(tc.realm))(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+				t.Error("next called after authentication failure")
+			}))
+			rec := httptest.NewRecorder()
+			handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
+			if got := rec.Result().Header.Get("WWW-Authenticate"); rec.Code != tc.want.Status() || got != tc.challenge {
+				t.Errorf("status=%d challenge=%q, want %d/%q", rec.Code, got, tc.want.Status(), tc.challenge)
+			}
+			var body struct {
+				Error struct {
+					Code    string
+					Message string
+				}
+			}
+			if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+				t.Fatal(err)
+			}
+			if body.Error.Code != tc.want.Code() || body.Error.Message != tc.want.Message() {
+				t.Errorf("code=%q message=%q, want %q/%q", body.Error.Code, body.Error.Message, tc.want.Code(), tc.want.Message())
+			}
+		})
 	}
 }
 

@@ -351,6 +351,34 @@ func TestStaticFSRejectsNonRegularFiles(t *testing.T) {
 	}
 }
 
+type staticFileWithoutInfo struct{ *closeCountingStaticFile }
+
+func (staticFileWithoutInfo) Stat() (fs.FileInfo, error) { return nil, nil }
+
+func TestStaticFSRejectsMissingFileInfo(t *testing.T) {
+	r := NewRouter()
+	source := new(staticOpenResult)
+	if err := r.StaticFS("/assets", source); err != nil {
+		t.Fatal(err)
+	}
+	files := http.FS(fstest.MapFS{"sample.txt": {Data: []byte("sample")}})
+	for _, method := range []string{http.MethodGet, http.MethodHead} {
+		for attempt := range 2 {
+			file, err := files.Open("sample.txt")
+			if err != nil {
+				t.Fatal(err)
+			}
+			tracked := &closeCountingStaticFile{File: file}
+			source.file = staticFileWithoutInfo{tracked}
+			w := httptest.NewRecorder()
+			r.ServeHTTP(w, httptest.NewRequest(method, "/assets/sample.txt", nil))
+			if w.Code != http.StatusNotFound || (method == http.MethodHead && w.Body.Len() != 0) || tracked.closes != 1 {
+				t.Errorf("%s attempt %d: status=%d body=%q closes=%d", method, attempt, w.Code, w.Body, tracked.closes)
+			}
+		}
+	}
+}
+
 func TestStaticFSRejectsDirectoryRequest(t *testing.T) {
 	r := NewRouter()
 	if err := r.StaticFS("/assets", http.FS(fstest.MapFS{

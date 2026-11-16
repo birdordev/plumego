@@ -178,6 +178,8 @@ func DefaultPolicy() Policy {
 // Call Compile once after the policy is fully configured, typically inside the
 // transport middleware constructor. Uncompiled policies still produce correct
 // output; Compile only avoids redundant string allocation per request.
+// Compile the returned policy again after changing its HSTS options to refresh
+// the precomputed header value.
 func (p Policy) Compile() Policy {
 	p.compiledHSTS = ""
 	if p.StrictTransportSecurity != nil {

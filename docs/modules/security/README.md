@@ -50,6 +50,7 @@ Use `security/*` for reviewable primitives and policies:
 - `security/authn.StaticToken` compares fixed credentials through fixed-length digest comparison.
 - `security/headers` owns header policies consumed by `middleware/securityheaders`.
 - `Policy.Compile` snapshots HSTS options before precomputing the header.
+  Compile the returned policy again after changing its HSTS options.
   The security headers middleware uses this snapshot for its lifetime.
 - `security/headers.Policy.Validate` reports unsafe configured header names and values before runtime; `Policy.Apply` fails closed without writing headers when policy validation fails, and `Policy.ApplyChecked` also returns the validation error.
 - Production-facing examples should prefer `middleware/securityheaders.Middleware(security.Config{...})` or direct `Policy.ApplyChecked` when error handling is required.

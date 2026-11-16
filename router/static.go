@@ -227,7 +227,7 @@ func serveFromFileSystem(w http.ResponseWriter, req *http.Request, fs http.FileS
 	defer func() { _ = f.Close() }()
 
 	info, err := f.Stat()
-	if err != nil || !info.Mode().IsRegular() {
+	if err != nil || info == nil || !info.Mode().IsRegular() {
 		http.NotFound(w, req)
 		return
 	}

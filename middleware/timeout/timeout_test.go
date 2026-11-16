@@ -170,6 +170,36 @@ func TestTimeoutMiddleware_PassThrough(t *testing.T) {
 	}
 }
 
+func TestTimeoutMiddlewareRejectsInvalidStatusAtWriteHeader(t *testing.T) {
+	for _, code := range []int{0, 99, 1000} {
+		t.Run(fmt.Sprint(code), func(t *testing.T) {
+			mw := Middleware(Config{Timeout: time.Second})
+			h := mw(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("X-Stage", "invalid")
+				var recovered any
+				func() {
+					defer func() { recovered = recover() }()
+					w.WriteHeader(code)
+				}()
+				if recovered == nil {
+					t.Error("invalid status did not panic at WriteHeader")
+				}
+				w.Header().Set("X-Stage", "accepted")
+				w.WriteHeader(http.StatusAccepted)
+				w.WriteHeader(code)
+				if _, err := w.Write([]byte("accepted")); err != nil {
+					t.Errorf("write after recovery: %v", err)
+				}
+			}))
+			w := httptest.NewRecorder()
+			h.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/", nil))
+			if w.Code != http.StatusAccepted || w.Result().Header.Get("X-Stage") != "accepted" || w.Body.String() != "accepted" {
+				t.Errorf("status=%d headers=%v body=%q, want 202 and accepted response", w.Code, w.Result().Header, w.Body)
+			}
+		})
+	}
+}
+
 func TestTimeoutMiddleware_RepanicsWorkerPanic(t *testing.T) {
 	wrapped := applyMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		panic("worker panic")

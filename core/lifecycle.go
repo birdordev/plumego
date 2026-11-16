@@ -44,6 +44,8 @@ func normalizeRunError(err error) error {
 }
 
 // Prepare freezes routing/middleware state and constructs the HTTP server.
+// Run resolves and binds the configured address when it starts listening.
+// Callers using Server with their own listener manage that listener themselves.
 func (a *App) Prepare() error {
 	return a.ensureServerPrepared()
 }

@@ -881,6 +881,77 @@ func (r *fixedRows) Next(dest []driver.Value) error {
 	return nil
 }
 
+type multiResultRows struct {
+	fixedRows
+	remaining  [][][]driver.Value
+	advanceErr error
+}
+
+func (r *multiResultRows) HasNextResultSet() bool {
+	return len(r.remaining) > 0
+}
+
+func (r *multiResultRows) NextResultSet() error {
+	if r.advanceErr != nil {
+		return r.advanceErr
+	}
+	if !r.HasNextResultSet() {
+		return io.EOF
+	}
+	r.values = r.remaining[0]
+	r.remaining = r.remaining[1:]
+	r.idx = 0
+	return nil
+}
+
+func TestQueryRowStrictAcrossResultSets(t *testing.T) {
+	first := [][]driver.Value{{int64(1)}}
+	second := [][]driver.Value{{int64(2)}}
+	advanceErr := errors.New("next result set failed")
+	closeErr := errors.New("close result sets failed")
+	for _, tc := range []struct {
+		name       string
+		sets       [][][]driver.Value
+		advanceErr error
+		closeErr   error
+		wantErr    error
+		wantScans  int
+		wantValue  int64
+	}{
+		{name: "second row in later set", sets: [][][]driver.Value{first, nil, second}, closeErr: closeErr, wantErr: ErrMultipleRows, wantScans: 1, wantValue: 1},
+		{name: "single row after empty set", sets: [][][]driver.Value{nil, second, nil}, wantScans: 1, wantValue: 2},
+		{name: "all empty", sets: [][][]driver.Value{nil, nil}, wantErr: ErrNoRows},
+		{name: "advance fails", sets: [][][]driver.Value{first, second}, advanceErr: advanceErr, wantErr: ErrQueryFailed, wantScans: 1, wantValue: 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rows := &multiResultRows{
+				fixedRows:  fixedRows{cols: []string{"n"}, values: tc.sets[0], closeErr: tc.closeErr},
+				remaining:  tc.sets[1:],
+				advanceErr: tc.advanceErr,
+			}
+			db := sql.OpenDB(&rowsConnector{rows: rows})
+			t.Cleanup(func() { _ = db.Close() })
+			var got int64
+			scans := 0
+			err := QueryRowStrict(t.Context(), db, "SELECT n", func(rows *sql.Rows) error {
+				scans++
+				return rows.Scan(&got)
+			})
+			if !errors.Is(err, tc.wantErr) {
+				t.Errorf("QueryRowStrict error=%v, want %v", err, tc.wantErr)
+			}
+			for _, cause := range []error{tc.advanceErr, tc.closeErr} {
+				if cause != nil && !errors.Is(err, cause) {
+					t.Errorf("QueryRowStrict error=%v, want cause %v", err, cause)
+				}
+			}
+			if scans != tc.wantScans || got != tc.wantValue || rows.closes != 1 {
+				t.Errorf("scans=%d value=%d closes=%d, want %d/%d/1", scans, got, rows.closes, tc.wantScans, tc.wantValue)
+			}
+		})
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Additional coverage tests
 // ---------------------------------------------------------------------------
