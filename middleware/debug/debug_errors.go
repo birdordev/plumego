@@ -183,7 +183,10 @@ func (r *debugErrorRecorder) WriteHeader(status int) {
 	if r.status != 0 || r.hijacked {
 		return
 	}
-	if status >= 100 && status < 200 && status != http.StatusSwitchingProtocols {
+	if status < 100 || status > 999 {
+		panic("invalid WriteHeader code")
+	}
+	if status < 200 && status != http.StatusSwitchingProtocols {
 		dst := r.dst.Header()
 		original := dst.Clone()
 		defer internaltransport.ReplaceHeaders(dst, original)
@@ -205,6 +208,9 @@ func (r *debugErrorRecorder) Write(p []byte) (int, error) {
 	}
 	if r.passthrough {
 		return internaltransport.SafeWrite(r.dst, p)
+	}
+	if len(p) > 0 && (r.status == http.StatusNoContent || r.status == http.StatusNotModified) {
+		return 0, http.ErrBodyNotAllowed
 	}
 	if r.maxBytes > 0 && r.body.Len()+len(p) > r.maxBytes {
 		if err := r.commitPassthrough(); err != nil {

@@ -214,15 +214,34 @@ func TestKVStoreKeysAndStats(t *testing.T) {
 }
 
 func TestKVStoreClose(t *testing.T) {
-	store, err := NewKVStore(Options{DataDir: t.TempDir()})
+	opts := DefaultConfig(t.TempDir())
+	store, err := NewKVStore(opts)
 	if err != nil {
 		t.Fatalf("NewKVStore: %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	if err := store.Set("saved", []byte("value"), 0); err != nil {
+		t.Fatalf("Set: %v", err)
 	}
 	if err := store.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
+	if store.data != nil || store.directoryLock != nil {
+		t.Error("closed handle retained the snapshot or directory lock")
+	}
+	if _, err := store.Get("saved"); err != ErrStoreClosed {
+		t.Fatalf("Get after Close = %v, want ErrStoreClosed", err)
+	}
 	if err := store.Set("closed", []byte("x"), 0); err != ErrStoreClosed {
 		t.Fatalf("expected ErrStoreClosed, got %v", err)
+	}
+	reopened, err := NewKVStore(opts)
+	if err != nil {
+		t.Fatalf("reopen: %v", err)
+	}
+	t.Cleanup(func() { _ = reopened.Close() })
+	if got, err := reopened.Get("saved"); err != nil || string(got) != "value" {
+		t.Fatalf("Get after reopen = (%q, %v), want persisted value", got, err)
 	}
 }
 

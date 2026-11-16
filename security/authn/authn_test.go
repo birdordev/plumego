@@ -68,6 +68,17 @@ func TestPrincipalContextCopiesMutableFields(t *testing.T) {
 	}
 }
 
+func TestPrincipalContextPreservesEmptySlices(t *testing.T) {
+	for _, in := range [][]string{nil, {}} {
+		ctx := WithPrincipal(t.Context(), &Principal{Roles: in, Scopes: in})
+		got := PrincipalFromContext(ctx)
+		if len(got.Roles) != 0 || len(got.Scopes) != 0 ||
+			(got.Roles == nil) != (in == nil) || (got.Scopes == nil) != (in == nil) {
+			t.Errorf("roles=%#v scopes=%#v, want %#v", got.Roles, got.Scopes, in)
+		}
+	}
+}
+
 func TestWithPrincipalNilContext(t *testing.T) {
 	p := &Principal{Subject: "user-1"}
 

@@ -325,6 +325,32 @@ func TestStaticFSHandlesEmptyOpenResult(t *testing.T) {
 	}
 }
 
+func TestStaticFSRejectsNonRegularFiles(t *testing.T) {
+	r := NewRouter()
+	source := new(staticOpenResult)
+	if err := r.StaticFS("/assets", source); err != nil {
+		t.Fatal(err)
+	}
+	files := http.FS(fstest.MapFS{
+		"special.txt": {Data: []byte("sample"), Mode: fs.ModeNamedPipe | 0o644},
+	})
+	for _, method := range []string{http.MethodGet, http.MethodHead} {
+		for attempt := range 2 {
+			file, err := files.Open("special.txt")
+			if err != nil {
+				t.Fatal(err)
+			}
+			tracked := &closeCountingStaticFile{File: file}
+			source.file = tracked
+			w := httptest.NewRecorder()
+			r.ServeHTTP(w, httptest.NewRequest(method, "/assets/special.txt", nil))
+			if w.Code != http.StatusNotFound || (method == http.MethodHead && w.Body.Len() != 0) || tracked.closes != 1 {
+				t.Errorf("%s attempt %d: status=%d body=%q closes=%d", method, attempt, w.Code, w.Body, tracked.closes)
+			}
+		}
+	}
+}
+
 func TestStaticFSRejectsDirectoryRequest(t *testing.T) {
 	r := NewRouter()
 	if err := r.StaticFS("/assets", http.FS(fstest.MapFS{

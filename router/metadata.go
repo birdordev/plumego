@@ -202,12 +202,15 @@ func (r *Router) Routes() []RouteInfo {
 	return infos
 }
 
-// Print prints all registered routes grouped by method.
+// Print prints all registered routes grouped by method. It stops on the first
+// write error.
 func (r *Router) Print(w io.Writer) {
 	if w == nil {
 		return
 	}
-	_, _ = fmt.Fprintln(w, "Registered Routes:")
+	if _, err := fmt.Fprintln(w, "Registered Routes:"); err != nil {
+		return
+	}
 	if !r.ready() {
 		return
 	}
@@ -217,7 +220,9 @@ func (r *Router) Print(w io.Writer) {
 		if strings.Contains(route.Path, "/*") {
 			label += "   [wildcard]"
 		}
-		_, _ = fmt.Fprintf(w, "%-6s %s\n", route.Method, label)
+		if _, err := fmt.Fprintf(w, "%-6s %s\n", route.Method, label); err != nil {
+			return
+		}
 	}
 }
 

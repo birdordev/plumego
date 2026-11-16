@@ -378,7 +378,7 @@ func validateKey(key string) error {
 	return nil
 }
 
-// Close closes the store.
+// Close releases the directory lock and discards this handle's in-memory snapshot.
 func (kv *KVStore) Close() error {
 	if kv == nil {
 		return nil
@@ -390,6 +390,7 @@ func (kv *KVStore) Close() error {
 		return nil
 	}
 	kv.closed = true
+	kv.data = nil
 	if kv.directoryLock != nil {
 		err := kv.directoryLock.Close()
 		kv.directoryLock = nil

@@ -308,6 +308,17 @@ func TestTokenClaimsContextCopiesMutableSlices(t *testing.T) {
 	}
 }
 
+func TestTokenClaimsContextPreservesEmptySlices(t *testing.T) {
+	for _, in := range [][]string{nil, {}} {
+		claims := &TokenClaims{Authorization: AuthorizationClaims{Roles: in, Permissions: in}}
+		got := TokenClaimsFromContext(WithTokenClaims(t.Context(), claims)).Authorization
+		if len(got.Roles) != 0 || len(got.Permissions) != 0 ||
+			(got.Roles == nil) != (in == nil) || (got.Permissions == nil) != (in == nil) {
+			t.Errorf("roles=%#v permissions=%#v, want %#v", got.Roles, got.Permissions, in)
+		}
+	}
+}
+
 func TestPolicyAuthorizerWithMiddlewareAuth(t *testing.T) {
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)

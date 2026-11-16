@@ -4,13 +4,13 @@ layer: stable
 status: ga
 owner: persistence
 risk: medium
-summary: In-memory key-value store with optional disk persistence, TTL support, and concurrent-safe operations.
+summary: Embedded key-value store backed by a JSON snapshot, with TTL support and concurrent-safe operations.
 
 strict_boundary: persistence_primitives
 
 responsibilities:
-  - Provide a concurrent-safe in-memory KV store
-  - Support optional disk persistence via JSON snapshot
+  - Provide concurrent-safe key-value operations over an in-memory snapshot
+  - Persist mutations to a single JSON snapshot in the required data directory
   - Support TTL-based expiration and statistics
 
 non_goals:
@@ -45,5 +45,5 @@ review_checklist:
   - Keep WAL, sharding, and durable engine features out of stable layer
 
 agent_hints:
-  - In-memory KV with optional disk persistence stays in store/kv
+  - Stable embedded KV requires an explicit data directory for its JSON snapshot
   - Durable WAL-based KV engines and sharding belong in x/data/kvengine

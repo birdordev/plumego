@@ -185,6 +185,12 @@ func serveFromDirectory(w http.ResponseWriter, req *http.Request, root string) {
 		return
 	}
 
+	// Check before opening, since opening some special files can block.
+	info, err := os.Stat(realPath)
+	if err != nil || !info.Mode().IsRegular() {
+		http.NotFound(w, req)
+		return
+	}
 	f, err := os.Open(realPath)
 	if err != nil {
 		http.NotFound(w, req)
@@ -192,12 +198,8 @@ func serveFromDirectory(w http.ResponseWriter, req *http.Request, root string) {
 	}
 	defer func() { _ = f.Close() }()
 
-	info, err := f.Stat()
-	if err != nil {
-		http.NotFound(w, req)
-		return
-	}
-	if info.IsDir() {
+	info, err = f.Stat()
+	if err != nil || !info.Mode().IsRegular() {
 		http.NotFound(w, req)
 		return
 	}
@@ -225,11 +227,7 @@ func serveFromFileSystem(w http.ResponseWriter, req *http.Request, fs http.FileS
 	defer func() { _ = f.Close() }()
 
 	info, err := f.Stat()
-	if err != nil {
-		http.NotFound(w, req)
-		return
-	}
-	if info.IsDir() {
+	if err != nil || !info.Mode().IsRegular() {
 		http.NotFound(w, req)
 		return
 	}

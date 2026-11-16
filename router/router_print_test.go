@@ -2,6 +2,7 @@ package router
 
 import (
 	"bytes"
+	"io"
 	"net/http"
 	"testing"
 	"time"
@@ -20,6 +21,32 @@ func TestRouterPrintIncludesWildcardLabel(t *testing.T) {
 type routerCallbackWriter struct {
 	buf bytes.Buffer
 	fn  func()
+}
+
+type routerFailingWriter struct {
+	calls int
+	fail  int
+}
+
+func (w *routerFailingWriter) Write(p []byte) (int, error) {
+	w.calls++
+	if w.calls >= w.fail {
+		return 0, io.ErrClosedPipe
+	}
+	return len(p), nil
+}
+
+func TestRouterPrintStopsOnWriteError(t *testing.T) {
+	r := NewRouter()
+	mustAddRoute(r, http.MethodGet, "/first", http.NotFoundHandler())
+	mustAddRoute(r, http.MethodGet, "/second", http.NotFoundHandler())
+	for _, fail := range []int{1, 2} {
+		w := &routerFailingWriter{fail: fail}
+		r.Print(w)
+		if w.calls != fail {
+			t.Errorf("writer failed at call %d, got %d calls", fail, w.calls)
+		}
+	}
 }
 
 func (w *routerCallbackWriter) Write(p []byte) (int, error) {

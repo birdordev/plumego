@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"slices"
 )
 
 // Principal is the authenticated identity attached to a request context.
@@ -49,7 +50,8 @@ func WithPrincipal(ctx context.Context, p *Principal) context.Context {
 	return context.WithValue(ctx, principalContextKey{}, clonePrincipal(p))
 }
 
-// PrincipalFromContext extracts a principal from a context.
+// PrincipalFromContext returns a copy of the principal from a context.
+// The copy preserves nil and non-nil empty slices.
 func PrincipalFromContext(ctx context.Context) *Principal {
 	if ctx == nil {
 		return nil
@@ -67,8 +69,8 @@ func clonePrincipal(p *Principal) *Principal {
 		return nil
 	}
 	copied := *p
-	copied.Roles = append([]string(nil), p.Roles...)
-	copied.Scopes = append([]string(nil), p.Scopes...)
+	copied.Roles = slices.Clone(p.Roles)
+	copied.Scopes = slices.Clone(p.Scopes)
 	if p.Claims != nil {
 		copied.Claims = make(map[string]string, len(p.Claims))
 		for k, v := range p.Claims {

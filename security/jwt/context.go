@@ -1,6 +1,9 @@
 package jwt
 
-import "context"
+import (
+	"context"
+	"slices"
+)
 
 // WithTokenClaims stores JWT claims in request context for downstream handlers.
 func WithTokenClaims(ctx context.Context, claims *TokenClaims) context.Context {
@@ -10,7 +13,8 @@ func WithTokenClaims(ctx context.Context, claims *TokenClaims) context.Context {
 	return context.WithValue(ctx, tokenClaimsContextKey{}, cloneTokenClaims(claims))
 }
 
-// TokenClaimsFromContext returns JWT claims from request context when present.
+// TokenClaimsFromContext returns a copy of JWT claims from request context when
+// present. The copy preserves nil and non-nil empty slices.
 func TokenClaimsFromContext(ctx context.Context) *TokenClaims {
 	if ctx == nil {
 		return nil
@@ -26,7 +30,7 @@ func cloneTokenClaims(claims *TokenClaims) *TokenClaims {
 		return nil
 	}
 	copied := *claims
-	copied.Authorization.Roles = append([]string(nil), claims.Authorization.Roles...)
-	copied.Authorization.Permissions = append([]string(nil), claims.Authorization.Permissions...)
+	copied.Authorization.Roles = slices.Clone(claims.Authorization.Roles)
+	copied.Authorization.Permissions = slices.Clone(claims.Authorization.Permissions)
 	return &copied
 }

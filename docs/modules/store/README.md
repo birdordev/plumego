@@ -170,9 +170,9 @@
   `ErrKeyExpired`; read-only helpers such as `ExistsContext`, `KeysContext`,
   `SizeContext`, and `GetStatsContext` ignore expired keys without mutating
   persisted state.
-- `Delete` returns `ErrKeyNotFound` for missing keys. `Close` is idempotent;
-  after close, value reads, mutations, and read-only inspection return
-  `ErrStoreClosed`.
+- `Delete` returns `ErrKeyNotFound` for missing keys. `Close` is idempotent
+  and discards the handle's in-memory snapshot. After close, value reads,
+  mutations, and read-only inspection return `ErrStoreClosed`.
 
 ## Idempotency Boundary
 

@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -809,6 +810,62 @@ func TestDebugEarlyHintsDoNotReplaceFinalStatus(t *testing.T) {
 			}
 			if got := json.Valid(w.Body.Bytes()); got != (status == http.StatusNotFound) {
 				t.Fatalf("unexpected response body %q", w.Body)
+			}
+		})
+	}
+}
+
+func TestDebugBodylessStatusWriteResults(t *testing.T) {
+	for _, status := range []int{http.StatusNoContent, http.StatusNotModified} {
+		for _, wrapped := range []bool{false, true} {
+			t.Run(http.StatusText(status)+"/wrapped="+strconv.FormatBool(wrapped), func(t *testing.T) {
+				var h http.Handler = http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+					w.WriteHeader(status)
+					if n, err := w.Write(nil); n != 0 || err != nil {
+						t.Errorf("empty write = (%d, %v), want (0, nil)", n, err)
+					}
+					if n, err := w.Write([]byte("body")); n != 0 || err != http.ErrBodyNotAllowed {
+						t.Errorf("body write = (%d, %v), want (0, ErrBodyNotAllowed)", n, err)
+					}
+				})
+				if wrapped {
+					h = Middleware(Config{})(h)
+				}
+				s := httptest.NewServer(h)
+				defer s.Close()
+				res, err := s.Client().Get(s.URL)
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer func() { _ = res.Body.Close() }()
+				body, err := io.ReadAll(res.Body)
+				if err != nil || res.StatusCode != status || len(body) != 0 {
+					t.Errorf("status=%d body=%q error=%v, want %d and empty body", res.StatusCode, body, err, status)
+				}
+			})
+		}
+	}
+}
+
+func TestDebugInvalidStatusPanicsBeforeCapture(t *testing.T) {
+	for _, code := range []int{0, 99, 1000} {
+		t.Run(strconv.Itoa(code), func(t *testing.T) {
+			h := Middleware(Config{})(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				var recovered any
+				func() {
+					defer func() { recovered = recover() }()
+					w.WriteHeader(code)
+				}()
+				if recovered == nil {
+					t.Error("invalid status did not panic at WriteHeader")
+				}
+				w.WriteHeader(http.StatusAccepted)
+				w.WriteHeader(code) // A repeated final status is ignored.
+			}))
+			w := httptest.NewRecorder()
+			h.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/", nil))
+			if w.Code != http.StatusAccepted {
+				t.Errorf("final status=%d, want 202", w.Code)
 			}
 		})
 	}
