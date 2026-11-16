@@ -249,19 +249,20 @@ func (w *gzipResponseWriter) Header() http.Header {
 }
 
 func (w *gzipResponseWriter) WriteHeader(statusCode int) {
-	if statusCode >= 100 && statusCode < 200 && statusCode != http.StatusSwitchingProtocols {
-		if !w.wroteHeader {
-			// Forward a snapshot without leaving interim-only values in the
-			// underlying header map, which later final commits overlay.
-			dst := w.ResponseWriter.Header()
-			original := dst.Clone()
-			defer internaltransport.ReplaceHeaders(dst, original)
-			internaltransport.CopyHeaders(dst, w.Header())
-			w.ResponseWriter.WriteHeader(statusCode)
-		}
+	if w.wroteHeader {
 		return
 	}
-	if w.wroteHeader {
+	if statusCode < 100 || statusCode > 999 {
+		panic("invalid WriteHeader code")
+	}
+	if statusCode < 200 && statusCode != http.StatusSwitchingProtocols {
+		// Forward a snapshot without leaving interim-only values in the
+		// underlying header map, which later final commits overlay.
+		dst := w.ResponseWriter.Header()
+		original := dst.Clone()
+		defer internaltransport.ReplaceHeaders(dst, original)
+		internaltransport.CopyHeaders(dst, w.Header())
+		w.ResponseWriter.WriteHeader(statusCode)
 		return
 	}
 	w.wroteHeader = true

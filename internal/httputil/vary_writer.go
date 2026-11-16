@@ -41,8 +41,13 @@ func (w *VaryWriter) Prepare() {
 func (w *VaryWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
 
 func (w *VaryWriter) WriteHeader(status int) {
-	if status >= 200 || status == http.StatusSwitchingProtocols {
-		w.Prepare()
+	if !w.committed {
+		if status < 100 || status > 999 {
+			panic("invalid WriteHeader code")
+		}
+		if status >= 200 || status == http.StatusSwitchingProtocols {
+			w.Prepare()
+		}
 	}
 	w.ResponseWriter.WriteHeader(status)
 }

@@ -95,6 +95,15 @@ func (mc *MemoryCache) removeExpiredItem(key any, item cacheItem) bool {
 	return mc.removeExpiredItemLocked(key, item)
 }
 
+// tryRemoveExpiredItem lets reads report an expired entry without waiting for a writer.
+func (mc *MemoryCache) tryRemoveExpiredItem(key string, item cacheItem) {
+	if !mc.writeMu.TryLock() {
+		return
+	}
+	defer mc.writeMu.Unlock()
+	mc.removeExpiredItemLocked(key, item)
+}
+
 func (mc *MemoryCache) removeExpiredItemLocked(key any, item cacheItem) bool {
 	if !expired(item.expiration) {
 		return false
@@ -180,7 +189,7 @@ func (mc *MemoryCache) Get(ctx context.Context, key string) ([]byte, error) {
 
 	item := val.(cacheItem)
 	if expired(item.expiration) {
-		mc.removeExpiredItem(key, item)
+		mc.tryRemoveExpiredItem(key, item)
 		return nil, ErrNotFound
 	}
 
@@ -288,7 +297,7 @@ func (mc *MemoryCache) Exists(ctx context.Context, key string) (bool, error) {
 
 	item := val.(cacheItem)
 	if expired(item.expiration) {
-		mc.removeExpiredItem(key, item)
+		mc.tryRemoveExpiredItem(key, item)
 		return false, nil
 	}
 

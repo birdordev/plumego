@@ -1223,35 +1223,75 @@ func TestDecrClosedCache(t *testing.T) {
 	}
 }
 
-// TestRemoveExpiredItemLockedItemChanged verifies that removeExpiredItemLocked
-// does nothing when the stored item has changed since the snapshot.
-func TestRemoveExpiredItemLockedItemChanged(t *testing.T) {
-	cache := NewMemoryCache()
-	defer cache.Close()
-
-	shortTTL := 20 * time.Millisecond
-	if err := cache.Set(t.Context(), "key", []byte("original"), shortTTL); err != nil {
-		t.Fatalf("Set: %v", err)
-	}
-
-	// Wait for the item to expire.
-	time.Sleep(40 * time.Millisecond)
-
-	// Replace the item with a fresh one before cleanup runs.
+func TestTryRemoveExpiredItemKeepsReplacement(t *testing.T) {
+	cache := mustNewMemoryCacheWithConfig(t, Config{})
+	t.Cleanup(func() { _ = cache.Close() })
+	original := cacheItem{value: []byte("original"), expiration: time.Now().Add(-time.Minute)}
+	cache.store.Store("key", original)
+	cache.adjustStoredValue(1, int64(len(original.value)))
 	if err := cache.Set(t.Context(), "key", []byte("updated"), time.Minute); err != nil {
 		t.Fatalf("Set updated: %v", err)
 	}
 
-	// Manually trigger cleanupExpired; the original snapshot is stale, so
-	// removeExpiredItemLocked should leave the updated item in place.
-	cache.cleanupExpired()
+	cache.tryRemoveExpiredItem("key", original)
 
-	val, err := cache.Get(t.Context(), "key")
-	if err != nil {
-		t.Fatalf("Get after cleanup: %v", err)
+	if val, err := cache.Get(t.Context(), "key"); err != nil || string(val) != "updated" {
+		t.Fatalf("Get after cleanup = (%q, %v), want updated", val, err)
 	}
-	if string(val) != "updated" {
-		t.Fatalf("expected 'updated', got %q", val)
+}
+
+func TestExpiredReadSkipsBusyWriteLock(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		read func(context.Context, *MemoryCache) error
+		want error
+	}{
+		{"Get", func(ctx context.Context, cache *MemoryCache) error {
+			_, err := cache.Get(ctx, "expired")
+			return err
+		}, ErrNotFound},
+		{"Exists", func(ctx context.Context, cache *MemoryCache) error {
+			exists, err := cache.Exists(ctx, "expired")
+			if exists {
+				return fmt.Errorf("expired entry exists")
+			}
+			return err
+		}, nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cache := mustNewMemoryCacheWithConfig(t, Config{})
+			t.Cleanup(func() { _ = cache.Close() })
+			cache.store.Store("expired", cacheItem{value: []byte("v"), expiration: time.Now().Add(-time.Minute)})
+			cache.adjustStoredValue(1, 1)
+
+			cache.writeMu.Lock()
+			done := make(chan error, 1)
+			ctx := t.Context()
+			go func() { done <- tc.read(ctx, cache) }()
+			timer := time.NewTimer(time.Second)
+			defer timer.Stop()
+			select {
+			case err := <-done:
+				cache.writeMu.Unlock()
+				if !errors.Is(err, tc.want) {
+					t.Fatalf("expired read error = %v, want %v", err, tc.want)
+				}
+			case <-timer.C:
+				cache.writeMu.Unlock()
+				<-done
+				t.Fatal("expired read waited for the write lock")
+			}
+
+			if stats := cache.Stats(); stats.Entries != 1 || stats.MemoryUsage != 1 {
+				t.Fatalf("busy read changed tracked entries: %+v", stats)
+			}
+			if err := tc.read(ctx, cache); !errors.Is(err, tc.want) {
+				t.Fatalf("expired read with idle write lock = %v, want %v", err, tc.want)
+			}
+			if stats := cache.Stats(); stats.Entries != 0 || stats.MemoryUsage != 0 {
+				t.Fatalf("idle read did not remove expired entry: %+v", stats)
+			}
+		})
 	}
 }
 

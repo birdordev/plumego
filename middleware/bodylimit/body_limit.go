@@ -87,6 +87,9 @@ func (w *bodyLimitResponseWriter) WriteHeader(statusCode int) {
 	if w.blocked || w.started {
 		return
 	}
+	if statusCode < 100 || statusCode > 999 {
+		panic("invalid WriteHeader code")
+	}
 	if statusCode >= 200 || statusCode == http.StatusSwitchingProtocols {
 		w.started = true
 		w.errorResponse = statusCode >= http.StatusBadRequest

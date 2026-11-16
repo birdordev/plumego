@@ -16,12 +16,66 @@ import (
 	"github.com/birdordev/plumego/middleware"
 	"github.com/birdordev/plumego/middleware/bodylimit"
 	"github.com/birdordev/plumego/middleware/compression"
+	"github.com/birdordev/plumego/middleware/cors"
 	"github.com/birdordev/plumego/middleware/debug"
 	"github.com/birdordev/plumego/middleware/httpmetrics"
 	"github.com/birdordev/plumego/middleware/singleflight"
 	"github.com/birdordev/plumego/middleware/timeout"
 	"github.com/birdordev/plumego/middleware/tracing"
 )
+
+func TestResponseWriterConformanceInvalidStatusRecovery(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		wrap middleware.Middleware
+		vary string
+	}{
+		{"bodylimit", bodylimit.Middleware(bodylimit.Config{MaxBytes: 1024}), ""},
+		{"gzip", compression.Middleware(compression.DefaultConfig()), "Accept-Encoding"},
+		{"cors", cors.Middleware(cors.CORSOptions{}), "Origin"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := tc.wrap(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				var recovered any
+				func() {
+					defer func() { recovered = recover() }()
+					w.WriteHeader(1000)
+				}()
+				if recovered == nil {
+					t.Error("invalid status did not panic at WriteHeader")
+				}
+				if got := w.Header().Get("Vary"); got != "" {
+					t.Errorf("invalid status set Vary to %q", got)
+				}
+				w.Header().Del("Vary")
+				w.WriteHeader(http.StatusAccepted)
+				w.WriteHeader(1000) // A repeated final status is ignored.
+				if _, err := io.WriteString(w, "accepted"); err != nil {
+					t.Errorf("write after recovery: %v", err)
+				}
+			}))
+			req := httptest.NewRequest(http.MethodGet, "/", nil)
+			req.Header.Set("Accept-Encoding", "gzip")
+			w := httptest.NewRecorder()
+			h.ServeHTTP(w, req)
+			if got := w.Result().Header.Get("Vary"); w.Code != http.StatusAccepted || got != tc.vary {
+				t.Errorf("status=%d Vary=%q, want 202 and %q", w.Code, got, tc.vary)
+			}
+			var body io.Reader = w.Body
+			if tc.name == "gzip" {
+				r, err := gzip.NewReader(body)
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer func() { _ = r.Close() }()
+				body = r
+			}
+			if got, err := io.ReadAll(body); err != nil || string(got) != "accepted" {
+				t.Errorf("body=%q error=%v, want accepted", got, err)
+			}
+		})
+	}
+}
 
 func TestResponseWriterConformancePanicPropagation(t *testing.T) {
 	tests := []struct {

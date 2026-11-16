@@ -3,14 +3,15 @@ package router
 import (
 	"bufio"
 	"errors"
-	plumelog "github.com/birdordev/plumego/log"
-	"github.com/birdordev/plumego/middleware/recovery"
 	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	plumelog "github.com/birdordev/plumego/log"
+	"github.com/birdordev/plumego/middleware/recovery"
 )
 
 type headBasicWriter struct{ http.ResponseWriter }
@@ -197,6 +198,48 @@ func TestHeadBodyAndLengthConstraints(t *testing.T) {
 	writer.commit(true)
 	if got := suppressed.Result().Header.Get("Content-Type"); got != "" {
 		t.Fatalf("explicitly suppressed content type=%q", got)
+	}
+}
+
+func TestHeadBodylessStatusesAcceptEmptyWrite(t *testing.T) {
+	for _, status := range []int{http.StatusNoContent, http.StatusNotModified} {
+		for _, tc := range []struct{ name, method string }{
+			{"direct", ""},
+			{"explicit HEAD", http.MethodHead},
+			{"GET fallback", http.MethodGet},
+		} {
+			t.Run(http.StatusText(status)+"/"+tc.name, func(t *testing.T) {
+				var handler http.Handler = http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+					w.WriteHeader(status)
+					if n, err := w.Write(nil); n != 0 || err != nil {
+						t.Errorf("empty write = (%d, %v), want (0, nil)", n, err)
+					}
+					if n, err := w.Write([]byte("forbidden")); n != 0 || err != http.ErrBodyNotAllowed {
+						t.Errorf("nonempty write = (%d, %v), want (0, ErrBodyNotAllowed)", n, err)
+					}
+				})
+				if tc.method != "" {
+					rt := NewRouter()
+					if err := rt.AddRoute(tc.method, "/", handler); err != nil {
+						t.Fatal(err)
+					}
+					handler = rt
+				}
+				server := httptest.NewServer(handler)
+				defer server.Close()
+				for range 2 {
+					res, err := server.Client().Head(server.URL)
+					if err != nil {
+						t.Fatal(err)
+					}
+					body, err := io.ReadAll(res.Body)
+					_ = res.Body.Close()
+					if res.StatusCode != status || len(body) != 0 || err != nil {
+						t.Fatalf("status=%d body=%q error=%v, want %d and empty body", res.StatusCode, body, err, status)
+					}
+				}
+			})
+		}
 	}
 }
 

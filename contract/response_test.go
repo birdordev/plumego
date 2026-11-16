@@ -624,8 +624,8 @@ func TestWriteResponseInvalidHighStatus(t *testing.T) {
 	}
 }
 
-// TestWriteResponseAcceptsInformationalStatus returns error for 1xx (below 200).
-func TestWriteResponseAcceptsInformationalStatus(t *testing.T) {
+// TestWriteResponseRejectsInformationalStatus checks the 2xx-only boundary.
+func TestWriteResponseRejectsInformationalStatus(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	rec := httptest.NewRecorder()
 

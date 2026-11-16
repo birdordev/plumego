@@ -10,6 +10,38 @@ import (
 	"github.com/birdordev/plumego/contract"
 )
 
+func TestMiddlewareAcceptsNilRequestHeader(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		opts   []Option
+		header string
+	}{
+		{"default writeback", nil, "generated"},
+		{"writeback disabled", []Option{WithRequestHeader(false)}, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "/", nil)
+			req.Header = nil
+			opts := append(tc.opts, WithGenerator(func() string { return "generated" }))
+			calls := 0
+			h := Middleware(opts...)(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+				calls++
+				if got := r.Header.Get(contract.RequestIDHeader); got != tc.header || (r.Header == nil) != (tc.header == "") {
+					t.Errorf("request header map=%v, want ID %q", r.Header, tc.header)
+				}
+				if id := contract.RequestIDFromContext(r.Context()); id != "generated" {
+					t.Errorf("context ID=%q, want generated", id)
+				}
+			}))
+			w := httptest.NewRecorder()
+			h.ServeHTTP(w, req)
+			if id := w.Header().Get(contract.RequestIDHeader); id != "generated" || calls != 1 || req.Header != nil {
+				t.Errorf("response ID=%q calls=%d original headers=%v", id, calls, req.Header)
+			}
+		})
+	}
+}
+
 func TestMiddlewareUsesSameValidatedIDInHeadersContextAndJSON(t *testing.T) {
 	oversized := strings.Repeat("x", 129)
 	unicodeBoundary := strings.Repeat("é", 64)

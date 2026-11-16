@@ -47,6 +47,9 @@ func (w *noBodyWriter) Write(p []byte) (int, error) {
 	if w.status == 0 {
 		w.WriteHeader(http.StatusOK)
 	}
+	if len(p) == 0 {
+		return 0, nil
+	}
 	if !w.bodyAllowed() {
 		return 0, http.ErrBodyNotAllowed
 	}
@@ -55,7 +58,7 @@ func (w *noBodyWriter) Write(p []byte) (int, error) {
 		return 0, http.ErrContentLength
 	}
 	_, hasContentType := w.header["Content-Type"]
-	if !w.committed && len(p) > 0 && len(w.sniff) < headSniffLength && !hasContentType &&
+	if !w.committed && len(w.sniff) < headSniffLength && !hasContentType &&
 		w.header.Get("Content-Encoding") == "" && w.header.Get("Transfer-Encoding") == "" {
 		w.sniff = append(w.sniff, p[:min(len(p), headSniffLength-len(w.sniff))]...)
 	}

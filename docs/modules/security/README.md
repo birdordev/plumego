@@ -83,7 +83,9 @@ Use `security/*` for reviewable primitives and policies:
 - `security/jwt.JWTConfig.Validate` rejects negative rotation intervals and clock skew values.
 - JWT access and refresh lifetimes must each be at least one second, matching
   the precision of the expiration claims and `expires_in`.
-- `security/jwt` verification is read-only with respect to signing key rotation; key rotation happens while issuing tokens or through explicit rotation.
+- `security/jwt` verification is read-only with respect to signing key rotation.
+  A positive `RotationInterval` is checked during token issuance. Zero disables
+  automatic rotation. Call `JWTManager.RotateKey` for explicit rotation.
 - `security/jwt` verification rejects tokens that omit issued-at, not-before, or expiration claims; issued-at values in the future beyond configured clock skew are invalid.
 - `security/jwt` generation and verification honor canceled caller contexts before expensive work.
 - `security/jwt` generation, verification, and key rotation evaluate time through a single manager clock path so boundary behavior stays consistent.

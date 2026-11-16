@@ -94,7 +94,9 @@ type JWTConfig struct {
 	// RefreshExpiration is the lifetime of refresh tokens, at least one second.
 	RefreshExpiration time.Duration
 
-	// RotationInterval is how often to rotate signing keys
+	// RotationInterval controls automatic signing key rotation during token issuance.
+	// A positive interval is checked when issuing tokens. Zero disables automatic
+	// rotation. Use [JWTManager.RotateKey] for explicit rotation.
 	RotationInterval time.Duration
 
 	// Algorithm is the signing algorithm

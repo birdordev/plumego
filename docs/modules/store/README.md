@@ -65,7 +65,9 @@
 - Integer updates accept signed `int64` deltas and reject arithmetic results
   outside the `int64` range without replacing the existing value.
 - `store/cache.MemoryCache.Stats` returns a point-in-time snapshot of tracked entries, payload bytes, and closed lifecycle state; it does not mutate the cache or export provider-specific metrics.
-- `store/cache.MemoryCache` expired-entry cleanup scans the whole in-process map on each cleanup pass instead of stopping at an arbitrary entry cap; this keeps cleanup predictable for stable in-process use.
+- Expired reads in `store/cache.MemoryCache` return a miss and remove the
+  expired entry only if the cache write lock is immediately available.
+  Background cleanup scans the whole in-process map on each pass.
 - `store/cache.MemoryCache` and `store/kv.KVStore` are constructor-only objects; zero-value or nil receiver operations fail closed with the package closed-store sentinel where practical.
 - `store/cache.MemoryCache.Close` closes the cache lifecycle; it waits for the cache write boundary before returning, and later operations return `cache.ErrCacheClosed`.
 - keep DB analytics, summaries, instrumentation wrappers, pool-stat polling, and slow-query inspection out of `store/db`; route them to `x/observability/dbinsights`
