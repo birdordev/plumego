@@ -8,6 +8,44 @@ import (
 	"time"
 )
 
+func TestLifecycleGroupStopCompletesPassBeforePropagatingFirstPanic(t *testing.T) {
+	firstPanic, laterPanic := errors.New("first panic"), errors.New("later panic")
+	var stopped []string
+	g := NewLifecycleGroup()
+	for _, tc := range []struct {
+		name    string
+		failure error
+	}{
+		{"first", nil}, {"second", laterPanic}, {"third", firstPanic},
+	} {
+		attempted := false
+		g.Add(tc.name, Component{OnStop: func(context.Context) error {
+			stopped = append(stopped, tc.name)
+			if !attempted && tc.failure != nil {
+				attempted = true
+				panic(tc.failure)
+			}
+			return nil
+		}})
+	}
+	if err := g.Start(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	var recovered any
+	func() {
+		defer func() { recovered = recover() }()
+		if err := g.Stop(t.Context()); err != nil {
+			t.Error(err)
+		}
+	}()
+	if recovered != firstPanic || !slices.Equal(stopped, []string{"third", "second", "first"}) {
+		t.Fatalf("panic=%v stop order=%v", recovered, stopped)
+	}
+	if err := g.Stop(t.Context()); err != nil || !slices.Equal(stopped, []string{"third", "second", "first", "third", "second"}) {
+		t.Fatalf("retry error=%v stop order=%v", err, stopped)
+	}
+}
+
 func TestLifecycleGroupStartupPanicRollsBackAndAllowsRetry(t *testing.T) {
 	for _, cleanupPanics := range []bool{false, true} {
 		var stops []string

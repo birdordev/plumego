@@ -176,6 +176,9 @@ These behaviors are part of the current stable-root freeze baseline:
 | `LifecycleGroup` | The first `Start` that enters startup freezes registration. A context already canceled leaves the group idle. A startup error, cancellation during startup, or panic rolls back every attempted component in reverse order with the startup context. Returned errors include rollback failures. A cleanup panic during startup rollback leaves that component pending and cleanup continues in reverse order. A startup panic propagates with its original value. `Stop` can retry pending cleanup and treats a nil context as `context.Background()`. `Ready` probes components only after successful startup, and overlapping operations return without waiting for callbacks. |
 
 `LifecycleGroup.Add` skips nil interfaces and nil `*Component` adapters.
+During normal `Stop`, a panic in a cleanup callback leaves that component
+pending. The remaining pending callbacks are attempted in reverse order, then
+the first panic is propagated with its original value.
 
 Focused regression coverage lives in `core/freeze_test.go`,
 `core/lifecycle_test.go`, `core/app_test.go`, and `core/routing_test.go`.

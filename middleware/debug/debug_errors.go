@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"errors"
+	"io"
 	"net"
 	"net/http"
 	"strings"
@@ -141,7 +142,10 @@ func Middleware(config Config) middleware.Middleware {
 			}
 
 			internaltransport.ReplaceHeaders(w.Header(), rec.committed)
-			w.Header().Del("Content-Length")
+			header := w.Header()
+			for _, name := range [...]string{"Content-Length", "ETag", "Digest", "Content-MD5", "Content-Digest", "Repr-Digest"} {
+				header.Del(name)
+			}
 			_ = contract.WriteError(w, r, debugErrorPayload(errorType, status, r, cfg, body))
 		})
 	}
@@ -206,17 +210,10 @@ func (r *debugErrorRecorder) Write(p []byte) (int, error) {
 		return internaltransport.SafeWrite(r.dst, p)
 	}
 	if r.maxBytes > 0 && r.body.Len()+len(p) > r.maxBytes {
-		r.passthrough = true
-		r.flushHeaders()
-		if r.body.Len() > 0 {
-			if _, err := internaltransport.SafeWrite(r.dst, r.body.Bytes()); err != nil {
-				r.body.Reset()
-				return 0, err
-			}
-			r.body.Reset()
+		if err := r.commitPassthrough(); err != nil {
+			return 0, err
 		}
-		n, err := internaltransport.SafeWrite(r.dst, p)
-		return n, err
+		return internaltransport.SafeWrite(r.dst, p)
 	}
 	return r.body.Write(p)
 }
@@ -226,7 +223,9 @@ func (r *debugErrorRecorder) Flush() { _ = r.FlushError() }
 func (r *debugErrorRecorder) FlushError() error {
 	controller := http.NewResponseController(r.dst)
 	if r.status != 0 || r.passthrough {
-		r.commitPassthrough()
+		if err := r.commitPassthrough(); err != nil {
+			return err
+		}
 		return controller.Flush()
 	}
 
@@ -247,7 +246,9 @@ func (r *debugErrorRecorder) FlushError() error {
 
 func (r *debugErrorRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 	if r.body.Len() > 0 || r.status != 0 {
-		r.commitPassthrough()
+		if err := r.commitPassthrough(); err != nil {
+			return nil, nil, err
+		}
 	}
 	conn, rw, err := http.NewResponseController(r.dst).Hijack()
 	if err == nil {
@@ -286,16 +287,22 @@ func (r *debugErrorRecorder) copyTrailers() {
 	internaltransport.CopyResponseTrailers(r.dst.Header(), r.committed, r.header)
 }
 
-func (r *debugErrorRecorder) commitPassthrough() {
+func (r *debugErrorRecorder) commitPassthrough() error {
 	if r.passthrough {
-		return
+		return nil
 	}
 	r.passthrough = true
 	r.flushHeaders()
-	if r.body.Len() > 0 {
-		_, _ = internaltransport.SafeWrite(r.dst, r.body.Bytes())
-		r.body.Reset()
+	if r.body.Len() == 0 {
+		return nil
 	}
+	size := r.body.Len()
+	n, err := internaltransport.SafeWrite(r.dst, r.body.Bytes())
+	r.body.Reset()
+	if err == nil && n != size {
+		return io.ErrShortWrite
+	}
+	return err
 }
 
 func shouldSkipDebugErrors(r *http.Request) bool {

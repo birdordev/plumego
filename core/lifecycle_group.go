@@ -205,8 +205,10 @@ func (g *LifecycleGroup) startComponents(ctx context.Context) error {
 }
 
 // Stop cleans up pending components in reverse registration order and joins
-// cleanup errors. A nil context uses context.Background. A later Stop retries only failed cleanup. If a lifecycle
-// operation is already executing callbacks, Stop returns an error for retry.
+// cleanup errors. If a callback panics, Stop re-panics with the first panic
+// after attempting the remaining callbacks. A later Stop retries only failed
+// cleanup. A nil context uses context.Background. If a lifecycle operation is
+// already executing callbacks, Stop returns an error for retry.
 func (g *LifecycleGroup) Stop(ctx context.Context) error {
 	if ctx == nil {
 		ctx = context.Background()
@@ -230,30 +232,38 @@ func (g *LifecycleGroup) Stop(ctx context.Context) error {
 // the frozen entries and their cleanup flags exclusively.
 func (g *LifecycleGroup) stopPending(ctx context.Context, rollingBack bool) error {
 	var errs []error
+	var firstPanic any
 	for i := len(g.entries) - 1; i >= 0; i-- {
 		e := &g.entries[i]
 		if !e.pendingStop {
 			continue
 		}
-		if err := e.stop(ctx, rollingBack); err != nil {
+		panicValue, err := e.stop(ctx)
+		if panicValue != nil {
+			if rollingBack {
+				err = errors.New("cleanup panicked during startup rollback")
+			} else {
+				if firstPanic == nil {
+					firstPanic = panicValue
+				}
+				continue
+			}
+		}
+		if err != nil {
 			errs = append(errs, fmt.Errorf("core: stop %q: %w", e.name, err))
 			continue
 		}
 		e.pendingStop = false
 	}
+	if firstPanic != nil {
+		panic(firstPanic)
+	}
 	return errors.Join(errs...)
 }
 
-func (e *namedLifecycle) stop(ctx context.Context, rollingBack bool) (err error) {
-	if rollingBack {
-		// Preserve the startup failure and let rollback visit the remaining entries.
-		defer func() {
-			if recover() != nil {
-				err = errors.New("cleanup panicked during startup rollback")
-			}
-		}()
-	}
-	return e.c.Stop(ctx)
+func (e *namedLifecycle) stop(ctx context.Context) (panicValue any, err error) {
+	defer func() { panicValue = recover() }()
+	return nil, e.c.Stop(ctx)
 }
 
 // Ready probes components after successful startup. It joins their errors and

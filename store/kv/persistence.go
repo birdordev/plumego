@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
+	"unicode/utf8"
 )
 
 const stateFileName = "store.json"
@@ -26,6 +27,9 @@ func (kv *KVStore) load() error {
 	}
 	if err != nil {
 		return fmt.Errorf("read state: %w", err)
+	}
+	if !utf8.Valid(raw) {
+		return fmt.Errorf("%w: snapshot must be valid UTF-8", ErrCorruptState)
 	}
 
 	var state struct {

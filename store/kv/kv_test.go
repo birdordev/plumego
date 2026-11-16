@@ -460,6 +460,7 @@ func TestKVStoreLoadRejectsMalformedEntriesAndReleasesLock(t *testing.T) {
 		`{"entries":{"a":{"value":"YQ=="},"\u0061":{"value":"Yg=="}}}`,
 		`{"entries":{"a":{"value":"YQ==","value":"Yg=="}}}`,
 		`{"entries":{"a":{"value":"YQ==","Value":"Yg=="}}}`,
+		"{\"entries\":{\"bad\xff\":{\"value\":\"YQ==\"}}}",
 	} {
 		t.Run(raw, func(t *testing.T) {
 			opts := DefaultConfig(t.TempDir())
@@ -495,7 +496,7 @@ func TestKVStoreLoadRejectsMalformedEntriesAndReleasesLock(t *testing.T) {
 
 func TestKVStoreLoadKeepsCaseDistinctKeysAndLegacyFieldSpelling(t *testing.T) {
 	opts := DefaultConfig(t.TempDir())
-	state := `{"Entries":{"a":{"Value":"YQ=="},"A":{"value":"QQ=="}},"metadata":{"versions":[1,2]}}`
+	state := `{"Entries":{"a":{"Value":"YQ=="},"A":{"value":"QQ=="},"�":{"value":"77+9"}},"metadata":{"versions":[1,2]}}`
 	if err := os.WriteFile(filepath.Join(opts.DataDir, stateFileName), []byte(state), 0600); err != nil {
 		t.Fatal(err)
 	}
@@ -504,7 +505,7 @@ func TestKVStoreLoadKeepsCaseDistinctKeysAndLegacyFieldSpelling(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = store.Close() }()
-	for _, key := range []string{"a", "A"} {
+	for _, key := range []string{"a", "A", "\uFFFD"} {
 		if value, err := store.Get(key); err != nil || string(value) != key {
 			t.Errorf("Get(%q) = %q, %v", key, value, err)
 		}

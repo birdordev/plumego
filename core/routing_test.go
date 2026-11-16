@@ -453,6 +453,16 @@ func TestRouteRegistrationFailsAfterPrepare(t *testing.T) {
 	}
 }
 
+func TestAppAndGroupClassifyTypedNilHandlers(t *testing.T) {
+	app := newTestApp()
+	group := app.Group("/group")
+	for _, register := range []func(string, http.Handler) error{app.Get, group.Get} {
+		if err := register("/nil", http.HandlerFunc(nil)); !errors.Is(err, contract.ErrHandlerNil) {
+			t.Errorf("registration error = %v, want ErrHandlerNil", err)
+		}
+	}
+}
+
 func TestRouteRegistrationStatePrecedesNilHandlerValidation(t *testing.T) {
 	app := newTestApp()
 	mustRegisterRoute(t, app.Get("/before-prepare", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -462,7 +472,7 @@ func TestRouteRegistrationStatePrecedesNilHandlerValidation(t *testing.T) {
 		t.Fatalf("Prepare returned error: %v", err)
 	}
 
-	err := app.Get("/after-prepare-nil", nil)
+	err := app.Get("/after-prepare-nil", http.HandlerFunc(nil))
 	if err == nil {
 		t.Fatal("expected route registration after Prepare to fail")
 	}

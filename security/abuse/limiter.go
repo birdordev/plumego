@@ -566,11 +566,11 @@ func durationFromSeconds(seconds float64) time.Duration {
 		return 0
 	}
 	const maxDuration = time.Duration(1<<63 - 1)
-	maxSeconds := float64(maxDuration) / float64(time.Second)
-	if seconds > maxSeconds {
+	nanoseconds := seconds * float64(time.Second)
+	if nanoseconds >= float64(maxDuration) {
 		return maxDuration
 	}
-	return time.Duration(seconds * float64(time.Second))
+	return time.Duration(nanoseconds)
 }
 
 func fnv32a(key string) uint32 {

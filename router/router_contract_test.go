@@ -2,6 +2,7 @@ package router
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -206,7 +207,7 @@ func TestAddRouteRejectsNilHandler(t *testing.T) {
 	r := NewRouter()
 
 	err := r.AddRoute(http.MethodGet, "/nil", nil)
-	if err == nil {
+	if !errors.Is(err, contract.ErrHandlerNil) {
 		t.Fatalf("expected nil handler registration to fail")
 	}
 	if !strings.Contains(err.Error(), "nil handler") {
@@ -217,8 +218,8 @@ func TestAddRouteRejectsNilHandler(t *testing.T) {
 func TestAddRouteRejectsNilHandlerFuncWithoutPublishing(t *testing.T) {
 	r := NewRouter()
 	const path, name = "/nil", "nil-retry"
-	if err := r.AddRoute(http.MethodGet, path, http.HandlerFunc(nil), WithRouteName(name)); err == nil {
-		t.Fatal("registered a nil HandlerFunc")
+	if err := r.AddRoute(http.MethodGet, path, http.HandlerFunc(nil), WithRouteName(name)); !errors.Is(err, contract.ErrHandlerNil) {
+		t.Fatalf("nil HandlerFunc error = %v, want ErrHandlerNil", err)
 	}
 	if r.HasRoute(name) || len(r.Routes()) != 0 {
 		t.Fatal("failed registration published a route")

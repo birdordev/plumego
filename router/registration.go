@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+
+	"github.com/birdordev/plumego/contract"
 )
 
 // Group creates a new router group with the given prefix.
@@ -82,7 +84,7 @@ func (r *Router) AddRoute(method, path string, handler http.Handler, opts ...Rou
 	}
 	handlerFunc, isHandlerFunc := handler.(http.HandlerFunc)
 	if handler == nil || (isHandlerFunc && handlerFunc == nil) {
-		return fmt.Errorf("router add_route %s %s: nil handler", method, path)
+		return fmt.Errorf("router add_route %s %s: nil handler: %w", method, path, contract.ErrHandlerNil)
 	}
 	if err := validateRoutePath(path); err != nil {
 		return fmt.Errorf("router add_route %s %s: %w", method, path, err)

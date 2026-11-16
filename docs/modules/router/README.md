@@ -139,12 +139,13 @@ directly.
 - `WithTags` snapshots its input labels when the option is created, so the same
   option can be reused independently of later changes to the input slice.
 - Route registration rejects nil handler interfaces and nil `http.HandlerFunc`
-  values before publishing the route or its name.
+  values with `contract.ErrHandlerNil` before publishing the route or its name.
 - `URL` consumes params as key/value pairs, percent-escapes segment params,
   preserves interior slash boundaries for wildcard params, rejects leading or
   trailing slashes in wildcard values, and returns empty string for
   unknown routes, incomplete params, duplicate keys, unknown keys, empty
-  required params, or malformed key/value param lists; `URLMust` panics with the
+  required params, or malformed key/value param lists; `URLMust` panics on any
+  URL generation error with the
   specific reverse-routing failure reason. Literal path segments are URL-escaped
   so reserved characters round-trip through request parsing.
 - `router.Static` and `router.StaticFS` are primitive GET mounts. Cache headers, SPA fallback, precompressed files, custom headers, and MIME policy belong to `x/frontend`.

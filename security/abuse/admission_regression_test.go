@@ -8,6 +8,36 @@ import (
 	"time"
 )
 
+func TestLimiterSaturatesRetryDuration(t *testing.T) {
+	const max = time.Duration(1<<63 - 1)
+	limit := float64(max) / float64(time.Second)
+	for _, tc := range []struct {
+		name    string
+		seconds float64
+		want    time.Duration
+	}{
+		{"below", limit / 2, max/2 + 1},
+		{"at", limit, max},
+		{"above", limit * 2, max},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			now := time.Unix(1000, 0)
+			l, err := NewLimiterWithConfig(Config{Rate: 1 / tc.seconds, Capacity: 1, CleanupInterval: time.Hour, Now: func() time.Time { return now }})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer l.Stop()
+			if !l.Allow("fixture").Allowed {
+				t.Fatal("initial request denied")
+			}
+			d := l.Allow("fixture")
+			if d.Allowed || d.RetryAfter != tc.want || !d.Reset.Equal(now.Add(tc.want)) {
+				t.Fatalf("retry=%v reset=%v, want retry=%v reset=%v", d.RetryAfter, d.Reset, tc.want, now.Add(tc.want))
+			}
+		})
+	}
+}
+
 func TestDelayedClockSampleDoesNotRefillOrAgeBucketTwice(t *testing.T) {
 	base := time.Unix(1_000, 0)
 	newer := base.Add(time.Second)

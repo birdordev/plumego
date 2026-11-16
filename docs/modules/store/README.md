@@ -131,6 +131,8 @@
   when the owning process exits. Platforms without a supported locking
   primitive return an error at open time.
 - `store/kv` classifies state-file JSON decode failures and invalid persisted keys with `kvstore.ErrCorruptState`; invalid-key corruption also keeps `kvstore.ErrInvalidKey` in the error chain for diagnostics.
+- Snapshot bytes must be valid UTF-8 before decoding. Invalid byte sequences
+  return `ErrCorruptState` instead of being converted to replacement characters.
 - An existing snapshot must contain an `entries` object. A missing or null
   object returns `ErrCorruptState`, and an empty object loads as an empty store.
   Each entry must be an object. An entry's byte value may be null. Duplicate

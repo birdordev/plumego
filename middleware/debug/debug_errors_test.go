@@ -16,6 +16,85 @@ import (
 	"github.com/birdordev/plumego/contract"
 )
 
+type debugDrainFailureWriter struct {
+	*httptest.ResponseRecorder
+	err             error
+	writes, flushes int
+}
+
+func (w *debugDrainFailureWriter) Write(p []byte) (int, error) {
+	w.writes++
+	n, _ := w.ResponseRecorder.Write(p[:1])
+	return n, w.err
+}
+
+func (w *debugDrainFailureWriter) FlushError() error {
+	w.flushes++
+	return nil
+}
+
+func TestDebugFlushReportsDrainErrorWithoutReplaying(t *testing.T) {
+	writeErr := errors.New("fixture write failed")
+	for _, tc := range []struct {
+		name           string
+		writeErr, want error
+	}{
+		{"write failure", writeErr, writeErr}, {"short write", nil, io.ErrShortWrite},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			w := &debugDrainFailureWriter{ResponseRecorder: httptest.NewRecorder(), err: tc.writeErr}
+			h := Middleware(Config{})(http.HandlerFunc(func(out http.ResponseWriter, _ *http.Request) {
+				out.WriteHeader(http.StatusAccepted)
+				if _, err := io.WriteString(out, "buffered"); err != nil {
+					t.Fatal(err)
+				}
+				controller := http.NewResponseController(out)
+				if err := controller.Flush(); !errors.Is(err, tc.want) || w.flushes != 0 {
+					t.Fatalf("Flush=%v, downstream flushes=%d", err, w.flushes)
+				}
+				if err := controller.Flush(); err != nil {
+					t.Fatal(err)
+				}
+			}))
+			h.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/", nil))
+			if w.Code != http.StatusAccepted || w.writes != 1 || w.flushes != 1 || w.Body.String() != "b" {
+				t.Fatalf("status=%d writes=%d flushes=%d body=%q", w.Code, w.writes, w.flushes, w.Body)
+			}
+		})
+	}
+}
+
+func TestDebugRemovesOriginalValidatorsOnlyWhenReplacing(t *testing.T) {
+	validators := http.Header{"Etag": {`"original"`}, "Digest": {"sha-256=sample"}, "Content-Md5": {"sample"}, "Content-Digest": {"sample"}, "Repr-Digest": {"sample"}}
+	for _, status := range []int{http.StatusServiceUnavailable, http.StatusTeapot} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			w := httptest.NewRecorder()
+			h := Middleware(Config{})(http.HandlerFunc(func(out http.ResponseWriter, _ *http.Request) {
+				for name := range validators {
+					out.Header().Set(name, validators.Get(name))
+				}
+				out.Header().Set("Retry-After", "10")
+				http.Error(out, "original", status)
+			}))
+			h.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/", nil))
+			res := w.Result()
+			replaced := status == http.StatusServiceUnavailable
+			for name := range validators {
+				want := ""
+				if !replaced {
+					want = validators.Get(name)
+				}
+				if got := res.Header.Get(name); got != want {
+					t.Errorf("%s=%q want %q", name, got, want)
+				}
+			}
+			if res.StatusCode != status || res.Header.Get("Retry-After") != "10" || json.Valid(w.Body.Bytes()) != replaced || (!replaced && w.Body.String() != "original\n") {
+				t.Fatalf("status=%d headers=%v body=%q", res.StatusCode, res.Header, w.Body)
+			}
+		})
+	}
+}
+
 func TestDebugKeepsEncodedErrorRepresentation(t *testing.T) {
 	var compressed bytes.Buffer
 	zw := gzip.NewWriter(&compressed)
@@ -828,7 +907,9 @@ func TestDebugErrorsCommitPassthrough_EmptyBody(t *testing.T) {
 	underlying := httptest.NewRecorder()
 	rec := newDebugErrorRecorder(underlying, defaultMaxBodyBytes)
 	rec.WriteHeader(http.StatusOK)
-	rec.commitPassthrough() // body is empty, should just flush headers
+	if err := rec.commitPassthrough(); err != nil {
+		t.Fatal(err)
+	}
 	if !rec.passthrough {
 		t.Fatal("expected passthrough to be set")
 	}
@@ -876,7 +957,9 @@ func TestDebugErrorsCommitPassthrough_AlreadyPassthrough(t *testing.T) {
 	underlying := httptest.NewRecorder()
 	rec := newDebugErrorRecorder(underlying, defaultMaxBodyBytes)
 	rec.passthrough = true
-	rec.commitPassthrough() // must be a no-op
+	if err := rec.commitPassthrough(); err != nil {
+		t.Fatal(err)
+	}
 }
 
 // TestDebugErrorsCommitPassthrough_WithBodyFlushes covers the body flush in
@@ -886,7 +969,9 @@ func TestDebugErrorsCommitPassthrough_WithBodyFlushes(t *testing.T) {
 	rec := newDebugErrorRecorder(underlying, defaultMaxBodyBytes)
 	rec.status = http.StatusOK
 	rec.body.Write([]byte("buffered"))
-	rec.commitPassthrough()
+	if err := rec.commitPassthrough(); err != nil {
+		t.Fatal(err)
+	}
 	if !rec.passthrough {
 		t.Fatal("expected passthrough=true")
 	}

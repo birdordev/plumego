@@ -132,7 +132,7 @@ func (r *Router) urlForNamedRoute(name string, params ...string) (string, string
 	return "/" + strings.Join(resultParts, "/"), ""
 }
 
-// URLMust generates a URL for a named route and panics if the route doesn't exist.
+// URLMust generates a URL for a named route and panics if URL generation fails.
 func (r *Router) URLMust(name string, params ...string) string {
 	result, reason := r.urlForNamedRoute(name, params...)
 	if reason != "" {
