@@ -120,8 +120,9 @@ func WithTags(tags ...string) RouteOption {
 }
 
 // WithCacheCapacity sets the maximum number of distinct method:path pairs to
-// cache per router. The cache is a FIFO ring buffer; once full the oldest entry
-// is evicted on each new miss. The option has no effect after Freeze.
+// cache per router. The FIFO cache stores only successful route matches and
+// evicts its oldest entry when a new match is inserted into a full cache.
+// The option has no effect after Freeze.
 //
 // The default of 100 works well for services whose hot paths are mostly static
 // URLs (/healthz, /readyz, /api/info). For fully parameterised APIs (every

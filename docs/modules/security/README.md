@@ -82,6 +82,8 @@ Use `security/*` for reviewable primitives and policies:
 - `security/jwt.JWTManager` treats an absent active signing-key marker as recoverable, but fails startup when a persisted active marker cannot be read.
 - `security/jwt.JWTManager.RotateKey` returns signing-key metadata only; HMAC secrets and Ed25519 private keys remain internal.
 - `security/jwt.JWTConfig.Validate` rejects negative rotation intervals and clock skew values.
+- The JWT manager treats an empty `JWTConfig.Algorithm` as HS256.
+  `DefaultJWTConfig` sets HS256 explicitly.
 - JWT access and refresh lifetimes must each be at least one second, matching
   the precision of the expiration claims and `expires_in`.
 - `security/jwt` verification is read-only with respect to signing key rotation.

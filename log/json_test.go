@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"io"
 	"math"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -14,6 +15,73 @@ import (
 type customJSONSlice []int
 
 func (*customJSONSlice) MarshalJSON() ([]byte, error) { return []byte(`"custom"`), nil }
+
+func TestJSONLoggerSkipsInvalidUTF8FieldNames(t *testing.T) {
+	const invalid, valid = "field\xff", "field\uFFFD"
+	type namedKey string
+	type namedMap map[namedKey]string
+	var out bytes.Buffer
+	logger := NewLogger(LoggerConfig{Format: LoggerFormatJSON, Output: &out})
+	logger.Info("sample", Fields{
+		invalid:  "discarded",
+		valid:    "retained",
+		"any":    map[string]any{invalid: "discarded", valid: "retained", "ordinary": true},
+		"string": map[string]string{invalid: "discarded", valid: "retained", "ordinary": "yes"},
+		"named":  namedMap{invalid: "discarded", valid: "retained", "ordinary": "yes"},
+	})
+
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(out.Bytes(), &fields); err != nil {
+		t.Fatal(err)
+	}
+	for name, raw := range map[string][]byte{
+		"entry": out.Bytes(), "any": fields["any"], "string": fields["string"], "named": fields["named"],
+	} {
+		t.Run(name, func(t *testing.T) {
+			decoder := json.NewDecoder(bytes.NewReader(raw))
+			if token, err := decoder.Token(); token != json.Delim('{') || err != nil {
+				t.Fatalf("expected JSON object, got %v, %v", token, err)
+			}
+			count := 0
+			for decoder.More() {
+				key, err := decoder.Token()
+				if err != nil {
+					t.Fatal(err)
+				}
+				var value json.RawMessage
+				if err := decoder.Decode(&value); err != nil {
+					t.Fatal(err)
+				}
+				if key == valid {
+					count++
+					if string(value) != `"retained"` {
+						t.Errorf("field value=%s, want retained", value)
+					}
+				}
+			}
+			if count != 1 || (name != "entry" && !bytes.Contains(raw, []byte(`"ordinary":`))) {
+				t.Errorf("valid field occurrences=%d, object=%s", count, raw)
+			}
+		})
+	}
+}
+
+func TestJSONInvalidUTF8FieldNamesConsumeNestedBudget(t *testing.T) {
+	type namedMap map[string]string
+	anyFields := make(map[string]any)
+	stringFields := make(map[string]string)
+	for i := range maxJSONFieldNodes * 2 {
+		key := "\xff" + strconv.Itoa(i)
+		anyFields[key] = true
+		stringFields[key] = "value"
+	}
+	for _, input := range []any{anyFields, stringFields, namedMap(stringFields)} {
+		normalized, ok := normalizeJSONFieldValue(input).(map[string]any)
+		if !ok || len(normalized) != 1 || normalized["[truncated]"] != "[truncated]" {
+			t.Errorf("%T did not stop after exhausting the field budget", input)
+		}
+	}
+}
 
 func TestJSONBudgetAppliesToContainerPointers(t *testing.T) {
 	seq := make([]int, 2*maxJSONFieldNodes)

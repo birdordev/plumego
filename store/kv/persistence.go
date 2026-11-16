@@ -161,15 +161,15 @@ func snapshotMemberName(object snapshotObject, name string) string {
 	return name
 }
 
-// makeDiskStateLocked creates an in-memory snapshot of the current data.
-// Must be called with kv.mu held (read or write).
+// makeDiskStateLocked creates the state for encoding under kv.mu.
+// It borrows immutable entry values until encoding completes.
 func (kv *KVStore) makeDiskStateLocked() diskState {
 	state := diskState{
 		Entries: make(map[string]entry, len(kv.data)),
 	}
 	for key, item := range kv.data {
 		state.Entries[key] = entry{
-			Value:     cloneBytes(item.Value),
+			Value:     item.Value,
 			ExpireAt:  item.ExpireAt,
 			UpdatedAt: item.UpdatedAt,
 			Size:      item.Size,

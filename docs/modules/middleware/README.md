@@ -398,6 +398,8 @@ Waiters also observe their request context while waiting for the leader. If a
 waiter request is canceled, coalesce returns without replaying the leader
 response or writing a synthetic timeout response. Cancellation observed before
 handling a ready leader result or timer takes priority over writing a response.
+If the leader's request is canceled before it commits a response and the
+handler returns, waiters with live requests receive a structured 502.
 `Config.OnCoalesced` and `Config.OnError` are synchronous best-effort hooks;
 panic from either hook is recovered internally so hooks cannot replace canonical
 transport responses.

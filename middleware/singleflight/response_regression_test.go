@@ -139,6 +139,77 @@ func TestWaiterCancellationWinsOverOtherReadyOutcomes(t *testing.T) {
 	}
 }
 
+func TestLeaderCancellationBeforeCommitRejectsReplay(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		cancel bool
+		status int
+		want   int
+	}{
+		{"uncommitted cancellation", true, 0, http.StatusBadGateway},
+		{"committed cancellation", true, http.StatusAccepted, http.StatusAccepted},
+		{"live empty response", false, 0, http.StatusOK},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				started := make(chan struct{})
+				release := make(chan struct{})
+				ctx, cancel := context.WithCancel(t.Context())
+				defer cancel()
+				var observation error
+				coalescer := New(Config{OnError: func(_ string, err error) { observation = err }})
+				calls := 0
+				h := coalescer.Middleware()(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					calls++
+					if calls > 1 {
+						w.WriteHeader(http.StatusCreated)
+						return
+					}
+					if tc.status != 0 {
+						w.WriteHeader(tc.status)
+					}
+					close(started)
+					select {
+					case <-r.Context().Done():
+					case <-release:
+					}
+				}))
+				req := func() *http.Request { return httptest.NewRequest(http.MethodGet, "/report", nil) }
+				go h.ServeHTTP(httptest.NewRecorder(), req().WithContext(ctx))
+				<-started
+				waiter := httptest.NewRecorder()
+				go h.ServeHTTP(waiter, req())
+				synctest.Wait()
+				if tc.cancel {
+					cancel()
+				} else {
+					close(release)
+				}
+				synctest.Wait()
+
+				if waiter.Code != tc.want {
+					t.Errorf("waiter status=%d, want %d", waiter.Code, tc.want)
+				}
+				if tc.want == http.StatusBadGateway {
+					if !errors.Is(observation, errLeaderCanceled) || !strings.Contains(waiter.Body.String(), "upstream_failed") {
+						t.Errorf("waiter error=%v body=%q, want canceled-leader failure", observation, waiter.Body)
+					}
+				} else if observation != nil || waiter.Body.Len() != 0 {
+					t.Errorf("waiter error=%v body=%q, want empty success", observation, waiter.Body)
+				}
+				if calls != 1 || coalescer.Stats().InFlight != 0 {
+					t.Fatalf("handler calls=%d stats=%+v, want one call and no entries", calls, coalescer.Stats())
+				}
+				retry := httptest.NewRecorder()
+				h.ServeHTTP(retry, req())
+				if retry.Code != http.StatusCreated || calls != 2 {
+					t.Errorf("retry status=%d calls=%d, want 201 and two calls", retry.Code, calls)
+				}
+			})
+		})
+	}
+}
+
 func TestCoalescedResponsesApplyHeaderChangesToEachWaiter(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		release := make(chan struct{})

@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"sync"
 	"time"
+	"unicode/utf8"
 )
 
 var errJSONFieldPanic = errors.New("log field encoder panicked")
@@ -176,6 +177,9 @@ func (l *jsonLogger) buildEntry(level Level, msg string, fields Fields) map[stri
 	combined := mergeFields(baseFields, fields)
 	entry := make(map[string]any, safeMapCapacity(len(combined), 4))
 	for k, v := range combined {
+		if !utf8.ValidString(k) {
+			continue
+		}
 		switch k {
 		case "time", "level", "msg":
 			continue
@@ -225,7 +229,9 @@ func normalizeJSONFieldValueAt(value any, depth int, remaining *int) any {
 				break
 			}
 			*remaining -= 1
-			normalized[key] = nested
+			if utf8.ValidString(key) {
+				normalized[key] = nested
+			}
 		}
 		return normalized
 	case []any:
@@ -338,7 +344,12 @@ func normalizeTypedJSONContainer(value reflect.Value, depth int, remaining *int)
 				fields["[truncated]"] = "[truncated]"
 				break
 			}
-			fields[key.String()] = normalizeJSONFieldValueAt(item.Interface(), depth+1, remaining)
+			name := key.String()
+			if !utf8.ValidString(name) {
+				*remaining -= 1
+				continue
+			}
+			fields[name] = normalizeJSONFieldValueAt(item.Interface(), depth+1, remaining)
 		}
 		return fields, true
 	default:
@@ -360,6 +371,10 @@ func normalizeJSONFieldMap(fields map[string]any, depth int, remaining *int) map
 		if *remaining <= 0 {
 			normalized["[truncated]"] = "[truncated]"
 			break
+		}
+		if !utf8.ValidString(key) {
+			*remaining -= 1
+			continue
 		}
 		normalized[key] = normalizeJSONFieldValueAt(value, depth+1, remaining)
 	}

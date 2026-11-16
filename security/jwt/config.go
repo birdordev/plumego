@@ -99,7 +99,8 @@ type JWTConfig struct {
 	// rotation. Use [JWTManager.RotateKey] for explicit rotation.
 	RotationInterval time.Duration
 
-	// Algorithm is the signing algorithm
+	// Algorithm selects the signing algorithm. The manager uses HS256 when the
+	// field is empty. DefaultJWTConfig sets HS256 explicitly.
 	Algorithm Algorithm
 
 	// ClockSkew is the tolerance for clock skew

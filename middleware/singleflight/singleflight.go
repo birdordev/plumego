@@ -52,6 +52,7 @@ import (
 )
 
 var errLeaderWrite = errors.New("coalesced leader response write failed")
+var errLeaderCanceled = errors.New("coalesced leader request canceled before response commitment")
 var errWaiterWrite = errors.New("coalesced waiter response write failed")
 var errUpstreamPanic = errors.New("upstream request panicked")
 var errResponseTooLarge = errors.New("coalesced response exceeded capture limit")
@@ -310,8 +311,12 @@ func (c *Coalescer) executeRequest(w http.ResponseWriter, r *http.Request, key s
 	recorder := newLimitedResponseRecorder(w, c.config.MaxResponseBytes)
 	next.ServeHTTP(recorder, r)
 
-	// Commit implicit success headers even when the handler wrote no body.
 	if !recorder.wroteHeader {
+		if r.Context().Err() != nil {
+			inflight.err = errLeaderCanceled
+			return
+		}
+		// A live handler can complete successfully without writing a body.
 		recorder.WriteHeader(http.StatusOK)
 	}
 	var trailers http.Header

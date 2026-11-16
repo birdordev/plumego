@@ -44,6 +44,9 @@
   ASCII keys made of letters, digits, `_`, `-`, `.`, or `/` stay unquoted.
 - JSON output owns the reserved `time`, `level`, and `msg` keys. Values
   supplied for those keys are skipped before field encoding.
+- JSON output skips field names containing invalid UTF-8 in the entry and in
+  maps normalized by the logger. Skipped map entries still count toward the
+  traversal budget.
 - JSON output preserves integer precision and replaces unsupported field values
   with a fixed placeholder, preserving safe siblings in common nested maps and
   slices. Ordinary nil maps and slices encode as `null`, while non-nil empty maps and
