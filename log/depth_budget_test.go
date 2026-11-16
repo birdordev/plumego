@@ -9,6 +9,26 @@ import (
 	"testing"
 )
 
+func TestTextWrappedUnexportedValueUsesPlaceholder(t *testing.T) {
+	data := struct{ items []int }{items: make([]int, 2048)}
+	var out bytes.Buffer
+	NewLogger(LoggerConfig{Format: LoggerFormatText, Output: &out}).Info("wrapped", Fields{
+		"private": reflect.ValueOf(data).Field(0),
+		"public":  reflect.ValueOf(42),
+		"invalid": reflect.Value{},
+		"other":   "kept",
+	})
+	line := out.String()
+	for _, field := range []string{"private=[unexported]", "public=42", "invalid=\"<invalid reflect.Value>\"", "other=kept"} {
+		if !strings.Contains(line, field) {
+			t.Errorf("missing %q in text log", field)
+		}
+	}
+	if strings.Contains(line, "[0 0") {
+		t.Error("wrapped unexported slice was traversed")
+	}
+}
+
 func TestWideTextMapBudgetKeepsCompleteEntries(t *testing.T) {
 	wide := make(map[string]string, 1024)
 	for i := range 1024 {

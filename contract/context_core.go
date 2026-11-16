@@ -151,11 +151,11 @@ func RequestContextFromContext(ctx context.Context) RequestContext {
 }
 
 // RequestParamFromContext returns one route parameter from the stored
-// metadata without cloning a params map. When a non-nil RouteState is present,
-// lookups use its parameters exclusively. If a key was added more than once
-// to RouteState, both accessors return its last value.
+// metadata by its exact key without cloning a params map. When a non-nil
+// RouteState is present, lookups use its parameters exclusively. If a key was
+// added more than once to RouteState, both accessors return its last value.
 func RequestParamFromContext(ctx context.Context, name string) string {
-	if ctx == nil || name == "" {
+	if ctx == nil {
 		return ""
 	}
 

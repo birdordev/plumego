@@ -215,7 +215,7 @@ func serveFromFileSystem(w http.ResponseWriter, req *http.Request, fs http.FileS
 
 	// Open the file
 	f, err := fs.Open(cleanPath)
-	if err != nil {
+	if err != nil || f == nil {
 		if f != nil {
 			_ = f.Close()
 		}

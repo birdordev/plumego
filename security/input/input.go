@@ -484,7 +484,7 @@ func BestEffortSanitizeSQL(s string) string {
 	return s
 }
 
-// StripControlChars removes ASCII control characters except newline and tab.
+// StripControlChars removes Unicode control characters except newline and tab.
 //
 // This function removes characters that could cause display issues or
 // be used for terminal injection attacks.

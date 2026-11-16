@@ -25,6 +25,70 @@ func (c *waiterContext) Done() <-chan struct{} {
 	return c.Context.Done()
 }
 
+type setupPanicWriter struct {
+	http.ResponseWriter
+	beforePanic func()
+	value       error
+}
+
+func (w setupPanicWriter) Header() http.Header {
+	w.beforePanic()
+	panic(w.value)
+}
+
+func TestRecorderSetupPanicReleasesWaiters(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		coalescer := New(Config{})
+		calls := 0
+		handler := coalescer.Middleware()(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			calls++
+			w.WriteHeader(http.StatusAccepted)
+		}))
+		request := func() *http.Request {
+			return httptest.NewRequest(http.MethodGet, "/report", nil)
+		}
+		entered := make(chan struct{})
+		release := make(chan struct{})
+		panicValue := errors.New("recorder setup failed")
+		panicSeen := make(chan any, 1)
+		leader := setupPanicWriter{
+			ResponseWriter: httptest.NewRecorder(),
+			beforePanic: func() {
+				close(entered)
+				<-release
+			},
+			value: panicValue,
+		}
+		go func() {
+			defer func() { panicSeen <- recover() }()
+			handler.ServeHTTP(leader, request())
+		}()
+		<-entered
+		waiter := httptest.NewRecorder()
+		waiterCtx, cancel := context.WithCancel(t.Context())
+		defer cancel()
+		go handler.ServeHTTP(waiter, request().WithContext(waiterCtx))
+		synctest.Wait()
+		close(release)
+		synctest.Wait()
+
+		if got := <-panicSeen; got != panicValue {
+			t.Errorf("leader panic = %v, want %v", got, panicValue)
+		}
+		if waiter.Code != http.StatusBadGateway || !strings.Contains(waiter.Body.String(), "upstream_failed") {
+			t.Errorf("waiter status = %d, body = %q, want 502 upstream_failed", waiter.Code, waiter.Body.String())
+		}
+		if got := coalescer.Stats().InFlight; got != 0 {
+			t.Fatalf("in-flight entries = %d, want 0", got)
+		}
+		retry := httptest.NewRecorder()
+		handler.ServeHTTP(retry, request())
+		if retry.Code != http.StatusAccepted || calls != 1 {
+			t.Errorf("retry status = %d, handler calls = %d, want 202 and one call", retry.Code, calls)
+		}
+	})
+}
+
 type waiterSelectContext struct {
 	context.Context
 	beforeSelect func()

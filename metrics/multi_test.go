@@ -2,6 +2,7 @@ package metrics
 
 import (
 	"context"
+	"math"
 	"reflect"
 	"testing"
 	"time"
@@ -145,6 +146,47 @@ func TestMultiCollectorGetStatsSumsCountersAndBreakdowns(t *testing.T) {
 	// StartTime should be the earliest
 	if !stats.StartTime.Equal(time.Unix(100, 0)) {
 		t.Fatalf("expected StartTime to be earliest, got %v", stats.StartTime)
+	}
+}
+
+func TestMultiCollectorGetStatsSaturatesCounters(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		offset int
+		gap    int
+	}{
+		{"below limit", 2, 1},
+		{"at limit", 1, 0},
+		{"above limit", 0, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			large := newStubAggregateCollector(func() CollectorStats {
+				return CollectorStats{
+					TotalRecords:  math.MaxInt64 - int64(tc.offset),
+					ErrorRecords:  math.MaxInt64 - int64(tc.offset),
+					ActiveSeries:  math.MaxInt - tc.offset,
+					NameBreakdown: map[string]int64{"shared": math.MaxInt64 - int64(tc.offset)},
+				}
+			})
+			small := newStubAggregateCollector(func() CollectorStats {
+				return CollectorStats{
+					TotalRecords:  1,
+					ErrorRecords:  1,
+					ActiveSeries:  1,
+					NameBreakdown: map[string]int64{"shared": 1, "independent": 1},
+				}
+			})
+			stats := NewMultiCollector(large, small).GetStats()
+			wantCount := math.MaxInt64 - int64(tc.gap)
+			wantSeries := math.MaxInt - tc.gap
+			if stats.TotalRecords != wantCount || stats.ErrorRecords != wantCount || stats.ActiveSeries != wantSeries {
+				t.Errorf("total=%d errors=%d series=%d, want %d, %d, %d",
+					stats.TotalRecords, stats.ErrorRecords, stats.ActiveSeries, wantCount, wantCount, wantSeries)
+			}
+			if stats.NameBreakdown["shared"] != wantCount || stats.NameBreakdown["independent"] != 1 {
+				t.Errorf("breakdown=%v, want shared=%d and independent=1", stats.NameBreakdown, wantCount)
+			}
+		})
 	}
 }
 

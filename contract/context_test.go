@@ -99,6 +99,36 @@ func TestRequestParamFromContextDoesNotExposeMutableMap(t *testing.T) {
 	}
 }
 
+func TestRequestParamFromContextLooksUpEmptyKey(t *testing.T) {
+	withMap := WithRequestContext(t.Context(), RequestContext{Params: map[string]string{"": "map"}})
+	withInline := new(RouteState)
+	withInline.AddParam("", "inline")
+	withOverflow := new(RouteState)
+	withOverflow.AddParam("", "first")
+	for range maxInlineParams - 1 {
+		withOverflow.AddParam("unused", "value")
+	}
+	withOverflow.AddParam("", "last")
+	for _, tc := range []struct {
+		name string
+		ctx  context.Context
+		want string
+	}{
+		{"snapshot", withMap, "map"},
+		{"inline", WithRouteState(withMap, withInline), "inline"},
+		{"overflow duplicate", WithRouteState(withMap, withOverflow), "last"},
+		{"route state masks snapshot", WithRouteState(withMap, new(RouteState)), ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			direct := RequestParamFromContext(tc.ctx, "")
+			snapshot := RequestContextFromContext(tc.ctx).Params[""]
+			if direct != tc.want || snapshot != tc.want {
+				t.Errorf("direct = %q, snapshot = %q, want %q", direct, snapshot, tc.want)
+			}
+		})
+	}
+}
+
 func TestRequestContextStableCarrierFields(t *testing.T) {
 	rt := reflect.TypeOf(RequestContext{})
 	want := []string{"Params", "RoutePattern", "RouteName"}

@@ -2,6 +2,7 @@ package metrics
 
 import (
 	"context"
+	"math"
 	"reflect"
 	"time"
 )
@@ -68,6 +69,7 @@ func (m *MultiCollector) ObserveHTTP(ctx context.Context, method, path string, s
 
 // GetStats sums counters, active series, and name breakdowns from individual
 // child snapshots. A record counted by two children contributes twice.
+// Sums saturate at the respective field's maximum value.
 // StartTime is the earliest nonzero child start time. The child snapshots
 // are read independently.
 func (m *MultiCollector) GetStats() CollectorStats {
@@ -84,12 +86,12 @@ func (m *MultiCollector) GetStats() CollectorStats {
 			continue
 		}
 		stats := c.GetStats()
-		combined.TotalRecords += stats.TotalRecords
-		combined.ErrorRecords += stats.ErrorRecords
-		combined.ActiveSeries += normalizedActiveSeries(stats)
+		combined.TotalRecords = addCounterSaturated(combined.TotalRecords, stats.TotalRecords, math.MaxInt64)
+		combined.ErrorRecords = addCounterSaturated(combined.ErrorRecords, stats.ErrorRecords, math.MaxInt64)
+		combined.ActiveSeries = addCounterSaturated(combined.ActiveSeries, normalizedActiveSeries(stats), math.MaxInt)
 
 		for k, v := range stats.NameBreakdown {
-			combined.NameBreakdown[k] += v
+			combined.NameBreakdown[k] = addCounterSaturated(combined.NameBreakdown[k], v, math.MaxInt64)
 		}
 
 		if combined.StartTime.IsZero() || (!stats.StartTime.IsZero() && stats.StartTime.Before(combined.StartTime)) {
@@ -98,6 +100,13 @@ func (m *MultiCollector) GetStats() CollectorStats {
 	}
 
 	return combined
+}
+
+func addCounterSaturated[T int | int64](total, delta, limit T) T {
+	if delta > 0 && total > limit-delta {
+		return limit
+	}
+	return total + delta
 }
 
 // Clear resets each child in order. Each child reset takes effect independently.

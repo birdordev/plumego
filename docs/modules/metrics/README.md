@@ -79,8 +79,9 @@ other modules can depend on safely.
 - Base collector updates, resets, and snapshots share one lock boundary. Stats
   maps are caller-owned. Multi-collector stats add counters and breakdowns
   from individual child snapshots. A record counted by two children contributes
-  twice. The combined start time is the earliest nonzero child start time.
-  Each child snapshot and reset takes effect independently.
+  twice. Sums saturate at each field's maximum representable value. The
+  combined start time is the earliest nonzero child start time. Each child
+  snapshot and reset takes effect independently.
 - Nil base and fan-out collector method calls are safe no-ops; nil stats readers
   return initialized empty stats.
 - Multi collectors sum child-maintained active series; if a child omits active

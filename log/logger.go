@@ -284,11 +284,13 @@ func formatTextValue(value reflect.Value, depth int, remaining *int) string {
 		// Custom formatters own their execution and must terminate themselves.
 		switch item := value.Interface().(type) {
 		case reflect.Value:
-			// fmt treats an accessible reflect.Value as the value it wraps.
-			if item.IsValid() && item.CanInterface() {
-				return formatTextValue(item, depth+1, remaining)
+			if !item.IsValid() {
+				return fmt.Sprint(item)
 			}
-			return fmt.Sprint(item)
+			if !item.CanInterface() {
+				return "[unexported]"
+			}
+			return formatTextValue(item, depth+1, remaining)
 		case fmt.Formatter, fmt.Stringer, error:
 			return formatCustomTextField(item)
 		}

@@ -297,9 +297,7 @@ func (c *Coalescer) decrementWaiters(inflight *inFlightRequest) {
 
 // executeRequest executes a new request and broadcasts to waiters
 func (c *Coalescer) executeRequest(w http.ResponseWriter, r *http.Request, key string, inflight *inFlightRequest, next http.Handler) {
-	// Create response recorder
-	recorder := newLimitedResponseRecorder(w, c.config.MaxResponseBytes)
-
+	// Recorder setup can call the underlying writer before the handler starts.
 	defer func() {
 		if rec := recover(); rec != nil {
 			inflight.err = errUpstreamPanic
@@ -309,7 +307,7 @@ func (c *Coalescer) executeRequest(w http.ResponseWriter, r *http.Request, key s
 		c.finishRequest(key, inflight)
 	}()
 
-	// Execute request
+	recorder := newLimitedResponseRecorder(w, c.config.MaxResponseBytes)
 	next.ServeHTTP(recorder, r)
 
 	// Commit implicit success headers even when the handler wrote no body.

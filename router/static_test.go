@@ -309,6 +309,22 @@ func TestStaticFSClosesFilesFromInjectedOpen(t *testing.T) {
 	}
 }
 
+func TestStaticFSHandlesEmptyOpenResult(t *testing.T) {
+	r := NewRouter()
+	if err := r.StaticFS("/assets", staticOpenResult{}); err != nil {
+		t.Fatal(err)
+	}
+	for _, method := range []string{http.MethodGet, http.MethodHead} {
+		for attempt := range 2 {
+			w := httptest.NewRecorder()
+			r.ServeHTTP(w, httptest.NewRequest(method, "/assets/note.txt", nil))
+			if w.Code != http.StatusNotFound || (method == http.MethodHead && w.Body.Len() != 0) {
+				t.Errorf("%s attempt %d: status=%d body=%q", method, attempt, w.Code, w.Body)
+			}
+		}
+	}
+}
+
 func TestStaticFSRejectsDirectoryRequest(t *testing.T) {
 	r := NewRouter()
 	if err := r.StaticFS("/assets", http.FS(fstest.MapFS{

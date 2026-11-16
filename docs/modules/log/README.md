@@ -57,7 +57,8 @@
   JSON containers share the container traversal budget. Text formatting also
   bounds pointers, struct fields,
   and byte slices. Each unexported struct field placeholder consumes one
-  node from the same traversal budget.
+  node from the same traversal budget. A supplied valid `reflect.Value` that
+  cannot be converted to an interface also renders as `[unexported]`.
   Custom `fmt.Formatter`, `fmt.Stringer`, and `error` methods retain their
   formatting behavior and own their termination; callers must keep them safe.
   If a custom text field method panics, the logger discards its partial
