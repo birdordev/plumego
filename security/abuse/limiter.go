@@ -131,6 +131,30 @@ type Decision struct {
 	RetryAfter time.Duration
 }
 
+// LimiterMetrics holds monitoring counters for a Limiter.
+//
+// Allowed, Rejected, and Evictions are cumulative counters that increase
+// monotonically since the limiter was created. Buckets is a point-in-time
+// snapshot of the current number of tracked keys; it rises and falls as keys
+// are added and evicted.
+type LimiterMetrics struct {
+	// Allowed is the cumulative number of requests that passed the rate limit.
+	Allowed int64
+	// Rejected is the cumulative number of requests that were denied.
+	Rejected int64
+	// Evictions is the cumulative number of bucket entries evicted due to
+	// MaxEntries pressure or idle expiry.
+	Evictions int64
+	// Buckets is the current number of active per-key buckets (point-in-time snapshot).
+	Buckets int64
+}
+
+type limiterMetricCounters struct {
+	Allowed   atomic.Int64
+	Rejected  atomic.Int64
+	Evictions atomic.Int64
+}
+
 // Limiter enforces a token bucket per key.
 //
 // Limiter provides per-key rate limiting using a token bucket algorithm.
@@ -159,30 +183,6 @@ type Decision struct {
 //
 // The limiter automatically cleans up idle entries to prevent memory leaks.
 // Call Stop() when done to clean up resources.
-// LimiterMetrics holds monitoring counters for a Limiter.
-//
-// Allowed, Rejected, and Evictions are cumulative counters that increase
-// monotonically since the limiter was created. Buckets is a point-in-time
-// snapshot of the current number of tracked keys; it rises and falls as keys
-// are added and evicted.
-type LimiterMetrics struct {
-	// Allowed is the cumulative number of requests that passed the rate limit.
-	Allowed int64
-	// Rejected is the cumulative number of requests that were denied.
-	Rejected int64
-	// Evictions is the cumulative number of bucket entries evicted due to
-	// MaxEntries pressure or idle expiry.
-	Evictions int64
-	// Buckets is the current number of active per-key buckets (point-in-time snapshot).
-	Buckets int64
-}
-
-type limiterMetricCounters struct {
-	Allowed   atomic.Int64
-	Rejected  atomic.Int64
-	Evictions atomic.Int64
-}
-
 type Limiter struct {
 	admissionMu     sync.Mutex // Serializes new-key admission and capacity eviction.
 	shards          []limiterShard

@@ -258,7 +258,9 @@ original response through. It skips websocket upgrades, CONNECT requests, SSE
 requests, streaming content types, and responses with a non-identity content
 encoding. JSON replacement preserves the original HTTP status and uses the
 `contract` error envelope. It removes the original `Content-Length`, `ETag`,
-and digest headers when the body changes. A status without a matching canonical
+and digest fields when the body changes, including digest trailer declarations
+and values. Other trailers and protocol headers are preserved.
+A status without a matching canonical
 error type passes through. Interim `1xx`
 responses are forwarded separately from the final response. Status `101` is
 terminal. Final headers are snapshotted when the status is selected. Later

@@ -133,6 +133,9 @@
 - `store/kv` classifies state-file JSON decode failures and invalid persisted keys with `kvstore.ErrCorruptState`; invalid-key corruption also keeps `kvstore.ErrInvalidKey` in the error chain for diagnostics.
 - Snapshot bytes must be valid UTF-8 before decoding. Invalid byte sequences
   return `ErrCorruptState` instead of being converted to replacement characters.
+- A persisted key containing an unpaired Unicode surrogate escape also returns
+  `ErrCorruptState`. Valid surrogate pairs and explicit replacement characters
+  retain their decoded key identities.
 - An existing snapshot must contain an `entries` object. A missing or null
   object returns `ErrCorruptState`, and an empty object loads as an empty store.
   Each entry must be an object. An entry's byte value may be null. Duplicate

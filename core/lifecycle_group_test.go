@@ -268,6 +268,45 @@ func TestLifecycleGroupReadyAggregates(t *testing.T) {
 	}
 }
 
+func TestLifecycleGroupReadyPanicAllowsAnotherProbeAndStop(t *testing.T) {
+	ctx := t.Context()
+	probePanic := errors.New("readiness callback panic")
+	probes, stops := 0, 0
+	g := NewLifecycleGroup().Add("worker", Component{
+		OnReady: func(context.Context) error {
+			probes++
+			if probes == 1 {
+				panic(probePanic)
+			}
+			return nil
+		},
+		OnStop: func(context.Context) error {
+			stops++
+			return nil
+		},
+	})
+	if err := g.Start(ctx); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	func() {
+		defer func() {
+			if got := recover(); got != probePanic {
+				t.Fatalf("Ready panic = %v, want %v", got, probePanic)
+			}
+		}()
+		_ = g.Ready(ctx)
+	}()
+	if err := g.Ready(ctx); err != nil {
+		t.Fatalf("Ready after panic: %v", err)
+	}
+	if err := g.Stop(ctx); err != nil || stops != 1 {
+		t.Fatalf("Stop after panic: calls=%d error=%v", stops, err)
+	}
+	if err := g.Ready(ctx); err == nil || probes != 2 {
+		t.Fatalf("Ready after Stop: calls=%d error=%v", probes, err)
+	}
+}
+
 func TestLifecycleGroupReadyOnlyAfterSuccessfulStart(t *testing.T) {
 	ctx := t.Context()
 	child := NewLifecycleGroup()

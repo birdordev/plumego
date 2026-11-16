@@ -190,6 +190,62 @@ func TestDebugSnapshotsFinalHeadersAndForwardsTrailers(t *testing.T) {
 	}
 }
 
+func TestDebugFiltersReplacedRepresentationTrailers(t *testing.T) {
+	for _, status := range []int{http.StatusOK, http.StatusServiceUnavailable} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			handler := Middleware(Config{})(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "text/plain")
+				w.Header().Add("Trailer", "content-digest, X-Result")
+				w.Header().Add("Trailer", "Digest")
+				w.Header().Set("Retry-After", "5")
+				w.WriteHeader(status)
+				_, _ = io.WriteString(w, "original response")
+				w.Header().Set("Content-Digest", "original content digest")
+				w.Header().Set("Digest", "original digest")
+				w.Header().Set(http.TrailerPrefix+"repr-digest", "original representation digest")
+				w.Header().Set("X-Result", "complete")
+				w.Header().Set(http.TrailerPrefix+"X-Late", "preserved")
+			}))
+			server := httptest.NewServer(handler)
+			defer server.Close()
+			req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, server.URL, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			res, err := server.Client().Do(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer res.Body.Close()
+			body, err := io.ReadAll(res.Body)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			replaced := status == http.StatusServiceUnavailable
+			if res.StatusCode != status || json.Valid(body) != replaced || res.Header.Get("Retry-After") != "5" {
+				t.Fatalf("status=%d body=%q headers=%v", res.StatusCode, body, res.Header)
+			}
+			if res.Trailer.Get("X-Result") != "complete" || res.Trailer.Get("X-Late") != "preserved" {
+				t.Fatalf("unrelated trailers lost: %v", res.Trailer)
+			}
+			for name, original := range map[string]string{
+				"Content-Digest": "original content digest",
+				"Digest":         "original digest",
+				"Repr-Digest":    "original representation digest",
+			} {
+				if replaced {
+					if _, ok := res.Trailer[name]; ok {
+						t.Errorf("replaced response carries %s: %v", name, res.Trailer)
+					}
+				} else if got := res.Trailer.Get(name); got != original {
+					t.Errorf("pass-through trailer %s = %q, want %q", name, got, original)
+				}
+			}
+		})
+	}
+}
+
 func assertJSONContentType(t *testing.T, contentType string) {
 	t.Helper()
 

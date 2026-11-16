@@ -461,6 +461,10 @@ func TestKVStoreLoadRejectsMalformedEntriesAndReleasesLock(t *testing.T) {
 		`{"entries":{"a":{"value":"YQ==","value":"Yg=="}}}`,
 		`{"entries":{"a":{"value":"YQ==","Value":"Yg=="}}}`,
 		"{\"entries\":{\"bad\xff\":{\"value\":\"YQ==\"}}}",
+		`{"entries":{"unpaired\ud800":{"value":"YQ=="}}}`,
+		`{"entries":{"a":{"value":"YQ=="}, "unpaired\uDc00":{"value":"YQ=="}}}`,
+		`{"entries":{"\ud800\u0061":{"value":"YQ=="}}}`,
+		`{"entries":{"\ud800\\udc00":{"value":"YQ=="}}}`,
 	} {
 		t.Run(raw, func(t *testing.T) {
 			opts := DefaultConfig(t.TempDir())
@@ -507,6 +511,24 @@ func TestKVStoreLoadKeepsCaseDistinctKeysAndLegacyFieldSpelling(t *testing.T) {
 	defer func() { _ = store.Close() }()
 	for _, key := range []string{"a", "A", "\uFFFD"} {
 		if value, err := store.Get(key); err != nil || string(value) != key {
+			t.Errorf("Get(%q) = %q, %v", key, value, err)
+		}
+	}
+}
+
+func TestKVStoreLoadPreservesEscapedUnicodeKeys(t *testing.T) {
+	opts := DefaultConfig(t.TempDir())
+	state := `{"entries":{"\ud83d\uDE00":{"value":"YQ=="},"\ufffd":{"value":"YQ=="},"\\ud800":{"value":"YQ=="}}}`
+	if err := os.WriteFile(filepath.Join(opts.DataDir, stateFileName), []byte(state), 0600); err != nil {
+		t.Fatal(err)
+	}
+	store, err := NewKVStore(opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = store.Close() }()
+	for _, key := range []string{"😀", "\uFFFD", `\ud800`} {
+		if value, err := store.Get(key); err != nil || string(value) != "a" {
 			t.Errorf("Get(%q) = %q, %v", key, value, err)
 		}
 	}

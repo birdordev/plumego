@@ -8,6 +8,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"unicode/utf8"
@@ -41,7 +42,7 @@ func (kv *KVStore) load() error {
 	if state.Entries == nil {
 		return fmt.Errorf("%w: state requires an entries object", ErrCorruptState)
 	}
-	if err := checkSnapshotObject(json.NewDecoder(bytes.NewReader(raw)), snapshotRoot); err != nil {
+	if err := checkSnapshotObject(json.NewDecoder(bytes.NewReader(raw)), raw, snapshotRoot); err != nil {
 		return fmt.Errorf("%w: %w", ErrCorruptState, err)
 	}
 	for key, item := range state.Entries {
@@ -68,8 +69,8 @@ const (
 )
 
 // The typed decode already validates JSON syntax and schema types. A second
-// pass sees members in order, before duplicate names can be merged or replaced.
-func checkSnapshotObject(dec *json.Decoder, object snapshotObject) error {
+// pass sees member order and raw key spellings that the typed decode loses.
+func checkSnapshotObject(dec *json.Decoder, raw []byte, object snapshotObject) error {
 	start, err := dec.Token()
 	if err != nil || start == nil {
 		return err
@@ -80,9 +81,16 @@ func checkSnapshotObject(dec *json.Decoder, object snapshotObject) error {
 	seen := make(map[string]struct{})
 	var value json.RawMessage
 	for dec.More() {
+		offset := dec.InputOffset()
 		token, err := dec.Token()
 		if err != nil {
 			return err
+		}
+		if object == snapshotEntries {
+			key := bytes.TrimLeft(raw[offset:dec.InputOffset()], ", \t\r\n")
+			if !snapshotKeyHasPairedSurrogates(key) {
+				return errors.New("snapshot key contains an unpaired Unicode surrogate")
+			}
 		}
 		name := snapshotMemberName(object, token.(string))
 		if _, exists := seen[name]; exists {
@@ -91,9 +99,9 @@ func checkSnapshotObject(dec *json.Decoder, object snapshotObject) error {
 		seen[name] = struct{}{}
 		switch {
 		case object == snapshotRoot && name == "entries":
-			err = checkSnapshotObject(dec, snapshotEntries)
+			err = checkSnapshotObject(dec, raw, snapshotEntries)
 		case object == snapshotEntries:
-			err = checkSnapshotObject(dec, snapshotEntry)
+			err = checkSnapshotObject(dec, raw, snapshotEntry)
 		default:
 			err = dec.Decode(&value)
 		}
@@ -103,6 +111,36 @@ func checkSnapshotObject(dec *json.Decoder, object snapshotObject) error {
 	}
 	_, err = dec.Token()
 	return err
+}
+
+// key is a syntactically valid JSON string, including quotes. The JSON decoder
+// replaces unpaired surrogates, so inspect the escapes before using its result.
+func snapshotKeyHasPairedSurrogates(key []byte) bool {
+	for i := 1; i < len(key)-1; i++ {
+		if key[i] != '\\' {
+			continue
+		}
+		i++
+		if key[i] != 'u' {
+			continue
+		}
+		unit, _ := strconv.ParseUint(string(key[i+1:i+5]), 16, 16)
+		i += 4
+		switch {
+		case unit >= 0xD800 && unit <= 0xDBFF:
+			if i+7 >= len(key) || key[i+1] != '\\' || key[i+2] != 'u' {
+				return false
+			}
+			low, err := strconv.ParseUint(string(key[i+3:i+7]), 16, 16)
+			if err != nil || low < 0xDC00 || low > 0xDFFF {
+				return false
+			}
+			i += 6
+		case unit >= 0xDC00 && unit <= 0xDFFF:
+			return false
+		}
+	}
+	return true
 }
 
 // Struct field matching in encoding/json is case-insensitive. Map keys remain

@@ -141,11 +141,8 @@ func Middleware(config Config) middleware.Middleware {
 				return
 			}
 
+			rec.discardReplacedRepresentationHeaders()
 			internaltransport.ReplaceHeaders(w.Header(), rec.committed)
-			header := w.Header()
-			for _, name := range [...]string{"Content-Length", "ETag", "Digest", "Content-MD5", "Content-Digest", "Repr-Digest"} {
-				header.Del(name)
-			}
 			_ = contract.WriteError(w, r, debugErrorPayload(errorType, status, r, cfg, body))
 		})
 	}
@@ -285,6 +282,41 @@ func (r *debugErrorRecorder) flushHeaders() {
 
 func (r *debugErrorRecorder) copyTrailers() {
 	internaltransport.CopyResponseTrailers(r.dst.Header(), r.committed, r.header)
+}
+
+func (r *debugErrorRecorder) discardReplacedRepresentationHeaders() {
+	for _, header := range [...]http.Header{r.committed, r.header} {
+		for key := range header {
+			name := strings.TrimPrefix(key, http.TrailerPrefix)
+			if isReplacedRepresentationHeader(name) {
+				delete(header, key)
+			}
+		}
+	}
+
+	declarations := r.committed.Values("Trailer")
+	r.committed.Del("Trailer")
+	for _, declaration := range declarations {
+		var retained []string
+		for name := range strings.SplitSeq(declaration, ",") {
+			name = strings.TrimSpace(name)
+			if name != "" && !isReplacedRepresentationHeader(name) {
+				retained = append(retained, name)
+			}
+		}
+		if len(retained) > 0 {
+			r.committed.Add("Trailer", strings.Join(retained, ", "))
+		}
+	}
+}
+
+func isReplacedRepresentationHeader(name string) bool {
+	switch http.CanonicalHeaderKey(name) {
+	case "Content-Length", "Etag", "Digest", "Content-Md5", "Content-Digest", "Repr-Digest":
+		return true
+	default:
+		return false
+	}
 }
 
 func (r *debugErrorRecorder) commitPassthrough() error {

@@ -14,6 +14,8 @@ import (
 	"github.com/birdordev/plumego/contract"
 )
 
+const headSniffLength = 512 // http.DetectContentType examines at most 512 bytes.
+
 // noBodyWriter tracks the representation without sending its body. Final headers
 // stay private until completion or flush so implicit status, content sniffing,
 // and small-response Content-Length remain consistent with net/http.
@@ -21,6 +23,7 @@ type noBodyWriter struct {
 	http.ResponseWriter
 	status    int
 	header    http.Header
+	sniff     []byte
 	bytes     int64
 	committed bool
 }
@@ -52,9 +55,9 @@ func (w *noBodyWriter) Write(p []byte) (int, error) {
 		return 0, http.ErrContentLength
 	}
 	_, hasContentType := w.header["Content-Type"]
-	if !w.committed && len(p) > 0 && !hasContentType &&
+	if !w.committed && len(p) > 0 && len(w.sniff) < headSniffLength && !hasContentType &&
 		w.header.Get("Content-Encoding") == "" && w.header.Get("Transfer-Encoding") == "" {
-		w.header.Set("Content-Type", http.DetectContentType(p))
+		w.sniff = append(w.sniff, p[:min(len(p), headSniffLength-len(w.sniff))]...)
 	}
 	return len(p), nil
 }
@@ -73,6 +76,9 @@ func (w *noBodyWriter) commit(inferLength bool) {
 	}
 	if w.status == 0 {
 		w.WriteHeader(http.StatusOK)
+	}
+	if len(w.sniff) > 0 {
+		w.header.Set("Content-Type", http.DetectContentType(w.sniff))
 	}
 	_, hasContentLength := w.header["Content-Length"]
 	if inferLength && w.bodyAllowed() && w.bytes <= 2048 && !hasContentLength &&

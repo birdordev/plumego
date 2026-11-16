@@ -76,6 +76,22 @@ func TestHeadPreservesImplicitCommit(t *testing.T) {
 			_, _ = w.Write([]byte("he"))
 			_, _ = w.Write([]byte("llo"))
 		}},
+		{"content type spans writes", func(w http.ResponseWriter, _ *http.Request) {
+			_, _ = io.WriteString(w, "<ht")
+			_, _ = io.WriteString(w, "ml>document</html>")
+		}},
+		{"explicit content type spans writes", func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "application/octet-stream")
+			_, _ = io.WriteString(w, "<ht")
+			_, _ = io.WriteString(w, "ml>document</html>")
+		}},
+		{"content type spans writes before flush", func(w http.ResponseWriter, _ *http.Request) {
+			_, _ = io.WriteString(w, "<ht")
+			_, _ = io.WriteString(w, "ml>document</html>")
+			if err := http.NewResponseController(w).Flush(); err != nil {
+				t.Error(err)
+			}
+		}},
 		{"readfrom", func(w http.ResponseWriter, r *http.Request) {
 			if reader, ok := w.(io.ReaderFrom); ok {
 				_, _ = reader.ReadFrom(strings.NewReader("hello"))
