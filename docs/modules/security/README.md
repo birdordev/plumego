@@ -66,6 +66,8 @@ Use `security/*` for reviewable primitives and policies:
 - `security/abuse` owns abuse guard decisions consumed by `middleware/abuseguard`.
 - `security/abuse.Config.Validate` and `NewLimiterWithConfig` treat zero fields as omitted defaults and reject explicit negative values; `NewLimiter` fails closed with a disabled limiter when explicit configuration is invalid.
 - `security/abuse.Allow` denies empty limiter keys, and `AllowKey` additionally returns `ErrInvalidKey` for callers that need to classify the extraction failure.
+- Concurrent limiter checks keep each bucket's refill and last-access times
+  monotonic when an older clock sample arrives after a newer one.
 - `security/abuse` reports current bucket count and cumulative evictions.
   Each bucket removed under capacity pressure or during idle cleanup contributes one eviction.
 - `security/jwt` and `security/password` own token and password primitives.

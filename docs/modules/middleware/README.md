@@ -255,12 +255,14 @@ debug metadata exposure.
 Debug capture is bounded by `Config.MaxBodyBytes`. If a response
 exceeds the capture limit, the middleware stops debug replacement and passes the
 original response through. It skips websocket upgrades, CONNECT requests, SSE
-requests, and response content types that declare streaming. JSON replacement
-preserves the original HTTP status and uses the `contract` error envelope. A
+requests, streaming content types, and responses with a non-identity content
+encoding. JSON replacement preserves the original HTTP status and uses the
+`contract` error envelope. A
 status without a matching canonical error type passes through. Interim `1xx`
 responses are forwarded separately from the final response. Status `101` is
-terminal. Before a final status or body is written, an unsupported `Flush` or
-`Hijack` leaves debug capture active. Successful flushes and hijacks switch to
+terminal. Final headers are snapshotted when the status is selected. Later
+changes can supply trailers. Before a final status or body is written, an
+unsupported `Flush` or `Hijack` leaves debug capture active. Successful flushes and hijacks switch to
 pass-through behavior.
 
 ### CORS contract

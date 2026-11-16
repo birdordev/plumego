@@ -453,7 +453,14 @@ func TestKVStoreLoadRejectsCorruptJSON(t *testing.T) {
 }
 
 func TestKVStoreLoadRejectsMalformedEntriesAndReleasesLock(t *testing.T) {
-	for _, raw := range []string{`null`, `{}`, `{"entries":null}`, `{"entries":{"item":null}}`} {
+	for _, raw := range []string{
+		`null`, `{}`, `{"entries":null}`, `{"entries":{"item":null}}`,
+		`{"entries":{"a":{"value":"YQ=="}},"entries":{"b":{"value":"Yg=="}}}`,
+		`{"entries":{},"Entries":{}}`,
+		`{"entries":{"a":{"value":"YQ=="},"\u0061":{"value":"Yg=="}}}`,
+		`{"entries":{"a":{"value":"YQ==","value":"Yg=="}}}`,
+		`{"entries":{"a":{"value":"YQ==","Value":"Yg=="}}}`,
+	} {
 		t.Run(raw, func(t *testing.T) {
 			opts := DefaultConfig(t.TempDir())
 			statePath := filepath.Join(opts.DataDir, stateFileName)
@@ -483,6 +490,24 @@ func TestKVStoreLoadRejectsMalformedEntriesAndReleasesLock(t *testing.T) {
 				t.Fatalf("empty snapshot size=%d error=%v", n, err)
 			}
 		})
+	}
+}
+
+func TestKVStoreLoadKeepsCaseDistinctKeysAndLegacyFieldSpelling(t *testing.T) {
+	opts := DefaultConfig(t.TempDir())
+	state := `{"Entries":{"a":{"Value":"YQ=="},"A":{"value":"QQ=="}},"metadata":{"versions":[1,2]}}`
+	if err := os.WriteFile(filepath.Join(opts.DataDir, stateFileName), []byte(state), 0600); err != nil {
+		t.Fatal(err)
+	}
+	store, err := NewKVStore(opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = store.Close() }()
+	for _, key := range []string{"a", "A"} {
+		if value, err := store.Get(key); err != nil || string(value) != key {
+			t.Errorf("Get(%q) = %q, %v", key, value, err)
+		}
 	}
 }
 

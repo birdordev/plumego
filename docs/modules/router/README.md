@@ -136,6 +136,8 @@ directly.
   with `method_not_allowed` and a sorted `Allow` header; a matching `GET`
   route also advertises implicit `HEAD`.
 - Named route collisions fail registration; route names must be unique.
+- `WithTags` snapshots its input labels when the option is created, so the same
+  option can be reused independently of later changes to the input slice.
 - Route registration rejects nil handler interfaces and nil `http.HandlerFunc`
   values before publishing the route or its name.
 - `URL` consumes params as key/value pairs, percent-escapes segment params,

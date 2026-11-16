@@ -1,12 +1,14 @@
 package kvstore
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"maps"
 	"os"
 	"path/filepath"
+	"strings"
 	"syscall"
 )
 
@@ -35,6 +37,9 @@ func (kv *KVStore) load() error {
 	if state.Entries == nil {
 		return fmt.Errorf("%w: state requires an entries object", ErrCorruptState)
 	}
+	if err := checkSnapshotObject(json.NewDecoder(bytes.NewReader(raw)), snapshotRoot); err != nil {
+		return fmt.Errorf("%w: %w", ErrCorruptState, err)
+	}
 	for key, item := range state.Entries {
 		if err := validateKey(key); err != nil {
 			return fmt.Errorf("%w: decode state key %q: %w", ErrCorruptState, key, err)
@@ -48,6 +53,70 @@ func (kv *KVStore) load() error {
 		kv.data[key] = &itemCopy
 	}
 	return nil
+}
+
+type snapshotObject uint8
+
+const (
+	snapshotRoot snapshotObject = iota
+	snapshotEntries
+	snapshotEntry
+)
+
+// The typed decode already validates JSON syntax and schema types. A second
+// pass sees members in order, before duplicate names can be merged or replaced.
+func checkSnapshotObject(dec *json.Decoder, object snapshotObject) error {
+	start, err := dec.Token()
+	if err != nil || start == nil {
+		return err
+	}
+	if start != json.Delim('{') {
+		return errors.New("expected snapshot object")
+	}
+	seen := make(map[string]struct{})
+	var value json.RawMessage
+	for dec.More() {
+		token, err := dec.Token()
+		if err != nil {
+			return err
+		}
+		name := snapshotMemberName(object, token.(string))
+		if _, exists := seen[name]; exists {
+			return errors.New("snapshot contains a duplicate member")
+		}
+		seen[name] = struct{}{}
+		switch {
+		case object == snapshotRoot && name == "entries":
+			err = checkSnapshotObject(dec, snapshotEntries)
+		case object == snapshotEntries:
+			err = checkSnapshotObject(dec, snapshotEntry)
+		default:
+			err = dec.Decode(&value)
+		}
+		if err != nil {
+			return err
+		}
+	}
+	_, err = dec.Token()
+	return err
+}
+
+// Struct field matching in encoding/json is case-insensitive. Map keys remain
+// case-sensitive, including keys that happen to match a struct field name.
+func snapshotMemberName(object snapshotObject, name string) string {
+	switch object {
+	case snapshotRoot:
+		if strings.EqualFold(name, "entries") {
+			return "entries"
+		}
+	case snapshotEntry:
+		for _, field := range [...]string{"value", "expire_at", "updated_at", "size"} {
+			if strings.EqualFold(name, field) {
+				return field
+			}
+		}
+	}
+	return name
 }
 
 // makeDiskStateLocked creates an in-memory snapshot of the current data.

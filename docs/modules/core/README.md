@@ -66,10 +66,12 @@
 `AppConfig` values are copied by value during `New`, so later mutations to the
 caller-owned config value do not affect the app.
 
-Server hardening fields follow standard `http.Server` zero-value semantics:
-zero timeouts disable that specific timeout and `MaxHeaderBytes == 0` leaves the
-server on the standard library default. `Prepare` rejects empty addresses and
-negative timeout/header-size values before freezing route or middleware
+Server hardening fields follow `http.Server` zero-value semantics. Zero
+`ReadTimeout` and `WriteTimeout` disable their respective limits. Zero
+`ReadHeaderTimeout` or `IdleTimeout` uses `ReadTimeout`, so the effective
+header or idle limit is disabled when `ReadTimeout` is also zero.
+`MaxHeaderBytes == 0` uses the standard library default. `Prepare` rejects empty
+addresses and negative timeout/header-size values before freezing route or middleware
 mutation. `DrainInterval <= 0` uses core's default drain logging interval.
 
 `HTTP2Enabled` controls the prepared server's TLS HTTP/2 policy. When false,

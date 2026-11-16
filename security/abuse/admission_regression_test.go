@@ -3,9 +3,57 @@ package abuse
 import (
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
+
+func TestDelayedClockSampleDoesNotRefillOrAgeBucketTwice(t *testing.T) {
+	base := time.Unix(1_000, 0)
+	newer := base.Add(time.Second)
+	olderSampled, releaseOlder := make(chan struct{}), make(chan struct{})
+	var calls atomic.Int32
+	limiter, err := NewLimiterWithConfig(Config{
+		Rate: 1, Capacity: 1, MaxIdle: time.Second, CleanupInterval: time.Hour,
+		Now: func() time.Time {
+			switch calls.Add(1) {
+			case 1, 2, 6:
+				return base
+			case 3:
+				close(olderSampled)
+				<-releaseOlder
+				return base
+			case 4, 5, 7, 8:
+				return newer
+			default:
+				return newer.Add(time.Second)
+			}
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer limiter.Stop()
+	const key = "fixture"
+	if !limiter.Allow(key).Allowed {
+		t.Fatal("initial request denied")
+	}
+	delayed := make(chan Decision, 1)
+	go func() { delayed <- limiter.Allow(key) }()
+	<-olderSampled
+	advanced := limiter.Allow(key)
+	close(releaseOlder)
+	if older := <-delayed; !advanced.Allowed || older.Allowed || !older.Reset.Equal(newer.Add(time.Second)) {
+		t.Fatalf("unexpected decisions: advanced=%+v older=%+v", advanced, older)
+	}
+	limiter.cleanup(newer.Add(500 * time.Millisecond))
+	if got := limiter.Allow(key); got.Allowed {
+		t.Fatal("bucket refilled or was evicted before another full interval elapsed")
+	}
+	if got := limiter.Allow(key); !got.Allowed {
+		t.Fatal("bucket did not refill after a full interval")
+	}
+}
 
 func TestFullLimiterPreservesExistingBucket(t *testing.T) {
 	now := time.Now()

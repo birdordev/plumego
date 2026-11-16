@@ -284,7 +284,7 @@ func marshalJSONField(value any) (data []byte, err error) {
 
 func normalizeTypedJSONContainer(value reflect.Value, depth int, remaining *int) (any, bool) {
 	switch value.Kind() {
-	case reflect.Pointer:
+	case reflect.Pointer, reflect.Interface:
 		if value.IsNil() {
 			return nil, true
 		}
@@ -293,7 +293,7 @@ func normalizeTypedJSONContainer(value reflect.Value, depth int, remaining *int)
 			return nil, false
 		}
 		switch elem.Kind() {
-		case reflect.Pointer, reflect.Slice, reflect.Array, reflect.Map:
+		case reflect.Pointer, reflect.Interface, reflect.Slice, reflect.Array, reflect.Map:
 			if *remaining <= 0 || depth+1 >= maxJSONFieldDepth {
 				return "[truncated]", true
 			}

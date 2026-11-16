@@ -15,6 +15,24 @@ import (
 	"github.com/birdordev/plumego/internal/testutil/wait"
 )
 
+func TestWithTagsSnapshotsReusableOption(t *testing.T) {
+	tags := []string{"reports"}
+	option := WithTags(tags...)
+	tags[0] = "changed"
+	r := NewRouter()
+	handler := http.HandlerFunc(func(http.ResponseWriter, *http.Request) {})
+	for _, path := range []string{"/one", "/two"} {
+		if err := r.AddRoute(http.MethodGet, path, handler, option); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, route := range r.Routes() {
+		if got := route.Meta.Tags; len(got) != 1 || got[0] != "reports" {
+			t.Errorf("route %s tags=%q, want [reports]", route.Path, got)
+		}
+	}
+}
+
 func TestMethodMismatchReturnsNotFound(t *testing.T) {
 	r := NewRouter()
 	mustAddRoute(r, http.MethodGet, "/only", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

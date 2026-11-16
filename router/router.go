@@ -2,6 +2,7 @@ package router
 
 import (
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -101,7 +102,7 @@ func WithRouteName(name string) RouteOption {
 	}
 }
 
-// WithTags attaches classification labels to a route. Tags appear in RouteInfo
+// WithTags snapshots classification labels for a route. Tags appear in RouteInfo
 // snapshots returned by Routes() and can be used by x/* extensions to filter or
 // annotate routes (e.g. openapi operation grouping, gateway policy selection).
 //
@@ -112,6 +113,7 @@ func WithRouteName(name string) RouteOption {
 //	    router.WithTags("admin", "users"),
 //	)
 func WithTags(tags ...string) RouteOption {
+	tags = slices.Clone(tags)
 	return func(meta *RouteMeta) {
 		meta.Tags = append(meta.Tags, tags...)
 	}

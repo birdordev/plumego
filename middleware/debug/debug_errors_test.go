@@ -3,8 +3,10 @@ package debug
 import (
 	"bufio"
 	"bytes"
+	"compress/gzip"
 	"encoding/json"
 	"errors"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -13,6 +15,101 @@ import (
 
 	"github.com/birdordev/plumego/contract"
 )
+
+func TestDebugKeepsEncodedErrorRepresentation(t *testing.T) {
+	var compressed bytes.Buffer
+	zw := gzip.NewWriter(&compressed)
+	const body = "encoded error"
+	if _, err := io.WriteString(zw, body); err != nil {
+		t.Fatal(err)
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name      string
+		encodings []string
+	}{
+		{"gzip", []string{"gzip"}},
+		{"gzip after identity", []string{"identity", "gzip"}},
+		{"identity", []string{"identity"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			encoded := tc.name != "identity"
+			h := Middleware(Config{})(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "text/plain")
+				for _, coding := range tc.encodings {
+					w.Header().Add("Content-Encoding", coding)
+				}
+				w.WriteHeader(http.StatusServiceUnavailable)
+				w.Header().Del("Content-Encoding")
+				data := []byte(body)
+				if encoded {
+					data = compressed.Bytes()
+				}
+				if _, err := w.Write(data); err != nil {
+					t.Error(err)
+				}
+			}))
+			rec := httptest.NewRecorder()
+			h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
+			res := rec.Result()
+			if got := res.Header.Values("Content-Encoding"); res.StatusCode != http.StatusServiceUnavailable || strings.Join(got, ",") != strings.Join(tc.encodings, ",") {
+				t.Fatalf("status=%d, encodings=%q", res.StatusCode, got)
+			}
+			if !encoded {
+				if !json.Valid(rec.Body.Bytes()) {
+					t.Fatalf("identity body is not JSON: %q", rec.Body)
+				}
+				return
+			}
+			if !bytes.Equal(rec.Body.Bytes(), compressed.Bytes()) {
+				t.Fatal("encoded response bytes changed")
+			}
+			zr, err := gzip.NewReader(rec.Body)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer zr.Close()
+			if got, err := io.ReadAll(zr); err != nil || string(got) != body {
+				t.Fatalf("decoded=%q, error=%v", got, err)
+			}
+		})
+	}
+}
+
+func TestDebugSnapshotsFinalHeadersAndForwardsTrailers(t *testing.T) {
+	for _, status := range []int{http.StatusOK, http.StatusNotFound} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			h := Middleware(Config{})(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("X-Version", "final")
+				w.Header().Set("Content-Type", "text/plain")
+				w.Header().Set("Trailer", "X-Checksum")
+				w.WriteHeader(status)
+				w.Header().Set("X-Version", "late")
+				w.Header().Set("Content-Type", "application/octet-stream")
+				w.Header().Set("X-Checksum", "digest")
+				w.Header().Set(http.TrailerPrefix+"X-Late", "late digest")
+				if _, err := io.WriteString(w, "sample"); err != nil {
+					t.Error(err)
+				}
+			}))
+			rec := httptest.NewRecorder()
+			rec.Header().Set("X-Outer", "preserved")
+			h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
+			res := rec.Result()
+			if res.StatusCode != status || res.Header.Get("X-Version") != "final" || res.Header.Get("X-Outer") != "preserved" || res.Header.Get("X-Checksum") != "" {
+				t.Fatalf("status=%d, headers=%v", res.StatusCode, res.Header)
+			}
+			if res.Trailer.Get("X-Checksum") != "digest" || res.Trailer.Get("X-Late") != "late digest" {
+				t.Fatalf("trailers=%v", res.Trailer)
+			}
+			if json.Valid(rec.Body.Bytes()) != (status == http.StatusNotFound) {
+				t.Fatalf("unexpected response body %q", rec.Body)
+			}
+		})
+	}
+}
 
 func assertJSONContentType(t *testing.T, contentType string) {
 	t.Helper()

@@ -27,9 +27,9 @@ type AppConfig struct {
 	Router RouterConfig // Router behavior policy
 	// HTTP server hardening
 	ReadTimeout       time.Duration // Maximum duration for reading the entire request, including the body
-	ReadHeaderTimeout time.Duration // Maximum duration for reading request headers
+	ReadHeaderTimeout time.Duration // Maximum duration for reading request headers; zero uses ReadTimeout
 	WriteTimeout      time.Duration // Maximum duration before timing out response writes
-	IdleTimeout       time.Duration // Maximum time to wait for the next keep-alive request
+	IdleTimeout       time.Duration // Maximum time to wait for the next keep-alive request; zero uses ReadTimeout
 	MaxHeaderBytes    int           // Maximum request header size; zero keeps the standard library default
 	HTTP2Enabled      bool          // Whether prepared TLS servers keep automatic HTTP/2 support enabled
 	DrainInterval     time.Duration // How often to log open connection counts while draining; non-positive values use the default

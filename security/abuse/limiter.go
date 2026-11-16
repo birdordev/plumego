@@ -373,10 +373,11 @@ func (l *Limiter) Allow(key string) Decision {
 		l.admissionMu.Unlock()
 	}
 
-	elapsed := now.Sub(b.lastRefill).Seconds()
-	if elapsed < 0 {
-		elapsed = 0
+	// Sampling happens outside the lock, so an older sample may arrive late.
+	if now.Before(b.lastRefill) {
+		now = b.lastRefill
 	}
+	elapsed := now.Sub(b.lastRefill).Seconds()
 	tokens := math.Min(l.capacity, b.tokens+elapsed*l.rate)
 	allowed := tokens >= 1
 	if allowed {
@@ -384,12 +385,16 @@ func (l *Limiter) Allow(key string) Decision {
 	}
 	b.tokens = tokens
 	b.lastRefill = now
-	b.lastAccess = now
+	if now.After(b.lastAccess) {
+		b.lastAccess = now
+	}
 	shard.mu.Unlock()
 	// --- end critical section ---
 
 	// Build decision outside the lock with local snapshot values.
-	now = l.now() // refresh after unlock for time-sensitive fields
+	if current := l.now(); current.After(now) {
+		now = current
+	}
 	decision := Decision{
 		Allowed:   allowed,
 		Limit:     int(l.capacity),

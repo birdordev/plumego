@@ -17,30 +17,45 @@ func (*customJSONSlice) MarshalJSON() ([]byte, error) { return []byte(`"custom"`
 
 func TestJSONBudgetAppliesToContainerPointers(t *testing.T) {
 	seq := make([]int, 2*maxJSONFieldNodes)
+	seq[0] = 17
 	lookup := map[string][]int{"items": seq}
 	custom := customJSONSlice(seq)
 	var nilSlice *[]int
 	data := []byte("abc")
+	var indirect, customIndirect, nilIndirect, bytesIndirect, largeNumber any = seq, &custom, nil, &data, uint64(1<<63) + 1
 	var output bytes.Buffer
 	logger := NewLogger(LoggerConfig{Format: LoggerFormatJSON, Output: &output})
-	logger.Info("sample", Fields{"slice": &seq, "map": &lookup, "custom": &custom, "nil": nilSlice, "bytes": &data})
+	logger.Info("sample", Fields{
+		"direct": seq, "slice": &seq, "map": &lookup, "indirect": &indirect,
+		"custom": &custom, "custom_indirect": &customIndirect, "nil": nilSlice, "nil_indirect": &nilIndirect,
+		"bytes": &data, "bytes_indirect": &bytesIndirect, "number": &largeNumber,
+	})
 	var entry struct {
-		Slice  []any            `json:"slice"`
-		Map    map[string][]any `json:"map"`
-		Custom string           `json:"custom"`
-		Nil    json.RawMessage  `json:"nil"`
-		Bytes  string           `json:"bytes"`
+		Slice          []any            `json:"slice"`
+		Direct         []any            `json:"direct"`
+		Indirect       []any            `json:"indirect"`
+		Map            map[string][]any `json:"map"`
+		Custom         string           `json:"custom"`
+		Nil            json.RawMessage  `json:"nil"`
+		Bytes          string           `json:"bytes"`
+		CustomIndirect string           `json:"custom_indirect"`
+		NilIndirect    json.RawMessage  `json:"nil_indirect"`
+		BytesIndirect  string           `json:"bytes_indirect"`
+		Number         uint64           `json:"number"`
 	}
 	if err := json.Unmarshal(output.Bytes(), &entry); err != nil {
 		t.Fatal(err)
 	}
-	for _, got := range [][]any{entry.Slice, entry.Map["items"]} {
-		if len(got) == 0 || len(got) > maxJSONFieldNodes || got[len(got)-1] != "[truncated]" {
+	for _, got := range [][]any{entry.Direct, entry.Slice, entry.Indirect, entry.Map["items"]} {
+		if len(got) == 0 || len(got) > maxJSONFieldNodes || got[0] != float64(17) || got[len(got)-1] != "[truncated]" {
 			t.Errorf("expected a bounded field with a truncation marker, got %d items", len(got))
 		}
 	}
 	if entry.Custom != "custom" || string(entry.Nil) != "null" || entry.Bytes != "YWJj" {
 		t.Fatalf("custom=%q, nil=%s, bytes=%q", entry.Custom, entry.Nil, entry.Bytes)
+	}
+	if entry.CustomIndirect != entry.Custom || string(entry.NilIndirect) != string(entry.Nil) || entry.BytesIndirect != entry.Bytes || entry.Number != uint64(1<<63)+1 {
+		t.Fatalf("custom=%q, nil=%s, bytes=%q, number=%d", entry.CustomIndirect, entry.NilIndirect, entry.BytesIndirect, entry.Number)
 	}
 }
 

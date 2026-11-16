@@ -120,21 +120,27 @@ func Middleware(config Config) middleware.Middleware {
 
 			rec := newDebugErrorRecorder(w, cfg.MaxBodyBytes)
 			next.ServeHTTP(rec, r)
+			if !rec.hijacked {
+				defer rec.copyTrailers()
+			}
 
 			if rec.passthrough {
 				return
 			}
 
-			status := rec.statusCode()
+			if rec.status == 0 {
+				rec.WriteHeader(http.StatusOK)
+			}
+			status := rec.status
 			body := rec.body.Bytes()
 
 			errorType := debugErrorType(status)
-			if errorType == "" || !shouldReplaceError(rec.header, body) {
+			if errorType == "" || !shouldReplaceError(rec.committed, body) {
 				rec.flushTo()
 				return
 			}
 
-			internaltransport.CopyHeaders(w.Header(), rec.header)
+			internaltransport.ReplaceHeaders(w.Header(), rec.committed)
 			w.Header().Del("Content-Length")
 			_ = contract.WriteError(w, r, debugErrorPayload(errorType, status, r, cfg, body))
 		})
@@ -144,16 +150,22 @@ func Middleware(config Config) middleware.Middleware {
 type debugErrorRecorder struct {
 	dst         http.ResponseWriter
 	header      http.Header
+	committed   http.Header
 	status      int
 	body        bytes.Buffer
 	maxBytes    int
 	passthrough bool
+	hijacked    bool
 }
 
 func newDebugErrorRecorder(dst http.ResponseWriter, maxBytes int) *debugErrorRecorder {
+	header := make(http.Header)
+	if dst != nil {
+		internaltransport.CopyHeaders(header, dst.Header())
+	}
 	return &debugErrorRecorder{
 		dst:      dst,
-		header:   make(http.Header),
+		header:   header,
 		maxBytes: maxBytes,
 	}
 }
@@ -167,18 +179,19 @@ func (r *debugErrorRecorder) Unwrap() http.ResponseWriter {
 }
 
 func (r *debugErrorRecorder) WriteHeader(status int) {
-	if r.status != 0 {
+	if r.status != 0 || r.hijacked {
 		return
 	}
 	if status >= 100 && status < 200 && status != http.StatusSwitchingProtocols {
 		dst := r.dst.Header()
 		original := dst.Clone()
 		defer internaltransport.ReplaceHeaders(dst, original)
-		internaltransport.CopyHeaders(dst, r.header)
+		internaltransport.ReplaceHeaders(dst, r.header)
 		r.dst.WriteHeader(status)
 		return
 	}
 	r.status = status
+	r.committed = r.header.Clone()
 	if r.passthrough || status == http.StatusSwitchingProtocols {
 		r.passthrough = true
 		r.flushHeaders()
@@ -187,7 +200,7 @@ func (r *debugErrorRecorder) WriteHeader(status int) {
 
 func (r *debugErrorRecorder) Write(p []byte) (int, error) {
 	if r.status == 0 {
-		r.status = http.StatusOK
+		r.WriteHeader(http.StatusOK)
 	}
 	if r.passthrough {
 		return internaltransport.SafeWrite(r.dst, p)
@@ -219,7 +232,7 @@ func (r *debugErrorRecorder) FlushError() error {
 
 	dst := r.dst.Header()
 	original := dst.Clone()
-	internaltransport.CopyHeaders(dst, r.header)
+	internaltransport.ReplaceHeaders(dst, r.header)
 	internaltransport.EnsureNoSniff(dst)
 	err := controller.Flush()
 	if errors.Is(err, http.ErrNotSupported) {
@@ -227,6 +240,7 @@ func (r *debugErrorRecorder) FlushError() error {
 		return err
 	}
 	r.status = http.StatusOK
+	r.committed = r.header.Clone()
 	r.passthrough = true
 	return err
 }
@@ -238,6 +252,7 @@ func (r *debugErrorRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 	conn, rw, err := http.NewResponseController(r.dst).Hijack()
 	if err == nil {
 		r.passthrough = true
+		r.hijacked = true
 	}
 	return conn, rw, err
 }
@@ -250,7 +265,7 @@ func (r *debugErrorRecorder) statusCode() int {
 }
 
 func (r *debugErrorRecorder) flushTo() {
-	internaltransport.CommitHeadersCopy(r.dst, r.header, r.statusCode())
+	r.flushHeaders()
 	_, _ = internaltransport.SafeWrite(r.dst, r.body.Bytes())
 }
 
@@ -258,7 +273,17 @@ func (r *debugErrorRecorder) flushHeaders() {
 	if r.dst == nil {
 		return
 	}
-	internaltransport.CommitHeadersCopy(r.dst, r.header, r.statusCode())
+	if r.committed == nil {
+		r.committed = r.header.Clone()
+	}
+	dst := r.dst.Header()
+	internaltransport.ReplaceHeaders(dst, r.committed)
+	internaltransport.EnsureNoSniff(dst)
+	r.dst.WriteHeader(r.statusCode())
+}
+
+func (r *debugErrorRecorder) copyTrailers() {
+	internaltransport.CopyResponseTrailers(r.dst.Header(), r.committed, r.header)
 }
 
 func (r *debugErrorRecorder) commitPassthrough() {
@@ -295,6 +320,14 @@ func shouldSkipDebugErrors(r *http.Request) bool {
 }
 
 func shouldReplaceError(header http.Header, body []byte) bool {
+	for _, line := range header.Values("Content-Encoding") {
+		for encoding := range strings.SplitSeq(line, ",") {
+			encoding = strings.TrimSpace(encoding)
+			if encoding != "" && !strings.EqualFold(encoding, "identity") {
+				return false
+			}
+		}
+	}
 	contentType := strings.ToLower(strings.TrimSpace(header.Get("Content-Type")))
 	if isStreamingContentType(contentType) {
 		return false

@@ -53,8 +53,9 @@
   produces the same placeholder.
 - JSON normalization and text container formatting use bounded traversal;
   cycles and excessive nesting produce truncation placeholders instead of
-  unbounded recursion. Ordinary pointers to supported JSON containers share the
-  container traversal budget. Text formatting also bounds pointers, struct fields,
+  unbounded recursion. Ordinary pointers and interfaces leading to supported
+  JSON containers share the container traversal budget. Text formatting also
+  bounds pointers, struct fields,
   and byte slices. Each unexported struct field placeholder consumes one
   node from the same traversal budget.
   Custom `fmt.Formatter`, `fmt.Stringer`, and `error` methods retain their
