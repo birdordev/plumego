@@ -144,13 +144,9 @@ func (r *ResponseRecorder) BytesWritten() int {
 	return r.bytesWritten
 }
 
-// Hijack forwards http.Hijacker when the wrapped writer supports it.
+// Hijack forwards connection takeover through the wrapped writer chain.
 func (r *ResponseRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
-	hj, ok := r.ResponseWriter.(http.Hijacker)
-	if !ok {
-		return nil, nil, http.ErrNotSupported
-	}
-	return hj.Hijack()
+	return HijackIfSupported(r.ResponseWriter)
 }
 
 // FlushError forwards Flush and records implicit commitment when supported.
@@ -177,13 +173,19 @@ func (r *ResponseRecorder) FlushError() error {
 // Flush implements http.Flusher.
 func (r *ResponseRecorder) Flush() { _ = r.FlushError() }
 
-// HijackIfSupported forwards Hijack to the underlying writer when available.
+// HijackIfSupported follows ResponseController's wrapper order and returns the
+// exact ErrNotSupported sentinel when no writer implements Hijack.
 func HijackIfSupported(w http.ResponseWriter) (net.Conn, *bufio.ReadWriter, error) {
-	hijacker, ok := w.(http.Hijacker)
-	if !ok {
-		return nil, nil, http.ErrNotSupported
+	for {
+		switch writer := w.(type) {
+		case http.Hijacker:
+			return writer.Hijack()
+		case interface{ Unwrap() http.ResponseWriter }:
+			w = writer.Unwrap()
+		default:
+			return nil, nil, http.ErrNotSupported
+		}
 	}
-	return hijacker.Hijack()
 }
 
 // CommitHeadersCopy overlays source headers onto destination headers, ensures

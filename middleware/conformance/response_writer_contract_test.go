@@ -249,26 +249,38 @@ func TestResponseWriterConformanceOptionalInterfaceMatrix(t *testing.T) {
 			}
 		})
 
-		t.Run(tc.name+"/hijack", func(t *testing.T) {
-			result := make(chan bool, 1)
-			writer := &conformanceHijackWriter{}
-			handler := tc.mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				hijacker, ok := w.(http.Hijacker)
-				if ok {
-					_, _, _ = hijacker.Hijack()
+		for _, path := range []string{"direct", "unwrap"} {
+			t.Run(tc.name+"/hijack/"+path, func(t *testing.T) {
+				writer := &conformanceHijackWriter{}
+				var dst http.ResponseWriter = writer
+				if path == "unwrap" {
+					dst = conformanceUnwrapWriter{dst}
 				}
-				result <- ok
-			}))
-			handler.ServeHTTP(writer, conformanceRequest(tc.needsGzip))
-			if got := <-result; got != tc.hasHijack {
-				t.Fatalf("Hijack exposure = %v, want %v", got, tc.hasHijack)
-			}
-			if tc.hasHijack && !writer.hijacked {
-				t.Fatal("Hijack was exposed but did not reach the underlying writer")
-			}
-		})
+				handler := tc.mw(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+					if _, exposed := w.(http.Hijacker); exposed != tc.hasHijack {
+						t.Errorf("Hijack exposure = %v, want %v", exposed, tc.hasHijack)
+					}
+					_, rw, err := http.NewResponseController(w).Hijack()
+					if tc.hasHijack {
+						if err != nil || rw == nil {
+							t.Errorf("Hijack returned writer %v, error %v", rw, err)
+						}
+					} else if !errors.Is(err, http.ErrNotSupported) {
+						t.Errorf("Hijack error = %v, want ErrNotSupported", err)
+					}
+				}))
+				handler.ServeHTTP(dst, conformanceRequest(tc.needsGzip))
+				if writer.hijacked != tc.hasHijack {
+					t.Fatalf("underlying Hijack called = %v, want %v", writer.hijacked, tc.hasHijack)
+				}
+			})
+		}
 	}
 }
+
+type conformanceUnwrapWriter struct{ http.ResponseWriter }
+
+func (w conformanceUnwrapWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
 
 type conformanceFlushWriter struct {
 	*httptest.ResponseRecorder

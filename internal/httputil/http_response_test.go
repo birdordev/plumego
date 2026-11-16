@@ -1,11 +1,35 @@
 package httputil
 
 import (
+	"bufio"
 	"errors"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 )
+
+type hijackErrorWriter struct {
+	flushUnwrapper
+	err error
+}
+
+func (w hijackErrorWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	return nil, nil, w.err
+}
+
+func TestHijackDelegationPreservesErrors(t *testing.T) {
+	dst := flushUnwrapper{httptest.NewRecorder()}
+	hijackErr := errors.New("connection already taken")
+	// An explicit Hijack method takes precedence over Unwrap.
+	writer := hijackErrorWriter{flushUnwrapper: dst, err: hijackErr}
+	if _, _, err := HijackIfSupported(flushUnwrapper{writer}); err != hijackErr {
+		t.Fatalf("Hijack error = %v, want %v", err, hijackErr)
+	}
+	if _, _, err := NewObservationRecorder(dst).Hijack(); err != http.ErrNotSupported {
+		t.Fatalf("Hijack error = %v, want the ErrNotSupported sentinel", err)
+	}
+}
 
 type flushUnwrapper struct {
 	http.ResponseWriter

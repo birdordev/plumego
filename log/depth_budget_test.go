@@ -9,6 +9,24 @@ import (
 	"testing"
 )
 
+func TestWideTextMapBudgetKeepsCompleteEntries(t *testing.T) {
+	wide := make(map[string]string, 1024)
+	for i := range 1024 {
+		wide[strconv.Itoa(i)] = "kept-value"
+	}
+	var out bytes.Buffer
+	NewLogger(LoggerConfig{Format: LoggerFormatText, Output: &out}).Info(
+		"bounded", Fields{"value": wide, "small": map[string]int{"b": 2, "a": 1}},
+	)
+	line := out.String()
+	if count := strings.Count(line, ":kept-value"); count != 511 || !strings.Contains(line, " [truncated]]") {
+		t.Fatalf("complete entries=%d, truncated=%t", count, strings.Contains(line, " [truncated]]"))
+	}
+	if !strings.Contains(line, "map[a:1 b:2]") {
+		t.Fatal("expected the small map to be sorted")
+	}
+}
+
 func TestTextStructBudgetCountsUnexportedFields(t *testing.T) {
 	fields := make([]reflect.StructField, 2048)
 	fields[0] = reflect.StructField{Name: "Visible", Type: reflect.TypeFor[string]()}

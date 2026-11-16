@@ -72,8 +72,9 @@ var ErrInvalidPolicy = errors.New("headers: invalid policy")
 //		StrictTransportSecurity: &hsts,
 //	}
 type HSTSOptions struct {
-	// MaxAge is the duration (in seconds) that the browser should remember
-	// to only use HTTPS for this domain
+	// MaxAge specifies how long the browser should use HTTPS for this domain.
+	// Set a time.Duration such as 60 * time.Second. Positive durations are
+	// encoded as whole seconds, discarding any fractional second.
 	MaxAge time.Duration
 
 	// IncludeSubDomains indicates whether the HSTS policy applies to all subdomains

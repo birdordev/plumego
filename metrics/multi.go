@@ -66,7 +66,10 @@ func (m *MultiCollector) ObserveHTTP(ctx context.Context, method, path string, s
 	}
 }
 
-// GetStats returns combined statistics from all collectors.
+// GetStats sums counters, active series, and name breakdowns from individual
+// child snapshots. A record counted by two children contributes twice.
+// StartTime is the earliest nonzero child start time. The child snapshots
+// are read independently.
 func (m *MultiCollector) GetStats() CollectorStats {
 	if m == nil || len(m.collectors) == 0 {
 		return emptyCollectorStats()
@@ -97,7 +100,7 @@ func (m *MultiCollector) GetStats() CollectorStats {
 	return combined
 }
 
-// Clear clears all collectors.
+// Clear resets each child in order. Each child reset takes effect independently.
 func (m *MultiCollector) Clear() {
 	if m == nil {
 		return

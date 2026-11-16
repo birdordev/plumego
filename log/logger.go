@@ -306,36 +306,39 @@ func formatTextValue(value reflect.Value, depth int, remaining *int) string {
 		}
 	case reflect.Map:
 		type entry struct {
-			value reflect.Value
-			text  string
+			key   string
+			value string
 		}
 		var entries []entry
 		iter := value.MapRange()
 		truncated := false
 		for iter.Next() {
+			if *remaining < 2 {
+				truncated = true
+				break
+			}
+			key := formatTextValue(iter.Key(), depth+1, remaining)
 			if *remaining <= 0 {
 				truncated = true
 				break
 			}
-			key := iter.Key()
-			entries = append(entries, entry{value: iter.Value(), text: formatTextValue(key, depth+1, remaining)})
+			entries = append(entries, entry{key: key, value: formatTextValue(iter.Value(), depth+1, remaining)})
 		}
-		sort.Slice(entries, func(i, j int) bool { return entries[i].text < entries[j].text })
+		sort.Slice(entries, func(i, j int) bool { return entries[i].key < entries[j].key })
 		var out strings.Builder
 		out.WriteString("map[")
 		for i, entry := range entries {
 			if i > 0 {
 				out.WriteByte(' ')
 			}
-			if *remaining <= 0 {
-				truncated = true
-				break
-			}
-			out.WriteString(entry.text)
+			out.WriteString(entry.key)
 			out.WriteByte(':')
-			out.WriteString(formatTextValue(entry.value, depth+1, remaining))
+			out.WriteString(entry.value)
 		}
 		if truncated {
+			if len(entries) > 0 {
+				out.WriteByte(' ')
+			}
 			out.WriteString("[truncated]")
 		}
 		out.WriteByte(']')

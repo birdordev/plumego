@@ -125,8 +125,9 @@ extension-owned refinements.
   `NewErrorBuilder`, but callers should construct values with
   `NewErrorBuilder` instead of literals.
 - `ErrorBuilder.Build` and `APIError.Details` clone supported map and slice
-  values, preserving nested empty containers and nil values. Cyclic detail
-  values rejected by JSON encoding trigger the fallback above.
+  values. Each call creates a separate snapshot that preserves nested empty
+  containers, nil values, and repeated references of the same container type.
+  Cyclic detail values rejected by JSON encoding trigger the fallback above.
 - Request ids are accepted only when the trimmed value is non-empty, valid UTF-8,
   free of control characters, and at most 128 bytes. Rejected request ids are not
   stored or echoed by `WriteResponse` or `WriteError`.

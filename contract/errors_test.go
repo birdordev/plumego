@@ -3,6 +3,7 @@ package contract
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -11,6 +12,71 @@ import (
 	"runtime/debug"
 	"testing"
 )
+
+func TestErrorDetailsPreserveSharedContainersWithinEachSnapshot(t *testing.T) {
+	type wrapped map[string]any
+	source := map[string]any{"label": "original"}
+	slice := []string{"original"}
+	container := wrapped{"map": source, "slice": slice}
+	err := NewErrorBuilder().Detail("items", []any{source, slice, container, container}).Build()
+	source["label"] = "input changed"
+	slice[0] = "input changed"
+
+	first := err.Details()["items"].([]any)
+	firstMap, firstSlice := first[0].(map[string]any), first[1].([]string)
+	named, again := first[2].(wrapped), first[3].(wrapped)
+	if firstMap["label"] != "original" || firstSlice[0] != "original" {
+		t.Fatal("built error shares mutable values with the input")
+	}
+	firstMap["label"] = "snapshot changed"
+	firstSlice[0] = "snapshot changed"
+	named["added"] = true
+	if named["map"].(map[string]any)["label"] != "snapshot changed" ||
+		named["slice"].([]string)[0] != "snapshot changed" || again["added"] != true {
+		t.Fatal("snapshot did not preserve shared containers")
+	}
+	second := err.Details()["items"].([]any)
+	if second[0].(map[string]any)["label"] != "original" || second[1].([]string)[0] != "original" || second[2].(wrapped)["added"] != nil {
+		t.Fatal("mutating one snapshot changed a later snapshot")
+	}
+}
+
+func TestErrorDetailsReflectFallbackDiscardsProvisionalCopies(t *testing.T) {
+	type parent []any
+	type child []any
+	unsupported := new(int)
+	root := make(parent, 2)
+	nested := child{root}
+	root[0], root[1] = nested, unsupported
+	ordinary := map[string]any{"pointer": unsupported}
+	wrapped := child{ordinary}
+
+	details := NewErrorBuilder().Detail("items", []any{root, nested, ordinary, wrapped}).Build().Details()["items"].([]any)
+	for _, pair := range [][2]any{{root, details[0]}, {nested, details[1]}, {wrapped, details[3]}} {
+		if reflect.ValueOf(pair[0]).Pointer() != reflect.ValueOf(pair[1]).Pointer() {
+			t.Fatalf("%T should retain the original container on fallback", pair[0])
+		}
+	}
+	if reflect.ValueOf(ordinary).Pointer() == reflect.ValueOf(details[2]).Pointer() {
+		t.Fatal("reflect fallback should not affect the separately cloned map")
+	}
+}
+
+func BenchmarkBuildSharedErrorDetails(b *testing.B) {
+	for _, depth := range []int{6, 10, 14} {
+		b.Run(fmt.Sprint(depth), func(b *testing.B) {
+			node := map[string]any{"leaf": "value"}
+			for range depth {
+				node = map[string]any{"left": node, "right": node}
+			}
+			builder := NewErrorBuilder().Detail("graph", node)
+			b.ReportAllocs()
+			for b.Loop() {
+				_ = builder.Build()
+			}
+		})
+	}
+}
 
 func TestErrorBuilder(t *testing.T) {
 	builder := NewErrorBuilder()

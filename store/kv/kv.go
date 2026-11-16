@@ -431,35 +431,43 @@ func cloneBytes(in []byte) []byte {
 func (kv *KVStore) evictIfNeededLocked(writtenKey string) {
 	now := time.Now()
 	var memoryUsage int64
+	var oldest evictionCandidate
 	for key, item := range kv.data {
 		if kv.isExpired(item, now) {
 			delete(kv.data, key)
 			continue
 		}
 		memoryUsage += item.Size
+		if key != writtenKey {
+			candidate := evictionCandidate{key: key, item: item}
+			if oldest.item == nil || compareEvictionCandidates(candidate, oldest) < 0 {
+				oldest = candidate
+			}
+		}
 	}
 
 	maxMemory := kv.maxMemoryBytes()
 	if len(kv.data) <= kv.opts.MaxEntries && memoryUsage <= maxMemory {
 		return
 	}
-
-	type candidate struct {
-		key  string
-		item *entry
+	if oldest.item == nil {
+		return
 	}
-	candidates := make([]candidate, 0, len(kv.data))
+
+	// Removing the oldest entry first avoids sorting for a single eviction.
+	delete(kv.data, oldest.key)
+	memoryUsage -= oldest.item.Size
+	if len(kv.data) <= kv.opts.MaxEntries && memoryUsage <= maxMemory {
+		return
+	}
+
+	candidates := make([]evictionCandidate, 0, len(kv.data))
 	for key, item := range kv.data {
 		if key != writtenKey {
-			candidates = append(candidates, candidate{key: key, item: item})
+			candidates = append(candidates, evictionCandidate{key: key, item: item})
 		}
 	}
-	slices.SortFunc(candidates, func(a, b candidate) int {
-		if order := a.item.UpdatedAt.Compare(b.item.UpdatedAt); order != 0 {
-			return order
-		}
-		return cmp.Compare(a.key, b.key)
-	})
+	slices.SortFunc(candidates, compareEvictionCandidates)
 
 	for _, candidate := range candidates {
 		delete(kv.data, candidate.key)
@@ -468,6 +476,18 @@ func (kv *KVStore) evictIfNeededLocked(writtenKey string) {
 			return
 		}
 	}
+}
+
+type evictionCandidate struct {
+	key  string
+	item *entry
+}
+
+func compareEvictionCandidates(a, b evictionCandidate) int {
+	if order := a.item.UpdatedAt.Compare(b.item.UpdatedAt); order != 0 {
+		return order
+	}
+	return cmp.Compare(a.key, b.key)
 }
 
 func (kv *KVStore) maxMemoryBytes() int64 {

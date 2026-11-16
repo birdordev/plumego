@@ -94,3 +94,5 @@ JSON normalization stops traversal of arrays, ordinary slices, and string-keyed 
 Custom backends receive original, unescaped values. Encode messages and field keys/values at the output boundary; escape control characters and Unicode line separators for text, or use a JSON encoder. Do not interpolate raw values into record delimiters. Callers must exclude secrets before calling the logger; safe encoding does not redact credentials or backend error messages.
 
 Text field traversal consumes its node budget even when visiting a value at the depth limit. Wide containers at that boundary remain bounded before temporary entries are collected or sorted. Custom formatters still own their execution.
+For wide text maps, the budget is applied to each key and value together. The
+retained entries are sorted, and their selection follows Go map iteration order.
