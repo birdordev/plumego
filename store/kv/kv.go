@@ -452,8 +452,11 @@ func (kv *KVStore) oldestKeyLocked(writtenKey string) string {
 		oldestAt  time.Time
 	)
 	for key, item := range kv.data {
+		if key == writtenKey {
+			continue
+		}
 		if oldestKey == "" || item.UpdatedAt.Before(oldestAt) ||
-			(item.UpdatedAt.Equal(oldestAt) && key != writtenKey && (oldestKey == writtenKey || key < oldestKey)) {
+			(item.UpdatedAt.Equal(oldestAt) && key < oldestKey) {
 			oldestKey = key
 			oldestAt = item.UpdatedAt
 		}

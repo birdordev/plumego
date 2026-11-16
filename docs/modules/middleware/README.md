@@ -228,9 +228,14 @@ active and waiting requests represented in that channel.
 accepts gzip. It skips websocket upgrades, SSE, already-compressed responses,
 common binary content types, range responses (206 or `Content-Range`), and
 bodyless responses with status 204 or 304.
-All `Accept-Encoding` field lines are evaluated as one list.
+All `Accept-Encoding` field lines are evaluated as one list. Quality weights
+use the HTTP decimal syntax from 0 to 1 with up to three fractional digits.
+An invalid weight makes its coding unavailable for gzip negotiation.
 Negotiated gzip and identity responses include `Vary: Accept-Encoding` while
 preserving other `Vary` values.
+When gzip starts, digest headers and their trailer declarations and values
+are removed along with strong ETags tied to the original bytes. Weak ETags
+and unrelated trailers are preserved.
 
 `Config.MaxBufferBytes` controls only the pre-compression buffer. If a
 response exceeds the limit before gzip output has started, the middleware

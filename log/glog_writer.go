@@ -196,15 +196,11 @@ func (l *gLogger) logInternal(level Level, calldepth int, messageBuilder func() 
 	shouldBacktrace := l.shouldLogBacktrace(file, line)
 	l.mu.RUnlock()
 
+	var writtenSize int64
 	if err := writeFull(writer, logLine); err != nil {
 		l.reportWriteError(err)
-	}
-
-	// Check if log file needs rotation
-	if l.logDir != "" {
-		for _, writtenLevel := range l.fileLevelsForLog(level) {
-			_ = l.checkLogRotation(writtenLevel, int64(len(logLine)))
-		}
+	} else {
+		writtenSize = int64(len(logLine))
 	}
 
 	// Return buffer to pool. logLine may alias the header buffer's backing
@@ -217,6 +213,15 @@ func (l *gLogger) logInternal(level Level, calldepth int, messageBuilder func() 
 		stack = stack[:runtime.Stack(stack, false)]
 		if err := writeFull(writer, stack); err != nil {
 			l.reportWriteError(err)
+		} else {
+			writtenSize += int64(len(stack))
+		}
+	}
+
+	// Rotate only after the entire record has used the current writer.
+	if writtenSize > 0 && l.logDir != "" {
+		for _, writtenLevel := range l.fileLevelsForLog(level) {
+			_ = l.checkLogRotation(writtenLevel, writtenSize)
 		}
 	}
 

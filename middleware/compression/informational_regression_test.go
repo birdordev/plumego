@@ -114,6 +114,87 @@ func TestGzipNegotiatesAcrossAcceptEncodingLines(t *testing.T) {
 	}
 }
 
+func TestGzipFiltersMetadataOnlyWhenEncodingChanges(t *testing.T) {
+	const body = "original response content"
+	for _, tc := range []struct {
+		name, acceptEncoding, etag, wantETag string
+		maxBuffer                            int
+		compressed                           bool
+	}{
+		{name: "gzip strong", acceptEncoding: "gzip", etag: `"strong"`, compressed: true},
+		{name: "gzip weak", acceptEncoding: "gzip", etag: `W/"weak"`, wantETag: `W/"weak"`, compressed: true},
+		{name: "identity", acceptEncoding: "identity", etag: `"strong"`, wantETag: `"strong"`},
+		{name: "buffer bypass", acceptEncoding: "gzip", etag: `"strong"`, wantETag: `"strong"`, maxBuffer: 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			inner := Middleware(Config{MaxBufferBytes: tc.maxBuffer})(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "text/plain")
+				w.Header().Set("Content-Digest", "original content digest")
+				w.Header().Set("ETag", tc.etag)
+				w.Header().Set("Trailer", "Repr-Digest, X-Result, Content-MD5")
+				w.WriteHeader(http.StatusOK)
+				_, _ = io.WriteString(w, body)
+				w.Header().Set("Repr-Digest", "original representation digest")
+				w.Header().Set("Content-MD5", "original content MD5")
+				w.Header().Set("X-Result", "complete")
+				w.Header().Set(http.TrailerPrefix+"digest", "original digest")
+			}))
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-MD5", "outer digest")
+				inner.ServeHTTP(w, r)
+			}))
+			defer server.Close()
+			req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, server.URL, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			req.Header.Set("Accept-Encoding", tc.acceptEncoding)
+			res, err := server.Client().Do(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer res.Body.Close()
+			if encoded := res.Header.Get("Content-Encoding") == "gzip"; encoded != tc.compressed {
+				t.Fatalf("Content-Encoding = %q, compressed = %v", res.Header.Get("Content-Encoding"), tc.compressed)
+			}
+			var reader io.Reader = res.Body
+			if tc.compressed {
+				zr, err := gzip.NewReader(res.Body)
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer zr.Close()
+				reader = zr
+			}
+			got, err := io.ReadAll(reader)
+			if err != nil || string(got) != body {
+				t.Fatalf("body = %q, err = %v", got, err)
+			}
+			if _, err := io.Copy(io.Discard, res.Body); err != nil {
+				t.Fatal(err)
+			}
+			if res.Header.Get("ETag") != tc.wantETag || res.Trailer.Get("X-Result") != "complete" {
+				t.Fatalf("headers = %v, trailers = %v", res.Header, res.Trailer)
+			}
+			if tc.compressed {
+				for _, field := range []string{"Content-Digest", "Content-Md5", "Repr-Digest", "Digest"} {
+					_, header := res.Header[field]
+					_, trailer := res.Trailer[field]
+					if header || trailer {
+						t.Errorf("stale field %s: headers=%v, trailers=%v", field, res.Header, res.Trailer)
+					}
+				}
+			} else if res.Header.Get("Content-Digest") != "original content digest" ||
+				res.Header.Get("Content-MD5") != "outer digest" ||
+				res.Trailer.Get("Repr-Digest") != "original representation digest" ||
+				res.Trailer.Get("Content-MD5") != "original content MD5" ||
+				res.Trailer.Get("Digest") != "original digest" {
+				t.Fatalf("lost metadata on identity response: headers=%v, trailers=%v", res.Header, res.Trailer)
+			}
+		})
+	}
+}
+
 func TestFinalHeaderSnapshotAndTrailers(t *testing.T) {
 	for _, coding := range []string{"identity", "gzip"} {
 		for _, flush := range []bool{false, true} {

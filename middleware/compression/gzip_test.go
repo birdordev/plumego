@@ -901,19 +901,24 @@ func countHeaderToken(values []string, want string) int {
 
 // --- NEW COVERAGE TESTS ---
 
-// TestGzip_AcceptEncodingInvalidQValue covers the !ok (no "=") and ParseFloat error
-// branches in the q-value parser.
-func TestGzip_AcceptEncodingInvalidQValue(t *testing.T) {
+func TestGzipAcceptEncodingQualityWeights(t *testing.T) {
 	tests := []struct {
 		name           string
 		header         string
 		wantCompressed bool
 	}{
-		// "q" param present but no "=" → treated as q=0 → skip gzip.
-		{name: "no equals in param", header: "gzip;qbad", wantCompressed: true},
-		// "q" param present but non-numeric value → ParseFloat error → q=0.
+		{name: "unknown parameter", header: "gzip;qbad", wantCompressed: true},
+		{name: "missing q value", header: "gzip;q", wantCompressed: false},
 		{name: "invalid q value", header: "gzip;q=bad", wantCompressed: false},
-		// Wildcard with invalid q → q=0 → not accepted.
+		{name: "outside range", header: "gzip;q=2", wantCompressed: false},
+		{name: "above one", header: "gzip;q=1.001", wantCompressed: false},
+		{name: "scientific notation", header: "gzip;q=1e-1", wantCompressed: false},
+		{name: "non-finite", header: "gzip;q=+Inf", wantCompressed: false},
+		{name: "too many fractional digits", header: "gzip;q=0.0001", wantCompressed: false},
+		{name: "explicit invalid before wildcard", header: "gzip;q=2, *;q=1", wantCompressed: false},
+		{name: "minimum positive", header: "gzip;q=0.001", wantCompressed: true},
+		{name: "maximum", header: "gzip;q=1.000", wantCompressed: true},
+		{name: "zero", header: "gzip;q=0.000", wantCompressed: false},
 		{name: "wildcard invalid q", header: "*;q=notanumber", wantCompressed: false},
 	}
 

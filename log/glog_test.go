@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -1048,6 +1049,77 @@ func TestRotationTracksFanoutFileSizes(t *testing.T) {
 	std.mu.RUnlock()
 	if currentSize != 0 {
 		t.Fatalf("expected INFO size to reset after ERROR fanout rotation, got %d", currentSize)
+	}
+}
+
+func TestRotationFailureKeepsOriginalWriterAndSize(t *testing.T) {
+	logger := newGLogger()
+	dir := t.TempDir()
+	logger.logDir, logger.toStderr = dir, false
+	logger.rotationConfig = rotationConfig{MaxSize: 1}
+	if err := logger.initLogFiles(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(logger.Close)
+	original := logger.logFiles[INFO]
+	const initialSize = 1<<20 - 1
+	logger.currentSize[INFO] = initialSize
+	logger.logDir = filepath.Join(dir, "missing", "subdir")
+	logger.Info("triggers failed rotation")
+	logger.Info("still using original file")
+	got, err := os.ReadFile(original.Name())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if logger.logFiles[INFO] != original || !bytes.Contains(got, []byte("still using original file")) {
+		t.Fatalf("rotation failure lost the writer or a record: %q", got)
+	}
+	if size := logger.currentSize[INFO]; size != initialSize+int64(len(got)) {
+		t.Errorf("size after failed rotation = %d, want %d", size, initialSize+int64(len(got)))
+	}
+
+	logger.logDir = dir
+	logger.Info("retries rotation")
+	if logger.logFiles[INFO] == original || logger.currentSize[INFO] != 0 {
+		t.Fatal("rotation did not recover after restoring the directory")
+	}
+	logger.Info("written to new file")
+	got, err = os.ReadFile(logger.logFiles[INFO].Name())
+	if err != nil || !bytes.Contains(got, []byte("written to new file")) {
+		t.Fatalf("new writer: bytes=%q, err=%v", got, err)
+	}
+}
+
+func TestRotationCountsBacktraceAndKeepsItWithRecord(t *testing.T) {
+	logger := newGLogger()
+	logger.logDir, logger.toStderr = t.TempDir(), false
+	logger.rotationConfig = rotationConfig{MaxSize: 1}
+	if err := logger.initLogFiles(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(logger.Close)
+	original := logger.logFiles[INFO]
+	const remaining = 256
+	logger.currentSize[INFO] = 1<<20 - remaining
+
+	_, file, line, _ := runtime.Caller(0)
+	logger.logBacktraceAt = fmt.Sprintf("%s:%d", filepath.Base(file), line+2)
+	logger.Info("record with backtrace")
+
+	got, err := os.ReadFile(original.Name())
+	if err != nil {
+		t.Fatal(err)
+	}
+	record, rest, _ := bytes.Cut(got, []byte("\n"))
+	if !bytes.Contains(record, []byte("record with backtrace")) ||
+		!bytes.Contains(rest, []byte("TestRotationCountsBacktraceAndKeepsItWithRecord(")) {
+		t.Fatalf("record and stack must share the original file: %q", got)
+	}
+	if len(record)+1 >= remaining || len(got) < remaining {
+		t.Fatalf("test threshold %d must be crossed only by the stack: record=%d, total=%d", remaining, len(record)+1, len(got))
+	}
+	if logger.logFiles[INFO] == original || logger.currentSize[INFO] != 0 {
+		t.Fatal("backtrace bytes did not trigger rotation")
 	}
 }
 

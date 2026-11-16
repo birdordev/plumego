@@ -120,8 +120,9 @@
 - `store/kv` context-aware operations check cancellation before lock acquisition and again after lock acquisition; once full-state filesystem persistence begins, that filesystem phase is not interruptible.
 - `store/kv` restores staged changes, including capacity evictions, when cancellation is observed before persistence or a write fails before the state file is replaced. After replacement, a directory-sync failure is still returned, but memory retains the published state. Such an error means durability is unconfirmed, not that the mutation was undone; inspect current state before retrying. A repeated delete of an already published deletion returns `ErrKeyNotFound`.
 - `store/kv` computes one TTL deadline before persistence and uses it in memory and on disk. Slow persistence can consume the TTL; successful writes do not extend only the in-memory lifetime.
-- `store/kv` evicts the oldest update first. For equal update timestamps, it
-  prefers retaining the key being written and evicts other keys in lexical order.
+- `store/kv` keeps the key being written when evicting for capacity. It evicts
+  the oldest of the other keys first, breaking timestamp ties in lexical order.
+  When trimming a snapshot at startup, all keys are eligible for eviction.
 - `store/kv` persists the full in-memory state as JSON on each write, fsyncs the temporary state file, atomically replaces the state file, and syncs the parent directory when the platform supports it; it is intended for small embedded datasets rather than high-throughput durable-engine workloads.
 - `store/kv` does not rewrite the state file during startup normalization; expired or over-capacity records can be pruned from memory without mutating disk until the next caller-initiated write.
 - `store/kv` read operations do not persist expired-key cleanup as a side effect.

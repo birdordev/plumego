@@ -1195,6 +1195,55 @@ func TestKVStoreHitRatio(t *testing.T) {
 	}
 }
 
+func TestKVStoreWriteSurvivesEvictionAfterClockMovesBackward(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		maxEntries  int
+		maxMemoryMB int
+		valueBytes  int
+	}{
+		{name: "entry limit", maxEntries: 1, maxMemoryMB: 1, valueBytes: 1},
+		{name: "memory limit", maxEntries: 10, maxMemoryMB: 1, valueBytes: 600 << 10},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := Config{DataDir: t.TempDir(), MaxEntries: tc.maxEntries, MaxMemoryMB: tc.maxMemoryMB}
+			writeState(t, cfg.DataDir, diskState{Entries: map[string]entry{
+				"existing": {Value: bytes.Repeat([]byte("a"), tc.valueBytes), UpdatedAt: time.Now().Add(time.Hour)},
+			}})
+			store, err := NewKVStore(cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = store.Close() })
+			newValue := bytes.Repeat([]byte("b"), tc.valueBytes)
+			if err := store.Set("new", newValue, 0); err != nil {
+				t.Fatal(err)
+			}
+
+			check := func(store *KVStore) {
+				t.Helper()
+				got, err := store.Get("new")
+				if err != nil || !bytes.Equal(got, newValue) {
+					t.Errorf("Get(new): length=%d error=%v", len(got), err)
+				}
+				if _, err := store.Get("existing"); !errors.Is(err, ErrKeyNotFound) {
+					t.Errorf("Get(existing): %v, want ErrKeyNotFound", err)
+				}
+			}
+			check(store)
+			if err := store.Close(); err != nil {
+				t.Fatal(err)
+			}
+			reopened, err := NewKVStore(cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = reopened.Close() })
+			check(reopened)
+		})
+	}
+}
+
 // TestKVStoreEvictIfNeededLocked exercises the eviction path when entries exceed MaxEntries.
 func TestKVStoreEvictIfNeededLocked(t *testing.T) {
 	dir := t.TempDir()

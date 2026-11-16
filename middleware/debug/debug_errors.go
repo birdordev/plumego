@@ -285,38 +285,11 @@ func (r *debugErrorRecorder) copyTrailers() {
 }
 
 func (r *debugErrorRecorder) discardReplacedRepresentationHeaders() {
-	for _, header := range [...]http.Header{r.committed, r.header} {
-		for key := range header {
-			name := strings.TrimPrefix(key, http.TrailerPrefix)
-			if isReplacedRepresentationHeader(name) {
-				delete(header, key)
-			}
-		}
+	remove := func(name string) bool {
+		return name == "Content-Length" || name == "Etag" || internaltransport.IsRepresentationDigestField(name)
 	}
-
-	declarations := r.committed.Values("Trailer")
-	r.committed.Del("Trailer")
-	for _, declaration := range declarations {
-		var retained []string
-		for name := range strings.SplitSeq(declaration, ",") {
-			name = strings.TrimSpace(name)
-			if name != "" && !isReplacedRepresentationHeader(name) {
-				retained = append(retained, name)
-			}
-		}
-		if len(retained) > 0 {
-			r.committed.Add("Trailer", strings.Join(retained, ", "))
-		}
-	}
-}
-
-func isReplacedRepresentationHeader(name string) bool {
-	switch http.CanonicalHeaderKey(name) {
-	case "Content-Length", "Etag", "Digest", "Content-Md5", "Content-Digest", "Repr-Digest":
-		return true
-	default:
-		return false
-	}
+	internaltransport.RemoveResponseFields(r.committed, remove)
+	internaltransport.RemoveResponseFields(r.header, remove)
 }
 
 func (r *debugErrorRecorder) commitPassthrough() error {

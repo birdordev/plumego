@@ -188,3 +188,41 @@ func CopyResponseTrailers(dst, committed, header http.Header) http.Header {
 	}
 	return dst
 }
+
+// RemoveResponseFields removes selected headers, prefixed trailer values, and
+// names in Trailer declarations. The predicate receives canonical field names.
+func RemoveResponseFields(header http.Header, remove func(string) bool) {
+	for key := range header {
+		if remove(http.CanonicalHeaderKey(strings.TrimPrefix(key, http.TrailerPrefix))) {
+			delete(header, key)
+		}
+	}
+	declarations := header.Values("Trailer")
+	if len(declarations) == 0 {
+		return
+	}
+	header.Del("Trailer")
+	for _, declaration := range declarations {
+		var retained []string
+		for name := range strings.SplitSeq(declaration, ",") {
+			name = strings.TrimSpace(name)
+			if name != "" && !remove(http.CanonicalHeaderKey(name)) {
+				retained = append(retained, name)
+			}
+		}
+		if len(retained) > 0 {
+			header.Add("Trailer", strings.Join(retained, ", "))
+		}
+	}
+}
+
+// IsRepresentationDigestField reports whether a canonical field name carries
+// a digest tied to the original response content or representation.
+func IsRepresentationDigestField(name string) bool {
+	switch name {
+	case "Digest", "Content-Md5", "Content-Digest", "Repr-Digest":
+		return true
+	default:
+		return false
+	}
+}

@@ -9,9 +9,8 @@ package router
 //     Group); allocating is fine; responsible for deduplicating leading slashes
 //     and joining prefix + relative path into the authoritative stored pattern.
 //
-// Do not merge them: the registration helpers tolerate sloppy input (e.g.
-// "///api/") while the dispatch helper trusts the Go http.Server to deliver a
-// cleaned URL.
+// Registration validates and stores canonical patterns. Dispatch preserves
+// internal repeated slashes in the request path for the matcher to handle.
 
 // fastNormalizePath normalizes the request path for cache keying and trie
 // traversal. It preserves exactly one leading slash, strips trailing slashes,

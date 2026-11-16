@@ -6,7 +6,6 @@ import (
 	"errors"
 	"net"
 	"net/http"
-	"strconv"
 	"strings"
 
 	internaltransport "github.com/birdordev/plumego/internal/httputil"
@@ -121,10 +120,9 @@ func Middleware(cfg Config) middleware.Middleware {
 
 func acceptsGzip(header string) bool {
 	var (
-		gzipQ       float64
-		wildcardQ   float64
-		hasGzip     bool
-		hasWildcard bool
+		gzipAccepted     bool
+		wildcardAccepted bool
+		hasGzip          bool
 	)
 
 	for _, part := range strings.Split(header, ",") {
@@ -135,35 +133,46 @@ func acceptsGzip(header string) bool {
 
 		segments := strings.Split(part, ";")
 		coding := strings.ToLower(strings.TrimSpace(segments[0]))
-		q := 1.0
+		accepted := true
 		for _, param := range segments[1:] {
 			name, value, ok := strings.Cut(strings.TrimSpace(param), "=")
-			if !ok || !strings.EqualFold(strings.TrimSpace(name), "q") {
+			if !strings.EqualFold(strings.TrimSpace(name), "q") {
 				continue
 			}
-			parsed, err := strconv.ParseFloat(strings.TrimSpace(value), 64)
-			if err != nil {
-				q = 0
-				break
-			}
-			q = parsed
+			accepted = ok && positiveQualityWeight(strings.TrimSpace(value))
 			break
 		}
 
 		switch coding {
 		case "gzip":
-			gzipQ = q
+			gzipAccepted = accepted
 			hasGzip = true
 		case "*":
-			wildcardQ = q
-			hasWildcard = true
+			wildcardAccepted = accepted
 		}
 	}
 
 	if hasGzip {
-		return gzipQ > 0
+		return gzipAccepted
 	}
-	return hasWildcard && wildcardQ > 0
+	return wildcardAccepted
+}
+
+// positiveQualityWeight accepts nonzero HTTP qvalues (RFC 9110, section 12.4.2).
+func positiveQualityWeight(value string) bool {
+	whole, fraction, _ := strings.Cut(value, ".")
+	if (whole != "0" && whole != "1") || len(fraction) > 3 {
+		return false
+	}
+	positive := whole == "1"
+	for i := range len(fraction) {
+		digit := fraction[i]
+		if digit < '0' || digit > '9' || (whole == "1" && digit != '0') {
+			return false
+		}
+		positive = positive || digit != '0'
+	}
+	return positive
 }
 
 type gzipResponseWriter struct {
@@ -191,7 +200,12 @@ func (w *gzipResponseWriter) finalize(panicking bool) {
 		return
 	}
 	if w.buffer != nil {
-		defer func() { w.buffer.CopyTrailers(w.ResponseWriter.Header()) }()
+		defer func() {
+			if w.gz != nil {
+				removeUncompressedMetadata(w.buffer.Header())
+			}
+			w.buffer.CopyTrailers(w.ResponseWriter.Header())
+		}()
 	}
 	if !w.wroteHeader && w.buffer != nil {
 		// Header-only handlers still own a final implicit 200 response.
@@ -345,9 +359,12 @@ func (w *gzipResponseWriter) Write(p []byte) (int, error) {
 	if w.gz == nil && w.buffer.Len() > 0 {
 		// Update headers for compression
 		header := w.buffer.FinalHeader()
+		removeUncompressedMetadata(header)
 		header.Del("Content-Length")
 		header.Set("Content-Encoding", "gzip")
-		w.ResponseWriter.Header().Del("Content-Length")
+		dst := w.ResponseWriter.Header()
+		removeUncompressedMetadata(dst)
+		dst.Del("Content-Length")
 		w.flushHeaders()
 		w.gz = gzip.NewWriter(w.ResponseWriter)
 
@@ -363,6 +380,18 @@ func (w *gzipResponseWriter) Write(p []byte) (int, error) {
 	}
 
 	return len(p), nil
+}
+
+func removeUncompressedMetadata(header http.Header) {
+	internaltransport.RemoveResponseFields(header, internaltransport.IsRepresentationDigestField)
+	// Keep ETag declarations so a weak tag supplied after commitment can
+	// still be forwarded. Strong tags are tied to the uncompressed bytes.
+	for key, values := range header {
+		if http.CanonicalHeaderKey(strings.TrimPrefix(key, http.TrailerPrefix)) == "Etag" &&
+			(len(values) != 1 || !strings.HasPrefix(strings.TrimSpace(values[0]), "W/")) {
+			delete(header, key)
+		}
+	}
 }
 
 func sniffContentType(header http.Header, p []byte) {

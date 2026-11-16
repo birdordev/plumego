@@ -119,7 +119,6 @@ func (l *gLogger) rotateIfNeeded(level Level, logSize int64) (logDir, program st
 	if l.currentSize[level] < int64(config.MaxSize)*1024*1024 {
 		return
 	}
-	l.currentSize[level] = 0
 	if err = l.rotateLogFile(level); err != nil {
 		return
 	}
@@ -132,11 +131,6 @@ func (l *gLogger) rotateIfNeeded(level Level, logSize int64) (logDir, program st
 
 // rotateLogFile rotates the log file for the given level
 func (l *gLogger) rotateLogFile(level Level) error {
-	// Close the current log file
-	if file, ok := l.logFiles[level]; ok {
-		_ = file.Close()
-	}
-
 	// Generate new log filename with timestamp
 	hostname, _ := os.Hostname()
 	if hostname == "" {
@@ -155,12 +149,16 @@ func (l *gLogger) rotateLogFile(level Level) error {
 		return err
 	}
 
-	// Update log file map
+	// Keep the current writer usable until its replacement opens successfully.
+	previous := l.logFiles[level]
 	l.logFiles[level] = file
 	l.currentSize[level] = 0
 
 	// The log file changed, so cached writers for this level are stale.
 	l.rebuildWriterCache()
+	if previous != nil {
+		_ = previous.Close()
+	}
 
 	// Update symlink to point to the newest log file.
 	// Symlink creation is best-effort: failures are logged to stderr but do not
