@@ -26,6 +26,7 @@ type noBodyWriter struct {
 	sniff     []byte
 	bytes     int64
 	committed bool
+	hijacked  bool
 }
 
 func (w *noBodyWriter) WriteHeader(status int) {
@@ -44,6 +45,9 @@ func (w *noBodyWriter) WriteHeader(status int) {
 }
 
 func (w *noBodyWriter) Write(p []byte) (int, error) {
+	if w.hijacked {
+		return 0, http.ErrHijacked
+	}
 	if w.status == 0 {
 		w.WriteHeader(http.StatusOK)
 	}
@@ -141,6 +145,7 @@ func (w *noBodyWriter) Flush() { _ = w.FlushError() }
 func (w *noBodyWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 	conn, rw, err := http.NewResponseController(w.ResponseWriter).Hijack()
 	if err == nil {
+		w.hijacked = true
 		w.committed = true
 	}
 	return conn, rw, err

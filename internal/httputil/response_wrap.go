@@ -29,6 +29,9 @@ func (w *BaseWrappedResponseWriter) WriteHeader(statusCode int) {
 	if w.wrote {
 		return
 	}
+	if statusCode < 100 || statusCode > 999 {
+		panic("invalid WriteHeader code")
+	}
 	if statusCode >= 200 || statusCode == http.StatusSwitchingProtocols {
 		w.wrote = true
 	}

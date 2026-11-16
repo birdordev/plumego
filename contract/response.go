@@ -47,10 +47,11 @@ func writeJSON(w http.ResponseWriter, status int, payload any) error {
 	return writeEncodedJSON(w, status, buf.Bytes())
 }
 
-// WriteResponse writes a standardized success response and injects request id when available.
-// For body-eligible statuses, nil data and nil meta encode as an empty JSON
-// object because the response envelope omits empty fields. A short body write
-// without a writer error returns io.ErrShortWrite.
+// WriteResponse writes a standardized success response and includes the request
+// ID when available. For body-eligible statuses, nil data and empty meta produce
+// an empty JSON object if no request ID is available, or an object containing
+// only request_id otherwise. A short body write without a writer error returns
+// io.ErrShortWrite.
 func WriteResponse(w http.ResponseWriter, r *http.Request, status int, data any, meta map[string]any) error {
 	resp := response{
 		Data: data,

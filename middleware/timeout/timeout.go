@@ -236,7 +236,7 @@ func (w *timeoutResponseWriter) Write(p []byte) (int, error) {
 
 	if len(p) > 0 {
 		switch w.buffer.StatusCode() {
-		case http.StatusNoContent, http.StatusNotModified:
+		case http.StatusSwitchingProtocols, http.StatusNoContent, http.StatusNotModified:
 			return 0, http.ErrBodyNotAllowed
 		}
 	}

@@ -54,8 +54,8 @@ aggregate health models.
   enabled
 - `ReadinessStatus.Components` maps component names to readiness booleans when
   the owning checker exposes per-component decisions
-- `HealthStatus.Duration` uses the standard library `time.Duration` JSON
-  encoding
+- `HealthStatus.Duration` is encoded as integer nanoseconds in JSON. For
+  example, 1500 milliseconds is `1500000000`. A zero duration is omitted.
 - `HealthStatus.Clone`, `ComponentHealth.Clone`, and `ReadinessStatus.Clone`
   detach maps and slices before returning model data across ownership
   boundaries; values stored inside `HealthStatus.Details` remain caller-owned

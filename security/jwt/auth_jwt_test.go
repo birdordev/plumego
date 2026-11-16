@@ -165,6 +165,17 @@ func TestPrincipalFromClaimsCopiesMutableSlices(t *testing.T) {
 	}
 }
 
+func TestPrincipalFromClaimsPreservesEmptyAuthorizationSlices(t *testing.T) {
+	for _, in := range [][]string{nil, {}} {
+		claims := &TokenClaims{Authorization: AuthorizationClaims{Roles: in, Permissions: in}}
+		p := PrincipalFromClaims(claims)
+		if len(p.Roles) != 0 || len(p.Scopes) != 0 ||
+			(p.Roles == nil) != (in == nil) || (p.Scopes == nil) != (in == nil) {
+			t.Errorf("roles=%#v scopes=%#v, want %#v", p.Roles, p.Scopes, in)
+		}
+	}
+}
+
 func TestPrincipalFromClaims_NoExtras(t *testing.T) {
 	claims := &TokenClaims{
 		Identity: IdentityClaims{Subject: "bare-user"},

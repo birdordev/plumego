@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 
 	"github.com/birdordev/plumego/security/authn"
 )
@@ -102,14 +103,15 @@ func (p PermissionAuthorizer) Authorize(principal *authn.Principal, action strin
 }
 
 // PrincipalFromClaims converts JWT claims to an authn.Principal.
+// It copies roles and permissions, preserving nil and non-nil empty slices.
 func PrincipalFromClaims(claims *TokenClaims) *authn.Principal {
 	if claims == nil {
 		return nil
 	}
 	principal := &authn.Principal{
 		Subject: claims.Identity.Subject,
-		Roles:   append([]string(nil), claims.Authorization.Roles...),
-		Scopes:  append([]string(nil), claims.Authorization.Permissions...),
+		Roles:   slices.Clone(claims.Authorization.Roles),
+		Scopes:  slices.Clone(claims.Authorization.Permissions),
 		Claims:  map[string]string{},
 	}
 	if claims.TokenID != "" {

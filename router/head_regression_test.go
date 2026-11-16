@@ -251,7 +251,7 @@ type headHijackWriter struct {
 func (w headHijackWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 	return w.conn, bufio.NewReadWriter(bufio.NewReader(w.conn), bufio.NewWriter(w.conn)), nil
 }
-func TestHeadHijackDoesNotCommitHeaders(t *testing.T) {
+func TestHeadHijackRejectsWritesWithoutCommittingHeaders(t *testing.T) {
 	conn, peer := net.Pipe()
 	defer conn.Close()
 	defer peer.Close()
@@ -259,9 +259,30 @@ func TestHeadHijackDoesNotCommitHeaders(t *testing.T) {
 	if _, _, err := http.NewResponseController(writer).Hijack(); err != nil {
 		t.Fatal(err)
 	}
+	for _, p := range [][]byte{nil, []byte("body")} {
+		if n, err := writer.Write(p); n != 0 || err != http.ErrHijacked {
+			t.Errorf("Write(%q) = (%d, %v), want (0, ErrHijacked)", p, n, err)
+		}
+	}
 	writer.commit(true)
 	if writer.status != 0 {
 		t.Fatal("headers committed after hijack")
+	}
+}
+
+func TestHeadFailedHijackPreservesResponse(t *testing.T) {
+	dst := httptest.NewRecorder()
+	writer := &noBodyWriter{ResponseWriter: dst}
+	if _, _, err := http.NewResponseController(writer).Hijack(); !errors.Is(err, http.ErrNotSupported) {
+		t.Fatalf("Hijack error=%v, want ErrNotSupported", err)
+	}
+	writer.WriteHeader(http.StatusAccepted)
+	if n, err := writer.Write([]byte("normal")); n != 6 || err != nil {
+		t.Fatalf("Write = (%d, %v), want (6, nil)", n, err)
+	}
+	writer.commit(true)
+	if dst.Code != http.StatusAccepted || dst.Result().Header.Get("Content-Length") != "6" || dst.Body.Len() != 0 {
+		t.Errorf("status=%d headers=%v body=%q, want 202, length 6, and empty body", dst.Code, dst.Result().Header, dst.Body)
 	}
 }
 

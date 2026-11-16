@@ -30,7 +30,7 @@ type HealthStatus struct {
 	Message      string         `json:"message,omitempty"`
 	Details      map[string]any `json:"details,omitempty"`
 	Timestamp    time.Time      `json:"timestamp"`
-	Duration     time.Duration  `json:"duration,omitempty"`
+	Duration     time.Duration  `json:"duration,omitempty"` // Integer nanoseconds in JSON, omitted when zero.
 	Dependencies []string       `json:"dependencies,omitempty"`
 }
 

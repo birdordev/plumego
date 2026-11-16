@@ -375,6 +375,54 @@ func TestRecoveryLoggerPanicDoesNotBlockErrorResponse(t *testing.T) {
 	}
 }
 
+func TestRecoveryHandlesInvalidStatusBeforeCommit(t *testing.T) {
+	mw := mustRecovery(t, &recordingLogger{})
+	for _, tc := range []struct {
+		name    string
+		handler http.HandlerFunc
+		want    int
+	}{
+		{"middleware recovers", func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(1000)
+		}, http.StatusInternalServerError},
+		{"handler recovers", func(w http.ResponseWriter, _ *http.Request) {
+			var recovered any
+			func() {
+				defer func() { recovered = recover() }()
+				w.WriteHeader(1000)
+			}()
+			if recovered == nil {
+				t.Error("invalid status did not panic at WriteHeader")
+			}
+			w.WriteHeader(http.StatusAccepted)
+			w.WriteHeader(1000) // A write after the final status is ignored.
+			if _, err := w.Write([]byte("accepted")); err != nil {
+				t.Errorf("write after recovery: %v", err)
+			}
+		}, http.StatusAccepted},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			mw(tc.handler).ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/", nil))
+			if w.Code != tc.want {
+				t.Fatalf("status=%d, want %d", w.Code, tc.want)
+			}
+			if tc.want == http.StatusAccepted {
+				if w.Body.String() != "accepted" {
+					t.Errorf("body=%q, want accepted", w.Body)
+				}
+				return
+			}
+			var body struct {
+				Error struct{ Code string }
+			}
+			if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil || body.Error.Code != contract.CodeInternalError {
+				t.Errorf("body=%q error=%v, want internal error response", w.Body, err)
+			}
+		})
+	}
+}
+
 func TestRecoveryRejectsNilLogger(t *testing.T) {
 	if _, err := Middleware(Config{}); !errors.Is(err, ErrNilLogger) {
 		t.Fatalf("Middleware error = %v, want %v", err, ErrNilLogger)
@@ -517,14 +565,16 @@ func TestRecoveryResponseWriterHijackNotSupported(t *testing.T) {
 // TestRecoveryResponseWriterWriteHeader_Idempotent verifies that calling WriteHeader
 // twice only writes the first status code.
 func TestRecoveryResponseWriterWriteHeader_Idempotent(t *testing.T) {
-	underlying := httptest.NewRecorder()
-	w := &recoveryResponseWriter{BaseWrappedResponseWriter: internaltransport.BaseWrappedResponseWriter{ResponseWriter: underlying}}
+	for _, status := range []int{http.StatusCreated, http.StatusSwitchingProtocols} {
+		underlying := httptest.NewRecorder()
+		w := &recoveryResponseWriter{BaseWrappedResponseWriter: internaltransport.BaseWrappedResponseWriter{ResponseWriter: underlying}}
 
-	w.WriteHeader(http.StatusCreated)
-	w.WriteHeader(http.StatusNotFound) // second call should be ignored
+		w.WriteHeader(status)
+		w.WriteHeader(http.StatusNotFound) // second call should be ignored
 
-	if underlying.Code != http.StatusCreated {
-		t.Fatalf("status = %d, want %d", underlying.Code, http.StatusCreated)
+		if underlying.Code != status {
+			t.Fatalf("status = %d, want %d", underlying.Code, status)
+		}
 	}
 }
 

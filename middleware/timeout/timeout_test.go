@@ -364,7 +364,7 @@ func TestTimeoutMiddleware_DisabledWhenTimeoutNonPositive(t *testing.T) {
 }
 
 func TestTimeoutBodylessResponseRejectsWritesBeforeSizeChecks(t *testing.T) {
-	for _, status := range []int{http.StatusNoContent, http.StatusNotModified} {
+	for _, status := range []int{http.StatusSwitchingProtocols, http.StatusNoContent, http.StatusNotModified} {
 		for _, limits := range []struct {
 			name           string
 			buffer, replay int
@@ -393,6 +393,38 @@ func TestTimeoutBodylessResponseRejectsWritesBeforeSizeChecks(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+func TestTimeoutSwitchingProtocolsMatchesDirectWriteResults(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		wrap func(http.Handler) http.Handler
+	}{
+		{"direct", func(h http.Handler) http.Handler { return h }},
+		{"timeout", Middleware(Config{Timeout: time.Second})},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := tc.wrap(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(http.StatusSwitchingProtocols)
+				if n, err := w.Write(nil); n != 0 || err != nil {
+					t.Errorf("empty Write = (%d, %v), want (0, nil)", n, err)
+				}
+				if n, err := w.Write([]byte("body")); n != 0 || err != http.ErrBodyNotAllowed {
+					t.Errorf("nonempty Write = (%d, %v), want (0, ErrBodyNotAllowed)", n, err)
+				}
+			}))
+			s := httptest.NewServer(h)
+			defer s.Close()
+			res, err := s.Client().Get(s.URL)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() { _ = res.Body.Close() }()
+			if res.StatusCode != http.StatusSwitchingProtocols {
+				t.Errorf("status=%d, want 101", res.StatusCode)
+			}
+		})
 	}
 }
 
