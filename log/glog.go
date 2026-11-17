@@ -54,6 +54,7 @@ type gLogger struct {
 	rotationConfig  rotationConfig
 	currentSize     map[Level]int64
 	writeErrOnce    sync.Once
+	rotationErrOnce sync.Once
 	// cachedWriters holds the per-level destinations and their file identities.
 	// Invalidated whenever logFiles, alsoToStderr, toStderr, or output changes.
 	cachedWriters map[Level]logDestinations

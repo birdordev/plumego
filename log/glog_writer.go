@@ -231,7 +231,11 @@ func (l *gLogger) logInternal(level Level, calldepth int, messageBuilder func() 
 	// Rotate only after the entire record has used the current writer.
 	for _, file := range destinations.files {
 		if size := fileBytes[file.level]; size > 0 {
-			_ = l.checkLogRotation(file.level, size)
+			if err := l.checkLogRotation(file.level, size); err != nil {
+				l.rotationErrOnce.Do(func() {
+					_, _ = os.Stderr.WriteString("glog: failed to rotate log file\n")
+				})
+			}
 		}
 	}
 

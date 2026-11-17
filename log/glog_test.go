@@ -2,6 +2,7 @@ package log
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	stdlog "log"
@@ -1124,6 +1125,16 @@ func TestRotationFailureKeepsOriginalWriterAndSize(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(logger.Close)
+	diagnostics, err := os.CreateTemp(t.TempDir(), "stderr-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer diagnostics.Close()
+	previousStderr := os.Stderr
+	os.Stderr = diagnostics
+	defer func() { os.Stderr = previousStderr }()
+	logger.reportWriteError(errors.New("writer failure detail"))
+
 	original := logger.logFiles[INFO]
 	const initialSize = 1<<20 - 1
 	logger.currentSize[INFO] = initialSize
@@ -1150,6 +1161,14 @@ func TestRotationFailureKeepsOriginalWriterAndSize(t *testing.T) {
 	got, err = os.ReadFile(logger.logFiles[INFO].Name())
 	if err != nil || !bytes.Contains(got, []byte("written to new file")) {
 		t.Fatalf("new writer: bytes=%q, err=%v", got, err)
+	}
+	notices, err := os.ReadFile(diagnostics.Name())
+	if err != nil {
+		t.Fatal(err)
+	}
+	const want = "glog: failed to write log output\nglog: failed to rotate log file\n"
+	if string(notices) != want {
+		t.Errorf("diagnostics = %q, want %q", notices, want)
 	}
 }
 

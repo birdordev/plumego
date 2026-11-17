@@ -5,7 +5,8 @@
 // ownership, and health or observability ownership belong outside the stable
 // store root. Operation deadlines are caller-owned through context.Context.
 //
-// Example usage:
+// Example usage with a PostgreSQL driver registered by the application under
+// the name "postgres":
 //
 //	import (
 //		"context"
@@ -14,22 +15,22 @@
 //		"github.com/birdordev/plumego/store/db"
 //	)
 //
-//	func example(ctx context.Context) error {
-//		cfg := db.DefaultConfig("postgres", "postgres://user:pass@localhost:5432/myapp?sslmode=disable")
+//	func example(ctx context.Context, dsn string, userID int64) error {
+//		cfg := db.DefaultConfig("postgres", dsn)
 //		database, err := db.Open(cfg)
 //		if err != nil {
 //			return err
 //		}
 //		defer database.Close()
 //
-//		rows, err := db.QueryContext(ctx, database, "SELECT id FROM users WHERE active = ?", true)
+//		rows, err := db.QueryContext(ctx, database, "SELECT id FROM users WHERE active = $1", true)
 //		if err != nil {
 //			return err
 //		}
 //		defer rows.Close()
 //
 //		return db.WithTransaction(ctx, database, nil, func(tx *sql.Tx) error {
-//			_, err := tx.ExecContext(ctx, "UPDATE users SET last_seen_at = CURRENT_TIMESTAMP")
+//			_, err := tx.ExecContext(ctx, "UPDATE users SET last_seen_at = CURRENT_TIMESTAMP WHERE id = $1", userID)
 //			return err
 //		})
 //	}

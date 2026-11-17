@@ -368,12 +368,8 @@ func (mc *MemoryCache) updateInteger(ctx context.Context, key string, delta int6
 		return 0, err
 	}
 
-	encoded, err := encodeInt64(newVal)
-	if err != nil {
-		return 0, err
-	}
-
-	// Store new value
+	var digits [20]byte // Enough for a signed int64 in decimal.
+	encoded := strconv.AppendInt(digits[:0], newVal, 10)
 	if err := mc.setLockedWithExpiration(key, encoded, exp); err != nil {
 		return 0, err
 	}
@@ -550,10 +546,6 @@ func decodeInt64(data []byte) (int64, error) {
 		return 0, err
 	}
 	return num, nil
-}
-
-func encodeInt64(num int64) ([]byte, error) {
-	return strconv.AppendInt(nil, num, 10), nil
 }
 
 func addInt64(value, delta int64) (int64, error) {

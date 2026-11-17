@@ -976,7 +976,7 @@ func TestMemoryCacheIncrPreservesExistingExpiration(t *testing.T) {
 	cache := mustNewMemoryCacheWithConfig(t, config)
 	defer cache.Close()
 
-	if err := cache.Set(t.Context(), "counter", mustEncodeInt64(t, 1), 30*time.Second); err != nil {
+	if err := cache.Set(t.Context(), "counter", []byte("1"), 30*time.Second); err != nil {
 		t.Fatalf("Set counter: %v", err)
 	}
 	before := cachedExpiration(t, cache, "counter")
@@ -1097,15 +1097,6 @@ func cachedExpiration(t *testing.T, cache *MemoryCache, key string) time.Time {
 	return raw.(cacheItem).expiration
 }
 
-func mustEncodeInt64(t *testing.T, value int64) []byte {
-	t.Helper()
-
-	encoded, err := encodeInt64(value)
-	if err != nil {
-		t.Fatalf("encodeInt64: %v", err)
-	}
-	return encoded
-}
 func TestMemoryCacheIncrNonInteger(t *testing.T) {
 	cache := NewMemoryCache()
 	defer cache.Close()
@@ -1563,12 +1554,24 @@ func TestIncrOverflowViaCache(t *testing.T) {
 	defer cache.Close()
 
 	// Set counter to maxInt64.
-	if err := cache.Set(t.Context(), "big", mustEncodeInt64(t, maxInt64), time.Minute); err != nil {
+	if err := cache.Set(t.Context(), "big", []byte("9223372036854775807"), time.Minute); err != nil {
 		t.Fatalf("Set: %v", err)
 	}
 	_, err := cache.Incr(t.Context(), "big", 1)
 	if err == nil || !errors.Is(err, ErrNotInteger) {
 		t.Fatalf("expected ErrNotInteger overflow, got %v", err)
+	}
+}
+
+func TestIncrStoresMinInt64(t *testing.T) {
+	cache := NewMemoryCache()
+	defer cache.Close()
+
+	if got, err := cache.Incr(t.Context(), "counter", minInt64); err != nil || got != minInt64 {
+		t.Fatalf("Incr = %d, %v; want %d, nil", got, err, int64(minInt64))
+	}
+	if raw, err := cache.Get(t.Context(), "counter"); err != nil || string(raw) != "-9223372036854775808" {
+		t.Fatalf("Get = %q, %v; want -9223372036854775808, nil", raw, err)
 	}
 }
 
