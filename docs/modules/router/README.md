@@ -186,7 +186,7 @@ These behaviors are part of the current stable-root freeze baseline:
 | 404 handling | unmatched routes use standard-library `http.NotFound` |
 | Defensive request guard | nil request URL uses standard-library 400 plain-text `bad request` output |
 | 405 handling | disabled by default; when enabled, returns sorted `Allow` including implicit `HEAD` for matching `GET` routes, with a canonical `contract` error representation |
-| HEAD fallback | HEAD suppresses response body writes for matched routes and router-generated 404 and 405 responses. It can use matching GET handlers when no explicit HEAD route exists. |
+| HEAD fallback | HEAD suppresses response body writes for matched routes and router-generated 400, 404, 405, and 503 responses. It can use matching GET handlers when no explicit HEAD route exists. |
 | Freeze | Direct router users call `Freeze` before immutable serving; route registration fails and later runtime policy toggles, including direct option application, are ignored; `core.App` freezes owned routers during prepare/first serve |
 | Static mounts | `Static` and `StaticFS` are small GET regular-file mounts, not frontend asset policy; local roots should be read-only or trusted for containment guarantees |
 

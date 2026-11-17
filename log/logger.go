@@ -76,11 +76,6 @@ type StructuredLogger interface {
 	FatalCtx(ctx context.Context, msg string, fields ...Fields)
 }
 
-// mergeFieldArgs merges variadic field maps in call order.
-func mergeFieldArgs(extra []Fields) Fields {
-	return mergeFieldSets(extra...)
-}
-
 // defaultLogger adapts the default text logger backend to StructuredLogger.
 type defaultLogger struct {
 	backend          *gLogger
@@ -126,23 +121,23 @@ func (l *defaultLogger) Debug(msg string, fields ...Fields) {
 	if l.respectVerbosity && !l.getBackend().vAt(1, 2) {
 		return
 	}
-	l.logWithLevel(DEBUG, msg, mergeFieldArgs(fields))
+	l.logWithLevel(DEBUG, msg, fields)
 }
 
 func (l *defaultLogger) Info(msg string, fields ...Fields) {
-	l.logWithLevel(INFO, msg, mergeFieldArgs(fields))
+	l.logWithLevel(INFO, msg, fields)
 }
 
 func (l *defaultLogger) Warn(msg string, fields ...Fields) {
-	l.logWithLevel(WARNING, msg, mergeFieldArgs(fields))
+	l.logWithLevel(WARNING, msg, fields)
 }
 
 func (l *defaultLogger) Error(msg string, fields ...Fields) {
-	l.logWithLevel(ERROR, msg, mergeFieldArgs(fields))
+	l.logWithLevel(ERROR, msg, fields)
 }
 
 func (l *defaultLogger) Fatal(msg string, fields ...Fields) {
-	l.logWithLevel(FATAL, msg, mergeFieldArgs(fields))
+	l.logWithLevel(FATAL, msg, fields)
 }
 
 // DebugCtx logs at DEBUG level with context.
@@ -153,29 +148,29 @@ func (l *defaultLogger) DebugCtx(_ context.Context, msg string, fields ...Fields
 	if l.respectVerbosity && !l.getBackend().vAt(1, 2) {
 		return
 	}
-	l.logWithLevel(DEBUG, msg, mergeFieldArgs(fields))
+	l.logWithLevel(DEBUG, msg, fields)
 }
 
 func (l *defaultLogger) InfoCtx(_ context.Context, msg string, fields ...Fields) {
-	l.logWithLevel(INFO, msg, mergeFieldArgs(fields))
+	l.logWithLevel(INFO, msg, fields)
 }
 
 func (l *defaultLogger) WarnCtx(_ context.Context, msg string, fields ...Fields) {
-	l.logWithLevel(WARNING, msg, mergeFieldArgs(fields))
+	l.logWithLevel(WARNING, msg, fields)
 }
 
 func (l *defaultLogger) ErrorCtx(_ context.Context, msg string, fields ...Fields) {
-	l.logWithLevel(ERROR, msg, mergeFieldArgs(fields))
+	l.logWithLevel(ERROR, msg, fields)
 }
 
 func (l *defaultLogger) FatalCtx(_ context.Context, msg string, fields ...Fields) {
-	l.logWithLevel(FATAL, msg, mergeFieldArgs(fields))
+	l.logWithLevel(FATAL, msg, fields)
 }
 
-func (l *defaultLogger) logWithLevel(level Level, msg string, fields Fields) {
+func (l *defaultLogger) logWithLevel(level Level, msg string, fields []Fields) {
 	// runtime.Caller skips logInternal, logWithLevel, and the public method.
 	l.getBackend().logInternal(level, 3, func() string {
-		formatted := l.formatFields(mergeFields(l.fields, fields))
+		formatted := l.formatFields(mergeFields(l.fields, mergeFieldSets(fields...)))
 		if formatted != "" {
 			return msg + " " + formatted
 		}

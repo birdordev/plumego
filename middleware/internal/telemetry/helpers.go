@@ -48,7 +48,13 @@ func PrepareRequest(w http.ResponseWriter, r *http.Request) PreparedRequest {
 
 // Complete derives request metrics from the prepared request lifecycle state.
 func (p PreparedRequest) Complete(r *http.Request) RequestMetrics {
-	return BuildRequestMetrics(p.observedRequest(r), p.Recorder, p.StartedAt, p.RequestID)
+	metrics, _ := p.complete(r)
+	return metrics
+}
+
+func (p PreparedRequest) complete(r *http.Request) (RequestMetrics, *http.Request) {
+	observed := p.observedRequest(r)
+	return BuildRequestMetrics(observed, p.Recorder, p.StartedAt, p.RequestID), observed
 }
 
 type TraceSpan interface {
@@ -181,7 +187,7 @@ func (p PreparedRequest) observedRequest(r *http.Request) *http.Request {
 // downstream code so they bubble correctly through the middleware chain.
 //
 // The observe callback receives:
-//   - metrics: the completed request metrics (from Complete)
+//   - metrics: the completed request metrics derived from r
 //   - recorder: the response recorder wrapping the original writer
 //   - r: the modified request (post-handler, for context reads like route/span)
 func WithObserver(next http.Handler, w http.ResponseWriter, r *http.Request, observe func(metrics RequestMetrics, recorder *ResponseRecorder, r *http.Request)) {
@@ -190,8 +196,8 @@ func WithObserver(next http.Handler, w http.ResponseWriter, r *http.Request, obs
 	r = prepared.Request
 
 	defer FinishPreservingPanic(func() {
-		observed := prepared.observedRequest(r)
-		observe(prepared.Complete(observed), recorder, observed)
+		metrics, observed := prepared.complete(r)
+		observe(metrics, recorder, observed)
 	})
 
 	next.ServeHTTP(recorder, r)

@@ -76,27 +76,27 @@ func (l *jsonLogger) Debug(msg string, fields ...Fields) {
 	if l.respectVerbosity && !l.vAt(1) {
 		return
 	}
-	l.log(DEBUG, msg, mergeFieldArgs(fields))
+	l.log(DEBUG, msg, fields)
 }
 
 // Info logs an info message with optional fields.
 func (l *jsonLogger) Info(msg string, fields ...Fields) {
-	l.log(INFO, msg, mergeFieldArgs(fields))
+	l.log(INFO, msg, fields)
 }
 
 // Warn logs a warning message with optional fields.
 func (l *jsonLogger) Warn(msg string, fields ...Fields) {
-	l.log(WARNING, msg, mergeFieldArgs(fields))
+	l.log(WARNING, msg, fields)
 }
 
 // Error logs an error message with optional fields.
 func (l *jsonLogger) Error(msg string, fields ...Fields) {
-	l.log(ERROR, msg, mergeFieldArgs(fields))
+	l.log(ERROR, msg, fields)
 }
 
 // Fatal logs a fatal message then calls os.Exit(1).
 func (l *jsonLogger) Fatal(msg string, fields ...Fields) {
-	l.log(FATAL, msg, mergeFieldArgs(fields))
+	l.log(FATAL, msg, fields)
 	os.Exit(1)
 }
 
@@ -106,35 +106,35 @@ func (l *jsonLogger) DebugCtx(ctx context.Context, msg string, fields ...Fields)
 	if l.respectVerbosity && !l.vAt(1) {
 		return
 	}
-	l.log(DEBUG, msg, mergeFieldArgs(fields))
+	l.log(DEBUG, msg, fields)
 }
 
 // InfoCtx logs an info message with context and optional fields.
 func (l *jsonLogger) InfoCtx(ctx context.Context, msg string, fields ...Fields) {
 	_ = ctx
-	l.log(INFO, msg, mergeFieldArgs(fields))
+	l.log(INFO, msg, fields)
 }
 
 // WarnCtx logs a warning message with context and optional fields.
 func (l *jsonLogger) WarnCtx(ctx context.Context, msg string, fields ...Fields) {
 	_ = ctx
-	l.log(WARNING, msg, mergeFieldArgs(fields))
+	l.log(WARNING, msg, fields)
 }
 
 // ErrorCtx logs an error message with context and optional fields.
 func (l *jsonLogger) ErrorCtx(ctx context.Context, msg string, fields ...Fields) {
 	_ = ctx
-	l.log(ERROR, msg, mergeFieldArgs(fields))
+	l.log(ERROR, msg, fields)
 }
 
 // FatalCtx logs a fatal message with context then calls os.Exit(1).
 func (l *jsonLogger) FatalCtx(ctx context.Context, msg string, fields ...Fields) {
 	_ = ctx
-	l.log(FATAL, msg, mergeFieldArgs(fields))
+	l.log(FATAL, msg, fields)
 	os.Exit(1)
 }
 
-func (l *jsonLogger) log(level Level, msg string, fields Fields) {
+func (l *jsonLogger) log(level Level, msg string, fields []Fields) {
 	// Snapshot the minimum level under the lock so a concurrent SetLevel()
 	// cannot race with this read (go race detector would flag the plain read).
 	l.mu.Lock()
@@ -145,7 +145,7 @@ func (l *jsonLogger) log(level Level, msg string, fields Fields) {
 	}
 
 	// Build the entry and marshal it outside the lock to reduce contention.
-	entry := l.buildEntry(level, msg, fields)
+	entry := l.buildEntry(level, msg, mergeFieldSets(fields...))
 	data, err := json.Marshal(entry)
 	if err != nil {
 		data = []byte(`{"level":"ERROR","msg":"failed to marshal log entry"}`)

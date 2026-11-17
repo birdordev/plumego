@@ -395,6 +395,43 @@ func TestServeHTTPRejectsNilRequestURL(t *testing.T) {
 	}
 }
 
+func TestHeadEarlyErrorsPreserveStatusAndHeadersWithoutBody(t *testing.T) {
+	tests := []struct {
+		name    string
+		router  *Router
+		nilURL  bool
+		status  int
+		getBody string
+	}{
+		{"nil router", nil, false, http.StatusServiceUnavailable, "router not initialized\n"},
+		{"zero router", &Router{}, false, http.StatusServiceUnavailable, "router not initialized\n"},
+		{"nil URL", NewRouter(), true, http.StatusBadRequest, "bad request\n"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			serve := func(method string) *httptest.ResponseRecorder {
+				req := httptest.NewRequest(method, "/users", nil)
+				if tt.nilURL {
+					req.URL = nil
+				}
+				rec := httptest.NewRecorder()
+				tt.router.ServeHTTP(rec, req)
+				assertResponseStatus(t, rec, tt.status)
+				return rec
+			}
+
+			get := serve(http.MethodGet)
+			assertResponseBody(t, get, tt.getBody)
+			head := serve(http.MethodHead)
+			assertResponseBody(t, head, "")
+			assertResponseHeader(t, head, "Content-Length", strconv.Itoa(len(tt.getBody)))
+			for _, header := range []string{contract.HeaderContentType, "X-Content-Type-Options"} {
+				assertResponseHeader(t, head, header, get.Header().Get(header))
+			}
+		})
+	}
+}
+
 func TestFreezeLocksMethodNotAllowedPolicy(t *testing.T) {
 	r := NewRouter()
 	if r.MethodNotAllowedEnabled() {

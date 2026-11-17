@@ -81,7 +81,7 @@ func (a *App) ensureServerPrepared() (bool, error) {
 }
 
 func (a *App) warnNoRoutes() {
-	a.Logger().Warn("no routes registered: all requests will receive 404; call app.Get/Post/… before Prepare", nil)
+	a.Logger().Warn("no routes registered. Register routes before preparing the application.", nil)
 }
 
 func (a *App) serverConfigSnapshot() (AppConfig, error) {

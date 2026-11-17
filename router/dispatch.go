@@ -155,16 +155,7 @@ func (w *noBodyWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
 
 // ServeHTTP implements http.Handler and handles incoming HTTP requests.
 func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
-	if !r.ready() || req == nil {
-		http.Error(w, "router not initialized", http.StatusServiceUnavailable)
-		return
-	}
-	if req.URL == nil {
-		http.Error(w, "bad request", http.StatusBadRequest)
-		return
-	}
-
-	if req.Method == http.MethodHead {
+	if req != nil && req.Method == http.MethodHead {
 		head := &noBodyWriter{ResponseWriter: w}
 		w = head
 		defer func() {
@@ -177,6 +168,15 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 			}
 			head.commit(true)
 		}()
+	}
+
+	if !r.ready() || req == nil {
+		http.Error(w, "router not initialized", http.StatusServiceUnavailable)
+		return
+	}
+	if req.URL == nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
 	}
 
 	path := fastNormalizePath(req.URL.Path)

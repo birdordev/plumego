@@ -306,10 +306,10 @@ func TestUseWithNilMiddlewareChainReturnsError(t *testing.T) {
 
 type prepareWarningLogger struct {
 	log.StructuredLogger
-	warn func()
+	warn func(string)
 }
 
-func (l *prepareWarningLogger) Warn(_ string, _ ...log.Fields) { l.warn() }
+func (l *prepareWarningLogger) Warn(message string, _ ...log.Fields) { l.warn(message) }
 
 func TestNoRoutesWarningCanReenterPrepare(t *testing.T) {
 	serveMissingRoute := func(t *testing.T, app *App) {
@@ -339,7 +339,7 @@ func TestNoRoutesWarningCanReenterPrepare(t *testing.T) {
 			app := New(DefaultConfig(), AppDependencies{Logger: logger})
 			var warnings int
 			var server *http.Server
-			logger.warn = func() {
+			logger.warn = func(_ string) {
 				warnings++
 				if warnings != 1 {
 					t.Fatal("expected only one no-route warning")
@@ -384,7 +384,7 @@ func TestNoRoutesWarningCanReenterPrepare(t *testing.T) {
 func TestPrepareWithRoutesDoesNotWarn(t *testing.T) {
 	logger := &prepareWarningLogger{
 		StructuredLogger: resolveLogger(AppDependencies{}),
-		warn:             func() { t.Error("unexpected no-route warning") },
+		warn:             func(_ string) { t.Error("unexpected no-route warning") },
 	}
 	app := New(DefaultConfig(), AppDependencies{Logger: logger})
 	if err := app.Get("/", http.NotFoundHandler()); err != nil {
@@ -392,6 +392,31 @@ func TestPrepareWithRoutesDoesNotWarn(t *testing.T) {
 	}
 	if err := app.Prepare(); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestNoRoutesWarningDescribesRouterForMiddlewareResponse(t *testing.T) {
+	var message string
+	logger := &prepareWarningLogger{
+		StructuredLogger: resolveLogger(AppDependencies{}),
+		warn:             func(warning string) { message = warning },
+	}
+	app := New(DefaultConfig(), AppDependencies{Logger: logger})
+	if err := app.Use(func(http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusOK)
+		})
+	}); err != nil {
+		t.Fatal(err)
+	}
+	rec := httptest.NewRecorder()
+	app.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/ready", nil))
+	if rec.Code != http.StatusOK || len(app.Routes()) != 0 {
+		t.Fatalf("response status = %d, routes = %v; want 200 and no routes", rec.Code, app.Routes())
+	}
+	const want = "no routes registered. Register routes before preparing the application."
+	if message != want {
+		t.Fatalf("warning = %q, want %q", message, want)
 	}
 }
 

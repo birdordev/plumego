@@ -159,3 +159,61 @@ func TestPreparedRequestCompleteAndEndTrace(t *testing.T) {
 		t.Fatalf("expected request id %q, got %q", metrics.RequestID, span.requestID)
 	}
 }
+
+func TestWithObserverSharesRouteBetweenMetricsAndRequest(t *testing.T) {
+	const path = "/users/42"
+	tests := []struct {
+		name      string
+		inherited string
+		published string
+		want      string
+	}{
+		{"no route", "", "", ""},
+		{"context route", "/users/:id", "", "/users/:id"},
+		{"published route takes precedence", "/old/:id", "/users/:id", "/users/:id"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, path, nil)
+			const requestID = "fixture-id"
+			req = req.WithContext(contract.WithRequestID(req.Context(), requestID))
+			if tt.inherited != "" {
+				req = req.WithContext(contract.WithRequestContext(req.Context(), contract.RequestContext{
+					RoutePattern: tt.inherited,
+				}))
+			}
+			next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if tt.published != "" {
+					w.(*ResponseRecorder).SetRouteContext(contract.WithRequestContext(r.Context(), contract.RequestContext{
+						RoutePattern: tt.published,
+					}))
+				}
+				w.WriteHeader(http.StatusCreated)
+				_, _ = w.Write([]byte("ok"))
+			})
+
+			calls := 0
+			WithObserver(next, httptest.NewRecorder(), req, func(metrics RequestMetrics, _ *ResponseRecorder, observed *http.Request) {
+				calls++
+				route := contract.RequestContextFromContext(observed.Context()).RoutePattern
+				if route != tt.want || metrics.Route != tt.want {
+					t.Errorf("request route = %q, metrics route = %q, want %q", route, metrics.Route, tt.want)
+				}
+				wantPath := tt.want
+				if wantPath == "" {
+					wantPath = path
+				}
+				if got := metrics.ObservedPath(); got != wantPath {
+					t.Errorf("observed path = %q, want %q", got, wantPath)
+				}
+				if metrics.RequestID != requestID || contract.RequestIDFromContext(observed.Context()) != requestID ||
+					metrics.Status != http.StatusCreated || metrics.Bytes != len("ok") {
+					t.Errorf("unexpected metrics or request ID: %+v", metrics)
+				}
+			})
+			if calls != 1 {
+				t.Fatalf("observe called %d times, want 1", calls)
+			}
+		})
+	}
+}
