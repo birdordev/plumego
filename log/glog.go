@@ -54,10 +54,9 @@ type gLogger struct {
 	rotationConfig  rotationConfig
 	currentSize     map[Level]int64
 	writeErrOnce    sync.Once
-	// cachedWriters caches the per-level io.Writer (possibly an io.MultiWriter)
-	// so getLogWriter does not allocate on every log call.
+	// cachedWriters holds the per-level destinations and their file identities.
 	// Invalidated whenever logFiles, alsoToStderr, toStderr, or output changes.
-	cachedWriters map[Level]io.Writer
+	cachedWriters map[Level]logDestinations
 }
 
 // pid is cached at package init to avoid a getpid syscall on every log line.

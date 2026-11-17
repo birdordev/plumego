@@ -1052,6 +1052,69 @@ func TestRotationTracksFanoutFileSizes(t *testing.T) {
 	}
 }
 
+func TestRotationCountsFileBytesWhenMirrorFails(t *testing.T) {
+	logger := newGLogger()
+	logger.logDir, logger.toStderr, logger.alsoToStderr = t.TempDir(), false, true
+	logger.SetOutput(&brokenWriter{err: io.ErrClosedPipe})
+	logger.SetRotationConfig(rotationConfig{MaxSize: 1})
+	if err := logger.initLogFiles(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(logger.Close)
+
+	before := logger.logFiles[INFO]
+	logger.Info(strings.Repeat("x", 1<<20))
+	info, err := os.Stat(before.Name())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Size() < 1<<20 || logger.logFiles[INFO] == before {
+		t.Fatalf("file size = %d, rotated = %t, want rotation at 1 MiB", info.Size(), logger.logFiles[INFO] != before)
+	}
+}
+
+func TestRotationSkipsFilesWhenErrorOutputIsRedirected(t *testing.T) {
+	logger := newGLogger()
+	logger.logDir, logger.toStderr = t.TempDir(), false
+	var redirected bytes.Buffer
+	logger.SetErrorOutput(&redirected)
+	logger.SetRotationConfig(rotationConfig{MaxSize: 1})
+	if err := logger.initLogFiles(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(logger.Close)
+
+	before := logger.logFiles[ERROR]
+	logger.Error(strings.Repeat("x", 1<<20))
+	if redirected.Len() < 1<<20 {
+		t.Fatalf("redirected output received %d bytes, want at least 1 MiB", redirected.Len())
+	}
+	if logger.logFiles[ERROR] != before || logger.currentSize[ERROR] != 0 || logger.currentSize[INFO] != 0 || logger.currentSize[WARNING] != 0 {
+		t.Fatal("redirected output changed file rotation state")
+	}
+}
+
+func TestLogDestinationsCountShortFileWrite(t *testing.T) {
+	var mirror bytes.Buffer
+	destinations := logDestinations{
+		files: []logFileDestination{
+			{level: ERROR, writer: io.Discard},
+			{level: INFO, writer: &shortWriter{}},
+			{level: WARNING, writer: io.Discard},
+		},
+		output: &mirror,
+	}
+
+	var fileBytes [FATAL + 1]int64
+	if err := destinations.write([]byte("entry"), &fileBytes); err != io.ErrShortWrite {
+		t.Fatalf("write error = %v, want io.ErrShortWrite", err)
+	}
+	want := [FATAL + 1]int64{ERROR: 5, INFO: 1}
+	if fileBytes != want || mirror.Len() != 0 {
+		t.Fatalf("files = %v, want %v; mirror bytes = %d, want 0", fileBytes, want, mirror.Len())
+	}
+}
+
 func TestRotationFailureKeepsOriginalWriterAndSize(t *testing.T) {
 	logger := newGLogger()
 	dir := t.TempDir()

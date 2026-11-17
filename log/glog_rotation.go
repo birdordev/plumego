@@ -74,26 +74,6 @@ func (l *gLogger) initLogFiles() error {
 	return nil
 }
 
-func (l *gLogger) fileLevelsForLog(level Level) []Level {
-	l.mu.RLock()
-	defer l.mu.RUnlock()
-
-	if l.logDir == "" || l.toStderr {
-		return nil
-	}
-
-	levels := make([]Level, 0, 4)
-	if l.logFiles[level] != nil {
-		levels = append(levels, level)
-	}
-	for lv := INFO; lv < level; lv++ {
-		if l.logFiles[lv] != nil {
-			levels = append(levels, lv)
-		}
-	}
-	return levels
-}
-
 // checkLogRotation checks if the log file needs rotation based on size.
 func (l *gLogger) checkLogRotation(level Level, logSize int64) error {
 	logDir, program, config, current, rotated, err := l.rotateIfNeeded(level, logSize)

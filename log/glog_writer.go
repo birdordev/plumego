@@ -87,57 +87,70 @@ func releaseHeaderBuffer(bufp *[]byte) {
 	logBufferPool.Put(bufp)
 }
 
-// rebuildWriterCache pre-computes the effective io.Writer for each log level
-// and stores it in cachedWriters. Must be called under l.mu write lock whenever
-// logFiles, alsoToStderr, toStderr, or output changes.
+type logFileDestination struct {
+	level  Level
+	writer io.Writer
+}
+
+type logDestinations struct {
+	files  []logFileDestination
+	output io.Writer
+}
+
+// rebuildWriterCache publishes the ordered destinations for each log level.
+// Call under l.mu write lock whenever logFiles, alsoToStderr, toStderr, or
+// output changes.
 func (l *gLogger) rebuildWriterCache() {
 	if l.toStderr {
 		// All levels go to stderr; no need to cache per-level.
 		l.cachedWriters = nil
 		return
 	}
-	cache := make(map[Level]io.Writer, 4)
+	cache := make(map[Level]logDestinations, 4)
 	for level := INFO; level <= FATAL; level++ {
-		var writers []io.Writer
-		if l.logDir != "" && l.logFiles[level] != nil {
-			writers = append(writers, l.logFiles[level])
+		var destinations logDestinations
+		if file := l.logFiles[level]; l.logDir != "" && file != nil {
+			destinations.files = append(destinations.files, logFileDestination{level, file})
 			for lv := INFO; lv < level; lv++ {
-				if l.logFiles[lv] != nil {
-					writers = append(writers, l.logFiles[lv])
+				if file := l.logFiles[lv]; file != nil {
+					destinations.files = append(destinations.files, logFileDestination{lv, file})
 				}
 			}
 		}
-		if l.alsoToStderr {
-			writers = append(writers, l.stderrWriter())
+		if l.alsoToStderr || len(destinations.files) == 0 {
+			destinations.output = l.stderrWriter()
 		}
-		if len(writers) == 0 {
-			writers = append(writers, l.stderrWriter())
-		}
-		if len(writers) == 1 {
-			cache[level] = writers[0]
-		} else {
-			cache[level] = io.MultiWriter(writers...)
-		}
+		cache[level] = destinations
 	}
 	l.cachedWriters = cache
 }
 
-// getLogWriter returns the effective io.Writer for the given level.
+// getLogDestinations returns the effective targets for the given level.
 // Must be called with at least l.mu read lock held.
-func (l *gLogger) getLogWriter(level Level) io.Writer {
+func (l *gLogger) getLogDestinations(level Level) logDestinations {
 	if level >= ERROR && l.errorOutput != nil {
-		return l.errorOutput
+		return logDestinations{output: l.errorOutput}
 	}
-	if l.toStderr {
-		return l.stderrWriter()
-	}
-	if l.cachedWriters != nil {
-		if w, ok := l.cachedWriters[level]; ok {
-			return w
+	if !l.toStderr {
+		if destinations, ok := l.cachedWriters[level]; ok {
+			return destinations
 		}
 	}
-	// Fallback (should not happen if rebuildWriterCache is called on every config change).
-	return l.stderrWriter()
+	return logDestinations{output: l.stderrWriter()}
+}
+
+func (d logDestinations) write(data []byte, fileBytes *[FATAL + 1]int64) error {
+	for _, file := range d.files {
+		n, err := writeBytes(file.writer, data)
+		fileBytes[file.level] += int64(n)
+		if err != nil {
+			return err
+		}
+	}
+	if d.output != nil {
+		return writeFull(d.output, data)
+	}
+	return nil
 }
 
 func (l *gLogger) stderrWriter() io.Writer {
@@ -192,15 +205,13 @@ func (l *gLogger) logInternal(level Level, calldepth int, messageBuilder func() 
 	// Snapshot writer state under writeMu so Close cannot close files between
 	// selecting a writer and writing through it.
 	l.mu.RLock()
-	writer := l.getLogWriter(level)
+	destinations := l.getLogDestinations(level)
 	shouldBacktrace := l.shouldLogBacktrace(file, line)
 	l.mu.RUnlock()
 
-	var writtenSize int64
-	if err := writeFull(writer, logLine); err != nil {
+	var fileBytes [FATAL + 1]int64
+	if err := destinations.write(logLine, &fileBytes); err != nil {
 		l.reportWriteError(err)
-	} else {
-		writtenSize = int64(len(logLine))
 	}
 
 	// Return buffer to pool. logLine may alias the header buffer's backing
@@ -211,17 +222,15 @@ func (l *gLogger) logInternal(level Level, calldepth int, messageBuilder func() 
 	if shouldBacktrace {
 		stack := make([]byte, 4096)
 		stack = stack[:runtime.Stack(stack, false)]
-		if err := writeFull(writer, stack); err != nil {
+		if err := destinations.write(stack, &fileBytes); err != nil {
 			l.reportWriteError(err)
-		} else {
-			writtenSize += int64(len(stack))
 		}
 	}
 
 	// Rotate only after the entire record has used the current writer.
-	if writtenSize > 0 && l.logDir != "" {
-		for _, writtenLevel := range l.fileLevelsForLog(level) {
-			_ = l.checkLogRotation(writtenLevel, writtenSize)
+	for _, file := range destinations.files {
+		if size := fileBytes[file.level]; size > 0 {
+			_ = l.checkLogRotation(file.level, size)
 		}
 	}
 
@@ -239,14 +248,16 @@ func (l *gLogger) reportWriteError(_ error) {
 }
 
 func writeFull(w io.Writer, data []byte) error {
+	_, err := writeBytes(w, data)
+	return err
+}
+
+func writeBytes(w io.Writer, data []byte) (int, error) {
 	n, err := w.Write(data)
-	if err != nil {
-		return err
+	if err == nil && n != len(data) {
+		err = io.ErrShortWrite
 	}
-	if n != len(data) {
-		return io.ErrShortWrite
-	}
-	return nil
+	return n, err
 }
 
 func escapeLogMessage(message string) string {

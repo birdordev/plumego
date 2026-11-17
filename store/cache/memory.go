@@ -313,12 +313,11 @@ func (mc *MemoryCache) Clear(ctx context.Context) error {
 		return err
 	}
 	defer mc.writeMu.Unlock()
-	mc.store.Range(func(key, value any) bool {
-		item := value.(cacheItem)
-		mc.store.Delete(key)
-		mc.adjustStoredValue(-1, -int64(len(item.value)))
-		return true
-	})
+	mc.stateMu.Lock()
+	mc.store.Clear()
+	mc.size = 0
+	mc.memory = 0
+	mc.stateMu.Unlock()
 
 	return nil
 }

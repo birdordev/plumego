@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 )
 
@@ -70,23 +71,41 @@ func TestMemoryCacheExpiration(t *testing.T) {
 }
 
 func TestMemoryCacheClear(t *testing.T) {
-	cache := NewMemoryCache()
+	synctest.Test(t, func(t *testing.T) {
+		config := DefaultConfig()
+		config.MaxMemoryUsage = 4
+		cache := mustNewMemoryCacheWithConfig(t, config)
+		defer cache.Close()
 
-	cache.Set(t.Context(), "a", []byte("1"), 0)
-	cache.Set(t.Context(), "b", []byte("2"), 0)
+		ctx := t.Context()
+		if err := cache.Set(ctx, "a", []byte("ab"), time.Second); err != nil {
+			t.Fatal(err)
+		}
+		if err := cache.Set(ctx, "b", []byte("cd"), time.Hour); err != nil {
+			t.Fatal(err)
+		}
+		time.Sleep(time.Second)
 
-	if err := cache.Clear(t.Context()); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+		if err := cache.Clear(ctx); err != nil {
+			t.Fatal(err)
+		}
+		for _, key := range []string{"a", "b"} {
+			if _, err := cache.Get(ctx, key); !errors.Is(err, ErrNotFound) {
+				t.Fatalf("Get(%q) after clear = %v, want ErrNotFound", key, err)
+			}
+		}
+		if got := cache.Stats(); got != (Stats{}) {
+			t.Fatalf("Stats after clear = %+v, want zero counts", got)
+		}
 
-	if _, err := cache.Get(t.Context(), "a"); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("expected ErrNotFound, got %v", err)
-	}
-
-	exists, _ := cache.Exists(t.Context(), "b")
-	if exists {
-		t.Fatalf("expected cache to be cleared")
-	}
+		if err := cache.Set(ctx, "a", []byte("full"), time.Hour); err != nil {
+			t.Fatalf("reuse capacity: %v", err)
+		}
+		cache.cleanupExpired()
+		if got := cache.Stats(); got != (Stats{Entries: 1, MemoryUsage: 4}) {
+			t.Fatalf("Stats after refill and cleanup = %+v", got)
+		}
+	})
 }
 
 func TestConfigValidate(t *testing.T) {

@@ -326,7 +326,10 @@ func (kv *KVStore) SizeContext(ctx context.Context) (int, error) {
 	return entries, nil
 }
 
-// GetStatsContext returns point-in-time statistics using the caller-provided context.
+// GetStatsContext returns statistics using the caller-provided context.
+// Entries and MemoryUsage use the same time to evaluate expiration. Hits and
+// Misses are sampled independently and can reflect different points in time
+// during concurrent reads. HitRatio is computed from the returned counters.
 func (kv *KVStore) GetStatsContext(ctx context.Context) (Stats, error) {
 	if err := contextErr(ctx); err != nil {
 		return Stats{}, err

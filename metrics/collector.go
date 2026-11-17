@@ -134,27 +134,29 @@ func (b *BaseMetricsCollector) Record(ctx context.Context, record MetricRecord) 
 	if b == nil {
 		return
 	}
+	b.record(record.Name, metricRecordIsError(record))
+}
 
+func (b *BaseMetricsCollector) record(name string, isError bool) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.ensureInitializedLocked()
 
 	b.stats.TotalRecords++
-	if record.Name != "" {
-		b.stats.NameBreakdown[record.Name]++
+	if name != "" {
+		b.stats.NameBreakdown[name]++
 	}
 
-	if metricRecordIsError(record) {
+	if isError {
 		b.stats.ErrorRecords++
 	}
 }
 
 // ObserveHTTP implements HTTP metrics recording
 func (b *BaseMetricsCollector) ObserveHTTP(ctx context.Context, method, path string, status, bytes int, duration time.Duration) {
-	if b == nil {
-		return
+	if b != nil {
+		b.record(MetricHTTPRequest, isHTTPErrorStatus(status))
 	}
-	b.Record(ctx, NewHTTPRecord(method, path, status, duration))
 }
 
 // GetStats returns current statistics
@@ -229,8 +231,10 @@ func metricRecordIsError(record MetricRecord) bool {
 		return false
 	}
 	status, err := strconv.Atoi(record.Labels[labelStatus])
-	return err == nil && status >= http.StatusBadRequest
+	return err == nil && isHTTPErrorStatus(status)
 }
+
+func isHTTPErrorStatus(status int) bool { return status >= http.StatusBadRequest }
 
 var (
 	_ AggregateCollector = (*BaseMetricsCollector)(nil)

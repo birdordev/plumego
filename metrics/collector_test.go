@@ -2,6 +2,7 @@ package metrics
 
 import (
 	"errors"
+	"maps"
 	"testing"
 	"time"
 )
@@ -53,6 +54,23 @@ func TestBaseMetricsCollectorObserveHTTP(t *testing.T) {
 	}
 	if stats.NameBreakdown[MetricHTTPRequest] != 1 {
 		t.Fatalf("expected HTTP name breakdown of 1, got %d", stats.NameBreakdown[MetricHTTPRequest])
+	}
+}
+
+func TestBaseMetricsCollectorObserveHTTPMatchesRecord(t *testing.T) {
+	var observed, recorded BaseMetricsCollector
+	statuses := []int{200, 399, 400, 404, 500}
+	for _, status := range statuses {
+		observed.ObserveHTTP(t.Context(), "GET", "/test", status, 100, time.Millisecond)
+		recorded.Record(t.Context(), NewHTTPRecord("GET", "/test", status, time.Millisecond))
+	}
+	got, want := observed.GetStats(), recorded.GetStats()
+	if got.TotalRecords != int64(len(statuses)) || got.ErrorRecords != 3 || got.ActiveSeries != 1 || got.StartTime.IsZero() {
+		t.Fatalf("unexpected observed stats: %+v", got)
+	}
+	if got.TotalRecords != want.TotalRecords || got.ErrorRecords != want.ErrorRecords ||
+		got.ActiveSeries != want.ActiveSeries || !maps.Equal(got.NameBreakdown, want.NameBreakdown) {
+		t.Fatalf("observed stats = %+v, recorded stats = %+v", got, want)
 	}
 }
 

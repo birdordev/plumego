@@ -485,7 +485,7 @@ func TestGLoggerStderrWriterNilOutput(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// 9. gLogger.getLogWriter — errorOutput path for ERROR level (glog_writer.go)
+// 9. gLogger.getLogDestinations — errorOutput path for ERROR level (glog_writer.go)
 // ---------------------------------------------------------------------------
 
 func TestGLoggerGetLogWriterUsesErrorOutput(t *testing.T) {
@@ -1073,7 +1073,7 @@ func TestWriteFullShortWriteReturn(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// 34. getLogWriter — fallback path when cachedWriters lacks level key
+// 34. getLogDestinations — fallback path when cachedWriters lacks level key
 // ---------------------------------------------------------------------------
 
 func TestGLoggerGetLogWriterFallbackPath(t *testing.T) {
@@ -1085,10 +1085,8 @@ func TestGLoggerGetLogWriterFallbackPath(t *testing.T) {
 	// in rebuildWriterCache) to force the fallback stderrWriter() return.
 	logger.mu.Lock()
 	logger.toStderr = false
-	logger.cachedWriters = map[Level]io.Writer{
-		INFO:    &buf,
-		WARNING: &buf,
-		ERROR:   &buf,
+	logger.cachedWriters = map[Level]logDestinations{
+		INFO: {output: &buf},
 	}
 	logger.mu.Unlock()
 
