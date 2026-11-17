@@ -340,6 +340,30 @@ func TestBodyLimitWriterWriteHeader_Blocked(t *testing.T) {
 	}
 }
 
+func TestBodyLimitWithNilRequestBody(t *testing.T) {
+	req, err := http.NewRequest(http.MethodGet, "/", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	calls := 0
+	handler := Middleware(DefaultConfig(8, nil))(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		var buf [1]byte
+		if n, err := r.Body.Read(buf[:]); n != 0 || err != io.EOF {
+			t.Errorf("Read() = (%d, %v), want (0, EOF)", n, err)
+		}
+		if err := r.Body.Close(); err != nil {
+			t.Errorf("Close() = %v", err)
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, req)
+	if calls != 1 || recorder.Code != http.StatusNoContent {
+		t.Fatalf("handler calls = %d, status = %d, want 1 and 204", calls, recorder.Code)
+	}
+}
+
 // TestBodyLimitClose verifies the body reader Close propagates to the underlying reader.
 func TestBodyLimitClose(t *testing.T) {
 	mw := Middleware(Config{MaxBytes: 100})

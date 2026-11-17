@@ -28,7 +28,8 @@ func matchNode(root *node, parts []string, rawPath string) *matchResult {
 }
 
 // matchBranch tries static, parameter, and wildcard children in that order.
-// A failed branch leaves params unchanged. offset points to the current
+// A failed branch leaves params unchanged. With nil params the traversal only
+// checks for a match. When capturing parameters, offset points to the current
 // segment in rawPath so a wildcard can capture the suffix without joining it.
 func matchBranch(current *node, parts []string, rawPath string, offset int, params *[]string) *node {
 	if len(parts) == 0 {
@@ -49,16 +50,23 @@ func matchBranch(current *node, parts []string, rawPath string, offset int, para
 		}
 	}
 	if child := findParamChild(current); child != nil {
-		previous := len(*params)
-		*params = append(*params, segment)
+		var previous int
+		if params != nil {
+			previous = len(*params)
+			*params = append(*params, segment)
+		}
 		if matched := matchBranch(child, parts[1:], rawPath, nextOffset, params); matched != nil {
 			return matched
 		}
-		(*params)[previous] = ""
-		*params = (*params)[:previous]
+		if params != nil {
+			(*params)[previous] = ""
+			*params = (*params)[:previous]
+		}
 	}
 	if child := findWildChild(current); child != nil && child.handler != nil {
-		*params = append(*params, rawPath[offset:])
+		if params != nil {
+			*params = append(*params, rawPath[offset:])
+		}
 		return child
 	}
 	return nil

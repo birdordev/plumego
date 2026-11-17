@@ -7,100 +7,6 @@ import (
 	"testing"
 )
 
-func TestTraceIDParserInternal(t *testing.T) {
-	validID := "1234567890abcdef1234567890abcdef"
-	traceID, err := parseTraceID(validID)
-	if err != nil {
-		t.Fatalf("expected no error for valid trace ID: %v", err)
-	}
-	if validID != traceID {
-		t.Fatalf("expected parsed trace ID to match")
-	}
-
-	for _, invalidID := range []string{
-		"123",
-		"1234567890abcdef1234567890abcdef123",
-	} {
-		if _, err := parseTraceID(invalidID); err == nil {
-			t.Fatalf("expected error for invalid ID length: %s", invalidID)
-		}
-	}
-
-	if _, err := parseTraceID("invalid_trace_id_!!!"); err == nil {
-		t.Fatalf("expected error for invalid hex format")
-	}
-	if _, err := parseTraceID("00000000000000000000000000000000"); err == nil {
-		t.Fatalf("expected error for all-zero trace ID")
-	}
-}
-
-func TestTraceIDParserInternalCanonicalizesLowercase(t *testing.T) {
-	traceID, err := parseTraceID("1234567890ABCDEF1234567890ABCDEF")
-	if err != nil {
-		t.Fatalf("expected uppercase trace ID to parse: %v", err)
-	}
-	if got, want := string(traceID), "1234567890abcdef1234567890abcdef"; got != want {
-		t.Fatalf("expected canonical trace ID %q, got %q", want, got)
-	}
-}
-
-func TestSpanIDParserInternal(t *testing.T) {
-	validID := "1234567890abcdef"
-	spanID, err := parseSpanID(validID)
-	if err != nil {
-		t.Fatalf("expected no error for valid span ID: %v", err)
-	}
-	if validID != spanID {
-		t.Fatalf("expected parsed span ID to match")
-	}
-
-	for _, invalidID := range []string{
-		"123",
-		"1234567890abcdef123",
-	} {
-		if _, err := parseSpanID(invalidID); err == nil {
-			t.Fatalf("expected error for invalid ID length: %s", invalidID)
-		}
-	}
-	if _, err := parseSpanID("0000000000000000"); err == nil {
-		t.Fatalf("expected error for all-zero span ID")
-	}
-}
-
-func TestSpanIDParserInternalCanonicalizesLowercase(t *testing.T) {
-	spanID, err := parseSpanID("1234567890ABCDEF")
-	if err != nil {
-		t.Fatalf("expected uppercase span ID to parse: %v", err)
-	}
-	if got, want := string(spanID), "1234567890abcdef"; got != want {
-		t.Fatalf("expected canonical span ID %q, got %q", want, got)
-	}
-}
-
-func TestTraceIDValidityInternal(t *testing.T) {
-	if !isValidTraceID("1234567890abcdef1234567890abcdef") {
-		t.Fatalf("expected valid trace ID to be recognized")
-	}
-	if isValidTraceID("invalid") {
-		t.Fatalf("expected invalid trace ID to be rejected")
-	}
-	if isValidTraceID("00000000000000000000000000000000") {
-		t.Fatalf("expected all-zero trace ID to be rejected")
-	}
-}
-
-func TestSpanIDValidityInternal(t *testing.T) {
-	if !isValidSpanID("1234567890abcdef") {
-		t.Fatalf("expected valid span ID to be recognized")
-	}
-	if isValidSpanID("invalid") {
-		t.Fatalf("expected invalid span ID to be rejected")
-	}
-	if isValidSpanID("0000000000000000") {
-		t.Fatalf("expected all-zero span ID to be rejected")
-	}
-}
-
 func TestTraceContextValidityHelpers(t *testing.T) {
 	validTraceID := "1234567890abcdef1234567890abcdef"
 	validSpanID := "1234567890abcdef"
@@ -118,6 +24,25 @@ func TestTraceContextValidityHelpers(t *testing.T) {
 			wantTrace: true,
 			wantSpan:  true,
 			wantValid: true,
+		},
+		{
+			name:      "mixed case",
+			tc:        TraceContext{TraceID: "1234567890AbCdEf1234567890ABCDEF", SpanID: "1234567890ABCDEF"},
+			wantTrace: true,
+			wantSpan:  true,
+			wantValid: true,
+		},
+		{
+			name: "all zero ids",
+			tc:   TraceContext{TraceID: strings.Repeat("0", 32), SpanID: strings.Repeat("0", 16)},
+		},
+		{
+			name: "overlong ids",
+			tc:   TraceContext{TraceID: validTraceID + "0", SpanID: validSpanID + "0"},
+		},
+		{
+			name: "non-ASCII ids with exact byte lengths",
+			tc:   TraceContext{TraceID: strings.Repeat("a", 30) + "é", SpanID: strings.Repeat("a", 14) + "é"},
 		},
 		{
 			name:      "trace only",

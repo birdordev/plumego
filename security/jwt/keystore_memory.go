@@ -10,6 +10,9 @@ import (
 // development, testing, and single-process deployments that do not require
 // key durability across restarts. The zero value is ready to use.
 //
+// A positive TTL limits how long a key can be read or listed. An expired
+// entry stays in memory until it is overwritten or the store is collected.
+//
 // For production deployments that need key durability or multi-instance
 // coordination, use a persistent store (e.g. a database or distributed cache)
 // that implements the KeyStore interface.

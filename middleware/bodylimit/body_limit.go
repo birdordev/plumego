@@ -46,11 +46,15 @@ func Middleware(config Config) mw.Middleware {
 				return
 			}
 
+			body := r.Body
+			if body == nil {
+				body = http.NoBody
+			}
 			bw := &bodyLimitResponseWriter{ResponseWriter: w}
 			limited := &limitedBodyReader{
 				w:        bw,
 				req:      r,
-				r:        r.Body,
+				r:        body,
 				maxBytes: config.MaxBytes,
 				logger:   config.Logger,
 				now:      time.Now,

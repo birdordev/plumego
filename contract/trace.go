@@ -1,11 +1,6 @@
 package contract
 
-import (
-	"context"
-	"encoding/hex"
-	"fmt"
-	"strings"
-)
+import "context"
 
 const (
 	traceFlagsSampled uint8 = 0x01
@@ -34,12 +29,12 @@ func (tc TraceContext) IsSampled() bool {
 
 // HasTraceID reports whether TraceID is present and valid.
 func (tc TraceContext) HasTraceID() bool {
-	return isValidTraceID(tc.TraceID)
+	return validHexID(tc.TraceID, traceIDLength)
 }
 
 // HasSpanID reports whether SpanID is present and valid.
 func (tc TraceContext) HasSpanID() bool {
-	return isValidSpanID(tc.SpanID)
+	return validHexID(tc.SpanID, spanIDLength)
 }
 
 // Valid reports whether TraceContext carries both required W3C identifiers.
@@ -93,49 +88,21 @@ func cloneTraceContext(traceContext TraceContext) TraceContext {
 	return traceContext
 }
 
-func parseTraceID(id string) (string, error) {
-	id = strings.ToLower(id)
-	if len(id) != traceIDLength {
-		return "", fmt.Errorf("invalid trace ID length: expected %d, got %d", traceIDLength, len(id))
+func validHexID(id string, length int) bool {
+	if len(id) != length {
+		return false
 	}
-	if _, err := hex.DecodeString(id); err != nil {
-		return "", fmt.Errorf("invalid trace ID format: %w", err)
-	}
-	if isAllZeroHex(id) {
-		return "", fmt.Errorf("invalid trace ID format: all zero")
-	}
-	return id, nil
-}
-
-func parseSpanID(id string) (string, error) {
-	id = strings.ToLower(id)
-	if len(id) != spanIDLength {
-		return "", fmt.Errorf("invalid span ID length: expected %d, got %d", spanIDLength, len(id))
-	}
-	if _, err := hex.DecodeString(id); err != nil {
-		return "", fmt.Errorf("invalid span ID format: %w", err)
-	}
-	if isAllZeroHex(id) {
-		return "", fmt.Errorf("invalid span ID format: all zero")
-	}
-	return id, nil
-}
-
-func isAllZeroHex(id string) bool {
-	for _, ch := range id {
-		if ch != '0' {
+	nonzero := false
+	for i := 0; i < len(id); i++ {
+		c := id[i]
+		switch {
+		case c == '0':
+			continue
+		case '1' <= c && c <= '9', 'a' <= c && c <= 'f', 'A' <= c && c <= 'F':
+			nonzero = true
+		default:
 			return false
 		}
 	}
-	return true
-}
-
-func isValidTraceID(traceID string) bool {
-	_, err := parseTraceID(traceID)
-	return err == nil
-}
-
-func isValidSpanID(spanID string) bool {
-	_, err := parseSpanID(spanID)
-	return err == nil
+	return nonzero
 }

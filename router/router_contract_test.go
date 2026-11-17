@@ -95,6 +95,35 @@ func TestMethodNotAllowedUsesStructuredContractError(t *testing.T) {
 	}
 }
 
+func TestMethodNotAllowedUsesCompleteRouteMatches(t *testing.T) {
+	r := NewRouter(WithMethodNotAllowed(true))
+	handler := http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		t.Fatal("route handler called for an unmatched method")
+	})
+	mustAddRoute(r, http.MethodGet, "/", handler)
+	mustAddRoute(r, http.MethodGet, "/items/fixed/other", handler)
+	mustAddRoute(r, http.MethodGet, "/items/:id/details", handler)
+	mustAddRoute(r, http.MethodPut, "/items/*rest", handler)
+	r.Freeze()
+
+	for _, tt := range []struct {
+		path   string
+		status int
+		allow  string
+	}{
+		{"/", http.StatusMethodNotAllowed, "GET, HEAD"},
+		{"/items/fixed/details", http.StatusMethodNotAllowed, "GET, HEAD, PUT"},
+		{"/items/other/nested/item", http.StatusMethodNotAllowed, "PUT"},
+		{"/missing", http.StatusNotFound, ""},
+	} {
+		t.Run(tt.path, func(t *testing.T) {
+			rec := serveRouter(r, http.MethodPost, tt.path)
+			assertResponseStatus(t, rec, tt.status)
+			assertResponseHeader(t, rec, "Allow", tt.allow)
+		})
+	}
+}
+
 func TestServeHTTPUninitializedOrNilRequestUsesStdlibUnavailable(t *testing.T) {
 	cases := []struct {
 		name string

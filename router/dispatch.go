@@ -349,7 +349,7 @@ func (r *Router) allowedMethods(path string) []string {
 			if method == MethodAny || tree == nil {
 				continue
 			}
-			if matchNode(tree, parts, normalized) != nil {
+			if matchBranch(tree, parts, "", 0, nil) != nil {
 				allowed = append(allowed, method)
 			}
 		}

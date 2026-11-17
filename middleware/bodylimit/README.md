@@ -29,6 +29,7 @@ app.Use(bodylimit.Middleware(bodylimit.DefaultConfig(1<<20, logger))) // 1 MiB
 ## Notes
 
 - Limits apply to the body reader, not request headers.
+- When calling the middleware directly, a nil request body is treated as empty.
 - The wrapped `ResponseWriter` supports `http.Flusher` and `http.Hijacker` passthrough.
 - The limit is checked lazily during `Read`; a handler that never reads the body will not trigger the check.
 

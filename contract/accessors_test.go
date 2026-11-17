@@ -954,22 +954,13 @@ func TestCloneReflectValueNilTypedMap(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// parseTraceID / parseSpanID — invalid hex branch
+// TraceContext identifiers — invalid hex
 // ---------------------------------------------------------------------------
 
-func TestParseTraceIDInvalidHex(t *testing.T) {
-	// 32-char string with non-hex characters → hex.DecodeString fails.
-	_, err := parseTraceID("zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz")
-	if err == nil {
-		t.Fatal("parseTraceID with invalid hex: expected error, got nil")
-	}
-}
-
-func TestParseSpanIDInvalidHex(t *testing.T) {
-	// 16-char string with non-hex characters.
-	_, err := parseSpanID("zzzzzzzzzzzzzzzz")
-	if err == nil {
-		t.Fatal("parseSpanID with invalid hex: expected error, got nil")
+func TestTraceContextRejectsNonHexIDs(t *testing.T) {
+	tc := TraceContext{TraceID: "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz", SpanID: "zzzzzzzzzzzzzzzz"}
+	if tc.HasTraceID() || tc.HasSpanID() || tc.Valid() {
+		t.Fatal("trace context accepted non-hex identifiers")
 	}
 }
 
