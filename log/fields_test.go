@@ -64,8 +64,8 @@ func TestMergeFieldsKeepsOverridePrecedence(t *testing.T) {
 	}
 }
 
-func TestMergeFieldSetsKeepsLaterPrecedence(t *testing.T) {
-	got := mergeFieldSets(
+func TestMergeFieldsKeepsLaterPrecedence(t *testing.T) {
+	got := mergeFields(
 		Fields{"first": "yes", "override": "first"},
 		Fields{"second": "yes", "override": "second"},
 		Fields{"third": "yes", "override": "third"},
@@ -78,7 +78,7 @@ func TestMergeFieldSetsKeepsLaterPrecedence(t *testing.T) {
 		"override": "third",
 	}) {
 		if got[key] != want {
-			t.Fatalf("mergeFieldSets()[%s] = %v, want %v in %#v", key, got[key], want, got)
+			t.Fatalf("mergeFields()[%s] = %v, want %v in %#v", key, got[key], want, got)
 		}
 	}
 }

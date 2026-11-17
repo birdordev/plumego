@@ -448,7 +448,7 @@ func TestKVStoreRejectsEmptyKeys(t *testing.T) {
 
 func TestKVStoreLoadRecomputesEntrySize(t *testing.T) {
 	dir := t.TempDir()
-	writeState(t, dir, diskState{Entries: map[string]entry{
+	writeState(t, dir, diskState{Entries: map[string]*entry{
 		"alpha": {
 			Value:     []byte("one"),
 			UpdatedAt: time.Now(),
@@ -465,6 +465,51 @@ func TestKVStoreLoadRecomputesEntrySize(t *testing.T) {
 	stats := mustStats(t, store)
 	if stats.MemoryUsage != entrySize("alpha", []byte("one")) {
 		t.Fatalf("MemoryUsage = %d, want %d", stats.MemoryUsage, entrySize("alpha", []byte("one")))
+	}
+}
+
+func TestPersistLockedPreservesLegacySnapshotEncoding(t *testing.T) {
+	type legacyState struct {
+		Entries map[string]entry `json:"entries"`
+	}
+	now := time.Unix(1000, 0).UTC()
+	tests := []struct {
+		name    string
+		entries map[string]entry
+	}{
+		{"empty", map[string]entry{}},
+		{"with values and TTL", map[string]entry{
+			"nil":   {UpdatedAt: now, Size: entrySize("nil", nil)},
+			"empty": {Value: []byte{}, UpdatedAt: now, Size: entrySize("empty", nil)},
+			"ttl":   {Value: []byte("value"), UpdatedAt: now, ExpireAt: now.Add(time.Minute), Size: entrySize("ttl", []byte("value"))},
+		}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			want, err := json.Marshal(legacyState{Entries: tt.entries})
+			if err != nil {
+				t.Fatal(err)
+			}
+			dir := t.TempDir()
+			store := &KVStore{opts: Options{DataDir: dir}, data: make(map[string]*entry, len(tt.entries))}
+			for key, value := range tt.entries {
+				store.data[key] = &value
+			}
+
+			store.mu.Lock()
+			committed, err := store.persistLocked()
+			store.mu.Unlock()
+			if err != nil || !committed {
+				t.Fatalf("persistLocked = %t, %v; want true, nil", committed, err)
+			}
+			got, err := os.ReadFile(filepath.Join(dir, stateFileName))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Equal(got, want) {
+				t.Fatalf("persisted %s, want %s", got, want)
+			}
+		})
 	}
 }
 
@@ -581,7 +626,7 @@ func TestKVStoreLoadAcceptsEntryWithNilValue(t *testing.T) {
 
 func TestKVStoreLoadRejectsInvalidKeys(t *testing.T) {
 	dir := t.TempDir()
-	writeState(t, dir, diskState{Entries: map[string]entry{
+	writeState(t, dir, diskState{Entries: map[string]*entry{
 		"": {
 			Value:     []byte("invalid"),
 			UpdatedAt: time.Now(),
@@ -604,7 +649,7 @@ func TestKVStoreLoadRejectsInvalidKeys(t *testing.T) {
 func TestKVStoreLoadAppliesMaxEntries(t *testing.T) {
 	dir := t.TempDir()
 	now := time.Now()
-	writeState(t, dir, diskState{Entries: map[string]entry{
+	writeState(t, dir, diskState{Entries: map[string]*entry{
 		"old": {
 			Value:     []byte("old"),
 			UpdatedAt: now.Add(-time.Minute),
@@ -632,7 +677,7 @@ func TestKVStoreLoadAppliesMaxEntries(t *testing.T) {
 func TestKVStoreOpenDoesNotPersistPrunedStartupState(t *testing.T) {
 	dir := t.TempDir()
 	now := time.Now()
-	writeState(t, dir, diskState{Entries: map[string]entry{
+	writeState(t, dir, diskState{Entries: map[string]*entry{
 		"expired": {
 			Value:     []byte("old"),
 			ExpireAt:  now.Add(-time.Minute),
@@ -1236,7 +1281,7 @@ func TestKVStoreWriteSurvivesEvictionAfterClockMovesBackward(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			cfg := Config{DataDir: t.TempDir(), MaxEntries: tc.maxEntries, MaxMemoryMB: tc.maxMemoryMB}
-			writeState(t, cfg.DataDir, diskState{Entries: map[string]entry{
+			writeState(t, cfg.DataDir, diskState{Entries: map[string]*entry{
 				"existing": {Value: bytes.Repeat([]byte("a"), tc.valueBytes), UpdatedAt: time.Now().Add(time.Hour)},
 			}})
 			store, err := NewKVStore(cfg)
@@ -1326,7 +1371,7 @@ func TestKVStoreStartupTrimsExpiredEntriesAndBothCapacityLimits(t *testing.T) {
 	older := time.Now().Add(-time.Hour)
 	newer := older.Add(time.Minute)
 	payload := bytes.Repeat([]byte("x"), 400*1024)
-	state := diskState{Entries: map[string]entry{
+	state := diskState{Entries: map[string]*entry{
 		"expired":  {Value: payload, UpdatedAt: newer, ExpireAt: older},
 		"z-oldest": {Value: []byte("small"), UpdatedAt: older},
 		"a":        {Value: payload, UpdatedAt: newer},

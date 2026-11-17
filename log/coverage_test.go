@@ -763,16 +763,9 @@ func TestGLoggerVAtCallerFailure(t *testing.T) {
 // 20. fieldSetCapacity overflow path
 // ---------------------------------------------------------------------------
 
-// Force fieldSetCapacity to hit the overflow return by passing a Fields slice
-// whose total length overflows int.  We use a map-capacity trick: create a
-// single entry with a type-cast that pretends a huge length.
 func TestFieldSetCapacityOverflowReturn(t *testing.T) {
-	// We can't allocate 2^62 entries, so we test via addMapCapacity directly —
-	// this is already done in TestFieldSetCapacityOverflow above.
-	// Here confirm mergeFieldSets handles it gracefully (capacity=0, non-empty).
-	result := mergeFieldSets(Fields{"a": 1}, Fields{"b": 2})
-	if result["a"] != 1 || result["b"] != 2 {
-		t.Errorf("expected merged result to contain both fields, got %v", result)
+	if got := fieldSetCapacity(maxMapCapacity, []Fields{{"extra": 1}}); got != 0 {
+		t.Errorf("fieldSetCapacity on overflow = %d, want 0", got)
 	}
 }
 

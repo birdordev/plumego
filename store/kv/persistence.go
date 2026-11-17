@@ -17,7 +17,7 @@ import (
 const stateFileName = "store.json"
 
 type diskState struct {
-	Entries map[string]entry `json:"entries"`
+	Entries map[string]*entry `json:"entries"`
 }
 
 func (kv *KVStore) load() error {
@@ -33,9 +33,7 @@ func (kv *KVStore) load() error {
 		return fmt.Errorf("%w: snapshot must be valid UTF-8", ErrCorruptState)
 	}
 
-	var state struct {
-		Entries map[string]*entry `json:"entries"`
-	}
+	var state diskState
 	if err := json.Unmarshal(raw, &state); err != nil {
 		return fmt.Errorf("%w: decode state: %w", ErrCorruptState, err)
 	}
@@ -160,28 +158,12 @@ func snapshotMemberName(object snapshotObject, name string) string {
 	return name
 }
 
-// makeDiskStateLocked creates the state for encoding under kv.mu.
-// It borrows immutable entry values until encoding completes.
-func (kv *KVStore) makeDiskStateLocked() diskState {
-	state := diskState{
-		Entries: make(map[string]entry, len(kv.data)),
-	}
-	for key, item := range kv.data {
-		state.Entries[key] = entry{
-			Value:     item.Value,
-			ExpireAt:  item.ExpireAt,
-			UpdatedAt: item.UpdatedAt,
-			Size:      item.Size,
-		}
-	}
-	return state
-}
-
-// persistState atomically replaces the backing file. The bool reports whether
+// persistLocked atomically replaces the backing file. The bool reports whether
 // replacement succeeded, even if the subsequent directory sync fails.
-// Callers must serialize writes through the same store.
-func (kv *KVStore) persistState(state diskState) (bool, error) {
-	raw, err := json.Marshal(state)
+// The write lock protects the borrowed entry map during synchronous encoding
+// and must remain held through replacement and state reconciliation.
+func (kv *KVStore) persistLocked() (bool, error) {
+	raw, err := json.Marshal(diskState{Entries: kv.data})
 	if err != nil {
 		return false, fmt.Errorf("encode state: %w", err)
 	}
@@ -222,13 +204,6 @@ func (kv *KVStore) persistState(state diskState) (bool, error) {
 		return true, fmt.Errorf("sync state dir: %w", err)
 	}
 	return true, nil
-}
-
-// persistLocked performs a full persist while holding kv.mu.
-// The write lock must remain held through replacement and state reconciliation.
-func (kv *KVStore) persistLocked() (bool, error) {
-	state := kv.makeDiskStateLocked()
-	return kv.persistState(state)
 }
 
 func syncDir(dir string) error {

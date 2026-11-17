@@ -145,7 +145,7 @@ func (l *jsonLogger) log(level Level, msg string, fields []Fields) {
 	}
 
 	// Build the entry and marshal it outside the lock to reduce contention.
-	entry := l.buildEntry(level, msg, mergeFieldSets(fields...))
+	entry := l.buildEntry(level, msg, fields)
 	data, err := json.Marshal(entry)
 	if err != nil {
 		data = []byte(`{"level":"ERROR","msg":"failed to marshal log entry"}`)
@@ -168,13 +168,13 @@ func (l *jsonLogger) log(level Level, msg string, fields []Fields) {
 }
 
 // buildEntry constructs the log entry map. Called without the mutex held.
-func (l *jsonLogger) buildEntry(level Level, msg string, fields Fields) map[string]any {
+func (l *jsonLogger) buildEntry(level Level, msg string, fields []Fields) map[string]any {
 	// Snapshot base fields under lock so WithFields-derived loggers are safe.
 	l.mu.Lock()
 	baseFields := l.fields
 	l.mu.Unlock()
 
-	combined := mergeFields(baseFields, fields)
+	combined := mergeFields(baseFields, fields...)
 	entry := make(map[string]any, safeMapCapacity(len(combined), 4))
 	for k, v := range combined {
 		if !utf8.ValidString(k) {

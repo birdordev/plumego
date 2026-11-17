@@ -139,6 +139,54 @@ func TestWaiterCancellationWinsOverOtherReadyOutcomes(t *testing.T) {
 	}
 }
 
+func TestWaiterChecksCancellationAfterLeaderErrorHook(t *testing.T) {
+	tests := []struct {
+		name      string
+		resultErr error
+		hookErr   error
+	}{
+		{"leader failed", errLeaderWrite, errLeaderWrite},
+		{"missing capture", nil, errUpstreamPanic},
+	}
+	for _, tt := range tests {
+		for _, cancelDuringHook := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/canceled=%t", tt.name, cancelDuringHook), func(t *testing.T) {
+				ctx, cancel := context.WithCancel(t.Context())
+				defer cancel()
+				calls := 0
+				c := New(Config{OnError: func(_ string, err error) {
+					calls++
+					if !errors.Is(err, tt.hookErr) {
+						t.Errorf("OnError got %v, want %v", err, tt.hookErr)
+					}
+					if cancelDuringHook {
+						cancel()
+					}
+				}})
+				flight := &inFlightRequest{done: make(chan struct{}), err: tt.resultErr}
+				flight.waiters.Store(1)
+				close(flight.done)
+				req := httptest.NewRequest(http.MethodGet, "/", nil).WithContext(ctx)
+				w := httptest.NewRecorder()
+				w.Code = 0 // Distinguish no commit from an explicit 200.
+
+				c.waitForInFlight(w, req, "fixture", flight)
+
+				if calls != 1 {
+					t.Fatalf("OnError called %d times, want 1", calls)
+				}
+				if cancelDuringHook {
+					if w.Code != 0 || w.Body.Len() != 0 || flight.waiters.Load() != 0 {
+						t.Fatalf("canceled waiter: status=%d body=%q waiters=%d", w.Code, w.Body, flight.waiters.Load())
+					}
+				} else if w.Code != http.StatusBadGateway || !strings.Contains(w.Body.String(), "upstream request failed") {
+					t.Fatalf("active waiter: status=%d body=%q, want structured 502", w.Code, w.Body)
+				}
+			})
+		}
+	}
+}
+
 func TestLeaderCancellationBeforeCommitRejectsReplay(t *testing.T) {
 	for _, tc := range []struct {
 		name   string

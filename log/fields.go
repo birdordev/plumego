@@ -27,8 +27,7 @@ func addMapCapacity(base, extra int) (int, bool) {
 	return int(sum), true
 }
 
-func fieldSetCapacity(fieldSets []Fields) int {
-	total := 0
+func fieldSetCapacity(total int, fieldSets []Fields) int {
 	for _, fields := range fieldSets {
 		next, ok := addMapCapacity(total, len(fields))
 		if !ok {
@@ -60,30 +59,17 @@ func cloneFields(fields Fields) Fields {
 	return cloned
 }
 
-// mergeFields returns a merged copy where override fields take precedence.
-func mergeFields(base, override Fields) Fields {
-	if len(base) == 0 && len(override) == 0 {
-		return Fields{}
-	}
-
-	merged := make(Fields, safeMapCapacity(len(base), len(override)))
-	for k, v := range base {
-		merged[k] = v
-	}
-	for k, v := range override {
-		merged[k] = v
-	}
-	return merged
-}
-
-// mergeFieldSets returns a merged copy where later field sets take precedence.
-func mergeFieldSets(fieldSets ...Fields) Fields {
-	capacity := fieldSetCapacity(fieldSets)
-	if capacity == 0 && fieldSetsEmpty(fieldSets) {
+// mergeFields copies the base and applies each subsequent field set in order.
+func mergeFields(base Fields, fieldSets ...Fields) Fields {
+	capacity := fieldSetCapacity(len(base), fieldSets)
+	if capacity == 0 && len(base) == 0 && fieldSetsEmpty(fieldSets) {
 		return Fields{}
 	}
 
 	merged := make(Fields, capacity)
+	for k, v := range base {
+		merged[k] = v
+	}
 	for _, fields := range fieldSets {
 		for k, v := range fields {
 			merged[k] = v

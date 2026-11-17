@@ -98,7 +98,8 @@ type PasswordStrengthConfig struct {
 	// RequireDigit requires at least one digit
 	RequireDigit bool
 
-	// RequireSpecial requires at least one special character
+	// RequireSpecial requires at least one Unicode punctuation or symbol
+	// character. Whitespace alone does not satisfy this requirement.
 	RequireSpecial bool
 }
 
