@@ -181,7 +181,6 @@ func (r *Router) Routes() []RouteInfo {
 		return []RouteInfo{}
 	}
 	r.state.mu.RLock()
-	defer r.state.mu.RUnlock()
 
 	infos := make([]RouteInfo, 0)
 	for _, routes := range r.state.routes {
@@ -191,6 +190,7 @@ func (r *Router) Routes() []RouteInfo {
 			infos = append(infos, info)
 		}
 	}
+	r.state.mu.RUnlock()
 
 	sort.Slice(infos, func(i, j int) bool {
 		if infos[i].Method == infos[j].Method {

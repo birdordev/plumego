@@ -20,20 +20,13 @@ func TestInMemoryKeyStoreCanceledWhileWaitingToSet(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	result := make(chan error, 1)
-	store.mu.RLock()
-	go func() { result <- store.SetContext(ctx, "fixture", []byte("sample"), 0) }()
-	deadline := time.Now().Add(5 * time.Second)
-	// This read lock keeps the writer queued. A queued writer prevents new readers.
-	for store.mu.TryRLock() {
-		store.mu.RUnlock()
-		if time.Now().After(deadline) {
-			store.mu.RUnlock()
-			t.Fatal("SetContext did not reach the write lock")
-		}
-		runtime.Gosched()
-	}
-	cancel()
-	store.mu.RUnlock()
+	func() {
+		store.mu.RLock()
+		defer store.mu.RUnlock()
+		go func() { result <- store.SetContext(ctx, "fixture", []byte("sample"), 0) }()
+		waitForKeyStoreWriter(t, store)
+		cancel()
+	}()
 	if err := <-result; !errors.Is(err, context.Canceled) {
 		t.Fatalf("SetContext = %v, want context.Canceled", err)
 	}
@@ -70,18 +63,7 @@ func TestInMemoryKeyStoreCanceledWhileWaitingToRead(t *testing.T) {
 					result <- readResult{keys != nil, err}
 				}()
 
-				// Observe the reader after the entry check and before cancellation.
-				var stack [64 << 10]byte
-				wait.ForCondition(t, 5*time.Second, method+" waiting for the read lock", func() bool {
-					n := runtime.Stack(stack[:], true)
-					for trace := range strings.SplitSeq(string(stack[:n]), "\n\n") {
-						if strings.Contains(trace, "sync.(*RWMutex).RLock(") &&
-							strings.Contains(trace, "(*InMemoryKeyStore)."+method+"(") {
-							return true
-						}
-					}
-					return false
-				})
+				waitForKeyStoreReader(t, method)
 				cancel()
 			}()
 
@@ -98,6 +80,81 @@ func TestInMemoryKeyStoreCanceledWhileWaitingToRead(t *testing.T) {
 			}
 			store.mu.Unlock()
 		})
+	}
+}
+
+func waitForKeyStoreWriter(t *testing.T, store *InMemoryKeyStore) {
+	t.Helper()
+	// The caller holds a read lock. A queued writer prevents additional readers.
+	wait.ForCondition(t, 5*time.Second, "SetContext waiting for the write lock", func() bool {
+		if store.mu.TryRLock() {
+			store.mu.RUnlock()
+			return false
+		}
+		return true
+	})
+}
+
+func waitForKeyStoreReader(t *testing.T, method string) {
+	t.Helper()
+	var stack [64 << 10]byte
+	wait.ForCondition(t, 5*time.Second, method+" waiting for the read lock", func() bool {
+		n := runtime.Stack(stack[:], true)
+		for trace := range strings.SplitSeq(string(stack[:n]), "\n\n") {
+			if strings.Contains(trace, "sync.(*RWMutex).RLock(") &&
+				strings.Contains(trace, "(*InMemoryKeyStore)."+method+"(") {
+				return true
+			}
+		}
+		return false
+	})
+}
+
+func TestInMemoryKeyStoreTTLStartsAfterWaitingToSet(t *testing.T) {
+	store := NewInMemoryKeyStore()
+	const ttl = 20 * time.Millisecond
+	result := make(chan error, 1)
+	releasingAt := func() time.Time {
+		store.mu.RLock()
+		defer store.mu.RUnlock()
+		go func() { result <- store.SetContext(t.Context(), "fixture", []byte("value"), ttl) }()
+		waitForKeyStoreWriter(t, store)
+		// Keep the writer queued beyond the entire TTL.
+		time.Sleep(2 * ttl)
+		return time.Now()
+	}()
+	if err := <-result; err != nil {
+		t.Fatal(err)
+	}
+	if expiry := store.entries["fixture"].expiry; expiry.Before(releasingAt.Add(ttl)) {
+		t.Fatalf("expiry minus lock release time = %v, want at least %v", expiry.Sub(releasingAt), ttl)
+	}
+}
+
+func TestInMemoryKeyStoreKeysUsesClockAfterWaitingToRead(t *testing.T) {
+	store := NewInMemoryKeyStore()
+	if err := store.SetContext(t.Context(), "permanent", []byte("value"), 0); err != nil {
+		t.Fatal(err)
+	}
+	type result struct {
+		keys []string
+		err  error
+	}
+	done := make(chan result, 1)
+	func() {
+		store.mu.Lock()
+		defer store.mu.Unlock()
+		go func() {
+			keys, err := store.KeysContext(t.Context())
+			done <- result{keys, err}
+		}()
+		waitForKeyStoreReader(t, "KeysContext")
+		// This entry expires before the reader can acquire the lock.
+		store.entries["expired"] = memEntry{expiry: time.Now()}
+	}()
+	got := <-done
+	if got.err != nil || !slices.Equal(got.keys, []string{"permanent"}) {
+		t.Fatalf("KeysContext = %v, %v; want [permanent], nil", got.keys, got.err)
 	}
 }
 

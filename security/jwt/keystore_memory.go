@@ -64,20 +64,21 @@ func (s *InMemoryKeyStore) GetContext(ctx context.Context, key string) ([]byte, 
 	return append([]byte(nil), e.value...), nil
 }
 
-// SetContext stores value for key. A positive ttl sets the expiration time.
+// SetContext stores value for key. A positive ttl starts after the write lock
+// is acquired and the context is checked.
 // A ttl of zero or less keeps the entry indefinitely.
 func (s *InMemoryKeyStore) SetContext(ctx context.Context, key string, value []byte, ttl time.Duration) error {
+	if err := contextErr(ctx); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	if err := contextErr(ctx); err != nil {
 		return err
 	}
 	var expiry time.Time
 	if ttl > 0 {
 		expiry = time.Now().Add(ttl)
-	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if err := contextErr(ctx); err != nil {
-		return err
 	}
 	if s.entries == nil {
 		s.entries = make(map[string]memEntry)
@@ -86,19 +87,20 @@ func (s *InMemoryKeyStore) SetContext(ctx context.Context, key string, value []b
 	return nil
 }
 
-// KeysContext returns all non-expired keys currently in the store.
+// KeysContext returns all keys that are unexpired when the store is read.
+// It uses the same time for all entries, sampled while holding the read lock.
 // If ctx is canceled before the read starts, including while waiting for the
 // read lock, KeysContext returns the context error and no keys.
 func (s *InMemoryKeyStore) KeysContext(ctx context.Context) ([]string, error) {
 	if err := contextErr(ctx); err != nil {
 		return nil, err
 	}
-	now := time.Now()
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if err := contextErr(ctx); err != nil {
 		return nil, err
 	}
+	now := time.Now()
 	keys := make([]string, 0, len(s.entries))
 	for k, e := range s.entries {
 		if !e.expiredAt(now) {

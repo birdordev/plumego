@@ -128,5 +128,7 @@ globals.
   minimal `KeyStore` interface; stores must document ambiguous write outcomes.
 - The in-memory JWT key store checks cancellation again after acquiring its
   read or write lock, before reading, listing, or publishing entries.
+  Positive TTLs start after the write lock and cancellation checks, and key
+  enumeration checks expiry at a single time sampled under the read lock.
 
 JWT issuance applies the same compact-token and segment size limits as verification. Oversized claims return ErrInvalidToken without a partial token pair. Limiter rate configuration rejects NaN and infinities with ErrInvalidConfig; zero retains its documented default behavior.

@@ -12,39 +12,7 @@ import (
 	"github.com/birdordev/plumego/middleware"
 )
 
-// Middleware compresses HTTP responses when the client supports it via
-// Accept-Encoding.
-// It intelligently skips compression for:
-//   - WebSocket upgrades
-//   - Server-Sent Events (SSE)
-//   - Already compressed content
-//   - Binary content (images, videos, etc.)
-//   - Responses that exceed MaxBufferBytes before gzip output starts
-//
-// Example:
-//
-//	import "github.com/birdordev/plumego/middleware/compression"
-//
-//	// Use explicit configuration
-//	config := compression.Config{
-//		MaxBufferBytes: 5 << 20, // 5MB max buffer
-//	}
-//	handler := compression.Middleware(config)(myHandler)
-//
-// The middleware adds the following headers:
-//   - Content-Encoding: gzip (when compression is used)
-//   - Vary: Accept-Encoding (to indicate response varies by encoding)
-//
 // Config controls gzip compression middleware behavior.
-//
-// Example:
-//
-//	import "github.com/birdordev/plumego/middleware/compression"
-//
-//	config := compression.Config{
-//		MaxBufferBytes: 5 << 20, // 5MB max buffer
-//	}
-//	handler := compression.Middleware(config)(myHandler)
 type Config struct {
 	// MaxBufferBytes is the maximum response size to buffer for compression.
 	// Responses larger than this bypass compression only if the limit is reached
@@ -69,7 +37,23 @@ var compressedContentTypePrefixes = []string{
 	"application/octet-stream",
 }
 
-// Middleware creates gzip compression middleware with explicit configuration.
+// Middleware compresses eligible HTTP responses when the client accepts gzip.
+// It bypasses negotiation for upgrade requests and requests accepting
+// Server-Sent Events. It skips compression for already encoded responses,
+// streaming or common binary content, range responses, error responses,
+// status 204 or 304, and responses that exceed [Config.MaxBufferBytes] before
+// gzip output starts.
+//
+// Negotiated gzip and identity responses include Vary: Accept-Encoding and
+// preserve other Vary values. Responses compressed by the middleware have
+// Content-Encoding: gzip.
+//
+// Example:
+//
+//	import "github.com/birdordev/plumego/middleware/compression"
+//
+//	config := compression.Config{MaxBufferBytes: 5 << 20}
+//	handler := compression.Middleware(config)(myHandler)
 func Middleware(cfg Config) middleware.Middleware {
 	if cfg.MaxBufferBytes <= 0 {
 		cfg.MaxBufferBytes = DefaultConfig().MaxBufferBytes

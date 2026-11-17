@@ -282,6 +282,16 @@ func (kv *KVStore) KeysContext(ctx context.Context) ([]string, error) {
 	if kv == nil {
 		return nil, ErrStoreClosed
 	}
+
+	keys, err := kv.snapshotKeys(ctx)
+	if err != nil {
+		return nil, err
+	}
+	sort.Strings(keys)
+	return keys, nil
+}
+
+func (kv *KVStore) snapshotKeys(ctx context.Context) ([]string, error) {
 	kv.mu.RLock()
 	defer kv.mu.RUnlock()
 
@@ -300,7 +310,6 @@ func (kv *KVStore) KeysContext(ctx context.Context) ([]string, error) {
 		}
 		keys = append(keys, key)
 	}
-	sort.Strings(keys)
 	return keys, nil
 }
 

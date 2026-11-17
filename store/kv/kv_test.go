@@ -196,6 +196,10 @@ func TestKVStoreKeysAndStats(t *testing.T) {
 	}
 	defer func() { _ = store.Close() }()
 
+	if keys := mustKeys(t, store); keys == nil || len(keys) != 0 {
+		t.Fatalf("empty store keys = %#v, want a non-nil empty slice", keys)
+	}
+
 	_ = store.Set("b", []byte("2"), 0)
 	_ = store.Set("a", []byte("1"), 0)
 	_, _ = store.Get("a")
