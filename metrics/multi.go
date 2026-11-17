@@ -17,21 +17,30 @@ type MultiCollector struct {
 // With multiple collectors it forwards in order and gives each target its
 // own copy of the labels on Record.
 func NewMultiCollector(collectors ...AggregateCollector) AggregateCollector {
-	filtered := make([]AggregateCollector, 0, len(collectors))
-	for _, collector := range collectors {
+	var first AggregateCollector
+	var filtered []AggregateCollector
+	for i, collector := range collectors {
 		value := reflect.ValueOf(collector)
 		if !value.IsValid() || (value.Kind() == reflect.Pointer && value.IsNil()) {
 			continue
 		}
+		if first == nil {
+			first = collector
+			continue
+		}
+		if filtered == nil {
+			filtered = make([]AggregateCollector, 1, 1+len(collectors)-i)
+			filtered[0] = first
+		}
 		filtered = append(filtered, collector)
 	}
-	if len(filtered) == 0 {
-		return NewNoopCollector()
+	if filtered != nil {
+		return &MultiCollector{collectors: filtered}
 	}
-	if len(filtered) == 1 {
-		return filtered[0]
+	if first != nil {
+		return first
 	}
-	return &MultiCollector{collectors: filtered}
+	return NewNoopCollector()
 }
 
 // Record forwards the record to all collectors.

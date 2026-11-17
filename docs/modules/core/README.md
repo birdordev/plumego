@@ -163,6 +163,7 @@ These behaviors are part of the current stable-root freeze baseline:
 | Route groups | `App.Group("")` adds no path prefix. A nested `RouteGroup.Group("")` inherits the parent prefix. A non-empty prefix without a leading `/` panics |
 | Middleware wiring | `Use` preserves registration order, treats an empty middleware list as a no-op, and rejects nil middleware without partial registration |
 | Middleware builder callbacks | The app serializes handler preparation. Wait for the builder to return before calling `Run`, `Prepare`, or `ServeHTTP` on the same app. |
+| No-route warning | The call that first successfully prepares a handler with no registered routes logs one warning after publishing its handler or server state and releasing the preparation locks it acquired. |
 | `ServeHTTP` | lazily prepares the handler only, skips server-only config validation, freezes later route/middleware mutation, and remains `net/http` compatible |
 | `ServeHTTP` then failed `Prepare` | if direct handler use already put the app in `handler_prepared`, a later server-only config failure from `Prepare` keeps the app handler-prepared, leaves `Server()` unavailable, and does not reopen route or middleware mutation |
 | `Prepare` | freezes handler state, builds one `http.Server`, prepares open HTTP connection tracking, applies the configured TLS HTTP/2 policy, and is idempotent |

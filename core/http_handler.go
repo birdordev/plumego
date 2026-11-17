@@ -10,45 +10,44 @@ import (
 )
 
 // ensureHandlerPrepared freezes registration before calling middleware builders.
-// A failed build releases the preparation lock without publishing a handler.
-func (a *App) ensureHandlerPrepared() {
+// It reports whether this call published a handler with no registered routes.
+func (a *App) ensureHandlerPrepared() bool {
 	if a.handlerFast.Load() != nil {
-		return
+		return false
 	}
 
 	a.handlerPrepareMu.Lock()
 	defer a.handlerPrepareMu.Unlock()
 	if a.handlerFast.Load() != nil {
-		return
+		return false
 	}
 
 	a.mu.Lock()
 	chain, r := a.middlewareChain, a.router
 	if chain == nil || r == nil {
 		a.mu.Unlock()
-		return
+		return false
 	}
 	a.freezeRegistration()
 	a.mu.Unlock()
 
-	if len(r.Routes()) == 0 {
-		a.Logger().Warn("no routes registered: all requests will receive 404; call app.Get/Post/… before Prepare", nil)
-	}
 	handler := chain.Build(r)
 	if handler == nil {
-		return
+		return false
 	}
+	warnNoRoutes := len(r.Routes()) == 0
 
 	a.mu.Lock()
 	a.handler = handler
 	a.preparationState = PreparationStateHandlerPrepared
 	a.handlerFast.Store(&handlerRef{h: handler})
 	a.mu.Unlock()
+	return warnNoRoutes
 }
 
 // ensureServerPrepared constructs the backing http.Server for the explicit
-// Prepare/Server lifecycle path.
-func (a *App) ensureServerPrepared() error {
+// Prepare/Server lifecycle path and reports whether to warn about no routes.
+func (a *App) ensureServerPrepared() (bool, error) {
 	a.serverPrepareMu.Lock()
 	defer a.serverPrepareMu.Unlock()
 
@@ -56,29 +55,33 @@ func (a *App) ensureServerPrepared() error {
 	prepared := a.httpServer != nil
 	a.mu.RUnlock()
 	if prepared {
-		return nil
+		return false, nil
 	}
 
 	config, err := a.serverConfigSnapshot()
 	if err != nil {
-		return err
+		return false, err
 	}
 	if err := validateServerConfig(config); err != nil {
-		return wrapCoreError(err, operationPrepareServer, nil)
+		return false, wrapCoreError(err, operationPrepareServer, nil)
 	}
 
 	tlsConfig, err := prepareTLSConfig(config.TLS)
 	if err != nil {
-		return wrapCoreError(err, operationPrepareServer, nil)
+		return false, wrapCoreError(err, operationPrepareServer, nil)
 	}
 
-	a.ensureHandlerPrepared()
+	warnNoRoutes := a.ensureHandlerPrepared()
 	handler, err := a.preparedHandlerSnapshot()
 	if err != nil {
-		return err
+		return false, err
 	}
 	a.installHTTPServer(config, tlsConfig, handler)
-	return nil
+	return warnNoRoutes, nil
+}
+
+func (a *App) warnNoRoutes() {
+	a.Logger().Warn("no routes registered: all requests will receive 404; call app.Get/Post/… before Prepare", nil)
 }
 
 func (a *App) serverConfigSnapshot() (AppConfig, error) {
@@ -148,7 +151,9 @@ func prepareTLSConfig(cfg TLSConfig) (*tls.Config, error) {
 
 // ServeHTTP allows App to be used directly with net/http servers.
 func (a *App) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	a.ensureHandlerPrepared()
+	if a.ensureHandlerPrepared() {
+		a.warnNoRoutes()
+	}
 
 	if ref := a.handlerFast.Load(); ref != nil {
 		ref.h.ServeHTTP(w, r)

@@ -47,7 +47,11 @@ func normalizeRunError(err error) error {
 // Run resolves and binds the configured address when it starts listening.
 // Callers using Server with their own listener manage that listener themselves.
 func (a *App) Prepare() error {
-	return a.ensureServerPrepared()
+	warnNoRoutes, err := a.ensureServerPrepared()
+	if warnNoRoutes {
+		a.warnNoRoutes()
+	}
+	return err
 }
 
 // Server returns the prepared HTTP server instance.

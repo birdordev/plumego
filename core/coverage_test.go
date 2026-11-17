@@ -304,19 +304,94 @@ func TestUseWithNilMiddlewareChainReturnsError(t *testing.T) {
 	assertCoreError(t, err, operationUseMiddleware, "middleware chain not configured")
 }
 
-// ---- ensureHandlerPrepared warning when no routes registered ----------------
+type prepareWarningLogger struct {
+	log.StructuredLogger
+	warn func()
+}
 
-func TestEnsureHandlerPreparedWarnsWhenNoRoutesRegistered(t *testing.T) {
-	// Calling ServeHTTP on an app with no routes triggers ensureHandlerPrepared,
-	// which should log a warning that no routes are registered.
-	app := newTestApp()
-	// Do not register any routes — ServeHTTP will still work but warn.
-	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/not-found", nil)
-	app.ServeHTTP(rec, req)
-	// The request returns 404 since no routes are registered.
-	if rec.Code != http.StatusNotFound {
-		t.Fatalf("expected 404 for no-route app, got %d", rec.Code)
+func (l *prepareWarningLogger) Warn(_ string, _ ...log.Fields) { l.warn() }
+
+func TestNoRoutesWarningCanReenterPrepare(t *testing.T) {
+	serveMissingRoute := func(t *testing.T, app *App) {
+		t.Helper()
+		rec := httptest.NewRecorder()
+		app.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/not-found", nil))
+		if rec.Code != http.StatusNotFound {
+			t.Fatalf("response status = %d, want 404", rec.Code)
+		}
+	}
+
+	tests := []struct {
+		name  string
+		run   func(*testing.T, *App)
+		state PreparationState
+	}{
+		{"Prepare", func(t *testing.T, app *App) {
+			if err := app.Prepare(); err != nil {
+				t.Fatal(err)
+			}
+		}, PreparationStateServerPrepared},
+		{"ServeHTTP", serveMissingRoute, PreparationStateHandlerPrepared},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			logger := &prepareWarningLogger{StructuredLogger: resolveLogger(AppDependencies{})}
+			app := New(DefaultConfig(), AppDependencies{Logger: logger})
+			var warnings int
+			var server *http.Server
+			logger.warn = func() {
+				warnings++
+				if warnings != 1 {
+					t.Fatal("expected only one no-route warning")
+				}
+				// Check the locks without blocking before invoking the nested Prepare.
+				if !app.handlerPrepareMu.TryLock() {
+					t.Fatal("Warn ran with the handler preparation lock held")
+				}
+				app.handlerPrepareMu.Unlock()
+				if !app.serverPrepareMu.TryLock() {
+					t.Fatal("Warn ran with the server preparation lock held")
+				}
+				app.serverPrepareMu.Unlock()
+				if state := app.PreparationState(); state != tt.state {
+					t.Fatalf("state in Warn = %q, want %q", state, tt.state)
+				}
+				if err := app.Prepare(); err != nil {
+					t.Fatalf("nested Prepare: %v", err)
+				}
+				var err error
+				server, err = app.Server()
+				if err != nil {
+					t.Fatalf("Server after nested Prepare: %v", err)
+				}
+			}
+
+			tt.run(t, app)
+			if warnings != 1 {
+				t.Fatalf("warnings = %d, want 1", warnings)
+			}
+			if err := app.Prepare(); err != nil {
+				t.Fatal(err)
+			}
+			if got, err := app.Server(); err != nil || got != server {
+				t.Fatalf("Server = %p, %v; want %p", got, err, server)
+			}
+			serveMissingRoute(t, app)
+		})
+	}
+}
+
+func TestPrepareWithRoutesDoesNotWarn(t *testing.T) {
+	logger := &prepareWarningLogger{
+		StructuredLogger: resolveLogger(AppDependencies{}),
+		warn:             func() { t.Error("unexpected no-route warning") },
+	}
+	app := New(DefaultConfig(), AppDependencies{Logger: logger})
+	if err := app.Get("/", http.NotFoundHandler()); err != nil {
+		t.Fatal(err)
+	}
+	if err := app.Prepare(); err != nil {
+		t.Fatal(err)
 	}
 }
 

@@ -404,7 +404,11 @@ func TestNewMultiCollectorFiltersNilPointers(t *testing.T) {
 		t.Fatalf("single remaining collector = %T, want original instance", result)
 	}
 	labels := MetricLabels{"test": "original"}
-	NewMultiCollector(absent, first, absent, second).Record(t.Context(), MetricRecord{Labels: labels})
+	collectors := []AggregateCollector{absent, first, absent, second}
+	multi := NewMultiCollector(collectors...)
+	collectors[1] = second
+	collectors[3] = nil
+	multi.Record(t.Context(), MetricRecord{Labels: labels})
 	if !reflect.DeepEqual(order, []string{"first", "second"}) || labels["test"] != "original" {
 		t.Fatalf("fan-out order = %v, original labels = %v", order, labels)
 	}

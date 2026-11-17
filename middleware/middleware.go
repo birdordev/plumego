@@ -56,7 +56,9 @@ import "net/http"
 //
 // Usage with core.App:
 //
-//	app.Use(requestid.Middleware())
+//	if err := app.Use(requestid.Middleware()); err != nil {
+//		return err
+//	}
 //
 // Usage with a standalone handler:
 //
@@ -64,7 +66,7 @@ import "net/http"
 //	if err != nil {
 //		return err
 //	}
-//	h := middleware.NewChain(recoveryMw, requestid.Middleware()).Build(finalHandler)
+//	h := middleware.NewChain(requestid.Middleware(), recoveryMw).Build(finalHandler)
 type Middleware func(http.Handler) http.Handler
 
 // Chain composes middleware in registration order.

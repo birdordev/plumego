@@ -20,15 +20,12 @@ func TestNewMatchCacheZeroCapacity(t *testing.T) {
 func TestMatcherCacheClear(t *testing.T) {
 	cache := newMatchCache(10)
 
-	for i := 0; i < 5; i++ {
+	for i := range cache.capacity + 3 {
 		cache.Set(fmt.Sprintf("key-%d", i), &matchResult{})
 	}
 
-	cache.Get("key-0")
-	cache.Get("missing")
-
-	if matchCacheEntryCount(cache) == 0 {
-		t.Fatal("cache should have entries before Clear")
+	if cache.head == 0 {
+		t.Fatal("expected FIFO head to advance before Clear")
 	}
 
 	cache.Clear()
@@ -36,7 +33,15 @@ func TestMatcherCacheClear(t *testing.T) {
 	if count := matchCacheEntryCount(cache); count != 0 {
 		t.Errorf("cache entries after Clear = %d, want 0", count)
 	}
-	for _, key := range []string{"key-0", "key-1"} {
+	if cache.head != 0 || cache.size != 0 {
+		t.Fatalf("FIFO state after Clear = (head %d, size %d), want (0, 0)", cache.head, cache.size)
+	}
+	for i, key := range cache.ring {
+		if key != "" {
+			t.Errorf("stale key %q in ring slot %d after Clear", key, i)
+		}
+	}
+	for _, key := range []string{"key-3", "key-12"} {
 		if _, found := cache.Get(key); found {
 			t.Fatalf("stale key %q survived Clear", key)
 		}

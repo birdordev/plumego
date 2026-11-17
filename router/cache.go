@@ -72,8 +72,8 @@ func (rc *matchCache) Clear() {
 	if rc.size == 0 {
 		return
 	}
-	rc.data = make(map[string]*matchResult, rc.capacity)
-	rc.ring = make([]string, rc.capacity)
+	clear(rc.data)
+	clear(rc.ring)
 	rc.head = 0
 	rc.size = 0
 }
