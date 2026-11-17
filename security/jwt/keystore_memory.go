@@ -42,11 +42,17 @@ func NewInMemoryKeyStore() *InMemoryKeyStore {
 
 // GetContext retrieves the value for key. It returns ErrUnknownKey if the key
 // does not exist and ErrKeyExpired at or after the key's expiration time.
+// If ctx is canceled before the read starts, including while waiting for the
+// read lock, GetContext returns the context error and no value.
 func (s *InMemoryKeyStore) GetContext(ctx context.Context, key string) ([]byte, error) {
 	if err := contextErr(ctx); err != nil {
 		return nil, err
 	}
 	s.mu.RLock()
+	if err := contextErr(ctx); err != nil {
+		s.mu.RUnlock()
+		return nil, err
+	}
 	e, ok := s.entries[key]
 	s.mu.RUnlock()
 	if !ok {
@@ -81,18 +87,23 @@ func (s *InMemoryKeyStore) SetContext(ctx context.Context, key string, value []b
 }
 
 // KeysContext returns all non-expired keys currently in the store.
+// If ctx is canceled before the read starts, including while waiting for the
+// read lock, KeysContext returns the context error and no keys.
 func (s *InMemoryKeyStore) KeysContext(ctx context.Context) ([]string, error) {
 	if err := contextErr(ctx); err != nil {
 		return nil, err
 	}
 	now := time.Now()
 	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := contextErr(ctx); err != nil {
+		return nil, err
+	}
 	keys := make([]string, 0, len(s.entries))
 	for k, e := range s.entries {
 		if !e.expiredAt(now) {
 			keys = append(keys, k)
 		}
 	}
-	s.mu.RUnlock()
 	return keys, nil
 }

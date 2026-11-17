@@ -155,7 +155,8 @@ parameters in overflow storage. Both parameter accessors include overflow
 values; snapshots detach all parameter maps. `Reset` clears both storage paths.
 The router publishes immutable match metadata retained by request contexts. Explicit users of
 `GetRouteState`/`PutRouteState` must keep pooled state alive until every context
-reader has finished and reset it before reuse.
+reader has finished and reset it before reuse. `PutRouteState(nil)` leaves the
+pool unchanged.
 
 
 `TraceContext` is a string carrier only. Full tracing runtime behavior, typed

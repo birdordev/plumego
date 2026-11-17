@@ -6,10 +6,13 @@ import (
 	"fmt"
 	"runtime"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"testing/synctest"
 	"time"
+
+	"github.com/birdordev/plumego/internal/testutil/wait"
 )
 
 func TestInMemoryKeyStoreCanceledWhileWaitingToSet(t *testing.T) {
@@ -36,6 +39,65 @@ func TestInMemoryKeyStoreCanceledWhileWaitingToSet(t *testing.T) {
 	}
 	if _, err := store.GetContext(t.Context(), "fixture"); !errors.Is(err, ErrUnknownKey) {
 		t.Fatalf("GetContext = %v, want ErrUnknownKey", err)
+	}
+}
+
+func TestInMemoryKeyStoreCanceledWhileWaitingToRead(t *testing.T) {
+	for _, method := range []string{"GetContext", "KeysContext"} {
+		t.Run(method, func(t *testing.T) {
+			store := NewInMemoryKeyStore()
+			if err := store.SetContext(t.Context(), "fixture", []byte("value"), 0); err != nil {
+				t.Fatal(err)
+			}
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			type readResult struct {
+				hasValue bool
+				err      error
+			}
+			result := make(chan readResult, 1)
+
+			func() {
+				store.mu.Lock()
+				defer store.mu.Unlock()
+				go func() {
+					if method == "GetContext" {
+						value, err := store.GetContext(ctx, "fixture")
+						result <- readResult{value != nil, err}
+						return
+					}
+					keys, err := store.KeysContext(ctx)
+					result <- readResult{keys != nil, err}
+				}()
+
+				// Observe the reader after the entry check and before cancellation.
+				var stack [64 << 10]byte
+				wait.ForCondition(t, 5*time.Second, method+" waiting for the read lock", func() bool {
+					n := runtime.Stack(stack[:], true)
+					for trace := range strings.SplitSeq(string(stack[:n]), "\n\n") {
+						if strings.Contains(trace, "sync.(*RWMutex).RLock(") &&
+							strings.Contains(trace, "(*InMemoryKeyStore)."+method+"(") {
+							return true
+						}
+					}
+					return false
+				})
+				cancel()
+			}()
+
+			select {
+			case got := <-result:
+				if got.hasValue || !errors.Is(got.err, context.Canceled) {
+					t.Fatalf("%s returned a result: %t, error: %v, want nil result and context.Canceled", method, got.hasValue, got.err)
+				}
+			case <-time.After(5 * time.Second):
+				t.Fatalf("%s did not return after the write lock was released", method)
+			}
+			if !store.mu.TryLock() {
+				t.Fatalf("%s did not release the read lock", method)
+			}
+			store.mu.Unlock()
+		})
 	}
 }
 

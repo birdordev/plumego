@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"runtime"
 	"testing"
 )
 
@@ -231,6 +232,21 @@ func TestAPIErrorAccessorMethodsCoverage(t *testing.T) {
 // ---------------------------------------------------------------------------
 // RouteState methods
 // ---------------------------------------------------------------------------
+
+func TestPutRouteStateIgnoresNil(t *testing.T) {
+	defer runtime.GOMAXPROCS(runtime.GOMAXPROCS(1))
+
+	// Keep borrowed entries out of the pool during the loop. Repeating also
+	// accounts for sync.Pool discarding some puts under the race detector.
+	for range 16 {
+		PutRouteState(nil)
+		state := GetRouteState()
+		if state == nil {
+			t.Fatal("GetRouteState returned nil after PutRouteState(nil)")
+		}
+		defer PutRouteState(state)
+	}
+}
 
 func TestRouteStateSetPatternAndSetName(t *testing.T) {
 	rs := GetRouteState()

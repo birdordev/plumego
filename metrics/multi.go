@@ -69,6 +69,8 @@ func (m *MultiCollector) ObserveHTTP(ctx context.Context, method, path string, s
 
 // GetStats sums counters, active series, and name breakdowns from individual
 // child snapshots. A record counted by two children contributes twice.
+// For a child with zero ActiveSeries, its NameBreakdown size contributes to
+// the active series total.
 // Sums saturate at the respective field's maximum value.
 // StartTime is the earliest nonzero child start time. The child snapshots
 // are read independently.

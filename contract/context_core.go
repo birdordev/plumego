@@ -68,7 +68,11 @@ func GetRouteState() *RouteState {
 }
 
 // PutRouteState returns rs to the pool. rs must not be used after this call.
+// A nil rs is ignored.
 func PutRouteState(rs *RouteState) {
+	if rs == nil {
+		return
+	}
 	routeStatePool.Put(rs)
 }
 

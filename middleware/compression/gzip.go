@@ -125,22 +125,24 @@ func acceptsGzip(header string) bool {
 		hasGzip          bool
 	)
 
-	for _, part := range strings.Split(header, ",") {
+	for part := range strings.SplitSeq(header, ",") {
 		part = strings.TrimSpace(part)
 		if part == "" {
 			continue
 		}
 
-		segments := strings.Split(part, ";")
-		coding := strings.ToLower(strings.TrimSpace(segments[0]))
+		coding, params, _ := strings.Cut(part, ";")
+		coding = strings.ToLower(strings.TrimSpace(coding))
 		accepted := true
-		for _, param := range segments[1:] {
-			name, value, ok := strings.Cut(strings.TrimSpace(param), "=")
-			if !strings.EqualFold(strings.TrimSpace(name), "q") {
-				continue
+		if params != "" {
+			for param := range strings.SplitSeq(params, ";") {
+				name, value, ok := strings.Cut(strings.TrimSpace(param), "=")
+				if !strings.EqualFold(strings.TrimSpace(name), "q") {
+					continue
+				}
+				accepted = ok && positiveQualityWeight(strings.TrimSpace(value))
+				break
 			}
-			accepted = ok && positiveQualityWeight(strings.TrimSpace(value))
-			break
 		}
 
 		switch coding {

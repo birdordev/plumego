@@ -905,6 +905,7 @@ func TestGzipAcceptEncodingQualityWeights(t *testing.T) {
 	tests := []struct {
 		name           string
 		header         string
+		extraHeader    string
 		wantCompressed bool
 	}{
 		{name: "unknown parameter", header: "gzip;qbad", wantCompressed: true},
@@ -920,6 +921,10 @@ func TestGzipAcceptEncodingQualityWeights(t *testing.T) {
 		{name: "maximum", header: "gzip;q=1.000", wantCompressed: true},
 		{name: "zero", header: "gzip;q=0.000", wantCompressed: false},
 		{name: "wildcard invalid q", header: "*;q=notanumber", wantCompressed: false},
+		{name: "first q wins", header: "gzip;q=0;q=1", wantCompressed: false},
+		{name: "last gzip coding wins", header: "gzip;q=0, GZIP; Q=0.5", wantCompressed: true},
+		{name: "last gzip coding can reject", header: "gzip;q=1, gzip;q=0", wantCompressed: false},
+		{name: "explicit gzip in second header", header: "*;q=1", extraHeader: "gzip;q=0", wantCompressed: false},
 	}
 
 	for _, tt := range tests {
@@ -932,6 +937,9 @@ func TestGzipAcceptEncodingQualityWeights(t *testing.T) {
 			wrapped := applyMiddleware(http.HandlerFunc(handler), Middleware(Config{}))
 			req := httptest.NewRequest(http.MethodGet, "/", nil)
 			req.Header.Set("Accept-Encoding", tt.header)
+			if tt.extraHeader != "" {
+				req.Header.Add("Accept-Encoding", tt.extraHeader)
+			}
 			rr := httptest.NewRecorder()
 			wrapped.ServeHTTP(rr, req)
 

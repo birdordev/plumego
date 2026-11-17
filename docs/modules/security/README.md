@@ -127,6 +127,6 @@ globals.
   This does not add transactions or distributed rotation coordination to the
   minimal `KeyStore` interface; stores must document ambiguous write outcomes.
 - The in-memory JWT key store checks cancellation again after acquiring its
-  write lock, before publishing the entry.
+  read or write lock, before reading, listing, or publishing entries.
 
 JWT issuance applies the same compact-token and segment size limits as verification. Oversized claims return ErrInvalidToken without a partial token pair. Limiter rate configuration rejects NaN and infinities with ErrInvalidConfig; zero retains its documented default behavior.
