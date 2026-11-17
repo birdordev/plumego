@@ -1033,6 +1033,60 @@ func TestMemoryCacheAppendPreservesExistingExpiration(t *testing.T) {
 	}
 }
 
+func TestMemoryCacheEmptyAppend(t *testing.T) {
+	config := DefaultConfig()
+	config.CleanupInterval = 0
+	config.DefaultTTL = time.Hour
+	config.MaxMemoryUsage = 8
+	cache := mustNewMemoryCacheWithConfig(t, config)
+	defer cache.Close()
+	ctx := t.Context()
+
+	if err := cache.Set(ctx, "live", []byte("hello"), time.Minute); err != nil {
+		t.Fatal(err)
+	}
+	expiration := cachedExpiration(t, cache, "live")
+	before := cache.Stats()
+	for _, data := range [][]byte{nil, {}} {
+		if err := cache.Append(ctx, "live", data); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if value, err := cache.Get(ctx, "live"); err != nil || string(value) != "hello" {
+		t.Fatalf("Get live = %q, %v", value, err)
+	}
+	if got := cachedExpiration(t, cache, "live"); !got.Equal(expiration) {
+		t.Fatalf("live expiration changed from %v to %v", expiration, got)
+	}
+	if got := cache.Stats(); got != before {
+		t.Fatalf("stats after empty append = %+v, want %+v", got, before)
+	}
+
+	if err := cache.Append(ctx, "missing", []byte{}); err != nil {
+		t.Fatal(err)
+	}
+	cache.writeMu.Lock()
+	err := cache.setLockedWithExpiration("expired", []byte("old"), time.Now().Add(-time.Minute))
+	cache.writeMu.Unlock()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := cache.Append(ctx, "expired", nil); err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []string{"missing", "expired"} {
+		if value, err := cache.Get(ctx, key); err != nil || value != nil {
+			t.Fatalf("Get %s = %v, %v, want nil value with no error", key, value, err)
+		}
+		if got := cachedExpiration(t, cache, key); !got.After(time.Now()) {
+			t.Fatalf("%s expiration = %v, want a future time", key, got)
+		}
+	}
+	if got := cache.Stats(); got.Entries != 3 || got.MemoryUsage != before.MemoryUsage {
+		t.Fatalf("stats after creating empty values = %+v", got)
+	}
+}
+
 func cachedExpiration(t *testing.T, cache *MemoryCache, key string) time.Time {
 	t.Helper()
 

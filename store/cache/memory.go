@@ -418,6 +418,9 @@ func (mc *MemoryCache) Append(ctx context.Context, key string, data []byte) erro
 	if err := mc.checkMemoryLimit(size, existingSize); err != nil {
 		return err
 	}
+	if existingFound && len(data) == 0 {
+		return nil
+	}
 
 	var value []byte
 	if existingData != nil || len(data) != 0 {

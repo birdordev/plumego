@@ -715,6 +715,40 @@ func TestMethodNotAllowedIncludesBacktrackedRoute(t *testing.T) {
 	}
 }
 
+func TestHeadUnmatchedRouteSuppressesErrorBody(t *testing.T) {
+	r := NewRouter(WithMethodNotAllowed(true))
+	handler := http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		t.Fatal("unexpected route dispatch")
+	})
+	mustAddRoute(r, http.MethodPost, "/only", handler)
+	mustAddRoute(r, http.MethodDelete, "/only", handler)
+	r.Freeze()
+
+	for _, tc := range []struct {
+		path   string
+		status int
+		allow  string
+	}{
+		{"/missing", http.StatusNotFound, ""},
+		{"/only", http.StatusMethodNotAllowed, "DELETE, POST"},
+	} {
+		t.Run(tc.path, func(t *testing.T) {
+			get := serveRouter(r, http.MethodGet, tc.path)
+			assertResponseStatus(t, get, tc.status)
+			if get.Body.Len() == 0 {
+				t.Fatal("GET error response is missing its body")
+			}
+
+			head := serveRouter(r, http.MethodHead, tc.path)
+			assertResponseStatus(t, head, tc.status)
+			assertResponseBody(t, head, "")
+			assertResponseHeader(t, head, "Allow", tc.allow)
+			assertResponseHeader(t, head, "Content-Type", get.Header().Get("Content-Type"))
+			assertResponseHeader(t, head, "Content-Length", strconv.Itoa(get.Body.Len()))
+		})
+	}
+}
+
 func TestMethodNotAllowedWhenEnabled(t *testing.T) {
 	r := NewRouter(WithMethodNotAllowed(true))
 	mustAddRoute(r, http.MethodGet, "/only", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -193,6 +193,38 @@ func TestTextMessageCannotForgeEntries(t *testing.T) {
 	}
 }
 
+func TestTextMessageEncoding(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		message string
+		want    string
+	}{
+		{"plain", "ready 世界\ufffd", "ready 世界\ufffd\n"},
+		{"malformed UTF-8", "left\xff\xf0\x9f世界\ufffd", "left\ufffd\ufffd\ufffd世界\ufffd\n"},
+		{"separators and trailing newline", "left\u0085\u2028\u2029right\n\n", "left\\u0085\\u2028\\u2029right\\n\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var output bytes.Buffer
+			logger := NewLogger(LoggerConfig{Format: LoggerFormatText, Output: &output})
+			logger.Info(tc.message)
+			if got := output.String(); !strings.HasSuffix(got, " "+tc.want) {
+				t.Fatalf("log = %q, want message suffix %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestEscapeLogMessagePlainTextAllocations(t *testing.T) {
+	message := "service ready 世界\ufffd"
+	var escaped string
+	allocations := testing.AllocsPerRun(100, func() {
+		escaped = escapeLogMessage(message)
+	})
+	if escaped != message || allocations != 0 {
+		t.Fatalf("escapeLogMessage = %q with %.1f allocations, want %q with no allocations", escaped, allocations, message)
+	}
+}
+
 type countingJSONField struct{ calls *int }
 
 func (f countingJSONField) MarshalJSON() ([]byte, error) {

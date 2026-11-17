@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 	"unicode"
+	"unicode/utf8"
 )
 
 // logBufferPool recycles log header buffers to reduce allocations.
@@ -262,13 +263,26 @@ func writeBytes(w io.Writer, data []byte) (int, error) {
 
 func escapeLogMessage(message string) string {
 	var escaped strings.Builder
-	for _, r := range message {
-		if unicode.IsControl(r) || r == '\u2028' || r == '\u2029' {
-			quoted := strconv.QuoteRune(r)
-			escaped.WriteString(quoted[1 : len(quoted)-1])
-		} else {
-			escaped.WriteRune(r)
+	start := 0
+	for offset := 0; offset < len(message); {
+		r, width := utf8.DecodeRuneInString(message[offset:])
+		next := offset + width
+		invalid := r == utf8.RuneError && width == 1
+		if invalid || unicode.IsControl(r) || r == '\u2028' || r == '\u2029' {
+			escaped.WriteString(message[start:offset])
+			if invalid {
+				escaped.WriteRune(utf8.RuneError)
+			} else {
+				quoted := strconv.QuoteRune(r)
+				escaped.WriteString(quoted[1 : len(quoted)-1])
+			}
+			start = next
 		}
+		offset = next
 	}
+	if start == 0 {
+		return message
+	}
+	escaped.WriteString(message[start:])
 	return escaped.String()
 }

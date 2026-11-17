@@ -164,6 +164,21 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	if req.Method == http.MethodHead {
+		head := &noBodyWriter{ResponseWriter: w}
+		w = head
+		defer func() {
+			if recovered := recover(); recovered != nil {
+				// Preserve logical commitment for outer recovery middleware.
+				if head.status != 0 {
+					head.commit(true)
+				}
+				panic(recovered)
+			}
+			head.commit(true)
+		}()
+	}
+
 	path := fastNormalizePath(req.URL.Path)
 	result := r.cachedMatch(req.Method, path)
 	if result == nil {
@@ -182,29 +197,7 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	w = responseWriterForMatch(w, req, result)
-	if head, ok := w.(*noBodyWriter); ok {
-		defer func() {
-			if recovered := recover(); recovered != nil {
-				// Preserve logical commitment for outer recovery middleware.
-				if head.status != 0 {
-					head.commit(true)
-				}
-				panic(recovered)
-			}
-		}()
-	}
 	r.attachRouteContextAndServe(w, req, result)
-	if head, ok := w.(*noBodyWriter); ok {
-		head.commit(true)
-	}
-}
-
-func responseWriterForMatch(w http.ResponseWriter, req *http.Request, result *matchResult) http.ResponseWriter {
-	if req != nil && req.Method == http.MethodHead && result != nil {
-		return &noBodyWriter{ResponseWriter: w}
-	}
-	return w
 }
 
 func (r *Router) cachedMatch(method, path string) *matchResult {

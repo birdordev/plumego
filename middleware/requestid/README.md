@@ -10,7 +10,7 @@ import "github.com/birdordev/plumego/middleware/requestid"
 
 ## Overview
 
-`requestid.Middleware` stamps every request with a unique correlation ID, writes it to the response header, and stores it in the request context. If the inbound request already carries a `X-Request-ID` header, it is preserved.
+`requestid.Middleware` selects a correlation ID from the request context first, then from a valid incoming `X-Request-ID` header, and generates one if neither supplies a valid ID. It stores the selected ID in the request context and writes it to the response header. By default it also writes that ID to the request header seen by the next handler.
 
 ## Exports
 
@@ -18,7 +18,7 @@ import "github.com/birdordev/plumego/middleware/requestid"
 |--------|-------------|
 | `Middleware(opts ...Option)` | Constructor; variadic options |
 | `WithGenerator(fn)` | Custom ID generator (default: fixed-width base62) |
-| `WithRequestHeader(enabled)` | Write ID back to inbound request header |
+| `WithRequestHeader(enabled)` | Write the selected ID to the downstream request header (default: true). With false, the next handler sees the incoming request header as received. |
 | `NewRequestID()` | Default generator; returns a 12-character base62 correlation ID |
 | `contract.RequestIDFromContext(ctx)` | Retrieve request ID from context |
 
