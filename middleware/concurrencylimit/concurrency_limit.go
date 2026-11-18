@@ -1,6 +1,7 @@
 package concurrencylimit
 
 import (
+	"context"
 	"math"
 	"net/http"
 	"time"
@@ -80,14 +81,7 @@ func Middleware(config Config) mw.Middleware {
 			case <-r.Context().Done():
 				return
 			default:
-				timer := time.NewTimer(config.QueueTimeout)
-				select {
-				case sem <- struct{}{}:
-					timer.Stop()
-				case <-r.Context().Done():
-					timer.Stop()
-					return
-				case <-timer.C:
+				if !waitForWorker(r.Context(), sem, config.QueueTimeout) {
 					if r.Context().Err() != nil {
 						return
 					}
@@ -106,4 +100,22 @@ func Middleware(config Config) mw.Middleware {
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+func waitForWorker(ctx context.Context, slots chan struct{}, timeout time.Duration) bool {
+	deadline := time.Now().Add(timeout)
+	timer := time.NewTimer(time.Until(deadline))
+	defer timer.Stop()
+
+	select {
+	case slots <- struct{}{}:
+		// The slot and timer may be ready together. Reject expired admissions.
+		if time.Now().Before(deadline) {
+			return true
+		}
+		<-slots
+	case <-ctx.Done():
+	case <-timer.C:
+	}
+	return false
 }

@@ -174,10 +174,11 @@ func (l *jsonLogger) buildEntry(level Level, msg string, fields []Fields) map[st
 	baseFields := l.fields
 	l.mu.Unlock()
 
-	combined := mergeFields(baseFields, fields...)
-	entry := make(map[string]any, safeMapCapacity(len(combined), 4))
-	for k, v := range combined {
+	capacity := safeMapCapacity(fieldSetCapacity(len(baseFields), fields), 3)
+	entry := mergeFieldsWithCapacity(baseFields, fields, capacity)
+	for k, v := range entry {
 		if !utf8.ValidString(k) {
+			delete(entry, k)
 			continue
 		}
 		switch k {

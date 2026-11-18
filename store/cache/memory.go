@@ -378,6 +378,9 @@ func (mc *MemoryCache) updateInteger(ctx context.Context, key string, delta int6
 }
 
 // Append appends data to the end of an existing value.
+// A missing or expired key is created with data as its value and uses
+// DefaultTTL when configured. Otherwise, the new entry has no expiration.
+// An existing, unexpired entry keeps its original expiration.
 func (mc *MemoryCache) Append(ctx context.Context, key string, data []byte) error {
 	if err := mc.operationErr(ctx); err != nil {
 		return err

@@ -61,10 +61,7 @@ func getFilePathFromRequest(req *http.Request) (string, bool) {
 }
 
 func hasParentTraversal(path string) bool {
-	if path == ".." {
-		return true
-	}
-	for _, part := range strings.Split(path, "/") {
+	for part := range strings.SplitSeq(path, "/") {
 		if part == ".." {
 			return true
 		}

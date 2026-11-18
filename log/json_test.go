@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"maps"
 	"math"
 	"strconv"
 	"strings"
@@ -336,13 +337,23 @@ func TestJSONFormatLoggerWithFields(t *testing.T) {
 
 func TestJSONFormatLoggerMergesVariadicFieldsInOrder(t *testing.T) {
 	var buf bytes.Buffer
+	var discarded int
 	logger := newTestJSONLogger(t, LoggerConfig{
 		Output: &buf,
 		Level:  INFO,
 		Fields: Fields{"base": "yes", "override": "base"},
 	})
 
-	logger.Info("multi", Fields{"first": "one", "override": "first"}, Fields{"second": float64(2), "override": "second"})
+	first := Fields{"first": "one", "override": countingJSONField{&discarded}, "field\xff": countingJSONField{&discarded}}
+	last := Fields{"second": float64(2), "override": "second", "level": countingJSONField{&discarded}}
+	wantFirst, wantLast := maps.Clone(first), maps.Clone(last)
+	logger.Info("multi", first, last)
+	if discarded != 0 {
+		t.Fatalf("discarded fields invoked encoders %d times", discarded)
+	}
+	if !maps.Equal(first, wantFirst) || !maps.Equal(last, wantLast) {
+		t.Fatalf("logger changed caller fields: first=%v last=%v", first, last)
+	}
 
 	var entry map[string]any
 	if err := json.Unmarshal(buf.Bytes(), &entry); err != nil {
@@ -358,6 +369,18 @@ func TestJSONFormatLoggerMergesVariadicFieldsInOrder(t *testing.T) {
 		if got := entry[key]; got != want {
 			t.Fatalf("expected %s=%v, got %v in %#v", key, want, got, entry)
 		}
+	}
+
+	buf.Reset()
+	logger.Info("base only")
+	var baseEntry struct {
+		Override string `json:"override"`
+	}
+	if err := json.Unmarshal(buf.Bytes(), &baseEntry); err != nil {
+		t.Fatalf("failed to parse base entry: %v", err)
+	}
+	if baseEntry.Override != "base" {
+		t.Fatalf("base override = %q, want base", baseEntry.Override)
 	}
 }
 

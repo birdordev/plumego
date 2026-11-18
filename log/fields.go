@@ -65,7 +65,10 @@ func mergeFields(base Fields, fieldSets ...Fields) Fields {
 	if capacity == 0 && len(base) == 0 && fieldSetsEmpty(fieldSets) {
 		return Fields{}
 	}
+	return mergeFieldsWithCapacity(base, fieldSets, capacity)
+}
 
+func mergeFieldsWithCapacity(base Fields, fieldSets []Fields, capacity int) Fields {
 	merged := make(Fields, capacity)
 	for k, v := range base {
 		merged[k] = v
