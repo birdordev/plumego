@@ -191,11 +191,10 @@ func ValidateEmail(email string) bool {
 		return false
 	}
 
-	labels := strings.Split(domain, ".")
-	if len(labels) < 2 {
+	if !strings.Contains(domain, ".") {
 		return false
 	}
-	for _, label := range labels {
+	for label := range strings.SplitSeq(domain, ".") {
 		if !isEmailDomainLabel(label) {
 			return false
 		}

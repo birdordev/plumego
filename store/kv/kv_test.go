@@ -787,9 +787,13 @@ func TestKVStoreDeleteRollbackOnPersistFailure(t *testing.T) {
 	}
 	defer func() { _ = store.Close() }()
 
-	if err := store.Set("alpha", []byte("one"), 0); err != nil {
+	if err := store.Set("alpha", []byte("one"), time.Hour); err != nil {
 		t.Fatalf("initial Set: %v", err)
 	}
+	if err := store.Set("beta", []byte("two"), 0); err != nil {
+		t.Fatalf("second Set: %v", err)
+	}
+	original := *store.data["alpha"]
 	blockStatePath(t, dir)
 
 	if err := store.Delete("alpha"); err == nil {
@@ -801,6 +805,13 @@ func TestKVStoreDeleteRollbackOnPersistFailure(t *testing.T) {
 	}
 	if !bytes.Equal(got, []byte("one")) {
 		t.Fatalf("expected deleted value to be restored, got %q", got)
+	}
+	restored := store.data["alpha"]
+	if restored.ExpireAt != original.ExpireAt || restored.UpdatedAt != original.UpdatedAt || restored.Size != original.Size {
+		t.Fatal("rollback changed the restored entry metadata")
+	}
+	if got, err := store.Get("beta"); err != nil || string(got) != "two" {
+		t.Fatalf("unrelated value after rollback = %q, %v", got, err)
 	}
 }
 

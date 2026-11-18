@@ -226,18 +226,18 @@ func (kv *KVStore) DeleteContext(ctx context.Context, key string) error {
 	if err := validateKey(key); err != nil {
 		return err
 	}
-	if _, ok := kv.data[key]; !ok {
+	item, ok := kv.data[key]
+	if !ok {
 		return ErrKeyNotFound
 	}
-	before := kv.cloneDataLocked()
 	delete(kv.data, key)
 	if err := contextErr(ctx); err != nil {
-		kv.data = before
+		kv.data[key] = item
 		return err
 	}
 	if committed, err := kv.persistLocked(); err != nil {
 		if !committed {
-			kv.data = before
+			kv.data[key] = item
 		}
 		return err
 	}

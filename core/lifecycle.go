@@ -67,6 +67,9 @@ func (a *App) Server() (*http.Server, error) {
 }
 
 // Shutdown gracefully stops the prepared HTTP server.
+// After a successful shutdown, the app remains prepared and [App.Server]
+// returns the same closed server. Direct calls to [App.ServeHTTP] still use
+// the prepared handler. Create a new App to prepare a fresh HTTP server.
 func (a *App) Shutdown(ctx context.Context) error {
 	if ctx == nil {
 		ctx = context.Background()
