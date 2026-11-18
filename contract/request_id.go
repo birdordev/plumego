@@ -17,7 +17,9 @@ const (
 // trimming surrounding whitespace.
 const maxRequestIDLength = 128
 
-// WithRequestID stores the canonical request correlation id in ctx.
+// WithRequestID stores id in ctx after trimming surrounding whitespace and
+// validating it. A rejected id leaves any existing request id in ctx intact.
+// A nil ctx uses context.Background.
 func WithRequestID(ctx context.Context, id string) context.Context {
 	if ctx == nil {
 		ctx = context.Background()

@@ -59,6 +59,22 @@ func TestRequestIDLengthBoundary(t *testing.T) {
 	}
 }
 
+func TestRequestIDRejectedReplacementPreservesExistingID(t *testing.T) {
+	const original = "req-original"
+	ctx := WithRequestID(t.Context(), original)
+	for _, replacement := range []string{"", "   ", strings.Repeat("a", maxRequestIDLength+1)} {
+		if got := RequestIDFromContext(WithRequestID(ctx, replacement)); got != original {
+			t.Errorf("request id after rejected replacement = %q, want %q", got, original)
+		}
+	}
+}
+
+func TestRequestIDWithNilContext(t *testing.T) {
+	if got := RequestIDFromContext(WithRequestID(nil, "  req-123  ")); got != "req-123" {
+		t.Fatalf("request id with nil parent = %q, want req-123", got)
+	}
+}
+
 func TestOversizedRequestIDIsNotEchoed(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req = req.WithContext(WithRequestID(req.Context(), strings.Repeat("a", maxRequestIDLength+1)))

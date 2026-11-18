@@ -603,7 +603,15 @@ func (b *CSPBuilder) Build() string {
 		return ""
 	}
 
-	parts := make([]string, 0, len(b.directives))
+	size := 2 * (len(b.directives) - 1)
+	for directive, sources := range b.directives {
+		size += len(directive)
+		for _, source := range sources {
+			size += 1 + len(source)
+		}
+	}
+	var value strings.Builder
+	value.Grow(size)
 
 	// Maintain consistent order for testing
 	directiveOrder := []string{
@@ -620,14 +628,16 @@ func (b *CSPBuilder) Build() string {
 			continue
 		}
 
-		if len(sources) == 0 {
-			parts = append(parts, directive)
-		} else {
-			parts = append(parts, directive+" "+strings.Join(sources, " "))
+		if value.Len() > 0 {
+			value.WriteString("; ")
+		}
+		value.WriteString(directive)
+		for _, source := range sources {
+			value.WriteByte(' ')
+			value.WriteString(source)
 		}
 	}
-
-	return strings.Join(parts, "; ")
+	return value.String()
 }
 
 // BuildChecked validates and constructs the CSP header value.

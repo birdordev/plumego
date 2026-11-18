@@ -387,14 +387,15 @@ func TestStrictCSP(t *testing.T) {
 
 func TestCSPBuilderBuildChecked(t *testing.T) {
 	csp, err := NewCSPBuilder().
-		DefaultSrc("'self'").
-		ScriptSrc("'self'", "https://cdn.example.com").
 		Sandbox("allow-scripts").
+		DefaultSrc("'self'").
+		UpgradeInsecureRequests().
+		ScriptSrc("'self'", "https://cdn.example.com").
 		BuildChecked()
 	if err != nil {
 		t.Fatalf("BuildChecked valid CSP: %v", err)
 	}
-	want := "default-src 'self'; script-src 'self' https://cdn.example.com; sandbox allow-scripts"
+	want := "default-src 'self'; script-src 'self' https://cdn.example.com; upgrade-insecure-requests; sandbox allow-scripts"
 	if csp != want {
 		t.Fatalf("BuildChecked CSP = %q, want %q", csp, want)
 	}

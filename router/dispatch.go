@@ -322,7 +322,6 @@ func (r *Router) allowedMethods(path string) []string {
 	}
 
 	r.state.mu.RLock()
-	defer r.state.mu.RUnlock()
 
 	allowed := make([]string, 0, len(r.state.trees))
 	if normalized == "/" {
@@ -350,10 +349,12 @@ func (r *Router) allowedMethods(path string) []string {
 		putPathParts(partsPtr)
 	}
 
+	r.state.mu.RUnlock()
+
+	allowed = appendImplicitHeadMethod(allowed)
 	if len(allowed) > 1 {
 		sort.Strings(allowed)
 	}
-	allowed = appendImplicitHeadMethod(allowed)
 	return allowed
 }
 
@@ -371,9 +372,7 @@ func appendImplicitHeadMethod(methods []string) []string {
 	if !hasGet || hasHead {
 		return methods
 	}
-	methods = append(methods, http.MethodHead)
-	sort.Strings(methods)
-	return methods
+	return append(methods, http.MethodHead)
 }
 
 // publishRouteContext notifies optional observers without changing request ownership.
