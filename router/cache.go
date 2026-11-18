@@ -29,8 +29,8 @@ func newMatchCache(capacity int) *matchCache {
 	}
 }
 
-// Get retrieves a cached route match result. It acquires only an RLock so
-// concurrent readers never block each other.
+// Get retrieves a cached route match result under a read lock without changing
+// the FIFO order.
 func (rc *matchCache) Get(key string) (*matchResult, bool) {
 	rc.mu.RLock()
 	v, ok := rc.data[key]

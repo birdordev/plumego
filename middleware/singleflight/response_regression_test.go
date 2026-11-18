@@ -119,10 +119,10 @@ func TestWaiterCancellationWinsOverOtherReadyOutcomes(t *testing.T) {
 							switch outcome {
 							case "complete":
 								inflight.response = &capturedResponse{statusCode: http.StatusOK, body: []byte("leader")}
-								close(inflight.done)
+								c.finishRequest("same", inflight)
 							case "leader failed":
 								inflight.err = errLeaderWrite
-								close(inflight.done)
+								c.finishRequest("same", inflight)
 							case "timeout":
 								time.Sleep(timeout) // Advance the synthetic clock before selection.
 							}
@@ -136,6 +136,64 @@ func TestWaiterCancellationWinsOverOtherReadyOutcomes(t *testing.T) {
 				}
 			})
 		})
+	}
+}
+
+func TestWaiterUsesLeaderCompletionTime(t *testing.T) {
+	const timeout = time.Second
+	for _, tc := range []struct {
+		name       string
+		finish     time.Duration
+		leaderErr  error
+		wantStatus int
+	}{
+		{"before deadline", timeout / 2, nil, http.StatusCreated},
+		{"failure before deadline", timeout / 2, errLeaderWrite, http.StatusBadGateway},
+		{"at deadline", timeout, nil, http.StatusGatewayTimeout},
+		{"after deadline", 2 * timeout, nil, http.StatusGatewayTimeout},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				c := New(Config{Timeout: timeout})
+				for range 32 {
+					flight := &inFlightRequest{done: make(chan struct{}), err: tc.leaderErr}
+					flight.response = &capturedResponse{statusCode: http.StatusCreated, body: []byte("leader")}
+					flight.waiters.Store(1)
+					ctx := waiterSelectContext{
+						Context: t.Context(),
+						beforeSelect: func() {
+							time.Sleep(tc.finish)
+							c.finishRequest("same", flight)
+							// Advance the synthetic clock until both channels are ready.
+							time.Sleep(3*timeout - tc.finish)
+						},
+					}
+					rec := httptest.NewRecorder()
+					c.waitForInFlight(rec, httptest.NewRequest(http.MethodGet, "/", nil).WithContext(ctx), "same", flight)
+					if rec.Code != tc.wantStatus {
+						t.Fatalf("waiter status = %d, body = %q, want %d", rec.Code, rec.Body.String(), tc.wantStatus)
+					}
+					if tc.wantStatus == http.StatusGatewayTimeout && flight.waiters.Load() != 0 {
+						t.Fatal("timed-out waiter was not released")
+					}
+				}
+			})
+		})
+	}
+}
+
+func TestNegativeWaiterTimeoutExpiresWithCompletedResult(t *testing.T) {
+	c := New(Config{Timeout: -time.Second})
+	flight := &inFlightRequest{
+		done:       make(chan struct{}),
+		response:   &capturedResponse{statusCode: http.StatusCreated},
+		finishedAt: time.Now().Add(-2 * time.Second),
+	}
+	close(flight.done)
+	rec := httptest.NewRecorder()
+	c.waitForInFlight(rec, httptest.NewRequest(http.MethodGet, "/", nil), "same", flight)
+	if rec.Code != http.StatusGatewayTimeout {
+		t.Fatalf("waiter status = %d, want 504", rec.Code)
 	}
 }
 
@@ -165,7 +223,7 @@ func TestWaiterChecksCancellationAfterLeaderErrorHook(t *testing.T) {
 				}})
 				flight := &inFlightRequest{done: make(chan struct{}), err: tt.resultErr}
 				flight.waiters.Store(1)
-				close(flight.done)
+				c.finishRequest("fixture", flight)
 				req := httptest.NewRequest(http.MethodGet, "/", nil).WithContext(ctx)
 				w := httptest.NewRecorder()
 				w.Code = 0 // Distinguish no commit from an explicit 200.

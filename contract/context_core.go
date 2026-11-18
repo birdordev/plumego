@@ -3,6 +3,7 @@ package contract
 import (
 	"context"
 	"errors"
+	"maps"
 	"sync"
 )
 
@@ -115,7 +116,7 @@ func WithRequestContext(ctx context.Context, rc RequestContext) context.Context 
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	rc.Params = cloneStringMap(rc.Params)
+	rc.Params = maps.Clone(rc.Params)
 	return context.WithValue(ctx, requestContextKey{}, rc)
 }
 
@@ -147,7 +148,7 @@ func RequestContextFromContext(ctx context.Context) RequestContext {
 	// Fallback: legacy requestContextKey path used by direct callers of
 	// WithRequestContext (e.g. middleware, tests).
 	if rc, ok := ctx.Value(requestContextKey{}).(RequestContext); ok {
-		rc.Params = cloneStringMap(rc.Params)
+		rc.Params = maps.Clone(rc.Params)
 		return rc
 	}
 
@@ -181,15 +182,4 @@ func RequestParamFromContext(ctx context.Context, name string) string {
 		return rc.Params[name]
 	}
 	return ""
-}
-
-func cloneStringMap(in map[string]string) map[string]string {
-	if in == nil {
-		return nil
-	}
-	out := make(map[string]string, len(in))
-	for k, v := range in {
-		out[k] = v
-	}
-	return out
 }

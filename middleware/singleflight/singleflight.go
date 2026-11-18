@@ -83,10 +83,9 @@ type Config struct {
 	// Default: ["GET", "HEAD"]
 	Methods []string
 
-	// Timeout is the maximum time to wait for an in-flight request
-	// If the upstream request takes longer, subsequent requests will
-	// time out instead of waiting indefinitely.
-	// Default: 30 seconds
+	// Timeout is the maximum time a waiter allows for the leader to finish.
+	// The leader must finish before the waiter's deadline for replay.
+	// Zero uses the default of 30 seconds. A negative value expires immediately.
 	Timeout time.Duration
 
 	// MaxResponseBytes is the maximum leader response body size captured for
@@ -143,10 +142,11 @@ type Coalescer struct {
 
 // inFlightRequest represents an in-flight request being processed
 type inFlightRequest struct {
-	response *capturedResponse
-	err      error
-	done     chan struct{}
-	waiters  atomic.Int32
+	response   *capturedResponse
+	err        error
+	finishedAt time.Time
+	done       chan struct{} // Closing done publishes the result and finishedAt.
+	waiters    atomic.Int32
 }
 
 // capturedResponse represents a captured HTTP response
@@ -217,14 +217,22 @@ func (c *Coalescer) Middleware() func(http.Handler) http.Handler {
 // waitForInFlight waits for an in-flight request to complete
 func (c *Coalescer) waitForInFlight(w http.ResponseWriter, r *http.Request, key string, inflight *inFlightRequest) {
 	ctx := r.Context()
-	timer := time.NewTimer(c.config.Timeout)
+	deadline := time.Now().Add(c.config.Timeout)
+	timer := time.NewTimer(time.Until(deadline))
 	defer timer.Stop()
 
-	timedOut := false
+	completed := false
 	select {
 	case <-inflight.done:
+		completed = true
 	case <-timer.C:
-		timedOut = true
+		// The leader may have finished before the deadline even if the timer
+		// won the select.
+		select {
+		case <-inflight.done:
+			completed = true
+		default:
+		}
 	case <-ctx.Done():
 		c.decrementWaiters(inflight)
 		return
@@ -235,7 +243,7 @@ func (c *Coalescer) waitForInFlight(w http.ResponseWriter, r *http.Request, key 
 		c.decrementWaiters(inflight)
 		return
 	}
-	if timedOut {
+	if !completed || c.config.Timeout < 0 || !inflight.finishedAt.Before(deadline) {
 		c.decrementWaiters(inflight)
 		internaltransport.WriteTransportError(w, r, http.StatusGatewayTimeout, contract.CodeTimeout, "upstream request timeout", nil)
 		return
@@ -353,6 +361,7 @@ func (c *Coalescer) finishRequest(key string, inflight *inFlightRequest) {
 	c.mu.Lock()
 	delete(c.inFlight, key)
 	c.mu.Unlock()
+	inflight.finishedAt = time.Now()
 	close(inflight.done)
 }
 

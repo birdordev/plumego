@@ -2,6 +2,7 @@ package metrics
 
 import (
 	"context"
+	"maps"
 	"net/http"
 	"strconv"
 	"sync"
@@ -198,11 +199,7 @@ func cloneBreakdown(breakdown map[string]int64) map[string]int64 {
 	if breakdown == nil {
 		return make(map[string]int64)
 	}
-	result := make(map[string]int64, len(breakdown))
-	for key, value := range breakdown {
-		result[key] = value
-	}
-	return result
+	return maps.Clone(breakdown)
 }
 
 func emptyCollectorStats() CollectorStats {

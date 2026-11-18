@@ -396,6 +396,10 @@ and is currently always `1`; timed-out waiters are not counted. Aggregate in the
 caller when total coalesced request counts are needed.
 An error or short write while replaying to a waiter calls `Config.OnError`
 with a fixed diagnostic and does not count as a successful replay.
+Each waiter has its own `Config.Timeout` deadline. It uses a leader result
+published before that deadline, even when the timer is also ready. If the
+leader has no result before the deadline, an active waiter receives a
+structured 504.
 Waiters also observe their request context while waiting for the leader. If a
 waiter request is canceled, coalesce returns without replaying the leader
 response or writing a synthetic timeout response. Cancellation observed before

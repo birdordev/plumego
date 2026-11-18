@@ -784,15 +784,16 @@ func TestCategoryForStatusBelowBadRequest(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// cloneStringMap — nil branch
+// RequestContext — empty parameter map shape
 // ---------------------------------------------------------------------------
 
-func TestCloneStringMapNilInput(t *testing.T) {
-	// Nil map in RequestContext.Params should propagate as nil (not an empty map).
-	ctx := WithRequestContext(nil, RequestContext{Params: nil, RoutePattern: "/x"})
-	rc := RequestContextFromContext(ctx)
-	if rc.Params != nil {
-		t.Fatalf("cloneStringMap(nil): expected nil Params, got %v", rc.Params)
+func TestRequestContextEmptyParamsShape(t *testing.T) {
+	for _, params := range []map[string]string{nil, {}} {
+		ctx := WithRequestContext(nil, RequestContext{Params: params, RoutePattern: "/x"})
+		rc := RequestContextFromContext(ctx)
+		if (rc.Params == nil) != (params == nil) || len(rc.Params) != 0 {
+			t.Fatalf("snapshot Params = %#v, want shape of %#v", rc.Params, params)
+		}
 	}
 }
 
