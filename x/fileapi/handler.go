@@ -264,9 +264,10 @@ func (h *Handler) Delete(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
+	params := r.URL.Query()
 	query := datafile.Query{Page: 1, PageSize: 20}
 
-	if p := r.URL.Query().Get("page"); p != "" {
+	if p := params.Get("page"); p != "" {
 		v, err := parsePositiveIntParam("page", p, 0)
 		if err != nil {
 			writeInvalidQueryError(w, r, "page")
@@ -275,7 +276,7 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 		query.Page = v
 	}
 
-	if ps := r.URL.Query().Get("page_size"); ps != "" {
+	if ps := params.Get("page_size"); ps != "" {
 		v, err := parsePositiveIntParam("page_size", ps, 100)
 		if err != nil {
 			writeInvalidQueryError(w, r, "page_size")
@@ -290,11 +291,11 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	query.TenantID = tenantID
-	query.UploadedBy = r.URL.Query().Get("uploaded_by")
-	query.MimeType = r.URL.Query().Get("mime_type")
-	query.OrderBy = r.URL.Query().Get("order_by")
+	query.UploadedBy = params.Get("uploaded_by")
+	query.MimeType = params.Get("mime_type")
+	query.OrderBy = params.Get("order_by")
 
-	if s := r.URL.Query().Get("start_time"); s != "" {
+	if s := params.Get("start_time"); s != "" {
 		t, err := time.Parse(time.RFC3339, s)
 		if err != nil {
 			writeInvalidQueryError(w, r, "start_time")
@@ -303,7 +304,7 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 		query.StartTime = t
 	}
 
-	if s := r.URL.Query().Get("end_time"); s != "" {
+	if s := params.Get("end_time"); s != "" {
 		t, err := time.Parse(time.RFC3339, s)
 		if err != nil {
 			writeInvalidQueryError(w, r, "end_time")

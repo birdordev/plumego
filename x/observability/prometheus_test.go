@@ -4,7 +4,9 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -380,5 +382,31 @@ func TestPrometheusCollectorRetainsExistingSeriesAtCapacity(t *testing.T) {
 	requests, durations, _ := collector.snapshot()
 	if len(requests) != 1 || len(durations) != 1 || requests[labelKey{method: "GET", path: "/new", status: "200"}] != 1 {
 		t.Fatalf("requests = %v; durations = %v", requests, durations)
+	}
+}
+
+func TestPrometheusLimitCanChangeWhileRecording(t *testing.T) {
+	p := NewPrometheusCollector("test")
+	var wg sync.WaitGroup
+	wg.Go(func() {
+		for i := range 100 {
+			p.WithMaxMemory(i%5 + 1)
+		}
+	})
+	wg.Go(func() {
+		for i := range 100 {
+			p.ObserveHTTP(t.Context(), "GET", strconv.Itoa(i), 200, 0, time.Second)
+		}
+	})
+	wg.Wait()
+	p.WithMaxMemory(1)
+	requests, durations, _ := p.snapshot()
+	if len(requests) != 1 || len(durations) != 1 {
+		t.Fatalf("series after shrink: %v, %v", requests, durations)
+	}
+	for k, count := range requests {
+		if count != durations[k].count {
+			t.Fatalf("series mismatch for %v", k)
+		}
 	}
 }

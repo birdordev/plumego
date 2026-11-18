@@ -33,6 +33,11 @@
 - `x/tenant/session` — session lifecycle and JWT-backed revocation/version state
 - `x/tenant/store/*` — tenant-aware cache and database adapters
 
+Use `session.NewJWTStateStoreWithConfig` with the same `jwt.JWTConfig`
+as the JWT manager when configuring clock skew. `NewJWTStateStore` uses
+the verifier's default skew. Revocation records expire at the end of the
+effective validity window.
+
 ## First files to read
 
 - `x/tenant/module.yaml`

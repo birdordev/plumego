@@ -201,3 +201,24 @@ func TestPoolClosesDiscardedDialsOutsideLock(t *testing.T) {
 		})
 	}
 }
+
+func TestPoolDoesNotCacheNilDial(t *testing.T) {
+	calls := 0
+	conn := &fakeConn{}
+	p := New(func(context.Context, string, ...DialOption) (Conn, error) {
+		calls++
+		if calls == 1 {
+			return nil, nil
+		}
+		return conn, nil
+	})
+	if _, err := p.Dial(t.Context(), "target"); err == nil {
+		t.Fatal("nil connection was accepted")
+	}
+	if got, err := p.Dial(t.Context(), "target"); err != nil || got != conn {
+		t.Fatalf("second dial = %v, %v", got, err)
+	}
+	if err := p.Close(); err != nil {
+		t.Fatal(err)
+	}
+}

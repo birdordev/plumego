@@ -135,6 +135,9 @@
 - use `Dial(ctx, url, *DialOptions)` for outbound websocket connections; the returned `*Conn` runs in client framing mode (outgoing frames masked per RFC 6455 §5.3, server frames must arrive unmasked) and the underlying transport is the HTTP client's response body, so per-frame write deadlines are no-ops — bound dial latency through the supplied context or `HTTPClient.Timeout`
 - attribute upstream code: the client handshake in `dial.go` is adapted from the ISC-licensed `github.com/coder/websocket` and intentionally omits permessage-deflate, ping/pong callbacks, and subprotocol fallback recovery; do not silently re-add them without a follow-up review
 
+`DialOptions.HTTPClient.Timeout` and the caller context bound the opening handshake.
+The upgraded connection remains open until it is closed or the transport ends.
+
 ## Current test coverage
 
 - connection configuration (read limit, ping period, pong wait)

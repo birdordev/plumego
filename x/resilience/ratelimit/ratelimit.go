@@ -125,6 +125,12 @@ func (b *TokenBucket) WaitN(ctx context.Context, n int64) error {
 func (b *TokenBucket) UpdateRate(rate float64, burst int64) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	b.updateRate(rate, burst, time.Now())
+}
+
+// updateRate settles the old rate before applying the new one. Hold b.mu.
+func (b *TokenBucket) updateRate(rate float64, burst int64, now time.Time) {
+	b.replenish(now)
 	b.rate = rate
 	if burst > 0 {
 		b.burst = burst
@@ -136,10 +142,13 @@ func (b *TokenBucket) UpdateRate(rate float64, burst int64) {
 
 // replenish adds tokens for elapsed time. Must be called with b.mu held.
 func (b *TokenBucket) replenish(now time.Time) {
+	elapsed := now.Sub(b.lastCheck).Seconds()
 	if b.rate <= 0 {
+		if elapsed > 0 {
+			b.lastCheck = now
+		}
 		return
 	}
-	elapsed := now.Sub(b.lastCheck).Seconds()
 	if elapsed > 0 {
 		b.tokens += elapsed * b.rate
 		if b.tokens > float64(b.burst) {

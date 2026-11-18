@@ -780,3 +780,25 @@ func TestCustomMIMETypesRejectInvalidExtensions(t *testing.T) {
 		})
 	}
 }
+
+func TestErrorPageRejectingIdentityKeepsOriginalStatus(t *testing.T) {
+	dir := t.TempDir()
+	writeTestFile(t, dir, "index.html", "index")
+	writeTestFile(t, dir, "404.html", "missing")
+	writeTestFile(t, dir, "500.html", "failed")
+	h, err := NewHandlerFS(&errOnPathFS{base: http.Dir(dir), errPath: "bad"}, WithNotFoundPage("404.html"), WithErrorPage("500.html"), WithFallback(false))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, method := range []string{http.MethodGet, http.MethodHead} {
+		for path, status := range map[string]int{"/missing": 404, "/bad": 500, "/index.html": 406} {
+			req := httptest.NewRequest(method, path, nil)
+			req.Header.Set("Accept-Encoding", "identity;q=0")
+			rec := httptest.NewRecorder()
+			h.ServeHTTP(rec, req)
+			if rec.Code != status || rec.Header().Get("Vary") != "Accept-Encoding" {
+				t.Errorf("%s %s: status=%d Vary=%q", method, path, rec.Code, rec.Header().Get("Vary"))
+			}
+		}
+	}
+}

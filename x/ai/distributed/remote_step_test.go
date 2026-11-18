@@ -102,3 +102,49 @@ func TestDistributedParallelStep_Execute_QueueError(t *testing.T) {
 		t.Error("expected error when queue is unavailable")
 	}
 }
+
+type lifecycleQueue struct {
+	TaskQueue
+	subscribe func(context.Context) error
+}
+
+func (q lifecycleQueue) Subscribe(ctx context.Context, _ string, _ TaskHandler) error {
+	return q.subscribe(ctx)
+}
+
+func TestWorkerStartupFailureCanRetryButStopIsFinal(t *testing.T) {
+	subscribing := make(chan struct{})
+	release := make(chan struct{})
+	attempts := 0
+	subscribeErr := errors.New("subscribe failed")
+	queue := lifecycleQueue{subscribe: func(context.Context) error {
+		attempts++
+		if attempts == 1 {
+			close(subscribing)
+			<-release
+			return subscribeErr
+		}
+		return nil
+	}}
+	worker := NewWorker(queue, nil, DefaultWorkerConfig())
+	first := make(chan error, 1)
+	go func() { first <- worker.Start(t.Context()) }()
+	<-subscribing
+	stopErr := worker.Stop(t.Context())
+	close(release)
+	if stopErr == nil {
+		t.Fatal("Stop succeeded before startup completed")
+	}
+	if err := <-first; !errors.Is(err, subscribeErr) {
+		t.Fatalf("first Start: %v", err)
+	}
+	if err := worker.Start(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if err := worker.Stop(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if err := worker.Start(t.Context()); err == nil {
+		t.Fatal("Start succeeded after Stop")
+	}
+}

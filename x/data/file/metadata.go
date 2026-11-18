@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
@@ -267,7 +268,11 @@ func (m *DBMetadataManager) list(ctx context.Context, query Query, requireTenant
 	if query.PageSize < 1 {
 		query.PageSize = 20
 	}
-	offset := (query.Page - 1) * query.PageSize
+	pageIndex := int64(query.Page - 1)
+	if pageIndex > math.MaxInt64/int64(query.PageSize) {
+		return []*File{}, total, nil
+	}
+	offset := pageIndex * int64(query.PageSize)
 
 	orderBy := "created_at DESC"
 	switch query.OrderBy {

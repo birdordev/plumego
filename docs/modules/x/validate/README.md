@@ -46,6 +46,9 @@ type Validator interface {
 
 ## BindJSON — Decode Only
 
+Both binding helpers decode a single JSON value without checking for EOF.
+Apply any request body size limit before calling either helper.
+
 Use `BindJSON` when your handler only needs to decode the body and does its
 own validation inline:
 

@@ -5,7 +5,8 @@ import (
 	"net/http"
 )
 
-// BindJSON decodes the request JSON body into T without validation.
+// BindJSON decodes one JSON value into T without validation or an EOF check.
+// The caller owns any request body size limit.
 func BindJSON[T any](r *http.Request) (T, error) {
 	var out T
 	if err := json.NewDecoder(r.Body).Decode(&out); err != nil {
@@ -14,7 +15,7 @@ func BindJSON[T any](r *http.Request) (T, error) {
 	return out, nil
 }
 
-// Bind decodes the request JSON body into T and validates the decoded value.
+// Bind decodes one JSON value using BindJSON, then validates the decoded value.
 func Bind[T any](r *http.Request, v Validator) (T, error) {
 	out, err := BindJSON[T](r)
 	if err != nil {

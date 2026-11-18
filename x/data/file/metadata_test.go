@@ -6,6 +6,8 @@ import (
 	"database/sql/driver"
 	"errors"
 	"io"
+	"math"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -352,6 +354,9 @@ func (c metadataConn) QueryContext(_ context.Context, query string, args []drive
 	copied := append([]driver.NamedValue(nil), args...)
 	c.rec.queries = append(c.rec.queries, query)
 	c.rec.qargs = append(c.rec.qargs, copied)
+	if strings.HasPrefix(query, "SELECT COUNT(*)") {
+		return &metadataCountRow{}, nil
+	}
 	return metadataRows{}, nil
 }
 
@@ -377,4 +382,46 @@ func (metadataRows) Close() error {
 
 func (metadataRows) Next([]driver.Value) error {
 	return io.EOF
+}
+
+type metadataCountRow struct{ read bool }
+
+func (*metadataCountRow) Columns() []string { return []string{"count"} }
+func (*metadataCountRow) Close() error      { return nil }
+func (r *metadataCountRow) Next(values []driver.Value) error {
+	if r.read {
+		return io.EOF
+	}
+	r.read = true
+	values[0] = int64(2)
+	return nil
+}
+
+func TestListDoesNotSendOverflowedOffset(t *testing.T) {
+	rec := &metadataExecRecorder{}
+	db := sql.OpenDB(metadataConnector{rec: rec})
+	defer db.Close()
+	m, err := NewDBMetadataManager(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, size := range []int{1, math.MaxInt} {
+		rec.queries = nil
+		rec.qargs = nil
+		items, total, err := m.List(t.Context(), Query{Page: math.MaxInt, PageSize: size, TenantID: "tenant"})
+		if err != nil || total != 2 || len(items) != 0 {
+			t.Fatalf("size %d: results = %v, %d, %v", size, items, total, err)
+		}
+		if size == 1 {
+			if len(rec.qargs) != 2 {
+				t.Fatalf("want count and list queries, got %v", rec.queries)
+			}
+			args := rec.qargs[1]
+			if args[len(args)-1].Value != int64(math.MaxInt)-1 {
+				t.Fatalf("offset = %v", args)
+			}
+		} else if strconv.IntSize == 64 && len(rec.queries) != 1 {
+			t.Fatalf("overflowed offset reached database: %v", rec.queries)
+		}
+	}
 }

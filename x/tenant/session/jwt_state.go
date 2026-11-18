@@ -17,18 +17,28 @@ const (
 
 // JWTStateStore owns revocation and subject-version state for JWT-backed sessions.
 type JWTStateStore struct {
-	store *kvstore.KVStore
+	store     *kvstore.KVStore
+	clockSkew time.Duration
 }
 
 // NewJWTStateStore creates a JWT lifecycle store backed by the stable KV primitive.
 func NewJWTStateStore(store *kvstore.KVStore) (*JWTStateStore, error) {
+	return NewJWTStateStoreWithConfig(store, jwt.DefaultJWTConfig())
+}
+
+// NewJWTStateStoreWithConfig uses the same clock skew as the JWT verifier.
+// Pass the configuration used to construct the JWT manager.
+func NewJWTStateStoreWithConfig(store *kvstore.KVStore, config jwt.JWTConfig) (*JWTStateStore, error) {
 	if store == nil {
 		return nil, errors.New("kv store is required")
 	}
-	return &JWTStateStore{store: store}, nil
+	if config.ClockSkew < 0 {
+		return nil, errors.New("JWT clock skew must be nonnegative")
+	}
+	return &JWTStateStore{store: store, clockSkew: config.ClockSkew.Truncate(time.Second)}, nil
 }
 
-// RevokeClaims records the token ID from verified claims until token expiry.
+// RevokeClaims records the token ID from verified claims through the configured clock skew.
 // Revoking already expired claims succeeds without a write.
 func (s *JWTStateStore) RevokeClaims(claims *jwt.TokenClaims) error {
 	if s == nil || s.store == nil {
@@ -38,7 +48,7 @@ func (s *JWTStateStore) RevokeClaims(claims *jwt.TokenClaims) error {
 		return authn.ErrInvalidToken
 	}
 
-	ttl := time.Until(time.Unix(claims.ExpiresAt, 0))
+	ttl := time.Until(time.Unix(claims.ExpiresAt, 0).Add(s.clockSkew))
 	if ttl <= 0 {
 		return nil
 	}

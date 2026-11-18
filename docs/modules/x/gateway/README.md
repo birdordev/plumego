@@ -44,6 +44,10 @@
 - do not couple discovery (`x/gateway/discovery`) selection to gateway-only defaults; discovery backend choice belongs to the caller's wiring
 - keep `RegisterRoute` and `RegisterProxy` explicit about invalid args: nil routers, blank paths, and nil handlers must return errors instead of hiding app wiring mistakes
 
+For WebSocket upgrades, HTTPS backends use TLS with the transport's
+`TLSClientConfig` and HTTP/1.1 ALPN. The upgrade uses the configured proxy
+timeout and validates the upstream certificate under the transport's TLS policy.
+
 ## Current test coverage
 
 - `newBackendCircuitBreaker`: nil-config defaults (closed state), explicit config, Trip/Reset lifecycle

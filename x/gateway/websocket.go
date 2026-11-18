@@ -13,6 +13,7 @@ import (
 	"bufio"
 	"context"
 	"crypto/sha1"
+	"crypto/tls"
 	"encoding/base64"
 	"io"
 	"net"
@@ -73,7 +74,16 @@ func (p *Proxy) dialBackend(backendURL *url.URL, r *http.Request) (net.Conn, io.
 
 	ctx, cancel := context.WithTimeout(r.Context(), p.config.Timeout)
 	defer cancel()
-	conn, err := dialer.DialContext(ctx, "tcp", host)
+	dial := dialer.DialContext
+	if backendURL.Scheme == "wss" {
+		tlsConfig := &tls.Config{}
+		if p.config.Transport != nil && p.config.Transport.TLSClientConfig != nil {
+			tlsConfig = p.config.Transport.TLSClientConfig.Clone()
+		}
+		tlsConfig.NextProtos = []string{"http/1.1"}
+		dial = (&tls.Dialer{NetDialer: dialer, Config: tlsConfig}).DialContext
+	}
+	conn, err := dial(ctx, "tcp", host)
 	if err != nil {
 		return nil, nil, nil, err
 	}

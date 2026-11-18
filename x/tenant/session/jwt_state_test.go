@@ -107,7 +107,7 @@ func TestJWTStateStoreRevocationTTLExpires(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = store.Close() })
 
-	state, err := NewJWTStateStore(store)
+	state, err := NewJWTStateStoreWithConfig(store, jwt.JWTConfig{ClockSkew: 0})
 	if err != nil {
 		t.Fatalf("create state store: %v", err)
 	}
@@ -136,5 +136,28 @@ func TestJWTStateStoreDoesNotPersistExpiredRevocation(t *testing.T) {
 	}
 	if _, err := state.store.Get(revokedTokenPrefix + claims.TokenID); !errors.Is(err, kvstore.ErrKeyNotFound) {
 		t.Fatalf("lookup expired revocation = %v, want ErrKeyNotFound", err)
+	}
+}
+
+func TestJWTStateStoreHonorsConfiguredClockSkew(t *testing.T) {
+	original, _ := newJWTStateStore(t)
+	state, err := NewJWTStateStoreWithConfig(original.store, jwt.JWTConfig{ClockSkew: time.Minute})
+	if err != nil {
+		t.Fatal(err)
+	}
+	claims := &jwt.TokenClaims{TokenID: "recent", Identity: jwt.IdentityClaims{Subject: "user"}, ExpiresAt: time.Now().Add(-10 * time.Second).Unix()}
+	if err := state.RevokeClaims(claims); err != nil {
+		t.Fatal(err)
+	}
+	if err := state.ValidateClaims(claims); !errors.Is(err, ErrSessionRevoked) {
+		t.Fatalf("want revoked, got %v", err)
+	}
+	claims.TokenID = "expired"
+	claims.ExpiresAt = time.Now().Add(-2 * time.Minute).Unix()
+	if err := state.RevokeClaims(claims); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := state.store.Get(revokedTokenPrefix + claims.TokenID); !errors.Is(err, kvstore.ErrKeyNotFound) {
+		t.Fatalf("want absent marker, got %v", err)
 	}
 }

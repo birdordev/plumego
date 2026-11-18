@@ -138,6 +138,10 @@ func (h *handler) serveFileWithPolicy(w http.ResponseWriter, r *http.Request, fi
 		return true, nil
 	}
 	if !identityEncodingAcceptable(r) {
+		if !includeAssetCache {
+			w.Header().Add("Vary", "Accept-Encoding")
+			return false, nil
+		}
 		h.serveNotAcceptable(w, r)
 		return true, nil
 	}

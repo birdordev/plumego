@@ -262,3 +262,20 @@ func TestSQLBuilderSearchConditions(t *testing.T) {
 		})
 	}
 }
+
+func TestRepositoryScanRowRejectsNilPointer(t *testing.T) {
+	var nilItem *dbResourceTestItem
+	value := dbResourceTestItem{ID: "item"}
+	for _, input := range []any{nilItem, value, &value} {
+		builder := NewSQLBuilder("items", "id").WithScanFunc(func(*sql.Rows) (any, error) { return input, nil })
+		repo := NewBaseRepository[dbResourceTestItem](nil, builder)
+		actual, err := repo.scanRow(nil)
+		if input == nilItem {
+			if err == nil || actual != nil {
+				t.Fatalf("nil scan returned %v, %v", actual, err)
+			}
+		} else if err != nil || actual == nil || *actual != value {
+			t.Fatalf("valid scan returned %v, %v", actual, err)
+		}
+	}
+}

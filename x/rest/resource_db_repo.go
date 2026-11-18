@@ -205,20 +205,11 @@ func (r *BaseRepository[T]) FindAll(ctx context.Context, params *QueryParams) ([
 
 	var results []T
 	for rows.Next() {
-		if r.builder.scanFunc == nil {
-			return nil, 0, fmt.Errorf("scan function not configured")
-		}
-		item, err := r.builder.scanFunc(rows)
+		item, err := r.scanRow(rows)
 		if err != nil {
-			return nil, 0, fmt.Errorf("failed to scan row: %w", err)
+			return nil, 0, err
 		}
-		if typedItem, ok := item.(T); ok {
-			results = append(results, typedItem)
-		} else if typedItem, ok := item.(*T); ok {
-			results = append(results, *typedItem)
-		} else {
-			return nil, 0, fmt.Errorf("scan function returned wrong type")
-		}
+		results = append(results, *item)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, 0, fmt.Errorf("rows iteration error: %w", err)
@@ -242,6 +233,10 @@ func (r *BaseRepository[T]) FindByID(ctx context.Context, id string) (*T, error)
 		return nil, sql.ErrNoRows
 	}
 
+	return r.scanRow(rows)
+}
+
+func (r *BaseRepository[T]) scanRow(rows *sql.Rows) (*T, error) {
 	if r.builder.scanFunc == nil {
 		return nil, fmt.Errorf("scan function not configured")
 	}
@@ -251,7 +246,11 @@ func (r *BaseRepository[T]) FindByID(ctx context.Context, id string) (*T, error)
 	}
 	if typedItem, ok := item.(T); ok {
 		return &typedItem, nil
-	} else if typedItem, ok := item.(*T); ok {
+	}
+	if typedItem, ok := item.(*T); ok {
+		if typedItem == nil {
+			return nil, fmt.Errorf("scan function returned nil pointer")
+		}
 		return typedItem, nil
 	}
 	return nil, fmt.Errorf("scan function returned wrong type")

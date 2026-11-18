@@ -16,7 +16,11 @@ type Worker struct {
 	queue       TaskQueue
 	executor    *StepExecutor
 	concurrency int
-	running     atomic.Bool
+	lifecycle   sync.Mutex
+	starting    bool
+	running     bool
+	finished    bool
+	cancel      context.CancelFunc
 	stopped     chan struct{}
 	wg          sync.WaitGroup
 	heartbeat   time.Duration
@@ -62,34 +66,48 @@ func NewWorker(queue TaskQueue, executor *StepExecutor, config WorkerConfig) *Wo
 
 // Start starts the worker.
 func (w *Worker) Start(ctx context.Context) error {
-	if w.running.Swap(true) {
-		return fmt.Errorf("worker already running")
+	w.lifecycle.Lock()
+	if w.starting || w.running || w.finished {
+		w.lifecycle.Unlock()
+		return fmt.Errorf("worker already started")
 	}
+	w.starting = true
+	w.lifecycle.Unlock()
+	runCtx, cancel := context.WithCancel(ctx)
 
 	// Subscribe to task queue
 	handler := func(ctx context.Context, task *WorkflowTask) (*TaskResult, error) {
 		return w.handleTask(ctx, task)
 	}
 
-	if err := w.queue.Subscribe(ctx, w.ID, handler); err != nil {
-		w.running.Store(false)
+	err := w.queue.Subscribe(runCtx, w.ID, handler)
+	w.lifecycle.Lock()
+	defer w.lifecycle.Unlock()
+	w.starting = false
+	if err != nil {
+		cancel()
 		return fmt.Errorf("failed to subscribe to queue: %w", err)
 	}
-
-	// Start heartbeat
+	w.cancel = cancel
 	w.wg.Add(1)
-	go w.runHeartbeat(ctx)
+	go w.runHeartbeat(runCtx)
+	w.running = true
 
 	return nil
 }
 
 // Stop stops the worker gracefully.
 func (w *Worker) Stop(ctx context.Context) error {
-	if !w.running.Swap(false) {
+	w.lifecycle.Lock()
+	if !w.running {
+		w.lifecycle.Unlock()
 		return fmt.Errorf("worker not running")
 	}
-
+	w.running = false
+	w.finished = true
 	close(w.stopped)
+	w.cancel()
+	w.lifecycle.Unlock()
 	w.wg.Wait()
 
 	return nil
@@ -97,7 +115,9 @@ func (w *Worker) Stop(ctx context.Context) error {
 
 // IsRunning returns whether the worker is currently running.
 func (w *Worker) IsRunning() bool {
-	return w.running.Load()
+	w.lifecycle.Lock()
+	defer w.lifecycle.Unlock()
+	return w.running
 }
 
 // handleTask processes a single workflow task.

@@ -112,3 +112,33 @@ func TestGenerateMultipleRoutesProducePathKeys(t *testing.T) {
 		t.Fatalf("/users/{id} item = %#v, want DELETE", doc.Paths["/users/{id}"])
 	}
 }
+
+func TestGenerateOwnsRecursiveSchemaAndOperationContent(t *testing.T) {
+	properties := make(map[string]Schema)
+	properties["self"] = Schema{Properties: properties}
+	item := &Schema{Type: "object", Properties: properties}
+	item.Items = item
+	content := map[string]MediaType{"application/json": {Schema: Schema{Items: item}}}
+	hint := Op{Body: &RequestBody{Description: "original", Content: content}, Responses: map[string]Response{"200": {Content: content}}}
+	op := operationFromHint(hint)
+	second := operationFromHint(hint)
+	hint.Body.Description = "edited"
+	item.Type = "changed"
+	if op.RequestBody.Description != "original" {
+		t.Fatal("body is shared")
+	}
+	copyItem := op.RequestBody.Content["application/json"].Schema.Items
+	if copyItem == item || copyItem.Items != copyItem || copyItem.Type != "object" {
+		t.Fatal("recursive schema was not copied")
+	}
+	copyItem.Properties["local"] = Schema{Type: "string"}
+	if _, ok := copyItem.Properties["self"].Properties["local"]; !ok {
+		t.Fatal("map cycle was not preserved")
+	}
+	if _, ok := properties["local"]; ok {
+		t.Fatal("input map was mutated")
+	}
+	if _, ok := second.Responses["200"].Content["application/json"].Schema.Items.Properties["local"]; ok {
+		t.Fatal("second result was mutated")
+	}
+}

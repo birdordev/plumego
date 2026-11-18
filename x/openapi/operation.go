@@ -1,7 +1,10 @@
 package openapi
 
 import (
+	"maps"
 	"net/http"
+	"reflect"
+	"slices"
 	"strings"
 
 	"github.com/birdordev/plumego/router"
@@ -29,13 +32,32 @@ func operationFromHint(hint Op) *Operation {
 	if len(responses) == 0 {
 		responses = defaultResponses()
 	}
+	cloner := schemaCloner{
+		items:      make(map[*Schema]*Schema),
+		properties: make(map[uintptr]map[string]Schema),
+	}
+	params := slices.Clone(hint.Params)
+	for i := range params {
+		params[i].Schema = cloner.clone(params[i].Schema)
+	}
+	body := hint.Body
+	if body != nil {
+		copy := *body
+		copy.Content = cloner.cloneContent(body.Content)
+		body = &copy
+	}
+	responses = maps.Clone(responses)
+	for code, response := range responses {
+		response.Content = cloner.cloneContent(response.Content)
+		responses[code] = response
+	}
 	return &Operation{
 		Summary:     hint.Summary,
 		Description: hint.Description,
-		Tags:        append([]string(nil), hint.Tags...),
-		Parameters:  append([]Param(nil), hint.Params...),
-		RequestBody: hint.Body,
-		Responses:   cloneResponses(responses),
+		Tags:        slices.Clone(hint.Tags),
+		Parameters:  params,
+		RequestBody: body,
+		Responses:   responses,
 	}
 }
 
@@ -45,12 +67,47 @@ func defaultResponses() map[string]Response {
 	}
 }
 
-func cloneResponses(in map[string]Response) map[string]Response {
-	out := make(map[string]Response, len(in))
-	for code, response := range in {
-		out[code] = response
+// schemaCloner records both kinds of reference before descending into them.
+// A Properties map can refer to itself through a Schema value.
+type schemaCloner struct {
+	items      map[*Schema]*Schema
+	properties map[uintptr]map[string]Schema
+}
+
+func (c schemaCloner) clone(schema Schema) Schema {
+	if schema.Items != nil {
+		original := schema.Items
+		item, ok := c.items[original]
+		if !ok {
+			item = new(Schema)
+			c.items[original] = item
+			*item = c.clone(*original)
+		}
+		schema.Items = item
 	}
-	return out
+	if schema.Properties != nil {
+		original := schema.Properties
+		key := reflect.ValueOf(original).Pointer()
+		properties, ok := c.properties[key]
+		if !ok {
+			properties = make(map[string]Schema, len(original))
+			c.properties[key] = properties
+			for name, field := range original {
+				properties[name] = c.clone(field)
+			}
+		}
+		schema.Properties = properties
+	}
+	return schema
+}
+
+func (c schemaCloner) cloneContent(content map[string]MediaType) map[string]MediaType {
+	result := maps.Clone(content)
+	for name, media := range result {
+		media.Schema = c.clone(media.Schema)
+		result[name] = media
+	}
+	return result
 }
 
 func routePathTemplate(path string) string {

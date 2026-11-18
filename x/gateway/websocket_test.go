@@ -3,11 +3,14 @@ package gateway
 import (
 	"bufio"
 	"bytes"
+	"crypto/tls"
+	"errors"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"testing"
 	"time"
 )
@@ -22,11 +25,17 @@ func TestComputeAcceptKey(t *testing.T) {
 }
 
 func TestWebSocketProxyPreservesNegotiationAndBufferedFrames(t *testing.T) {
+	t.Run("plain backend", func(t *testing.T) { testWebSocketProxyFrames(t, false) })
+	t.Run("trusted TLS backend", func(t *testing.T) { testWebSocketProxyFrames(t, true) })
+}
+
+func testWebSocketProxyFrames(t *testing.T, secure bool) {
+	t.Helper()
 	const key = "dGhlIHNhbXBsZSBub25jZQ=="
 	serverFrame := []byte{0x81, 0x02, 'o', 'k'}
 	clientFrame := []byte{0x81, 0x81, 1, 2, 3, 4, 'x' ^ 1}
 	backendErr := make(chan error, 1)
-	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	backend := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		backendErr <- func() error {
 			conn, rw, err := http.NewResponseController(w).Hijack()
 			if err != nil {
@@ -61,8 +70,15 @@ func TestWebSocketProxyPreservesNegotiationAndBufferedFrames(t *testing.T) {
 			return nil
 		}()
 	}))
+	transport := DefaultTransportConfig()
+	if secure {
+		backend.StartTLS()
+		transport.TLSClientConfig = backend.Client().Transport.(*http.Transport).TLSClientConfig
+	} else {
+		backend.Start()
+	}
 	defer backend.Close()
-	proxy, err := New(Config{Targets: []string{backend.URL}, WebSocketEnabled: true, Timeout: 3 * time.Second})
+	proxy, err := New(Config{Transport: transport, Targets: []string{backend.URL}, WebSocketEnabled: true, Timeout: 3 * time.Second})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -99,5 +115,26 @@ func TestWebSocketProxyPreservesNegotiationAndBufferedFrames(t *testing.T) {
 	}
 	if err := <-backendErr; err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestWebSocketProxyRejectsUntrustedTLS(t *testing.T) {
+	backend := httptest.NewTLSServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	defer backend.Close()
+	proxy, err := New(Config{Targets: []string{backend.URL}, WebSocketEnabled: true, Timeout: time.Second})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer proxy.Close()
+	target, err := url.Parse(backend.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	target.Scheme = "wss"
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	_, _, _, err = proxy.dialBackend(target, req)
+	var verifyErr *tls.CertificateVerificationError
+	if !errors.As(err, &verifyErr) {
+		t.Fatalf("want certificate verification error, got %v", err)
 	}
 }

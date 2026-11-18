@@ -166,3 +166,54 @@ func TestSQLReserveIncludesExpiredLeases(t *testing.T) {
 		t.Fatalf("args = %v, want %v", args, want)
 	}
 }
+
+type reserveConnector struct {
+	driver.Connector
+	conn *reserveConn
+}
+
+func (c reserveConnector) Connect(context.Context) (driver.Conn, error) { return c.conn, nil }
+
+type reserveConn struct {
+	attemptConn
+	invalidID bool
+	tx        *reserveTx
+}
+
+func (c *reserveConn) BeginTx(context.Context, driver.TxOptions) (driver.Tx, error) { return c.tx, nil }
+
+func (c *reserveConn) QueryContext(_ context.Context, query string, _ []driver.NamedValue) (driver.Rows, error) {
+	if strings.HasPrefix(query, "SELECT id FROM") {
+		var id driver.Value = "task"
+		if c.invalidID {
+			id = nil
+		}
+		return &attemptRows{cols: []string{"id"}, values: [][]driver.Value{{id}}}, nil
+	}
+	return &attemptRows{cols: []string{"invalid_task_shape"}, values: [][]driver.Value{{nil}}}, nil
+}
+
+type reserveTx struct {
+	attemptTx
+	rolledBack bool
+}
+
+func (t *reserveTx) Rollback() error { t.rolledBack = true; return nil }
+
+func TestReserveRollsBackOnScanFailure(t *testing.T) {
+	for _, invalidID := range []bool{true, false} {
+		name := "task scan"
+		if invalidID {
+			name = "ID scan"
+		}
+		t.Run(name, func(t *testing.T) {
+			tx := new(reserveTx)
+			db := sql.OpenDB(reserveConnector{conn: &reserveConn{invalidID: invalidID, tx: tx}})
+			defer db.Close()
+			_, err := NewSQL(db, DefaultSQLConfig()).Reserve(t.Context(), mq.ReserveOptions{Limit: 1, ConsumerID: "worker"})
+			if err == nil || !tx.rolledBack || db.Stats().InUse != 0 {
+				t.Fatalf("err = %v, rollback = %v, DB stats = %+v", err, tx.rolledBack, db.Stats())
+			}
+		})
+	}
+}

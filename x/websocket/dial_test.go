@@ -258,3 +258,37 @@ func TestRWCConnDeadlineNoOps(t *testing.T) {
 		t.Fatalf("Write after Close = %v, want errClosedDialConn", err)
 	}
 }
+
+func TestDialClientTimeoutDuringHandshake(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) { <-r.Context().Done() }))
+	defer server.Close()
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
+	defer cancel()
+	_, _, err := Dial(ctx, server.URL, &DialOptions{HTTPClient: &http.Client{Timeout: 30 * time.Millisecond}})
+	if !errors.Is(err, context.DeadlineExceeded) || ctx.Err() != nil {
+		t.Fatalf("handshake err = %v, parent err = %v", err, ctx.Err())
+	}
+}
+
+func TestDialClientTimeoutEndsAtUpgrade(t *testing.T) {
+	server, _ := startUnauthDialServer(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
+	defer cancel()
+	timeout := 200 * time.Millisecond
+	client, _, err := Dial(ctx, server.URL+"/ws?room=timeout", &DialOptions{HTTPClient: &http.Client{Timeout: timeout}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+	// The caller can also cancel its dial context after the upgrade.
+	cancel()
+	// Wait beyond the handshake budget, then exercise both directions.
+	time.Sleep(timeout)
+	if err := client.WriteMessage(OpcodeText, []byte("after upgrade")); err != nil {
+		t.Fatal(err)
+	}
+	_, payload, err := client.ReadMessage()
+	if err != nil || string(payload) != "after upgrade" {
+		t.Fatalf("read = %q, %v", payload, err)
+	}
+}

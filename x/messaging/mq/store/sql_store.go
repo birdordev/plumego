@@ -73,11 +73,7 @@ func (s *SQLStore) Reserve(ctx context.Context, opts mq.ReserveOptions) ([]mq.Ta
 	if err != nil {
 		return nil, err
 	}
-	defer func() {
-		if err != nil {
-			_ = tx.Rollback()
-		}
-	}()
+	defer func() { _ = tx.Rollback() }()
 
 	_ = s.expireQueued(ctx, tx, now)
 

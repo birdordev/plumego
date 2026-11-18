@@ -64,20 +64,44 @@ const (
 // non-nil error is returned (Conn is nil; the response may still be inspected
 // for status/headers).
 func Dial(ctx context.Context, urlStr string, opts *DialOptions) (*Conn, *http.Response, error) {
-	resolved, cleanup, err := resolveDialOptions(ctx, opts)
-	if err != nil {
-		return nil, nil, err
+	resolved, timeout := resolveDialOptions(opts)
+	requestCtx, cancel := context.WithCancelCause(context.WithoutCancel(ctx))
+	stopParent := context.AfterFunc(ctx, func() { cancel(context.Cause(ctx)) })
+	defer stopParent()
+	if err := ctx.Err(); err != nil {
+		cancel(context.Cause(ctx))
 	}
-	if cleanup != nil {
-		defer cleanup()
-	}
+	connected := false
+	defer func() {
+		if !connected {
+			cancel(nil)
+		}
+	}()
 
 	secKey, err := generateSecWebSocketKey()
 	if err != nil {
 		return nil, nil, fmt.Errorf("websocket: generate Sec-WebSocket-Key: %w", err)
 	}
 
-	resp, err := sendHandshakeRequest(ctx, urlStr, resolved, secKey)
+	// Cancel the request only if the timer wins. A successful upgrade keeps
+	// the request context alive until the connection is closed.
+	var timer *time.Timer
+	if timeout > 0 {
+		timer = time.AfterFunc(timeout, func() { cancel(context.DeadlineExceeded) })
+	}
+	resp, err := sendHandshakeRequest(requestCtx, urlStr, resolved, secKey)
+	if timer != nil && !timer.Stop() {
+		<-requestCtx.Done()
+	}
+	if !stopParent() {
+		<-requestCtx.Done()
+	}
+	if cause := context.Cause(requestCtx); cause != nil {
+		if resp != nil {
+			_ = resp.Body.Close()
+		}
+		return nil, nil, fmt.Errorf("websocket: handshake request: %w", cause)
+	}
 	if err != nil {
 		return nil, nil, err
 	}
@@ -93,8 +117,10 @@ func Dial(ctx context.Context, urlStr string, opts *DialOptions) (*Conn, *http.R
 		return nil, resp, fmt.Errorf("websocket: response body is not io.ReadWriteCloser: %T", resp.Body)
 	}
 
+	conn := newRWCConn(rwc)
+	conn.onClose = func() { cancel(nil) }
 	c := newConnFromHijack(
-		newRWCConn(rwc),
+		conn,
 		bufio.NewReaderSize(rwc, defaultBufSize),
 		bufio.NewWriterSize(rwc, defaultBufSize),
 		defaultClientQueueSize,
@@ -105,13 +131,12 @@ func Dial(ctx context.Context, urlStr string, opts *DialOptions) (*Conn, *http.R
 	// Replace the body so the standard library does not log a warning about a
 	// non-closed response body. The placeholder is empty and a no-op on Close.
 	resp.Body = io.NopCloser(strings.NewReader(""))
+	connected = true
 	return c, resp, nil
 }
 
-// resolveDialOptions returns a normalized copy of opts with safe defaults. The
-// returned cleanup, when non-nil, must be deferred by the caller so the
-// derived context (used to honor HTTPClient.Timeout) is released.
-func resolveDialOptions(ctx context.Context, in *DialOptions) (*DialOptions, context.CancelFunc, error) {
+// resolveDialOptions clones the HTTP client for an upgrade request.
+func resolveDialOptions(in *DialOptions) (*DialOptions, time.Duration) {
 	out := DialOptions{}
 	if in != nil {
 		out = *in
@@ -119,19 +144,11 @@ func resolveDialOptions(ctx context.Context, in *DialOptions) (*DialOptions, con
 	if out.HTTPClient == nil {
 		out.HTTPClient = http.DefaultClient
 	}
-	var cancel context.CancelFunc
-	// Honor HTTPClient.Timeout by deriving a per-call context. We then clear
-	// the client's own Timeout on a clone, since net/http enforces it across
-	// the response body Read which must remain open for the WebSocket frames.
-	if out.HTTPClient.Timeout > 0 {
-		ctx, cancel = context.WithTimeout(ctx, out.HTTPClient.Timeout)
-		clone := *out.HTTPClient
-		clone.Timeout = 0
-		out.HTTPClient = &clone
-	}
+	timeout := out.HTTPClient.Timeout
 	// Insert a CheckRedirect that rewrites ws/wss in the redirected URL so the
 	// stdlib http client can follow Location headers without rejecting them.
 	clone := *out.HTTPClient
+	clone.Timeout = 0
 	prevCheck := out.HTTPClient.CheckRedirect
 	clone.CheckRedirect = func(req *http.Request, via []*http.Request) error {
 		switch req.URL.Scheme {
@@ -150,8 +167,7 @@ func resolveDialOptions(ctx context.Context, in *DialOptions) (*DialOptions, con
 	if out.HTTPHeader == nil {
 		out.HTTPHeader = http.Header{}
 	}
-	_ = ctx // ctx is consumed by the caller via sendHandshakeRequest
-	return &out, cancel, nil
+	return &out, timeout
 }
 
 func sendHandshakeRequest(ctx context.Context, urlStr string, opts *DialOptions, secKey string) (*http.Response, error) {
@@ -239,8 +255,9 @@ var errClosedDialConn = errors.New("websocket: dial connection closed")
 // methods are no-ops here; per-call timeouts must be handled at the
 // context/HTTPClient layer.
 type rwcConn struct {
-	rwc    io.ReadWriteCloser
-	closed atomic.Bool
+	rwc     io.ReadWriteCloser
+	closed  atomic.Bool
+	onClose func()
 }
 
 func newRWCConn(rwc io.ReadWriteCloser) *rwcConn {
@@ -264,6 +281,9 @@ func (c *rwcConn) Write(p []byte) (int, error) {
 func (c *rwcConn) Close() error {
 	if !c.closed.CompareAndSwap(false, true) {
 		return nil
+	}
+	if c.onClose != nil {
+		c.onClose()
 	}
 	return c.rwc.Close()
 }

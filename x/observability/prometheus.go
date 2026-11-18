@@ -51,9 +51,15 @@ func NewPrometheusCollector(namespace string) *PrometheusCollector {
 	}
 }
 
+// WithMaxMemory sets the series limit and immediately evicts excess series.
 func (p *PrometheusCollector) WithMaxMemory(max int) *PrometheusCollector {
 	if max > 0 {
+		p.mu.Lock()
 		p.maxMemory = max
+		if excess := len(p.requests) - max; excess > 0 {
+			p.evictSeries(excess)
+		}
+		p.mu.Unlock()
 	}
 	return p
 }
@@ -173,17 +179,13 @@ func (p *PrometheusCollector) recordHTTP(method, path string, status int, durati
 }
 
 func (p *PrometheusCollector) evictLeastUsed() {
-	evictCount := len(p.requests) / 10
-	if evictCount == 0 {
-		evictCount = 1
-	}
+	p.evictSeries(max(1, len(p.requests)/10))
+}
 
-	keys := make([]labelKey, 0, len(p.requests))
-	for key := range p.requests {
-		keys = append(keys, key)
-	}
+func (p *PrometheusCollector) evictSeries(evictCount int) {
+	keys := sortedKeys(p.requests)
 
-	sort.Slice(keys, func(i, j int) bool {
+	sort.SliceStable(keys, func(i, j int) bool {
 		return p.requests[keys[i]] < p.requests[keys[j]]
 	})
 

@@ -21,7 +21,8 @@ type Conn interface {
 // DialOption is an opaque caller-owned option passed through to Dialer.
 type DialOption any
 
-// Dialer opens an RPC connection for a target.
+// Dialer opens an RPC connection for a target. A successful result must hold
+// a usable connection. Typed nil values are invalid.
 type Dialer func(context.Context, string, ...DialOption) (Conn, error)
 
 type Pool struct {
@@ -62,6 +63,9 @@ func (p *Pool) Dial(ctx context.Context, target string, opts ...DialOption) (Con
 	conn, err := dial(ctx, target, dialOpts...)
 	if err != nil {
 		return nil, err
+	}
+	if conn == nil {
+		return nil, errors.New("rpc client dialer returned a nil connection")
 	}
 
 	p.mu.Lock()
