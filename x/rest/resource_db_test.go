@@ -8,6 +8,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 
@@ -232,5 +233,32 @@ func TestDBResourceControllerIndex_CanonicalContractShape(t *testing.T) {
 	}
 	if resp.Meta.Pagination.TotalItems != 1 {
 		t.Fatalf("pagination.total_items = %d, want 1", resp.Meta.Pagination.TotalItems)
+	}
+}
+
+func TestSQLBuilderSearchConditions(t *testing.T) {
+	for _, tc := range []struct {
+		name                 string
+		columns              []string
+		filters              map[string]string
+		selectColumns, where string
+		args                 []any
+	}{
+		{name: "no columns", selectColumns: "*"},
+		{name: "filters without search columns", filters: map[string]string{"state": "open"}, selectColumns: "*", where: " WHERE state = ?", args: []any{"open"}},
+		{name: "search columns", columns: []string{"id", "name"}, selectColumns: "id, name", where: " WHERE (id LIKE ? OR name LIKE ?)", args: []any{"%sample%", "%sample%"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			builder := NewSQLBuilder("items", "id").WithColumns(tc.columns...)
+			params := &QueryParams{Search: "sample", Filters: tc.filters}
+			selectSQL, selectArgs := builder.BuildSelectQuery(params)
+			countSQL, countArgs := builder.BuildCountQuery(params)
+			if selectSQL != "SELECT "+tc.selectColumns+" FROM items"+tc.where || !slices.Equal(selectArgs, tc.args) {
+				t.Errorf("select = %q, args = %v", selectSQL, selectArgs)
+			}
+			if countSQL != "SELECT COUNT(*) FROM items"+tc.where || !slices.Equal(countArgs, tc.args) {
+				t.Errorf("count = %q, args = %v", countSQL, countArgs)
+			}
+		})
 	}
 }

@@ -364,7 +364,7 @@ func (p *Proxy) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// Proxy WebSocket connection
-		err = p.handleWebSocketProxy(w, r, backend)
+		hijacked, err := p.handleWebSocketProxy(w, r, backend)
 
 		if err == nil {
 			// Success!
@@ -374,6 +374,9 @@ func (p *Proxy) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 
 		// Record failure
 		backend.RecordFailure(p.config.FailureThreshold)
+		if hijacked {
+			return
+		}
 		lastErr = NewProxyError(backend.URL, err, attempt)
 
 		// Check if we should retry

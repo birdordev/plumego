@@ -55,8 +55,6 @@ func (b *SQLBuilder) WithUpdateFunc(fn func(any) ([]any, error)) *SQLBuilder {
 // BuildSelectQuery builds a SELECT query with pagination, sorting, and filtering.
 func (b *SQLBuilder) BuildSelectQuery(params *QueryParams) (string, []any) {
 	var query strings.Builder
-	var args []any
-
 	query.WriteString("SELECT ")
 	if len(b.columns) > 0 {
 		query.WriteString(strings.Join(b.columns, ", "))
@@ -66,26 +64,7 @@ func (b *SQLBuilder) BuildSelectQuery(params *QueryParams) (string, []any) {
 	query.WriteString(" FROM ")
 	query.WriteString(b.table)
 
-	if len(params.Filters) > 0 || params.Search != "" {
-		query.WriteString(" WHERE ")
-		var conditions []string
-
-		if params.Search != "" && len(b.columns) > 0 {
-			var searchConds []string
-			for _, col := range b.columns {
-				searchConds = append(searchConds, fmt.Sprintf("%s LIKE ?", col))
-				args = append(args, "%"+params.Search+"%")
-			}
-			conditions = append(conditions, "("+strings.Join(searchConds, " OR ")+")")
-		}
-
-		for key, value := range params.Filters {
-			conditions = append(conditions, fmt.Sprintf("%s = ?", key))
-			args = append(args, value)
-		}
-
-		query.WriteString(strings.Join(conditions, " AND "))
-	}
+	args := b.writeWhere(&query, params)
 
 	if len(params.Sort) > 0 {
 		query.WriteString(" ORDER BY ")
@@ -115,33 +94,37 @@ func (b *SQLBuilder) BuildSelectQuery(params *QueryParams) (string, []any) {
 // BuildCountQuery builds a COUNT query with filtering.
 func (b *SQLBuilder) BuildCountQuery(params *QueryParams) (string, []any) {
 	var query strings.Builder
-	var args []any
-
 	query.WriteString("SELECT COUNT(*) FROM ")
 	query.WriteString(b.table)
 
-	if len(params.Filters) > 0 || params.Search != "" {
-		query.WriteString(" WHERE ")
-		var conditions []string
-
-		if params.Search != "" && len(b.columns) > 0 {
-			var searchConds []string
-			for _, col := range b.columns {
-				searchConds = append(searchConds, fmt.Sprintf("%s LIKE ?", col))
-				args = append(args, "%"+params.Search+"%")
-			}
-			conditions = append(conditions, "("+strings.Join(searchConds, " OR ")+")")
-		}
-
-		for key, value := range params.Filters {
-			conditions = append(conditions, fmt.Sprintf("%s = ?", key))
-			args = append(args, value)
-		}
-
-		query.WriteString(strings.Join(conditions, " AND "))
-	}
+	args := b.writeWhere(&query, params)
 
 	return query.String(), args
+}
+
+// writeWhere uses the same filtering rules for selection and counting.
+// Search applies only to configured columns.
+func (b *SQLBuilder) writeWhere(query *strings.Builder, params *QueryParams) []any {
+	var conditions []string
+	var args []any
+
+	if params.Search != "" && len(b.columns) > 0 {
+		search := make([]string, 0, len(b.columns))
+		for _, column := range b.columns {
+			search = append(search, column+" LIKE ?")
+			args = append(args, "%"+params.Search+"%")
+		}
+		conditions = append(conditions, "("+strings.Join(search, " OR ")+")")
+	}
+	for key, value := range params.Filters {
+		conditions = append(conditions, key+" = ?")
+		args = append(args, value)
+	}
+	if len(conditions) > 0 {
+		query.WriteString(" WHERE ")
+		query.WriteString(strings.Join(conditions, " AND "))
+	}
+	return args
 }
 
 // BuildInsertQuery builds an INSERT query for the configured columns.

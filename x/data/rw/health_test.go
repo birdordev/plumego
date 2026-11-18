@@ -3,7 +3,9 @@ package rw
 import (
 	"context"
 	"database/sql"
+	"database/sql/driver"
 	"errors"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -122,7 +124,7 @@ func TestHealthCheckerCheckAll(t *testing.T) {
 
 	// Run health check multiple times to exceed failure threshold
 	for i := 0; i < 3; i++ {
-		hc.checkAll(cluster)
+		hc.checkAll(t.Context(), cluster)
 		time.Sleep(10 * time.Millisecond) // Small delay
 	}
 
@@ -177,7 +179,7 @@ func TestHealthCheckerRecovery(t *testing.T) {
 
 	// Run health checks to trigger recovery
 	for i := 0; i < 3; i++ {
-		hc.checkAll(cluster)
+		hc.checkAll(t.Context(), cluster)
 		time.Sleep(10 * time.Millisecond)
 	}
 
@@ -387,6 +389,71 @@ func BenchmarkHealthCheckerCheckAll(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		hc.checkAll(cluster)
+		hc.checkAll(b.Context(), cluster)
+	}
+}
+
+type healthPingConn struct {
+	stubConn
+	ping func(context.Context) error
+}
+
+func (c *healthPingConn) Ping(ctx context.Context) error { return c.ping(ctx) }
+
+type healthPingConnector struct{ conn *healthPingConn }
+
+func (c healthPingConnector) Connect(context.Context) (driver.Conn, error) { return c.conn, nil }
+func (healthPingConnector) Driver() driver.Driver                          { return stubDriver{} }
+
+func TestHealthCheckCancelsActivePing(t *testing.T) {
+	for _, closeCluster := range []bool{false, true} {
+		name := "cancel parent"
+		if closeCluster {
+			name = "close cluster"
+		}
+		t.Run(name, func(t *testing.T) {
+			started := make(chan struct{})
+			var laterPings atomic.Int32
+			first := sql.OpenDB(healthPingConnector{&healthPingConn{ping: func(ctx context.Context) error {
+				close(started)
+				<-ctx.Done()
+				return ctx.Err()
+			}}})
+			next := sql.OpenDB(healthPingConnector{&healthPingConn{ping: func(context.Context) error {
+				laterPings.Add(1)
+				return nil
+			}}})
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			config := DefaultHealthCheckConfig()
+			config.Enabled = true
+			config.Interval = time.Millisecond
+			config.Timeout = 5 * time.Second
+			cluster, err := New(Config{Primary: newStubDB(), Replicas: []*sql.DB{first, next}, HealthCheck: config, HealthCheckContext: ctx})
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = cluster.Close() })
+			select {
+			case <-started:
+			case <-time.After(time.Second):
+				t.Fatal("health check did not start")
+			}
+			done := make(chan struct{})
+			if closeCluster {
+				go func() { _ = cluster.Close(); close(done) }()
+			} else {
+				cancel()
+				go func() { cluster.health.wg.Wait(); close(done) }()
+			}
+			select {
+			case <-done:
+			case <-time.After(time.Second):
+				t.Fatal("active ping ignored shutdown")
+			}
+			if laterPings.Load() != 0 || cluster.health.GetFailureCount(0) != 0 {
+				t.Fatal("canceling a ping caused an extra probe or a health failure")
+			}
+		})
 	}
 }

@@ -190,8 +190,11 @@ func (m *Manager) AppendMessage(ctx context.Context, sessionID string, msg provi
 	return m.Update(ctx, session)
 }
 
-// GetMessages retrieves messages with pagination.
+// GetMessages retrieves messages with pagination. Offset and limit must be nonnegative.
 func (m *Manager) GetMessages(ctx context.Context, sessionID string, offset, limit int) ([]provider.Message, error) {
+	if offset < 0 || limit < 0 {
+		return nil, fmt.Errorf("message pagination requires nonnegative offset and limit")
+	}
 	session, err := m.Get(ctx, sessionID)
 	if err != nil {
 		return nil, err
@@ -204,10 +207,7 @@ func (m *Manager) GetMessages(ctx context.Context, sessionID string, offset, lim
 		return []provider.Message{}, nil
 	}
 
-	end := offset + limit
-	if end > len(messages) {
-		end = len(messages)
-	}
+	end := offset + min(limit, len(messages)-offset)
 
 	return messages[offset:end], nil
 }

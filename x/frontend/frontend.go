@@ -143,9 +143,8 @@ func (h *handler) serveFileWithPolicy(w http.ResponseWriter, r *http.Request, fi
 	}
 
 	h.applyFileHeaders(w, filePath, includeAssetCache)
-	if h.hasPrecompressedVariant(filePath) {
-		w.Header().Add("Vary", "Accept-Encoding")
-	}
+	// Even without a compressed variant, refusing identity changes the status.
+	w.Header().Add("Vary", "Accept-Encoding")
 	http.ServeContent(w, serveContentRequest(r, includeAssetCache), path.Base(filePath), stat.ModTime(), f)
 	return true, nil
 }
@@ -155,7 +154,6 @@ func serveContentRequest(r *http.Request, includeAssetCache bool) *http.Request 
 		return r
 	}
 	copied := r.Clone(r.Context())
-	copied.Header = r.Header.Clone()
 	for _, key := range []string{
 		"Range",
 		"If-Range",

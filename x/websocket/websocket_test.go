@@ -2,6 +2,7 @@ package websocket
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"log"
@@ -800,4 +801,27 @@ func assertErrorIsOrContains(t *testing.T, err error, target error, wants ...str
 		}
 	}
 	t.Fatalf("error = %v, want %v or mention of %v", err, target, wants)
+}
+
+func TestServerRetriesCanceledShutdown(t *testing.T) {
+	cfg := DefaultWebSocketConfig()
+	cfg.Secret = validSecret()
+	server, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn := newMockConn()
+	defer conn.Close()
+	mustTryJoin(t, server.Hub(), "room", conn)
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	if err := server.Shutdown(ctx); !errors.Is(err, context.Canceled) {
+		t.Fatalf("Shutdown: %v", err)
+	}
+	if err := server.Shutdown(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if !conn.IsClosed() || server.Hub() != nil {
+		t.Fatal("shutdown retry did not close the pending connection")
+	}
 }

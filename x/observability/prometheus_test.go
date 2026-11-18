@@ -362,3 +362,23 @@ func TestPrometheusExporter_Handler_EmptyCollector(t *testing.T) {
 		t.Error("expected uptime line even for empty collector")
 	}
 }
+
+func TestPrometheusCollectorRetainsExistingSeriesAtCapacity(t *testing.T) {
+	collector := NewPrometheusCollector("capacity").WithMaxMemory(1)
+	for range 3 {
+		collector.ObserveHTTP(t.Context(), http.MethodGet, "/existing", http.StatusOK, 0, time.Second)
+	}
+	rec := httptest.NewRecorder()
+	collector.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	labels := `{method="GET",path="/existing",status="200"} 3` + "\n"
+	for _, name := range []string{"capacity_http_requests_total", "capacity_http_request_duration_seconds_count"} {
+		if !strings.Contains(rec.Body.String(), name+labels) {
+			t.Errorf("incorrect series %s: %s", name, rec.Body)
+		}
+	}
+	collector.ObserveHTTP(t.Context(), http.MethodGet, "/new", http.StatusOK, 0, time.Second)
+	requests, durations, _ := collector.snapshot()
+	if len(requests) != 1 || len(durations) != 1 || requests[labelKey{method: "GET", path: "/new", status: "200"}] != 1 {
+		t.Fatalf("requests = %v; durations = %v", requests, durations)
+	}
+}

@@ -15,9 +15,10 @@ type HealthChecker struct {
 	successes map[int]int
 	mu        sync.RWMutex
 
-	stopCh   chan struct{}
-	wg       sync.WaitGroup
-	stopOnce sync.Once
+	lifecycleMu sync.Mutex
+	cancel      context.CancelFunc
+	stopped     bool
+	wg          sync.WaitGroup
 }
 
 // NewHealthChecker creates a new health checker
@@ -26,7 +27,6 @@ func NewHealthChecker(config HealthCheckConfig) *HealthChecker {
 		config:    config,
 		failures:  make(map[int]int),
 		successes: make(map[int]int),
-		stopCh:    make(chan struct{}),
 	}
 }
 
@@ -36,15 +36,24 @@ func (hc *HealthChecker) Start(ctx context.Context, cluster *Cluster) {
 		return
 	}
 
+	hc.lifecycleMu.Lock()
+	defer hc.lifecycleMu.Unlock()
+	if hc.stopped || hc.cancel != nil {
+		return
+	}
+	ctx, hc.cancel = context.WithCancel(ctx)
 	hc.wg.Add(1)
 	go hc.run(ctx, cluster)
 }
 
 // Stop stops the health checker
 func (hc *HealthChecker) Stop() {
-	hc.stopOnce.Do(func() {
-		close(hc.stopCh)
-	})
+	hc.lifecycleMu.Lock()
+	hc.stopped = true
+	if hc.cancel != nil {
+		hc.cancel()
+	}
+	hc.lifecycleMu.Unlock()
 	hc.wg.Wait()
 }
 
@@ -57,29 +66,33 @@ func (hc *HealthChecker) run(ctx context.Context, cluster *Cluster) {
 
 	for {
 		select {
-		case <-hc.stopCh:
-			return
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			hc.checkAll(cluster)
+			hc.checkAll(ctx, cluster)
 		}
 	}
 }
 
 // checkAll checks health of all replicas
-func (hc *HealthChecker) checkAll(cluster *Cluster) {
+func (hc *HealthChecker) checkAll(ctx context.Context, cluster *Cluster) {
 	replicas := cluster.Replicas()
 	currentHealth := cluster.ReplicaHealth()
 
 	for i, replica := range replicas {
 		// Create timeout context for this check
-		checkCtx, cancel := context.WithTimeout(context.Background(), hc.config.Timeout)
+		if ctx.Err() != nil {
+			return
+		}
+		checkCtx, cancel := context.WithTimeout(ctx, hc.config.Timeout)
 
 		err := replica.PingContext(checkCtx)
 		cancel()
 
 		cluster.metrics.HealthCheckCount.Add(1)
+		if ctx.Err() != nil {
+			return
+		}
 
 		// Update failure/success counters under hc.mu, then release the lock
 		// before calling cluster.markReplicaHealth to avoid lock-order inversion

@@ -143,3 +143,18 @@ func TestKeyedBuckets_UpdateRate(t *testing.T) {
 		t.Fatalf("Wait after UpdateRate: %v", err)
 	}
 }
+
+func TestWaitOnCanceledContextDoesNotConsumeToken(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	bucket := ratelimit.New(0, 1)
+	if err := bucket.Wait(ctx); err != context.Canceled {
+		t.Fatalf("Wait = %v, want context.Canceled", err)
+	}
+	if got := bucket.Remaining(); got != 1 {
+		t.Fatalf("Remaining = %d, want 1", got)
+	}
+	if err := bucket.WaitN(ctx, 0); err != nil {
+		t.Fatalf("WaitN(0) = %v", err)
+	}
+}

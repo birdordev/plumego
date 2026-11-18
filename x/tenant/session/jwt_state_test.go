@@ -127,3 +127,14 @@ func TestJWTStateStoreRevocationTTLExpires(t *testing.T) {
 		t.Fatalf("expired revocation marker should not fail validation, got %v", err)
 	}
 }
+
+func TestJWTStateStoreDoesNotPersistExpiredRevocation(t *testing.T) {
+	state, _ := newJWTStateStore(t)
+	claims := &jwt.TokenClaims{TokenID: "expired", ExpiresAt: time.Now().Add(-time.Minute).Unix()}
+	if err := state.RevokeClaims(claims); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := state.store.Get(revokedTokenPrefix + claims.TokenID); !errors.Is(err, kvstore.ErrKeyNotFound) {
+		t.Fatalf("lookup expired revocation = %v, want ErrKeyNotFound", err)
+	}
+}

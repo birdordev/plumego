@@ -6,6 +6,7 @@ import (
 	"database/sql/driver"
 	"errors"
 	"io"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -150,3 +151,18 @@ func (r *attemptRows) Next(dest []driver.Value) error {
 }
 
 var _ mq.TaskStore = (*SQLStore)(nil)
+
+func TestSQLReserveIncludesExpiredLeases(t *testing.T) {
+	store := NewSQL(nil, DefaultSQLConfig())
+	now := time.Unix(12345, 0)
+	query, args := store.buildReserveSelect(mq.ReserveOptions{Topics: []string{"send"}, Limit: 2}, now)
+	if !strings.Contains(query, "WHERE (status = $1 OR (status = $2 AND lease_until < $3))") ||
+		!strings.Contains(query, "AND available_at <= $4 AND (expires_at IS NULL OR expires_at > $5)") ||
+		!strings.Contains(query, "AND topic IN ($6)") || !strings.HasSuffix(query, "LIMIT $7") {
+		t.Fatalf("unexpected reserve query: %s", query)
+	}
+	want := []any{mq.TaskStatusQueued, mq.TaskStatusLeased, now, now, now, "send", 2}
+	if !slices.Equal(args, want) {
+		t.Fatalf("args = %v, want %v", args, want)
+	}
+}

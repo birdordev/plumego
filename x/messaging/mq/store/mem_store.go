@@ -71,7 +71,9 @@ func (m *MemStore) Reserve(_ context.Context, opts mq.ReserveOptions) ([]mq.Task
 
 	candidates := make([]*memRecord, 0)
 	for _, rec := range m.tasks {
-		if rec.status != mq.TaskStatusQueued {
+		leaseExpired := rec.status == mq.TaskStatusLeased &&
+			!rec.task.LeaseUntil.IsZero() && rec.task.LeaseUntil.Before(opts.Now)
+		if rec.status != mq.TaskStatusQueued && !leaseExpired {
 			continue
 		}
 		if !rec.task.ExpiresAt.IsZero() && !rec.task.ExpiresAt.After(opts.Now) {

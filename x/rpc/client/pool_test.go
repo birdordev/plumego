@@ -5,6 +5,7 @@ import (
 	"errors"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	plumelog "github.com/birdordev/plumego/log"
 )
@@ -131,5 +132,72 @@ func (l *recordingLogger) storeMethod(fields ...plumelog.Fields) {
 			l.method.Store(method)
 			return
 		}
+	}
+}
+
+type blockingPoolConn struct {
+	closing chan struct{}
+	release chan struct{}
+}
+
+func (c *blockingPoolConn) Close() error {
+	close(c.closing)
+	<-c.release
+	return nil
+}
+
+func TestPoolClosesDiscardedDialsOutsideLock(t *testing.T) {
+	for _, closePool := range []bool{false, true} {
+		name := "existing winner"
+		if closePool {
+			name = "pool closed"
+		}
+		t.Run(name, func(t *testing.T) {
+			discarded := &blockingPoolConn{closing: make(chan struct{}), release: make(chan struct{})}
+			winner := &fakeConn{}
+			dialStarted := make(chan struct{})
+			allowFirstDial := make(chan struct{})
+			var count atomic.Int32
+			p := New(func(context.Context, string, ...DialOption) (Conn, error) {
+				if count.Add(1) == 1 {
+					close(dialStarted)
+					<-allowFirstDial
+					return discarded, nil
+				}
+				return winner, nil
+			})
+			type result struct {
+				conn Conn
+				err  error
+			}
+			first := make(chan result, 1)
+			go func() { c, e := p.Dial(t.Context(), "same"); first <- result{c, e} }()
+			<-dialStarted
+			if closePool {
+				if err := p.Close(); err != nil {
+					t.Fatal(err)
+				}
+			} else if c, err := p.Dial(t.Context(), "same"); err != nil || c != winner {
+				t.Fatalf("winner = %v, %v", c, err)
+			}
+			close(allowFirstDial)
+			defer close(discarded.release)
+			<-discarded.closing
+			probe := make(chan result, 1)
+			go func() { c, e := p.Dial(t.Context(), "other"); probe <- result{c, e} }()
+			select {
+			case r := <-probe:
+				if closePool && !errors.Is(r.err, ErrPoolClosed) || !closePool && r.err != nil {
+					t.Fatalf("pool probe = %v, %v", r.conn, r.err)
+				}
+			case <-time.After(time.Second):
+				t.Fatal("discarded connection Close held pool lock")
+			}
+			discarded.release <- struct{}{}
+			r := <-first
+			if closePool && (r.conn != nil || !errors.Is(r.err, ErrPoolClosed)) || !closePool && (r.conn != winner || r.err != nil) {
+				t.Fatalf("discarded dial result = %v, %v", r.conn, r.err)
+			}
+		})
 	}
 }

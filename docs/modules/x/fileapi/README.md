@@ -75,3 +75,13 @@ application wiring around it.
 - `go test -race -timeout 60s ./x/fileapi/...`
 - `go test -timeout 20s ./x/fileapi/...`
 - `go vet ./x/fileapi/...`
+
+## Upload and download limits
+
+`Handler.Upload` accepts files up to 100 MiB by default. `WithMaxSize` sets
+the file byte limit. Zero allows only empty files; a negative value restores
+the default. The multipart request has a separate total limit of the file
+limit plus 1 MiB for form fields and framing. Exceeding either limit returns
+HTTP 413.
+
+Successful tenant-authorized downloads use `Cache-Control: private, no-store`.

@@ -33,7 +33,6 @@ func TestPrecompressedFiles(t *testing.T) {
 		acceptEncoding string
 		expectBody     string
 		expectEncoding string
-		expectVary     bool
 	}{
 		{
 			name:           "brotli preferred",
@@ -41,7 +40,6 @@ func TestPrecompressedFiles(t *testing.T) {
 			acceptEncoding: "br, gzip, deflate",
 			expectBody:     "brotli content",
 			expectEncoding: "br",
-			expectVary:     true,
 		},
 		{
 			name:           "gzip when br not accepted",
@@ -49,7 +47,6 @@ func TestPrecompressedFiles(t *testing.T) {
 			acceptEncoding: "gzip, deflate",
 			expectBody:     "gzipped content",
 			expectEncoding: "gzip",
-			expectVary:     true,
 		},
 		{
 			name:           "original when no encoding accepted",
@@ -57,7 +54,6 @@ func TestPrecompressedFiles(t *testing.T) {
 			acceptEncoding: "",
 			expectBody:     "console.log('original')",
 			expectEncoding: "",
-			expectVary:     true,
 		},
 		{
 			name:           "gzip when brotli q zero",
@@ -65,7 +61,6 @@ func TestPrecompressedFiles(t *testing.T) {
 			acceptEncoding: "br;q=0, gzip;q=1",
 			expectBody:     "gzipped content",
 			expectEncoding: "gzip",
-			expectVary:     true,
 		},
 		{
 			name:           "gzip when gzip quality higher",
@@ -73,7 +68,6 @@ func TestPrecompressedFiles(t *testing.T) {
 			acceptEncoding: "br;q=0.1, gzip;q=1",
 			expectBody:     "gzipped content",
 			expectEncoding: "gzip",
-			expectVary:     true,
 		},
 		{
 			name:           "brotli wins equal quality",
@@ -81,7 +75,6 @@ func TestPrecompressedFiles(t *testing.T) {
 			acceptEncoding: "br;q=0.8, gzip;q=0.8",
 			expectBody:     "brotli content",
 			expectEncoding: "br",
-			expectVary:     true,
 		},
 		{
 			name:           "original when encodings q zero",
@@ -89,7 +82,6 @@ func TestPrecompressedFiles(t *testing.T) {
 			acceptEncoding: "br;q=0, gzip;q=0",
 			expectBody:     "console.log('original')",
 			expectEncoding: "",
-			expectVary:     true,
 		},
 		{
 			name:           "only gzip available",
@@ -97,7 +89,6 @@ func TestPrecompressedFiles(t *testing.T) {
 			acceptEncoding: "br, gzip",
 			expectBody:     "gzipped css",
 			expectEncoding: "gzip",
-			expectVary:     true,
 		},
 		{
 			name:           "no precompressed version",
@@ -105,7 +96,6 @@ func TestPrecompressedFiles(t *testing.T) {
 			acceptEncoding: "gzip, br",
 			expectBody:     "<html>index</html>",
 			expectEncoding: "",
-			expectVary:     false,
 		},
 	}
 
@@ -130,9 +120,8 @@ func TestPrecompressedFiles(t *testing.T) {
 				t.Fatalf("Content-Encoding: got %q want %q", gotEncoding, tc.expectEncoding)
 			}
 
-			hasVary := rec.Header().Get("Vary") != ""
-			if hasVary != tc.expectVary {
-				t.Fatalf("Vary header: got %v want %v", hasVary, tc.expectVary)
+			if got := rec.Header().Get("Vary"); got != "Accept-Encoding" {
+				t.Fatalf("Vary = %q, want Accept-Encoding", got)
 			}
 		})
 	}
@@ -266,8 +255,8 @@ func TestDirectoryPrecompressedPlanIsImmutable(t *testing.T) {
 	if got := rec.Header().Get("Content-Encoding"); got != "" {
 		t.Fatalf("Content-Encoding: got %q want empty", got)
 	}
-	if got := rec.Header().Get("Vary"); got != "" {
-		t.Fatalf("Vary: got %q want empty", got)
+	if got := rec.Header().Get("Vary"); got != "Accept-Encoding" {
+		t.Fatalf("Vary: got %q want Accept-Encoding", got)
 	}
 }
 
@@ -400,23 +389,20 @@ func TestMIMETypesWithPrecompressed(t *testing.T) {
 	}
 }
 
-func TestCustomFSLazyPrecompressedVariantProbing(t *testing.T) {
+func TestCustomFSOnlyProbesAcceptedPrecompressedVariants(t *testing.T) {
 	tests := []struct {
-		name       string
-		writeBR    bool
-		expectVary bool
-		wantOpens  []string
+		name      string
+		writeBR   bool
+		wantOpens []string
 	}{
 		{
-			name:       "br variant found",
-			writeBR:    true,
-			expectVary: true,
-			wantOpens:  []string{"app.js", "app.js.br"},
+			name:      "br variant found",
+			writeBR:   true,
+			wantOpens: []string{"app.js", "app.js.br"},
 		},
 		{
-			name:       "no variants found",
-			expectVary: false,
-			wantOpens:  []string{"app.js", "app.js.br", "app.js.gz"},
+			name:      "no variants found",
+			wantOpens: []string{"app.js", "app.js.br"},
 		},
 	}
 
@@ -436,19 +422,20 @@ func TestCustomFSLazyPrecompressedVariantProbing(t *testing.T) {
 			}
 
 			req := httptest.NewRequest(http.MethodGet, "/app.js", nil)
+			req.Header.Set("Accept-Encoding", "br")
 			rec := httptest.NewRecorder()
 			r.ServeHTTP(rec, req)
 
 			if rec.Code != http.StatusOK {
 				t.Fatalf("status: got %d want %d body=%q", rec.Code, http.StatusOK, rec.Body.String())
 			}
-			assertBodyContains(t, rec, "original")
-			if got := rec.Header().Get("Content-Encoding"); got != "" {
-				t.Fatalf("Content-Encoding: got %q want empty", got)
+			if tt.writeBR {
+				assertBodyContains(t, rec, "compressed")
+			} else {
+				assertBodyContains(t, rec, "original")
 			}
-			hasVary := rec.Header().Get("Vary") != ""
-			if hasVary != tt.expectVary {
-				t.Fatalf("Vary present: got %v want %v", hasVary, tt.expectVary)
+			if got := rec.Header().Get("Vary"); got != "Accept-Encoding" {
+				t.Fatalf("Vary = %q, want Accept-Encoding", got)
 			}
 			if !slices.Equal(fsys.opened, tt.wantOpens) {
 				t.Fatalf("opened paths: got %#v want %#v", fsys.opened, tt.wantOpens)
@@ -457,7 +444,7 @@ func TestCustomFSLazyPrecompressedVariantProbing(t *testing.T) {
 	}
 }
 
-func TestCustomFSPrecompressedVariantPlanAvoidsLazyVaryProbes(t *testing.T) {
+func TestCustomFSPrecompressedVariantPlanServesIdentityWithoutProbing(t *testing.T) {
 	dir := t.TempDir()
 	writeTestFile(t, dir, "index.html", "index")
 	writeTestFile(t, dir, "app.js", "original")
@@ -560,8 +547,8 @@ func TestCustomFSLazyPrecompressedStatErrorFallsBackToOriginal(t *testing.T) {
 	if got := rec.Header().Get("Content-Encoding"); got != "" {
 		t.Fatalf("Content-Encoding: got %q want empty", got)
 	}
-	if got := rec.Header().Get("Vary"); got != "" {
-		t.Fatalf("Vary: got %q want empty", got)
+	if got := rec.Header().Get("Vary"); got != "Accept-Encoding" {
+		t.Fatalf("Vary: got %q want Accept-Encoding", got)
 	}
 	if len(misses) != 1 {
 		t.Fatalf("misses: got %#v want one event", misses)
@@ -684,5 +671,32 @@ func TestAcceptsToken(t *testing.T) {
 				t.Fatalf("acceptsToken(%q, %q) = %v, want %v", tt.header, tt.token, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestIdentityOnlyAssetVariesByAcceptEncoding(t *testing.T) {
+	dir := t.TempDir()
+	writeTestFile(t, dir, "index.html", "<html>index</html>")
+	writeTestFile(t, dir, "app.js", "original")
+	mount, err := NewMountFromDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		method, encoding string
+		status           int
+	}{
+		{http.MethodGet, "", http.StatusOK},
+		{http.MethodHead, "", http.StatusOK},
+		{http.MethodGet, "identity;q=0", http.StatusNotAcceptable},
+	} {
+		req := httptest.NewRequest(tc.method, "/app.js", nil)
+		req.Header.Set("Accept-Encoding", tc.encoding)
+		rec := httptest.NewRecorder()
+		rec.Header().Set("Vary", "Origin")
+		mount.Handler().ServeHTTP(rec, req)
+		if rec.Code != tc.status || !slices.Equal(rec.Header().Values("Vary"), []string{"Origin", "Accept-Encoding"}) {
+			t.Errorf("%s with %q: status %d, Vary %v", tc.method, tc.encoding, rec.Code, rec.Header().Values("Vary"))
+		}
 	}
 }

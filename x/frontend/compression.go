@@ -258,38 +258,6 @@ func precompressedSuffix(encoding string) string {
 	return "." + encoding
 }
 
-func (h *handler) hasPrecompressedVariant(filePath string) bool {
-	if !h.cfg.EnablePrecompressed {
-		return false
-	}
-	if h.variants.known {
-		return h.variants.variants[filePath].any()
-	}
-	if f, _ := h.tryOpenFile(filePath + ".br"); f != nil {
-		_ = f.Close()
-		return true
-	}
-	if f, _ := h.tryOpenFile(filePath + ".gz"); f != nil {
-		_ = f.Close()
-		return true
-	}
-	return false
-}
-
-// tryOpenFile attempts to open a file and return it with its stat.
-func (h *handler) tryOpenFile(filePath string) (http.File, os.FileInfo) {
-	f, err := h.fs.Open(filePath)
-	if err != nil {
-		return nil, nil
-	}
-	stat, err := f.Stat()
-	if err != nil || stat.IsDir() {
-		_ = f.Close()
-		return nil, nil
-	}
-	return f, stat
-}
-
 func (h *handler) tryOpenPrecompressedVariant(filePath, encoding string, reportOpenMiss bool) (http.File, os.FileInfo) {
 	variantPath := filePath + precompressedSuffix(encoding)
 	f, err := h.fs.Open(variantPath)

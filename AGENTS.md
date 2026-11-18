@@ -8,6 +8,8 @@ Read path: `AGENTS.md` -> matching `specs/task-routing.yaml` entry -> that entry
 
 Control-plane docs: `docs/operations/codex-workflow.md`, `docs/operations/agent-code-quality-rules.md`, `docs/operations/agent-context-budget.md`, `docs/reference/canonical-style-guide.md`, `docs/concepts/agent-first-repo-blueprint.md`, and `docs/concepts/extension-maturity.md`.
 
+Use the [52-item stable module quality checklist](docs/operations/agent-code-quality-rules.md#9-stable-module-quality-checklist) for stable-root reviews and implementation. A full review records evidence or verification limits for every check and all nine stable roots. For scoped changes, reference the applicable check numbers in task cards and verification.
+
 Machine-readable sources: `specs/repo.yaml`, `specs/task-routing.yaml`, `specs/dependency-rules.yaml`, `specs/agent-quality-rules.yaml`, `specs/checks.yaml`, `specs/gate-profiles.yaml`, `specs/stop-condition-handlers.yaml`, `specs/request-flows.yaml`, `specs/extension-maturity.yaml`, `specs/extension-beta-evidence.yaml`, `specs/deprecation-inventory.yaml`, and `specs/change-recipes/`.
 
 Canonical wiring: `reference/standard-service`. This file is the authoritative repository-wide agent guide; keep shared instructions here rather than in a separate agent-specific snapshot. CLI: `(cd cmd/plumego && go run . --help)`; agent helpers live under `plumego agents ...`. Task bundle: `make bundle TASK=<recipe> MODULE=<path>`.

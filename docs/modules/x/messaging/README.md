@@ -74,6 +74,11 @@ and queue-task dedupe adapters. Start with `x/messaging/mq/module.yaml`.
 Public entrypoints include `NewTaskQueue`, `NewWorker`, `NewInProcBrokerE`,
 `store.NewMemory`, `store.NewSQL`, and `NewKVPersistence`.
 
+`Worker.Stop` uses the earlier of the caller deadline and
+`WorkerConfig.ShutdownTimeout`. It reserves part of that budget for releasing
+in-flight leases. When release fails or the budget is exhausted, the built-in
+memory and SQL stores can reserve the task again after its lease expires.
+
 MQTT and AMQP server bridges are not implemented. `Config.Validate` fails
 closed when `EnableMQTT` or `EnableAMQP` is true, wrapping
 `ErrNotImplemented`. `StartMQTTServer` and `StartAMQPServer` remain

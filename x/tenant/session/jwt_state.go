@@ -28,7 +28,8 @@ func NewJWTStateStore(store *kvstore.KVStore) (*JWTStateStore, error) {
 	return &JWTStateStore{store: store}, nil
 }
 
-// RevokeClaims records the token id from verified claims until token expiry.
+// RevokeClaims records the token ID from verified claims until token expiry.
+// Revoking already expired claims succeeds without a write.
 func (s *JWTStateStore) RevokeClaims(claims *jwt.TokenClaims) error {
 	if s == nil || s.store == nil {
 		return errors.New("jwt state store is nil")
@@ -38,8 +39,8 @@ func (s *JWTStateStore) RevokeClaims(claims *jwt.TokenClaims) error {
 	}
 
 	ttl := time.Until(time.Unix(claims.ExpiresAt, 0))
-	if ttl < 0 {
-		ttl = 0
+	if ttl <= 0 {
+		return nil
 	}
 	return s.store.Set(revokedTokenPrefix+claims.TokenID, []byte("revoked"), ttl)
 }

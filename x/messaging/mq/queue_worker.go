@@ -40,7 +40,8 @@ type Worker struct {
 	pollCtx    context.Context
 	pollCancel context.CancelFunc
 	wg         sync.WaitGroup
-	started    atomic.Bool
+	startMu    sync.Mutex
+	started    bool
 	inflight   atomic.Int64
 
 	inflightMu    sync.Mutex
@@ -70,9 +71,12 @@ func (w *Worker) Start(ctx context.Context) {
 	if w == nil || w.queue == nil {
 		return
 	}
-	if w.started.Swap(true) {
+	w.startMu.Lock()
+	defer w.startMu.Unlock()
+	if w.started {
 		return
 	}
+	w.started = true
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -97,11 +101,17 @@ func (w *Worker) Start(ctx context.Context) {
 	}
 }
 
+// Stop drains tasks within the earlier of the caller's deadline and
+// ShutdownTimeout. A portion of that time is reserved for releasing in-flight
+// leases after cancellation. Leases that cannot be released expire normally.
 func (w *Worker) Stop(ctx context.Context) error {
 	if w == nil {
 		return nil
 	}
-	if !w.started.Load() {
+	w.startMu.Lock()
+	started := w.started
+	w.startMu.Unlock()
+	if !started {
 		return nil
 	}
 
@@ -114,21 +124,30 @@ func (w *Worker) Stop(ctx context.Context) error {
 		defer cancel()
 	}
 
+	drainCtx := ctx
+	if deadline, ok := ctx.Deadline(); ok {
+		cleanupBudget := min(time.Second, time.Until(deadline)/10)
+		if cleanupBudget > 0 {
+			var cancel context.CancelFunc
+			drainCtx, cancel = context.WithDeadline(ctx, deadline.Add(-cleanupBudget))
+			defer cancel()
+		}
+	}
+
 	if w.pollCancel != nil {
 		w.pollCancel()
 	}
 
-	if err := waitForPoll(ctx, w.pollDone); err != nil {
-		w.forceStop()
-		return err
+	if err := waitForPoll(drainCtx, w.pollDone); err != nil {
+		return errors.Join(err, w.forceStop(ctx))
 	}
 
 	w.closeTasks()
 
-	if err := waitWithContext(ctx, &w.wg); err != nil {
-		w.forceStop()
-		return err
+	if err := waitWithContext(drainCtx, &w.wg); err != nil {
+		return errors.Join(err, w.forceStop(ctx))
 	}
+	w.runCancel()
 	return nil
 }
 
@@ -395,9 +414,9 @@ func (w *Worker) untrackInflight(taskID string) {
 	w.inflightMu.Unlock()
 }
 
-func (w *Worker) releaseInflight(ctx context.Context) {
+func (w *Worker) releaseInflight(ctx context.Context) error {
 	if w.queue == nil {
-		return
+		return nil
 	}
 	w.inflightMu.Lock()
 	tasks := make([]Task, 0, len(w.inflightTasks))
@@ -406,13 +425,22 @@ func (w *Worker) releaseInflight(ctx context.Context) {
 	}
 	w.inflightMu.Unlock()
 
+	var releaseErr error
 	for _, task := range tasks {
-		_ = w.queue.Release(ctx, task.ID, w.config.ConsumerID, ReleaseOptions{
-			RetryAt: time.Now(),
+		if err := ctx.Err(); err != nil {
+			return errors.Join(releaseErr, err)
+		}
+		now := time.Now()
+		err := w.queue.Release(ctx, task.ID, w.config.ConsumerID, ReleaseOptions{
+			RetryAt: now,
 			Reason:  "worker shutdown",
-			Now:     time.Now(),
+			Now:     now,
 		})
+		if err != nil && !errors.Is(err, ErrLeaseLost) && !errors.Is(err, ErrTaskNotFound) {
+			releaseErr = errors.Join(releaseErr, err)
+		}
 	}
+	return releaseErr
 }
 
 func (w *Worker) closeTasks() {
@@ -424,14 +452,14 @@ func (w *Worker) closeTasks() {
 	})
 }
 
-func (w *Worker) forceStop() {
+func (w *Worker) forceStop(ctx context.Context) error {
 	if w.pollCancel != nil {
 		w.pollCancel()
 	}
 	if w.runCancel != nil {
 		w.runCancel()
 	}
-	w.releaseInflight(context.Background())
+	return w.releaseInflight(ctx)
 }
 
 func (w *Worker) markDeduped(task Task) {

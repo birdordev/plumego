@@ -193,3 +193,19 @@ func sampleDocument() Document {
 		},
 	}
 }
+
+func TestMarshalYAMLRetainsEmptyCollections(t *testing.T) {
+	data, err := MarshalYAML(New().Generate(nil, nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "paths: {}\n") {
+		t.Errorf("empty paths missing: %s", data)
+	}
+
+	var buf bytes.Buffer
+	writeYAMLValue(&buf, map[string]any{"children": []any{map[string]any{}, []any{}}}, 0)
+	if got := buf.String(); got != "children:\n  - {}\n  - []\n" {
+		t.Errorf("empty children = %q", got)
+	}
+}

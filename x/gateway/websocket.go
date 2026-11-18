@@ -10,6 +10,7 @@
 package gateway
 
 import (
+	"bufio"
 	"context"
 	"crypto/sha1"
 	"encoding/base64"
@@ -25,12 +26,13 @@ import (
 
 // handleWebSocketProxy handles WebSocket proxying
 // This is a raw TCP proxy that handles the WebSocket upgrade and bidirectional copying
-func (p *Proxy) handleWebSocketProxy(w http.ResponseWriter, r *http.Request, backend *Backend) error {
+func (p *Proxy) handleWebSocketProxy(w http.ResponseWriter, r *http.Request, backend *Backend) (hijacked bool, err error) {
 	// Build backend WebSocket URL
 	backendURL := &url.URL{
-		Scheme: getWebSocketScheme(backend.ParsedURL.Scheme),
-		Host:   backend.ParsedURL.Host,
-		Path:   r.URL.Path,
+		Scheme:   getWebSocketScheme(backend.ParsedURL.Scheme),
+		Host:     backend.ParsedURL.Host,
+		Path:     r.URL.Path,
+		RawQuery: r.URL.RawQuery,
 	}
 
 	// Apply path rewriting if configured
@@ -38,74 +40,70 @@ func (p *Proxy) handleWebSocketProxy(w http.ResponseWriter, r *http.Request, bac
 		backendURL.Path = p.config.PathRewrite(backendURL.Path)
 	}
 
-	// Dial backend
-	backendConn, err := p.dialBackend(backendURL, r)
+	backendConn, backendReader, response, err := p.dialBackend(backendURL, r)
 	if err != nil {
-		return err
+		return false, err
 	}
 	defer func() { _ = backendConn.Close() }()
 
-	// Hijack client connection
-	hijacker, ok := w.(http.Hijacker)
-	if !ok {
-		return ErrWebSocketUpgrade
-	}
-
-	clientConn, _, err := hijacker.Hijack()
+	clientConn, clientBuffer, err := httputil.HijackIfSupported(w)
 	if err != nil {
-		return err
+		return false, err
 	}
 	defer func() { _ = clientConn.Close() }()
 
-	// Send upgrade response to client
-	if err := p.sendUpgradeResponse(clientConn, r); err != nil {
-		return err
+	if err := sendUpgradeResponse(clientBuffer.Writer, response); err != nil {
+		return true, err
 	}
-
-	// Bidirectional copy
-	return p.bidirectionalCopy(clientConn, backendConn)
+	return true, p.bidirectionalCopy(clientConn, backendConn, clientBuffer.Reader, backendReader)
 }
 
-// dialBackend dials the backend WebSocket server
-func (p *Proxy) dialBackend(backendURL *url.URL, r *http.Request) (net.Conn, error) {
-	// Create dialer with timeout
-	dialer := &net.Dialer{
-		Timeout:   p.config.Timeout,
-		KeepAlive: 30 * time.Second,
-	}
+// dialBackend opens the upstream connection and reads the upgrade response.
+func (p *Proxy) dialBackend(backendURL *url.URL, r *http.Request) (net.Conn, io.Reader, *http.Response, error) {
+	dialer := &net.Dialer{Timeout: p.config.Timeout, KeepAlive: 30 * time.Second}
 
-	// Determine network address
 	host := backendURL.Host
-	if !strings.Contains(host, ":") {
+	if backendURL.Port() == "" {
+		port := "80"
 		if backendURL.Scheme == "wss" {
-			host += ":443"
-		} else {
-			host += ":80"
+			port = "443"
 		}
+		host = net.JoinHostPort(backendURL.Hostname(), port)
 	}
 
-	// Dial backend
-	ctx, cancel := context.WithTimeout(context.Background(), p.config.Timeout)
+	ctx, cancel := context.WithTimeout(r.Context(), p.config.Timeout)
 	defer cancel()
-
 	conn, err := dialer.DialContext(ctx, "tcp", host)
 	if err != nil {
-		return nil, err
+		return nil, nil, nil, err
 	}
 
-	// Send upgrade request to backend
+	deadline, _ := ctx.Deadline()
+	if err := conn.SetDeadline(deadline); err != nil {
+		_ = conn.Close()
+		return nil, nil, nil, err
+	}
 	if err := p.sendBackendUpgrade(conn, backendURL, r); err != nil {
 		_ = conn.Close()
-		return nil, err
+		return nil, nil, nil, err
 	}
 
-	// Read upgrade response from backend
-	if err := p.readBackendUpgradeResponse(conn); err != nil {
+	// Keep one reader across the upgrade so any buffered frame bytes survive.
+	const maxUpgradeResponseBytes = 64 << 10
+	bounded := &io.LimitedReader{R: conn, N: maxUpgradeResponseBytes}
+	reader := bufio.NewReader(bounded)
+	response, err := http.ReadResponse(reader, r)
+	if err != nil || response.StatusCode != http.StatusSwitchingProtocols ||
+		!strings.EqualFold(response.Header.Get("Upgrade"), "websocket") ||
+		response.Header.Get("Sec-WebSocket-Accept") != computeAcceptKey(r.Header.Get("Sec-WebSocket-Key")) {
 		_ = conn.Close()
-		return nil, err
+		return nil, nil, nil, ErrWebSocketUpgrade
 	}
-
-	return conn, nil
+	if err := conn.SetDeadline(time.Time{}); err != nil {
+		_ = conn.Close()
+		return nil, nil, nil, err
+	}
+	return conn, io.MultiReader(io.LimitReader(reader, int64(reader.Buffered())), conn), response, nil
 }
 
 // sendBackendUpgrade sends the WebSocket upgrade request to the backend
@@ -113,11 +111,7 @@ func (p *Proxy) sendBackendUpgrade(conn net.Conn, backendURL *url.URL, r *http.R
 	// Build upgrade request
 	var sb strings.Builder
 	sb.WriteString("GET ")
-	sb.WriteString(backendURL.Path)
-	if backendURL.RawQuery != "" {
-		sb.WriteString("?")
-		sb.WriteString(backendURL.RawQuery)
-	}
+	sb.WriteString(backendURL.RequestURI())
 	sb.WriteString(" HTTP/1.1\r\n")
 	sb.WriteString("Host: ")
 	sb.WriteString(backendURL.Host)
@@ -161,73 +155,38 @@ func (p *Proxy) sendBackendUpgrade(conn net.Conn, backendURL *url.URL, r *http.R
 	return err
 }
 
-// readBackendUpgradeResponse reads and validates the upgrade response from backend
-func (p *Proxy) readBackendUpgradeResponse(conn net.Conn) error {
-	// Set read deadline
-	_ = conn.SetReadDeadline(time.Now().Add(p.config.Timeout))
-	defer func() { _ = conn.SetReadDeadline(time.Time{}) }()
-
-	// Read response status line and headers
-	buf := make([]byte, 4096)
-	n, err := conn.Read(buf)
-	if err != nil {
+// sendUpgradeResponse forwards the negotiated WebSocket response headers.
+func sendUpgradeResponse(w *bufio.Writer, upstream *http.Response) error {
+	response := &http.Response{
+		StatusCode: http.StatusSwitchingProtocols,
+		ProtoMajor: 1,
+		ProtoMinor: 1,
+		Header:     http.Header{"Connection": {"Upgrade"}, "Upgrade": {"websocket"}},
+	}
+	for _, name := range []string{"Sec-WebSocket-Accept", "Sec-WebSocket-Protocol", "Sec-WebSocket-Extensions"} {
+		for _, value := range upstream.Header.Values(name) {
+			response.Header.Add(name, value)
+		}
+	}
+	if err := response.Write(w); err != nil {
 		return err
 	}
-
-	response := string(buf[:n])
-
-	// Check for successful upgrade (101 Switching Protocols)
-	if !strings.HasPrefix(response, "HTTP/1.1 101") {
-		return ErrWebSocketUpgrade
-	}
-
-	return nil
+	return w.Flush()
 }
 
-// sendUpgradeResponse sends the WebSocket upgrade response to the client
-func (p *Proxy) sendUpgradeResponse(conn net.Conn, r *http.Request) error {
-	// Build upgrade response
-	var sb strings.Builder
-	sb.WriteString("HTTP/1.1 101 Switching Protocols\r\n")
-	sb.WriteString("Upgrade: websocket\r\n")
-	sb.WriteString("Connection: Upgrade\r\n")
-
-	// Copy Sec-WebSocket-Accept from backend response
-	// For simplicity, we'll generate it here
-	if key := r.Header.Get("Sec-WebSocket-Key"); key != "" {
-		accept := computeAcceptKey(key)
-		sb.WriteString("Sec-WebSocket-Accept: ")
-		sb.WriteString(accept)
-		sb.WriteString("\r\n")
-	}
-
-	// Copy Sec-WebSocket-Protocol if present
-	if protocol := r.Header.Get("Sec-WebSocket-Protocol"); protocol != "" {
-		sb.WriteString("Sec-WebSocket-Protocol: ")
-		sb.WriteString(protocol)
-		sb.WriteString("\r\n")
-	}
-
-	sb.WriteString("\r\n")
-
-	// Send response
-	_, err := conn.Write([]byte(sb.String()))
-	return err
-}
-
-// bidirectionalCopy copies data bidirectionally between client and backend
-func (p *Proxy) bidirectionalCopy(client, backend net.Conn) error {
+// bidirectionalCopy uses the readers left by both handshakes.
+func (p *Proxy) bidirectionalCopy(client, backend net.Conn, clientReader, backendReader io.Reader) error {
 	errChan := make(chan error, 2)
 
 	// Copy client -> backend
 	go func() {
-		_, err := io.Copy(backend, client)
+		_, err := io.Copy(backend, clientReader)
 		errChan <- err
 	}()
 
 	// Copy backend -> client
 	go func() {
-		_, err := io.Copy(client, backend)
+		_, err := io.Copy(client, backendReader)
 		errChan <- err
 	}()
 
@@ -237,6 +196,7 @@ func (p *Proxy) bidirectionalCopy(client, backend net.Conn) error {
 	// Close both connections to terminate the other goroutine
 	_ = client.Close()
 	_ = backend.Close()
+	<-errChan
 
 	return err
 }

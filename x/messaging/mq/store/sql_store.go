@@ -475,12 +475,13 @@ func (s *SQLStore) buildInsert(task mq.Task, status string, meta []byte) (string
 }
 
 func (s *SQLStore) buildReserveSelect(opts mq.ReserveOptions, now time.Time) (string, []any) {
-	args := make([]any, 0, 4+len(opts.Topics))
+	args := make([]any, 0, 6+len(opts.Topics))
 	idx := 1
 
-	query := fmt.Sprintf("SELECT id FROM %s WHERE status = %s AND available_at <= %s AND (expires_at IS NULL OR expires_at > %s)", s.cfg.Table, s.placeholder(idx), s.placeholder(idx+1), s.placeholder(idx+2))
-	args = append(args, mq.TaskStatusQueued, now, now)
-	idx += 3
+	query := fmt.Sprintf("SELECT id FROM %s WHERE (status = %s OR (status = %s AND lease_until < %s)) AND available_at <= %s AND (expires_at IS NULL OR expires_at > %s)",
+		s.cfg.Table, s.placeholder(idx), s.placeholder(idx+1), s.placeholder(idx+2), s.placeholder(idx+3), s.placeholder(idx+4))
+	args = append(args, mq.TaskStatusQueued, mq.TaskStatusLeased, now, now, now)
+	idx += 5
 
 	if len(opts.Topics) > 0 {
 		placeholders := make([]string, 0, len(opts.Topics))

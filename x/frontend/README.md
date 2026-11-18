@@ -27,12 +27,9 @@ compressed variants are a best-effort downgrade: if identity is acceptable, the
 original asset is served instead, and no log or metric is emitted by this
 package unless `WithPrecompressedVariantMissHandler` is configured. Add that
 application-owned hook if stale or missing build artifacts need an operational
-signal. Non-`http.Dir` custom filesystems keep lazy variant probing. That means
-original responses can probe `.br` and `.gz` candidates to decide whether
-`Vary: Accept-Encoding` is required; use directory-backed mounts when those
-extra backend opens are too expensive, or provide
-`WithPrecompressedVariantPlan` when a custom filesystem already has reliable
-variant metadata.
+signal. Non-`http.Dir` custom filesystems try accepted compressed variants
+lazily. A filesystem with reliable variant metadata can supply
+`WithPrecompressedVariantPlan` to skip unlisted candidates.
 
 Mount registration uses a fixed ANY-route plan: root mounts register `/` and
 `/*filepath`; prefixed mounts register `<prefix>/*filepath` and `<prefix>`.
@@ -221,11 +218,11 @@ When enabled:
   construction
 - Applications can observe planned variant open misses and candidate stat misses
   with `WithPrecompressedVariantMissHandler`
-- Responses for URLs with pre-compressed variants include `Vary: Accept-Encoding`
-- Non-`http.Dir` custom filesystems are probed lazily for `.br` and `.gz`
-  variants, including on original responses when `Vary: Accept-Encoding` must be
-  decided. Directory-backed mounts avoid that per-request variant probing, and
-  custom filesystems can avoid it with `WithPrecompressedVariantPlan`.
+- Asset responses include `Vary: Accept-Encoding`, including when only the
+  original asset is available.
+- Non-`http.Dir` custom filesystems try only accepted compressed variants.
+  Directory-backed mounts and `WithPrecompressedVariantPlan` use their variant
+  metadata to skip unlisted candidates.
 
 ```go
 frontend.WithPrecompressed(true)

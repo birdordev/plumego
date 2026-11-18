@@ -116,9 +116,13 @@ func writeIndent(buf *bytes.Buffer, indent int) {
 }
 
 func isYAMLScalar(value any) bool {
-	switch value.(type) {
+	switch value := value.(type) {
 	case nil, string, bool, float64:
 		return true
+	case map[string]any:
+		return len(value) == 0
+	case []any:
+		return len(value) == 0
 	default:
 		return false
 	}
@@ -134,6 +138,10 @@ func formatYAMLScalar(value any) string {
 		return strconv.FormatBool(v)
 	case float64:
 		return strconv.FormatFloat(v, 'f', -1, 64)
+	case map[string]any:
+		return "{}"
+	case []any:
+		return "[]"
 	default:
 		return fmt.Sprintf("%v", v)
 	}

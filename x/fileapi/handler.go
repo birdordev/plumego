@@ -12,6 +12,8 @@ import (
 	"fmt"
 	"html"
 	"io"
+	"math"
+	"mime/multipart"
 	"net/http"
 	"strconv"
 	"time"
@@ -20,6 +22,12 @@ import (
 	storefile "github.com/birdordev/plumego/store/file"
 	datafile "github.com/birdordev/plumego/x/data/file"
 	tenantcore "github.com/birdordev/plumego/x/tenant/core"
+)
+
+const (
+	defaultMaxUploadSize   = 100 << 20
+	multipartMemoryLimit   = 8 << 20
+	multipartOverheadLimit = 1 << 20
 )
 
 // Handler provides HTTP endpoints for file operations.
@@ -52,12 +60,16 @@ func NewHandler(storage datafile.Storage, metadata datafile.MetadataManager) *Ha
 	return &Handler{
 		storage:  storage,
 		metadata: metadata,
-		maxSize:  100 << 20,
+		maxSize:  defaultMaxUploadSize,
 	}
 }
 
-// WithMaxSize sets the maximum allowed file size for uploads.
+// WithMaxSize sets the maximum allowed file size for uploads. A negative
+// size restores the default, and zero permits only empty files.
 func (h *Handler) WithMaxSize(size int64) *Handler {
+	if size < 0 {
+		size = defaultMaxUploadSize
+	}
 	h.maxSize = size
 	return h
 }
@@ -116,13 +128,31 @@ func (h *Handler) Upload(w http.ResponseWriter, r *http.Request) {
 
 	userID := UserIDFromContext(ctx)
 
-	if err := r.ParseMultipartForm(h.maxSize); err != nil {
+	// Bound the whole request separately from the selected file and the parser's
+	// in-memory threshold. Saturate the addition for very large configured sizes.
+	bodyLimit := min(h.maxSize, math.MaxInt64-multipartOverheadLimit) + multipartOverheadLimit
+	if r.ContentLength > bodyLimit {
+		writeUploadTooLarge(w, r)
+		return
+	}
+	formWasParsed := r.MultipartForm != nil
+	r.Body = http.MaxBytesReader(w, r.Body, bodyLimit)
+	if err := r.ParseMultipartForm(min(h.maxSize, multipartMemoryLimit)); err != nil {
+		var sizeErr *http.MaxBytesError
+		if errors.As(err, &sizeErr) || errors.Is(err, multipart.ErrMessageTooLarge) {
+			writeUploadTooLarge(w, r)
+			return
+		}
 		_ = contract.WriteError(w, r, contract.NewErrorBuilder().
 			Type(contract.TypeValidation).
 			Code(contract.CodeBadRequest).
 			Message("invalid multipart form").
 			Build())
 		return
+	}
+
+	if !formWasParsed {
+		defer func() { _ = r.MultipartForm.RemoveAll() }()
 	}
 
 	f, header, err := r.FormFile("file")
@@ -135,6 +165,11 @@ func (h *Handler) Upload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer func() { _ = f.Close() }()
+
+	if header.Size > h.maxSize {
+		writeUploadTooLarge(w, r)
+		return
+	}
 
 	generateThumb := r.FormValue("generate_thumb") == "true"
 	thumbWidth, _ := strconv.Atoi(r.FormValue("thumb_width"))
@@ -161,6 +196,13 @@ func (h *Handler) Upload(w http.ResponseWriter, r *http.Request) {
 	_ = contract.WriteResponse(w, r, http.StatusOK, result, nil)
 }
 
+func writeUploadTooLarge(w http.ResponseWriter, r *http.Request) {
+	_ = contract.WriteError(w, r, contract.NewErrorBuilder().
+		Type(contract.TypePayloadTooLarge).
+		Message("upload exceeds size limit").
+		Build())
+}
+
 // Download streams file content.
 // GET /files/{id}
 func (h *Handler) Download(w http.ResponseWriter, r *http.Request) {
@@ -182,7 +224,7 @@ func (h *Handler) Download(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", fileMeta.MimeType)
 	w.Header().Set("Content-Length", fmt.Sprintf("%d", fileMeta.Size))
 	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", fileMeta.Name))
-	w.Header().Set("Cache-Control", "public, max-age=31536000")
+	w.Header().Set("Cache-Control", "private, no-store")
 	w.WriteHeader(http.StatusOK)
 	_, _ = io.Copy(w, reader)
 }

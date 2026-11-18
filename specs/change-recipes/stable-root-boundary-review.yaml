@@ -5,10 +5,12 @@ steps:
   - Classify changed files by stable root and identify any extension-family leakage or app-wiring drift.
   - Check for hidden globals, context service-location, net/http compatibility drift, and transport/business responsibility mixing.
   - Apply the quality acceptance dimensions and module-specific focus from specs/agent-quality-rules.yaml; follow actual ownership into extensions without moving orchestration into stable models.
+  - Apply the numbered stable module quality checklist in docs/operations/agent-code-quality-rules.md section 9. For a full stable-root review, account for all 52 checks and each of the nine modules with evidence or verification limits.
   - For stateful paths, record transitions, retained resources, cleanup failures, and legal retry; for shared data, record synchronization and mutable ownership.
   - Inspect failure, panic, timeout, cancellation, response commit, and cache equivalence where applicable; passing tests alone do not establish a complete audit.
   - Distinguish reproduced findings, source-confirmed conclusions, and unverified hypotheses; include trigger, observed behavior, and expected behavior.
   - Report findings first, ordered by severity, with file-level references, minimal fix guidance, and missing-test notes.
+  - Reference applicable checklist numbers in findings and task cards. Give each task card an owning module, scope, regression commands, and completion criteria.
   - Call out missing negative-path or regression tests when behavior risk is non-trivial.
 stop_conditions:
   - Do not patch code unless the review explicitly asks for implementation.

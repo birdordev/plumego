@@ -64,7 +64,10 @@ func (r BroadcastResult) Rejected() bool {
 //	metrics := hub.Metrics()
 type Hub struct {
 	rooms map[string]map[*Conn]struct{}
-	mu    sync.RWMutex
+	// Pending hard closes survive cancellation and room cleanup. Protected by mu.
+	pendingShutdown map[*Conn]struct{}
+	shuttingDown    bool
+	mu              sync.RWMutex
 
 	// worker pool
 	jobQueue    chan hubJob
@@ -481,63 +484,41 @@ func (h *Hub) Stop() {
 	h.clearRooms()
 }
 
-// Shutdown closes all open connections and then stops the hub.
-//
-// It collects every unique connection across all rooms, calls Close() on each
-// one to tear down TCP immediately, and finally calls Stop() to drain in-flight
-// jobs and shut down workers. Shutdown intentionally does not send WebSocket
-// close frames because clean close-frame delivery can block on slow clients
-// during process shutdown.
-//
-// ctx controls the overall deadline for the close loop. A nil context is treated
-// as context.Background(). If the context is
-// cancelled before all connections are closed, Shutdown returns ctx.Err()
-// immediately after stopping the hub and clearing room registrations.
-//
-// Example:
-//
-//	import (
-//	    "context"
-//	    "time"
-//	    "github.com/birdordev/plumego/x/websocket"
-//	)
-//
-//	hub, err := websocket.NewHubWithConfig(websocket.HubConfig{WorkerCount: 4, JobQueueSize: 1024})
-//	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-//	defer cancel()
-//	if err := hub.Shutdown(ctx); err != nil {
-//	    log.Printf("shutdown incomplete: %v", err)
-//	}
+// Shutdown rejects new joins, hard-closes registered connections, and stops
+// the hub. Cancellation leaves pending connections available to a later retry.
+// A nil context is treated as context.Background().
 func (h *Hub) Shutdown(ctx context.Context) error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
 
-	// Collect all unique connections under the read lock.
-	h.mu.RLock()
-	seen := make(map[*Conn]struct{})
-	for _, rs := range h.rooms {
-		for c := range rs {
-			if c == nil {
-				continue
+	h.mu.Lock()
+	if !h.shuttingDown {
+		h.shuttingDown = true
+		h.pendingShutdown = make(map[*Conn]struct{})
+		for _, room := range h.rooms {
+			for conn := range room {
+				if conn != nil {
+					h.pendingShutdown[conn] = struct{}{}
+				}
 			}
-			seen[c] = struct{}{}
 		}
 	}
-	h.mu.RUnlock()
-
-	// Close each connection, respecting context cancellation.
-	for c := range seen {
-		select {
-		case <-ctx.Done():
-			h.Stop()
-			return ctx.Err()
-		default:
-		}
-		_ = c.Close()
+	pending := make([]*Conn, 0, len(h.pendingShutdown))
+	for conn := range h.pendingShutdown {
+		pending = append(pending, conn)
 	}
+	h.mu.Unlock()
 
-	h.clearRooms()
-	h.Stop()
+	defer h.Stop()
+	for _, conn := range pending {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		_ = conn.Close()
+		h.mu.Lock()
+		delete(h.pendingShutdown, conn)
+		h.mu.Unlock()
+	}
 	return nil
 }

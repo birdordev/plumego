@@ -446,11 +446,9 @@ func TestHub_Shutdown_WithConnections(t *testing.T) {
 func TestHub_Shutdown_ContextCancel_ReturnsCtxErr(t *testing.T) {
 	hub := mustNewHubConfig(t, HubConfig{WorkerCount: 1, JobQueueSize: 4})
 
-	// Add many connections to slow down Shutdown iteration.
-	for i := 0; i < 5; i++ {
-		c := newMockConn()
-		mustTryJoin(t, hub, "r", c)
-	}
+	conn := newMockConn()
+	defer conn.Close()
+	mustTryJoin(t, hub, "r", conn)
 
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel() // already cancelled
@@ -470,6 +468,19 @@ func TestHub_Shutdown_ContextCancel_ReturnsCtxErr(t *testing.T) {
 	if err := hub.TryJoin("r", c); !errors.Is(err, ErrHubStopped) {
 		t.Fatalf("TryJoin after cancelled Shutdown = %v, want ErrHubStopped", err)
 	}
+	if conn.IsClosed() {
+		t.Fatal("canceled shutdown closed a pending connection")
+	}
+	if err := hub.Shutdown(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if !conn.IsClosed() {
+		t.Fatal("shutdown retry did not close pending connection")
+	}
+	if err := hub.Shutdown(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+
 }
 
 // --- Metrics ---

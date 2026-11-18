@@ -131,7 +131,8 @@ Use findings-first output for reviews:
 
 ```text
 Findings:
-- [P0/P1/P2] Title
+- [P0/P1/P2/P3] Title
+  Checklist IDs:
   File:
   Trigger:
   Observed behavior:
@@ -262,3 +263,206 @@ hypothesis is not a confirmed defect.
 - `make lint` is a separate zero-finding gate. `make gates` does not imply lint or website build validation; use `make website-gates` when affected.
 - Keep the stable coverage gate at >=90%; additionally inspect failure, cancellation, and concurrency paths. A percentage alone is not acceptance evidence.
 - Report actual commands, status, first meaningful failure, next step, skipped checks, and residual risk. Do not mark an entire module audited merely because its tests pass.
+
+## 9. Stable Module Quality Checklist
+
+This checklist applies to `core`, `router`, `contract`, `middleware`,
+`security`, `store`, `health`, `log`, `metrics`, and the root facade. Keep the
+numbers stable so reviews, task cards, and implementation handoffs can refer
+to the same checks. Apply the authority order in [AGENTS.md](../../AGENTS.md),
+including its module boundaries, and follow the gate selection in [§6](#6-gate-profiles).
+
+### How to apply the checklist
+
+- **Review.** Start with the module manifests and identify the public entrypoints,
+  internal paths, and representative callers inspected. For a full stable-root
+  review, account for all 52 IDs and each of the nine modules. Record evidence
+  for checked items, explain items that do not apply, and mark unverified items
+  with the missing evidence. Passing gates alone establishes only what those
+  gates checked.
+- **Prioritize.** Use P0–P3 and the evidence statuses in
+  [§8](#severity-and-evidence). Tie each confirmed finding to relevant checklist
+  IDs and code locations. Record the trigger, actual and expected behavior,
+  impact, smallest fix, and missing regression coverage using
+  [§5](#5-review-output-contract). Keep unverified hypotheses identifiable.
+- **Plan and implement.** In each task card, name the owning module, applicable
+  IDs, files in scope, expected behavior, regression commands, and completion
+  criteria. For a scoped change, apply the relevant cross-cutting checks and
+  the owning module's check. Review authorization covers inspection and
+  reporting. Implement after the task authorizes edits.
+- **Verify and hand off.** Compare the outcome with the card, record the actual
+  commands and results, and identify remaining evidence gaps. Use
+  [§7](#7-handoff-contract) for implementation handoffs.
+
+### Architecture and compatibility
+
+1. **Establish module ownership.** Read the owning module's `module.yaml`
+   before changing behavior. Place implementation, tests, and documentation
+   with the module that owns the contract.
+2. **Verify dependency direction.** Stable modules must not import `x/*`,
+   reference applications, or CLI packages. Check cross-module imports against
+   [the dependency rules](../../specs/dependency-rules.yaml).
+3. **Keep the root facade thin.** Limit the root package to its approved
+   convenience exports. Repository code imports the package that owns the capability.
+4. **Prefer the standard library.** Obtain explicit approval for new third-party
+   dependencies in the main module. Use existing `internal/*` helpers only
+   from their declared callers.
+5. **Make construction and dependencies visible.** Pass dependencies through
+   constructors and fields. Follow [standard-service](../../reference/standard-service)
+   for application wiring. Avoid mutable global registries, `init()`
+   registration, reflection-based discovery, and context service locators.
+6. **Preserve stable caller contracts.** Check signatures, defaults, error
+   codes, return shapes, and documented behavior. For an authorized contract
+   change, inventory and migrate callers and synchronize public entrypoints
+   and API snapshots.
+7. **Give compatibility layers an explicit disposition.** A retained alias or
+   deprecated wrapper needs a replacement, an owner, and a migration decision.
+   Apply the removal rules when its last caller migrates and record exceptions
+   in [the deprecation inventory](../../specs/deprecation-inventory.yaml).
+8. **Keep changes independently reviewable and reversible.** Default to one
+   primary module. For cross-module work, identify each affected contract and
+   its verification scope.
+
+### Readability and maintainability
+
+9. **Choose names that express intent.** Function and type names convey
+   responsibilities. Variable names distinguish units, state, and meaning.
+10. **Make the main sequence readable.** Organize validation, state changes,
+    external calls, and returns in execution order. Use early returns where
+    they keep the success path shallow.
+11. **Split by responsibility and phase.** Separate independent responsibilities,
+    resource phases, and error policies when they make one function hard to
+    follow. Function length alone is no gate.
+12. **Extract helpers that explain or consolidate logic.** A helper names a
+    coherent operation, centralizes an invariant, or removes repetition that
+    could diverge. Keep forwarding-only operations at the call site by default.
+13. **Derive small interfaces from callers.** Identify the consumer, replacement
+    need, or test boundary for a new interface. Keep its method set narrow.
+14. **Centralize configuration semantics.** Define defaults, zero values,
+    invalid values, and explicit disablement. Validate and normalize at the
+    entrypoint where practical.
+15. **Make construction failures actionable.** New fallible constructors
+    return an error. Use the documented safe entrypoint for existing
+    compatibility constructors.
+16. **Document constraints.** GoDoc describes behavior callers depend on.
+    Implementation comments explain ordering, locks, ownership, and
+    compatibility constraints.
+
+### HTTP, errors, and sensitive data
+
+17. **Preserve `net/http` compatibility.** Handlers use
+    `func(http.ResponseWriter, *http.Request)` and middleware wraps `http.Handler`.
+18. **Make input sources visible.** Show whether a value comes from the path,
+    query, headers, or body. Decode JSON explicitly or through a thin helper
+    that reads a single source.
+19. **Make route registration searchable.** Keep method, path, and handler
+    visible together. Return registration failures to the assembly layer and
+    handle them before starting the app.
+20. **Keep middleware control flow deterministic.** Call `next` once on pass
+    through. On rejection, complete the response and return. Keep business
+    policy, DTO assembly, and service injection in their owning layers.
+21. **Use the canonical JSON response paths.** Use `contract.WriteResponse`
+    for success and `contract.WriteError` for failure. Preserve stable status
+    codes, error codes, and response shapes.
+22. **Keep errors classifiable.** Preserve `errors.Is` and `errors.As` where
+    callers branch on errors, and add enough operation context. Update affected
+    callers to handle newly returned errors.
+23. **Separate failures by HTTP commitment.** Establish response ownership
+    during encoding failures, post-commit write failures, and recovery.
+    Avoid writing a second final status or error body.
+24. **Verify applicable writer capabilities.** Exercise streaming, connection
+    takeover, and `http.ResponseController` through actual wrappers where
+    relevant. Cover informational headers, final headers, and bodyless responses.
+25. **Protect sensitive data on every output path.** Inspect response bodies,
+    logs, error chains, and fallback diagnostics. Keep tokens, signatures,
+    private keys, and replayable derived values out of those paths.
+
+### State, concurrency, and resources
+
+26. **Propagate cancellation to blocking operations.** Pass caller contexts to
+    I/O and downstream calls. Normalize nil only at entrypoints that accept it.
+27. **Limit context to request-related data.** Use `With{Type}` and
+    `{Type}FromContext` with unexported zero-value struct key types.
+28. **Enumerate state transitions.** Specify initial, success, and failure
+    states for start, stop, reset, and other stateful operations. Account for
+    repeated calls and concurrency where applicable.
+29. **Assign resource ownership.** Trace creation, exit conditions, and
+    cleanup responsibility for files, connections, timers, and goroutines.
+    Cover partial initialization.
+30. **Preserve primary and relevant cleanup errors.** On rollback failure,
+    identify what remains to clean up. Retry only the steps still pending.
+31. **Define the commit point and retry semantics.** Distinguish pre-commit
+    failures, failures after commitment, and cancellation racing with commit.
+    State whether a retry resumes, repeats, or is rejected.
+32. **Synchronize the whole invariant.** Cover related reads and writes with
+    locks, atomics, or a single owner. Verify that fields that must change
+    together cannot expose an inconsistent intermediate state.
+33. **Define callback lock boundaries.** Invoke external callbacks outside locks
+    by default. For callbacks under a lock, document and verify blocking,
+    cancellation, and reentrancy constraints.
+34. **Define ownership for mutable data.** State when maps, slices, labels, and
+    snapshots are copied and who can mutate them. Test that caller mutations
+    leave internal state isolated where the contract requires it.
+35. **Bound resource growth.** Specify applicable limits, behavior at capacity,
+    and exit conditions for request bodies, caches, buffers, queues, and workers.
+
+### Stable module checks
+
+36. **Verify `core` lifecycle.** Cover startup order, reverse rollback after
+    partial startup, cleanup retry, controlled shutdown, and readiness changes.
+37. **Verify `router` matching priority.** Cover static routes, parameters,
+    groups, and reverse routing. Exercise dead-end fallback and complete-match
+    priority, with equivalent cold and warm cache behavior for `HEAD`, 404,
+    405, and `Allow`.
+38. **Verify `contract` transport contracts.** Cover error codes, status
+    codes, response fields, empty-value serialization, and encoding fallbacks
+    through public entrypoints.
+39. **Verify `middleware` composition order.** Make ordering visible in
+    wiring and tests. Cover relevant pass-through, rejection, timeout, and
+    recovery paths and their effects on the next handler and response.
+40. **Verify `security` rejection paths.** Fail closed when credentials are
+    invalid or expired, verification fails, or policy cannot be determined.
+    Use timing-safe comparisons for secrets and signatures, with relevant
+    negative tests.
+41. **Verify `store` persistence consistency.** Cover supported historical
+    data and failures before and after commitment. Check memory, disk,
+    reopened state, and retries.
+42. **Verify `health` status accuracy.** Distinguish liveness and readiness
+    and handle unknown and failed checks by contract. Where the owning
+    orchestrator manages results, verify that stale checks cannot overwrite
+    newer state and that closing cannot restore readiness.
+43. **Verify `log` output integrity.** Preserve field types and integer
+    precision, escape text controls, bound cyclic and deep conversion, and
+    verify fallback output.
+44. **Verify `metrics` statistics consistency.** Assert exact totals after
+    concurrent updates and invariants when reset and reads interleave. Isolate
+    mutable fan-out labels and document aggregate snapshot atomicity.
+
+### Tests and delivery
+
+45. **Add focused behavior regressions.** Test observable outcomes using a
+    normal or public entrypoint near the owning module. For defect fixes,
+    prefer a regression that fails before the fix and passes afterward.
+46. **Cover negative cases by risk.** Inject controlled failures for applicable
+    invalid input, cancellation, partial success, dependency failures, and
+    recovery. Assert the result and resulting state.
+47. **Make concurrency tests deterministic.** Prefer channels, done signals,
+    or repository condition-wait tools. Use fixed sleeps only for wall-clock
+    behavior with no observable condition to wait on.
+48. **Measure performance claims.** Supply reproducible before-and-after
+    timings, allocations, or memory for relevant scenarios. Validate semantic
+    equivalence and resource bounds when changing caches or pools.
+49. **Check formatting and lint separately.** Format Go changes with `make fmt`.
+    Run `make lint` as the zero-finding gate. Document any intentional
+    exception at its code site.
+50. **Select gates from the diff.** Preview with `make validate-diff-dry` and
+    run `make validate-diff`. Follow [§6](#6-gate-profiles). A single stable
+    module runs race and vet followed by boundary and API checks. Cross-module
+    Go, public API, and release changes use `make gates`.
+51. **Verify coverage and critical behavior.** The full gate requires at least
+    90% aggregate stable-module statement coverage. Inspect affected failure,
+    cancellation, rollback, and concurrency paths as well.
+52. **Synchronize docs and record the delivery.** Update API snapshots,
+    configuration, examples, and module docs when affected. Record actual
+    validation commands, status, first meaningful failure, next step, and
+    remaining verification scope.

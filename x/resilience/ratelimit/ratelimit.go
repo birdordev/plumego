@@ -58,6 +58,11 @@ func (b *TokenBucket) AllowN(n int64) bool {
 	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	return b.take(n)
+}
+
+// take consumes tokens with b.mu held.
+func (b *TokenBucket) take(n int64) bool {
 	b.replenish(time.Now())
 	if b.tokens < float64(n) {
 		return false
@@ -82,12 +87,23 @@ func (b *TokenBucket) Wait(ctx context.Context) error {
 	return b.WaitN(ctx, 1)
 }
 
-// WaitN blocks until n tokens are available or ctx is cancelled.
+// WaitN blocks until n tokens are available or ctx is canceled. Cancellation
+// is checked under the lock before consuming tokens. Nonpositive n is a no-op.
 func (b *TokenBucket) WaitN(ctx context.Context, n int64) error {
+	if n <= 0 {
+		return nil
+	}
 	timer := time.NewTimer(time.Millisecond)
 	defer timer.Stop()
 	for {
-		if b.AllowN(n) {
+		b.mu.Lock()
+		if err := ctx.Err(); err != nil {
+			b.mu.Unlock()
+			return err
+		}
+		available := b.take(n)
+		b.mu.Unlock()
+		if available {
 			return nil
 		}
 		if !timer.Stop() {

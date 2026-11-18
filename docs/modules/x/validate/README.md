@@ -29,11 +29,11 @@ Status: **experimental**. The API may change between minor releases.
 import "github.com/birdordev/plumego/x/validate"
 
 // BindJSON decodes the request body into T without validation.
-// Returns a *validate.ValidationError with contract.APIError shape on decode failure.
+// Returns the decoder error on failure.
 func BindJSON[T any](r *http.Request) (T, error)
 
-// Bind decodes into T and then calls v.Validate(&result).
-// Returns a *validate.ValidationError if decoding or validation fails.
+// Bind decodes into T and then calls v.Validate(result) when v is non-nil.
+// Returns the decoder error or a ValidationError value from a rejected validation.
 func Bind[T any](r *http.Request, v validate.Validator) (T, error)
 
 // Validator is the interface your validation logic must satisfy.
@@ -64,14 +64,17 @@ type CreateUserRequest struct {
 func createUserHandler(w http.ResponseWriter, r *http.Request) {
     req, err := validate.BindJSON[CreateUserRequest](r)
     if err != nil {
-        _ = contract.WriteError(w, r, err)
+        _ = contract.WriteError(w, r, contract.NewErrorBuilder().
+            Type(contract.TypeBadRequest).
+            Message("invalid request body").
+            Build())
         return
     }
 
     if req.Name == "" || req.Email == "" {
         apiErr := contract.NewErrorBuilder().
-            WithType(contract.TypeValidation).
-            WithMessage("name and email are required").
+            Type(contract.TypeValidation).
+            Message("name and email are required").
             Build()
         _ = contract.WriteError(w, r, apiErr)
         return
@@ -86,14 +89,14 @@ func createUserHandler(w http.ResponseWriter, r *http.Request) {
 ## Bind — Decode + Validate
 
 Use `Bind` when you have a `Validator` implementation. The validator runs after
-a successful decode; its errors are adapted to `contract.APIError`:
+a successful decode. The example uses `errors` and `fmt` from the standard library.
 
 ```go
 // Define your validator (in your own package, not in x/validate).
 type userRequestValidator struct{}
 
 func (userRequestValidator) Validate(v any) error {
-    req, ok := v.(*CreateUserRequest)
+    req, ok := v.(CreateUserRequest)
     if !ok {
         return fmt.Errorf("unexpected type %T", v)
     }
@@ -106,11 +109,23 @@ func (userRequestValidator) Validate(v any) error {
     return nil
 }
 
+func writeBindError(w http.ResponseWriter, r *http.Request, err error) {
+    var validationErr validate.ValidationError
+    if errors.As(err, &validationErr) {
+        _ = contract.WriteError(w, r, validationErr.APIError)
+        return
+    }
+    _ = contract.WriteError(w, r, contract.NewErrorBuilder().
+        Type(contract.TypeBadRequest).
+        Message("invalid request body").
+        Build())
+}
+
 // Use Bind in your handler.
 func createUserHandler(w http.ResponseWriter, r *http.Request) {
     req, err := validate.Bind[CreateUserRequest](r, userRequestValidator{})
     if err != nil {
-        _ = contract.WriteError(w, r, err)
+        writeBindError(w, r, err)
         return
     }
     _ = contract.WriteResponse(w, r, http.StatusCreated, req, nil)
@@ -156,10 +171,10 @@ var v = validation.New()
 func createUserHandler(w http.ResponseWriter, r *http.Request) {
     req, err := validate.Bind[CreateUserRequest](r, v)
     if err != nil {
-        _ = contract.WriteError(w, r, err)
+        writeBindError(w, r, err)
         return
     }
-    // req is validated and decoded
+    _ = contract.WriteResponse(w, r, http.StatusCreated, req, nil)
 }
 ```
 
@@ -169,22 +184,23 @@ See `reference/with-rest` for a complete working example.
 
 ## Error Shape
 
-Both `BindJSON` and `Bind` return `*validate.ValidationError` on failure.
-`contract.WriteError` handles this type natively:
+Both functions return the original decoder error if decoding fails. The
+handler can map that error to HTTP 400 without exposing decoder details.
+`Bind` wraps a validator failure in a `validate.ValidationError` value. Its
+`Unwrap` method preserves the original error. Pass its `APIError` field to
+`contract.WriteError` for this response:
 
 ```
-HTTP 422 Unprocessable Entity
+HTTP 400 Bad Request
 {
   "error": {
-    "type": "validation_error",
-    "message": "request body invalid: <detail>",
-    "code": "VALIDATION_ERROR"
+    "code": "VALIDATION_ERROR",
+    "message": "validation failed",
+    "category": "client_error",
+    "type": "bad_request"
   }
 }
 ```
-
-Decode errors (malformed JSON, EOF) produce `TypeBadRequest`.
-Validation errors from `Validator.Validate` produce `TypeValidation`.
 
 ---
 

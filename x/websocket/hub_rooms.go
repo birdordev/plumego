@@ -87,6 +87,11 @@ func (h *Hub) tryJoin(room string, c *Conn, validator RoomNameValidator) error {
 	}
 
 	h.mu.RLock()
+	if h.shuttingDown || h.stopped.Load() {
+		h.mu.RUnlock()
+		h.rejected.Add(1)
+		return ErrHubStopped
+	}
 	if rs, ok := h.rooms[room]; ok {
 		if _, exists := rs[c]; exists {
 			h.mu.RUnlock()
@@ -111,6 +116,10 @@ func (h *Hub) tryJoin(room string, c *Conn, validator RoomNameValidator) error {
 
 	h.mu.Lock()
 	defer h.mu.Unlock()
+	if h.shuttingDown || h.stopped.Load() {
+		h.rejected.Add(1)
+		return ErrHubStopped
+	}
 
 	if rs, ok := h.rooms[room]; ok {
 		if _, exists := rs[c]; exists {
@@ -197,6 +206,9 @@ func (h *Hub) canJoin(room string, validator RoomNameValidator) error {
 
 	h.mu.RLock()
 	defer h.mu.RUnlock()
+	if h.shuttingDown || h.stopped.Load() {
+		return ErrHubStopped
+	}
 
 	if h.maxRoomConns > 0 {
 		if rs, ok := h.rooms[room]; ok && len(rs) >= h.maxRoomConns {

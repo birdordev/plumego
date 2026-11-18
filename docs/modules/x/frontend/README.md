@@ -110,13 +110,11 @@
 - `WithPrecompressedVariantMissHandler` provides application-owned observability
   for planned variant open misses and accepted variant stat misses. By default,
   x/frontend emits no log or metric and keeps best-effort downgrade behavior.
-- Non-`http.Dir` caller-provided filesystems keep lazy variant probing. Original
-  responses may open `.br` and `.gz` candidates to decide
-  `Vary: Accept-Encoding`; prefer directory-backed mounts when that backend
-  probing cost is too high.
-- Custom filesystems that already have reliable variant metadata can provide
-  `WithPrecompressedVariantPlan` to avoid lazy `.br`/`.gz` miss probes on
-  original responses. Callers own the correctness of the supplied plan.
+- Asset responses include `Vary: Accept-Encoding` even when only the original
+  asset exists, because the request can refuse the identity encoding.
+- Non-`http.Dir` caller-provided filesystems try accepted compressed variants
+  lazily. A filesystem with reliable variant metadata can supply
+  `WithPrecompressedVariantPlan` to skip unlisted candidates.
 - Invalid `Accept-Encoding` quality values invalidate that token rather than
   being clamped.
 - Requests that refuse `identity` receive `406 Not Acceptable` when no accepted

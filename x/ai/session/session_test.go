@@ -2,6 +2,7 @@ package session
 
 import (
 	"fmt"
+	"math"
 	"testing"
 	"time"
 
@@ -413,3 +414,31 @@ type noopTokenizer struct{}
 func (noopTokenizer) Count(text string) (int, error)                      { return 3, nil }
 func (noopTokenizer) CountMessages(msgs []tokenizer.Message) (int, error) { return 3 * len(msgs), nil }
 func (noopTokenizer) ModelName() string                                   { return "noop" }
+
+func TestManagerGetMessagesPaginationBounds(t *testing.T) {
+	manager := NewManager(NewMemoryStorage())
+	session, err := manager.Create(t.Context(), CreateOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, text := range []string{"first", "second"} {
+		if err := manager.AppendMessage(t.Context(), session.ID, provider.NewTextMessage(provider.RoleUser, text)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, tc := range []struct {
+		offset, limit, count int
+		wantError            bool
+	}{
+		{-1, 1, 0, true},
+		{0, -1, 0, true},
+		{1, math.MaxInt, 1, false},
+		{2, 3, 0, false},
+		{0, 0, 0, false},
+	} {
+		messages, err := manager.GetMessages(t.Context(), session.ID, tc.offset, tc.limit)
+		if (err != nil) != tc.wantError || len(messages) != tc.count {
+			t.Errorf("GetMessages(%d, %d) returned %d messages, err = %v", tc.offset, tc.limit, len(messages), err)
+		}
+	}
+}

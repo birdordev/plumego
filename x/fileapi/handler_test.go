@@ -302,6 +302,9 @@ func TestHandler_Download(t *testing.T) {
 	if w.Header().Get("Content-Type") != "text/plain" {
 		t.Errorf("Content-Type = %q", w.Header().Get("Content-Type"))
 	}
+	if got := w.Header().Get("Cache-Control"); got != "private, no-store" {
+		t.Errorf("Cache-Control = %q, want private, no-store", got)
+	}
 	if w.Body.String() != "file content" {
 		t.Errorf("Body = %q, want %q", w.Body.String(), "file content")
 	}
@@ -904,5 +907,61 @@ func BenchmarkHandler_Download(b *testing.B) {
 		req = req.WithContext(ctx)
 		w := httptest.NewRecorder()
 		h.Download(w, req)
+	}
+}
+
+func TestHandlerUploadSizeLimits(t *testing.T) {
+	const limit = 32
+	for _, tc := range []struct {
+		name                    string
+		size, fieldSize, status int
+	}{
+		{"below", limit - 1, 0, http.StatusOK},
+		{"exact", limit, 0, http.StatusOK},
+		{"over file limit", limit + 1, 0, http.StatusRequestEntityTooLarge},
+		{"over request limit", limit, multipartOverheadLimit, http.StatusRequestEntityTooLarge},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			calls := 0
+			storage := &mockStorage{putFunc: func(_ context.Context, opts datafile.PutOptions) (*datafile.File, error) {
+				calls++
+				size, err := io.Copy(io.Discard, opts.Reader)
+				if err != nil || size != int64(tc.size) {
+					t.Fatalf("stored file size = %d, err = %v; want %d", size, err, tc.size)
+				}
+				return &datafile.File{}, nil
+			}}
+			var body bytes.Buffer
+			writer := multipart.NewWriter(&body)
+			part, err := writer.CreateFormFile("file", "test.txt")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := io.WriteString(part, strings.Repeat("x", tc.size)); err != nil {
+				t.Fatal(err)
+			}
+			if tc.fieldSize > 0 {
+				if err := writer.WriteField("extra", strings.Repeat("x", tc.fieldSize)); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := writer.Close(); err != nil {
+				t.Fatal(err)
+			}
+			req := httptest.NewRequest(http.MethodPost, "/files", &body)
+			req.Header.Set("Content-Type", writer.FormDataContentType())
+			// Exercise the parser's streaming cap without Content-Length.
+			req.ContentLength = -1
+			req = req.WithContext(tenantcore.WithTenantID(req.Context(), "tenant"))
+			rec := httptest.NewRecorder()
+			NewHandler(storage, &mockMetadataManager{}).WithMaxSize(limit).Upload(rec, req)
+			wantCalls := 0
+			if tc.status == http.StatusOK {
+				wantCalls = 1
+			}
+			if rec.Code != tc.status || calls != wantCalls {
+				t.Fatalf("status = %d, store calls = %d; want %d and %d", rec.Code, calls, tc.status, wantCalls)
+			}
+		})
 	}
 }

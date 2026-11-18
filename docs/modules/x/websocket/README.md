@@ -105,7 +105,9 @@
 - treat `RegisterRoutes` errors as assembly failures; nil registrars, nil hubs, empty websocket paths, and empty enabled broadcast paths must fail visibly
 - perform the real Hub join before writing `101 Switching Protocols`; if capacity changes after the pre-check, return a normal HTTP error before upgrade
 - treat `Hub.Stop` worker drain as bounded; `SendBlock` connections without their own timeout use the hub worker fallback deadline instead of blocking indefinitely
-- treat `Hub.Shutdown` as a hard connection close path, not a WebSocket close-frame handshake
+- `Hub.Shutdown` rejects new joins and hard-closes registered connections.
+  Retry `Hub.Shutdown` or `Server.Shutdown` with a fresh context to close
+  connections left pending after cancellation.
 - use `NewConn` for connection construction with explicit validation errors
 - use `NewHubWithConfig` for hub configuration with explicit validation errors
 - treat `SetReadLimit` as a fail-visible mutator; non-positive limits are rejected

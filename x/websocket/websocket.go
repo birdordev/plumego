@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/birdordev/plumego/contract"
@@ -83,6 +84,7 @@ type Server struct {
 	config WebSocketConfig
 	token  TokenAuthenticator
 	room   RoomAuthorizer
+	hubMu  sync.RWMutex
 	hub    *Hub
 }
 
@@ -178,7 +180,7 @@ func (c *Server) RegisterRoutes(r routeRegistrar) error {
 	if r == nil {
 		return fmt.Errorf("%w: websocket route registrar is nil", ErrInvalidConfig)
 	}
-	if c.hub == nil {
+	if c.Hub() == nil {
 		return ErrNilHub
 	}
 	if strings.TrimSpace(c.config.WSRoutePath) == "" {
@@ -190,7 +192,7 @@ func (c *Server) RegisterRoutes(r routeRegistrar) error {
 
 	if err := r.AddRoute(http.MethodGet, c.config.WSRoutePath, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		serverCfg := ServerConfig{
-			Hub:                  c.hub,
+			Hub:                  c.Hub(),
 			TokenAuth:            c.token,
 			RoomAuth:             c.room,
 			OnMessage:            c.config.OnMessage,
@@ -246,6 +248,12 @@ func (c *Server) RegisterRoutes(r routeRegistrar) error {
 				return
 			}
 
+			hub := c.Hub()
+			if hub == nil {
+				writeWebSocketHTTPError(w, r, http.StatusServiceUnavailable,
+					codeWebSocketBroadcastRejected, "websocket broadcast rejected", contract.CategoryServer)
+				return
+			}
 			// Optional ?room= parameter targets a specific room; omit for all-room broadcast.
 			var result BroadcastResult
 			if room := r.URL.Query().Get("room"); room != "" {
@@ -258,9 +266,9 @@ func (c *Server) RegisterRoutes(r routeRegistrar) error {
 					)
 					return
 				}
-				result = c.hub.tryBroadcastRoom(room, OpcodeText, b, c.config.RoomNameValidator)
+				result = hub.tryBroadcastRoom(room, OpcodeText, b, c.config.RoomNameValidator)
 			} else {
-				result = c.hub.TryBroadcastAll(OpcodeText, b)
+				result = hub.TryBroadcastAll(OpcodeText, b)
 			}
 			if result.Rejected() {
 				writeWebSocketHTTPError(w, r,
@@ -319,19 +327,25 @@ func secretsEqual(a, b []byte) bool {
 	return subtle.ConstantTimeCompare(a, b) == 1
 }
 
+// Shutdown stops the hub. A canceled shutdown can be retried.
 func (c *Server) Shutdown(ctx context.Context) error {
-	if c.hub != nil {
-		err := c.hub.Shutdown(ctx)
-		c.hub = nil
+	hub := c.Hub()
+	if hub == nil {
+		return nil
+	}
+	if err := hub.Shutdown(ctx); err != nil {
 		return err
 	}
+	c.hubMu.Lock()
+	c.hub = nil
+	c.hubMu.Unlock()
 	return nil
 }
 
 func (c *Server) Health() (string, health.HealthStatus) {
 	status := health.HealthStatus{Status: health.StatusHealthy, Details: map[string]any{"broadcastEnabled": c.config.BroadcastEnabled}}
 
-	if c.hub == nil {
+	if hub := c.Hub(); hub == nil || hub.stopped.Load() {
 		status.Status = health.StatusUnhealthy
 		status.Message = "hub not initialized"
 	}
@@ -340,4 +354,8 @@ func (c *Server) Health() (string, health.HealthStatus) {
 }
 
 // Hub exposes the underlying WebSocket hub for advanced usage.
-func (c *Server) Hub() *Hub { return c.hub }
+func (c *Server) Hub() *Hub {
+	c.hubMu.RLock()
+	defer c.hubMu.RUnlock()
+	return c.hub
+}

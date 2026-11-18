@@ -107,6 +107,8 @@ func RegisterRoutes(r *router.Router, repository rest.Repository[User]) {
 - keep response and error conventions aligned with `contract`; do not introduce `x/rest`-local error envelopes
 - keep domain validation and business rules outside `x/rest`
 - `RegisterResourceRoutes` returns explicit errors for nil router or controller so app wiring mistakes are visible; empty prefixes normalize to the root route surface
+- `SQLBuilder` applies search to columns set with `WithColumns`. Without
+  configured columns, it ignores search and still applies filters.
 - `x/rest` is not an ORM — `SQLBuilder` is a query helper, not an active-record layer; column-level SQL safety (filter-key interpolation) depends on `QueryBuilder.WithAllowedFilters` being configured; a `QueryBuilder` without an allowlist passes all filter keys through to SQL
 - `x/rest` is not a validation framework — `DBResourceController.WithValidator` accepts any `interface{ Validate(any) error }`; the validator's error message is never forwarded to the client; only the stable "validation failed" message is exposed
 - `x/rest` does not own route discovery or auto-registration; every resource must be wired explicitly by the calling package

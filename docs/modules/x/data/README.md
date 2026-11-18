@@ -265,8 +265,9 @@ file metadata persistence behind the stable `store/file` contracts.
 - If all replicas are unhealthy and `FallbackToPrimary` is explicitly set to `true`, reads fall back to primary; otherwise the query returns a routing error.
 - Background replica health checks run only when `HealthCheck.Enabled` is `true`; they use periodic `PingContext` probes and remove replicas from balancing only after the configured failure threshold.
 - Set `Config.HealthCheckContext` when health checks should inherit a
-  caller-owned shutdown context; otherwise they use `context.Background()` and
-  stop through `Cluster.Close`.
+  caller-owned shutdown context. Canceling it or calling `Cluster.Close`
+  cancels an active probe and skips the remaining replicas. A probe that reaches
+  its own timeout still counts toward the failure threshold.
 - `ReplicaWeights`, when provided, must match the replica count and each weight
   must be positive. Use `NewWeightedBalancerE` for constructor-time validation
   when creating a weighted balancer directly. An empty direct weighted balancer

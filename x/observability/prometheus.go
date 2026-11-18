@@ -153,7 +153,7 @@ func (p *PrometheusCollector) recordHTTP(method, path string, status int, durati
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	if p.maxMemory > 0 && len(p.requests) >= p.maxMemory {
+	if _, exists := p.requests[key]; !exists && p.maxMemory > 0 && len(p.requests) >= p.maxMemory {
 		p.evictLeastUsed()
 	}
 

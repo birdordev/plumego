@@ -65,16 +65,18 @@ func (p *Pool) Dial(ctx context.Context, target string, opts ...DialOption) (Con
 	}
 
 	p.mu.Lock()
-	defer p.mu.Unlock()
 	if p.closed {
+		p.mu.Unlock()
 		_ = conn.Close()
 		return nil, ErrPoolClosed
 	}
 	if existing, ok := p.conns[target]; ok {
+		p.mu.Unlock()
 		_ = conn.Close()
 		return existing, nil
 	}
 	p.conns[target] = conn
+	p.mu.Unlock()
 	return conn, nil
 }
 
