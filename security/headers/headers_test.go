@@ -65,6 +65,42 @@ func TestStrictPolicyHSTS(t *testing.T) {
 	}
 }
 
+func TestStrictPolicyHSTSWithForwardedProtocols(t *testing.T) {
+	policy := StrictPolicy().Compile()
+	tests := []struct {
+		name      string
+		proto     string
+		forwarded string
+		wantHSTS  bool
+	}{
+		{name: "forwarded proto HTTPS", proto: " https, HTTPS ", wantHSTS: true},
+		{name: "forwarded proto mixed", proto: "https, http"},
+		{name: "forwarded HTTPS", forwarded: `for=192.0.2.1; proto="https", for=192.0.2.2; proto=https`, wantHSTS: true},
+		{name: "forwarded mixed", forwarded: "proto=https, proto=http"},
+		{name: "forwarded missing protocol", forwarded: "for=192.0.2.1"},
+		{name: "no forwarded headers"},
+		{name: "forwarded proto takes precedence", proto: "http", forwarded: "proto=https"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "http://example.test", nil)
+			if tt.proto != "" {
+				req.Header.Set("X-Forwarded-Proto", tt.proto)
+			}
+			if tt.forwarded != "" {
+				req.Header.Set("Forwarded", tt.forwarded)
+			}
+			rec := httptest.NewRecorder()
+			if err := policy.ApplyChecked(rec, req); err != nil {
+				t.Fatal(err)
+			}
+			if got := rec.Header().Get("Strict-Transport-Security") != ""; got != tt.wantHSTS {
+				t.Fatalf("HSTS present = %t, want %t", got, tt.wantHSTS)
+			}
+		})
+	}
+}
+
 func TestStrictPolicyDoesNotTrustForwardedSSLForHSTS(t *testing.T) {
 	policy := StrictPolicy()
 

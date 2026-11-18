@@ -58,7 +58,8 @@ func (ch ComponentHealth) Clone() ComponentHealth {
 	return clone
 }
 
-// IsReady reports whether the health state can serve traffic.
+// IsReady reports whether hs is [StatusHealthy] or [StatusDegraded].
+// [StatusUnhealthy] and unknown values return false.
 func (hs HealthState) IsReady() bool {
 	return hs == StatusHealthy || hs == StatusDegraded
 }

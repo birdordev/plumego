@@ -258,9 +258,9 @@ func compilePathSegments(path string) []segment {
 	if path == "/" {
 		return nil
 	}
-	parts := strings.Split(strings.Trim(path, "/"), "/")
-	segments := make([]segment, 0, len(parts))
-	for _, segmentPart := range parts {
+	path = strings.Trim(path, "/")
+	segments := make([]segment, 0, strings.Count(path, "/")+1)
+	for segmentPart := range strings.SplitSeq(path, "/") {
 		if strings.HasPrefix(segmentPart, ":") {
 			segments = append(segments, segment{
 				raw:       segmentPart,

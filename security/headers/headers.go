@@ -421,11 +421,7 @@ func isHTTPSRequest(r *http.Request) bool {
 }
 
 func forwardedProtoIsHTTPS(value string) bool {
-	parts := strings.Split(value, ",")
-	if len(parts) == 0 {
-		return false
-	}
-	for _, part := range parts {
+	for part := range strings.SplitSeq(value, ",") {
 		if !strings.EqualFold(strings.TrimSpace(part), "https") {
 			return false
 		}
@@ -437,7 +433,7 @@ func forwardedHeaderIsHTTPS(value string) bool {
 	if strings.TrimSpace(value) == "" {
 		return false
 	}
-	for _, element := range strings.Split(value, ",") {
+	for element := range strings.SplitSeq(value, ",") {
 		proto, ok := forwardedProtoParam(element)
 		if !ok || !strings.EqualFold(proto, "https") {
 			return false
@@ -447,7 +443,7 @@ func forwardedHeaderIsHTTPS(value string) bool {
 }
 
 func forwardedProtoParam(element string) (string, bool) {
-	for _, param := range strings.Split(element, ";") {
+	for param := range strings.SplitSeq(element, ";") {
 		name, value, ok := strings.Cut(strings.TrimSpace(param), "=")
 		if !ok {
 			continue
