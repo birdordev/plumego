@@ -308,10 +308,8 @@ func TestExternalTypedErrorsUseCanonicalContractCodes(t *testing.T) {
 			rel = path
 		}
 		rel = filepath.ToSlash(rel)
-		stringConsts, err := packageStringConstNames(filepath.Dir(path))
-		if err != nil {
-			return err
-		}
+		var stringConsts map[string]struct{}
+		var stringConstsErr error
 
 		for _, decl := range file.Decls {
 			fn, ok := decl.(*ast.FuncDecl)
@@ -321,6 +319,9 @@ func TestExternalTypedErrorsUseCanonicalContractCodes(t *testing.T) {
 			funcKey := rel + "#" + funcDeclName(fn)
 
 			ast.Inspect(fn.Body, func(node ast.Node) bool {
+				if stringConstsErr != nil {
+					return false
+				}
 				call, ok := node.(*ast.CallExpr)
 				if !ok {
 					return true
@@ -353,6 +354,12 @@ func TestExternalTypedErrorsUseCanonicalContractCodes(t *testing.T) {
 					case "Code":
 						if len(step.args) != 1 {
 							continue
+						}
+						if _, isIdent := step.args[0].(*ast.Ident); isIdent && stringConsts == nil {
+							stringConsts, stringConstsErr = packageStringConstNames(filepath.Dir(path))
+							if stringConstsErr != nil {
+								return false
+							}
 						}
 						if name, ok := contractSelector(step.args[0], contractNames, "Code"); ok {
 							codeName = name
@@ -415,7 +422,7 @@ func TestExternalTypedErrorsUseCanonicalContractCodes(t *testing.T) {
 				return true
 			})
 		}
-		return nil
+		return stringConstsErr
 	})
 	if err != nil {
 		t.Fatalf("scan external typed error code overrides: %v", err)
@@ -534,6 +541,29 @@ func packageStringConstNames(dir string) (map[string]struct{}, error) {
 	packageStringConstNamesCache[dir] = names
 	packageStringConstNamesMu.Unlock()
 	return names, nil
+}
+
+func TestPackageStringConstNamesResolvesSiblingCode(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "codes.go"), []byte("package fixture\nconst siblingCode = \"SIBLING_CODE\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	expr, err := parser.ParseExpr("contract.NewErrorBuilder().Code(siblingCode).Build()")
+	if err != nil {
+		t.Fatal(err)
+	}
+	call := expr.(*ast.CallExpr)
+	chain, ok := contractErrorBuilderChain(call, map[string]struct{}{"contract": {}})
+	if !ok || len(chain) != 2 || chain[0].name != "Code" || len(chain[0].args) != 1 {
+		t.Fatalf("unexpected error builder chain: %#v", chain)
+	}
+	names, err := packageStringConstNames(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, ok := customCodeReference(chain[0].args[0], names); !ok || got != "siblingCode" {
+		t.Fatalf("custom code reference = %q, %t, want siblingCode, true", got, ok)
+	}
 }
 
 func customCodeReference(expr ast.Expr, stringConsts map[string]struct{}) (string, bool) {

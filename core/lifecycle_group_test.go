@@ -268,6 +268,50 @@ func TestLifecycleGroupReadyAggregates(t *testing.T) {
 	}
 }
 
+func TestLifecycleGroupReadyCancellationPreservesProbeErrors(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	probeErr := errors.New("component unavailable")
+	var probes []string
+	g := NewLifecycleGroup().
+		Add("first", Component{OnReady: func(probeCtx context.Context) error {
+			probes = append(probes, "first")
+			if probeCtx == ctx {
+				cancel()
+				return probeErr
+			}
+			return nil
+		}}).
+		Add("second", Component{OnReady: func(context.Context) error {
+			probes = append(probes, "second")
+			return nil
+		}})
+	if err := g.Start(t.Context()); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := g.Stop(t.Context()); err != nil {
+			t.Errorf("Stop: %v", err)
+		}
+	})
+
+	if err := g.Ready(ctx); !errors.Is(err, context.Canceled) || !errors.Is(err, probeErr) {
+		t.Fatalf("Ready error = %v, want cancellation and %v", err, probeErr)
+	}
+	if want := []string{"first"}; !slices.Equal(probes, want) {
+		t.Fatalf("probes after cancellation = %v, want %v", probes, want)
+	}
+	if err := g.Ready(ctx); !errors.Is(err, context.Canceled) || len(probes) != 1 {
+		t.Fatalf("Ready with canceled context: probes = %v, error = %v", probes, err)
+	}
+	if err := g.Ready(nil); err != nil {
+		t.Fatalf("Ready retry with nil context: %v", err)
+	}
+	if want := []string{"first", "first", "second"}; !slices.Equal(probes, want) {
+		t.Fatalf("probes after retry = %v, want %v", probes, want)
+	}
+}
+
 func TestLifecycleGroupReadyPanicAllowsAnotherProbeAndStop(t *testing.T) {
 	ctx := t.Context()
 	probePanic := errors.New("readiness callback panic")

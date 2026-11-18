@@ -268,6 +268,8 @@ func (e *namedLifecycle) stop(ctx context.Context) (panicValue any, err error) {
 
 // Ready probes components after successful startup. It joins their errors and
 // returns promptly if another lifecycle operation is executing callbacks.
+// A nil context uses context.Background. Cancellation skips remaining probes
+// and joins the context error with any errors already collected.
 func (g *LifecycleGroup) Ready(ctx context.Context) error {
 	if ctx == nil {
 		ctx = context.Background()
