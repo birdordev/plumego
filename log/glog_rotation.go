@@ -11,7 +11,7 @@ import (
 )
 
 type rotationConfig struct {
-	MaxSize    int // Maximum size in MB before rotation
+	MaxSize    int // Maximum size in MiB before rotation
 	MaxAge     int // Maximum days to retain old log files
 	MaxBackups int // Maximum number of old log files to retain
 }
@@ -97,7 +97,8 @@ func (l *gLogger) rotateIfNeeded(level Level, logSize int64) (logDir, program st
 		return
 	}
 	l.currentSize[level] += logSize
-	if l.currentSize[level] < int64(config.MaxSize)*1024*1024 {
+	// Convert bytes to whole MiB so a large configured threshold cannot overflow.
+	if l.currentSize[level]/(1<<20) < int64(config.MaxSize) {
 		return
 	}
 	if err = l.rotateLogFile(level); err != nil {

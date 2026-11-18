@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	stdlog "log"
+	"math"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -1113,6 +1114,56 @@ func TestLogDestinationsCountShortFileWrite(t *testing.T) {
 	want := [FATAL + 1]int64{ERROR: 5, INFO: 1}
 	if fileBytes != want || mirror.Len() != 0 {
 		t.Fatalf("files = %v, want %v; mirror bytes = %d, want 0", fileBytes, want, mirror.Len())
+	}
+}
+
+func TestRotationAtSizeThreshold(t *testing.T) {
+	logger := newGLogger()
+	logger.logDir, logger.toStderr = t.TempDir(), false
+	logger.rotationConfig = rotationConfig{MaxSize: 1}
+	if err := logger.initLogFiles(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(logger.Close)
+	original := logger.logFiles[INFO]
+
+	if err := logger.checkLogRotation(INFO, (1<<20)-1); err != nil {
+		t.Fatal(err)
+	}
+	if logger.logFiles[INFO] != original || logger.currentSize[INFO] != (1<<20)-1 {
+		t.Fatal("one byte below the threshold should retain the writer and byte count")
+	}
+	if err := logger.checkLogRotation(INFO, 1); err != nil {
+		t.Fatal(err)
+	}
+	if logger.logFiles[INFO] == original || logger.currentSize[INFO] != 0 {
+		t.Fatal("reaching the threshold should rotate and reset the byte count")
+	}
+}
+
+func TestRotationRetainsWriterWithOversizedThreshold(t *testing.T) {
+	threshold := int64(math.MaxInt64/(1<<20)) + 1
+	maxSize := int(threshold)
+	if int64(maxSize) != threshold {
+		t.Skip("threshold is outside the platform int range")
+	}
+	logger := newGLogger()
+	logger.logDir, logger.toStderr = t.TempDir(), false
+	logger.rotationConfig = rotationConfig{MaxSize: maxSize}
+	if err := logger.initLogFiles(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(logger.Close)
+	original := logger.logFiles[INFO]
+
+	logger.Info("small record")
+
+	info, err := os.Stat(original.Name())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if logger.logFiles[INFO] != original || info.Size() == 0 || logger.currentSize[INFO] != info.Size() {
+		t.Fatalf("rotated = %t, count = %d, file size = %d", logger.logFiles[INFO] != original, logger.currentSize[INFO], info.Size())
 	}
 }
 

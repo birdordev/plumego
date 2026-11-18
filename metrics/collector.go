@@ -153,7 +153,9 @@ func (b *BaseMetricsCollector) record(name string, isError bool) {
 	}
 }
 
-// ObserveHTTP implements HTTP metrics recording
+// ObserveHTTP counts each observation under [MetricHTTPRequest]. Status codes
+// of 400 or higher count as errors. Method, path, byte count, and duration do
+// not contribute to these statistics.
 func (b *BaseMetricsCollector) ObserveHTTP(ctx context.Context, method, path string, status, bytes int, duration time.Duration) {
 	if b != nil {
 		b.record(MetricHTTPRequest, isHTTPErrorStatus(status))

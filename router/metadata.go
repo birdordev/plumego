@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net/url"
 	"sort"
 	"strings"
@@ -165,9 +166,9 @@ func (r *Router) NamedRoutes() map[string]*NamedRoute {
 
 	result := make(map[string]*NamedRoute, len(r.state.namedRoutes))
 	for k, v := range r.state.namedRoutes {
-		paramPos := make(map[string]int, len(v.ParamPos))
-		for pk, pv := range v.ParamPos {
-			paramPos[pk] = pv
+		paramPos := maps.Clone(v.ParamPos)
+		if paramPos == nil {
+			paramPos = make(map[string]int)
 		}
 		result[k] = &NamedRoute{
 			Method:   v.Method,

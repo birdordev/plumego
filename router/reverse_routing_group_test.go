@@ -190,6 +190,20 @@ func TestNamedRoutesReturnsDeepCopy(t *testing.T) {
 	}
 }
 
+func TestNamedRoutesStaticParamPositionsAreWritable(t *testing.T) {
+	r := NewRouter()
+	mustAddRoute(r, http.MethodGet, "/status", http.NotFoundHandler(), WithRouteName("status"))
+
+	params := r.NamedRoutes()["status"].ParamPos
+	if params == nil || len(params) != 0 {
+		t.Fatalf("ParamPos = %#v, want a writable empty map", params)
+	}
+	params["caller"] = 1
+	if next := r.NamedRoutes()["status"].ParamPos; len(next) != 0 {
+		t.Fatalf("ParamPos = %#v, caller mutation changed the next snapshot", next)
+	}
+}
+
 func TestURLMustPanicsForUnknownRoute(t *testing.T) {
 	r := NewRouter()
 
