@@ -2,6 +2,7 @@ package log
 
 import (
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"sort"
@@ -193,6 +194,15 @@ func cleanupOldLogs(logDir, program string, config rotationConfig, current map[s
 	}
 
 	now := time.Now()
+	const day = 24 * time.Hour
+	var maxAge time.Duration
+	if config.MaxAge > 0 {
+		// A retention period beyond Duration's range cannot expire an archive by age.
+		maxAge = time.Duration(math.MaxInt64)
+		if config.MaxAge <= int(maxAge/day) {
+			maxAge = time.Duration(config.MaxAge) * day
+		}
+	}
 	perLevel := make(map[Level][]logFileInfo)
 
 	for _, entry := range entries {
@@ -224,14 +234,11 @@ func cleanupOldLogs(logDir, program string, config rotationConfig, current map[s
 			continue
 		}
 
-		if config.MaxAge > 0 {
-			maxAge := time.Duration(config.MaxAge) * 24 * time.Hour
-			if now.Sub(info.ModTime()) > maxAge {
-				if err := os.Remove(filepath.Join(logDir, name)); err != nil && !os.IsNotExist(err) {
-					fmt.Fprintf(os.Stderr, "log: failed to remove aged log %s: %v\n", name, err)
-				}
-				continue
+		if maxAge > 0 && now.Sub(info.ModTime()) > maxAge {
+			if err := os.Remove(filepath.Join(logDir, name)); err != nil && !os.IsNotExist(err) {
+				fmt.Fprintf(os.Stderr, "log: failed to remove aged log %s: %v\n", name, err)
 			}
+			continue
 		}
 
 		if config.MaxBackups > 0 {

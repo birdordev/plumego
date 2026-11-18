@@ -79,6 +79,25 @@ func TestPrincipalContextPreservesEmptySlices(t *testing.T) {
 	}
 }
 
+func TestPrincipalContextPreservesEmptyClaims(t *testing.T) {
+	for _, claims := range []map[string]string{nil, {}} {
+		ctx := WithPrincipal(t.Context(), &Principal{Claims: claims})
+		if claims != nil {
+			claims["caller"] = "value"
+		}
+		got := PrincipalFromContext(ctx)
+		if got == nil || (got.Claims == nil) != (claims == nil) || len(got.Claims) != 0 {
+			t.Fatalf("stored principal = %#v, want empty claims with shape of %#v", got, claims)
+		}
+		if got.Claims != nil {
+			got.Claims["reader"] = "value"
+			if again := PrincipalFromContext(ctx); again == nil || again.Claims == nil || len(again.Claims) != 0 {
+				t.Fatalf("reader changed stored claims: %#v", again)
+			}
+		}
+	}
+}
+
 func TestWithPrincipalNilContext(t *testing.T) {
 	p := &Principal{Subject: "user-1"}
 

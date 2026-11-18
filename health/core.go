@@ -49,7 +49,9 @@ func (hs HealthStatus) Clone() HealthStatus {
 	return clone
 }
 
-// Clone returns a copy of ch with embedded health maps and slices detached.
+// Clone returns a copy of ch using [HealthStatus.Clone] for the embedded status.
+// The Details map and Dependencies slice are detached. Values in Details are
+// copied shallowly and can still share mutable data with the original.
 func (ch ComponentHealth) Clone() ComponentHealth {
 	clone := ch
 	clone.HealthStatus = ch.HealthStatus.Clone()

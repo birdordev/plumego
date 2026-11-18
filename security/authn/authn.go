@@ -3,6 +3,7 @@ package authn
 import (
 	"context"
 	"errors"
+	"maps"
 	"net/http"
 	"slices"
 )
@@ -71,11 +72,6 @@ func clonePrincipal(p *Principal) *Principal {
 	copied := *p
 	copied.Roles = slices.Clone(p.Roles)
 	copied.Scopes = slices.Clone(p.Scopes)
-	if p.Claims != nil {
-		copied.Claims = make(map[string]string, len(p.Claims))
-		for k, v := range p.Claims {
-			copied.Claims[k] = v
-		}
-	}
+	copied.Claims = maps.Clone(p.Claims)
 	return &copied
 }

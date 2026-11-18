@@ -20,6 +20,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -984,6 +985,51 @@ func TestCleanupOldLogsSkipsSymlinksAndNonLogFiles(t *testing.T) {
 // ---------------------------------------------------------------------------
 // 30. cleanupOldLogs — MaxBackups pruning removes excess files
 // ---------------------------------------------------------------------------
+
+func TestCleanupOldLogsRetentionDays(t *testing.T) {
+	const overflowDays = int(math.MaxInt64/int64(24*time.Hour)) + 1
+	for _, tc := range []struct {
+		name    string
+		config  rotationConfig
+		keepOld bool
+	}{
+		{"normal age", rotationConfig{MaxAge: 1}, false},
+		{"out of range", rotationConfig{MaxAge: overflowDays}, true},
+		{"out of range with backup limit", rotationConfig{MaxAge: overflowDays, MaxBackups: 1}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			now := time.Now()
+			old := filepath.Join(dir, "app.host.INFO.20260101-000000.1.log")
+			recent := filepath.Join(dir, "app.host.INFO.20260102-000000.1.log")
+			for _, archive := range []struct {
+				path string
+				age  time.Duration
+			}{{old, 48 * time.Hour}, {recent, time.Hour}} {
+				if err := os.WriteFile(archive.path, []byte("archive"), 0600); err != nil {
+					t.Fatal(err)
+				}
+				modTime := now.Add(-archive.age)
+				if err := os.Chtimes(archive.path, modTime, modTime); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			cleanupOldLogs(dir, "app", tc.config, nil)
+
+			if _, err := os.Stat(recent); err != nil {
+				t.Fatalf("recent archive should remain: %v", err)
+			}
+			_, err := os.Stat(old)
+			if tc.keepOld && err != nil {
+				t.Fatalf("old archive should remain: %v", err)
+			}
+			if !tc.keepOld && !errors.Is(err, os.ErrNotExist) {
+				t.Fatalf("old archive should be removed, stat error = %v", err)
+			}
+		})
+	}
+}
 
 func TestCleanupOldLogsMaxBackupsPruning(t *testing.T) {
 	dir := t.TempDir()
