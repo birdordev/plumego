@@ -22,22 +22,14 @@ func (r *Router) validateRouteMetaLocked(meta RouteMeta) error {
 
 var errDuplicateRouteName = errors.New("duplicate route name")
 
-func (r *Router) registerNamedRoute(name, method, pattern string) {
+func (r *Router) registerNamedRoute(name, method, pattern string, paramKeys []string) {
 	if r.state.namedRoutes == nil {
 		r.state.namedRoutes = make(map[string]*NamedRoute)
 	}
 
-	paramPos := make(map[string]int)
-	parts := strings.Split(strings.Trim(pattern, "/"), "/")
-	pos := 0
-	for _, part := range parts {
-		if strings.HasPrefix(part, ":") {
-			paramPos[part[1:]] = pos
-			pos++
-		} else if strings.HasPrefix(part, "*") {
-			paramPos[part[1:]] = pos
-			pos++
-		}
+	paramPos := make(map[string]int, len(paramKeys))
+	for pos, key := range paramKeys {
+		paramPos[key] = pos
 	}
 
 	r.state.namedRoutes[name] = &NamedRoute{

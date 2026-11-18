@@ -560,7 +560,7 @@ func TestRegisterNamedRouteInitializesNilMap(t *testing.T) {
 	r.state.mu.Unlock()
 
 	r.state.mu.Lock()
-	r.registerNamedRoute("direct.test", http.MethodGet, "/direct/:id")
+	r.registerNamedRoute("direct.test", http.MethodGet, "/direct/:id", []string{"id"})
 	r.state.mu.Unlock()
 
 	if !r.HasRoute("direct.test") {

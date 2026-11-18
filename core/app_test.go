@@ -349,7 +349,7 @@ func TestUseRejectsNilMiddlewareWithoutMutatingChain(t *testing.T) {
 		})
 	}
 
-	if err := app.Use(nil, valid); err == nil {
+	if err := app.Use(valid, nil); err == nil {
 		t.Fatal("expected nil middleware registration error")
 	}
 	if got := app.middlewareChain.Len(); got != 0 {

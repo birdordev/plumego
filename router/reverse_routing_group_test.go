@@ -1,6 +1,7 @@
 package router
 
 import (
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -21,6 +22,12 @@ func TestURLFromNestedGroupNamedRoute(t *testing.T) {
 	}), WithRouteName("files.show"))
 	if err != nil {
 		t.Fatalf("add named route failed: %v", err)
+	}
+
+	positions := r.NamedRoutes()["files.show"].ParamPos
+	wantPositions := map[string]int{"tenant": 0, "path": 1}
+	if !maps.Equal(positions, wantPositions) {
+		t.Fatalf("ParamPos = %v, want %v", positions, wantPositions)
 	}
 
 	got, err := r.URL("files.show", "tenant", "acme corp", "path", "reports/2026 q1.pdf")

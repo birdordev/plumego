@@ -1,6 +1,9 @@
 package log
 
-import "math/bits"
+import (
+	"maps"
+	"math/bits"
+)
 
 const maxMapCapacity = int(^uint(0) >> 1)
 
@@ -52,11 +55,7 @@ func cloneFields(fields Fields) Fields {
 	if len(fields) == 0 {
 		return Fields{}
 	}
-	cloned := make(Fields, len(fields))
-	for k, v := range fields {
-		cloned[k] = v
-	}
-	return cloned
+	return maps.Clone(fields)
 }
 
 // mergeFields copies the base and applies each subsequent field set in order.

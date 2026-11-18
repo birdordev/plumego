@@ -10,6 +10,23 @@ import (
 	"testing"
 )
 
+func TestNewLoggerDetachesConfigFields(t *testing.T) {
+	for _, format := range []LoggerFormat{LoggerFormatText, LoggerFormatJSON} {
+		t.Run(string(format), func(t *testing.T) {
+			var output bytes.Buffer
+			fields := Fields{"component": "original"}
+			logger := NewLogger(LoggerConfig{Format: format, Output: &output, Fields: fields})
+
+			fields["component"] = "replacement"
+			logger.Info("example")
+			got := output.String()
+			if !strings.Contains(got, "original") || strings.Contains(got, "replacement") {
+				t.Fatalf("log output = %q, want original component value", got)
+			}
+		})
+	}
+}
+
 func TestDefaultLoggerRespectVerbosity(t *testing.T) {
 	t.Run("respects-verbosity", func(t *testing.T) {
 		var buf bytes.Buffer
