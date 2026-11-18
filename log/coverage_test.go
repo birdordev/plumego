@@ -571,9 +571,18 @@ func TestAddMapCapacityNegative(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestLevelFromFilenameUnknown(t *testing.T) {
-	_, ok := levelFromFilename("myapp.host.UNKNOWN.20240101-000000.log")
-	if ok {
-		t.Error("expected levelFromFilename to return false for unknown level string")
+	for _, name := range []string{
+		"app.host.UNKNOWN.20240101-000000.1234.log",
+		"app.INFO.20240101-000000.1234.log",
+		"app.host.INFO.20240230-000000.1234.log",
+		"app.host.INFO.20240101-000000.1234567890.1234.log",
+		"app.host.INFO.20240101-000000..log",
+		"app.host.INFO.20240101-000000.pid.log",
+		"app.host.INFO.20240101-000000.1234.txt",
+	} {
+		if _, ok := levelFromFilename(name); ok {
+			t.Errorf("levelFromFilename(%q) accepted an invalid archive name", name)
+		}
 	}
 }
 
@@ -585,6 +594,9 @@ func TestLevelFromFilenameKnownLevels(t *testing.T) {
 		{"app.host.INFO.20240101-000000.1234.log", INFO},
 		{"app.host.WARN.20240101-000000.1234.log", WARNING},
 		{"app.host.ERROR.20240101-000000.1234.log", ERROR},
+		{"app.prod.host.local.INFO.20240101-000000.123456789.1234.log", INFO},
+		{"app.prod.host.local.WARN.20240101-000000.1234.log", WARNING},
+		{"app.host.ERROR.20240101-000000.0.1234.log", ERROR},
 	}
 	for _, tt := range tests {
 		got, ok := levelFromFilename(tt.name)

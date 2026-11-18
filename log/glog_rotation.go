@@ -264,33 +264,44 @@ func levelFromFilename(name string) (Level, bool) {
 	if !ok {
 		return INFO, false
 	}
-	parts := strings.Split(base, ".")
-	if len(parts) < 5 {
+	prefix, pid, ok := cutLastDot(base)
+	if !ok || pid == "" || strings.Trim(pid, "0123456789") != "" {
 		return INFO, false
 	}
-	pid := parts[len(parts)-1]
-	if pid == "" || strings.Trim(pid, "0123456789") != "" {
+	prefix, timestamp, ok := cutLastDot(prefix)
+	if !ok {
 		return INFO, false
 	}
-
-	timestamp := len(parts) - 2
 	// Current filenames include fractional seconds before the PID. Older
 	// archives put the PID immediately after the timestamp.
-	if fraction := parts[timestamp]; len(fraction) > 0 && len(fraction) <= 9 && strings.Trim(fraction, "0123456789") == "" {
-		timestamp--
+	if fraction := timestamp; len(fraction) > 0 && len(fraction) <= 9 && strings.Trim(fraction, "0123456789") == "" {
+		prefix, timestamp, ok = cutLastDot(prefix)
+		if !ok {
+			return INFO, false
+		}
 	}
-	if timestamp < 3 {
+	prefix, label, ok := cutLastDot(prefix)
+	// The prefix contains at least the program and host segments.
+	if !ok || !strings.Contains(prefix, ".") {
 		return INFO, false
 	}
-	if _, err := time.Parse("20060102-150405", parts[timestamp]); err != nil {
+	if _, err := time.Parse("20060102-150405", timestamp); err != nil {
 		return INFO, false
 	}
 	for level := INFO; level <= ERROR; level++ {
-		if parts[timestamp-1] == levelName(level) {
+		if label == levelName(level) {
 			return level, true
 		}
 	}
 	return INFO, false
+}
+
+func cutLastDot(s string) (string, string, bool) {
+	i := strings.LastIndexByte(s, '.')
+	if i < 0 {
+		return s, "", false
+	}
+	return s[:i], s[i+1:], true
 }
 
 func levelName(level Level) string {

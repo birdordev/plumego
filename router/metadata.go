@@ -185,7 +185,7 @@ func (r *Router) Routes() []RouteInfo {
 	}
 	r.state.mu.RLock()
 
-	infos := make([]RouteInfo, 0)
+	infos := make([]RouteInfo, 0, r.routeCountLocked())
 	for _, routes := range r.state.routes {
 		for _, entry := range routes {
 			info := RouteInfo(entry)
@@ -231,7 +231,7 @@ func (r *Router) Print(w io.Writer) {
 
 func (r *Router) printRoutesSnapshot() []route {
 	r.state.mu.RLock()
-	routes := make([]route, 0)
+	routes := make([]route, 0, r.routeCountLocked())
 	for _, byMethod := range r.state.routes {
 		routes = append(routes, byMethod...)
 	}
@@ -244,4 +244,13 @@ func (r *Router) printRoutesSnapshot() []route {
 		return routes[i].Method < routes[j].Method
 	})
 	return routes
+}
+
+// routeCountLocked returns the route count while the caller holds the state lock.
+func (r *Router) routeCountLocked() int {
+	count := 0
+	for _, bucket := range r.state.routes {
+		count += len(bucket)
+	}
+	return count
 }

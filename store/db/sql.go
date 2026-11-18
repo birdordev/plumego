@@ -229,7 +229,11 @@ func QueryContext(ctx context.Context, db DB, query string, args ...any) (*sql.R
 	return rows, nil
 }
 
-// QueryRowContext executes a query using the caller-provided context.
+// QueryRowContext returns a single-row result using the caller-provided context.
+// It returns ErrQueryFailed if db or the returned row is nil. Call
+// [sql.Row.Scan] to read the result and check for query errors, including
+// [sql.ErrNoRows] when the query returns no rows.
+// Use [QueryRowStrict] to enforce that exactly one row is returned.
 func QueryRowContext(ctx context.Context, db DB, query string, args ...any) (*sql.Row, error) {
 	if db == nil {
 		return nil, fmt.Errorf("%w: database is nil", ErrQueryFailed)
@@ -291,8 +295,9 @@ func WithTransaction(ctx context.Context, db DB, txOpts *sql.TxOptions, fn func(
 	return nil
 }
 
-// QueryRow executes a query and returns the first row.
-// Use QueryRowStrict when you need single-row enforcement.
+// QueryRow is equivalent to [QueryRowContext]. Call [sql.Row.Scan] to read the
+// result and check for query errors, including [sql.ErrNoRows].
+// Use [QueryRowStrict] to enforce that exactly one row is returned.
 func QueryRow(ctx context.Context, db DB, query string, args ...any) (*sql.Row, error) {
 	return QueryRowContext(ctx, db, query, args...)
 }
