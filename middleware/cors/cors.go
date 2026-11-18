@@ -177,7 +177,7 @@ func serveCORS(w http.ResponseWriter, r *http.Request, next http.Handler, opts C
 		}
 
 		var allowHeadersValue string
-		reqHeaders := r.Header.Get("Access-Control-Request-Headers")
+		reqHeaders := strings.Join(r.Header.Values("Access-Control-Request-Headers"), ",")
 		if reqHeaders != "" {
 			if contains(opts.AllowedHeaders, "*") {
 				allowed, ok := normalizeRequestedHeaders(reqHeaders)

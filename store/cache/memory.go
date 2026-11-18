@@ -431,7 +431,9 @@ func (mc *MemoryCache) Append(ctx context.Context, key string, data []byte) erro
 	return nil
 }
 
-// Close stops the background cleanup goroutine.
+// Close marks the cache closed, stops background cleanup, and waits for writes
+// already in progress. It is safe to call more than once.
+// Subsequent cache operations with an active context return ErrCacheClosed.
 func (mc *MemoryCache) Close() error {
 	if mc == nil {
 		return nil

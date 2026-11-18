@@ -89,11 +89,11 @@ func (r *Router) urlForNamedRoute(name string, params ...string) (string, string
 		paramMap[key] = params[i+1]
 	}
 
-	result := namedRoute.Pattern
-	parts := strings.Split(strings.Trim(result, "/"), "/")
-	resultParts := make([]string, 0, len(parts))
+	var result strings.Builder
+	result.Grow(len(namedRoute.Pattern))
 
-	for _, part := range parts {
+	for part := range strings.SplitSeq(strings.Trim(namedRoute.Pattern, "/"), "/") {
+		result.WriteByte('/')
 		if strings.HasPrefix(part, ":") {
 			paramName := part[1:]
 			if val, ok := paramMap[paramName]; ok {
@@ -103,7 +103,7 @@ func (r *Router) urlForNamedRoute(name string, params ...string) (string, string
 				if strings.Contains(val, "/") {
 					return "", fmt.Sprintf("named route %q has a slash in single-segment param %q", name, paramName)
 				}
-				resultParts = append(resultParts, url.PathEscape(val))
+				result.WriteString(url.PathEscape(val))
 			} else {
 				return "", fmt.Sprintf("named route %q missing required param %q", name, paramName)
 			}
@@ -116,20 +116,23 @@ func (r *Router) urlForNamedRoute(name string, params ...string) (string, string
 				if val[0] == '/' || val[len(val)-1] == '/' {
 					return "", fmt.Sprintf("named route %q has a leading or trailing slash in wildcard param %q", name, paramName)
 				}
-				segments := strings.Split(val, "/")
-				for i, seg := range segments {
-					segments[i] = url.PathEscape(seg)
+				first := true
+				for seg := range strings.SplitSeq(val, "/") {
+					if !first {
+						result.WriteByte('/')
+					}
+					first = false
+					result.WriteString(url.PathEscape(seg))
 				}
-				resultParts = append(resultParts, strings.Join(segments, "/"))
 			} else {
 				return "", fmt.Sprintf("named route %q missing required param %q", name, paramName)
 			}
 		} else {
-			resultParts = append(resultParts, url.PathEscape(part))
+			result.WriteString(url.PathEscape(part))
 		}
 	}
 
-	return "/" + strings.Join(resultParts, "/"), ""
+	return result.String(), ""
 }
 
 // URLMust generates a URL for a named route and panics if URL generation fails.

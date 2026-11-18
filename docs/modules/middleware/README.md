@@ -291,7 +291,8 @@ Raw option lists are trimmed and blank entries are ignored before matching, so
 common configuration whitespace does not silently disable an origin, method, or
 header.
 
-Wildcard `AllowedHeaders` preserves requested header names after trimming and
+All `Access-Control-Request-Headers` field lines are evaluated as one comma-separated
+list. Wildcard `AllowedHeaders` preserves requested header names after trimming and
 uses the same blank-list validation as explicit allowed-header checks.
 
 The zero-value options default to `AllowedOrigins: ["*"]`. When credentials are

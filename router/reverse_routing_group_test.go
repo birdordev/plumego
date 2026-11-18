@@ -350,7 +350,7 @@ func TestNamedRouteURLMatchesItsParameterKind(t *testing.T) {
 }
 
 func TestNamedRouteURLRoundTripsLiteralSegments(t *testing.T) {
-	for _, pattern := range []string{"/café#menu", "/files?draft", "/100%", "/plain"} {
+	for _, pattern := range []string{"/", "/café#menu", "/files?draft", "/100%", "/plain"} {
 		t.Run(pattern, func(t *testing.T) {
 			r := NewRouter()
 			err := r.AddRoute(http.MethodGet, pattern, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -363,6 +363,9 @@ func TestNamedRouteURLRoundTripsLiteralSegments(t *testing.T) {
 			generated, err := r.URL("literal")
 			if err != nil {
 				t.Fatal(err)
+			}
+			if pattern == "/" && generated != "/" {
+				t.Fatalf("URL() for the root route = %q, want /", generated)
 			}
 			req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, generated, nil)
 			if err != nil {

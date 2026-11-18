@@ -289,6 +289,54 @@ func TestCORSMiddleware(t *testing.T) {
 	})
 }
 
+func TestCORSPreflightCombinesRequestedHeaderLines(t *testing.T) {
+	const requestHeaders = "Access-Control-Request-Headers"
+	const wantHeaders = "X-Region, X-Format"
+	for _, config := range []struct {
+		name    string
+		allowed []string
+	}{
+		{"explicit", []string{"X-Region", "X-Format"}},
+		{"wildcard", []string{"*"}},
+	} {
+		t.Run(config.name, func(t *testing.T) {
+			handler := Middleware(CORSOptions{
+				AllowedOrigins: []string{"https://ui.example"},
+				AllowedHeaders: config.allowed,
+			})(http.NotFoundHandler())
+
+			for _, form := range []struct {
+				name   string
+				values []string
+			}{
+				{"single field", []string{wantHeaders}},
+				{"multiple fields", []string{"X-Region", "X-Format"}},
+				{"empty first field", []string{"", wantHeaders}},
+			} {
+				t.Run(form.name, func(t *testing.T) {
+					req := httptest.NewRequest(http.MethodOptions, "/", nil)
+					req.Header.Set("Origin", "https://ui.example")
+					req.Header.Set("Access-Control-Request-Method", http.MethodGet)
+					for _, value := range form.values {
+						req.Header.Add(requestHeaders, value)
+					}
+					rec := httptest.NewRecorder()
+					handler.ServeHTTP(rec, req)
+					if got := rec.Header().Get("Access-Control-Allow-Headers"); rec.Code != http.StatusNoContent || got != wantHeaders {
+						t.Fatalf("status = %d, allowed headers = %q, want 204 and %q", rec.Code, got, wantHeaders)
+					}
+					vary := rec.Header().Values("Vary")
+					for _, field := range []string{"Origin", "Access-Control-Request-Method", requestHeaders} {
+						if !headerValuesContain(vary, field) {
+							t.Errorf("Vary = %v, missing %q", vary, field)
+						}
+					}
+				})
+			}
+		})
+	}
+}
+
 func TestCORSMiddleware_DeduplicatesExistingVary(t *testing.T) {
 	opts := CORSOptions{AllowedOrigins: []string{"http://allowed.com"}}
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
