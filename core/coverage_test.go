@@ -187,23 +187,13 @@ func TestWrapCoreErrorWithNilAndParamsReturnsNil(t *testing.T) {
 }
 
 func TestWrapCoreErrorWithParamsIncludesParams(t *testing.T) {
-	inner := http.ErrNoCookie // any non-nil sentinel error
-	err := wrapCoreError(inner, "op", map[string]any{"a": 1, "b": "two"})
-	if err == nil {
-		t.Fatal("expected non-nil error")
+	err := wrapCoreError(http.ErrNoCookie, "op", map[string]any{"b": "two", "a": 1})
+	if !errors.Is(err, http.ErrNoCookie) {
+		t.Fatalf("error = %v, want wrapped %v", err, http.ErrNoCookie)
 	}
-	got := err.Error()
-	for _, fragment := range []string{"core op", "a=1", "b=two"} {
-		found := false
-		for i := 0; i+len(fragment) <= len(got); i++ {
-			if got[i:i+len(fragment)] == fragment {
-				found = true
-				break
-			}
-		}
-		if !found {
-			t.Errorf("error %q missing fragment %q", got, fragment)
-		}
+	want := "core op a=1 b=two: " + http.ErrNoCookie.Error()
+	if got := err.Error(); got != want {
+		t.Fatalf("error = %q, want %q", got, want)
 	}
 }
 

@@ -2,6 +2,7 @@ package file
 
 import (
 	"io"
+	"maps"
 	"reflect"
 	"slices"
 	"time"
@@ -136,14 +137,7 @@ func (c *metadataCloner) cloneValue(value any) any {
 		c.pending = append(c.pending, metadataCopy{source: typed, target: clone})
 		return clone
 	case map[string]string:
-		if typed == nil {
-			return map[string]string(nil)
-		}
-		clone := make(map[string]string, len(typed))
-		for key, value := range typed {
-			clone[key] = value
-		}
-		return clone
+		return maps.Clone(typed)
 	case []any:
 		if typed == nil {
 			return []any(nil)

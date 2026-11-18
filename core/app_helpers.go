@@ -3,7 +3,6 @@ package core
 import (
 	"fmt"
 	"sort"
-	"strings"
 
 	"github.com/birdordev/plumego/router"
 )
@@ -40,11 +39,16 @@ func formatErrorParams(params map[string]any) string {
 	}
 	sort.Strings(keys)
 
-	parts := make([]string, 0, len(keys))
-	for _, key := range keys {
-		parts = append(parts, fmt.Sprintf("%s=%v", key, params[key]))
+	var formatted []byte
+	for i, key := range keys {
+		if i > 0 {
+			formatted = append(formatted, ' ')
+		}
+		formatted = append(formatted, key...)
+		formatted = append(formatted, '=')
+		formatted = fmt.Appendf(formatted, "%v", params[key])
 	}
-	return strings.Join(parts, " ")
+	return string(formatted)
 }
 
 // registrationMutable must be called with a.mu held.

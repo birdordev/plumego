@@ -201,12 +201,17 @@ func TestCloneMetadataDetachesNestedMutableValues(t *testing.T) {
 		"nested": map[string]any{
 			"labels": []any{"a", map[string]any{"inner": "b"}},
 		},
-		"strings": []string{"one"},
-		"bytes":   []byte("abc"),
-		"attrs":   map[string]string{"tier": "gold"},
+		"strings":     []string{"one"},
+		"bytes":       []byte("abc"),
+		"attrs":       map[string]string{"tier": "gold"},
+		"nil attrs":   map[string]string(nil),
+		"empty attrs": map[string]string{},
 	}}
 
-	clone := opts.CloneMetadata()
+	clones := []map[string]any{
+		opts.CloneMetadata(),
+		(File{Metadata: opts.Metadata}).Clone().Metadata,
+	}
 
 	opts.Metadata["nested"].(map[string]any)["labels"].([]any)[0] = "mutated"
 	opts.Metadata["nested"].(map[string]any)["labels"].([]any)[1].(map[string]any)["inner"] = "mutated"
@@ -214,21 +219,36 @@ func TestCloneMetadataDetachesNestedMutableValues(t *testing.T) {
 	opts.Metadata["bytes"].([]byte)[0] = 'z'
 	opts.Metadata["attrs"].(map[string]string)["tier"] = "mutated"
 
-	labels := clone["nested"].(map[string]any)["labels"].([]any)
-	if labels[0] != "a" {
-		t.Fatalf("nested label = %v, want a", labels[0])
+	for _, clone := range clones {
+		labels := clone["nested"].(map[string]any)["labels"].([]any)
+		if labels[0] != "a" {
+			t.Fatalf("nested label = %v, want a", labels[0])
+		}
+		if got := labels[1].(map[string]any)["inner"]; got != "b" {
+			t.Fatalf("nested inner = %v, want b", got)
+		}
+		if got := clone["strings"].([]string)[0]; got != "one" {
+			t.Fatalf("string slice value = %v, want one", got)
+		}
+		if got := string(clone["bytes"].([]byte)); got != "abc" {
+			t.Fatalf("byte slice value = %q, want abc", got)
+		}
+		if got := clone["attrs"].(map[string]string)["tier"]; got != "gold" {
+			t.Fatalf("attrs tier = %v, want gold", got)
+		}
+		if clone["nil attrs"].(map[string]string) != nil {
+			t.Fatal("nil attrs should clone to nil")
+		}
+		empty := clone["empty attrs"].(map[string]string)
+		if empty == nil || len(empty) != 0 {
+			t.Fatalf("empty attrs clone = %#v, want non-nil empty map", empty)
+		}
+		empty["tier"] = "silver"
+		clone["attrs"].(map[string]string)["tier"] = "silver"
 	}
-	if got := labels[1].(map[string]any)["inner"]; got != "b" {
-		t.Fatalf("nested inner = %v, want b", got)
-	}
-	if got := clone["strings"].([]string)[0]; got != "one" {
-		t.Fatalf("string slice value = %v, want one", got)
-	}
-	if got := string(clone["bytes"].([]byte)); got != "abc" {
-		t.Fatalf("byte slice value = %q, want abc", got)
-	}
-	if got := clone["attrs"].(map[string]string)["tier"]; got != "gold" {
-		t.Fatalf("attrs tier = %v, want gold", got)
+	if len(opts.Metadata["empty attrs"].(map[string]string)) != 0 ||
+		opts.Metadata["attrs"].(map[string]string)["tier"] != "mutated" {
+		t.Fatal("mutating cloned attrs changed source metadata")
 	}
 }
 
