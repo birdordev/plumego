@@ -1,6 +1,9 @@
 package contract
 
-import "context"
+import (
+	"context"
+	"maps"
+)
 
 const (
 	traceFlagsSampled uint8 = 0x01
@@ -78,13 +81,7 @@ func cloneTraceContext(traceContext TraceContext) TraceContext {
 		parentSpanID := *traceContext.ParentSpanID
 		traceContext.ParentSpanID = &parentSpanID
 	}
-	if traceContext.Baggage != nil {
-		baggage := make(map[string]string, len(traceContext.Baggage))
-		for k, v := range traceContext.Baggage {
-			baggage[k] = v
-		}
-		traceContext.Baggage = baggage
-	}
+	traceContext.Baggage = maps.Clone(traceContext.Baggage)
 	return traceContext
 }
 

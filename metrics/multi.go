@@ -2,6 +2,7 @@ package metrics
 
 import (
 	"context"
+	"maps"
 	"math"
 	"reflect"
 	"time"
@@ -53,12 +54,7 @@ func (m *MultiCollector) Record(ctx context.Context, record MetricRecord) {
 			continue
 		}
 		childRecord := record
-		if record.Labels != nil {
-			childRecord.Labels = make(MetricLabels, len(record.Labels))
-			for key, value := range record.Labels {
-				childRecord.Labels[key] = value
-			}
-		}
+		childRecord.Labels = maps.Clone(record.Labels)
 		c.Record(ctx, childRecord)
 	}
 }

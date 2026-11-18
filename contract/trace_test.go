@@ -161,6 +161,27 @@ func TestTraceContextUsesDefensiveCopies(t *testing.T) {
 	}
 }
 
+func TestTraceContextPreservesEmptyBaggageShape(t *testing.T) {
+	for _, baggage := range []map[string]string{nil, {}} {
+		ctx := WithTraceContext(t.Context(), TraceContext{Baggage: baggage})
+		if baggage != nil {
+			baggage["caller"] = "value"
+		}
+
+		got, ok := TraceContextFromContext(ctx)
+		if !ok || (got.Baggage == nil) != (baggage == nil) || len(got.Baggage) != 0 {
+			t.Fatalf("stored = %v, baggage = %#v, input = %#v", ok, got.Baggage, baggage)
+		}
+		if got.Baggage != nil {
+			got.Baggage["reader"] = "value"
+			again, _ := TraceContextFromContext(ctx)
+			if len(again.Baggage) != 0 {
+				t.Fatalf("reader changed stored baggage: %#v", again.Baggage)
+			}
+		}
+	}
+}
+
 func TestTraceContextStableCarrierFields(t *testing.T) {
 	rt := reflect.TypeOf(TraceContext{})
 	want := []string{"TraceID", "SpanID", "ParentSpanID", "Baggage", "Flags"}

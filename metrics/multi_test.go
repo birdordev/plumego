@@ -384,6 +384,34 @@ func (c *recordingCollector) Record(_ context.Context, record MetricRecord) {
 	c.onRecord(record)
 }
 
+func TestMultiCollectorPreservesEmptyLabelShape(t *testing.T) {
+	for _, labels := range []MetricLabels{nil, {}} {
+		var received []MetricLabels
+		capture := func(record MetricRecord) {
+			received = append(received, record.Labels)
+		}
+		multi := NewMultiCollector(
+			&recordingCollector{onRecord: capture},
+			&recordingCollector{onRecord: capture},
+		)
+		multi.Record(t.Context(), MetricRecord{Labels: labels})
+		if len(received) != 2 {
+			t.Fatalf("received %d label maps, want 2", len(received))
+		}
+		for _, child := range received {
+			if (child == nil) != (labels == nil) || len(child) != 0 {
+				t.Fatalf("child labels = %#v, want shape of %#v", child, labels)
+			}
+		}
+		if labels != nil {
+			received[0]["child"] = "value"
+			if len(received[1]) != 0 || len(labels) != 0 {
+				t.Fatal("child labels share ownership with a sibling or caller")
+			}
+		}
+	}
+}
+
 func TestNewMultiCollectorFiltersNilPointers(t *testing.T) {
 	var absent *recordingCollector
 	if result := NewMultiCollector(nil, absent); reflect.TypeOf(result) != reflect.TypeFor[*NoopCollector]() {

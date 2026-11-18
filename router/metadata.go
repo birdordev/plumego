@@ -49,8 +49,8 @@ func (r *Router) registerNamedRoute(name, method, pattern string) {
 // URL generates a URL for a named route with the given parameters.
 // It returns an error when the route is unknown, a required parameter is
 // missing or empty, a single-segment parameter contains a slash, a wildcard
-// parameter starts or ends with a slash, parameters are unpaired, or the router
-// is not initialised.
+// parameter starts or ends with a slash, parameter keys are unpaired, unknown,
+// or repeated, or the router is not initialised.
 // On error the returned string is always "".
 //
 // Use [URLMust] at startup time when the route names are compile-time constants
