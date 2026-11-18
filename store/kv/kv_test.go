@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -959,6 +960,36 @@ func TestKVStoreReadOnlyExpiredChecksDoNotMutate(t *testing.T) {
 	store.mu.RUnlock()
 	if !stillLoaded {
 		t.Fatal("read-only checks should not mutate expired entries")
+	}
+}
+
+func TestKVStoreKeysContextSnapshotThreshold(t *testing.T) {
+	for _, count := range []int{0, 32, 33} {
+		t.Run(fmt.Sprint(count), func(t *testing.T) {
+			store := &KVStore{data: map[string]*entry{
+				"expired": {ExpireAt: time.Unix(1, 0)},
+			}}
+			want := make([]string, count)
+			for i := range want {
+				key := fmt.Sprintf("key-%02d", i)
+				store.data[key] = &entry{}
+				want[i] = key
+			}
+
+			keys := mustKeys(t, store)
+			if keys == nil || !slices.Equal(keys, want) {
+				t.Fatalf("keys = %#v, want %#v", keys, want)
+			}
+			if len(keys) > 0 {
+				keys[0] = "modified"
+				if got := mustKeys(t, store); !slices.Equal(got, want) {
+					t.Fatalf("keys after snapshot mutation = %v, want %v", got, want)
+				}
+			}
+			if _, ok := store.data["expired"]; !ok {
+				t.Fatal("taking a snapshot removed an expired entry")
+			}
+		})
 	}
 }
 

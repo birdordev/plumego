@@ -300,18 +300,26 @@ func TestCORSPreflightCombinesRequestedHeaderLines(t *testing.T) {
 		{"wildcard", []string{"*"}},
 	} {
 		t.Run(config.name, func(t *testing.T) {
+			calls := 0
 			handler := Middleware(CORSOptions{
 				AllowedOrigins: []string{"https://ui.example"},
 				AllowedHeaders: config.allowed,
-			})(http.NotFoundHandler())
+			})(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				calls++
+				w.WriteHeader(http.StatusAccepted)
+			}))
 
 			for _, form := range []struct {
-				name   string
-				values []string
+				name        string
+				values      []string
+				wantStatus  int
+				wantHeaders string
+				wantCalls   int
 			}{
-				{"single field", []string{wantHeaders}},
-				{"multiple fields", []string{"X-Region", "X-Format"}},
-				{"empty first field", []string{"", wantHeaders}},
+				{"single field", []string{wantHeaders}, http.StatusNoContent, wantHeaders, 0},
+				{"multiple fields", []string{"X-Region", "X-Format"}, http.StatusNoContent, wantHeaders, 0},
+				{"empty first field", []string{"", wantHeaders}, http.StatusNoContent, wantHeaders, 0},
+				{"only blank fields", []string{" , ", " "}, http.StatusAccepted, "", 1},
 			} {
 				t.Run(form.name, func(t *testing.T) {
 					req := httptest.NewRequest(http.MethodOptions, "/", nil)
@@ -321,9 +329,13 @@ func TestCORSPreflightCombinesRequestedHeaderLines(t *testing.T) {
 						req.Header.Add(requestHeaders, value)
 					}
 					rec := httptest.NewRecorder()
+					calls = 0
 					handler.ServeHTTP(rec, req)
-					if got := rec.Header().Get("Access-Control-Allow-Headers"); rec.Code != http.StatusNoContent || got != wantHeaders {
-						t.Fatalf("status = %d, allowed headers = %q, want 204 and %q", rec.Code, got, wantHeaders)
+					if got := rec.Header().Get("Access-Control-Allow-Headers"); rec.Code != form.wantStatus || got != form.wantHeaders {
+						t.Fatalf("status = %d, allowed headers = %q, want %d and %q", rec.Code, got, form.wantStatus, form.wantHeaders)
+					}
+					if calls != form.wantCalls {
+						t.Fatalf("downstream calls = %d, want %d", calls, form.wantCalls)
 					}
 					vary := rec.Header().Values("Vary")
 					for _, field := range []string{"Origin", "Access-Control-Request-Method", requestHeaders} {

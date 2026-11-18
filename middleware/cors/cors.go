@@ -241,7 +241,7 @@ func allowedRequestedHeaders(requestHeaders string, allowedHeaders []string) ([]
 
 func normalizeRequestedHeaders(requestHeaders string) ([]string, bool) {
 	reqs := strings.Split(requestHeaders, ",")
-	allowed := make([]string, 0, len(reqs))
+	allowed := reqs[:0]
 	for _, h := range reqs {
 		h = strings.TrimSpace(h)
 		if h == "" {

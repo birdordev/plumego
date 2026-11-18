@@ -162,7 +162,8 @@ func (b *BaseMetricsCollector) ObserveHTTP(ctx context.Context, method, path str
 	}
 }
 
-// GetStats returns current statistics
+// GetStats returns a snapshot of the current statistics.
+// NameBreakdown is a non-nil, writable map owned by the caller.
 func (b *BaseMetricsCollector) GetStats() CollectorStats {
 	if b == nil {
 		return emptyCollectorStats()

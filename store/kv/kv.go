@@ -303,12 +303,26 @@ func (kv *KVStore) snapshotKeys(ctx context.Context) ([]string, error) {
 	}
 
 	now := time.Now()
-	keys := make([]string, 0, len(kv.data))
+	// Keep small snapshots independent of the number of expired entries.
+	var inline [32]string
+	small := inline[:0]
+	var keys []string
 	for key, item := range kv.data {
 		if kv.isExpired(item, now) {
 			continue
 		}
+		if keys == nil {
+			if len(small) < cap(small) {
+				small = append(small, key)
+				continue
+			}
+			keys = make([]string, len(small), len(kv.data))
+			copy(keys, small)
+		}
 		keys = append(keys, key)
+	}
+	if keys == nil {
+		return append([]string{}, small...), nil
 	}
 	return keys, nil
 }
