@@ -79,3 +79,35 @@ func TestSPAFallbackVariesByAccept(t *testing.T) {
 		}
 	}
 }
+
+func TestSPAFallbackReadsAllAcceptLines(t *testing.T) {
+	root := t.TempDir()
+	writeTestFile(t, root, "index.html", "index")
+	h, err := NewHandlerFS(http.Dir(root), WithFallback(true))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		lines  []string
+		status int
+	}{
+		{[]string{"application/json", "text/html"}, 200},
+		{[]string{"application/json, text/html"}, 200},
+		{[]string{"", "  "}, 200},
+		{[]string{"application/json", "text/html;q=0"}, 404},
+	} {
+		for _, method := range []string{http.MethodGet, http.MethodHead} {
+			req := httptest.NewRequest(method, "/route", nil)
+			for _, line := range tc.lines {
+				req.Header.Add("Accept", line)
+			}
+			rec := httptest.NewRecorder()
+			rec.Header().Set("Vary", "Origin")
+			h.ServeHTTP(rec, req)
+			if rec.Code != tc.status || !slices.Contains(rec.Header().Values("Vary"), "Accept") ||
+				!slices.Contains(rec.Header().Values("Vary"), "Origin") {
+				t.Errorf("%s %q: status=%d Vary=%v", method, tc.lines, rec.Code, rec.Header().Values("Vary"))
+			}
+		}
+	}
+}

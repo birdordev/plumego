@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/birdordev/plumego/store/db"
@@ -28,9 +29,9 @@ func NewSQLBuilder(table string, idColumn string) *SQLBuilder {
 	}
 }
 
-// WithColumns sets the columns to select.
+// WithColumns sets the columns to select and keeps its own copy.
 func (b *SQLBuilder) WithColumns(columns ...string) *SQLBuilder {
-	b.columns = columns
+	b.columns = slices.Clone(columns)
 	return b
 }
 

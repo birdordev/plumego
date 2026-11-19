@@ -644,35 +644,39 @@ func TestHandler_List_MetadataErrorDoesNotLeak(t *testing.T) {
 }
 
 func TestHandler_GetURL(t *testing.T) {
-	storage := &mockStorage{
-		getURLFunc: func(ctx context.Context, path string, expiry time.Duration) (string, error) {
-			return "https://example.com/presigned-url", nil
-		},
-	}
-	metadata := &mockMetadataManager{
-		getFunc: func(ctx context.Context, tenantID, id string) (*datafile.File, error) {
-			return &datafile.File{File: storefile.File{ID: id, Path: "test/path.txt"}, TenantID: "tenant-123"}, nil
-		},
-	}
-	h := NewHandler(storage, metadata)
+	for _, tc := range []struct{ query, seconds string }{{"", "900"}, {"?expiry=3600", "3600"}} {
+		t.Run(tc.seconds, func(t *testing.T) {
+			storage := &mockStorage{
+				getURLFunc: func(ctx context.Context, path string, expiry time.Duration) (string, error) {
+					return "https://example.invalid/report?format=json&lang=en", nil
+				},
+			}
+			metadata := &mockMetadataManager{
+				getFunc: func(ctx context.Context, tenantID, id string) (*datafile.File, error) {
+					return &datafile.File{File: storefile.File{ID: id, Path: "test/path.txt"}, TenantID: "tenant-123"}, nil
+				},
+			}
+			h := NewHandler(storage, metadata)
 
-	req := httptest.NewRequest(http.MethodGet, "/files/test-id/url?expiry=3600", nil)
-	req = withRouteParam(req, "id", "test-id")
-	ctx := tenantcore.WithTenantID(req.Context(), "tenant-123")
-	req = req.WithContext(ctx)
-	w := httptest.NewRecorder()
-	h.GetURL(w, req)
+			req := httptest.NewRequest(http.MethodGet, "/files/test-id/url"+tc.query, nil)
+			req = withRouteParam(req, "id", "test-id")
+			ctx := tenantcore.WithTenantID(req.Context(), "tenant-123")
+			req = req.WithContext(ctx)
+			w := httptest.NewRecorder()
+			h.GetURL(w, req)
 
-	if w.Code != http.StatusOK {
-		t.Errorf("Status = %d, want %d", w.Code, http.StatusOK)
-	}
+			if w.Code != http.StatusOK {
+				t.Errorf("Status = %d, want %d", w.Code, http.StatusOK)
+			}
 
-	result := decodeResponseData[map[string]string](t, w)
-	if result["url"] != "https://example.com/presigned-url" {
-		t.Errorf("URL = %q", result["url"])
-	}
-	if result["expires_in"] != "3600" {
-		t.Errorf("ExpiresIn = %q, want 3600", result["expires_in"])
+			result := decodeResponseData[map[string]string](t, w)
+			if result["url"] != "https://example.invalid/report?format=json&lang=en" {
+				t.Errorf("URL = %q", result["url"])
+			}
+			if result["expires_in"] != tc.seconds {
+				t.Errorf("ExpiresIn = %q, want 3600", result["expires_in"])
+			}
+		})
 	}
 }
 

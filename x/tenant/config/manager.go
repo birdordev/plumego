@@ -7,6 +7,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
+	"slices"
 	"sync"
 	"time"
 
@@ -26,7 +28,8 @@ type DBTenantConfigManager struct {
 // DBTenantConfigOption configures DBTenantConfigManager.
 type DBTenantConfigOption func(*DBTenantConfigManager)
 
-// WithTenantCache enables LRU caching with specified capacity and TTL.
+// WithTenantCache enables LRU caching with the specified capacity and TTL.
+// The cache holds its own snapshots of tenant configurations.
 func WithTenantCache(size int, ttl time.Duration) DBTenantConfigOption {
 	return func(m *DBTenantConfigManager) {
 		m.cache = newTenantCache(size, ttl)
@@ -267,12 +270,13 @@ func (c *tenantCache) Get(tenantID string) (tenant.Config, bool) {
 
 	// Move to front (mark as most recently used).
 	c.lru.MoveToFront(elem)
-	return entry.config, true
+	return cloneTenantConfig(entry.config), true
 }
 
 // Set stores or updates a config in the cache.
 // If the cache is at capacity, the least-recently-used entry is evicted first.
 func (c *tenantCache) Set(tenantID string, config tenant.Config) {
+	config = cloneTenantConfig(config)
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -297,6 +301,16 @@ func (c *tenantCache) Set(tenantID string, config tenant.Config) {
 	}
 	elem := c.lru.PushFront(e)
 	c.entries[tenantID] = elem
+}
+
+func cloneTenantConfig(cfg tenant.Config) tenant.Config {
+	cfg.Metadata = maps.Clone(cfg.Metadata)
+	cfg.Quota.Limits = slices.Clone(cfg.Quota.Limits)
+	cfg.Policy.AllowedModels = slices.Clone(cfg.Policy.AllowedModels)
+	cfg.Policy.AllowedTools = slices.Clone(cfg.Policy.AllowedTools)
+	cfg.Policy.AllowedMethods = slices.Clone(cfg.Policy.AllowedMethods)
+	cfg.Policy.AllowedPaths = slices.Clone(cfg.Policy.AllowedPaths)
+	return cfg
 }
 
 // Delete removes a tenant entry from the cache.

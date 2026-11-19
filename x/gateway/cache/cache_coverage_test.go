@@ -471,3 +471,25 @@ func TestStatsHelper(t *testing.T) {
 		t.Fatalf("expected 0 items, got %d", s.Items)
 	}
 }
+
+func TestMemoryStoreResizeNonPositive(t *testing.T) {
+	for _, capacity := range []int{0, -1} {
+		for _, populated := range []bool{false, true} {
+			store := NewMemoryStore(2)
+			resp := &CachedResponse{ExpiresAt: time.Now().Add(time.Hour), Size: 1}
+			if populated {
+				store.Set("existing", resp, time.Hour)
+			}
+			store.Resize(capacity)
+			store.Set("discard", resp, time.Hour)
+			if stats := store.Stats(); stats.Items != 0 || stats.Size != 0 {
+				t.Fatalf("capacity=%d populated=%t: %+v", capacity, populated, stats)
+			}
+			store.Resize(1)
+			store.Set("new", resp, time.Hour)
+			if _, ok := store.Get("new"); !ok {
+				t.Fatal("cache did not resume after resize")
+			}
+		}
+	}
+}

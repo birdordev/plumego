@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 )
 
 var errWriterNil = errors.New("openapi: writer is nil")
@@ -84,7 +85,16 @@ func writeYAMLMap(buf *bytes.Buffer, value map[string]any, indent int) {
 
 	for _, key := range keys {
 		writeIndent(buf, indent)
-		buf.WriteString(formatYAMLKey(key))
+		encoded := formatYAMLKey(key)
+		// Implicit YAML keys are limited to 1024 characters.
+		if len(encoded) > 1024 && utf8.RuneCountInString(encoded) > 1024 {
+			buf.WriteString("? ")
+			buf.WriteString(encoded)
+			buf.WriteByte('\n')
+			writeIndent(buf, indent)
+		} else {
+			buf.WriteString(encoded)
+		}
 		child := value[key]
 		if isYAMLScalar(child) {
 			buf.WriteString(": ")

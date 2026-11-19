@@ -231,3 +231,16 @@ func TestYAMLMapKeysPreserveStringType(t *testing.T) {
 		}
 	}
 }
+
+func TestYAMLExplicitLongMappingKeys(t *testing.T) {
+	short := strings.Repeat("a", 1024)
+	long := strings.Repeat("b", 1025)
+	var out bytes.Buffer
+	writeYAMLValue(&out, map[string]any{"inner": map[string]any{
+		short: 7.0, long: "scalar", long + "map": map[string]any{"label": "value"},
+	}}, 0)
+	want := "inner:\n  " + short + ": 7\n  ? " + long + "\n  : \"scalar\"\n  ? " + long + "map\n  :\n    label: \"value\"\n"
+	if out.String() != want {
+		t.Fatal("unexpected short or explicit long key formatting")
+	}
+}

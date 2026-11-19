@@ -41,7 +41,7 @@ func (m *MemoryBackend) Name() string {
 	return "memory"
 }
 
-// Add adds a vector entry to the store.
+// Add adds or replaces a vector entry. Replacing an ID uses its existing slot.
 func (m *MemoryBackend) Add(ctx context.Context, entry *Entry) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -52,7 +52,7 @@ func (m *MemoryBackend) Add(ctx context.Context, entry *Entry) error {
 	}
 
 	// Check size limit
-	if m.maxSize > 0 && len(m.entries) >= m.maxSize {
+	if _, exists := m.entries[entry.ID]; !exists && m.maxSize > 0 && len(m.entries) >= m.maxSize {
 		// Evict oldest entry
 		if err := m.evictOldest(); err != nil {
 			return fmt.Errorf("failed to evict entry: %w", err)

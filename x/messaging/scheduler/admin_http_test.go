@@ -297,7 +297,10 @@ func assertErrorCode(t *testing.T, rec *httptest.ResponseRecorder, want string) 
 }
 
 func TestParseJobQuery(t *testing.T) {
-	q := parseJobQuery(nil)
+	q, err := parseJobQueryE(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if q.Group != "" || len(q.Tags) != 0 || len(q.Kinds) != 0 || q.Running != nil ||
 		q.Paused != nil || len(q.States) != 0 || q.OrderBy != "" || q.Ascending || q.Limit != 0 || q.Offset != 0 {
 		t.Fatalf("expected zero JobQuery for nil request, got %+v", q)
@@ -305,10 +308,13 @@ func TestParseJobQuery(t *testing.T) {
 
 	req := httptest.NewRequest(
 		http.MethodGet,
-		"/scheduler/jobs?state=running&state=bogus&group=g1&tag=t1&tag=t2&kind=cron&kind=invalid&running=true&paused=bad&order_by=next_run&asc=false&limit=999999&offset=-1",
+		"/scheduler/jobs?state=running&state=bogus&group=g1&tag=t1&tag=t2&kind=cron&kind=invalid&running=true&paused=bad&order_by=next_run&asc=false&limit=999999&offset=0",
 		nil,
 	)
-	parsed := parseJobQuery(req)
+	parsed, err := parseJobQueryE(req)
+	if err == nil || err.Error() != "paused" {
+		t.Fatalf("error = %v, want paused", err)
+	}
 	if len(parsed.States) != 1 || parsed.States[0] != JobStateRunning {
 		t.Fatalf("expected states [running], got %+v", parsed.States)
 	}
@@ -337,7 +343,7 @@ func TestParseJobQuery(t *testing.T) {
 		t.Fatalf("expected limit capped to 10000, got %d", parsed.Limit)
 	}
 	if parsed.Offset != 0 {
-		t.Fatalf("expected invalid negative offset to be 0, got %d", parsed.Offset)
+		t.Fatalf("expected zero offset, got %d", parsed.Offset)
 	}
 
 	req2 := httptest.NewRequest(
@@ -345,7 +351,10 @@ func TestParseJobQuery(t *testing.T) {
 		"/scheduler/jobs?offset=2000000&limit=12&running=false&paused=true",
 		nil,
 	)
-	parsed2 := parseJobQuery(req2)
+	parsed2, err := parseJobQueryE(req2)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if parsed2.Offset != 1_000_000 {
 		t.Fatalf("expected offset capped to 1000000, got %d", parsed2.Offset)
 	}
@@ -361,5 +370,30 @@ func TestParseJobQuery(t *testing.T) {
 
 	if _, err := parseJobQueryE(httptest.NewRequest(http.MethodGet, "/scheduler/jobs?running=bad", nil)); err == nil || err.Error() != "running" {
 		t.Fatalf("expected running bool parse error, got %v", err)
+	}
+}
+
+func TestAdminHandlerPaginationInput(t *testing.T) {
+	h := NewAdminHandler(New())
+	for _, tc := range []struct {
+		query  string
+		status int
+	}{
+		{"", http.StatusOK},
+		{"?limit=0&offset=0", http.StatusOK},
+		{"?limit=10001&offset=1000001", http.StatusOK},
+		{"?limit=wrong", http.StatusBadRequest},
+		{"?limit=-1", http.StatusBadRequest},
+		{"?offset=-1", http.StatusBadRequest},
+		{"?offset=99999999999999999999999", http.StatusBadRequest},
+	} {
+		rec := doAdminReq(h, http.MethodGet, "/scheduler/jobs"+tc.query)
+		if rec.Code != tc.status {
+			t.Errorf("%s: status=%d, want %d", tc.query, rec.Code, tc.status)
+			continue
+		}
+		if tc.status == http.StatusBadRequest {
+			assertErrorCode(t, rec, contract.CodeInvalidQuery)
+		}
 	}
 }

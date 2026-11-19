@@ -10,7 +10,6 @@ package fileapi
 import (
 	"errors"
 	"fmt"
-	"html"
 	"io"
 	"math"
 	"mime/multipart"
@@ -361,7 +360,7 @@ func (h *Handler) GetURL(w http.ResponseWriter, r *http.Request) {
 	}
 
 	_ = contract.WriteResponse(w, r, http.StatusOK, urlResponse{
-		URL:       html.EscapeString(fileURL),
+		URL:       fileURL,
 		ExpiresIn: strconv.Itoa(int(expiry.Seconds())),
 	}, nil)
 }

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"sync"
 	"testing"
 	"time"
 )
@@ -421,3 +422,25 @@ type mockAddr struct{}
 
 func (m *mockAddr) Network() string { return "tcp" }
 func (m *mockAddr) String() string  { return "127.0.0.1:0" }
+
+func TestConcurrentHeartbeatUpdatesPreserveTimingOrder(t *testing.T) {
+	for range 200 {
+		c := new(Conn)
+		if err := c.SetPingPeriod(time.Second); err != nil {
+			t.Fatal(err)
+		}
+		if err := c.SetPongWait(5 * time.Second); err != nil {
+			t.Fatal(err)
+		}
+		var pingErr, pongErr error
+		start := make(chan struct{})
+		var wg sync.WaitGroup
+		wg.Go(func() { <-start; pingErr = c.SetPingPeriod(4 * time.Second) })
+		wg.Go(func() { <-start; pongErr = c.SetPongWait(3 * time.Second) })
+		close(start)
+		wg.Wait()
+		if (pingErr == nil) == (pongErr == nil) || c.pingPeriod.Load() >= c.pongWait.Load() {
+			t.Fatalf("ping=%v pong=%v setter results=%v, %v", time.Duration(c.pingPeriod.Load()), time.Duration(c.pongWait.Load()), pingErr, pongErr)
+		}
+	}
+}

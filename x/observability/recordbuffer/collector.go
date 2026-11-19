@@ -41,7 +41,9 @@ func (c *Collector) WithMaxRecords(max int) *Collector {
 
 	c.maxRecords = max
 	if len(c.records) > max {
-		c.records = c.records[len(c.records)-max:]
+		cutoff := len(c.records) - max
+		clear(c.records[:cutoff])
+		c.records = c.records[cutoff:]
 	}
 	return c
 }
@@ -51,8 +53,6 @@ func (c *Collector) Record(ctx context.Context, record metrics.MetricRecord) {
 	if c == nil {
 		return
 	}
-
-	c.base.Record(ctx, record)
 
 	if record.Timestamp.IsZero() {
 		record.Timestamp = time.Now()
@@ -64,7 +64,9 @@ func (c *Collector) Record(ctx context.Context, record metrics.MetricRecord) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
+	c.base.Record(ctx, record)
 	if c.maxRecords > 0 && len(c.records) >= c.maxRecords {
+		c.records[0] = metrics.MetricRecord{}
 		c.records = c.records[1:]
 	}
 	c.records = append(c.records, record)
@@ -78,23 +80,25 @@ func (c *Collector) ObserveHTTP(ctx context.Context, method, path string, status
 	c.Record(ctx, metrics.NewHTTPRecord(method, path, status, duration))
 }
 
-// GetStats returns aggregated collector stats.
+// GetStats returns an aggregate snapshot independent of any GetRecords call.
 func (c *Collector) GetStats() metrics.CollectorStats {
 	if c == nil {
 		return metrics.CollectorStats{}
 	}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
 	return c.base.GetStats()
 }
 
-// Clear resets buffered records and aggregated stats.
+// Clear resets buffered records and aggregated stats as one operation.
 func (c *Collector) Clear() {
 	if c == nil {
 		return
 	}
-	c.base.Clear()
-
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	c.base.Clear()
+	clear(c.records)
 	c.records = c.records[:0]
 }
 

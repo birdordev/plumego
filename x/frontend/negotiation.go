@@ -51,8 +51,18 @@ func varyOnAccept(header http.Header) {
 }
 
 func acceptsIndex(r *http.Request) bool {
-	accept := strings.TrimSpace(r.Header.Get("Accept"))
-	return accept == "" || acceptsHTML(accept)
+	hasAcceptedTypes := false
+	for _, line := range r.Header.Values("Accept") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		hasAcceptedTypes = true
+		if acceptsHTML(line) {
+			return true
+		}
+	}
+	return !hasAcceptedTypes
 }
 
 func acceptsHTML(header string) bool {

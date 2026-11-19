@@ -63,8 +63,10 @@ if err := srv.GracefulStop(shutdownCtx); err != nil {
 }
 ```
 
-`GracefulStop` waits for in-flight RPCs to finish. If the context deadline
-passes first, it calls `Stop()` to force-close and returns the context error.
+`GracefulStop` starts one shared shutdown. Each caller waits with its own
+context. Cancellation while waiting requests a single background `Stop()`
+and returns the context error. The runtime must allow `Stop()` to run
+concurrently and cause its graceful shutdown to finish.
 
 ---
 

@@ -32,6 +32,9 @@ func TestRegisterServeGracefulStop(t *testing.T) {
 	if err := <-errs; err != nil {
 		t.Fatalf("Serve() error = %v", err)
 	}
+	if err := srv.GracefulStop(stopCtx); err != nil {
+		t.Fatalf("repeated GracefulStop() error = %v", err)
+	}
 	if !runtime.graceful {
 		t.Fatal("expected runtime.GracefulStop to be called")
 	}
@@ -85,5 +88,55 @@ func (r *fakeRuntime) Stop() {
 	r.stopped = true
 	if r.serveDone != nil {
 		close(r.serveDone)
+	}
+}
+
+type blockedShutdownRuntime struct {
+	fakeRuntime
+	gracefulStarted chan struct{}
+	forcedStarted   chan struct{}
+	release         chan struct{}
+}
+
+func (r *blockedShutdownRuntime) GracefulStop() {
+	close(r.gracefulStarted)
+	<-r.release
+}
+
+func (r *blockedShutdownRuntime) Stop() {
+	close(r.forcedStarted)
+	<-r.release
+}
+
+func TestShutdownWaitersOwnTheirDeadline(t *testing.T) {
+	runtime := &blockedShutdownRuntime{
+		gracefulStarted: make(chan struct{}),
+		forcedStarted:   make(chan struct{}),
+		release:         make(chan struct{}),
+	}
+	defer close(runtime.release)
+	srv := New(runtime)
+	results := make(chan error, 2)
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	for range 2 {
+		go func() { results <- srv.GracefulStop(ctx) }()
+	}
+	<-runtime.gracefulStarted
+	cancel()
+	for range 2 {
+		select {
+		case err := <-results:
+			if !errors.Is(err, context.Canceled) {
+				t.Errorf("GracefulStop = %v, want canceled", err)
+			}
+		case <-time.After(time.Second):
+			t.Fatal("GracefulStop waited for the runtime callback")
+		}
+	}
+	select {
+	case <-runtime.forcedStarted:
+	case <-time.After(time.Second):
+		t.Fatal("Stop was not called")
 	}
 }

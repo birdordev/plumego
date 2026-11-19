@@ -85,3 +85,7 @@ limit plus 1 MiB for form fields and framing. Exceeding either limit returns
 HTTP 413.
 
 Successful tenant-authorized downloads use `Cache-Control: private, no-store`.
+
+`Handler.GetURL` returns the storage provider's URL as a JSON string.
+Decode the JSON response normally to obtain the full URL, including any
+query separators.

@@ -279,3 +279,22 @@ func TestRepositoryScanRowRejectsNilPointer(t *testing.T) {
 		}
 	}
 }
+
+func TestSQLBuilderOwnsColumns(t *testing.T) {
+	columns := []string{"id", "title"}
+	b := NewSQLBuilder("items", "id").WithColumns(columns...)
+	columns[1] = "description"
+	params := &QueryParams{Search: "test"}
+	query, _ := b.BuildSelectQuery(params)
+	if query != "SELECT id, title FROM items WHERE (id LIKE ? OR title LIKE ?)" {
+		t.Errorf("select = %q", query)
+	}
+	query, _ = b.BuildCountQuery(params)
+	if query != "SELECT COUNT(*) FROM items WHERE (id LIKE ? OR title LIKE ?)" {
+		t.Errorf("count = %q", query)
+	}
+	query, _ = b.WithColumns(columns...).BuildSelectQuery(params)
+	if query != "SELECT id, description FROM items WHERE (id LIKE ? OR description LIKE ?)" {
+		t.Errorf("updated query = %q", query)
+	}
+}

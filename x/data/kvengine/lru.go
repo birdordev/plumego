@@ -8,14 +8,14 @@ func (kv *KVStore) moveToFront(shard *Shard, entry *Entry) {
 		return
 	}
 
-	// Remove from current position
-	if prev := shard.prev[entry]; prev != nil {
+	// Only linked entries have a predecessor entry in the index.
+	if prev, linked := shard.prev[entry]; linked {
 		shard.next[prev] = shard.next[entry]
-	}
-	if next := shard.next[entry]; next != nil {
-		shard.prev[next] = shard.prev[entry]
-	} else {
-		shard.lruTail = shard.prev[entry]
+		if next := shard.next[entry]; next != nil {
+			shard.prev[next] = prev
+		} else {
+			shard.lruTail = prev
+		}
 	}
 
 	// Add to front
@@ -30,23 +30,17 @@ func (kv *KVStore) moveToFront(shard *Shard, entry *Entry) {
 	}
 }
 
-func (kv *KVStore) evictLRU(shard *Shard) {
-	if shard.lruTail == nil {
-		return
-	}
-
-	entry := shard.lruTail
-	kv.deleteFromShard(shard, entry.Key, entry)
-	// No need to log to WAL - LRU evictions are a cache management strategy
-
-	atomic.AddInt64(&kv.evictions, 1)
-}
-
 func (kv *KVStore) evictOneLRUSkip(skipKey string) bool {
 	for _, shard := range kv.shards {
 		shard.mu.Lock()
-		if shard.lruTail != nil && shard.lruTail.Key != skipKey {
-			kv.evictLRU(shard)
+		victim := shard.lruTail
+		if victim != nil && victim.Key == skipKey {
+			victim = shard.prev[victim]
+		}
+		if victim != nil {
+			kv.deleteFromShard(shard, victim.Key, victim)
+			// LRU eviction is a cache operation, so it does not write to the WAL.
+			atomic.AddInt64(&kv.evictions, 1)
 			shard.mu.Unlock()
 			return true
 		}

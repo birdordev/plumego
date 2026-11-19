@@ -162,11 +162,12 @@ type Conn struct {
 	closed    atomic.Int32
 	closeC    chan struct{}
 
-	readLimit  atomic.Int64
-	writeWait  atomic.Int64
-	pingPeriod atomic.Int64 // stores time.Duration as int64 nanoseconds
-	pongWait   atomic.Int64 // stores time.Duration as int64 nanoseconds
-	lastPong   atomic.Int64
+	heartbeatMu sync.Mutex // serializes validation and updates of heartbeat settings
+	readLimit   atomic.Int64
+	writeWait   atomic.Int64
+	pingPeriod  atomic.Int64 // stores time.Duration as int64 nanoseconds
+	pongWait    atomic.Int64 // stores time.Duration as int64 nanoseconds
+	lastPong    atomic.Int64
 
 	// User information (set after authentication)
 	UserInfo *UserInfo
@@ -277,11 +278,14 @@ func (c *Conn) SetReadLimit(limit int64) error {
 	return nil
 }
 
-// SetPingPeriod sets the ping interval.
+// SetPingPeriod sets the ping interval, which must be less than the pong wait.
 func (c *Conn) SetPingPeriod(d time.Duration) error {
 	if d <= 0 {
 		return ErrInvalidPingPeriod
 	}
+	c.heartbeatMu.Lock()
+	defer c.heartbeatMu.Unlock()
+
 	if d >= positiveDurationOrDefault(c.pongWait.Load(), defaultPongWait) {
 		return ErrInvalidPingPeriod
 	}
@@ -289,11 +293,14 @@ func (c *Conn) SetPingPeriod(d time.Duration) error {
 	return nil
 }
 
-// SetPongWait sets the pong wait time.
+// SetPongWait sets the pong wait time, which must exceed the ping interval.
 func (c *Conn) SetPongWait(d time.Duration) error {
 	if d <= 0 {
 		return ErrInvalidPongWait
 	}
+	c.heartbeatMu.Lock()
+	defer c.heartbeatMu.Unlock()
+
 	if d <= positiveDurationOrDefault(c.pingPeriod.Load(), defaultPingPeriod) {
 		return ErrInvalidPongWait
 	}

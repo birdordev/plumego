@@ -6,11 +6,14 @@ import (
 	"context"
 	"errors"
 	"net"
+	"sync"
 )
 
 var ErrRuntimeNil = errors.New("rpc server runtime is nil")
 
 // Runtime is the dependency-free lifecycle surface required by Server.
+// Stop must be safe to call concurrently with GracefulStop and must make the
+// graceful shutdown return.
 type Runtime interface {
 	RegisterService(desc any, impl any) error
 	Serve(net.Listener) error
@@ -19,11 +22,21 @@ type Runtime interface {
 }
 
 type Server struct {
-	runtime Runtime
+	runtime  Runtime
+	shutdown *shutdownState
+}
+
+type shutdownState struct {
+	start sync.Once
+	force sync.Once
+	done  chan struct{}
 }
 
 func New(runtime Runtime) *Server {
-	return &Server{runtime: runtime}
+	return &Server{
+		runtime:  runtime,
+		shutdown: &shutdownState{done: make(chan struct{})},
+	}
 }
 
 func (s *Server) RegisterService(desc any, impl any) error {
@@ -40,28 +53,35 @@ func (s *Server) Serve(lis net.Listener) error {
 	return s.runtime.Serve(lis)
 }
 
+// GracefulStop starts shutdown once and waits for it to finish or for ctx to
+// be canceled. Cancellation while waiting initiates one background Stop.
 func (s *Server) GracefulStop(ctx context.Context) error {
 	if s == nil || s.runtime == nil {
 		return ErrRuntimeNil
 	}
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	default:
+	if err := ctx.Err(); err != nil {
+		return err
 	}
 
-	done := make(chan struct{})
-	go func() {
-		s.runtime.GracefulStop()
-		close(done)
-	}()
+	shutdown := s.shutdown
+	shutdown.start.Do(func() {
+		go func() {
+			s.runtime.GracefulStop()
+			close(shutdown.done)
+		}()
+	})
 
 	select {
-	case <-done:
+	case <-shutdown.done:
 		return nil
 	case <-ctx.Done():
-		s.runtime.Stop()
-		<-done
+		shutdown.force.Do(func() {
+			select {
+			case <-shutdown.done:
+			default:
+				go s.runtime.Stop()
+			}
+		})
 		return ctx.Err()
 	}
 }

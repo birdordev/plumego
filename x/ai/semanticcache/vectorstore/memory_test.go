@@ -297,3 +297,37 @@ func BenchmarkMemoryBackend_Search(b *testing.B) {
 		_, _ = backend.Search(ctx, query, 10, 0.8)
 	}
 }
+
+func TestMemoryBackendReplacementKeepsOtherEntries(t *testing.T) {
+	for _, id := range []string{"old", "new"} {
+		t.Run(id, func(t *testing.T) {
+			ctx := t.Context()
+			m := NewMemoryBackend(MemoryConfig{Dimensions: 1, MaxSize: 2})
+			base := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
+			for _, e := range []*Entry{{ID: "old", Vector: []float64{1}, CreatedAt: base}, {ID: "new", Vector: []float64{1}, CreatedAt: base.Add(time.Hour)}, {ID: id, Vector: []float64{2}}} {
+				if err := m.Add(ctx, e); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if n, _ := m.Count(ctx); n != 2 {
+				t.Fatalf("count after replacement = %d", n)
+			}
+			got, err := m.Get(ctx, id)
+			if err != nil || got.Vector[0] != 2 {
+				t.Fatalf("replacement = %v, %v", got, err)
+			}
+			if err := m.Add(ctx, &Entry{ID: "invalid", Vector: []float64{1, 2}}); err == nil {
+				t.Fatal("accepted invalid dimensions")
+			}
+			if n, _ := m.Count(ctx); n != 2 {
+				t.Fatalf("count after rejected entry = %d", n)
+			}
+			if err := m.Add(ctx, &Entry{ID: "fresh", Vector: []float64{1}}); err != nil {
+				t.Fatal(err)
+			}
+			if n, _ := m.Count(ctx); n != 2 {
+				t.Fatalf("count after insertion = %d", n)
+			}
+		})
+	}
+}

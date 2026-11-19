@@ -2737,3 +2737,86 @@ func TestCleanExpiredLowPercentage(t *testing.T) {
 		t.Errorf("Expected some cleanup, initial=%d final=%d", initialSize, finalSize)
 	}
 }
+
+func TestCapacityEvictsLeastRecentlyUsed(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		refresh     bool
+		wantMissing string
+	}{
+		{"insertion order", false, "a"},
+		{"access refresh", true, "b"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			kv, err := NewKVStore(Options{DataDir: t.TempDir(), ShardCount: 1, MaxEntries: 2})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer kv.Close()
+			for _, key := range []string{"a", "b"} {
+				if err := kv.Set(key, []byte(key), 0); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if tc.refresh {
+				if _, err := kv.Get("a"); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := kv.Set("c", []byte("c"), 0); err != nil {
+				t.Fatal(err)
+			}
+			if kv.Exists(tc.wantMissing) || !kv.Exists("c") || kv.Size() != 2 {
+				t.Fatalf("keys=%v; want %q evicted and c retained", kv.Keys(), tc.wantMissing)
+			}
+		})
+	}
+}
+
+func TestReplaceTailCanEvictItsPredecessor(t *testing.T) {
+	opts := Options{DataDir: t.TempDir(), ShardCount: 1, MaxMemoryMB: 1}
+	kv, err := NewKVStore(opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer kv.Close()
+	for _, key := range []string{"a", "b"} {
+		if err := kv.Set(key, make([]byte, 350*1024), 0); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := kv.Set("a", make([]byte, 800*1024), 0); err != nil {
+		t.Fatal(err)
+	}
+	if !kv.Exists("a") || kv.Exists("b") || kv.Size() != 1 {
+		t.Fatalf("unexpected keys %v", kv.Keys())
+	}
+}
+
+func TestReplayRestoresLRUInsertionOrder(t *testing.T) {
+	opts := Options{DataDir: t.TempDir(), ShardCount: 1, MaxEntries: 2}
+	kv, err := NewKVStore(opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = kv.Close() })
+	for _, key := range []string{"a", "b"} {
+		if err := kv.Set(key, []byte(key), 0); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := kv.Close(); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := NewKVStore(opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopened.Close()
+	if err := reopened.Set("c", []byte("c"), 0); err != nil {
+		t.Fatal(err)
+	}
+	if reopened.Exists("a") || !reopened.Exists("b") || !reopened.Exists("c") || reopened.Size() != 2 {
+		t.Fatalf("keys after replay and eviction: %v", reopened.Keys())
+	}
+}

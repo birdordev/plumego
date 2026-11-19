@@ -1,7 +1,10 @@
 package config
 
 import (
+	"context"
 	"database/sql"
+	"database/sql/driver"
+	"io"
 	"testing"
 	"time"
 
@@ -367,5 +370,63 @@ func TestDBTenantConfigManager_CacheHit(t *testing.T) {
 	}
 	if len(got.Quota.Limits) == 0 || got.Quota.Limits[0].Requests != 50 {
 		t.Errorf("expected 50 requests/min, got %+v", got.Quota.Limits)
+	}
+}
+
+type snapshotConnector struct {
+	driver.Connector
+	queries int
+}
+
+func (c *snapshotConnector) Connect(context.Context) (driver.Conn, error) {
+	return &snapshotConn{connector: c}, nil
+}
+
+type snapshotConn struct {
+	driver.Conn
+	connector *snapshotConnector
+}
+
+func (*snapshotConn) Close() error { return nil }
+
+func (c *snapshotConn) QueryContext(context.Context, string, []driver.NamedValue) (driver.Rows, error) {
+	c.connector.queries++
+	return &snapshotRows{}, nil
+}
+
+type snapshotRows struct{ read bool }
+
+func (*snapshotRows) Columns() []string {
+	return []string{"id", "quota_limits", "allowed_models", "allowed_tools", "allowed_methods", "allowed_paths", "metadata", "updated_at"}
+}
+func (*snapshotRows) Close() error { return nil }
+func (r *snapshotRows) Next(dest []driver.Value) error {
+	if r.read {
+		return io.EOF
+	}
+	r.read = true
+	copy(dest, []driver.Value{"sample", nil, `["model"]`, nil, nil, nil, `{"region":"original"}`, time.Unix(1, 0)})
+	return nil
+}
+
+func TestManagerCacheIsolatesReturnedSnapshots(t *testing.T) {
+	connector := &snapshotConnector{}
+	db := sql.OpenDB(connector)
+	defer db.Close()
+	m := NewDBTenantConfigManager(db, WithTenantCache(2, time.Minute))
+	for range 3 {
+		cfg, err := m.GetTenantConfig(t.Context(), "sample")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if cfg.Metadata["region"] != "original" || len(cfg.Policy.AllowedModels) != 1 ||
+			cfg.Policy.AllowedModels[0] != "model" || cfg.Policy.AllowedTools != nil || cfg.Quota.Limits != nil {
+			t.Fatalf("unexpected config: %+v", cfg)
+		}
+		cfg.Metadata["region"] = "changed"
+		cfg.Policy.AllowedModels[0] = "changed"
+	}
+	if connector.queries != 1 {
+		t.Fatalf("queried database %d times", connector.queries)
 	}
 }

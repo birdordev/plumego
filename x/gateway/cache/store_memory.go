@@ -176,13 +176,13 @@ func (s *MemoryStore) CleanupExpired() int {
 	return removed
 }
 
-// Resize changes the capacity of the cache
-// Evicts entries if new capacity is smaller
+// Resize changes the cache capacity and evicts excess entries.
+// A non-positive capacity clears the cache and disables retention.
 func (s *MemoryStore) Resize(newCapacity int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	s.capacity = newCapacity
+	s.capacity = max(0, newCapacity)
 
 	// Evict entries if over capacity
 	for s.lruList.Len() > s.capacity {

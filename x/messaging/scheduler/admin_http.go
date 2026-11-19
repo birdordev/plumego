@@ -255,7 +255,7 @@ func (h *AdminHandler) handleBulkAction(w http.ResponseWriter, r *http.Request, 
 	_ = contract.WriteResponse(w, r, http.StatusOK, adminBulkActionResponse{Affected: n}, nil)
 }
 
-// parseJobQuery builds a JobQuery from URL query parameters.
+// parseJobQueryE builds a JobQuery from URL query parameters.
 // Supported parameters:
 //
 //	state=running&state=failed  — filter by job state (repeatable)
@@ -268,11 +268,8 @@ func (h *AdminHandler) handleBulkAction(w http.ResponseWriter, r *http.Request, 
 //	asc=false                   — sort direction (default true)
 //	limit=50                    — max results
 //	offset=0                    — pagination offset
-func parseJobQuery(r *http.Request) JobQuery {
-	q, _ := parseJobQueryE(r)
-	return q
-}
-
+//
+// Invalid or negative pagination values return a field error.
 func parseJobQueryE(r *http.Request) (JobQuery, error) {
 	var q JobQuery
 	if r == nil {
@@ -286,11 +283,14 @@ func parseJobQueryE(r *http.Request) (JobQuery, error) {
 	q.Kinds = parseJobKinds(values["kind"])
 	q.OrderBy = values.Get("order_by")
 	q.Ascending = true
-	q.Limit = parseOptionalBoundedInt(values.Get("limit"), 10_000)
-	q.Offset = parseOptionalBoundedInt(values.Get("offset"), 1_000_000)
-
 	var firstErr error
 	var err error
+	if q.Limit, err = parseOptionalBoundedInt(values.Get("limit"), "limit", 10_000); err != nil {
+		firstErr = err
+	}
+	if q.Offset, err = parseOptionalBoundedInt(values.Get("offset"), "offset", 1_000_000); err != nil && firstErr == nil {
+		firstErr = err
+	}
 	if q.Running, err = parseOptionalBoolE(values.Get("running"), "running"); err != nil && firstErr == nil {
 		firstErr = err
 	}
@@ -343,18 +343,15 @@ func parseOptionalBoolE(value, field string) (*bool, error) {
 	return &b, nil
 }
 
-func parseOptionalBoundedInt(value string, max int) int {
+func parseOptionalBoundedInt(value, field string, max int) (int, error) {
 	if value == "" {
-		return 0
+		return 0, nil
 	}
 	n, err := strconv.Atoi(value)
 	if err != nil || n < 0 {
-		return 0
+		return 0, errors.New(field)
 	}
-	if n > max {
-		return max
-	}
-	return n
+	return min(n, max), nil
 }
 
 func parseJobState(value string) JobState {

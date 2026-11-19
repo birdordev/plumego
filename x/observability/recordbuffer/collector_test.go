@@ -152,3 +152,20 @@ func TestObserveHTTP_AddsRecord(t *testing.T) {
 		t.Errorf("unexpected status label: %q", got[0].Labels["status"])
 	}
 }
+
+func TestClearAndRecordAgreeAfterConcurrentWrites(t *testing.T) {
+	c := recordbuffer.NewCollector().WithMaxRecords(0)
+	for range 100 {
+		start := make(chan struct{})
+		var wg sync.WaitGroup
+		wg.Go(func() { <-start; c.Record(t.Context(), metrics.NewHTTPRecord("GET", "/items", 200, 0)) })
+		wg.Go(func() { <-start; c.Clear() })
+		close(start)
+		wg.Wait()
+		stats, records := c.GetStats(), c.GetRecords()
+		if stats.TotalRecords != int64(len(records)) {
+			t.Fatalf("aggregate count=%d, buffered records=%d", stats.TotalRecords, len(records))
+		}
+		c.Clear()
+	}
+}
