@@ -707,3 +707,41 @@ func TestIdentityOnlyAssetVariesByAcceptEncoding(t *testing.T) {
 		}
 	}
 }
+
+func TestPrecompressedEncodingFieldLines(t *testing.T) {
+	dir := t.TempDir()
+	writeTestFile(t, dir, "index.html", "index")
+	writeTestFile(t, dir, "app.js", "identity")
+	writeTestFile(t, dir, "app.js.br", "brotli fixture")
+	writeTestFile(t, dir, "app.js.gz", "gzip fixture")
+	handler, err := NewHandlerFS(http.Dir(dir), WithPrecompressed(true))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, tc := range []struct {
+		fields   []string
+		status   int
+		encoding string
+	}{
+		{[]string{"gzip;q=0.2, br;q=0.9"}, http.StatusOK, "br"},
+		{[]string{"gzip;q=0.2", "br;q=0.9"}, http.StatusOK, "br"},
+		{[]string{"", "gzip"}, http.StatusOK, "gzip"},
+		{[]string{"gzip;q=0, identity;q=0"}, http.StatusNotAcceptable, ""},
+		{[]string{"gzip;q=0", "identity;q=0"}, http.StatusNotAcceptable, ""},
+		{[]string{"br;q=0.1", "gzip;q=0.5", "br;q=0.9"}, http.StatusOK, "br"},
+	} {
+		for _, method := range []string{http.MethodGet, http.MethodHead} {
+			req := httptest.NewRequest(method, "/app.js", nil)
+			for _, field := range tc.fields {
+				req.Header.Add("Accept-Encoding", field)
+			}
+			w := httptest.NewRecorder()
+			handler.ServeHTTP(w, req)
+			if w.Code != tc.status || w.Header().Get("Content-Encoding") != tc.encoding ||
+				!slices.Contains(w.Header().Values("Vary"), "Accept-Encoding") {
+				t.Errorf("%s %q: status=%d headers=%v, want %d and encoding %q", method, tc.fields, w.Code, w.Header(), tc.status, tc.encoding)
+			}
+		}
+	}
+}

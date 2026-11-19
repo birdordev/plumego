@@ -112,7 +112,8 @@ func (l *TokenBucketRateLimiter) DeleteTenant(tenantID string) {
 	}
 }
 
-// Allow checks rate limits for a tenant using token bucket algorithm.
+// Allow checks rate limits for a tenant. A new rate for an active bucket
+// takes effect after refilling to the request time at the previous rate.
 func (l *TokenBucketRateLimiter) Allow(ctx context.Context, tenantID string, req RateLimitRequest) (RateLimitResult, error) {
 	if l == nil || l.provider == nil {
 		return RateLimitResult{Allowed: true}, nil
@@ -154,21 +155,16 @@ func (l *TokenBucketRateLimiter) Allow(ctx context.Context, tenantID string, req
 		bucket.tokens = float64(effectiveBurst)
 	}
 
+	// Refill using the configuration that applied throughout the elapsed interval.
+	if elapsed := req.Now.Sub(bucket.last).Seconds(); elapsed > 0 {
+		bucket.tokens = min(float64(bucket.capacity), bucket.tokens+elapsed*float64(bucket.refillRate))
+		bucket.last = req.Now
+	}
+
 	if bucket.capacity != effectiveBurst || bucket.refillRate != cfg.RequestsPerSecond {
 		bucket.capacity = effectiveBurst
 		bucket.refillRate = cfg.RequestsPerSecond
-		if bucket.tokens > float64(bucket.capacity) {
-			bucket.tokens = float64(bucket.capacity)
-		}
-	}
-
-	elapsed := req.Now.Sub(bucket.last).Seconds()
-	if elapsed < 0 {
-		elapsed = 0
-	}
-	if elapsed > 0 && bucket.refillRate > 0 {
-		bucket.tokens = min(float64(bucket.capacity), bucket.tokens+elapsed*float64(bucket.refillRate))
-		bucket.last = req.Now
+		bucket.tokens = min(float64(bucket.capacity), bucket.tokens)
 	}
 
 	allowed := bucket.tokens >= float64(req.Tokens)

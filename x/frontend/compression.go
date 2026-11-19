@@ -12,7 +12,7 @@ import (
 // named encoding token. It compares tokens case-insensitively and rejects tokens
 // with a zero quality factor.
 func acceptsToken(r *http.Request, token string) bool {
-	return acceptedEncodings(r.Header.Get("Accept-Encoding")).quality(token) > 0
+	return acceptedEncodings(r).quality(token) > 0
 }
 
 type encodingPreference struct {
@@ -21,7 +21,9 @@ type encodingPreference struct {
 	wildcard      float64
 }
 
-func acceptedEncodings(header string) encodingPreference {
+func acceptedEncodings(r *http.Request) encodingPreference {
+	// Accept-Encoding is a list, so preserve field order when combining lines.
+	header := strings.Join(r.Header.Values("Accept-Encoding"), ",")
 	pref := encodingPreference{wildcard: -1}
 	if header == "" {
 		return pref
@@ -131,7 +133,7 @@ func (h *handler) localFileExists(filePath string) bool {
 }
 
 func preferredPrecompressedEncodings(r *http.Request) []string {
-	pref := acceptedEncodings(r.Header.Get("Accept-Encoding"))
+	pref := acceptedEncodings(r)
 	brQ := pref.quality("br")
 	gzipQ := pref.quality("gzip")
 	switch {
@@ -159,7 +161,7 @@ func preferredPrecompressedEncodings(r *http.Request) []string {
 }
 
 func identityEncodingAcceptable(r *http.Request) bool {
-	return acceptedEncodings(r.Header.Get("Accept-Encoding")).identityAcceptable()
+	return acceptedEncodings(r).identityAcceptable()
 }
 
 func (v PrecompressedVariants) has(encoding string) bool {

@@ -718,3 +718,120 @@ func BenchmarkOrderedPubSub_Global(b *testing.B) {
 		_ = ops.PublishOrdered("bench.topic", msg, OrderGlobal)
 	}
 }
+
+func TestOrderedPubSubRejectedPublishKeepsSequence(t *testing.T) {
+	cfg := DefaultOrderingConfig()
+	cfg.QueueSize = 1
+	broker := NewOrdered(cfg)
+	defer broker.Close()
+
+	// Control consumption at the queue boundary so the rejection is deterministic.
+	queue := broker.createQueue(cfg.MaxBatchSize)
+	broker.topicQueues["fixture"] = queue
+	publish := func() error {
+		return broker.PublishOrdered("fixture", Message{Data: "sample"}, OrderPerTopic)
+	}
+	if err := publish(); err != nil {
+		t.Fatal(err)
+	}
+	if err := publish(); err == nil {
+		t.Fatal("full queue accepted a message")
+	}
+	if got := (<-queue.ch).sequence; got != 1 {
+		t.Fatalf("first sequence = %d", got)
+	}
+	if err := publish(); err != nil {
+		t.Fatal(err)
+	}
+	if got := (<-queue.ch).sequence; got != 2 {
+		t.Errorf("sequence after rejected publish = %d, want 2", got)
+	}
+}
+
+func TestOrderedPubSubConcurrentAdmissionPreservesSequences(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		level OrderLevel
+	}{
+		{"topic", OrderPerTopic},
+		{"key", OrderPerKey},
+		{"global", OrderGlobal},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			const count = 32
+			cfg := DefaultOrderingConfig()
+			cfg.SequenceCheckEnabled = true
+			broker := NewOrdered(cfg)
+			defer broker.Close()
+			sub, err := broker.SubscribeOrdered("fixture", SubOptions{BufferSize: count})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer sub.Cancel()
+
+			var publishers sync.WaitGroup
+			start := make(chan struct{})
+			for i := range count {
+				publishers.Go(func() {
+					<-start
+					if err := broker.PublishWithKey("fixture", "key", Message{Data: i}, tc.level); err != nil {
+						t.Errorf("publish %d: %v", i, err)
+					}
+					_ = broker.OrderingStats()
+				})
+			}
+			close(start)
+			publishers.Wait()
+
+			ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
+			defer cancel()
+			received := make(map[int]bool, count)
+			for i := 1; i <= count; i++ {
+				msg, err := sub.Receive(ctx)
+				if err != nil {
+					t.Fatalf("receive %d: %v", i, err)
+				}
+				if got := msg.Meta[MetaKeySequence]; got != strconv.Itoa(i) {
+					t.Errorf("sequence = %q, want %d", got, i)
+				}
+				received[msg.Data.(int)] = true
+			}
+			stats := broker.OrderingStats()
+			if len(received) != count || len(stats.QueueStats) != 1 || stats.QueuedMessages != count || stats.SequenceErrors != 0 {
+				t.Errorf("received %d distinct messages; stats = %+v", len(received), stats)
+			}
+		})
+	}
+}
+
+func TestOrderedPubSubConcurrentRegistrationAndClose(t *testing.T) {
+	for range 8 {
+		broker := NewOrdered(DefaultOrderingConfig())
+		var operations sync.WaitGroup
+		start := make(chan struct{})
+		for i := range 12 {
+			operations.Go(func() {
+				<-start
+				level := []OrderLevel{OrderPerTopic, OrderPerKey, OrderGlobal}[i%3]
+				err := broker.PublishWithKey(strconv.Itoa(i), strconv.Itoa(i), Message{Data: i}, level)
+				if err != nil && err != ErrOrderingClosed {
+					t.Errorf("publish at shutdown: %v", err)
+				}
+				_ = broker.OrderingStats()
+			})
+		}
+		operations.Go(func() {
+			<-start
+			if err := broker.Close(); err != nil {
+				t.Error(err)
+			}
+		})
+		close(start)
+		operations.Wait()
+		for _, level := range []OrderLevel{OrderNone, OrderPerTopic, OrderPerKey, OrderGlobal} {
+			if err := broker.PublishOrdered("after-close", Message{Data: "sample"}, level); err != ErrOrderingClosed {
+				t.Errorf("order level %v after close: %v", level, err)
+			}
+		}
+	}
+}

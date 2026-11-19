@@ -98,7 +98,7 @@ func NewStreamManager() *StreamManager {
 	}
 }
 
-// RegisterE registers a new stream for a workflow and reports invalid input.
+// Register registers a new stream for a workflow and reports invalid input.
 func (sm *StreamManager) Register(workflowID string, stream *sse.Stream) error {
 	if workflowID == "" {
 		return ErrWorkflowIDRequired

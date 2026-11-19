@@ -9,59 +9,31 @@ func (ops *OrderedPubSub) createQueue(batchSize int) *orderedQueue {
 	}
 }
 
-// getOrCreateTopicQueue gets or creates a queue for a topic.
-func (ops *OrderedPubSub) getOrCreateTopicQueue(topic string) *orderedQueue {
-	ops.topicQueuesMu.RLock()
-	queue, exists := ops.topicQueues[topic]
-	ops.topicQueuesMu.RUnlock()
-
-	if exists {
-		return queue
+// orderedQueue looks up an ordered queue with queuesMu held.
+func (ops *OrderedPubSub) orderedQueue(identifier string, level OrderLevel) *orderedQueue {
+	switch level {
+	case OrderPerTopic:
+		return ops.topicQueues[identifier]
+	case OrderPerKey:
+		return ops.keyQueues[identifier]
+	default:
+		return ops.globalQueue
 	}
-
-	ops.topicQueuesMu.Lock()
-	defer ops.topicQueuesMu.Unlock()
-
-	// Double-check
-	if queue, exists = ops.topicQueues[topic]; exists {
-		return queue
-	}
-
-	// Create new queue
-	queue = ops.createQueue(ops.config.MaxBatchSize)
-	ops.topicQueues[topic] = queue
-
-	// Start worker
-	ops.startQueueWorker(queue, topic)
-
-	return queue
 }
 
-// getOrCreateKeyQueue gets or creates a queue for a key.
-func (ops *OrderedPubSub) getOrCreateKeyQueue(key string) *orderedQueue {
-	ops.keyQueuesMu.RLock()
-	queue, exists := ops.keyQueues[key]
-	ops.keyQueuesMu.RUnlock()
-
-	if exists {
-		return queue
+// createOrderedQueue registers a queue and its worker before Close can wait.
+// Hold queuesMu for writing once the broker has been constructed.
+func (ops *OrderedPubSub) createOrderedQueue(identifier string, level OrderLevel) *orderedQueue {
+	queue := ops.createQueue(ops.config.MaxBatchSize)
+	switch level {
+	case OrderPerTopic:
+		ops.topicQueues[identifier] = queue
+	case OrderPerKey:
+		ops.keyQueues[identifier] = queue
+	case OrderGlobal:
+		ops.globalQueue = queue
 	}
-
-	ops.keyQueuesMu.Lock()
-	defer ops.keyQueuesMu.Unlock()
-
-	// Double-check
-	if queue, exists = ops.keyQueues[key]; exists {
-		return queue
-	}
-
-	// Create new queue
-	queue = ops.createQueue(ops.config.MaxBatchSize)
-	ops.keyQueues[key] = queue
-
-	// Start worker
-	ops.startQueueWorker(queue, key)
-
+	ops.startQueueWorker(queue, identifier)
 	return queue
 }
 
@@ -112,7 +84,8 @@ func (ops *OrderedPubSub) verifySequence(om orderedMessage, identifier string) e
 func (ops *OrderedPubSub) OrderingStats() OrderingStats {
 	queueStats := make(map[string]QueueStat)
 
-	ops.topicQueuesMu.RLock()
+	ops.queuesMu.RLock()
+	defer ops.queuesMu.RUnlock()
 	topicQueues := len(ops.topicQueues)
 	for id, q := range ops.topicQueues {
 		queueStats[id] = QueueStat{
@@ -122,9 +95,7 @@ func (ops *OrderedPubSub) OrderingStats() OrderingStats {
 			Pending:        len(q.ch),
 		}
 	}
-	ops.topicQueuesMu.RUnlock()
 
-	ops.keyQueuesMu.RLock()
 	keyQueues := len(ops.keyQueues)
 	for id, q := range ops.keyQueues {
 		queueStats[id] = QueueStat{
@@ -134,7 +105,6 @@ func (ops *OrderedPubSub) OrderingStats() OrderingStats {
 			Pending:        len(q.ch),
 		}
 	}
-	ops.keyQueuesMu.RUnlock()
 
 	if ops.globalQueue != nil {
 		queueStats[globalQueueIdentifier] = QueueStat{

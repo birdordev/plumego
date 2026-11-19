@@ -3,8 +3,10 @@ package rest
 import (
 	"encoding/json"
 	"errors"
+	"math"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"testing"
 
 	"github.com/birdordev/plumego/contract"
@@ -248,5 +250,26 @@ func TestQueryBuilder_DescendingSort(t *testing.T) {
 	}
 	if !params.Sort[0].Desc || params.Sort[0].Field != "created_at" {
 		t.Errorf("first sort = {%v %v}, want {created_at desc}", params.Sort[0].Field, params.Sort[0].Desc)
+	}
+}
+
+func TestQueryBuilderOffsetPrecedenceAndBounds(t *testing.T) {
+	builder := NewQueryBuilder().WithPageSize(20, 50)
+	for _, tc := range []struct {
+		query string
+		want  int
+	}{
+		{"page=3&offset=0", 0},
+		{"page=3&offset=5", 5},
+		{"page=3", 40},
+		{"page=3&offset=bad", 40},
+		{"page=3&offset=-1", 40},
+		{"page=" + strconv.Itoa(math.MaxInt), math.MaxInt},
+		{"page=" + strconv.Itoa(math.MaxInt) + "&page_size=1", math.MaxInt - 1},
+	} {
+		req := httptest.NewRequest(http.MethodGet, "/?"+tc.query, nil)
+		if got := builder.Parse(req).Offset; got != tc.want {
+			t.Errorf("%s: offset = %d, want %d", tc.query, got, tc.want)
+		}
 	}
 }

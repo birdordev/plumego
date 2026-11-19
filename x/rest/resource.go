@@ -16,6 +16,7 @@ package rest
 import (
 	"context"
 	"fmt"
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -239,13 +240,15 @@ func (qb *QueryBuilder) Parse(r *http.Request) *QueryParams {
 			}
 		}
 	}
-	if offsetStr := query.Get("offset"); offsetStr != "" {
-		if offset, err := strconv.Atoi(offsetStr); err == nil && offset >= 0 {
-			params.Offset = offset
+	if offset, err := strconv.Atoi(query.Get("offset")); err == nil && offset >= 0 {
+		params.Offset = offset
+	} else if params.Page > 1 && params.PageSize > 0 {
+		pages := params.Page - 1
+		if pages > math.MaxInt/params.PageSize {
+			params.Offset = math.MaxInt
+		} else {
+			params.Offset = pages * params.PageSize
 		}
-	}
-	if params.Offset == 0 && params.Page > 1 {
-		params.Offset = (params.Page - 1) * params.PageSize
 	}
 	if params.Limit == 0 {
 		params.Limit = params.PageSize

@@ -73,15 +73,10 @@ type OrderedPubSub struct {
 
 	config OrderingConfig
 
-	// Per-topic queues
-	topicQueues   map[string]*orderedQueue
-	topicQueuesMu sync.RWMutex
-
-	// Per-key queues (for OrderPerKey)
+	// queuesMu serializes queue registration and admission with shutdown.
+	queuesMu    sync.RWMutex
+	topicQueues map[string]*orderedQueue
 	keyQueues   map[string]*orderedQueue
-	keyQueuesMu sync.RWMutex
-
-	// Global queue (for OrderGlobal)
 	globalQueue *orderedQueue
 
 	// Sequence tracking
@@ -107,10 +102,10 @@ const globalQueueIdentifier = "__global__"
 type orderedQueue struct {
 	ch        chan orderedMessage
 	mu        sync.Mutex
-	sequence  atomic.Uint64
+	enqueueMu sync.Mutex
+	sequence  uint64
 	batch     []orderedMessage
 	batchSize int
-	closed    atomic.Bool
 
 	// Per-queue statistics
 	processed      atomic.Uint64
@@ -121,7 +116,6 @@ type orderedQueue struct {
 // orderedMessage wraps a message with ordering metadata
 type orderedMessage struct {
 	topic    string
-	key      string
 	message  Message
 	sequence uint64
 	enqueued time.Time
@@ -167,8 +161,7 @@ func NewOrdered(config OrderingConfig, opts ...Option) *OrderedPubSub {
 
 	// Create global queue if needed
 	if config.DefaultLevel == OrderGlobal {
-		ops.globalQueue = ops.createQueue(config.MaxBatchSize)
-		ops.startQueueWorker(ops.globalQueue, globalQueueIdentifier)
+		ops.createOrderedQueue(globalQueueIdentifier, OrderGlobal)
 	}
 
 	return ops
@@ -176,67 +169,73 @@ func NewOrdered(config OrderingConfig, opts ...Option) *OrderedPubSub {
 
 // PublishOrdered publishes a message with ordering guarantee
 func (ops *OrderedPubSub) PublishOrdered(topic string, msg Message, level OrderLevel) error {
-	if ops.closed.Load() {
-		return ErrOrderingClosed
-	}
-
 	return ops.PublishWithKey(topic, "", msg, level)
 }
 
-// PublishWithKey publishes a message with a partition key
+// PublishWithKey publishes a message with a partition key.
 func (ops *OrderedPubSub) PublishWithKey(topic, key string, msg Message, level OrderLevel) error {
 	if ops.closed.Load() {
 		return ErrOrderingClosed
 	}
 
-	// Generate sequence number
-	var queue *orderedQueue
-
+	var identifier string
 	switch level {
 	case OrderNone:
-		// Fast path: no ordering
 		return ops.Publish(topic, msg)
-
 	case OrderPerTopic:
-		queue = ops.getOrCreateTopicQueue(topic)
-
+		identifier = topic
 	case OrderPerKey:
-		if key == "" {
-			key = topic // Default to topic if no key
+		identifier = key
+		if identifier == "" {
+			identifier = topic
 		}
-		queue = ops.getOrCreateKeyQueue(key)
-
 	case OrderGlobal:
-		if ops.globalQueue == nil {
-			ops.globalQueue = ops.createQueue(ops.config.MaxBatchSize)
-			ops.startQueueWorker(ops.globalQueue, globalQueueIdentifier)
-		}
-		queue = ops.globalQueue
-
+		identifier = globalQueueIdentifier
 	default:
 		return ErrInvalidOrderLevel
 	}
 
-	// Create ordered message
-	om := orderedMessage{
-		topic:    topic,
-		key:      key,
-		message:  msg,
-		sequence: queue.sequence.Add(1),
-		enqueued: time.Now(),
+	ops.queuesMu.RLock()
+	queue := ops.orderedQueue(identifier, level)
+	if queue == nil {
+		ops.queuesMu.RUnlock()
+		ops.queuesMu.Lock()
+		defer ops.queuesMu.Unlock()
+		if ops.closed.Load() {
+			return ErrOrderingClosed
+		}
+		queue = ops.orderedQueue(identifier, level)
+		if queue == nil {
+			queue = ops.createOrderedQueue(identifier, level)
+		}
+	} else {
+		defer ops.queuesMu.RUnlock()
+		if ops.closed.Load() {
+			return ErrOrderingClosed
+		}
 	}
 
-	// Enqueue
+	return ops.enqueueOrdered(queue, topic, msg)
+}
+
+// enqueueOrdered assigns sequence numbers in admission order. Only a successful
+// enqueue advances the sequence, so a rejected message leaves no gap.
+func (ops *OrderedPubSub) enqueueOrdered(queue *orderedQueue, topic string, msg Message) error {
+	queue.enqueueMu.Lock()
+	defer queue.enqueueMu.Unlock()
+
+	om := orderedMessage{
+		topic:    topic,
+		message:  msg,
+		sequence: queue.sequence + 1,
+		enqueued: time.Now(),
+	}
 	select {
 	case queue.ch <- om:
+		queue.sequence = om.sequence
 		ops.queuedMessages.Add(1)
 		return nil
-
-	case <-ops.ctx.Done():
-		return ErrOrderingClosed
-
 	default:
-		// Queue full - caller should retry with backoff or use a different OrderLevel.
 		return newErr(ErrCodeBufferFull, "enqueue", "", "ordered queue is full", nil)
 	}
 }
@@ -350,41 +349,19 @@ func PartitionKey(value string, partitions int) string {
 	return strconv.Itoa(partition)
 }
 
-// Close closes the ordered pubsub
+// Close stops ordered admission and waits for workers to flush their in-flight
+// batches before closing the underlying broker.
 func (ops *OrderedPubSub) Close() error {
+	ops.queuesMu.Lock()
 	if ops.closed.Swap(true) {
+		ops.queuesMu.Unlock()
 		return nil
 	}
-
-	// Cancel the context first so workers exit via ctx.Done().
-	// We intentionally do NOT close individual queue channels here: PublishWithKey
-	// uses a non-blocking select with case queue.ch <- om, and sending to a closed
-	// channel panics in Go even when a default case is present.  Workers drain
-	// their in-flight batch on ctx.Done() and exit cleanly without a channel close.
+	// Once cancellation begins, no publisher can enqueue or register a worker.
 	ops.cancel()
+	ops.queuesMu.Unlock()
 
-	// Mark queues closed so PublishWithKey returns ErrOrderingClosed for any
-	// concurrent callers that already passed the ops.closed check.
-	ops.topicQueuesMu.Lock()
-	for _, queue := range ops.topicQueues {
-		queue.closed.Store(true)
-	}
-	ops.topicQueuesMu.Unlock()
-
-	ops.keyQueuesMu.Lock()
-	for _, queue := range ops.keyQueues {
-		queue.closed.Store(true)
-	}
-	ops.keyQueuesMu.Unlock()
-
-	if ops.globalQueue != nil {
-		ops.globalQueue.closed.Store(true)
-	}
-
-	// Wait for workers
 	ops.wg.Wait()
-
-	// Close base pubsub
 	return ops.InProcBroker.Close()
 }
 

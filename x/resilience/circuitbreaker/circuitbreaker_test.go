@@ -9,6 +9,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 )
 
@@ -587,6 +588,73 @@ func TestReset(t *testing.T) {
 	counts := cb.Counts()
 	if counts.Requests != 0 || counts.Failures != 0 {
 		t.Errorf("expected zeroed counts after Reset, got %+v", counts)
+	}
+}
+
+func TestResetDiscardsInFlightCounts(t *testing.T) {
+	for _, state := range []State{StateClosed, StateHalfOpen} {
+		t.Run(state.String(), func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				type transition struct{ from, to State }
+				changes := make(chan transition, 3)
+				cb, clock := newTestCB(Config{Timeout: time.Second, OnStateChange: func(from, to State) {
+					changes <- transition{from, to}
+				}})
+				if err := cb.Call(func() error { return nil }); err != nil {
+					t.Fatal(err)
+				}
+				if state == StateHalfOpen {
+					cb.Trip()
+					clock.Advance(time.Second)
+				}
+				entered := make(chan struct{})
+				release := make(chan struct{})
+				done := make(chan error, 1)
+				go func() {
+					done <- cb.Call(func() error {
+						close(entered)
+						<-release
+						return errTest
+					})
+				}()
+				select {
+				case <-entered:
+				case err := <-done:
+					t.Fatalf("call not admitted: %v", err)
+				}
+				if cb.State() != state {
+					t.Errorf("state before reset = %v, want %v", cb.State(), state)
+				}
+				cb.Reset()
+				if got := cb.Counts(); got != (Counts{}) {
+					t.Errorf("counts after Reset = %+v", got)
+				}
+				close(release)
+				if err := <-done; err != errTest {
+					t.Errorf("call error = %v", err)
+				}
+				if got := cb.Counts(); cb.State() != StateClosed || got != (Counts{}) {
+					t.Errorf("completion after Reset: state=%v counts=%+v", cb.State(), got)
+				}
+				synctest.Wait()
+				close(changes)
+				want := map[transition]bool{}
+				if state == StateHalfOpen {
+					want[transition{StateClosed, StateOpen}] = true
+					want[transition{StateOpen, StateHalfOpen}] = true
+					want[transition{StateHalfOpen, StateClosed}] = true
+				}
+				for change := range changes {
+					if !want[change] {
+						t.Errorf("unexpected transition %+v", change)
+					}
+					delete(want, change)
+				}
+				if len(want) != 0 {
+					t.Errorf("missing transitions: %v", want)
+				}
+			})
+		})
 	}
 }
 

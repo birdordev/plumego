@@ -3,6 +3,7 @@ package observability
 import (
 	"context"
 	"fmt"
+	"maps"
 	"net/http"
 	"strconv"
 	"sync"
@@ -131,12 +132,16 @@ func (t *OpenTelemetryTracer) Start(ctx context.Context, r *http.Request) (conte
 	return ctx, handle
 }
 
+// Spans returns a snapshot whose spans and attributes belong to the caller.
 func (t *OpenTelemetryTracer) Spans() []Span {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 
 	spans := make([]Span, len(t.spans))
-	copy(spans, t.spans)
+	for i, span := range t.spans {
+		span.Attributes = maps.Clone(span.Attributes)
+		spans[i] = span
+	}
 	return spans
 }
 

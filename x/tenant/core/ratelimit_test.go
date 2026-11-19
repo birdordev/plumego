@@ -97,3 +97,38 @@ func TestTokenBucketRateLimiter_Unlimited(t *testing.T) {
 		t.Fatalf("expected allowed for unlimited config, got err=%v res=%+v", err, res)
 	}
 }
+
+func TestTenantRateLimitRefillsBeforeReconfiguration(t *testing.T) {
+	const id = "fixture"
+	provider := NewInMemoryRateLimitManager()
+	limiter := NewTokenBucketRateLimiter(provider)
+	start := time.Unix(100, 0)
+	for _, tc := range []struct {
+		name                string
+		at                  time.Duration
+		rate, burst, tokens int64
+		remaining           int64
+		allowed             bool
+	}{
+		{"drain initial bucket", 0, 1, 10, 10, 0, true},
+		{"increase uses old rate for elapsed time", time.Second, 4, 10, 1, 0, true},
+		{"same time adds nothing", time.Second, 4, 10, 1, 0, false},
+		{"new rate applies in the next interval", 2 * time.Second, 4, 10, 1, 3, true},
+		{"decrease uses old rate for elapsed time", 3 * time.Second, 2, 10, 1, 6, true},
+		{"shrink caps the settled balance", 4 * time.Second, 2, 3, 1, 2, true},
+		{"past request does not move refill point", 3 * time.Second, 2, 3, 3, 2, false},
+		{"same time consumes without refill", 4 * time.Second, 2, 3, 2, 0, true},
+		{"new rate after decrease", 5 * time.Second, 2, 3, 2, 0, true},
+	} {
+		provider.SetRateLimit(id, RateLimitConfig{RequestsPerSecond: tc.rate, Burst: tc.burst})
+		result, err := limiter.Allow(t.Context(), id, RateLimitRequest{Now: start.Add(tc.at), Tokens: tc.tokens})
+		wantErr := error(nil)
+		if !tc.allowed {
+			wantErr = ErrRateLimitExceeded
+		}
+		if result.Allowed != tc.allowed || result.Remaining != tc.remaining || err != wantErr ||
+			result.Limit != tc.rate || result.Burst != tc.burst {
+			t.Errorf("%s: got %+v, %v; want allowed=%v remaining=%d limit=%d burst=%d err=%v", tc.name, result, err, tc.allowed, tc.remaining, tc.rate, tc.burst, wantErr)
+		}
+	}
+}

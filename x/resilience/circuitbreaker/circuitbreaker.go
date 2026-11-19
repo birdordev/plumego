@@ -348,9 +348,19 @@ func (cb *CircuitBreaker) Counts() Counts {
 	return cb.counts
 }
 
-// Reset resets the circuit breaker to closed state
+// Reset closes the circuit and clears its counts. Completions from calls
+// admitted before Reset do not update the new counts.
 func (cb *CircuitBreaker) Reset() {
-	cb.setState(StateClosed)
+	cb.stateMu.Lock()
+	if cb.state == StateClosed {
+		cb.generation++
+	}
+	notify := cb.setStateLocked(StateClosed)
+	cb.counts = Counts{}
+	cb.stateMu.Unlock()
+	if notify != nil {
+		notify()
+	}
 }
 
 // Trip manually opens the circuit

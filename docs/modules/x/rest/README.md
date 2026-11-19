@@ -131,7 +131,7 @@ func RegisterRoutes(r *router.Router, repository rest.Repository[User]) {
 - `NewDBResource`: empty `ResourceSpec{}` normalizes safely (name defaulted, controller non-nil)
 - `ResourceSpec` / `ApplyResourceSpec`: controller defaults preservation, spec-driven query normalization, legacy sort field filtering
 - `NewPaginationMeta`: first-page (HasPrev=false, HasNext=true), last-page (HasNext=false), zero-item (TotalPages=0, no navigation), zero/negative pageSize returns without panic, single-exact-page (HasNext=false, HasPrev=false), exact divisor (no extra page)
-- `QueryBuilder`: page-size clamping to max; invalid, zero, and negative page and page_size input use defaults; unknown sort field filtered out; bare-dash sort (`-`) filtered out (no empty-field `SortField`); unknown filter field filtered out; descending sort prefix (`-`) parsing; `q=` fallback when `search=` is absent; `search=` takes precedence over `q=`; `fields=` and `include=` comma list parsing; explicit `offset=` respected
+- `QueryBuilder`: page-size clamping to max; invalid, zero, and negative page and page_size input use defaults; unknown sort field filtered out; bare-dash sort (`-`) filtered out (no empty-field `SortField`); unknown filter field filtered out; descending sort prefix (`-`) parsing; `q=` fallback when `search=` is absent; `search=` takes precedence over `q=`; `fields=` and `include=` comma list parsing; explicit nonnegative `offset=` (including zero) takes precedence over page-derived offsets, which saturate at the largest representable `int`
 
 ## Beta readiness
 

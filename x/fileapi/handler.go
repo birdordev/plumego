@@ -110,7 +110,7 @@ func (h *Handler) loadAuthorizedFile(w http.ResponseWriter, r *http.Request) (*d
 
 // Upload handles file upload via multipart form.
 // POST /files
-// Form fields: file (required), generate_thumb, thumb_width, thumb_height.
+// Multipart form fields: file (required), generate_thumb, thumb_width, thumb_height.
 // Requires tenant identity in request context.
 func (h *Handler) Upload(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
@@ -170,9 +170,9 @@ func (h *Handler) Upload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	generateThumb := r.FormValue("generate_thumb") == "true"
-	thumbWidth, _ := strconv.Atoi(r.FormValue("thumb_width"))
-	thumbHeight, _ := strconv.Atoi(r.FormValue("thumb_height"))
+	generateThumb := r.PostFormValue("generate_thumb") == "true"
+	thumbWidth, _ := strconv.Atoi(r.PostFormValue("thumb_width"))
+	thumbHeight, _ := strconv.Atoi(r.PostFormValue("thumb_height"))
 
 	opts := datafile.PutOptions{
 		TenantID:      tenantID,

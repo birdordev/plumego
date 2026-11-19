@@ -3,11 +3,13 @@ package client
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	plumelog "github.com/birdordev/plumego/log"
+	obstracer "github.com/birdordev/plumego/x/observability/tracer"
 )
 
 func TestPoolDialCachesConnection(t *testing.T) {
@@ -106,6 +108,7 @@ func (e codedError) RPCCode() Code {
 
 type recordingLogger struct {
 	method atomic.Value
+	status atomic.Value
 }
 
 func (l *recordingLogger) WithFields(plumelog.Fields) plumelog.StructuredLogger { return l }
@@ -119,18 +122,20 @@ func (l *recordingLogger) ErrorCtx(context.Context, string, ...plumelog.Fields) 
 func (l *recordingLogger) FatalCtx(context.Context, string, ...plumelog.Fields) {}
 
 func (l *recordingLogger) Info(_ string, fields ...plumelog.Fields) {
-	l.storeMethod(fields...)
+	l.storeFields(fields...)
 }
 
 func (l *recordingLogger) InfoCtx(_ context.Context, _ string, fields ...plumelog.Fields) {
-	l.storeMethod(fields...)
+	l.storeFields(fields...)
 }
 
-func (l *recordingLogger) storeMethod(fields ...plumelog.Fields) {
+func (l *recordingLogger) storeFields(fields ...plumelog.Fields) {
 	for _, fieldSet := range fields {
 		if method, ok := fieldSet["method"].(string); ok {
 			l.method.Store(method)
-			return
+		}
+		if status, ok := fieldSet["status"].(string); ok {
+			l.status.Store(status)
 		}
 	}
 }
@@ -220,5 +225,59 @@ func TestPoolDoesNotCacheNilDial(t *testing.T) {
 	}
 	if err := p.Close(); err != nil {
 		t.Fatal(err)
+	}
+}
+
+type recordingTraceStarter struct {
+	status obstracer.SpanStatus
+}
+
+func (*recordingTraceStarter) StartTrace(ctx context.Context, _ string, _ ...obstracer.TraceOption) (context.Context, *obstracer.Span) {
+	return ctx, &obstracer.Span{}
+}
+
+func (t *recordingTraceStarter) EndSpan(span *obstracer.Span, options ...obstracer.SpanOption) {
+	for _, option := range options {
+		option(span)
+	}
+	t.status = span.Status
+}
+
+func (*recordingTraceStarter) RecordError(*obstracer.Span, error, ...obstracer.ErrorOption) {}
+
+func TestInterceptorsClassifyWrappedRPCStatus(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		err   error
+		code  string
+		calls int
+	}{
+		{"wrapped retryable", fmt.Errorf("outer: %w", fmt.Errorf("inner: %w", codedError{code: "Unavailable"})), "Unavailable", 2},
+		{"wrapped permanent", fmt.Errorf("operation: %w", codedError{code: "InvalidArgument"}), "InvalidArgument", 1},
+		{"unclassified", errors.New("operation failed"), "Unknown", 1},
+		{"success", nil, "OK", 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			logger := &recordingLogger{}
+			tracer := &recordingTraceStarter{}
+			calls := 0
+			retry := RetryInterceptor(2, "Unavailable")
+			logCall := LoggingInterceptor(logger)
+			traceCall := TracingInterceptor(tracer)
+			err := retry(t.Context(), "example", nil, nil, func(ctx context.Context, method string, req, reply any, opts ...CallOption) error {
+				calls++
+				return logCall(ctx, method, req, reply, func(ctx context.Context, method string, req, reply any, opts ...CallOption) error {
+					return traceCall(ctx, method, req, reply, func(context.Context, string, any, any, ...CallOption) error {
+						return tc.err
+					}, opts...)
+				}, opts...)
+			})
+			if err != tc.err || calls != tc.calls {
+				t.Errorf("error=%v, calls=%d; want %v, %d", err, calls, tc.err, tc.calls)
+			}
+			if logger.status.Load() != tc.code || tracer.status.Description != tc.code {
+				t.Errorf("logged status=%v trace status=%+v, want %s", logger.status.Load(), tracer.status, tc.code)
+			}
+		})
 	}
 }

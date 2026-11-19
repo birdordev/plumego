@@ -98,7 +98,7 @@ review_checklist:
   - Keep provider adapters isolated from app bootstrap policy
 
 agent_hints:
-  - Use RegisterE for config-driven provider wiring and keep Register only for trusted static setup
+  - Handle Register errors when wiring providers, including config-driven registrations
   - Add provider adapters here instead of widening stable roots or the x/ai family marker
   - Keep generic resilience composition in x/ai/resilience or x/resilience, not in provider adapters
 

@@ -999,3 +999,55 @@ func TestHandlerUploadSizeLimits(t *testing.T) {
 		})
 	}
 }
+
+func TestHandlerUploadThumbnailOptionsComeFromMultipart(t *testing.T) {
+	for _, tc := range []struct {
+		name          string
+		fields        map[string]string
+		generate      bool
+		width, height int
+	}{
+		{"multipart wins", map[string]string{"generate_thumb": "true", "thumb_width": "40", "thumb_height": "60"}, true, 40, 60},
+		{"query only", nil, false, 0, 0},
+		{"existing field conversion", map[string]string{"generate_thumb": "false", "thumb_width": "invalid", "thumb_height": "60"}, false, 0, 60},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var body bytes.Buffer
+			form := multipart.NewWriter(&body)
+			part, err := form.CreateFormFile("file", "sample.txt")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := io.WriteString(part, "fixture"); err != nil {
+				t.Fatal(err)
+			}
+			for name, value := range tc.fields {
+				if err := form.WriteField(name, value); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := form.Close(); err != nil {
+				t.Fatal(err)
+			}
+
+			var got datafile.PutOptions
+			storage := &mockStorage{putFunc: func(_ context.Context, opts datafile.PutOptions) (*datafile.File, error) {
+				got = opts
+				return &datafile.File{File: storefile.File{ID: "sample"}, TenantID: opts.TenantID}, nil
+			}}
+			h := NewHandler(storage, &mockMetadataManager{})
+			queryGenerate := "false"
+			if !tc.generate {
+				queryGenerate = "true"
+			}
+			req := httptest.NewRequest(http.MethodPost, "/files?generate_thumb="+queryGenerate+"&thumb_width=100&thumb_height=200", &body)
+			req.Header.Set("Content-Type", form.FormDataContentType())
+			req = req.WithContext(tenantcore.WithTenantID(req.Context(), "sample"))
+			w := httptest.NewRecorder()
+			h.Upload(w, req)
+			if w.Code != http.StatusOK || got.GenerateThumb != tc.generate || got.ThumbWidth != tc.width || got.ThumbHeight != tc.height {
+				t.Errorf("status=%d thumbnail=(%v, %d, %d), want 200 (%v, %d, %d)", w.Code, got.GenerateThumb, got.ThumbWidth, got.ThumbHeight, tc.generate, tc.width, tc.height)
+			}
+		})
+	}
+}

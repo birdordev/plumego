@@ -1,9 +1,13 @@
 package gateway
 
 import (
+	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
+	"testing/synctest"
 	"time"
 )
 
@@ -185,4 +189,91 @@ func TestHealthCheckerDefaultConfig(t *testing.T) {
 	if checker.config.ExpectedStatus != http.StatusOK {
 		t.Errorf("default status = %d, want 200", checker.config.ExpectedStatus)
 	}
+}
+
+type healthTestTransport func(*http.Request) (*http.Response, error)
+
+func (f healthTestTransport) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+func TestHealthCheckerDoesNotStartAfterStop(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		pool, err := NewBackendPool([]string{"http://example.invalid"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		checker := NewHealthChecker(pool, &HealthCheckConfig{Interval: time.Hour})
+		calls := 0
+		checker.client.Transport = healthTestTransport(func(*http.Request) (*http.Response, error) {
+			calls++
+			return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(""))}, nil
+		})
+		checker.Stop()
+		checker.Start()
+		synctest.Wait()
+		if calls != 0 {
+			t.Errorf("background probes after Stop = %d, want 0", calls)
+		}
+		checker.Check(pool.Backends()[0])
+		checker.CheckAll()
+		if calls != 2 {
+			t.Errorf("manual probes after Stop = %d, want 2", calls)
+		}
+	})
+}
+
+func TestHealthCheckerStopCancelsProbeWithoutMarkingUnhealthy(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		pool, err := NewBackendPool([]string{"http://example.invalid"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		checker := NewHealthChecker(pool, &HealthCheckConfig{Interval: time.Hour, Timeout: time.Minute})
+		started := make(chan struct{}, 2)
+		results := make(chan error, 2)
+		checker.client.Transport = healthTestTransport(func(r *http.Request) (*http.Response, error) {
+			started <- struct{}{}
+			<-r.Context().Done()
+			err := r.Context().Err()
+			results <- err
+			return nil, err
+		})
+		checker.Start()
+		<-started
+		checker.Start()
+		synctest.Wait()
+		if len(started) != 0 {
+			t.Error("repeated Start launched another probe")
+		}
+		checker.Stop()
+		if got := <-results; got != context.Canceled {
+			t.Errorf("probe error = %v, want canceled", got)
+		}
+		if !pool.Backends()[0].IsHealthy() {
+			t.Error("Stop marked backend unhealthy")
+		}
+	})
+}
+
+func TestHealthCheckerProbeTimeoutMarksUnhealthy(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		pool, err := NewBackendPool([]string{"http://example.invalid"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		updates := make(chan bool, 1)
+		checker := NewHealthChecker(pool, &HealthCheckConfig{
+			Interval:       time.Hour,
+			Timeout:        time.Second,
+			OnHealthChange: func(_ *Backend, healthy bool) { updates <- healthy },
+		})
+		checker.client.Transport = healthTestTransport(func(r *http.Request) (*http.Response, error) {
+			<-r.Context().Done()
+			return nil, r.Context().Err()
+		})
+		checker.Start()
+		defer checker.Stop()
+		if healthy := <-updates; healthy || pool.Backends()[0].IsHealthy() {
+			t.Error("probe timeout did not mark backend unhealthy")
+		}
+	})
 }

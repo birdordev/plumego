@@ -142,9 +142,6 @@ semantic series would otherwise share the same name.
 Several `x/ai` packages still expose panic-based compatibility helpers while the
 family remains experimental or while stable-tier callers migrate gradually:
 
-- `provider.Manager.Register` and `streaming.StreamManager.Register` remain only
-  for trusted in-code wiring. Prefer `RegisterE` for config-driven, plugin, or
-  user-provided registration.
 - `resilience.NewResilientProvider` and
   `semanticcache.NewSemanticCachingProvider` are deprecated panic shims. Prefer
   `NewResilientProviderE` and `NewSemanticCachingProviderE`.
@@ -159,7 +156,19 @@ removed when their remaining compatibility callers are migrated.
 - `x/ai/sse` and `x/ai/streaming` HTTP handlers use structured `contract.WriteError` responses for setup and request failures.
 - Default SSE stream setup, invalid JSON, workflow callback, and handler error-event paths use safe public messages and do not expose provider, callback, decoder, or stream creation internals.
 - `x/ai/streaming` terminal SSE payloads use local typed DTO structs instead of one-off maps.
-- `provider.Manager.RegisterE` and `streaming.StreamManager.RegisterE` are the explicit validation paths for dynamic registration input. Use them for user/config/plugin-driven registration and handle their returned errors. The legacy `Register` methods remain compatibility wrappers for known-good internal wiring and intentionally panic on invalid input.
+- Use `provider.Manager.Register` to register providers and
+  `streaming.StreamManager.Register` to associate streams with workflow IDs.
+  Both return an error for invalid registration input. Handle the error in
+  application wiring before using the registration.
+
+```go
+if err := manager.Register(provider); err != nil {
+    return err
+}
+if err := streamManager.Register(workflowID, stream); err != nil {
+    return err
+}
+```
 
 The stable-tier entrypoints are `provider`, `session`, `streaming`, and `tool`.
 Use other `x/ai/*` packages with experimental-module expectations.

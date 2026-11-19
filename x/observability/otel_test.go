@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"sync"
 	"testing"
 	"time"
 
@@ -311,5 +312,38 @@ func TestOpenTelemetryTracerWithMaxSpansTrimsExisting(t *testing.T) {
 	stats := tracer.GetSpanStats()
 	if stats.DroppedSpans != 2 {
 		t.Fatalf("expected dropped spans to include trim operation, got %d", stats.DroppedSpans)
+	}
+}
+
+func TestOpenTelemetryTracerSpanSnapshotsOwnAttributes(t *testing.T) {
+	tracer := NewOpenTelemetryTracer("fixture")
+	record := func() {
+		_, span := tracer.Start(t.Context(), httptest.NewRequest(http.MethodGet, "/items", nil))
+		span.End(http.StatusOK, 0, "")
+	}
+	record()
+	first, second := tracer.Spans(), tracer.Spans()
+	var workers sync.WaitGroup
+	for _, snapshot := range [][]Span{first, second} {
+		workers.Go(func() {
+			for range 32 {
+				snapshot[0].Attributes["http.route"] = "/modified"
+			}
+		})
+	}
+	workers.Go(record)
+	workers.Wait()
+	spans := tracer.Spans()
+	if len(spans) != 2 {
+		t.Fatalf("spans = %d, want 2", len(spans))
+	}
+	for _, span := range spans {
+		if got := span.Attributes["http.route"]; got != "/items" {
+			t.Errorf("stored route = %q, want /items", got)
+		}
+	}
+	first[0].Attributes["local"] = "first"
+	if _, ok := second[0].Attributes["local"]; ok {
+		t.Error("snapshots share attributes")
 	}
 }

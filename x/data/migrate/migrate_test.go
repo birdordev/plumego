@@ -87,3 +87,32 @@ func (r *fakeRunner) Close() error {
 	r.closed = true
 	return nil
 }
+
+func TestMigratorStatusOwnsTimestamp(t *testing.T) {
+	original := time.Unix(1, 0)
+	runner := &fakeRunner{status: []MigrationStatus{
+		{Version: 1, State: "applied", AppliedAt: &original},
+		{Version: 2, State: "pending"},
+	}}
+	m, err := New(runner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := m.Status(t.Context())
+	if err != nil || len(got) != 2 || got[0].AppliedAt == nil || got[1].AppliedAt != nil {
+		t.Fatalf("status = %+v, error = %v", got, err)
+	}
+	*got[0].AppliedAt = time.Unix(2, 0)
+	fresh, err := m.Status(t.Context())
+	if err != nil || !original.Equal(time.Unix(1, 0)) || !fresh[0].AppliedAt.Equal(original) {
+		t.Errorf("runner timestamp = %v; fresh status = %+v, error = %v", original, fresh, err)
+	}
+	runner.status = []MigrationStatus{}
+	if got, err := m.Status(t.Context()); err != nil || got != nil {
+		t.Errorf("empty status = %#v, error = %v", got, err)
+	}
+	runner.statusE = errors.New("read failed")
+	if _, err := m.Status(t.Context()); !errors.Is(err, ErrMigrationFailed) || !errors.Is(err, runner.statusE) {
+		t.Errorf("status error = %v", err)
+	}
+}

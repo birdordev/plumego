@@ -96,7 +96,7 @@ review_checklist:
   - Keep orchestration composition reviewable and caller-owned
 
 agent_hints:
-  - Use RegisterE for dynamic stream wiring and keep Register only for trusted in-code setup
+  - Handle Register errors when wiring workflow streams
   - Keep generic HTTP or SSE primitives outside this package
   - Add streaming workflow helpers here instead of widening provider or orchestration contracts
 

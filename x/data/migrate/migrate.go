@@ -68,7 +68,7 @@ func (m *Migrator) Down(ctx context.Context) error {
 	return nil
 }
 
-// Status returns pending and applied migration state.
+// Status returns a caller-owned snapshot of pending and applied migrations.
 func (m *Migrator) Status(ctx context.Context) ([]MigrationStatus, error) {
 	if m == nil || m.runner == nil {
 		return nil, fmt.Errorf("%w: migrator is nil", ErrMigrationFailed)
@@ -77,7 +77,14 @@ func (m *Migrator) Status(ctx context.Context) ([]MigrationStatus, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%w: status: %w", ErrMigrationFailed, err)
 	}
-	return append([]MigrationStatus(nil), statuses...), nil
+	snapshot := append([]MigrationStatus(nil), statuses...)
+	for i := range snapshot {
+		if snapshot[i].AppliedAt != nil {
+			appliedAt := *snapshot[i].AppliedAt
+			snapshot[i].AppliedAt = &appliedAt
+		}
+	}
+	return snapshot, nil
 }
 
 // Close releases provider resources.

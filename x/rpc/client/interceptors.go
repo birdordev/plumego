@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/birdordev/plumego/contract"
@@ -21,7 +22,8 @@ type UnaryInterceptor func(ctx context.Context, method string, req any, reply an
 // Code identifies a transport status in a dependency-free shape.
 type Code string
 
-// CodedError exposes a transport status code for retry and logging decisions.
+// CodedError exposes a transport status code for retries, logs, and traces.
+// Interceptors look for it in the error chain.
 type CodedError interface {
 	RPCCode() Code
 }
@@ -110,7 +112,8 @@ func errorCode(err error) Code {
 	if err == nil {
 		return "OK"
 	}
-	if coded, ok := err.(CodedError); ok {
+	var coded CodedError
+	if errors.As(err, &coded) {
 		return coded.RPCCode()
 	}
 	return "Unknown"
