@@ -1,5 +1,7 @@
 overrides:
   esbuild: 0.28.1
   ajv>fast-uri: 3.1.9
+  '@astrojs/internal-helpers@0.10.2>smol-toml': 1.9.1
   '@astrojs/starlight>js-yaml': 4.3.2
+  postcss-nested>postcss-selector-parser: 6.1.5
   yaml: 2.9.0
