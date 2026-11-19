@@ -2,6 +2,7 @@ package pubsub
 
 import (
 	"context"
+	"errors"
 	"maps"
 	"strconv"
 	"sync"
@@ -9,6 +10,56 @@ import (
 	"testing"
 	"time"
 )
+
+func TestOrderedPublishValidatesTopicBeforeAdmission(t *testing.T) {
+	cfg := DefaultOrderingConfig()
+	cfg.MaxBatchSize = 1
+	broker := NewOrdered(cfg)
+	defer broker.Close()
+	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
+	defer cancel()
+	for _, level := range []OrderLevel{OrderPerTopic, OrderPerKey, OrderGlobal} {
+		if err := broker.PublishWithKey(" \t ", "key", Message{}, level); !errors.Is(err, &Error{Code: ErrCodeInvalidTopic}) {
+			t.Errorf("level %v: error = %v, want invalid topic", level, err)
+		}
+	}
+	stats := broker.OrderingStats()
+	if stats.QueuedMessages != 0 || stats.OrderedPublishes != 0 || len(stats.QueueStats) != 0 {
+		t.Fatalf("invalid messages changed ordering state: %+v", stats)
+	}
+	sub, err := broker.Subscribe(ctx, "topic", SubOptions{BufferSize: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, topic := range []string{" topic ", "topic"} {
+		if err := broker.PublishOrdered(topic, Message{Data: "sample"}, OrderPerTopic); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, want := range []string{"1", "2"} {
+		select {
+		case msg := <-sub.C():
+			if got := msg.Meta[MetaKeySequence]; got != want {
+				t.Errorf("sequence = %q, want %q", got, want)
+			}
+		case <-ctx.Done():
+			t.Fatal("valid message was not delivered")
+		}
+	}
+}
+
+func TestOrderedPublishCountsOnlyBrokerSuccess(t *testing.T) {
+	broker := NewOrdered(DefaultOrderingConfig())
+	defer broker.Close()
+	if err := broker.InProcBroker.Close(); err != nil {
+		t.Fatal(err)
+	}
+	queue := &orderedQueue{batch: []orderedMessage{{topic: "topic", sequence: 1}}}
+	broker.flushBatch(queue)
+	if queue.batchFlushes.Load() != 1 || queue.processed.Load() != 0 || broker.OrderingStats().OrderedPublishes != 0 {
+		t.Fatal("a broker rejection was counted as a successful publish")
+	}
+}
 
 func waitUntil(timeout time.Duration, condition func() bool) bool {
 	deadline := time.Now().Add(timeout)

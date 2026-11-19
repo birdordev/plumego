@@ -195,6 +195,70 @@ type healthTestTransport func(*http.Request) (*http.Response, error)
 
 func (f healthTestTransport) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
 
+func TestHealthCheckerIgnoresOlderResult(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		old, newer int
+	}{
+		{"late success", http.StatusOK, http.StatusServiceUnavailable},
+		{"late failure", http.StatusServiceUnavailable, http.StatusOK},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				pool := mustPool(t, "http://first.example", "http://other.example")
+				backends := pool.Backends()
+				backend, other := backends[0], backends[1]
+				wantHealthy := tc.newer == http.StatusOK
+				backend.SetHealthy(!wantHealthy)
+				other.SetHealthy(false)
+				type change struct {
+					backend *Backend
+					healthy bool
+				}
+				changes := make(chan change, 4)
+				checker := NewHealthChecker(pool, &HealthCheckConfig{
+					OnHealthChange: func(b *Backend, healthy bool) { changes <- change{b, healthy} },
+				})
+				defer checker.Stop()
+				started, resume := make(chan struct{}), make(chan struct{})
+				calls := 0
+				checker.client.Transport = healthTestTransport(func(r *http.Request) (*http.Response, error) {
+					status := http.StatusOK
+					if r.URL.Host == "first.example" {
+						calls++
+						status = tc.newer
+						if calls == 1 {
+							close(started)
+							<-resume
+							status = tc.old
+						}
+					}
+					return &http.Response{StatusCode: status, Body: http.NoBody}, nil
+				})
+
+				oldResult := make(chan bool, 1)
+				go func() { oldResult <- checker.Check(backend) }()
+				<-started
+				newResult := checker.Check(backend)
+				otherResult := checker.Check(other)
+				close(resume)
+				if got := <-oldResult; got != wantHealthy || newResult != wantHealthy || !otherResult || backend.IsHealthy() != wantHealthy {
+					t.Errorf("old = %v, new = %v, other = %v, current = %v; want primary %v and other healthy", got, newResult, otherResult, backend.IsHealthy(), wantHealthy)
+				}
+				if len(changes) != 2 {
+					t.Fatalf("health changes = %d, want 2", len(changes))
+				}
+				if got := <-changes; got != (change{backend, wantHealthy}) {
+					t.Errorf("primary change = %+v", got)
+				}
+				if got := <-changes; got != (change{other, true}) {
+					t.Errorf("other change = %+v", got)
+				}
+			})
+		})
+	}
+}
+
 func TestHealthCheckerDoesNotStartAfterStop(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		pool, err := NewBackendPool([]string{"http://example.invalid"})

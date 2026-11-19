@@ -3,12 +3,90 @@ package session
 import (
 	"fmt"
 	"math"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/birdordev/plumego/internal/testutil/wait"
 	"github.com/birdordev/plumego/x/ai/provider"
 	"github.com/birdordev/plumego/x/ai/tokenizer"
 )
+
+type blockedSessionTokenizer struct {
+	tokenizer.Tokenizer
+	once    sync.Once
+	started chan struct{}
+	resume  chan struct{}
+}
+
+func (b *blockedSessionTokenizer) Count(string) (int, error) {
+	b.once.Do(func() {
+		close(b.started)
+		<-b.resume
+	})
+	return 1, nil
+}
+
+func TestManagerSerializesSessionChanges(t *testing.T) {
+	for _, appendSecond := range []bool{true, false} {
+		t.Run(fmt.Sprintf("appendSecond=%v", appendSecond), func(t *testing.T) {
+			ctx := t.Context()
+			counter := &blockedSessionTokenizer{started: make(chan struct{}), resume: make(chan struct{})}
+			resume := sync.OnceFunc(func() { close(counter.resume) })
+			defer resume()
+			m := NewManager(NewMemoryStorage(), WithTokenizer(counter))
+			s, err := m.Create(ctx, CreateOptions{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			first, second := make(chan error, 1), make(chan error, 1)
+			go func() { first <- m.AppendMessage(ctx, s.ID, provider.Message{Role: provider.RoleUser}) }()
+			select {
+			case <-counter.started:
+			case <-time.After(3 * time.Second):
+				t.Fatal("first append did not start counting tokens")
+			}
+			go func() {
+				if appendSecond {
+					second <- m.AppendMessage(ctx, s.ID, provider.Message{Role: provider.RoleAssistant})
+				} else {
+					second <- m.SetContext(ctx, s.ID, "key", "value")
+				}
+			}()
+			wait.ForCondition(t, 3*time.Second, "both session changes registered", func() bool {
+				m.sessionMu.Lock()
+				defer m.sessionMu.Unlock()
+				lock := m.sessions[s.ID]
+				return lock != nil && lock.refs == 2
+			})
+			resume()
+			for _, result := range []chan error{first, second} {
+				if err := <-result; err != nil {
+					t.Fatal(err)
+				}
+			}
+			got, err := m.Get(ctx, s.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			wantMessages := 1
+			if appendSecond {
+				wantMessages = 2
+				if len(got.Messages) == 2 && got.Messages[1].Role != provider.RoleAssistant {
+					t.Errorf("messages = %v, second message should be the assistant", got.Messages)
+				}
+			} else if got.Context["key"] != "value" {
+				t.Errorf("context = %v, want key=value", got.Context)
+			}
+			if len(got.Messages) != wantMessages || got.Usage.TotalTokens != wantMessages {
+				t.Errorf("messages = %d, tokens = %d, want %d each", len(got.Messages), got.Usage.TotalTokens, wantMessages)
+			}
+			if len(m.sessions) != 0 {
+				t.Error("session lock was retained after both operations")
+			}
+		})
+	}
+}
 
 func TestManager_Create(t *testing.T) {
 	storage := NewMemoryStorage()

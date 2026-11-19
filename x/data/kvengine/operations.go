@@ -32,7 +32,7 @@ func (kv *KVStore) Set(key string, value []byte, ttl time.Duration) (err error) 
 		expireAt = time.Now().Add(ttl)
 	}
 
-	size := int64(len(key) + len(value) + 64) // rough estimate
+	size := int64(len(key)) + int64(len(value)) + 64
 	maxMemory := int64(kv.opts.MaxMemoryMB) * 1024 * 1024
 	if size > maxMemory {
 		return fmt.Errorf("value too large: size %d exceeds max memory %d", size, maxMemory)
@@ -55,36 +55,34 @@ func (kv *KVStore) Set(key string, value []byte, ttl time.Duration) (err error) 
 		return fmt.Errorf("WAL write failed: %w", err)
 	}
 
-	shard := kv.getShard(key)
-	kv.makeRoomForSet(shard, key, size, maxMemory)
-	shard.mu.Lock()
-	defer shard.mu.Unlock()
-
-	// Create or update entry
-	entry := &Entry{
+	kv.putEntry(&Entry{
 		Key:      key,
 		Value:    append([]byte(nil), value...), // defensive copy
 		ExpireAt: expireAt,
 		Size:     size,
 		Version:  version,
-	}
-
-	// Remove old entry if exists
-	if oldEntry, exists := shard.data[key]; exists {
-		kv.deleteFromShard(shard, key, oldEntry)
-	}
-
-	// Add new entry
-	shard.data[key] = entry
-	kv.moveToFront(shard, entry)
-
-	atomic.AddInt64(&kv.entries, 1)
-	atomic.AddInt64(&kv.memoryUsage, size)
-
+	}, maxMemory)
 	return nil
 }
 
-// makeRoomForSet runs with opsMu held. The incoming entry fits on its own,
+// putEntry publishes a value that fits on its own, under opsMu or during startup.
+func (kv *KVStore) putEntry(entry *Entry, maxMemory int64) {
+	shard := kv.getShard(entry.Key)
+	kv.makeRoomForSet(shard, entry.Key, entry.Size, maxMemory)
+	shard.mu.Lock()
+	defer shard.mu.Unlock()
+	if oldEntry := shard.data[entry.Key]; oldEntry != nil {
+		kv.deleteFromShard(shard, entry.Key, oldEntry)
+	}
+
+	shard.data[entry.Key] = entry
+	kv.moveToFront(shard, entry)
+
+	atomic.AddInt64(&kv.entries, 1)
+	atomic.AddInt64(&kv.memoryUsage, entry.Size)
+}
+
+// makeRoomForSet runs with opsMu held or during startup. The incoming entry fits on its own,
 // and other goroutines can only remove entries until Set publishes it.
 func (kv *KVStore) makeRoomForSet(shard *Shard, key string, size, maxMemory int64) {
 	for {

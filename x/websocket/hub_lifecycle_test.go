@@ -359,6 +359,22 @@ func TestHub_CanJoin_HubFull(t *testing.T) {
 
 // --- RangeConns ---
 
+func TestHubRecycledConnectionListDropsReferences(t *testing.T) {
+	hub := newManualHub(1)
+	list := hub.getConnList()
+	*list = append(*list, &Conn{}, &Conn{})
+	backing := *list
+	hub.putConnList(list)
+	if len(*list) != 0 || cap(*list) != cap(backing) {
+		t.Fatalf("recycled length=%d capacity=%d, want zero length and capacity %d", len(*list), cap(*list), cap(backing))
+	}
+	for i, conn := range backing {
+		if conn != nil {
+			t.Errorf("recycled slot %d still holds a connection", i)
+		}
+	}
+}
+
 func TestHub_RangeConns_VisitsAll(t *testing.T) {
 	hub := mustNewHubConfig(t, HubConfig{WorkerCount: 1, JobQueueSize: 8})
 	defer hub.Stop()

@@ -324,14 +324,17 @@ type PaginationMeta struct {
 
 // NewPaginationMeta builds PaginationMeta from page, page size, and total item count.
 // A pageSize ≤ 0 is treated as 1 to avoid division-by-zero.
+// TotalPages saturates at the largest int when the page count is larger.
 func NewPaginationMeta(page, pageSize int, totalItems int64) *PaginationMeta {
 	if pageSize <= 0 {
 		pageSize = 1
 	}
-	totalPages := int((totalItems + int64(pageSize) - 1) / int64(pageSize))
-	if totalPages < 0 {
-		totalPages = 0
+	divisor := int64(pageSize)
+	pages := totalItems / divisor
+	if totalItems%divisor > 0 {
+		pages++
 	}
+	totalPages := int(min(max(pages, 0), int64(math.MaxInt)))
 	return &PaginationMeta{
 		Page:       page,
 		PageSize:   pageSize,

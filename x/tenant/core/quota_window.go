@@ -2,8 +2,12 @@ package tenant
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"time"
 )
+
+const quotaRollbackTimeout = 5 * time.Second
 
 // WindowQuotaManager enforces per-tenant quota limits for multiple windows.
 // It uses a QuotaStore to atomically reserve usage per window.
@@ -20,7 +24,8 @@ func NewWindowQuotaManager(provider QuotaConfigProvider, store QuotaStore) *Wind
 	}
 }
 
-// Allow checks quota usage for a tenant.
+// Allow checks quota usage for a tenant. If a reservation fails, it releases
+// earlier reservations with a bounded cleanup context and reports release errors.
 func (m *WindowQuotaManager) Allow(ctx context.Context, tenantID string, req QuotaRequest) (QuotaResult, error) {
 	if m == nil || m.provider == nil || m.store == nil {
 		return QuotaResult{Allowed: true}, nil
@@ -38,13 +43,8 @@ func (m *WindowQuotaManager) Allow(ctx context.Context, tenantID string, req Quo
 
 	normalizeQuotaRequest(&req)
 
-	type reservation struct {
-		window      QuotaWindow
-		windowStart time.Time
-	}
-
 	var (
-		reserved []reservation
+		reserved []QuotaReleaseRequest
 		minReq   int64 = -1
 		minTok   int64 = -1
 	)
@@ -65,16 +65,6 @@ func (m *WindowQuotaManager) Allow(ctx context.Context, tenantID string, req Quo
 			LimitTokens:   limit.Tokens,
 		})
 		if err != nil || !allowed {
-			for _, item := range reserved {
-				_ = m.store.Release(ctx, QuotaReleaseRequest{
-					TenantID:      tenantID,
-					Window:        item.window,
-					WindowStart:   item.windowStart,
-					DeltaRequests: req.Requests,
-					DeltaTokens:   req.Tokens,
-				})
-			}
-
 			retryAfter := time.Until(quotaWindowEnd(windowStart, limit.Window))
 			if retryAfter < 0 {
 				retryAfter = 0
@@ -86,13 +76,19 @@ func (m *WindowQuotaManager) Allow(ctx context.Context, tenantID string, req Quo
 				RemainingTokens:   remaining(limit.Tokens, usage.Tokens),
 				RetryAfter:        retryAfter,
 			}
-			if err != nil {
-				return result, err
+			if err == nil {
+				err = ErrQuotaExceeded
 			}
-			return result, ErrQuotaExceeded
+			return result, m.rollback(ctx, reserved, err)
 		}
 
-		reserved = append(reserved, reservation{window: limit.Window, windowStart: windowStart})
+		reserved = append(reserved, QuotaReleaseRequest{
+			TenantID:      tenantID,
+			Window:        limit.Window,
+			WindowStart:   windowStart,
+			DeltaRequests: req.Requests,
+			DeltaTokens:   req.Tokens,
+		})
 		minReq = minRemaining(minReq, remaining(limit.Requests, usage.Requests))
 		minTok = minRemaining(minTok, remaining(limit.Tokens, usage.Tokens))
 	}
@@ -102,6 +98,20 @@ func (m *WindowQuotaManager) Allow(ctx context.Context, tenantID string, req Quo
 		RemainingRequests: minReq,
 		RemainingTokens:   minTok,
 	}, nil
+}
+
+func (m *WindowQuotaManager) rollback(ctx context.Context, reserved []QuotaReleaseRequest, cause error) error {
+	if len(reserved) == 0 {
+		return cause
+	}
+	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), quotaRollbackTimeout)
+	defer cancel()
+	for i := len(reserved) - 1; i >= 0; i-- {
+		if err := m.store.Release(cleanupCtx, reserved[i]); err != nil {
+			cause = errors.Join(cause, fmt.Errorf("release %s quota reservation: %w", reserved[i].Window, err))
+		}
+	}
+	return cause
 }
 
 func minRemaining(current, candidate int64) int64 {

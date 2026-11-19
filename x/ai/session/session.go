@@ -7,6 +7,7 @@ package session
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/birdordev/plumego/x/ai/provider"
@@ -29,11 +30,47 @@ type Session struct {
 	Metadata  map[string]string
 }
 
-// Manager manages conversation sessions.
+// Manager manages conversation sessions. It serializes access to a session
+// within one manager. Storage and tokenizer callbacks invoked during a session
+// operation must not reenter that manager. Separate managers sharing storage
+// need external coordination for concurrent changes to the same session.
 type Manager struct {
 	storage   Storage
 	tokenizer tokenizer.Tokenizer
 	config    Config
+
+	sessionMu sync.Mutex
+	sessions  map[string]*sessionLock
+}
+
+type sessionLock struct {
+	mu   sync.Mutex
+	refs int
+}
+
+func (m *Manager) lockSession(id string) func() {
+	m.sessionMu.Lock()
+	lock := m.sessions[id]
+	if lock == nil {
+		lock = &sessionLock{}
+		if m.sessions == nil {
+			m.sessions = make(map[string]*sessionLock)
+		}
+		m.sessions[id] = lock
+	}
+	lock.refs++
+	m.sessionMu.Unlock()
+
+	lock.mu.Lock()
+	return func() {
+		lock.mu.Unlock()
+		m.sessionMu.Lock()
+		lock.refs--
+		if lock.refs == 0 {
+			delete(m.sessions, id)
+		}
+		m.sessionMu.Unlock()
+	}
 }
 
 // Config configures the session manager.
@@ -135,6 +172,12 @@ func (m *Manager) Create(ctx context.Context, opts CreateOptions) (*Session, err
 
 // Get retrieves a session.
 func (m *Manager) Get(ctx context.Context, sessionID string) (*Session, error) {
+	defer m.lockSession(sessionID)()
+	return m.loadSession(ctx, sessionID)
+}
+
+// loadSession runs under the session lock because expiry can delete the record.
+func (m *Manager) loadSession(ctx context.Context, sessionID string) (*Session, error) {
 	session, err := m.storage.Load(ctx, sessionID)
 	if err != nil {
 		return nil, err
@@ -149,20 +192,27 @@ func (m *Manager) Get(ctx context.Context, sessionID string) (*Session, error) {
 	return session, nil
 }
 
-// Update updates a session.
+// Update replaces a session with the supplied snapshot.
 func (m *Manager) Update(ctx context.Context, session *Session) error {
+	defer m.lockSession(session.ID)()
+	return m.saveSession(ctx, session)
+}
+
+func (m *Manager) saveSession(ctx context.Context, session *Session) error {
 	session.UpdatedAt = time.Now()
 	return m.storage.Save(ctx, session)
 }
 
 // Delete deletes a session.
 func (m *Manager) Delete(ctx context.Context, sessionID string) error {
+	defer m.lockSession(sessionID)()
 	return m.storage.Delete(ctx, sessionID)
 }
 
 // AppendMessage appends a message to the session.
 func (m *Manager) AppendMessage(ctx context.Context, sessionID string, msg provider.Message) error {
-	session, err := m.Get(ctx, sessionID)
+	defer m.lockSession(sessionID)()
+	session, err := m.loadSession(ctx, sessionID)
 	if err != nil {
 		return err
 	}
@@ -187,7 +237,7 @@ func (m *Manager) AppendMessage(ctx context.Context, sessionID string, msg provi
 		}
 	}
 
-	return m.Update(ctx, session)
+	return m.saveSession(ctx, session)
 }
 
 // GetMessages retrieves messages with pagination. Offset and limit must be nonnegative.
@@ -224,7 +274,8 @@ func (m *Manager) GetActiveContext(ctx context.Context, sessionID string, maxTok
 
 // TrimMessages removes old messages to fit within token budget.
 func (m *Manager) TrimMessages(ctx context.Context, sessionID string, maxTokens int) error {
-	session, err := m.Get(ctx, sessionID)
+	defer m.lockSession(sessionID)()
+	session, err := m.loadSession(ctx, sessionID)
 	if err != nil {
 		return err
 	}
@@ -233,18 +284,19 @@ func (m *Manager) TrimMessages(ctx context.Context, sessionID string, maxTokens 
 		return err
 	}
 
-	return m.Update(ctx, session)
+	return m.saveSession(ctx, session)
 }
 
 // SetContext sets a context variable.
 func (m *Manager) SetContext(ctx context.Context, sessionID string, key string, value any) error {
-	session, err := m.Get(ctx, sessionID)
+	defer m.lockSession(sessionID)()
+	session, err := m.loadSession(ctx, sessionID)
 	if err != nil {
 		return err
 	}
 
 	session.Context[key] = value
-	return m.Update(ctx, session)
+	return m.saveSession(ctx, session)
 }
 
 // GetContext gets a context variable.

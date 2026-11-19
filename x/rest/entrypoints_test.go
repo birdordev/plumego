@@ -190,6 +190,26 @@ func TestNewPaginationMeta_ZeroItems(t *testing.T) {
 	}
 }
 
+func TestPaginationMetaRoundsWithoutOverflow(t *testing.T) {
+	for _, tc := range []struct {
+		count          int64
+		page, pageSize int
+		want           int64
+	}{
+		{math.MaxInt64, 1, 2, math.MaxInt64/2 + 1},
+		{math.MaxInt64, 1, 0, math.MaxInt64},
+		{40, 2, 20, 2},
+		{41, 2, 20, 3},
+		{-1, 1, 20, 0},
+	} {
+		got := NewPaginationMeta(tc.page, tc.pageSize, tc.count)
+		pages := int(min(tc.want, int64(math.MaxInt)))
+		if got.TotalPages != pages || got.HasNext != (tc.page < pages) || got.HasPrev != (tc.page > 1) || got.PageSize != max(tc.pageSize, 1) {
+			t.Errorf("count=%d, page=%d, size=%d: metadata = %+v, want %d pages", tc.count, tc.page, tc.pageSize, got, pages)
+		}
+	}
+}
+
 // --- QueryBuilder negative-path cases ---
 
 func TestQueryBuilder_PageSizeExceedsMax_Clamped(t *testing.T) {

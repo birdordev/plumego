@@ -38,6 +38,7 @@ import (
 	"fmt"
 	"hash/crc32"
 	"io"
+	"math"
 	"os"
 	"path/filepath"
 	"sync"
@@ -204,11 +205,17 @@ func NewKVStore(opts Options) (*KVStore, error) {
 		serializer: GetSerializer(opts.SerializerFormat),
 	}
 
+	// Finish recovery before starting workers that mutate resident entries.
+	if err := kv.loadData(); err != nil {
+		return nil, fmt.Errorf("failed to load data: %w", err)
+	}
+
 	kv.ctx, kv.cancel = context.WithCancel(context.Background())
 
 	// Initialize WAL
 	if !opts.ReadOnly {
 		if err := kv.initWAL(); err != nil {
+			kv.cancel()
 			return nil, fmt.Errorf("failed to initialize WAL: %w", err)
 		}
 
@@ -216,12 +223,6 @@ func NewKVStore(opts Options) (*KVStore, error) {
 		kv.wg.Add(2)
 		go kv.walFlusher()
 		go kv.cleaner()
-	}
-
-	// Load existing data
-	if err := kv.loadData(); err != nil {
-		_ = kv.Close()
-		return nil, fmt.Errorf("failed to load data: %w", err)
 	}
 
 	return kv, nil
@@ -268,6 +269,9 @@ func validateOptions(opts *Options) error {
 	}
 	if opts.MaxMemoryMB <= 0 {
 		return errors.New("max memory must be positive")
+	}
+	if int64(opts.MaxMemoryMB) > math.MaxInt64/(1024*1024) {
+		return errors.New("max memory exceeds the representable byte range")
 	}
 	if opts.ShardCount <= 0 || (opts.ShardCount&(opts.ShardCount-1)) != 0 {
 		return errors.New("shard count must be power of 2")
@@ -545,14 +549,7 @@ func (kv *KVStore) loadSnapshot() error {
 			return err
 		}
 
-		shard := kv.getShard(entry.Key)
-		shard.mu.Lock()
-		shard.data[entry.Key] = entry
-		kv.moveToFront(shard, entry)
-		shard.mu.Unlock()
-
-		atomic.AddInt64(&kv.entries, 1)
-		atomic.AddInt64(&kv.memoryUsage, entry.Size)
+		kv.restoreEntry(entry)
 	}
 
 	return nil

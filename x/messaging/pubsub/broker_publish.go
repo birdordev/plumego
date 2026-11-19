@@ -27,9 +27,9 @@ func (b *InProcBroker) PublishBatch(topic string, msgs []Message) error {
 		return newErr(ErrCodeClosed, "publish_batch", topic, "broker is closed", nil)
 	}
 
-	topic = strings.TrimSpace(topic)
-	if topic == "" {
-		return newErr(ErrCodeInvalidTopic, "publish_batch", "", "topic must not be empty", nil)
+	topic, err := normalizePublishTopic(topic, "publish_batch")
+	if err != nil {
+		return err
 	}
 
 	for i := range msgs {
@@ -109,9 +109,8 @@ func (b *InProcBroker) publishInternal(ctx context.Context, topic string, msg Me
 		return err
 	}
 
-	topic = strings.TrimSpace(topic)
-	if topic == "" {
-		err = newErr(ErrCodeInvalidTopic, "publish", "", "topic must not be empty", nil)
+	topic, err = normalizePublishTopic(topic, "publish")
+	if err != nil {
 		return err
 	}
 
@@ -145,4 +144,12 @@ func (b *InProcBroker) publishInternal(ctx context.Context, topic string, msg Me
 	}
 
 	return nil
+}
+
+func normalizePublishTopic(topic, op string) (string, error) {
+	topic = strings.TrimSpace(topic)
+	if topic == "" {
+		return "", newErr(ErrCodeInvalidTopic, op, "", "topic must not be empty", nil)
+	}
+	return topic, nil
 }

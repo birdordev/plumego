@@ -23,7 +23,10 @@ type Backend struct {
 	Metadata map[string]string
 
 	// Health status
-	healthy atomic.Bool
+	healthy       atomic.Bool
+	probeSequence atomic.Uint64
+	probeMu       sync.Mutex
+	appliedProbe  uint64 // Guarded by probeMu.
 
 	// Failure tracking
 	consecutiveFailures atomic.Uint32

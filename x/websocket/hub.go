@@ -117,7 +117,8 @@ func (h *Hub) getConnList() *[]*Conn {
 
 // putConnList returns a connection list to the pool after clearing it
 func (h *Hub) putConnList(conns *[]*Conn) {
-	// Clear the slice but keep the underlying array
+	// Drop connection references while retaining the backing array.
+	clear(*conns)
 	*conns = (*conns)[:0]
 	h.connListPool.Put(conns)
 }

@@ -102,6 +102,7 @@ func (h *HealthChecker) checkAll(ctx context.Context) {
 
 // checkBackend checks a single backend
 func (h *HealthChecker) checkBackend(parent context.Context, backend *Backend) {
+	sequence := backend.probeSequence.Add(1)
 	ctx, cancel := context.WithTimeout(parent, h.config.Timeout)
 	defer cancel()
 
@@ -111,36 +112,39 @@ func (h *HealthChecker) checkBackend(parent context.Context, backend *Backend) {
 	// Create request
 	req, err := http.NewRequestWithContext(ctx, h.config.Method, healthURL, nil)
 	if err != nil {
-		h.updateHealth(parent, backend, false)
+		h.updateHealth(parent, backend, sequence, false)
 		return
 	}
 
 	// Execute request
 	resp, err := h.client.Do(req)
 	if err != nil {
-		h.updateHealth(parent, backend, false)
+		h.updateHealth(parent, backend, sequence, false)
 		return
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	// Check status code
 	healthy := resp.StatusCode == h.config.ExpectedStatus
-	h.updateHealth(parent, backend, healthy)
+	h.updateHealth(parent, backend, sequence, healthy)
 }
 
 // updateHealth updates the health status of a backend
-func (h *HealthChecker) updateHealth(ctx context.Context, backend *Backend, healthy bool) {
+func (h *HealthChecker) updateHealth(ctx context.Context, backend *Backend, sequence uint64, healthy bool) {
 	// Serialize publication with background cancellation. A per-probe
 	// deadline is still an unhealthy result if the parent remains active.
 	h.mu.Lock()
-	if ctx.Err() != nil {
+	backend.probeMu.Lock()
+	if ctx.Err() != nil || sequence <= backend.appliedProbe {
+		backend.probeMu.Unlock()
 		h.mu.Unlock()
 		return
 	}
 	wasHealthy := backend.IsHealthy()
 
-	// Update health status
+	backend.appliedProbe = sequence
 	backend.SetHealthy(healthy)
+	backend.probeMu.Unlock()
 	h.mu.Unlock()
 
 	// Call health change callback if status changed
@@ -149,7 +153,9 @@ func (h *HealthChecker) updateHealth(ctx context.Context, backend *Backend, heal
 	}
 }
 
-// Check performs an immediate health check on a specific backend
+// Check performs an immediate health check on a specific backend and returns
+// its current health. An overlapping check started earlier cannot overwrite
+// a result already applied by a newer check.
 func (h *HealthChecker) Check(backend *Backend) bool {
 	h.checkBackend(context.Background(), backend)
 	return backend.IsHealthy()

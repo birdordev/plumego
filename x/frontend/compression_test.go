@@ -643,8 +643,7 @@ func TestPrecompressedVariantPlanRejectsUnsafePaths(t *testing.T) {
 	}
 }
 
-// TestAcceptsToken verifies the token-level Accept-Encoding parser.
-func TestAcceptsToken(t *testing.T) {
+func TestAcceptedEncodingQuality(t *testing.T) {
 	tests := []struct {
 		header string
 		token  string
@@ -673,9 +672,9 @@ func TestAcceptsToken(t *testing.T) {
 			if tt.header != "" {
 				req.Header.Set("Accept-Encoding", tt.header)
 			}
-			got := acceptsToken(req, tt.token)
+			got := acceptedEncodings(req).quality(tt.token) > 0
 			if got != tt.want {
-				t.Fatalf("acceptsToken(%q, %q) = %v, want %v", tt.header, tt.token, got, tt.want)
+				t.Fatalf("positive quality for %q in %q = %v, want %v", tt.token, tt.header, got, tt.want)
 			}
 		})
 	}

@@ -222,6 +222,10 @@ file metadata persistence behind the stable `store/file` contracts.
 - Snapshot and WAL format detection fails closed for unknown non-empty content.
   Compressed snapshots are decompressed before format detection, so auto-detect
   sees the actual persisted snapshot payload instead of the gzip header.
+- Recovery applies the configured entry and memory limits while loading the
+  snapshot and replaying the WAL, including in read-only mode. Eviction is
+  based on recovery order. Reads that changed the previous in-memory LRU order
+  are not persisted.
 - When `EnableCompression` is true, snapshot loading requires valid gzip data
   and fails closed instead of falling back to an uncompressed read.
 - `SetMetricsCollector` observes `Set`, `Get`, and `Delete` operations,

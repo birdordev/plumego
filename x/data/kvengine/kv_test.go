@@ -2822,6 +2822,96 @@ func TestReplayRestoresLRUInsertionOrder(t *testing.T) {
 	}
 }
 
+func TestRecoveryHonorsCapacity(t *testing.T) {
+	for _, format := range []SerializationFormat{FormatBinary, FormatJSON} {
+		for _, snapshot := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/snapshot=%v", format, snapshot), func(t *testing.T) {
+				opts := Options{DataDir: t.TempDir(), ShardCount: 1, MaxEntries: 1, SerializerFormat: format}
+				store, err := NewKVStore(opts)
+				if err != nil {
+					t.Fatal(err)
+				}
+				t.Cleanup(func() { _ = store.Close() })
+				if err := store.Set("a", []byte("first"), 0); err != nil {
+					t.Fatal(err)
+				}
+				if snapshot {
+					if err := store.Snapshot(); err != nil {
+						t.Fatal(err)
+					}
+				}
+				for _, value := range []string{"first", "latest"} {
+					if err := store.Set("b", []byte(value), 0); err != nil {
+						t.Fatal(err)
+					}
+				}
+				if err := store.Delete("b"); err != nil {
+					t.Fatal(err)
+				}
+				if err := store.Set("c", []byte("retained"), 0); err != nil {
+					t.Fatal(err)
+				}
+				if err := store.Close(); err != nil {
+					t.Fatal(err)
+				}
+				for _, readOnly := range []bool{false, true} {
+					opts.ReadOnly = readOnly
+					reopened, err := NewKVStore(opts)
+					if err != nil {
+						t.Fatal(err)
+					}
+					t.Cleanup(func() { _ = reopened.Close() })
+					if keys := reopened.Keys(); len(keys) != 1 || keys[0] != "c" {
+						t.Errorf("read only = %v: keys = %v, want [c]", readOnly, keys)
+					}
+					if err := reopened.Close(); err != nil {
+						t.Fatal(err)
+					}
+				}
+			})
+		}
+	}
+}
+
+func TestRecoveryHonorsReducedMemoryBudget(t *testing.T) {
+	opts := Options{DataDir: t.TempDir(), ShardCount: 1, MaxMemoryMB: 3}
+	store, err := NewKVStore(opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	if err := store.Set("a", make([]byte, 700*1024), 0); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Snapshot(); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Set("b", make([]byte, 700*1024), 0); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Set("a", make([]byte, 100*1024), 0); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Set("a", make([]byte, 1100*1024), 0); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	opts.MaxMemoryMB = 1
+	reopened, err := NewKVStore(opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopened.Close()
+	if keys := reopened.Keys(); len(keys) != 1 || keys[0] != "b" {
+		t.Errorf("keys = %v, want [b]", keys)
+	}
+	if got := reopened.GetStats().MemoryUsage; got > 1024*1024 {
+		t.Errorf("memory usage = %d, exceeds budget", got)
+	}
+}
+
 type rejectWALWrite struct{ err error }
 
 func (w rejectWALWrite) Write([]byte) (int, error) { return 0, w.err }

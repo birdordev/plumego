@@ -8,13 +8,6 @@ import (
 	"strings"
 )
 
-// acceptsToken reports whether the client's Accept-Encoding header accepts the
-// named encoding token. It compares tokens case-insensitively and rejects tokens
-// with a zero quality factor.
-func acceptsToken(r *http.Request, token string) bool {
-	return acceptedEncodings(r).quality(token) > 0
-}
-
 type encodingPreference struct {
 	headerPresent bool
 	explicit      map[string]float64

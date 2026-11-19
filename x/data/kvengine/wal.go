@@ -188,39 +188,41 @@ func (kv *KVStore) replayWAL() error {
 			return fmt.Errorf("%w: CRC mismatch for key %q", ErrInvalidEntry, entry.Key)
 		}
 
-		shard := kv.getShard(entry.Key)
-		shard.mu.Lock()
-
 		switch entry.Op {
 		case opSet:
-			size := int64(len(entry.Key) + len(entry.Value) + 64)
-			e := &Entry{
+			kv.restoreEntry(&Entry{
 				Key:      entry.Key,
 				Value:    entry.Value,
 				ExpireAt: entry.ExpireAt,
-				Size:     size,
 				Version:  entry.Version,
-			}
-
-			if oldEntry, exists := shard.data[entry.Key]; exists {
-				kv.deleteFromShard(shard, entry.Key, oldEntry)
-			}
-
-			shard.data[entry.Key] = e
-			kv.moveToFront(shard, e)
-			atomic.AddInt64(&kv.entries, 1)
-			atomic.AddInt64(&kv.memoryUsage, size)
+			})
 
 		case opDelete:
-			if entry, exists := shard.data[entry.Key]; exists {
-				kv.deleteFromShard(shard, entry.Key, entry)
-			}
+			kv.removeRestoredEntry(entry.Key)
 		}
-
-		shard.mu.Unlock()
 	}
 
 	return nil
+}
+
+// restoreEntry applies the current cache budget without changing the persisted data.
+func (kv *KVStore) restoreEntry(entry *Entry) {
+	entry.Size = int64(len(entry.Key)) + int64(len(entry.Value)) + 64
+	maxMemory := int64(kv.opts.MaxMemoryMB) * 1024 * 1024
+	if entry.Size > maxMemory {
+		// A skipped replacement must still invalidate the previous value.
+		kv.removeRestoredEntry(entry.Key)
+		return
+	}
+	kv.putEntry(entry, maxMemory)
+}
+
+// removeRestoredEntry runs before the store is exposed or its workers start.
+func (kv *KVStore) removeRestoredEntry(key string) {
+	shard := kv.getShard(key)
+	if entry := shard.data[key]; entry != nil {
+		kv.deleteFromShard(shard, key, entry)
+	}
 }
 
 func (kv *KVStore) encodeWALEntry(entry WALEntry) ([]byte, error) {

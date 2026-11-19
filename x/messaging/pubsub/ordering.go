@@ -172,26 +172,32 @@ func (ops *OrderedPubSub) PublishOrdered(topic string, msg Message, level OrderL
 
 // PublishWithKey publishes a message with a partition key.
 // Ordered queues copy Meta before returning and stamp the sequence on that copy.
+// A successful ordered call confirms admission. OrderedPublishes counts messages
+// accepted by the underlying broker.
 func (ops *OrderedPubSub) PublishWithKey(topic, key string, msg Message, level OrderLevel) error {
 	if ops.closed.Load() {
 		return ErrOrderingClosed
 	}
 
-	var identifier string
-	switch level {
-	case OrderNone:
+	if level == OrderNone {
 		return ops.Publish(topic, msg)
-	case OrderPerTopic:
-		identifier = topic
+	}
+	if level < OrderPerTopic || level > OrderGlobal {
+		return ErrInvalidOrderLevel
+	}
+	topic, err := normalizePublishTopic(topic, "publish")
+	if err != nil {
+		return err
+	}
+
+	identifier := topic
+	switch level {
 	case OrderPerKey:
-		identifier = key
-		if identifier == "" {
-			identifier = topic
+		if key != "" {
+			identifier = key
 		}
 	case OrderGlobal:
 		identifier = globalQueueIdentifier
-	default:
-		return ErrInvalidOrderLevel
 	}
 
 	ops.queuesMu.RLock()
@@ -319,7 +325,9 @@ func (ops *OrderedPubSub) flushBatch(queue *orderedQueue) {
 		om.message.Meta[MetaKeySequence] = strconv.FormatUint(om.sequence, 10)
 
 		// Publish
-		_ = ops.Publish(om.topic, om.message)
+		if err := ops.Publish(om.topic, om.message); err != nil {
+			continue
+		}
 		ops.orderedPublishes.Add(1)
 		queue.processed.Add(1)
 	}
