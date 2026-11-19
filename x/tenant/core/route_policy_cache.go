@@ -43,7 +43,8 @@ func NewInMemoryRoutePolicyCache(maxSize int, ttl time.Duration) *InMemoryRouteP
 }
 
 // Get returns a cached policy if present and not expired.
-func (c *InMemoryRoutePolicyCache) Get(ctx context.Context, tenantID string) (RoutePolicy, bool) {
+// Expired entries remain eligible for eviction when the cache needs space.
+func (c *InMemoryRoutePolicyCache) Get(_ context.Context, tenantID string) (RoutePolicy, bool) {
 	if c == nil {
 		return RoutePolicy{}, false
 	}
@@ -55,7 +56,6 @@ func (c *InMemoryRoutePolicyCache) Get(ctx context.Context, tenantID string) (Ro
 		return RoutePolicy{}, false
 	}
 	if time.Now().UTC().After(entry.expiresAt) {
-		_ = c.Delete(ctx, tenantID)
 		return RoutePolicy{}, false
 	}
 	return entry.policy, true

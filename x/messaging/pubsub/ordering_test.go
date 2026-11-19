@@ -2,6 +2,7 @@ package pubsub
 
 import (
 	"context"
+	"maps"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -78,6 +79,48 @@ func TestAudit08OrderingNamespace(t *testing.T) {
 			receive(second, tc.wantSecond)
 			if got := broker.OrderingStats().SequenceErrors; got != 0 {
 				t.Errorf("sequence errors = %d, want 0", got)
+			}
+		})
+	}
+}
+
+func TestOrderedPublishOwnsMetadata(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		meta map[string]string
+	}{
+		{"nil", nil},
+		{"empty", map[string]string{}},
+		{"existing sequence", map[string]string{"color": "blue", MetaKeySequence: "caller"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := DefaultOrderingConfig()
+			cfg.MaxBatchSize = 1
+			broker := NewOrdered(cfg)
+			defer broker.Close()
+			ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
+			defer cancel()
+			sub, err := broker.Subscribe(ctx, "test", SubOptions{BufferSize: 2})
+			if err != nil {
+				t.Fatal(err)
+			}
+			before := maps.Clone(tc.meta)
+			if err := broker.PublishOrdered("test", Message{Data: "payload", Meta: tc.meta}, OrderPerTopic); err != nil {
+				t.Fatal(err)
+			}
+			select {
+			case msg := <-sub.C():
+				if got := msg.Meta[MetaKeySequence]; got != "1" {
+					t.Errorf("sequence = %q, want 1", got)
+				}
+				if got := msg.Meta["color"]; got != before["color"] {
+					t.Errorf("label = %q, want %q", got, before["color"])
+				}
+			case <-ctx.Done():
+				t.Fatal("ordered message not delivered")
+			}
+			if !maps.Equal(tc.meta, before) {
+				t.Errorf("publisher metadata = %v, want %v", tc.meta, before)
 			}
 		})
 	}

@@ -1,3 +1,5 @@
 overrides:
   esbuild: 0.28.1
+  ajv>fast-uri: 3.1.9
+  '@astrojs/starlight>js-yaml': 4.3.2
   yaml: 2.9.0

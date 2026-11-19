@@ -34,7 +34,6 @@ public_entrypoints:
   - LoadBalancer
   - NewRoundRobinBalancer
   - NewWeightedBalancer
-  - NewWeightedBalancerE
   - NewRandomBalancer
   - NewLeastConnBalancer
   - ErrNoPrimary

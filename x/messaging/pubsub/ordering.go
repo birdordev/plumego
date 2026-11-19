@@ -2,6 +2,7 @@ package pubsub
 
 import (
 	"context"
+	"maps"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -170,6 +171,7 @@ func (ops *OrderedPubSub) PublishOrdered(topic string, msg Message, level OrderL
 }
 
 // PublishWithKey publishes a message with a partition key.
+// Ordered queues copy Meta before returning and stamp the sequence on that copy.
 func (ops *OrderedPubSub) PublishWithKey(topic, key string, msg Message, level OrderLevel) error {
 	if ops.closed.Load() {
 		return ErrOrderingClosed
@@ -221,6 +223,7 @@ func (ops *OrderedPubSub) enqueueOrdered(queue *orderedQueue, topic string, msg 
 	queue.enqueueMu.Lock()
 	defer queue.enqueueMu.Unlock()
 
+	msg.Meta = maps.Clone(msg.Meta)
 	om := orderedMessage{
 		topic:    topic,
 		message:  msg,

@@ -242,13 +242,8 @@ func (qb *QueryBuilder) Parse(r *http.Request) *QueryParams {
 	}
 	if offset, err := strconv.Atoi(query.Get("offset")); err == nil && offset >= 0 {
 		params.Offset = offset
-	} else if params.Page > 1 && params.PageSize > 0 {
-		pages := params.Page - 1
-		if pages > math.MaxInt/params.PageSize {
-			params.Offset = math.MaxInt
-		} else {
-			params.Offset = pages * params.PageSize
-		}
+	} else {
+		params.Offset = pageOffset(params.Page, params.PageSize)
 	}
 	if params.Limit == 0 {
 		params.Limit = params.PageSize
@@ -524,7 +519,8 @@ func DefaultResourceOptions() *ResourceOptions {
 	}
 }
 
-// NormalizeQueryParams applies resource-level defaults and allowlists to parsed query params.
+// NormalizeQueryParams applies resource-level defaults and allowlists to parsed
+// query params. A recalculated offset saturates at the largest int.
 func NormalizeQueryParams(params *QueryParams, opts *ResourceOptions) *QueryParams {
 	if params == nil {
 		params = &QueryParams{}
@@ -544,7 +540,7 @@ func NormalizeQueryParams(params *QueryParams, opts *ResourceOptions) *QueryPara
 	}
 	if params.PageSize > 0 {
 		params.Limit = params.PageSize
-		params.Offset = (params.Page - 1) * params.PageSize
+		params.Offset = pageOffset(params.Page, params.PageSize)
 	}
 
 	if len(opts.AllowedFilters) > 0 && len(params.Filters) > 0 {
@@ -578,6 +574,17 @@ func NormalizeQueryParams(params *QueryParams, opts *ResourceOptions) *QueryPara
 	}
 
 	return params
+}
+
+func pageOffset(page, pageSize int) int {
+	if page <= 1 || pageSize <= 0 {
+		return 0
+	}
+	pages := page - 1
+	if pages > math.MaxInt/pageSize {
+		return math.MaxInt
+	}
+	return pages * pageSize
 }
 
 // ================================================

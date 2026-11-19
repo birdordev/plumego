@@ -85,6 +85,41 @@ func TestRetryInterceptorRetriesRetryableCode(t *testing.T) {
 	}
 }
 
+func TestRetryInterceptorStopsOnCancellation(t *testing.T) {
+	retryable := codedError{code: "Unavailable"}
+	terminal := errors.New("terminal error")
+	for _, tc := range []struct {
+		name          string
+		cancelBefore  bool
+		invocationErr error
+		wantErr       error
+		wantCalls     int
+	}{
+		{"before invocation", true, retryable, context.Canceled, 0},
+		{"before retry", false, retryable, context.Canceled, 1},
+		{"terminal result", false, terminal, terminal, 1},
+		{"successful result", false, nil, nil, 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			if tc.cancelBefore {
+				cancel()
+			}
+			calls := 0
+			invoke := RetryInterceptor(3, "Unavailable")
+			err := invoke(ctx, "/test/Ping", nil, nil, func(context.Context, string, any, any, ...CallOption) error {
+				calls++
+				cancel()
+				return tc.invocationErr
+			})
+			if calls != tc.wantCalls || !errors.Is(err, tc.wantErr) {
+				t.Errorf("calls = %d, err = %v, want %d and %v", calls, err, tc.wantCalls, tc.wantErr)
+			}
+		})
+	}
+}
+
 type fakeConn struct {
 	closed atomic.Bool
 }

@@ -146,6 +146,41 @@ func TestHubTryBroadcastRoomCountsDrops(t *testing.T) {
 	}
 }
 
+func TestHubBroadcastSnapshotsPayload(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		all      bool
+		capacity int
+	}{
+		{"room", false, 2},
+		{"all", true, 2},
+		{"room reaches capacity", false, 1},
+		{"all reaches capacity", true, 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			hub := newManualHub(tc.capacity)
+			a, b := &Conn{closeC: make(chan struct{})}, &Conn{closeC: make(chan struct{})}
+			hub.rooms["room"] = map[*Conn]struct{}{a: {}, b: {}}
+			payload := []byte("original")
+			var result BroadcastResult
+			if tc.all {
+				result = hub.TryBroadcastAll(OpcodeText, payload)
+			} else {
+				result = hub.TryBroadcastRoom("room", OpcodeText, payload)
+			}
+			if result.Enqueued != tc.capacity || result.Dropped != 2-tc.capacity {
+				t.Fatalf("unexpected broadcast result: %+v", result)
+			}
+			copy(payload, "modified")
+			for range result.Enqueued {
+				if got := string((<-hub.jobQueue).data); got != "original" {
+					t.Errorf("queued payload = %q, want original", got)
+				}
+			}
+		})
+	}
+}
+
 // --- TryJoin capacity errors ---
 
 func TestHub_TryJoin_HubFull(t *testing.T) {

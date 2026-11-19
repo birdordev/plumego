@@ -2,6 +2,7 @@ package recordbuffer_test
 
 import (
 	"context"
+	"maps"
 	"sync"
 	"testing"
 	"time"
@@ -99,6 +100,36 @@ func TestGetRecords_ReturnsCopy(t *testing.T) {
 	got2 := c.GetRecords()
 	if got2[0].Name != "original" {
 		t.Errorf("GetRecords did not return an independent copy; got %q", got2[0].Name)
+	}
+}
+
+func TestRecordLabelsAreIndependent(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		labels metrics.MetricLabels
+	}{
+		{"nil", nil},
+		{"empty", metrics.MetricLabels{}},
+		{"populated", metrics.MetricLabels{"key": "original"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := recordbuffer.NewCollector()
+			want := maps.Clone(tc.labels)
+			c.Record(t.Context(), metrics.MetricRecord{Labels: tc.labels})
+			if tc.labels != nil {
+				tc.labels["key"] = "changed input"
+			}
+			first := c.GetRecords()[0].Labels
+			if (first == nil) != (want == nil) || !maps.Equal(first, want) {
+				t.Fatalf("stored labels = %#v, want %#v", first, want)
+			}
+			if first != nil {
+				first["key"] = "changed snapshot"
+			}
+			if got := c.GetRecords()[0].Labels; !maps.Equal(got, want) {
+				t.Errorf("labels after snapshot change = %v, want %v", got, want)
+			}
+		})
 	}
 }
 

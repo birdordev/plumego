@@ -3,6 +3,7 @@ package rest
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"math"
 	"net/http"
 	"net/http/httptest"
@@ -270,6 +271,31 @@ func TestQueryBuilderOffsetPrecedenceAndBounds(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/?"+tc.query, nil)
 		if got := builder.Parse(req).Offset; got != tc.want {
 			t.Errorf("%s: offset = %d, want %d", tc.query, got, tc.want)
+		}
+	}
+}
+
+func TestResourceQueryNormalizationBoundsOffset(t *testing.T) {
+	controller := NewBaseContextResourceController("widgets")
+	spec := DefaultResourceSpec("widgets")
+	spec.Options.MaxPageSize = 3
+	controller.ApplySpec(spec)
+	for _, tc := range []struct {
+		page, size, offset int
+		wantSize, want     int
+	}{
+		{3, 10, 5, 3, 6},
+		{math.MaxInt, 3, 0, 3, math.MaxInt},
+		{math.MaxInt, 1, 0, 1, math.MaxInt - 1},
+	} {
+		query := fmt.Sprintf("/?page=%d&page_size=%d&offset=%d", tc.page, tc.size, tc.offset)
+		req := httptest.NewRequest(http.MethodGet, query, nil)
+		direct := NormalizeQueryParams(&QueryParams{Page: tc.page, PageSize: tc.size, Offset: tc.offset}, spec.Options)
+		parsed := controller.ParseQueryParams(req)
+		for _, got := range []*QueryParams{direct, parsed} {
+			if got.Offset != tc.want || got.PageSize != tc.wantSize || got.Limit != tc.wantSize {
+				t.Errorf("%s: page size = %d, limit = %d, offset = %d, want %d, %d, %d", query, got.PageSize, got.Limit, got.Offset, tc.wantSize, tc.wantSize, tc.want)
+			}
 		}
 	}
 }

@@ -235,32 +235,22 @@ func (b *LeastConnectionsBalancer) Next(pool *BackendPool) (*Backend, error) {
 	}
 
 	b.mu.Lock()
-	// Ensure all backends have a counter
-	for _, backend := range backends {
-		if _, exists := b.connections[backend.URL]; !exists {
-			b.connections[backend.URL] = &atomic.Int64{}
-		}
-	}
-	b.mu.Unlock()
+	defer b.mu.Unlock()
 
-	// Find backend with least connections
+	// Reset must not replace the counters between initialization and selection.
 	var selected *Backend
-	minConns := int64(-1)
-
-	b.mu.RLock()
+	var minConns int64
 	for _, backend := range backends {
 		counter := b.connections[backend.URL]
+		if counter == nil {
+			counter = &atomic.Int64{}
+			b.connections[backend.URL] = counter
+		}
 		conns := counter.Load()
-
-		if minConns == -1 || conns < minConns {
+		if selected == nil || conns < minConns {
 			minConns = conns
 			selected = backend
 		}
-	}
-	b.mu.RUnlock()
-
-	if selected == nil {
-		return nil, ErrNoHealthyBackends
 	}
 
 	return selected, nil

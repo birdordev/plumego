@@ -401,6 +401,35 @@ func TestLeastConnectionsReset(t *testing.T) {
 	}
 }
 
+func TestLeastConnectionsNextDuringReset(t *testing.T) {
+	balancer := NewLeastConnectionsBalancer()
+	pool := mustPool(t, "http://a:8080", "http://b:8080", "http://c:8080")
+	backends := pool.Backends()
+	backends[0].SetHealthy(false)
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	wg.Go(func() {
+		<-start
+		for range 5000 {
+			balancer.Reset()
+		}
+	})
+	close(start)
+	for range 5000 {
+		backend, err := balancer.Next(pool)
+		if err != nil || (backend != backends[1] && backend != backends[2]) {
+			t.Errorf("Next selected %v, err %v, want a healthy backend", backend, err)
+			break
+		}
+	}
+	wg.Wait()
+
+	balancer.Reset()
+	if backend, err := balancer.Next(pool); err != nil || backend != backends[1] {
+		t.Fatalf("Next after Reset selected %v, err %v, want first healthy backend", backend, err)
+	}
+}
+
 func TestLeastConnectionsConcurrent(t *testing.T) {
 	pool := mustPool(t, "http://a:8080", "http://b:8080")
 	b := NewLeastConnectionsBalancer()

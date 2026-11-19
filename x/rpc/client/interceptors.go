@@ -50,6 +50,8 @@ func LoggingInterceptor(logger plumelog.StructuredLogger) UnaryInterceptor {
 	}
 }
 
+// RetryInterceptor retries matching errors up to maxAttempts. A canceled
+// context prevents the next invocation and returns the context error.
 func RetryInterceptor(maxAttempts int, retryCodes ...Code) UnaryInterceptor {
 	if maxAttempts < 1 {
 		maxAttempts = 1
@@ -61,6 +63,9 @@ func RetryInterceptor(maxAttempts int, retryCodes ...Code) UnaryInterceptor {
 	return func(ctx context.Context, method string, req any, reply any, invoker UnaryInvoker, opts ...CallOption) error {
 		var err error
 		for attempt := 1; attempt <= maxAttempts; attempt++ {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
 			err = invoker(ctx, method, req, reply, opts...)
 			if err == nil {
 				return nil

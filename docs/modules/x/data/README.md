@@ -269,9 +269,11 @@ file metadata persistence behind the stable `store/file` contracts.
   cancels an active probe and skips the remaining replicas. A probe that reaches
   its own timeout still counts toward the failure threshold.
 - `ReplicaWeights`, when provided, must match the replica count and each weight
-  must be positive. Use `NewWeightedBalancerE` for constructor-time validation
+  must be positive. Use `NewWeightedBalancer` for constructor-time validation
   when creating a weighted balancer directly. An empty direct weighted balancer
-  keeps state and behaves like round-robin.
+  keeps state and behaves like round-robin. Weighted selection uses the total
+  weight of healthy replicas and returns `ErrInvalidReplicaWeight` if a total
+  or score exceeds the integer range.
 - `Cluster.Close` and health checker stop are idempotent; closing the cluster
   owns and closes the configured `*sql.DB` handles once.
 

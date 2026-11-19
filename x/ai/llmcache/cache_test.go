@@ -103,6 +103,42 @@ func TestAudit08LLMCacheReplaceAtCapacity(t *testing.T) {
 	}
 }
 
+func TestMemoryCacheDefaultExpiryBelongsToStoredEntry(t *testing.T) {
+	ctx := t.Context()
+	key := &CacheKey{Hash: "shared"}
+	entry := &CacheEntry{}
+	for _, ttl := range []time.Duration{time.Hour, 2 * time.Hour} {
+		cache := NewMemoryCache(ttl, 1)
+		before := time.Now()
+		if err := cache.Set(ctx, key, entry); err != nil {
+			t.Fatal(err)
+		}
+		after := time.Now()
+		stored, err := cache.Get(ctx, key)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if stored.ExpiresAt.Before(before.Add(ttl)) || stored.ExpiresAt.After(after.Add(ttl)) {
+			t.Errorf("stored expiry %v outside expected range for TTL %v", stored.ExpiresAt, ttl)
+		}
+		if !entry.ExpiresAt.IsZero() {
+			t.Errorf("caller expiry = %v, want zero", entry.ExpiresAt)
+		}
+
+		explicit := before.Add(3 * time.Hour)
+		if err := cache.Set(ctx, key, &CacheEntry{ExpiresAt: explicit}); err != nil {
+			t.Fatal(err)
+		}
+		stored, err = cache.Get(ctx, key)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !stored.ExpiresAt.Equal(explicit) || cache.Stats().Evictions != 0 {
+			t.Errorf("replacement expires at %v with %d evictions, want %v and 0", stored.ExpiresAt, cache.Stats().Evictions, explicit)
+		}
+	}
+}
+
 func TestMemoryCache_SetGet(t *testing.T) {
 	cache := NewMemoryCache(1*time.Hour, 100)
 

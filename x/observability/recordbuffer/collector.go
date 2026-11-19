@@ -2,6 +2,7 @@ package recordbuffer
 
 import (
 	"context"
+	"maps"
 	"sync"
 	"time"
 
@@ -57,9 +58,7 @@ func (c *Collector) Record(ctx context.Context, record metrics.MetricRecord) {
 	if record.Timestamp.IsZero() {
 		record.Timestamp = time.Now()
 	}
-	if len(record.Labels) > 0 {
-		record.Labels = cloneLabels(record.Labels)
-	}
+	record.Labels = maps.Clone(record.Labels)
 
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -113,21 +112,8 @@ func (c *Collector) GetRecords() []metrics.MetricRecord {
 
 	out := make([]metrics.MetricRecord, len(c.records))
 	for i, record := range c.records {
-		if len(record.Labels) > 0 {
-			record.Labels = cloneLabels(record.Labels)
-		}
+		record.Labels = maps.Clone(record.Labels)
 		out[i] = record
-	}
-	return out
-}
-
-func cloneLabels(labels metrics.MetricLabels) metrics.MetricLabels {
-	if len(labels) == 0 {
-		return nil
-	}
-	out := make(metrics.MetricLabels, len(labels))
-	for key, value := range labels {
-		out[key] = value
 	}
 	return out
 }

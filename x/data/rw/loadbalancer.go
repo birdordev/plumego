@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"math"
 	"math/rand"
 	"sync"
 	"sync/atomic"
@@ -17,7 +18,7 @@ var (
 	// ErrNoHealthyReplicas is returned when all replicas are unhealthy
 	ErrNoHealthyReplicas = errors.New("rw: no healthy replicas available")
 
-	// ErrInvalidReplicaWeight is returned when a replica weight is not positive.
+	// ErrInvalidReplicaWeight identifies invalid weights or unrepresentable scores.
 	ErrInvalidReplicaWeight = errors.New("rw: replica weights must be positive")
 )
 
@@ -186,9 +187,6 @@ func (b *LeastConnBalancer) Name() string {
 type WeightedBalancer struct {
 	weights       []int
 	currentWeight []int
-	maxWeight     int
-	gcd           int
-	invalid       bool
 	fallback      RoundRobinBalancer
 	mu            sync.Mutex
 }
@@ -200,29 +198,23 @@ func NewWeightedBalancer(weights []int) (*WeightedBalancer, error) {
 		return &WeightedBalancer{}, nil
 	}
 
-	maxWeight := 0
-	gcd := weights[0]
 	copied := append([]int(nil), weights...)
 
 	for i, w := range copied {
 		if w <= 0 {
 			return nil, fmt.Errorf("%w: index %d has weight %d", ErrInvalidReplicaWeight, i, w)
 		}
-		if w > maxWeight {
-			maxWeight = w
-		}
-		gcd = gcdInt(gcd, w)
 	}
 
 	return &WeightedBalancer{
 		weights:       copied,
 		currentWeight: make([]int, len(copied)),
-		maxWeight:     maxWeight,
-		gcd:           gcd,
 	}, nil
 }
 
-// Next returns the next replica using weighted round-robin
+// Next uses smooth weighted round-robin among healthy replicas.
+// If a total or score exceeds the integer range, it returns
+// ErrInvalidReplicaWeight without advancing the selection state.
 func (b *WeightedBalancer) Next(replicas []Replica) (int, error) {
 	if len(replicas) == 0 {
 		return -1, ErrNoReplicasAvailable
@@ -231,9 +223,6 @@ func (b *WeightedBalancer) Next(replicas []Replica) (int, error) {
 	if len(b.weights) == 0 {
 		return b.fallback.Next(replicas)
 	}
-	if b.invalid || b.maxWeight <= 0 {
-		return -1, ErrInvalidReplicaWeight
-	}
 	if len(b.weights) != len(replicas) {
 		return -1, fmt.Errorf("%w: got %d weights for %d replicas", ErrInvalidReplicaWeight, len(b.weights), len(replicas))
 	}
@@ -241,34 +230,35 @@ func (b *WeightedBalancer) Next(replicas []Replica) (int, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
-	// Weighted round-robin algorithm
-	for {
-		maxCurrent := -1
-		maxIdx := -1
-
-		for i := 0; i < len(replicas) && i < len(b.weights); i++ {
-			if !replicas[i].IsHealthy {
-				continue
-			}
-			if b.weights[i] <= 0 {
-				continue
-			}
-
-			b.currentWeight[i] += b.weights[i]
-
-			if maxIdx == -1 || b.currentWeight[i] > maxCurrent {
-				maxCurrent = b.currentWeight[i]
-				maxIdx = i
-			}
+	totalWeight, bestScore, selected := 0, 0, -1
+	for i, replica := range replicas {
+		if !replica.IsHealthy {
+			continue
 		}
-
-		if maxIdx == -1 {
-			return -1, ErrNoHealthyReplicas
+		weight := b.weights[i]
+		if totalWeight > math.MaxInt-weight || b.currentWeight[i] > math.MaxInt-weight {
+			return -1, fmt.Errorf("%w: total or score exceeds integer range", ErrInvalidReplicaWeight)
 		}
-
-		b.currentWeight[maxIdx] -= b.maxWeight
-		return maxIdx, nil
+		totalWeight += weight
+		score := b.currentWeight[i] + weight
+		if selected < 0 || score > bestScore {
+			selected, bestScore = i, score
+		}
 	}
+	if selected < 0 {
+		return -1, ErrNoHealthyReplicas
+	}
+	// Unhealthy replicas retain their scores, so the winning score can be negative.
+	if bestScore < math.MinInt+totalWeight {
+		return -1, fmt.Errorf("%w: winning score exceeds integer range", ErrInvalidReplicaWeight)
+	}
+	for i, replica := range replicas {
+		if replica.IsHealthy {
+			b.currentWeight[i] += b.weights[i]
+		}
+	}
+	b.currentWeight[selected] = bestScore - totalWeight
+	return selected, nil
 }
 
 // Reset resets the weighted balancer state
@@ -284,12 +274,4 @@ func (b *WeightedBalancer) Reset() {
 // Name returns the strategy name
 func (b *WeightedBalancer) Name() string {
 	return "weighted_round_robin"
-}
-
-// gcdInt calculates the greatest common divisor of two integers
-func gcdInt(a, b int) int {
-	for b != 0 {
-		a, b = b, a%b
-	}
-	return a
 }

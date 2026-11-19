@@ -1,5 +1,7 @@
 package websocket
 
+import "slices"
+
 // dispatchJobs enqueues send jobs for each connection in conns and tracks drops.
 // label is used only for log/metric messages to identify the broadcast target.
 func (h *Hub) dispatchJobs(conns []*Conn, op byte, data []byte, label string) BroadcastResult {
@@ -13,13 +15,15 @@ func (h *Hub) dispatchJobs(conns []*Conn, op byte, data []byte, label string) Br
 		h.broadcastDropped.Add(uint64(result.Dropped))
 		return result
 	}
+	// Jobs share one immutable snapshot of the caller's payload.
+	payload := slices.Clone(data)
 	for _, c := range conns {
 		if c == nil || c.IsClosed() {
 			result.Skipped++
 			continue
 		}
 		select {
-		case h.jobQueue <- hubJob{conn: c, op: op, data: data}:
+		case h.jobQueue <- hubJob{conn: c, op: op, data: payload}:
 			result.Enqueued++
 		default:
 			result.Dropped++
@@ -56,6 +60,7 @@ func (h *Hub) recordSkippedBroadcast(skipped int) BroadcastResult {
 //
 // This method is thread-safe and can be called concurrently from multiple goroutines.
 // Messages are delivered asynchronously via the worker pool.
+// The caller can reuse data after BroadcastRoom returns.
 //
 // Example:
 //
@@ -71,6 +76,7 @@ func (h *Hub) BroadcastRoom(room string, op byte, data []byte) {
 }
 
 // TryBroadcastRoom enqueues jobs for room members and returns the fanout result.
+// The caller can reuse data after this method returns.
 func (h *Hub) TryBroadcastRoom(room string, op byte, data []byte) BroadcastResult {
 	return h.tryBroadcastRoom(room, op, data, h.roomNameValidator())
 }
@@ -115,6 +121,7 @@ func (h *Hub) tryBroadcastRoom(room string, op byte, data []byte, validator Room
 }
 
 // BroadcastAll broadcasts to all clients.
+// The caller can reuse data after BroadcastAll returns.
 //
 // This is useful for system-wide announcements or notifications.
 // Use with caution as it can generate significant network traffic.
@@ -131,6 +138,7 @@ func (h *Hub) BroadcastAll(op byte, data []byte) {
 }
 
 // TryBroadcastAll enqueues jobs for all unique open connections and returns the fanout result.
+// The caller can reuse data after this method returns.
 func (h *Hub) TryBroadcastAll(op byte, data []byte) BroadcastResult {
 	if h.stopped.Load() {
 		return BroadcastResult{Stopped: true}

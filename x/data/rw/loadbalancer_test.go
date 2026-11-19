@@ -2,6 +2,8 @@ package rw
 
 import (
 	"errors"
+	"math"
+	"slices"
 	"testing"
 )
 
@@ -206,6 +208,68 @@ func TestWeightedBalancerSkipsUnhealthy(t *testing.T) {
 		}
 		if idx == 1 {
 			t.Errorf("selected unhealthy replica")
+		}
+	}
+}
+
+func TestWeightedBalancerUsesHealthyWeightTotal(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		weights []int
+		healthy []bool
+		want    [3]int
+	}{
+		{"unequal", []int{3, 1}, []bool{true, true}, [3]int{30, 10}},
+		{"equal", []int{2, 2}, []bool{true, true}, [3]int{20, 20}},
+		{"unhealthy excluded", []int{3, 1, 20}, []bool{true, true, false}, [3]int{30, 10}},
+		{"only one healthy", []int{3, 1}, []bool{false, true}, [3]int{0, 40}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			balancer, err := NewWeightedBalancer(tc.weights)
+			if err != nil {
+				t.Fatal(err)
+			}
+			replicas := make([]Replica, len(tc.healthy))
+			for i, healthy := range tc.healthy {
+				replicas[i].IsHealthy = healthy
+			}
+			var counts [3]int
+			for range 40 {
+				i, err := balancer.Next(replicas)
+				if err != nil {
+					t.Fatal(err)
+				}
+				counts[i]++
+			}
+			if counts != tc.want {
+				t.Errorf("counts = %v, want %v", counts, tc.want)
+			}
+		})
+	}
+}
+
+func TestWeightedBalancerOverflowLeavesScoresUnchanged(t *testing.T) {
+	balancer, err := NewWeightedBalancer([]int{math.MaxInt, 2, 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	replicas := []Replica{{}, {IsHealthy: true}, {IsHealthy: true}}
+	if i, err := balancer.Next(replicas); err != nil || i != 1 {
+		t.Fatalf("initial choice = %d, err = %v, want 1", i, err)
+	}
+	before := slices.Clone(balancer.currentWeight)
+	replicas[0].IsHealthy = true
+	if _, err := balancer.Next(replicas); !errors.Is(err, ErrInvalidReplicaWeight) {
+		t.Errorf("overflow error = %v, want ErrInvalidReplicaWeight", err)
+	}
+	if !slices.Equal(balancer.currentWeight, before) {
+		t.Errorf("scores = %v, want %v", balancer.currentWeight, before)
+	}
+	balancer.Reset()
+	replicas[1].IsHealthy, replicas[2].IsHealthy = false, false
+	for range 2 {
+		if i, err := balancer.Next(replicas); err != nil || i != 0 {
+			t.Fatalf("single maximum-weight replica = %d, err = %v, want 0", i, err)
 		}
 	}
 }

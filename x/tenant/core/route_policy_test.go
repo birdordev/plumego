@@ -66,6 +66,33 @@ func TestCachedRoutePolicyProvider(t *testing.T) {
 	}
 }
 
+func TestInMemoryRoutePolicyCache_ExpiredReadLeavesEntryForEviction(t *testing.T) {
+	ctx := t.Context()
+	cache := NewInMemoryRoutePolicyCache(1, time.Hour)
+	cache.entries["tenant"] = routePolicyCacheEntry{
+		policy:    RoutePolicy{Strategy: "old"},
+		expiresAt: time.Now().Add(-time.Hour),
+	}
+	if _, ok := cache.Get(ctx, "tenant"); ok {
+		t.Fatal("expired policy was returned")
+	}
+	if _, ok := cache.entries["tenant"]; !ok {
+		t.Fatal("Get removed an expired entry")
+	}
+	if err := cache.Set(ctx, "tenant", RoutePolicy{Strategy: "new"}); err != nil {
+		t.Fatal(err)
+	}
+	if got, ok := cache.Get(ctx, "tenant"); !ok || got.Strategy != "new" {
+		t.Fatalf("refreshed policy = %+v, found = %v", got, ok)
+	}
+	if err := cache.Set(ctx, "other", RoutePolicy{Strategy: "new"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := len(cache.entries); got != 1 {
+		t.Errorf("cache size = %d, want 1", got)
+	}
+}
+
 func TestInMemoryRoutePolicyCache_EvictExpiredFirst(t *testing.T) {
 	ctx := t.Context()
 	maxSize := 3

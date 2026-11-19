@@ -145,6 +145,7 @@ func (c *MemoryCache) Get(ctx context.Context, key *CacheKey) (*CacheEntry, erro
 }
 
 // Set implements Cache. Only inserting a new key at capacity evicts an entry.
+// A zero expiration uses the cache TTL and is filled in on the stored copy.
 func (c *MemoryCache) Set(ctx context.Context, key *CacheKey, entry *CacheEntry) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -155,13 +156,10 @@ func (c *MemoryCache) Set(ctx context.Context, key *CacheKey, entry *CacheEntry)
 		c.evictOldest()
 	}
 
-	// Set expiration
-	if entry.ExpiresAt.IsZero() {
-		entry.ExpiresAt = time.Now().Add(c.ttl)
-	}
-
-	// Store copy
 	copied := *entry
+	if copied.ExpiresAt.IsZero() {
+		copied.ExpiresAt = time.Now().Add(c.ttl)
+	}
 	copied.Response = copyResponse(entry.Response)
 	c.entries[key.Hash] = &copied
 
