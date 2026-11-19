@@ -295,20 +295,6 @@ func (a *Aggregator) GetAllStats() map[string]AggregatorStats {
 	return result
 }
 
-// percentile calculates the nth percentile of a slice of float64 values.
-// The values slice is not modified.
-func percentile(values []float64, p float64) float64 {
-	if len(values) == 0 {
-		return 0
-	}
-
-	sorted := make([]float64, len(values))
-	copy(sorted, values)
-	sort.Float64s(sorted)
-
-	return percentileSorted(sorted, p)
-}
-
 func percentileSorted(sorted []float64, p float64) float64 {
 	if len(sorted) == 0 {
 		return 0

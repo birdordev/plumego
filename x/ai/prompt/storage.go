@@ -3,11 +3,13 @@ package prompt
 import (
 	"context"
 	"fmt"
+	"maps"
 	"sort"
 	"sync"
 )
 
-// MemoryStorage implements in-memory template storage.
+// MemoryStorage stores and returns copies of template slices and metadata.
+// Callers must treat reference values inside Variable.Default as immutable.
 type MemoryStorage struct {
 	templates map[string]*Template
 	mu        sync.RWMutex
@@ -25,22 +27,7 @@ func (s *MemoryStorage) Save(ctx context.Context, tmpl *Template) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// Deep copy to avoid mutation
-	copied := *tmpl
-	copied.Variables = make([]Variable, len(tmpl.Variables))
-	copy(copied.Variables, tmpl.Variables)
-
-	copied.Tags = make([]string, len(tmpl.Tags))
-	copy(copied.Tags, tmpl.Tags)
-
-	if tmpl.Metadata != nil {
-		copied.Metadata = make(map[string]string)
-		for k, v := range tmpl.Metadata {
-			copied.Metadata[k] = v
-		}
-	}
-
-	s.templates[tmpl.ID] = &copied
+	s.templates[tmpl.ID] = cloneTemplate(tmpl)
 	return nil
 }
 
@@ -54,9 +41,7 @@ func (s *MemoryStorage) Load(ctx context.Context, templateID string) (*Template,
 		return nil, fmt.Errorf("template not found: %s", templateID)
 	}
 
-	// Return copy
-	copied := *tmpl
-	return &copied, nil
+	return cloneTemplate(tmpl), nil
 }
 
 // Delete implements Storage.
@@ -76,8 +61,7 @@ func (s *MemoryStorage) ListVersions(ctx context.Context, name string) ([]*Templ
 	var versions []*Template
 	for _, tmpl := range s.templates {
 		if tmpl.Name == name {
-			copied := *tmpl
-			versions = append(versions, &copied)
+			versions = append(versions, cloneTemplate(tmpl))
 		}
 	}
 
@@ -98,14 +82,21 @@ func (s *MemoryStorage) ListByTag(ctx context.Context, tag string) ([]*Template,
 	for _, tmpl := range s.templates {
 		for _, t := range tmpl.Tags {
 			if t == tag {
-				copied := *tmpl
-				result = append(result, &copied)
+				result = append(result, cloneTemplate(tmpl))
 				break
 			}
 		}
 	}
 
 	return result, nil
+}
+
+func cloneTemplate(tmpl *Template) *Template {
+	copied := *tmpl
+	copied.Variables = append([]Variable{}, tmpl.Variables...)
+	copied.Tags = append([]string{}, tmpl.Tags...)
+	copied.Metadata = maps.Clone(tmpl.Metadata)
+	return &copied
 }
 
 // Count returns the number of templates.

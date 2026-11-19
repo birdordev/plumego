@@ -568,13 +568,11 @@ func (t *Tracer) GetActiveSpan(ctx context.Context) *Span {
 }
 
 // RecordSpanEvent records a named event on the given span.
+// Event options run before the tracer locks and appends the event.
 func (t *Tracer) RecordSpanEvent(span *Span, name string, options ...EventOption) {
 	if span == nil {
 		return
 	}
-	t.mu.Lock()
-	defer t.mu.Unlock()
-
 	event := SpanEvent{
 		Name:       name,
 		Timestamp:  time.Now(),
@@ -583,6 +581,9 @@ func (t *Tracer) RecordSpanEvent(span *Span, name string, options ...EventOption
 	for _, option := range options {
 		option(&event)
 	}
+
+	t.mu.Lock()
+	defer t.mu.Unlock()
 	span.Events = append(span.Events, event)
 	t.updateCollectedSpan(span)
 }

@@ -6,6 +6,7 @@ import "time"
 type Store interface {
 	Save(job StoredJob) error
 	Delete(id JobID) error
+	// List may return readable jobs together with an error for other records.
 	List() ([]StoredJob, error)
 }
 

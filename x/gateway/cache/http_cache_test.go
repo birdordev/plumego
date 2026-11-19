@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"testing/synctest"
 	"time"
 )
 
@@ -57,6 +58,42 @@ func TestMemoryStore_Expiration(t *testing.T) {
 	if found {
 		t.Error("Expected expired response to not be found")
 	}
+}
+
+func TestMemoryStoreUsesTTLForUnsetExpiry(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		store := NewMemoryStore(3)
+		input := &CachedResponse{StatusCode: http.StatusOK}
+		now := time.Now()
+		store.Set("derived", input, time.Second)
+		if cached, found := store.Get("derived"); !found || !cached.ExpiresAt.Equal(now.Add(time.Second)) {
+			t.Fatalf("initial entry = %+v, found = %v", cached, found)
+		}
+		store.Set("derived", input, 2*time.Second)
+		if cached, found := store.Get("derived"); !found || !cached.ExpiresAt.Equal(now.Add(2*time.Second)) {
+			t.Fatalf("replacement = %+v, found = %v", cached, found)
+		}
+		if !input.ExpiresAt.IsZero() {
+			t.Fatalf("caller expiry = %v, want zero", input.ExpiresAt)
+		}
+		future := now.Add(time.Hour)
+		store.Set("future", &CachedResponse{ExpiresAt: future}, time.Second)
+		store.Set("expired", &CachedResponse{ExpiresAt: now.Add(-time.Second)}, time.Hour)
+		if _, found := store.Get("expired"); found {
+			t.Error("explicit expired response was retained")
+		}
+		store.Set("zero", input, 0)
+		if _, found := store.Get("zero"); found {
+			t.Error("zero TTL changed the behavior of an unset expiry")
+		}
+		time.Sleep(3 * time.Second)
+		if _, found := store.Get("derived"); found {
+			t.Error("derived expiry was not applied")
+		}
+		if cached, found := store.Get("future"); !found || !cached.ExpiresAt.Equal(future) {
+			t.Errorf("explicit expiry = %+v, found = %v", cached, found)
+		}
+	})
 }
 
 func TestMemoryStore_LRUEviction(t *testing.T) {

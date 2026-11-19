@@ -242,6 +242,55 @@ func TestPoolClosesDiscardedDialsOutsideLock(t *testing.T) {
 	}
 }
 
+type discardedDialConn struct {
+	err   error
+	calls int
+}
+
+func (c *discardedDialConn) Close() error {
+	c.calls++
+	return c.err
+}
+
+func TestPoolReportsDiscardedDialCloseError(t *testing.T) {
+	closeErr := errors.New("discard close failed")
+	for _, tc := range []struct {
+		name string
+		err  error
+	}{{"clean close", nil}, {"failed close", closeErr}} {
+		t.Run(tc.name, func(t *testing.T) {
+			started, resume := make(chan struct{}), make(chan struct{})
+			conn := &discardedDialConn{err: tc.err}
+			pool := New(func(context.Context, string, ...DialOption) (Conn, error) {
+				close(started)
+				<-resume
+				return conn, nil
+			})
+			done := make(chan error, 1)
+			go func() {
+				got, err := pool.Dial(t.Context(), "sample")
+				if got != nil {
+					t.Errorf("closed pool returned %v", got)
+				}
+				done <- err
+			}()
+			<-started
+			err := pool.Close()
+			close(resume)
+			if err != nil {
+				t.Fatal(err)
+			}
+			got := <-done
+			if conn.calls != 1 || !errors.Is(got, ErrPoolClosed) {
+				t.Errorf("close calls = %d, error = %v, want one call and ErrPoolClosed", conn.calls, got)
+			}
+			if tc.err == nil && got != ErrPoolClosed || tc.err != nil && !errors.Is(got, tc.err) {
+				t.Errorf("close failure %v was not represented correctly in %v", tc.err, got)
+			}
+		})
+	}
+}
+
 func TestPoolDoesNotCacheNilDial(t *testing.T) {
 	calls := 0
 	conn := &fakeConn{}

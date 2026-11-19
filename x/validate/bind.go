@@ -2,14 +2,19 @@ package validate
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 )
 
 // BindJSON decodes one JSON value into T without validation or an EOF check.
+// A request with no body returns io.EOF.
 // The caller owns any request body size limit. On decoding error the
 // returned value may be partially populated; only use it when err is nil.
 func BindJSON[T any](r *http.Request) (T, error) {
 	var out T
+	if r.Body == nil {
+		return out, io.EOF
+	}
 	if err := json.NewDecoder(r.Body).Decode(&out); err != nil {
 		return out, err
 	}

@@ -67,41 +67,14 @@ This path takes you from "hello world" to understanding the control plane. Time 
 
 **Steps:**
 
-1. **Copy the standard API example:**
+1. **Run the standard service from the repository root:**
    ```bash
-   cp -r examples/standard-api my-service
-   cd my-service
-   go run main.go
+   go -C reference/standard-service run .
    ```
 
-2. **Test it:**
-   ```bash
-   # Create
-   curl -X POST http://localhost:8080/items \
-     -H "Content-Type: application/json" \
-     -d '{"name":"Item 1"}'
-   
-   # List
-   curl http://localhost:8080/items
-   
-   # Get one
-   curl http://localhost:8080/items/1
-   
-   # Update
-   curl -X PUT http://localhost:8080/items/1 \
-     -H "Content-Type: application/json" \
-     -d '{"name":"Updated"}'
-   
-   # Delete
-   curl -X DELETE http://localhost:8080/items/1
-   ```
+2. **Try the API:** Follow the [CRUD walkthrough](../../reference/standard-service/TUTORIAL.md#try-the-api) to create, list, read, update, and delete an item.
 
-3. **Read the code in this order:**
-   - `examples/standard-api/TUTORIAL.md` — explains each file
-   - `main.go` — entry point and wiring
-   - `internal/config/config.go` — configuration
-   - `internal/app/routes.go` — route registration
-   - `internal/handler/items.go` — handler patterns
+3. **Read the code:** Follow the [code walkthrough](../../reference/standard-service/TUTORIAL.md#read-the-code) from startup through route registration, handlers, and storage.
 
 4. **Try modifying it:**
    - Add a new route
@@ -193,7 +166,7 @@ If you're maintaining a service or using code agents:
 
 **Ready to build a real service?**
 
-1. Use `examples/standard-api` as your template
+1. Use [`reference/standard-service`](../../reference/standard-service) as your template
 2. Follow `docs/start/production-checklist.md` to add production capabilities
 3. Choose 1-2 extensions from `docs/start/extension-guide.md`
 4. Copy the matching reference app (e.g., `reference/with-rest/`)

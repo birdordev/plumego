@@ -376,6 +376,58 @@ func TestMemoryStorage(t *testing.T) {
 	}
 }
 
+func TestMemoryStorageOwnsTemplateContainers(t *testing.T) {
+	store := NewMemoryStorage()
+	ctx := t.Context()
+	template := &Template{
+		ID: "first", Name: "sample", Version: "1",
+		Tags: []string{"original"}, Variables: []Variable{{Name: "original"}},
+		Metadata: map[string]string{"color": "blue"},
+	}
+	if err := store.Save(ctx, template); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Save(ctx, &Template{ID: "second", Name: "sample", Version: "2"}); err != nil {
+		t.Fatal(err)
+	}
+	mutate := func(tmpl *Template) {
+		tmpl.Tags[0] = "changed"
+		tmpl.Variables[0].Name = "changed"
+		tmpl.Metadata["color"] = "red"
+	}
+	assertOriginal := func(tmpl *Template) {
+		t.Helper()
+		if tmpl.Tags[0] != "original" || tmpl.Variables[0].Name != "original" || tmpl.Metadata["color"] != "blue" {
+			t.Fatalf("stored template changed: %+v", tmpl)
+		}
+	}
+
+	mutate(template)
+	got, err := store.Load(ctx, template.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertOriginal(got)
+	mutate(got)
+	versions, err := store.ListVersions(ctx, template.Name)
+	if err != nil || len(versions) != 2 || versions[0].ID != "first" || versions[1].ID != "second" {
+		t.Fatalf("versions = %v, error = %v", versions, err)
+	}
+	assertOriginal(versions[0])
+	mutate(versions[0])
+	tagged, err := store.ListByTag(ctx, "original")
+	if err != nil || len(tagged) != 1 || tagged[0].ID != "first" {
+		t.Fatalf("tagged = %v, error = %v", tagged, err)
+	}
+	assertOriginal(tagged[0])
+	mutate(tagged[0])
+	got, err = store.Load(ctx, template.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertOriginal(got)
+}
+
 func TestMemoryStorage_Clear(t *testing.T) {
 	storage := NewMemoryStorage()
 

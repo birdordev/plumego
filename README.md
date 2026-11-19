@@ -93,6 +93,10 @@ see [`docs/start/getting-started.md`](./docs/start/getting-started.md).
 
 ## Choose Your Starting Point
 
+- **Quick start:** [Hello world](./examples/hello) and [error handling](./examples/error-handling).
+- **Standard application:** [Standard service](./reference/standard-service) and its [CRUD tutorial](./reference/standard-service/TUTORIAL.md).
+- **Feature integrations:** [Reference application catalog](./reference/README.md#feature-scenario-references).
+
 | I want to build... | Start here | Tier |
 | --- | --- | --- |
 | A plain JSON API | `reference/standard-service` → stable roots only | **GA** |

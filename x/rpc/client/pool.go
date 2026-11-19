@@ -42,6 +42,9 @@ func New(dial Dialer, defaultOpts ...DialOption) *Pool {
 	}
 }
 
+// Dial returns a pooled connection or opens one for target. If the pool closes
+// during a successful dial, the error includes ErrPoolClosed and any error
+// from closing the newly opened connection.
 func (p *Pool) Dial(ctx context.Context, target string, opts ...DialOption) (Conn, error) {
 	p.mu.Lock()
 	if p.closed {
@@ -72,7 +75,9 @@ func (p *Pool) Dial(ctx context.Context, target string, opts ...DialOption) (Con
 	p.mu.Lock()
 	if p.closed {
 		p.mu.Unlock()
-		_ = conn.Close()
+		if err := conn.Close(); err != nil {
+			return nil, errors.Join(ErrPoolClosed, err)
+		}
 		return nil, ErrPoolClosed
 	}
 	if existing, ok := p.conns[target]; ok {

@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
 	"time"
 )
 
@@ -38,10 +39,18 @@ type MigrationStatus struct {
 	AppliedAt *time.Time `json:"applied_at,omitempty"`
 }
 
-// New creates a migrator from a caller-provided runner.
+// New creates a migrator from a caller-provided runner. It rejects nil runners,
+// including implementations with a typed nil value.
 func New(runner Runner) (*Migrator, error) {
 	if runner == nil {
 		return nil, fmt.Errorf("%w: runner is nil", ErrInvalidConfig)
+	}
+	value := reflect.ValueOf(runner)
+	switch value.Kind() {
+	case reflect.Chan, reflect.Func, reflect.Map, reflect.Pointer, reflect.Slice:
+		if value.IsNil() {
+			return nil, fmt.Errorf("%w: runner is nil", ErrInvalidConfig)
+		}
 	}
 	return &Migrator{runner: runner}, nil
 }

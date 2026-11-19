@@ -14,7 +14,7 @@ A Plumego service ready for production should have these capabilities. This chec
 
 **Reference:** 
 - `reference/standard-service/internal/config/config.go` — Config struct with defaults and validation
-- `examples/standard-api/internal/config/` — Copy this pattern
+- `reference/standard-service/internal/config/` — Copy this pattern
 
 **Questions to answer:**
 - How do I load config from a file?
@@ -31,7 +31,7 @@ A Plumego service ready for production should have these capabilities. This chec
 
 **Reference:**
 - `reference/standard-service/main.go` — Signal handling and graceful shutdown
-- `examples/standard-api/main.go` — Complete example
+- `reference/standard-service/main.go` — Complete example
 
 **Pattern:**
 ```go
@@ -398,7 +398,7 @@ Use this as a template. Copy and customize:
 
 ## Quick start
 
-1. **Use the template:** Copy `reference/standard-service` or `examples/standard-api`
+1. **Use the template:** Copy `reference/standard-service`
 2. **Add middleware:**
    ```go
    app.Use(requestid.Handler())

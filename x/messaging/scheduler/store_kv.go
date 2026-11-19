@@ -3,10 +3,14 @@ package scheduler
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"strings"
 
 	kvstore "github.com/birdordev/plumego/store/kv"
 )
+
+var errInvalidStoredJob = errors.New("invalid stored job")
 
 // KVStore persists jobs in the internal KV store.
 type KVStore struct {
@@ -43,6 +47,7 @@ func (k *KVStore) Delete(id JobID) error {
 	return k.kv.Delete(k.prefix + string(id))
 }
 
+// List returns readable jobs and reports records it could not read or decode.
 func (k *KVStore) List() ([]StoredJob, error) {
 	if k == nil || k.kv == nil {
 		return nil, nil
@@ -52,19 +57,24 @@ func (k *KVStore) List() ([]StoredJob, error) {
 		return nil, err
 	}
 	out := make([]StoredJob, 0)
+	var failures []error
 	for _, key := range keys {
 		if !strings.HasPrefix(key, k.prefix) {
 			continue
 		}
 		raw, err := k.kv.Get(key)
 		if err != nil {
+			if !errors.Is(err, kvstore.ErrKeyNotFound) && !errors.Is(err, kvstore.ErrKeyExpired) {
+				failures = append(failures, fmt.Errorf("read scheduler job %q: %w", strings.TrimPrefix(key, k.prefix), err))
+			}
 			continue
 		}
 		var job StoredJob
 		if err := json.Unmarshal(raw, &job); err != nil {
+			failures = append(failures, fmt.Errorf("decode scheduler job %q: %w", strings.TrimPrefix(key, k.prefix), errInvalidStoredJob))
 			continue
 		}
 		out = append(out, job)
 	}
-	return out, nil
+	return out, errors.Join(failures...)
 }

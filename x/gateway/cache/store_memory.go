@@ -69,10 +69,17 @@ func (s *MemoryStore) Get(key string) (*CachedResponse, bool) {
 	return ent.response, true
 }
 
-// Set stores a response in cache with TTL
+// Set stores a response in cache. A positive TTL sets the expiry when
+// resp.ExpiresAt is zero, without modifying the supplied response.
 func (s *MemoryStore) Set(key string, resp *CachedResponse, ttl time.Duration) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	if resp.ExpiresAt.IsZero() && ttl > 0 {
+		owned := *resp
+		owned.ExpiresAt = time.Now().Add(ttl)
+		resp = &owned
+	}
 
 	// Check if key already exists
 	if elem, found := s.items[key]; found {

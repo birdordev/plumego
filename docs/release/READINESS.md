@@ -36,7 +36,7 @@ This checklist verifies that Plumego v1 is truly "done" before a release. Track 
 ## Adoption Path ✅
 
 - [x] examples/hello runs in 1 minute
-- [x] examples/standard-api is runnable and tutorial-annotated
+- [x] reference/standard-service is runnable and tutorial-annotated
 - [x] examples/error-handling demonstrates common patterns
 - [x] docs/start/adoption-path.md flows linearly (5 min → 30 min → 1 day)
 - [x] All links in adoption path point to existing files
@@ -256,7 +256,7 @@ go run ./internal/checks/public-entrypoints-sync
 
 # Build examples
 go build ./examples/hello
-go build ./examples/standard-api
+go -C reference/standard-service build ./...
 go build ./examples/error-handling
 
 # Verify links (manual spot-check)

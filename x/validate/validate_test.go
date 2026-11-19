@@ -2,6 +2,7 @@ package validate
 
 import (
 	"errors"
+	"io"
 	"net/http"
 	"strings"
 	"testing"
@@ -105,6 +106,28 @@ func TestBindEmptyBodyReturnsBeforeValidation(t *testing.T) {
 	}
 	if validator.called {
 		t.Fatal("Bind called validator after empty body")
+	}
+}
+
+func TestBindReturnsEOFForMissingRequestBody(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		body io.ReadCloser
+	}{{"nil body", nil}, {"NoBody", http.NoBody}} {
+		t.Run(tc.name, func(t *testing.T) {
+			req, err := http.NewRequestWithContext(t.Context(), http.MethodPost, "http://example.invalid", nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			req.Body = tc.body
+			if out, err := BindJSON[createItemRequest](req); out != (createItemRequest{}) || !errors.Is(err, io.EOF) {
+				t.Fatalf("BindJSON = %+v, %v, want zero value and EOF", out, err)
+			}
+			validator := &requestValidator{}
+			if _, err := Bind[createItemRequest](req, validator); !errors.Is(err, io.EOF) || validator.called {
+				t.Errorf("Bind error = %v, validator called = %v, want EOF before validation", err, validator.called)
+			}
+		})
 	}
 }
 

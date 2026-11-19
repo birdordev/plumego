@@ -92,6 +92,10 @@ app := plumego.NewWithConfig(cfg)
 
 ## 选择你的起点
 
+- **快速上手** · [最小服务](./examples/hello)和[错误处理](./examples/error-handling)。
+- **标准应用** · [标准服务](./reference/standard-service)及其 [CRUD 教程](./reference/standard-service/TUTORIAL.md)。
+- **功能集成** · [参考应用目录](./reference/README.md#feature-scenario-references)。
+
 | 我想构建… | 从这里开始 | 成熟度 |
 | --- | --- | --- |
 | 普通 JSON API | `reference/standard-service` → 仅使用稳定根包 | **GA** |

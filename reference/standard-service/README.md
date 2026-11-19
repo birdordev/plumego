@@ -80,6 +80,8 @@ independently testable by injecting stubs.
 
 ## Quick start
 
+For a guided walkthrough, see the [CRUD tutorial](./TUTORIAL.md).
+
 ```bash
 cd reference/standard-service
 

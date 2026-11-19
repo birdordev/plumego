@@ -29,13 +29,6 @@ const smallestExamples = [
     href: 'https://github.com/birdordev/plumego/tree/main/examples/error-handling',
     label: '在 GitHub 查看 →',
   },
-  {
-    kicker: 'standard api',
-    title: 'examples/standard-api',
-    body: '略大一点的 stdlib 风格 API——路由、中间件与 item CRUD 集中呈现。可与 reference/standard-service 对比。',
-    href: 'https://github.com/birdordev/plumego/tree/main/examples/standard-api',
-    label: '在 GitHub 查看 →',
-  },
 ];
 
 const recipeTracks = [
@@ -228,11 +221,14 @@ const readingOrder = [
             <span class="dir-tree__title">terminal</span>
           </div>
           <div class="dir-tree__body example-command__body">
-            <span><span class="dir-tree__dim">$ </span><span class="dir-tree__key">go run</span> ./reference/standard-service</span>
+            <span><span class="dir-tree__dim">$ </span><span class="dir-tree__key">go -C reference/standard-service run</span> .</span>
             <span class="dir-tree__note"># Server started at :8080</span>
           </div>
         </div>
-        <a class="text-link" href="/zh/docs/reference-app">打开参考应用说明</a>
+        <div class="page-links page-links--inline">
+          <a class="text-link" href="/zh/docs/reference-app">打开参考应用说明</a>
+          <a class="text-link" href="https://github.com/birdordev/plumego/blob/main/reference/standard-service/TUTORIAL.md">查看 CRUD 教程</a>
+        </div>
       </article>
       <article class="example-hierarchy__secondary">
         <p class="signal-list__kicker">guided recipes</p>
@@ -274,7 +270,7 @@ const readingOrder = [
     <div class="section__intro">
       <h2>最小可运行示例。</h2>
       <p>
-        <code>examples/</code> 目录下有三个最小程序——每个只教一个知识点，短到可以一口气读完。
+        可以先运行最小 HTTP 服务，也可以直接学习结构化错误响应。
       </p>
     </div>
     <div class="page-grid">

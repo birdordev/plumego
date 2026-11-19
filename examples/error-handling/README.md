@@ -163,4 +163,4 @@ This catches all panics, logs them, and returns a 500 error with a structured re
 
 - Read `docs/modules/middleware/recovery/` for details on the recovery middleware
 - Read `docs/modules/contract/` for all available response helpers
-- See `examples/standard-api` for a complete CRUD example with proper error handling in context
+- See [the standard service tutorial](../../reference/standard-service/TUTORIAL.md) for a complete CRUD example with proper error handling in context

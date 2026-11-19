@@ -29,13 +29,6 @@ const smallestExamples = [
     href: 'https://github.com/birdordev/plumego/tree/main/examples/error-handling',
     label: 'Open on GitHub →',
   },
-  {
-    kicker: 'standard api',
-    title: 'examples/standard-api',
-    body: 'A slightly larger stdlib-shaped API — routes, middleware, and item CRUD in one place. Compare against reference/standard-service.',
-    href: 'https://github.com/birdordev/plumego/tree/main/examples/standard-api',
-    label: 'Open on GitHub →',
-  },
 ];
 
 const recipeTracks = [
@@ -259,12 +252,15 @@ const readingOrder = [
             <span class="dir-tree__title">terminal</span>
           </div>
           <div class="dir-tree__body example-command__body">
-            <span><span class="dir-tree__dim">$ </span><span class="dir-tree__key">go run</span> ./reference/standard-service</span>
+            <span><span class="dir-tree__dim">$ </span><span class="dir-tree__key">go -C reference/standard-service run</span> .</span>
             <span class="dir-tree__note"># Server started at :8080</span>
           </div>
         </div>
 
-        <a class="text-link" href="/docs/reference-app">Open the reference app guide</a>
+        <div class="page-links page-links--inline">
+          <a class="text-link" href="/docs/reference-app">Open the reference app guide</a>
+          <a class="text-link" href="https://github.com/birdordev/plumego/blob/main/reference/standard-service/TUTORIAL.md">Follow the CRUD tutorial</a>
+        </div>
       </article>
       <article class="example-hierarchy__secondary">
         <p class="signal-list__kicker">guided recipes</p>
@@ -310,7 +306,7 @@ const readingOrder = [
     <div class="section__intro">
       <h2>Smallest runnable examples.</h2>
       <p>
-        Under <code>examples/</code> there are three minimal programs — each one focuses on a single teaching point and stays small enough to read end-to-end in one sitting.
+        Start with the smallest HTTP service or explore structured error responses.
       </p>
     </div>
     <div class="page-grid">

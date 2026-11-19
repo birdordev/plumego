@@ -6,7 +6,7 @@ func (s *Scheduler) logError(msg string, err error) {
 	if s.logger == nil || err == nil {
 		return
 	}
-	s.logger.Error(msg, log.Fields{"error": err})
+	s.logger.Error(msg, log.Fields{"error": err.Error()})
 }
 
 func (s *Scheduler) persistJobLocked(j *job) {
@@ -43,7 +43,6 @@ func (s *Scheduler) loadPersisted() {
 	stored, err := s.store.List()
 	if err != nil {
 		s.logError("scheduler load persisted jobs failed", err)
-		return
 	}
 
 	// Two-pass loading: first restore jobs without dependencies so that

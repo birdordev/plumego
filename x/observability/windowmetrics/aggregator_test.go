@@ -180,27 +180,23 @@ func TestAggregatorEvictsSamplesOutsideWindowOnGetStats(t *testing.T) {
 	}
 }
 
-func TestPercentile(t *testing.T) {
+func TestPercentileSorted(t *testing.T) {
 	values := []float64{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
 
-	p50 := percentile(values, 0.5)
-	if p50 != 5 && p50 != 6 {
-		t.Fatalf("expected P50 to be 5 or 6, got %.2f", p50)
-	}
-
-	p95 := percentile(values, 0.95)
-	if p95 < 9 || p95 > 10 {
-		t.Fatalf("expected P95 to be between 9 and 10, got %.2f", p95)
+	for _, tc := range []struct{ p, want float64 }{{0, 1}, {0.5, 5}, {0.95, 9}, {1, 10}} {
+		if got := percentileSorted(values, tc.p); got != tc.want {
+			t.Errorf("percentile %v = %v, want %v", tc.p, got, tc.want)
+		}
 	}
 
 	// Empty slice
-	p := percentile([]float64{}, 0.5)
+	p := percentileSorted(nil, 0.5)
 	if p != 0 {
 		t.Fatalf("expected percentile of empty slice to be 0, got %.2f", p)
 	}
 
 	// Single value
-	p = percentile([]float64{42}, 0.5)
+	p = percentileSorted([]float64{42}, 0.5)
 	if p != 42 {
 		t.Fatalf("expected percentile of single value to be 42, got %.2f", p)
 	}

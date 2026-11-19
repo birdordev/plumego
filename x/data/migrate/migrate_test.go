@@ -14,6 +14,29 @@ func TestNewNilRunnerReturnsError(t *testing.T) {
 	}
 }
 
+type valueRunner struct{ *fakeRunner }
+
+func TestNewValidatesRunnerInstance(t *testing.T) {
+	var missing *fakeRunner
+	if got, err := New(missing); got != nil || !errors.Is(err, ErrInvalidConfig) {
+		t.Errorf("typed nil result = %v, %v, want ErrInvalidConfig", got, err)
+	}
+	runner := &fakeRunner{}
+	for _, input := range []Runner{runner, valueRunner{runner}} {
+		runner.up = false
+		migrator, err := New(input)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := migrator.Up(t.Context()); err != nil {
+			t.Fatal(err)
+		}
+		if !runner.up {
+			t.Errorf("Up was not delegated for %T", input)
+		}
+	}
+}
+
 func TestMigratorDelegatesOperations(t *testing.T) {
 	appliedAt := time.Now()
 	runner := &fakeRunner{

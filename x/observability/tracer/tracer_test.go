@@ -1,11 +1,54 @@
 package tracer
 
 import (
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/birdordev/plumego/contract"
 )
+
+func TestRecordSpanEventOptionCanReadTracer(t *testing.T) {
+	config := DefaultTracerConfig()
+	config.SamplingRate = 1
+	tracer, err := NewTracer(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, span := tracer.StartTrace(t.Context(), "events")
+	if span == nil {
+		t.Fatal("expected an active span")
+	}
+
+	const events = 8
+	var wg sync.WaitGroup
+	for range events {
+		wg.Go(func() {
+			tracer.RecordSpanEvent(span, "sample", func(event *SpanEvent) {
+				if tracer.GetActiveSpan(ctx) != span {
+					t.Error("active span lookup failed")
+				}
+				event.Attributes["source"] = "option"
+			})
+		})
+	}
+	wg.Wait()
+
+	trace, ok := tracer.collector.GetTrace(span.TraceID)
+	if !ok || len(trace.Spans) != 1 {
+		t.Fatalf("collected trace = %+v, found = %v", trace, ok)
+	}
+	for _, got := range [][]SpanEvent{span.Events, trace.Spans[0].Events} {
+		if len(got) != events {
+			t.Fatalf("event count = %d, want %d", len(got), events)
+		}
+		for _, event := range got {
+			if event.Name != "sample" || event.Attributes["source"] != "option" {
+				t.Errorf("unexpected event: %+v", event)
+			}
+		}
+	}
+}
 
 func TestRandomIDGenerator(t *testing.T) {
 	gen := NewRandomIDGenerator()
