@@ -16,7 +16,8 @@ func BindJSON[T any](r *http.Request) (T, error) {
 	return out, nil
 }
 
-// Bind decodes one JSON value using BindJSON, then validates the decoded value.
+// Bind decodes one JSON value using BindJSON and passes the decoded T to v.
+// Choose a value or pointer T to match the validator. A nil v skips validation.
 // It returns the partially populated value on a decoding error and the decoded
 // value on a validation error. Only use the result when err is nil.
 func Bind[T any](r *http.Request, v Validator) (T, error) {

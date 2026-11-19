@@ -52,16 +52,21 @@ func NewDBTenantConfigManager(db *sql.DB, options ...DBTenantConfigOption) *DBTe
 	return m
 }
 
-// GetTenantConfig retrieves tenant configuration from database (with optional caching).
+// GetTenantConfig retrieves tenant configuration from the database, with optional caching.
+// A read overlapping a successful update or deletion can finish with its original
+// result, but cannot repopulate the invalidated cache.
 func (m *DBTenantConfigManager) GetTenantConfig(ctx context.Context, tenantID string) (tenant.Config, error) {
 	if m == nil {
 		return tenant.Config{}, tenant.ErrTenantNotFound
 	}
 
+	var generation uint64
 	if m.cache != nil {
-		if cfg, ok := m.cache.Get(tenantID); ok {
+		cfg, ok, observed := m.cache.Get(tenantID)
+		if ok {
 			return cfg, nil
 		}
+		generation = observed
 	}
 
 	if m.db == nil {
@@ -82,7 +87,7 @@ func (m *DBTenantConfigManager) GetTenantConfig(ctx context.Context, tenantID st
 	}
 
 	if m.cache != nil {
-		m.cache.Set(tenantID, cfg)
+		m.cache.setIfCurrent(tenantID, cfg, generation)
 	}
 
 	return cfg, nil
@@ -232,6 +237,8 @@ type tenantCache struct {
 	lru     *list.List // front = MRU (most recently used), back = LRU
 	maxSize int
 	ttl     time.Duration
+	// A cache-wide generation bounds invalidation state even for absent tenants.
+	generation uint64
 }
 
 type lruEntry struct {
@@ -249,15 +256,15 @@ func newTenantCache(maxSize int, ttl time.Duration) *tenantCache {
 	}
 }
 
-// Get returns the cached config for tenantID.
+// Get returns the cached config and the generation observed under the cache lock.
 // Expired entries are removed on access (lazy eviction).
-func (c *tenantCache) Get(tenantID string) (tenant.Config, bool) {
+func (c *tenantCache) Get(tenantID string) (tenant.Config, bool, uint64) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
 	elem, ok := c.entries[tenantID]
 	if !ok {
-		return tenant.Config{}, false
+		return tenant.Config{}, false, c.generation
 	}
 
 	entry := elem.Value.(*lruEntry)
@@ -265,20 +272,23 @@ func (c *tenantCache) Get(tenantID string) (tenant.Config, bool) {
 	// Expired – remove entry and report cache miss.
 	if time.Now().After(entry.expiresAt) {
 		c.removeElement(elem)
-		return tenant.Config{}, false
+		return tenant.Config{}, false, c.generation
 	}
 
 	// Move to front (mark as most recently used).
 	c.lru.MoveToFront(elem)
-	return cloneTenantConfig(entry.config), true
+	return cloneTenantConfig(entry.config), true, c.generation
 }
 
-// Set stores or updates a config in the cache.
+// setIfCurrent stores a config only if no invalidation has occurred since lookup.
 // If the cache is at capacity, the least-recently-used entry is evicted first.
-func (c *tenantCache) Set(tenantID string, config tenant.Config) {
+func (c *tenantCache) setIfCurrent(tenantID string, config tenant.Config, generation uint64) {
 	config = cloneTenantConfig(config)
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if generation != c.generation {
+		return
+	}
 
 	if elem, ok := c.entries[tenantID]; ok {
 		// Refresh existing entry.
@@ -313,10 +323,11 @@ func cloneTenantConfig(cfg tenant.Config) tenant.Config {
 	return cfg
 }
 
-// Delete removes a tenant entry from the cache.
+// Delete removes a tenant entry and invalidates in-flight cache fills.
 func (c *tenantCache) Delete(tenantID string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	c.generation++
 
 	if elem, ok := c.entries[tenantID]; ok {
 		c.removeElement(elem)

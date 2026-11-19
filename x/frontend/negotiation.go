@@ -1,6 +1,7 @@
 package frontend
 
 import (
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -30,7 +31,7 @@ func parseWeightedToken(part string) (weightedToken, bool) {
 			continue
 		}
 		parsed, err := strconv.ParseFloat(strings.TrimSpace(value), 64)
-		if err != nil || parsed < 0 || parsed > 1 {
+		if err != nil || math.IsNaN(parsed) || parsed < 0 || parsed > 1 {
 			return weightedToken{}, false
 		}
 		q = parsed

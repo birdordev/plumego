@@ -110,21 +110,38 @@ func (c schemaCloner) cloneContent(content map[string]MediaType) map[string]Medi
 	return result
 }
 
-func routePathTemplate(path string) string {
+func routePathTemplate(path string) (string, []string) {
 	if path == "" || path == "/" {
-		return "/"
+		return "/", nil
 	}
 	parts := strings.Split(path, "/")
+	var names []string
 	for i, part := range parts {
 		if len(part) < 2 {
 			continue
 		}
 		switch part[0] {
 		case ':', '*':
+			names = append(names, part[1:])
 			parts[i] = "{" + part[1:] + "}"
 		}
 	}
-	return strings.Join(parts, "/")
+	return strings.Join(parts, "/"), names
+}
+
+// completePathParameters operates on the generated operation's owned parameters.
+func completePathParameters(params []Param, names []string) []Param {
+	for _, name := range names {
+		i := slices.IndexFunc(params, func(p Param) bool {
+			return p.In == "path" && p.Name == name
+		})
+		if i >= 0 {
+			params[i].Required = true
+		} else {
+			params = append(params, PathParam(name, Schema{Type: "string"}))
+		}
+	}
+	return params
 }
 
 func setOperation(item *PathItem, method string, op *Operation) {

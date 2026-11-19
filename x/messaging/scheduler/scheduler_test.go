@@ -7,6 +7,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 )
 
@@ -2581,5 +2582,101 @@ func TestCronNextCalendarBoundaries(t *testing.T) {
 				t.Fatalf("Next = %v, want %v", got, tc.want)
 			}
 		})
+	}
+}
+
+type blockingStartupStore struct {
+	*MemoryStore
+	entered chan struct{}
+	release chan struct{}
+}
+
+func (s *blockingStartupStore) List() ([]StoredJob, error) {
+	close(s.entered)
+	<-s.release
+	return s.MemoryStore.List()
+}
+
+func TestStopWaitsForStartupRecovery(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		store := &blockingStartupStore{
+			MemoryStore: NewMemoryStore(),
+			entered:     make(chan struct{}),
+			release:     make(chan struct{}),
+		}
+		s := New(WithStore(store))
+		started := make(chan struct{})
+		go func() {
+			defer close(started)
+			s.Start()
+		}()
+		defer func() { <-started }()
+		defer close(store.release)
+		<-store.entered
+
+		ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+		defer cancel()
+		if err := s.Stop(ctx); !errors.Is(err, context.DeadlineExceeded) {
+			t.Errorf("Stop while recovery is blocked = %v, want deadline exceeded", err)
+		}
+	})
+}
+
+func TestStopWaitersHaveIndependentDeadlines(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		s := New(WithWorkers(1))
+		started := make(chan struct{})
+		canceled := make(chan struct{})
+		release := make(chan struct{})
+		_, err := s.Delay("blocked", 0, func(ctx context.Context) error {
+			close(started)
+			<-ctx.Done()
+			close(canceled)
+			<-release
+			return nil
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		s.Start()
+		<-started
+		var releaseOnce sync.Once
+		releaseTask := func() { releaseOnce.Do(func() { close(release) }) }
+		defer releaseTask()
+
+		waited := make(chan error, 1)
+		go func() { waited <- s.Stop(t.Context()) }()
+		<-canceled
+		ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+		defer cancel()
+		if err := s.Stop(ctx); !errors.Is(err, context.DeadlineExceeded) {
+			t.Errorf("second Stop = %v, want deadline exceeded", err)
+		}
+		releaseTask()
+		if err := <-waited; err != nil {
+			t.Fatal(err)
+		}
+		if err := s.Stop(t.Context()); err != nil {
+			t.Fatal(err)
+		}
+	})
+}
+
+func TestStopBeforeStartSkipsRecovery(t *testing.T) {
+	store := &blockingStartupStore{
+		MemoryStore: NewMemoryStore(),
+		entered:     make(chan struct{}),
+		release:     make(chan struct{}),
+	}
+	close(store.release)
+	s := New(WithStore(store))
+	if err := s.Stop(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	s.Start()
+	select {
+	case <-store.entered:
+		t.Fatal("Start attempted recovery after shutdown")
+	default:
 	}
 }

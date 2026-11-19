@@ -46,6 +46,9 @@
 - `x/observability` is for exporter, adapter, and pipeline wiring only; keep transport-layer observation (per-request counters, latency) in stable `middleware/httpmetrics`
 - do not add hidden global collectors or automatic registration at import time; pass `Hooks` and config explicitly via `Configure`
 - keep `PrometheusCollector` and `PrometheusExporter` isolated per service instance; do not share collectors across test cases or goroutines without coordination
+- the exported `*_http_requests_total_all` counter includes evicted label
+  series and resets on `Clear()`. `GetStats()` reports the resident HTTP
+  series alongside the base collector statistics.
 - use error-returning constructors for dynamic wiring: `NewPrometheusExporterE`,
   `tracer.NewProbabilitySamplerE`, and `tracer.NewTracerE`; the shorter
   constructors remain for trusted in-code defaults and existing callers

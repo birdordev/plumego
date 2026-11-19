@@ -1,6 +1,7 @@
 package kvengine
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"errors"
@@ -2818,5 +2819,85 @@ func TestReplayRestoresLRUInsertionOrder(t *testing.T) {
 	}
 	if reopened.Exists("a") || !reopened.Exists("b") || !reopened.Exists("c") || reopened.Size() != 2 {
 		t.Fatalf("keys after replay and eviction: %v", reopened.Keys())
+	}
+}
+
+type rejectWALWrite struct{ err error }
+
+func (w rejectWALWrite) Write([]byte) (int, error) { return 0, w.err }
+
+func TestFailedSetPreservesCapacityAndWAL(t *testing.T) {
+	for _, limits := range []struct {
+		name       string
+		maxEntries int
+		valueSize  int
+	}{
+		{name: "entry limit", maxEntries: 2, valueSize: 1},
+		{name: "memory limit", maxEntries: 10, valueSize: 400 * 1024},
+	} {
+		t.Run(limits.name, func(t *testing.T) {
+			opts := Options{DataDir: t.TempDir(), MaxEntries: limits.maxEntries, MaxMemoryMB: 1, ShardCount: 1, WALSyncMode: WALSyncImmediate}
+			kv, err := NewKVStore(opts)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = kv.Close() })
+			value := bytes.Repeat([]byte("x"), limits.valueSize)
+			for _, key := range []string{"oldest", "recent"} {
+				if err := kv.Set(key, value, 0); err != nil {
+					t.Fatal(err)
+				}
+			}
+			before := kv.GetStats()
+			writeErr := errors.New("WAL unavailable")
+			kv.walMutex.Lock()
+			originalWriter := kv.walWriter
+			kv.walWriter = bufio.NewWriter(rejectWALWrite{err: writeErr})
+			kv.walMutex.Unlock()
+			err = kv.Set("new", value, 0)
+			kv.walMutex.Lock()
+			kv.walWriter = originalWriter
+			kv.walMutex.Unlock()
+			if !errors.Is(err, writeErr) {
+				t.Fatalf("Set error = %v, want %v", err, writeErr)
+			}
+			after := kv.GetStats()
+			if before.Entries != after.Entries || before.MemoryUsage != after.MemoryUsage || before.Evictions != after.Evictions {
+				t.Fatalf("resident stats changed after failed Set: before=%+v after=%+v", before, after)
+			}
+			assertContents := func(store *KVStore) {
+				t.Helper()
+				for _, key := range []string{"oldest", "recent"} {
+					got, err := store.Get(key)
+					if err != nil || !bytes.Equal(got, value) {
+						t.Fatalf("Get(%q) failed: %v", key, err)
+					}
+				}
+				if _, err := store.Get("new"); !errors.Is(err, ErrKeyNotFound) {
+					t.Fatalf("Get(new) error = %v", err)
+				}
+			}
+			assertContents(kv)
+			if err := kv.Close(); err != nil {
+				t.Fatal(err)
+			}
+			reopened, err := NewKVStore(opts)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = reopened.Close() })
+			assertContents(reopened)
+			if err := reopened.Set("new", value, 0); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := reopened.Get("oldest"); !errors.Is(err, ErrKeyNotFound) {
+				t.Fatalf("oldest was not evicted: %v", err)
+			}
+			for _, key := range []string{"recent", "new"} {
+				if _, err := reopened.Get(key); err != nil {
+					t.Fatalf("Get(%q): %v", key, err)
+				}
+			}
+		})
 	}
 }

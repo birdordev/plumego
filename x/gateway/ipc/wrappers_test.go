@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 )
 
@@ -503,6 +504,70 @@ func TestHeartbeatClientCloseStopsHeartbeat(t *testing.T) {
 
 	if deadCalled {
 		t.Fatal("OnDead should not be called after explicit Close")
+	}
+}
+
+type failingHeartbeatClient struct {
+	Client
+	entered chan struct{}
+	release chan struct{}
+}
+
+func (c *failingHeartbeatClient) WriteWithTimeout([]byte, time.Duration) (int, error) {
+	close(c.entered)
+	<-c.release
+	return 0, io.ErrClosedPipe
+}
+
+func (*failingHeartbeatClient) Close() error { return nil }
+
+func TestHeartbeatFailureCallbackLifecycle(t *testing.T) {
+	for _, closeFirst := range []bool{false, true} {
+		name := "callback can close"
+		if closeFirst {
+			name = "close suppresses callback"
+		}
+		t.Run(name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				raw := &failingHeartbeatClient{entered: make(chan struct{}), release: make(chan struct{})}
+				var hb Client
+				var calls int
+				cfg := &HeartbeatConfig{
+					Enabled:  true,
+					Interval: time.Second,
+					Timeout:  time.Second,
+					OnDead: func() {
+						calls++
+						if hb.(*heartbeatClient).LastSeen().IsZero() {
+							t.Error("LastSeen is zero")
+						}
+						if err := hb.Close(); err != nil {
+							t.Error(err)
+						}
+					},
+				}
+				var err error
+				hb, err = NewHeartbeatClient(raw, cfg)
+				if err != nil {
+					t.Fatal(err)
+				}
+				<-raw.entered
+				if closeFirst {
+					if err := hb.Close(); err != nil {
+						t.Error(err)
+					}
+				}
+				close(raw.release)
+				synctest.Wait()
+				want := 1
+				if closeFirst {
+					want = 0
+				}
+				if calls != want {
+					t.Errorf("notification count = %d, want %d", calls, want)
+				}
+			})
+		})
 	}
 }
 

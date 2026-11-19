@@ -13,7 +13,9 @@ type HeartbeatConfig struct {
 	Enabled  bool          // Enable heartbeat mechanism
 	Interval time.Duration // Interval between heartbeat checks
 	Timeout  time.Duration // Timeout for heartbeat response
-	OnDead   func()        // Callback when connection is detected as dead (optional)
+	// OnDead is called once on heartbeat failure, outside the client lock.
+	// Close suppresses a notification that has not been selected yet.
+	OnDead func()
 }
 
 // DefaultHeartbeatConfig returns default heartbeat configuration
@@ -69,12 +71,12 @@ func (hb *heartbeatClient) run() {
 		select {
 		case <-ticker.C:
 			if err := hb.ping(); err != nil {
-				// Connection appears dead
-				hb.mu.Lock()
-				if hb.config.OnDead != nil && !hb.stopped {
-					hb.config.OnDead()
+				hb.mu.RLock()
+				onDead, stopped := hb.config.OnDead, hb.stopped
+				hb.mu.RUnlock()
+				if !stopped && onDead != nil {
+					onDead()
 				}
-				hb.mu.Unlock()
 				return
 			}
 		case <-hb.stopCh:

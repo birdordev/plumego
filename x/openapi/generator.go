@@ -18,6 +18,7 @@ func New() *Generator {
 }
 
 // Generate converts route metadata and optional operation hints into a document.
+// It adds required string parameters for path placeholders without hints.
 func (g *Generator) Generate(routes []router.RouteInfo, hints map[string]Op) Document {
 	info := Info{Title: "Plumego API", Version: "0.0.0"}
 	if g != nil {
@@ -30,9 +31,10 @@ func (g *Generator) Generate(routes []router.RouteInfo, hints map[string]Op) Doc
 	}
 
 	for _, route := range routes {
-		path := routePathTemplate(route.Path)
+		path, parameterNames := routePathTemplate(route.Path)
 		item := doc.Paths[path]
 		op := operationFromHint(lookupHint(route, hints))
+		op.Parameters = completePathParameters(op.Parameters, parameterNames)
 		setOperation(&item, route.Method, op)
 		doc.Paths[path] = item
 	}

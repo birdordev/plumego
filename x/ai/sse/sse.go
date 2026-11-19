@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -18,7 +19,7 @@ const defaultErrorEventData = "stream handler failed"
 type Event struct {
 	// Event type (optional)
 	Event string
-	// Event data (required)
+	// Event data. LF, CRLF, and CR delimit lines within the same event.
 	Data string
 	// Event ID for client resumption (optional)
 	ID string
@@ -202,8 +203,12 @@ func (s *Stream) writeEvent(event *Event) error {
 
 	// Write data (can be multi-line)
 	if event.Data != "" {
-		if _, err := fmt.Fprintf(s.w, "data: %s\n", event.Data); err != nil {
-			return err
+		data := strings.ReplaceAll(event.Data, "\r\n", "\n")
+		data = strings.ReplaceAll(data, "\r", "\n")
+		for line := range strings.SplitSeq(data, "\n") {
+			if _, err := fmt.Fprintf(s.w, "data: %s\n", line); err != nil {
+				return err
+			}
 		}
 	}
 

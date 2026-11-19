@@ -379,7 +379,7 @@ func TestPrometheusCollectorRetainsExistingSeriesAtCapacity(t *testing.T) {
 		}
 	}
 	collector.ObserveHTTP(t.Context(), http.MethodGet, "/new", http.StatusOK, 0, time.Second)
-	requests, durations, _ := collector.snapshot()
+	requests, durations, _, _ := collector.snapshot()
 	if len(requests) != 1 || len(durations) != 1 || requests[labelKey{method: "GET", path: "/new", status: "200"}] != 1 {
 		t.Fatalf("requests = %v; durations = %v", requests, durations)
 	}
@@ -400,7 +400,7 @@ func TestPrometheusLimitCanChangeWhileRecording(t *testing.T) {
 	})
 	wg.Wait()
 	p.WithMaxMemory(1)
-	requests, durations, _ := p.snapshot()
+	requests, durations, _, _ := p.snapshot()
 	if len(requests) != 1 || len(durations) != 1 {
 		t.Fatalf("series after shrink: %v, %v", requests, durations)
 	}
@@ -409,4 +409,46 @@ func TestPrometheusLimitCanChangeWhileRecording(t *testing.T) {
 			t.Fatalf("series mismatch for %v", k)
 		}
 	}
+}
+
+func TestPrometheusTotalSurvivesSeriesEviction(t *testing.T) {
+	collector := NewPrometheusCollector("audit").WithMaxMemory(1)
+	assertTotal := func(want string) {
+		t.Helper()
+		w := httptest.NewRecorder()
+		collector.Handler().ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+		if line := "audit_http_requests_total_all " + want + "\n"; !strings.Contains(w.Body.String(), line) {
+			t.Errorf("expected %q in scrape:\n%s", line, w.Body.String())
+		}
+	}
+	for range 2 {
+		collector.ObserveHTTP(t.Context(), http.MethodGet, "/first", http.StatusOK, 0, time.Millisecond)
+	}
+	assertTotal("2")
+	collector.ObserveHTTP(t.Context(), http.MethodGet, "/second", http.StatusOK, 0, time.Millisecond)
+	assertTotal("3")
+	if got := collector.GetStats(); got.ActiveSeries != 1 || got.TotalRecords != 1 {
+		t.Errorf("resident series stats changed: %+v", got)
+	}
+
+	var writers sync.WaitGroup
+	for i := range 20 {
+		writers.Go(func() {
+			collector.Record(t.Context(), metrics.MetricRecord{
+				Name:     metrics.MetricHTTPRequest,
+				Labels:   map[string]string{"method": "GET", "path": "/record/" + strconv.Itoa(i), "status": "200"},
+				Duration: time.Millisecond,
+			})
+		})
+		writers.Go(func() {
+			collector.ObserveHTTP(t.Context(), http.MethodGet, "/observe/"+strconv.Itoa(i), http.StatusOK, 0, time.Millisecond)
+		})
+	}
+	writers.Wait()
+	assertTotal("43")
+	if got := collector.GetStats().ActiveSeries; got != 1 {
+		t.Fatalf("active series = %d, want 1", got)
+	}
+	collector.Clear()
+	assertTotal("0")
 }

@@ -520,6 +520,55 @@ func TestHub_Metrics_DistinguishesUniqueConnectionsAndRoomRegistrations(t *testi
 	}
 }
 
+func TestHub_Metrics_MembershipSnapshotDuringChanges(t *testing.T) {
+	hub := mustNewHubConfig(t, HubConfig{WorkerCount: 1, JobQueueSize: 4})
+	defer hub.Stop()
+	conn := newMockConn()
+	defer conn.Close()
+
+	joined := make(chan struct{})
+	done := make(chan error, 1)
+	go func() {
+		for i := range 2_000 {
+			for _, room := range []string{"first", "second"} {
+				if err := hub.TryJoin(room, conn); err != nil {
+					if i == 0 {
+						close(joined)
+					}
+					done <- err
+					return
+				}
+			}
+			if i == 0 {
+				close(joined)
+			}
+			hub.Leave("first", conn)
+			hub.clearRooms()
+		}
+		done <- nil
+	}()
+	<-joined
+	var record HubMetrics
+	var inconsistent bool
+	for range 2_000 {
+		m := hub.Metrics()
+		if m.Rooms > m.RoomRegistrations || m.ActiveConnections > m.RoomRegistrations ||
+			(m.RoomRegistrations > 0 && (m.Rooms == 0 || m.ActiveConnections == 0)) {
+			record, inconsistent = m, true
+			break
+		}
+	}
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	if inconsistent {
+		t.Errorf("inconsistent membership snapshot: %+v", record)
+	}
+	if m := hub.Metrics(); m.Rooms != 0 || m.RoomRegistrations != 0 || m.ActiveConnections != 0 {
+		t.Errorf("membership after clear = %+v", m)
+	}
+}
+
 func TestHub_GetRooms_Empty(t *testing.T) {
 	hub := mustNewHubConfig(t, HubConfig{WorkerCount: 1, JobQueueSize: 4})
 	defer hub.Stop()

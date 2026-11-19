@@ -335,3 +335,63 @@ func TestStream_KeepAlive(t *testing.T) {
 		t.Errorf("Keep-alive not found in output: %v", output)
 	}
 }
+
+func TestStream_SendDataMultiline(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		data string
+		want string
+	}{
+		{"single line", "a", "data: a\n\n"},
+		{"empty", "", "\n"},
+		{"LF", "a\nb", "data: a\ndata: b\n\n"},
+		{"CRLF", "a\r\nb", "data: a\ndata: b\n\n"},
+		{"CR", "a\rb", "data: a\ndata: b\n\n"},
+		{"blank and trailing lines", "a\n\nb\n", "data: a\ndata: \ndata: b\ndata: \n\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			stream, err := NewStream(t.Context(), w)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer stream.Close()
+			if err := stream.SendData(tc.data); err != nil {
+				t.Fatal(err)
+			}
+			if got := w.Body.String(); got != tc.want || !w.Flushed {
+				t.Errorf("body = %q, flushed = %v, want %q and flush", got, w.Flushed, tc.want)
+			}
+		})
+	}
+}
+
+type secondLineErrorWriter struct {
+	*httptest.ResponseRecorder
+	writes int
+	err    error
+}
+
+func (w *secondLineErrorWriter) Write(p []byte) (int, error) {
+	w.writes++
+	if w.writes == 2 {
+		return 0, w.err
+	}
+	return w.ResponseRecorder.Write(p)
+}
+
+func TestStream_SendDataMultilineWriteError(t *testing.T) {
+	writeErr := errors.New("stream write failed")
+	w := &secondLineErrorWriter{ResponseRecorder: httptest.NewRecorder(), err: writeErr}
+	stream, err := NewStream(t.Context(), w)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stream.Close()
+	if err := stream.SendData("a\nb"); !errors.Is(err, writeErr) {
+		t.Fatalf("SendData error = %v", err)
+	}
+	if w.Flushed || w.Body.String() != "data: a\n" {
+		t.Errorf("body = %q, flushed = %v", w.Body.String(), w.Flushed)
+	}
+}

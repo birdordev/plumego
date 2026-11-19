@@ -70,6 +70,13 @@ func TestPrecompressedFiles(t *testing.T) {
 			expectEncoding: "gzip",
 		},
 		{
+			name:           "invalid brotli weight leaves wildcard preference",
+			path:           "/app.js",
+			acceptEncoding: "br;q=NaN, *;q=0.8, gzip;q=0.2",
+			expectBody:     "brotli content",
+			expectEncoding: "br",
+		},
+		{
 			name:           "brotli wins equal quality",
 			path:           "/app.js",
 			acceptEncoding: "br;q=0.8, gzip;q=0.8",

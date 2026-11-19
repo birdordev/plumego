@@ -4,7 +4,10 @@ import (
 	"context"
 	"database/sql"
 	"database/sql/driver"
+	"errors"
 	"io"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -136,10 +139,10 @@ func TestTenantCache_GetSetDelete(t *testing.T) {
 	cfg.Quota.Limits = []tenant.QuotaLimit{{Window: tenant.QuotaWindowMinute, Requests: 100}}
 
 	// Set
-	cache.Set("t-123", cfg)
+	storeTenantCache(cache, "t-123", cfg)
 
 	// Get
-	got, ok := cache.Get("t-123")
+	got, ok, _ := cache.Get("t-123")
 	if !ok {
 		t.Fatal("expected cache hit")
 	}
@@ -152,7 +155,7 @@ func TestTenantCache_GetSetDelete(t *testing.T) {
 
 	// Delete
 	cache.Delete("t-123")
-	_, ok = cache.Get("t-123")
+	_, ok, _ = cache.Get("t-123")
 	if ok {
 		t.Error("expected cache miss after delete")
 	}
@@ -161,7 +164,7 @@ func TestTenantCache_GetSetDelete(t *testing.T) {
 func TestTenantCache_Miss(t *testing.T) {
 	cache := newTenantCache(10, 1*time.Minute)
 
-	_, ok := cache.Get("nonexistent")
+	_, ok, _ := cache.Get("nonexistent")
 	if ok {
 		t.Error("expected cache miss for nonexistent key")
 	}
@@ -171,12 +174,12 @@ func TestTenantCache_Expiration(t *testing.T) {
 	cache := newTenantCache(10, 1*time.Millisecond)
 
 	cfg := tenant.Config{TenantID: "t-123"}
-	cache.Set("t-123", cfg)
+	storeTenantCache(cache, "t-123", cfg)
 
 	// Wait for expiration
 	time.Sleep(5 * time.Millisecond)
 
-	_, ok := cache.Get("t-123")
+	_, ok, _ := cache.Get("t-123")
 	if ok {
 		t.Error("expected cache miss after TTL expiration")
 	}
@@ -185,16 +188,16 @@ func TestTenantCache_Expiration(t *testing.T) {
 func TestTenantCache_Eviction(t *testing.T) {
 	cache := newTenantCache(2, 1*time.Minute)
 
-	cache.Set("t-1", tenant.Config{TenantID: "t-1"})
-	cache.Set("t-2", tenant.Config{TenantID: "t-2"})
+	storeTenantCache(cache, "t-1", tenant.Config{TenantID: "t-1"})
+	storeTenantCache(cache, "t-2", tenant.Config{TenantID: "t-2"})
 
 	// Cache is full, adding t-3 should evict one entry
-	cache.Set("t-3", tenant.Config{TenantID: "t-3"})
+	storeTenantCache(cache, "t-3", tenant.Config{TenantID: "t-3"})
 
 	// Should have exactly 2 entries now
 	count := 0
 	for _, key := range []string{"t-1", "t-2", "t-3"} {
-		if _, ok := cache.Get(key); ok {
+		if _, ok, _ := cache.Get(key); ok {
 			count++
 		}
 	}
@@ -203,7 +206,7 @@ func TestTenantCache_Eviction(t *testing.T) {
 	}
 
 	// t-3 should definitely be present since it was just added
-	_, ok := cache.Get("t-3")
+	_, ok, _ := cache.Get("t-3")
 	if !ok {
 		t.Error("expected t-3 to be present")
 	}
@@ -218,7 +221,7 @@ func TestTenantCache_ConcurrentAccess(t *testing.T) {
 			for j := 0; j < 100; j++ {
 				key := "t-" + string(rune('0'+id))
 				cfg := tenant.Config{TenantID: key}
-				cache.Set(key, cfg)
+				storeTenantCache(cache, key, cfg)
 				cache.Get(key)
 				cache.Delete(key)
 			}
@@ -358,7 +361,7 @@ func TestDBTenantConfigManager_CacheHit(t *testing.T) {
 	// Pre-populate cache
 	cfg := tenant.Config{TenantID: "t-123"}
 	cfg.Quota.Limits = []tenant.QuotaLimit{{Window: tenant.QuotaWindowMinute, Requests: 50}}
-	m.cache.Set("t-123", cfg)
+	storeTenantCache(m.cache, "t-123", cfg)
 
 	// Should return from cache even though db is nil
 	got, err := m.GetTenantConfig(t.Context(), "t-123")
@@ -373,9 +376,20 @@ func TestDBTenantConfigManager_CacheHit(t *testing.T) {
 	}
 }
 
+func storeTenantCache(cache *tenantCache, key string, cfg tenant.Config) {
+	_, _, generation := cache.Get(key)
+	cache.setIfCurrent(key, cfg, generation)
+}
+
 type snapshotConnector struct {
 	driver.Connector
-	queries int
+	mu          sync.Mutex
+	queries     int
+	metadata    string
+	deleted     bool
+	writeErr    error
+	firstRead   chan struct{}
+	releaseRead chan struct{}
 }
 
 func (c *snapshotConnector) Connect(context.Context) (driver.Conn, error) {
@@ -389,12 +403,43 @@ type snapshotConn struct {
 
 func (*snapshotConn) Close() error { return nil }
 
-func (c *snapshotConn) QueryContext(context.Context, string, []driver.NamedValue) (driver.Rows, error) {
-	c.connector.queries++
-	return &snapshotRows{}, nil
+func (c *snapshotConn) QueryContext(ctx context.Context, _ string, _ []driver.NamedValue) (driver.Rows, error) {
+	state := c.connector
+	state.mu.Lock()
+	state.queries++
+	first := state.queries == 1
+	rows := &snapshotRows{metadata: state.metadata, read: state.deleted}
+	state.mu.Unlock()
+	if first && state.firstRead != nil {
+		close(state.firstRead)
+		select {
+		case <-state.releaseRead:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+	return rows, nil
 }
 
-type snapshotRows struct{ read bool }
+func (c *snapshotConn) ExecContext(_ context.Context, query string, args []driver.NamedValue) (driver.Result, error) {
+	state := c.connector
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	if state.writeErr != nil {
+		return nil, state.writeErr
+	}
+	if strings.HasPrefix(query, "DELETE") {
+		state.deleted = true
+	} else {
+		state.metadata = args[6].Value.(string)
+	}
+	return driver.RowsAffected(1), nil
+}
+
+type snapshotRows struct {
+	read     bool
+	metadata string
+}
 
 func (*snapshotRows) Columns() []string {
 	return []string{"id", "quota_limits", "allowed_models", "allowed_tools", "allowed_methods", "allowed_paths", "metadata", "updated_at"}
@@ -405,12 +450,12 @@ func (r *snapshotRows) Next(dest []driver.Value) error {
 		return io.EOF
 	}
 	r.read = true
-	copy(dest, []driver.Value{"sample", nil, `["model"]`, nil, nil, nil, `{"region":"original"}`, time.Unix(1, 0)})
+	copy(dest, []driver.Value{"sample", nil, `["model"]`, nil, nil, nil, r.metadata, time.Unix(1, 0)})
 	return nil
 }
 
 func TestManagerCacheIsolatesReturnedSnapshots(t *testing.T) {
-	connector := &snapshotConnector{}
+	connector := &snapshotConnector{metadata: `{"region":"original"}`}
 	db := sql.OpenDB(connector)
 	defer db.Close()
 	m := NewDBTenantConfigManager(db, WithTenantCache(2, time.Minute))
@@ -428,5 +473,80 @@ func TestManagerCacheIsolatesReturnedSnapshots(t *testing.T) {
 	}
 	if connector.queries != 1 {
 		t.Fatalf("queried database %d times", connector.queries)
+	}
+}
+
+func TestTenantConfigInvalidationFencesPendingFill(t *testing.T) {
+	writeFailure := errors.New("write failed")
+	for _, scenario := range []struct {
+		name        string
+		cache       bool
+		remove      bool
+		writeErr    error
+		wantRegion  string
+		wantQueries int
+	}{
+		{name: "update", cache: true, wantRegion: "new", wantQueries: 2},
+		{name: "delete", cache: true, remove: true, wantQueries: 3},
+		{name: "failed update", cache: true, writeErr: writeFailure, wantRegion: "old", wantQueries: 1},
+		{name: "cache disabled", wantRegion: "new", wantQueries: 3},
+	} {
+		t.Run(scenario.name, func(t *testing.T) {
+			connector := &snapshotConnector{
+				metadata:    `{"region":"old"}`,
+				writeErr:    scenario.writeErr,
+				firstRead:   make(chan struct{}),
+				releaseRead: make(chan struct{}),
+			}
+			db := sql.OpenDB(connector)
+			defer db.Close()
+			manager := NewDBTenantConfigManager(db)
+			if scenario.cache {
+				manager = NewDBTenantConfigManager(db, WithTenantCache(2, time.Minute))
+			}
+			var releaseOnce sync.Once
+			release := func() { releaseOnce.Do(func() { close(connector.releaseRead) }) }
+			defer release()
+			type result struct {
+				cfg tenant.Config
+				err error
+			}
+			pending := make(chan result, 1)
+			go func() {
+				cfg, err := manager.GetTenantConfig(t.Context(), "sample")
+				pending <- result{cfg, err}
+			}()
+			select {
+			case <-connector.firstRead:
+			case early := <-pending:
+				t.Fatalf("initial read returned early: %+v", early)
+			}
+			var err error
+			if scenario.remove {
+				err = manager.DeleteTenantConfig(t.Context(), "sample")
+			} else {
+				err = manager.SetTenantConfig(t.Context(), tenant.Config{TenantID: "sample", Metadata: map[string]string{"region": "new"}})
+			}
+			if !errors.Is(err, scenario.writeErr) {
+				t.Fatalf("write error = %v, want %v", err, scenario.writeErr)
+			}
+			release()
+			if old := <-pending; old.err != nil || old.cfg.Metadata["region"] != "old" {
+				t.Fatalf("overlapping read = %+v", old)
+			}
+			for range 2 {
+				cfg, err := manager.GetTenantConfig(t.Context(), "sample")
+				if scenario.remove {
+					if !errors.Is(err, tenant.ErrTenantNotFound) {
+						t.Fatalf("read after delete: %v", err)
+					}
+				} else if err != nil || cfg.Metadata["region"] != scenario.wantRegion {
+					t.Fatalf("read after write = %+v, %v", cfg, err)
+				}
+			}
+			if connector.queries != scenario.wantQueries {
+				t.Errorf("queries = %d, want %d", connector.queries, scenario.wantQueries)
+			}
+		})
 	}
 }

@@ -95,6 +95,9 @@ func TestSPAFallbackReadsAllAcceptLines(t *testing.T) {
 		{[]string{"application/json, text/html"}, 200},
 		{[]string{"", "  "}, 200},
 		{[]string{"application/json", "text/html;q=0"}, 404},
+		{[]string{"text/html;q=NaN"}, 404},
+		{[]string{"text/html;q=+Inf"}, 404},
+		{[]string{"text/html;q=NaN", "application/xhtml+xml;q=0.5"}, 200},
 	} {
 		for _, method := range []string{http.MethodGet, http.MethodHead} {
 			req := httptest.NewRequest(method, "/route", nil)

@@ -122,6 +122,7 @@ func (b *TokenBucket) WaitN(ctx context.Context, n int64) error {
 }
 
 // UpdateRate updates the replenishment rate and maximum burst capacity.
+// A nonpositive burst preserves the current capacity.
 func (b *TokenBucket) UpdateRate(rate float64, burst int64) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -200,11 +201,14 @@ func (k *KeyedBuckets) Wait(ctx context.Context, key string) error {
 }
 
 // UpdateRate updates the rate and burst for all existing and new buckets.
+// A nonpositive burst preserves the current capacity.
 func (k *KeyedBuckets) UpdateRate(rate float64, burst int64) {
 	k.mu.Lock()
 	defer k.mu.Unlock()
 	k.rate = rate
-	k.burst = burst
+	if burst > 0 {
+		k.burst = burst
+	}
 	for _, b := range k.buckets {
 		b.UpdateRate(rate, burst)
 	}

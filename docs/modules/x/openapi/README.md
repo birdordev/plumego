@@ -30,7 +30,12 @@ The command locates `./internal/app` as the application package, calls
 
 ## Operation Hints (`plumego.spec.yaml`)
 
-By default, every route gets a minimal operation with `"200": {description: "OK"}`.
+By default, every supported route method gets a minimal operation with
+`"200": {description: "OK"}`. Route placeholders produce required string
+path parameters. A matching path parameter hint supplies its schema and
+description, and the generated parameter remains required. Query hints
+are independent of path parameters with the same name.
+
 Place a `plumego.spec.yaml` file in the project root to annotate routes:
 
 ```yaml

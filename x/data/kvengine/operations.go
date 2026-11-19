@@ -7,6 +7,7 @@ import (
 	"time"
 )
 
+// Set stores a value and applies capacity eviction after the WAL accepts the write.
 func (kv *KVStore) Set(key string, value []byte, ttl time.Duration) (err error) {
 	start := time.Now()
 	defer func() {
@@ -37,10 +38,6 @@ func (kv *KVStore) Set(key string, value []byte, ttl time.Duration) (err error) 
 		return fmt.Errorf("value too large: size %d exceeds max memory %d", size, maxMemory)
 	}
 
-	if err := kv.ensureCapacityForSet(key, size); err != nil {
-		return err
-	}
-
 	version := atomic.AddInt64(&kv.version, 1)
 
 	// Write to WAL first (before updating memory)
@@ -53,13 +50,13 @@ func (kv *KVStore) Set(key string, value []byte, ttl time.Duration) (err error) 
 	}
 	walEntry.CRC = kv.calculateCRC(walEntry)
 
-	// Synchronous WAL write - fail fast if WAL fails
+	// Honor the configured WAL sync mode before changing resident entries.
 	if err := kv.writeWALEntry(walEntry); err != nil {
 		return fmt.Errorf("WAL write failed: %w", err)
 	}
 
-	// WAL write succeeded, now update memory
 	shard := kv.getShard(key)
+	kv.makeRoomForSet(shard, key, size, maxMemory)
 	shard.mu.Lock()
 	defer shard.mu.Unlock()
 
@@ -87,46 +84,24 @@ func (kv *KVStore) Set(key string, value []byte, ttl time.Duration) (err error) 
 	return nil
 }
 
-func (kv *KVStore) ensureCapacityForSet(key string, size int64) error {
-	var oldSize int64
-	var replacing bool
-
-	shard := kv.getShard(key)
-	shard.mu.RLock()
-	if oldEntry, exists := shard.data[key]; exists {
-		oldSize = oldEntry.Size
-		replacing = true
-	}
-	shard.mu.RUnlock()
-
+// makeRoomForSet runs with opsMu held. The incoming entry fits on its own,
+// and other goroutines can only remove entries until Set publishes it.
+func (kv *KVStore) makeRoomForSet(shard *Shard, key string, size, maxMemory int64) {
 	for {
+		shard.mu.RLock()
 		entries := atomic.LoadInt64(&kv.entries)
-		if replacing {
-			if entries <= int64(kv.opts.MaxEntries) {
-				break
-			}
-		} else if entries < int64(kv.opts.MaxEntries) {
-			break
+		memory := atomic.LoadInt64(&kv.memoryUsage)
+		if old := shard.data[key]; old != nil {
+			entries--
+			memory -= old.Size
 		}
+		shard.mu.RUnlock()
 
-		if !kv.evictOneLRUSkip(key) {
-			return fmt.Errorf("capacity full: entries %d exceeds max entries %d", entries, kv.opts.MaxEntries)
+		if entries < int64(kv.opts.MaxEntries) && memory <= maxMemory-size {
+			return
 		}
-	}
-
-	maxMemory := int64(kv.opts.MaxMemoryMB) * 1024 * 1024
-	for {
-		memoryAfterSet := atomic.LoadInt64(&kv.memoryUsage) + size
-		if replacing {
-			memoryAfterSet -= oldSize
-		}
-		if memoryAfterSet <= maxMemory {
-			return nil
-		}
-
-		if !kv.evictOneLRUSkip(key) {
-			return fmt.Errorf("capacity full: memory %d exceeds max memory %d", memoryAfterSet, maxMemory)
-		}
+		// Expiration may remove the last victim while eviction scans the shards.
+		kv.evictOneLRUSkip(key)
 	}
 }
 
@@ -231,12 +206,11 @@ func (kv *KVStore) Delete(key string) (err error) {
 	}
 	walEntry.CRC = kv.calculateCRC(walEntry)
 
-	// Synchronous WAL write - fail fast if WAL fails
+	// Honor the configured WAL sync mode before changing resident entries.
 	if err := kv.writeWALEntry(walEntry); err != nil {
 		return fmt.Errorf("WAL write failed: %w", err)
 	}
 
-	// WAL write succeeded, now update memory
 	shard := kv.getShard(key)
 	shard.mu.Lock()
 	defer shard.mu.Unlock()

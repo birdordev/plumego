@@ -28,7 +28,7 @@ func NewPrometheusExporter(collector *PrometheusCollector) (*PrometheusExporter,
 
 func (e *PrometheusExporter) Handler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		requests, durations, uptime := e.collector.snapshot()
+		requests, durations, totalRequests, uptime := e.collector.snapshot()
 
 		w.Header().Set("Content-Type", "text/plain; version=0.0.4")
 
@@ -72,10 +72,6 @@ func (e *PrometheusExporter) Handler() http.Handler {
 		_, _ = fmt.Fprintln(w)
 		_, _ = fmt.Fprintf(w, "# HELP %s_http_requests_total_all Total requests across all labels.\n", e.collector.namespace)
 		_, _ = fmt.Fprintf(w, "# TYPE %s_http_requests_total_all counter\n", e.collector.namespace)
-		var totalRequests uint64
-		for _, count := range requests {
-			totalRequests += count
-		}
 		_, _ = fmt.Fprintf(w, "%s_http_requests_total_all %d\n", e.collector.namespace, totalRequests)
 	})
 }

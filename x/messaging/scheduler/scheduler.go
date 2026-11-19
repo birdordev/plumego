@@ -23,6 +23,7 @@ type Scheduler struct {
 	queue   scheduleHeap
 	wakeCh  chan struct{}
 	stopCh  chan struct{}
+	done    chan struct{}
 	closed  bool
 	started bool // guards against multiple Start() calls
 
@@ -146,6 +147,7 @@ func New(opts ...Option) *Scheduler {
 		jobs:             make(map[JobID]*job),
 		queue:            scheduleHeap{},
 		wakeCh:           make(chan struct{}, 1),
+		done:             make(chan struct{}),
 		stopCh:           make(chan struct{}),
 		workerCount:      4,
 		workCh:           make(chan *runRequest, DefaultWorkChannelBuffer),
@@ -167,7 +169,8 @@ func New(opts ...Option) *Scheduler {
 	return s
 }
 
-// Start launches scheduler goroutines.
+// Start restores persisted jobs and launches scheduler goroutines unless Stop
+// begins during recovery.
 // Calling Start more than once on the same Scheduler is a no-op.
 func (s *Scheduler) Start() {
 	s.mu.Lock()
@@ -176,13 +179,21 @@ func (s *Scheduler) Start() {
 		return
 	}
 	s.started = true
+	// Account for recovery before Stop can begin waiting.
+	s.wg.Add(1)
 	s.mu.Unlock()
+	defer s.wg.Done()
 
 	s.loadPersisted()
-	s.wg.Add(1)
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed {
+		return
+	}
+	s.wg.Add(1 + s.workerCount)
 	go s.runLoop()
-	for i := 0; i < s.workerCount; i++ {
-		s.wg.Add(1)
+	for range s.workerCount {
 		go s.worker()
 	}
 }
@@ -202,28 +213,31 @@ func (s *Scheduler) RegisterTask(name string, task TaskFunc) error {
 	return nil
 }
 
-// Stop stops the scheduler and waits for shutdown.
+// Stop signals shutdown and waits for startup and worker goroutines to finish.
+// Each caller can bound its wait with ctx, including after shutdown has started.
+// Cancellation of the wait does not interrupt a Store.List call in progress.
 func (s *Scheduler) Stop(ctx context.Context) error {
 	s.mu.Lock()
-	if s.closed {
-		s.mu.Unlock()
-		return nil
+	if !s.closed {
+		s.closed = true
+		close(s.stopCh)
+		s.stopCancel()
+		go func() {
+			s.wg.Wait()
+			close(s.done)
+		}()
 	}
-	s.closed = true
-	close(s.stopCh)
-	s.stopCancel() // signal running tasks via stopCtx
 	s.mu.Unlock()
 
-	done := make(chan struct{})
-	go func() {
-		s.wg.Wait()
-		close(done)
-	}()
-
+	select {
+	case <-s.done:
+		return nil
+	default:
+	}
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
-	case <-done:
+	case <-s.done:
 		return nil
 	}
 }

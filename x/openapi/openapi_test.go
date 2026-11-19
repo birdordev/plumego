@@ -1,7 +1,9 @@
 package openapi
 
 import (
+	"encoding/json"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/birdordev/plumego/router"
@@ -140,5 +142,65 @@ func TestGenerateOwnsRecursiveSchemaAndOperationContent(t *testing.T) {
 	}
 	if _, ok := second.Responses["200"].Content["application/json"].Schema.Items.Properties["local"]; ok {
 		t.Fatal("second result was mutated")
+	}
+}
+
+func TestGenerateCompletesRequiredPathParameters(t *testing.T) {
+	const routePath = "/teams/:team/users/:id"
+	const openAPIPath = "/teams/{team}/users/{id}"
+	hint := Op{Params: []Param{
+		{In: "path", Name: "id", Description: "User number", Schema: Schema{Type: "integer"}},
+		QueryParam("team", Schema{Type: "string"}),
+	}}
+	routes := []router.RouteInfo{
+		{Method: http.MethodGet, Path: routePath},
+		{Method: http.MethodPost, Path: routePath},
+		{Method: http.MethodGet, Path: "/assets/*path"},
+	}
+	doc := New().Generate(routes, map[string]Op{"GET " + routePath: hint})
+	assertParameter := func(got Param, name, location, kind, description string, required bool) {
+		t.Helper()
+		if got.Name != name || got.In != location || got.Required != required || got.Schema.Type != kind || got.Description != description {
+			t.Errorf("unexpected parameter: %+v", got)
+		}
+	}
+	assertDocument := func(doc Document) {
+		t.Helper()
+		item := doc.Paths[openAPIPath]
+		if item.Get == nil || item.Post == nil || len(item.Get.Parameters) != 3 || len(item.Post.Parameters) != 2 {
+			t.Fatalf("unexpected operations: %+v", item)
+		}
+		assertParameter(item.Get.Parameters[0], "id", "path", "integer", "User number", true)
+		assertParameter(item.Get.Parameters[1], "team", "query", "string", "", false)
+		assertParameter(item.Get.Parameters[2], "team", "path", "string", "", true)
+		assertParameter(item.Post.Parameters[0], "team", "path", "string", "", true)
+		assertParameter(item.Post.Parameters[1], "id", "path", "string", "", true)
+		wildcard := doc.Paths["/assets/{path}"].Get
+		if wildcard == nil || len(wildcard.Parameters) != 1 {
+			t.Fatalf("unexpected wildcard operation: %+v", wildcard)
+		}
+		assertParameter(wildcard.Parameters[0], "path", "path", "string", "", true)
+	}
+	assertDocument(doc)
+	if len(hint.Params) != 2 || hint.Params[0].Required {
+		t.Fatalf("modified hint: %+v", hint)
+	}
+
+	encoded, err := MarshalJSON(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded Document
+	if err := json.Unmarshal(encoded, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	assertDocument(decoded)
+
+	yaml, err := MarshalYAML(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Count(string(yaml), "required: true"); got != 5 {
+		t.Errorf("YAML contains %d required parameters, want 5:\n%s", got, yaml)
 	}
 }

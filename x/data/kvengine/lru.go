@@ -30,7 +30,7 @@ func (kv *KVStore) moveToFront(shard *Shard, entry *Entry) {
 	}
 }
 
-func (kv *KVStore) evictOneLRUSkip(skipKey string) bool {
+func (kv *KVStore) evictOneLRUSkip(skipKey string) {
 	for _, shard := range kv.shards {
 		shard.mu.Lock()
 		victim := shard.lruTail
@@ -42,11 +42,10 @@ func (kv *KVStore) evictOneLRUSkip(skipKey string) bool {
 			// LRU eviction is a cache operation, so it does not write to the WAL.
 			atomic.AddInt64(&kv.evictions, 1)
 			shard.mu.Unlock()
-			return true
+			return
 		}
 		shard.mu.Unlock()
 	}
-	return false
 }
 
 func (kv *KVStore) deleteFromShard(shard *Shard, key string, entry *Entry) {

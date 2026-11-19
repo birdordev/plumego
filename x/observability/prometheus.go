@@ -31,10 +31,11 @@ type PrometheusCollector struct {
 	namespace string
 	maxMemory int
 
-	mu        sync.RWMutex
-	requests  map[labelKey]uint64
-	durations map[labelKey]latencyStats
-	startTime time.Time
+	mu            sync.RWMutex
+	totalRequests uint64
+	requests      map[labelKey]uint64
+	durations     map[labelKey]latencyStats
+	startTime     time.Time
 }
 
 func NewPrometheusCollector(namespace string) *PrometheusCollector {
@@ -130,13 +131,14 @@ func (p *PrometheusCollector) Clear() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
+	p.totalRequests = 0
 	p.requests = make(map[labelKey]uint64)
 	p.durations = make(map[labelKey]latencyStats)
 	p.startTime = time.Now()
 	p.base.Clear()
 }
 
-func (p *PrometheusCollector) snapshot() (map[labelKey]uint64, map[labelKey]latencyStats, time.Duration) {
+func (p *PrometheusCollector) snapshot() (map[labelKey]uint64, map[labelKey]latencyStats, uint64, time.Duration) {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 
@@ -150,7 +152,7 @@ func (p *PrometheusCollector) snapshot() (map[labelKey]uint64, map[labelKey]late
 		durCopy[k] = v
 	}
 
-	return reqCopy, durCopy, time.Since(p.startTime)
+	return reqCopy, durCopy, p.totalRequests, time.Since(p.startTime)
 }
 
 func (p *PrometheusCollector) recordHTTP(method, path string, status int, duration time.Duration) {
@@ -164,6 +166,7 @@ func (p *PrometheusCollector) recordHTTP(method, path string, status int, durati
 	}
 
 	p.requests[key]++
+	p.totalRequests++
 
 	seconds := duration.Seconds()
 	stats := p.durations[key]

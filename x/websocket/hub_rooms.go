@@ -219,7 +219,8 @@ func (h *Hub) canJoin(room string, validator RoomNameValidator) error {
 	return nil
 }
 
-// Metrics returns a snapshot of hub metrics.
+// Metrics returns the room count, registrations, and active connections from
+// one membership snapshot. Cumulative counters are sampled independently.
 //
 // Example:
 //
@@ -239,11 +240,12 @@ func (h *Hub) Metrics() HubMetrics {
 			}
 		}
 	}
+	registrations := int(h.roomRegistrations.Load())
 	h.mu.RUnlock()
 
 	return HubMetrics{
 		ActiveConnections:    len(seen),
-		RoomRegistrations:    int(h.roomRegistrations.Load()),
+		RoomRegistrations:    registrations,
 		Rooms:                rooms,
 		AcceptedTotal:        h.accepted.Load(),
 		RejectedTotal:        h.rejected.Load(),

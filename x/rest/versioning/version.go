@@ -44,6 +44,7 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -101,7 +102,7 @@ type Config struct {
 	// Default: 1
 	DefaultVersion int
 
-	// SupportedVersions is the list of supported API versions
+	// SupportedVersions is copied when Middleware is constructed.
 	// If empty, all versions are accepted
 	// Default: nil (accept all)
 	SupportedVersions []int
@@ -172,6 +173,7 @@ func applyDefaults(c Config) Config {
 // Middleware creates a version negotiation middleware
 func Middleware(config Config) mw.Middleware {
 	cfg := applyDefaults(config)
+	cfg.SupportedVersions = slices.Clone(cfg.SupportedVersions)
 
 	// Pre-compile Accept header regex at construction time
 	var acceptRe *regexp.Regexp
@@ -369,8 +371,10 @@ func isVersionSupported(version int, supported []int) bool {
 // Extractor is a custom version extractor function
 type Extractor func(r *http.Request) int
 
-// CustomExtractor creates a middleware with custom version extraction
+// CustomExtractor creates a middleware with custom version extraction.
+// It copies supportedVersions at construction.
 func CustomExtractor(extractor Extractor, defaultVersion int, supportedVersions []int) mw.Middleware {
+	supportedVersions = slices.Clone(supportedVersions)
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			version := extractor(r)

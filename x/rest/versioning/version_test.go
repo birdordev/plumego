@@ -426,3 +426,63 @@ func TestResponseHeaders(t *testing.T) {
 		t.Errorf("Expected X-API-Version: 2 in response, got %s", versionHeader)
 	}
 }
+
+func TestVersionConfigOwnsSupportedVersions(t *testing.T) {
+	for _, tc := range []struct {
+		name           string
+		makeMiddleware func([]int) func(http.Handler) http.Handler
+	}{
+		{"Middleware", func(versions []int) func(http.Handler) http.Handler {
+			return Middleware(Config{Strategy: StrategyCustomHeader, DefaultVersion: 2, SupportedVersions: versions})
+		}},
+		{"CustomExtractor", func(versions []int) func(http.Handler) http.Handler {
+			return CustomExtractor(func(r *http.Request) int {
+				return extractFromHeader(r, "X-API-Version")
+			}, 2, versions)
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			check := func(versions []int, mutate func()) {
+				t.Helper()
+				wrap := tc.makeMiddleware(versions)
+				mutate()
+				next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+					w.WriteHeader(http.StatusNoContent)
+				})
+				handler := wrap(next)
+				for _, query := range []struct {
+					version string
+					want    int
+				}{
+					{"", http.StatusNoContent},
+					{"2", http.StatusNoContent},
+					{"3", http.StatusNotAcceptable},
+				} {
+					req := httptest.NewRequest(http.MethodGet, "/", nil)
+					if query.version != "" {
+						req.Header.Set("X-API-Version", query.version)
+					}
+					w := httptest.NewRecorder()
+					handler.ServeHTTP(w, req)
+					want := query.want
+					if len(versions) == 0 {
+						want = http.StatusNoContent
+					}
+					if w.Code != want {
+						t.Errorf("version %q: status = %d, want %d", query.version, w.Code, want)
+					}
+					if want == http.StatusNotAcceptable {
+						var response versioningErrorResponse
+						if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil || response.Error.Code != contract.CodeNotAcceptable {
+							t.Errorf("rejection error = %s, decode error = %v", w.Body.String(), err)
+						}
+					}
+				}
+			}
+			versions := []int{2}
+			check(versions, func() { versions[0] = 3 })
+			check(nil, func() {})
+			check([]int{}, func() {})
+		})
+	}
+}
