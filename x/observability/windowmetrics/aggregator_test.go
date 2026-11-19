@@ -1,6 +1,8 @@
 package windowmetrics
 
 import (
+	"strconv"
+	"sync"
 	"testing"
 	"time"
 )
@@ -225,5 +227,36 @@ func BenchmarkAggregatorGetStats(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_ = agg.GetStats("test")
+	}
+}
+
+func TestAggregatorReclaimsIdleMetricNames(t *testing.T) {
+	agg := NewAggregator(time.Minute)
+	current := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
+	agg.now = func() time.Time { return current }
+	for i := range 2 * maxIdleRemovalsPerRecord {
+		agg.Record(strconv.Itoa(i), 1)
+	}
+
+	current = current.Add(time.Minute)
+	agg.Record("active", 40)
+	if agg.activity.Len() != 2*maxIdleRemovalsPerRecord+1 {
+		t.Fatal("samples exactly at the cutoff should be retained")
+	}
+	current = current.Add(time.Second)
+	agg.Record("active", 60)
+	if len(agg.buckets) != maxIdleRemovalsPerRecord+1 {
+		t.Fatalf("record cleanup retained %d buckets", len(agg.buckets))
+	}
+
+	var group sync.WaitGroup
+	for range 10 {
+		group.Go(func() { agg.Record("active", 50) })
+		group.Go(func() { _ = agg.GetAllStats() })
+	}
+	group.Wait()
+	stats := agg.GetAllStats()
+	if got := stats["active"]; len(stats) != 1 || got.Count != 12 || got.Mean != 50 || got.P50 != 50 {
+		t.Fatalf("snapshot = %+v", stats)
 	}
 }

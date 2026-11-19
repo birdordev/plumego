@@ -49,13 +49,17 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.serveError(w, r, "internal server error", http.StatusInternalServerError)
 		return
 	}
-	if !served {
-		if h.cfg.Fallback && shouldFallbackToIndex(r, filePath) {
+	if served {
+		return
+	}
+	if h.cfg.Fallback && path.Ext(filePath) == "" {
+		varyOnAccept(w.Header())
+		if acceptsIndex(r) {
 			h.serveIndex(w, r)
-		} else {
-			h.serveNotFound(w, r)
+			return
 		}
 	}
+	h.serveNotFound(w, r)
 }
 
 // stripPrefix extracts the relative path from requestPath by stripping h.cfg.Prefix.

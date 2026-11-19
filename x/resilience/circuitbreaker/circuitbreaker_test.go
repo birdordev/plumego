@@ -307,7 +307,7 @@ func TestTransitionHalfOpenToClosed(t *testing.T) {
 		MinRequests:      2,
 		Timeout:          1 * time.Second,
 		SuccessThreshold: 3,
-		MaxRequests:      10, // allow enough requests in half-open
+		MaxRequests:      1, // completed probes release the slot
 	})
 
 	// Trip to open
@@ -387,18 +387,51 @@ func TestHalfOpenMaxRequests(t *testing.T) {
 		_ = cb.Call(func() error { return errTest })
 	}
 
-	// Advance past timeout → first call moves to half-open
 	mc.Advance(2 * time.Second)
-	_ = cb.Call(func() error { return nil }) // consumes the 1 allowed request
-
-	if cb.State() != StateHalfOpen {
-		t.Fatalf("state = %v, want HalfOpen", cb.State())
-	}
-
-	// Second call should be rejected (max 1 request)
+	entered, release := make(chan struct{}), make(chan struct{})
+	done := make(chan error, 1)
+	go func() {
+		done <- cb.Call(func() error {
+			close(entered)
+			<-release
+			return nil
+		})
+	}()
+	<-entered
 	err := cb.Call(func() error { return nil })
+	close(release)
+	if probeErr := <-done; probeErr != nil {
+		t.Fatalf("first probe: %v", probeErr)
+	}
 	if !errors.Is(err, ErrTooManyRequests) {
-		t.Fatalf("expected ErrTooManyRequests, got %v", err)
+		t.Fatalf("overlapping call = %v, want ErrTooManyRequests", err)
+	}
+	if err := cb.Call(func() error { return nil }); err != nil {
+		t.Fatalf("call after slot release: %v", err)
+	}
+}
+
+func TestStaleHalfOpenResult(t *testing.T) {
+	cb, clock := newTestCB(Config{Timeout: time.Second, SuccessThreshold: 2})
+	cb.Trip()
+	clock.Advance(time.Second)
+	entered, release := make(chan struct{}), make(chan struct{})
+	done := make(chan error, 1)
+	go func() {
+		done <- cb.Call(func() error {
+			close(entered)
+			<-release
+			return errTest
+		})
+	}()
+	<-entered
+	cb.Trip()
+	clock.Advance(time.Second)
+	err := cb.Call(func() error { return nil })
+	close(release)
+	<-done
+	if err != nil || cb.State() != StateHalfOpen || cb.Counts().ConsecutiveSuccesses != 1 {
+		t.Fatalf("new generation: err=%v, state=%v, counts=%+v", err, cb.State(), cb.Counts())
 	}
 }
 

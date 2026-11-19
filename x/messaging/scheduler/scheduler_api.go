@@ -99,12 +99,12 @@ func (s *Scheduler) UpdateCron(id JobID, spec string) error {
 	if err != nil {
 		return err
 	}
-	j.cron = parsed
-	j.cronExpr = parsed.Expr()
 	next := parsed.Next(s.clock.Now())
 	if next.IsZero() {
-		return fmt.Errorf("scheduler: new spec %q yields no future run time", spec)
+		return fmt.Errorf("%w: new spec %q yields no future run time", ErrInvalidCronExpr, spec)
 	}
+	j.cron = parsed
+	j.cronExpr = parsed.Expr()
 	j.runAt = next
 	if !j.paused.Load() {
 		s.pushScheduleItemLocked(j, next, true)
@@ -310,6 +310,9 @@ func (s *Scheduler) addJob(id JobID, kind jobKind, task TaskFunc, spec CronSpec,
 	}
 	if kind == jobKindCron {
 		j.runAt = spec.Next(s.clock.Now())
+		if j.runAt.IsZero() {
+			return "", fmt.Errorf("%w: spec %q yields no future run time", ErrInvalidCronExpr, spec.Expr())
+		}
 		j.cronExpr = spec.Expr()
 	}
 	if kind == jobKindDelay && runAt.Before(s.clock.Now()) {

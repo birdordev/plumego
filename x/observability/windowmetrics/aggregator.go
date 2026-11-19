@@ -1,6 +1,7 @@
 package windowmetrics
 
 import (
+	"container/list"
 	"sort"
 	"sync"
 	"time"
@@ -27,13 +28,18 @@ import (
 //	fmt.Printf("Count: %d, Mean: %.2f, Min: %.2f, Max: %.2f\n",
 //		stats.Count, stats.Mean, stats.Min, stats.Max)
 type Aggregator struct {
-	mu      *sync.RWMutex
-	window  time.Duration
-	buckets map[string]*bucket
-	now     func() time.Time
+	mu       *sync.RWMutex
+	window   time.Duration
+	buckets  map[string]*bucket
+	activity *list.List // oldest to newest last observation, under mu
+	now      func() time.Time
 }
 
+const maxIdleRemovalsPerRecord = 8
+
 type bucket struct {
+	name             string
+	activity         *list.Element
 	samples          []sample
 	maxLen           int
 	sortedCache      []float64
@@ -76,10 +82,11 @@ type AggregatorStats struct {
 //	agg := windowmetrics.NewAggregator(5 * time.Minute)
 func NewAggregator(window time.Duration) *Aggregator {
 	return &Aggregator{
-		mu:      &sync.RWMutex{},
-		window:  window,
-		buckets: make(map[string]*bucket),
-		now:     time.Now,
+		mu:       &sync.RWMutex{},
+		window:   window,
+		buckets:  make(map[string]*bucket),
+		activity: list.New(),
+		now:      time.Now,
 	}
 }
 
@@ -96,14 +103,19 @@ func (a *Aggregator) Record(name string, value float64) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	now := a.now()
+	a.discardIdle(now, maxIdleRemovalsPerRecord)
 
 	b, exists := a.buckets[name]
 	if !exists {
 		b = &bucket{
+			name:    name,
 			samples: make([]sample, 0, 1000),
 			maxLen:  10000,
 		}
 		a.buckets[name] = b
+		b.activity = a.activity.PushBack(b)
+	} else {
+		a.activity.MoveToBack(b.activity)
 	}
 
 	b.evictExpired(a.window, now)
@@ -143,9 +155,11 @@ func (a *Aggregator) GetStats(name string) AggregatorStats {
 		return AggregatorStats{}
 	}
 	b.evictExpired(a.window, a.now())
-
+	if len(b.samples) == 0 {
+		a.removeBucket(b)
+		return AggregatorStats{}
+	}
 	return b.buildStats()
-
 }
 
 func (b *bucket) buildStats() AggregatorStats {
@@ -209,6 +223,31 @@ func (b *bucket) evictExpired(window time.Duration, now time.Time) {
 	}
 }
 
+// discardIdle reclaims whole expired buckets in last-observation order.
+// Record bounds reclamation work per call, even after a long idle period.
+func (a *Aggregator) discardIdle(now time.Time, limit int) {
+	if a.window <= 0 {
+		return
+	}
+	cutoff := now.Add(-a.window)
+	for removed := 0; removed < limit; removed++ {
+		first := a.activity.Front()
+		if first == nil {
+			return
+		}
+		b := first.Value.(*bucket)
+		if !b.samples[len(b.samples)-1].observedAt.Before(cutoff) {
+			return
+		}
+		a.removeBucket(b)
+	}
+}
+
+func (a *Aggregator) removeBucket(b *bucket) {
+	a.activity.Remove(b.activity)
+	delete(a.buckets, b.name)
+}
+
 // Clear removes all aggregated metrics.
 //
 // Example:
@@ -223,9 +262,11 @@ func (a *Aggregator) Clear() {
 	defer a.mu.Unlock()
 
 	a.buckets = make(map[string]*bucket)
+	a.activity = list.New()
 }
 
-// GetAllStats returns statistics for all tracked metrics.
+// GetAllStats returns statistics for metrics with retained samples at the time
+// of the snapshot. It removes expired metric names from the aggregator.
 //
 // Example:
 //
@@ -243,6 +284,7 @@ func (a *Aggregator) GetAllStats() map[string]AggregatorStats {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	now := a.now()
+	a.discardIdle(now, len(a.buckets))
 
 	result := make(map[string]AggregatorStats, len(a.buckets))
 	for name, b := range a.buckets {

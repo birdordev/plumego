@@ -3,6 +3,9 @@ package config
 import (
 	"context"
 	"os"
+	"path/filepath"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -571,4 +574,91 @@ func BenchmarkConfigWatcher_Get(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		_ = watcher.Get()
 	}
+}
+
+func TestConcurrentReloadPublishesVersionOnce(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	data := []byte(`{
+		"shards": [{"name":"shard0","primary":{"driver":"sqlite3","database":"test"}}],
+		"sharding_rules": [{"table_name":"items","shard_key_column":"id","strategy":"hash"}],
+		"cross_shard_policy":"deny",
+		"log_level":"info"
+	}`)
+	if err := os.WriteFile(path, data, 0600); err != nil {
+		t.Fatal(err)
+	}
+	w, err := NewConfigWatcher(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var calls atomic.Int32
+	w.AddOnChange(func(*ShardingConfig) {
+		if got := w.Get().Shards[0].Name; got != "shard0" {
+			t.Errorf("published shard = %q", got)
+		}
+		calls.Add(1)
+	})
+	next := w.lastMod.Add(time.Minute)
+	if err := os.Chtimes(path, next, next); err != nil {
+		t.Fatal(err)
+	}
+	start := make(chan struct{})
+	var group sync.WaitGroup
+	for range 16 {
+		group.Go(func() {
+			<-start
+			if err := w.Reload(); err != nil {
+				t.Error(err)
+			}
+		})
+	}
+	close(start)
+	group.Wait()
+	if got := calls.Load(); got != 1 {
+		t.Fatalf("callback count = %d, want 1", got)
+	}
+}
+
+func TestWatcherSnapshotsAreIsolated(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	data := []byte(`{
+		"shards": [{"name":"original","primary":{"driver":"sqlite3","database":"test"}}],
+		"sharding_rules": [{"table_name":"items","shard_key_column":"id","strategy":"range",
+			"actual_table_names":{"0":"items_0"},
+			"strategy_config":{"ranges":[{"start":{"value":[1]},"end":10,"shard":0}]}}],
+		"cross_shard_policy":"deny",
+		"log_level":"info"
+	}`)
+	if err := os.WriteFile(path, data, 0600); err != nil {
+		t.Fatal(err)
+	}
+	w, err := NewConfigWatcher(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	edit := func(cfg *ShardingConfig) {
+		cfg.Shards[0].Name = "edited"
+		rule := &cfg.ShardingRules[0]
+		rule.ActualTableNames[0] = "edited"
+		rule.StrategyConfig.Ranges[0].Start.(map[string]any)["value"].([]any)[0] = 0.0
+	}
+	check := func(cfg *ShardingConfig) {
+		rule := &cfg.ShardingRules[0]
+		if cfg.Shards[0].Name != "original" || rule.ActualTableNames[0] != "items_0" ||
+			rule.StrategyConfig.Ranges[0].Start.(map[string]any)["value"].([]any)[0] != 1.0 {
+			t.Error("configuration snapshot has been mutated")
+		}
+	}
+	edit(w.Get())
+	check(w.Get())
+	w.AddOnChange(edit)
+	w.AddOnChange(check)
+	next := w.lastMod.Add(time.Minute)
+	if err := os.Chtimes(path, next, next); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Reload(); err != nil {
+		t.Fatal(err)
+	}
+	check(w.Get())
 }

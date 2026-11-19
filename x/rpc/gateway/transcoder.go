@@ -3,8 +3,12 @@ package gateway
 
 import (
 	"context"
+	"fmt"
+	"maps"
 	"net/http"
+	"slices"
 	"strings"
+	"sync"
 
 	"github.com/birdordev/plumego/contract"
 )
@@ -18,12 +22,16 @@ type Option func(*HTTPTranscoder)
 type HTTPTranscoder struct {
 	mux    *http.ServeMux
 	target string
+
+	mu     sync.RWMutex
+	routes map[string]map[string]HandlerFunc
 }
 
 func New(target string, opts ...Option) *HTTPTranscoder {
 	t := &HTTPTranscoder{
 		mux:    http.NewServeMux(),
 		target: strings.TrimSpace(target),
+		routes: make(map[string]map[string]HandlerFunc),
 	}
 	for _, opt := range opts {
 		if opt != nil {
@@ -33,21 +41,61 @@ func New(target string, opts ...Option) *HTTPTranscoder {
 	return t
 }
 
+// Register adds a handler for a method and path. Patterns without a method
+// use GET. Each registered method, including HEAD, is matched explicitly.
 func (t *HTTPTranscoder) Register(ctx context.Context, handler HandlerFunc, pattern string) error {
 	_ = ctx
 	if handler == nil {
 		return contract.ErrHandlerNil
 	}
 	method, path := splitPattern(pattern)
-	t.mux.HandleFunc(path, func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != method {
-			w.Header().Set("Allow", method)
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
+	if _, err := http.NewRequest(method, "/", nil); err != nil {
+		return fmt.Errorf("rpc gateway: invalid method: %w", err)
+	}
+
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	methods := t.routes[path]
+	if methods == nil {
+		if err := registerMuxPath(t.mux, path, func(w http.ResponseWriter, r *http.Request) {
+			t.servePath(w, r, path)
+		}); err != nil {
+			return err
 		}
-		handler(w, r, nil)
-	})
+		methods = make(map[string]HandlerFunc)
+		t.routes[path] = methods
+	}
+	if methods[method] != nil {
+		return fmt.Errorf("rpc gateway: %s %s is already registered", method, path)
+	}
+	methods[method] = handler
 	return nil
+}
+
+func registerMuxPath(mux *http.ServeMux, path string, handler http.HandlerFunc) (err error) {
+	// ServeMux reports invalid and conflicting patterns by panicking.
+	defer func() {
+		if cause := recover(); cause != nil {
+			err = fmt.Errorf("rpc gateway: register %q: %v", path, cause)
+		}
+	}()
+	mux.HandleFunc(path, handler)
+	return nil
+}
+
+func (t *HTTPTranscoder) servePath(w http.ResponseWriter, r *http.Request, path string) {
+	t.mu.RLock()
+	methods := t.routes[path]
+	handler := methods[r.Method]
+	if handler != nil {
+		t.mu.RUnlock()
+		handler(w, r, nil)
+		return
+	}
+	allowed := slices.Sorted(maps.Keys(methods))
+	t.mu.RUnlock()
+	w.Header().Set("Allow", strings.Join(allowed, ", "))
+	http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 }
 
 func (t *HTTPTranscoder) Handler() http.Handler {

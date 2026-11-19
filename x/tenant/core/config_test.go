@@ -1,6 +1,7 @@
 package tenant
 
 import (
+	"reflect"
 	"sync"
 	"testing"
 	"time"
@@ -255,5 +256,68 @@ func TestInMemoryConfigManager_MultipleUpdates(t *testing.T) {
 	}
 	if retrieved.Metadata["version"] != "2" {
 		t.Errorf("expected version 2, got %s", retrieved.Metadata["version"])
+	}
+}
+
+func TestInMemoryConfigManagerOwnsSnapshots(t *testing.T) {
+	manager := NewInMemoryConfigManager()
+	newConfig := func() Config {
+		return Config{
+			TenantID: "sample",
+			Metadata: map[string]string{"region": "original"},
+			Quota:    QuotaConfig{Limits: []QuotaLimit{{Window: QuotaWindowMinute, Requests: 5}}},
+			Policy: PolicyConfig{
+				AllowedModels:  []string{"model"},
+				AllowedTools:   []string{"tool"},
+				AllowedMethods: []string{"GET"},
+				AllowedPaths:   []string{"/items"},
+			},
+		}
+	}
+	mutate := func(cfg Config) {
+		cfg.Metadata["region"] = "edited"
+		cfg.Quota.Limits[0].Requests = 1
+		cfg.Policy.AllowedModels[0] = "edited"
+		cfg.Policy.AllowedTools[0] = "edited"
+		cfg.Policy.AllowedMethods[0] = "POST"
+		cfg.Policy.AllowedPaths[0] = "/other"
+	}
+	load := func() Config {
+		t.Helper()
+		got, err := manager.GetTenantConfig(t.Context(), "sample")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.UpdatedAt.IsZero() {
+			t.Fatal("missing update time")
+		}
+		got.UpdatedAt = time.Time{}
+		return got
+	}
+	input := newConfig()
+	manager.SetTenantConfig(input)
+	mutate(input)
+	mutate(load())
+	if got := load(); !reflect.DeepEqual(got, newConfig()) {
+		t.Fatalf("stored configuration changed: %+v", got)
+	}
+
+	policy, err := manager.PolicyConfig(t.Context(), "sample")
+	if err != nil {
+		t.Fatal(err)
+	}
+	policy.AllowedModels[0] = "edited"
+	quota, err := manager.QuotaConfig(t.Context(), "sample")
+	if err != nil {
+		t.Fatal(err)
+	}
+	quota.Limits[0].Requests = 1
+	if got := load(); !reflect.DeepEqual(got, newConfig()) {
+		t.Fatalf("derived configuration changed stored result: %+v", got)
+	}
+
+	manager.SetTenantConfig(Config{TenantID: "sample"})
+	if got := load(); !reflect.DeepEqual(got, Config{TenantID: "sample"}) {
+		t.Fatalf("replacement config = %+v", got)
 	}
 }

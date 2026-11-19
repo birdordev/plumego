@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"math"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -511,6 +512,35 @@ func TestHandler_List(t *testing.T) {
 	}
 	if result.Page != 1 || result.PageSize != 20 || result.TotalPage != 1 {
 		t.Errorf("unexpected pagination: %+v", result)
+	}
+}
+
+func TestHandler_ListTotalPages(t *testing.T) {
+	for _, tc := range []struct {
+		total int64
+		pages int64
+	}{
+		{0, 0},
+		{4, 2},
+		{5, 3},
+		{math.MaxInt64, math.MaxInt64/2 + 1},
+	} {
+		metadata := &mockMetadataManager{
+			listFunc: func(context.Context, datafile.Query) ([]*datafile.File, int64, error) {
+				return nil, tc.total, nil
+			},
+		}
+		h := NewHandler(&mockStorage{}, metadata)
+		req := httptest.NewRequest(http.MethodGet, "/files?page_size=2", nil)
+		rec := httptest.NewRecorder()
+		h.List(rec, tenantcore.RequestWithTenantID(req, "tenant"))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("List status = %d", rec.Code)
+		}
+		result := decodeResponseData[listResponse](t, rec)
+		if result.Total != tc.total || result.TotalPage != tc.pages {
+			t.Errorf("total=%d pages=%d, want %d and %d", result.Total, result.TotalPage, tc.total, tc.pages)
+		}
 	}
 }
 

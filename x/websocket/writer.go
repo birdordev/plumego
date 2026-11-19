@@ -24,7 +24,9 @@ func (c *Conn) WriteMessage(op byte, data []byte) error {
 }
 
 // WriteMessageContext enqueues message to sendQueue with context support.
-// Behavior on full queue depends on c.sendBehavior.
+// Behavior on full queue depends on c.sendBehavior. An already canceled
+// context prevents admission. Once a message is queued, canceling ctx does not
+// remove it from the queue.
 //
 // The context can be used for cancellation and custom timeouts:
 //
@@ -35,11 +37,14 @@ func (c *Conn) WriteMessageContext(ctx context.Context, op byte, data []byte) er
 	if !isApplicationWriteOpcode(op) {
 		return ErrInvalidOpcode
 	}
+	if ctx != nil && ctx.Err() != nil {
+		return ctx.Err()
+	}
 	owned := make([]byte, len(data))
 	copy(owned, data)
 	out := Outbound{Op: op, Data: owned}
 
-	if err := c.tryEnqueue(out); err == nil {
+	if err := c.tryEnqueue(ctx, out); err == nil {
 		return nil
 	} else if !errors.Is(err, ErrQueueFull) {
 		return err
@@ -63,9 +68,12 @@ func isApplicationWriteOpcode(op byte) bool {
 	return op == OpcodeText || op == OpcodeBinary
 }
 
-func (c *Conn) tryEnqueue(out Outbound) error {
+func (c *Conn) tryEnqueue(ctx context.Context, out Outbound) error {
 	c.stateMu.RLock()
 	defer c.stateMu.RUnlock()
+	if ctx != nil && ctx.Err() != nil {
+		return ctx.Err()
+	}
 	if c.IsClosed() {
 		return ErrConnClosed
 	}
@@ -81,18 +89,19 @@ func (c *Conn) enqueueBlocking(ctx context.Context, out Outbound) error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	for {
-		if c.IsClosed() {
-			return ErrConnClosed
-		}
-		select {
-		case c.sendQueue <- out:
-			return nil
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-c.closeC:
-			return ErrConnClosed
-		}
+	if c.IsClosed() {
+		return ErrConnClosed
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	select {
+	case c.sendQueue <- out:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-c.closeC:
+		return ErrConnClosed
 	}
 }
 

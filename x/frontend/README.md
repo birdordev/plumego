@@ -199,7 +199,8 @@ Fallback is intentionally navigation-only. Missing paths with a file extension
 such as `/assets/app.js`, `/app.css`, `/module.wasm`, or `/app.js.map` return
 404 instead of the index. Extensionless paths fall back when the request has no
 `Accept` header or accepts HTML (`text/html`, `application/xhtml+xml`, `text/*`,
-or `*/*`). Requests that explicitly do not accept HTML return 404.
+or `*/*`). Requests that explicitly do not accept HTML return 404. Both
+responses include `Vary: Accept` so caches account for that choice.
 
 ### WithPrecompressed(enabled bool)
 

@@ -25,6 +25,8 @@ package tenant
 
 import (
 	"context"
+	"maps"
+	"slices"
 	"sync"
 	"time"
 )
@@ -37,6 +39,16 @@ type Config struct {
 	RateLimit RateLimitConfig
 	Metadata  map[string]string
 	UpdatedAt time.Time
+}
+
+func (c Config) clone() Config {
+	c.Metadata = maps.Clone(c.Metadata)
+	c.Quota.Limits = slices.Clone(c.Quota.Limits)
+	c.Policy.AllowedModels = slices.Clone(c.Policy.AllowedModels)
+	c.Policy.AllowedTools = slices.Clone(c.Policy.AllowedTools)
+	c.Policy.AllowedMethods = slices.Clone(c.Policy.AllowedMethods)
+	c.Policy.AllowedPaths = slices.Clone(c.Policy.AllowedPaths)
+	return c
 }
 
 // QuotaConfigProvider loads quota configuration for a tenant.
@@ -79,12 +91,13 @@ func NewInMemoryConfigManager() *InMemoryConfigManager {
 	}
 }
 
-// SetTenantConfig inserts or replaces a tenant configuration.
+// SetTenantConfig inserts or replaces a tenant configuration with a snapshot.
 func (m *InMemoryConfigManager) SetTenantConfig(cfg Config) {
 	if m == nil {
 		return
 	}
 
+	cfg = cfg.clone()
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -92,20 +105,19 @@ func (m *InMemoryConfigManager) SetTenantConfig(cfg Config) {
 	m.configs[cfg.TenantID] = cfg
 }
 
-// GetTenantConfig fetches the tenant configuration.
+// GetTenantConfig returns a caller-owned copy of the tenant configuration.
 func (m *InMemoryConfigManager) GetTenantConfig(ctx context.Context, tenantID string) (Config, error) {
 	if m == nil {
 		return Config{}, ErrTenantNotFound
 	}
 
 	m.mu.RLock()
-	defer m.mu.RUnlock()
-
 	cfg, ok := m.configs[tenantID]
+	m.mu.RUnlock()
 	if !ok {
 		return Config{}, ErrTenantNotFound
 	}
-	return cfg, nil
+	return cfg.clone(), nil
 }
 
 // QuotaConfig returns the quota config for a tenant.

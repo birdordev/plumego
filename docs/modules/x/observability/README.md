@@ -78,6 +78,10 @@ Health HTTP orchestration belongs in `x/observability/ops/healthhttp` or app-loc
 The stable `health` root owns readiness models and helpers, not HTTP handler
 ownership.
 
+`windowmetrics.Aggregator.GetAllStats` reports metric names that have samples
+in the window. Recording new samples also reclaims idle names in bounded
+batches.
+
 ## Current test coverage
 
 - `PrometheusCollector`: observe/handler round-trip, multiple requests with different labels, stats (ActiveSeries, TotalRecords, NameBreakdown, StartTime), Clear, WithMaxMemory eviction, concurrency, Prometheus text format and label escaping (newline and quote injection), empty namespace default, zero-max-memory fallback, eviction of least-used series

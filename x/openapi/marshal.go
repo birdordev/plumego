@@ -84,7 +84,7 @@ func writeYAMLMap(buf *bytes.Buffer, value map[string]any, indent int) {
 
 	for _, key := range keys {
 		writeIndent(buf, indent)
-		buf.WriteString(key)
+		buf.WriteString(formatYAMLKey(key))
 		child := value[key]
 		if isYAMLScalar(child) {
 			buf.WriteString(": ")
@@ -95,6 +95,34 @@ func writeYAMLMap(buf *bytes.Buffer, value map[string]any, indent int) {
 		buf.WriteString(":\n")
 		writeYAMLValue(buf, child, indent+2)
 	}
+}
+
+// Keep common field names and route templates readable. Quote all other
+// keys, including tokens that YAML parsers can resolve as non-string types.
+func formatYAMLKey(key string) string {
+	if key == "" || (key[0] != '/' && key[0] != '_' && !asciiLetter(key[0])) {
+		return quoteYAMLString(key)
+	}
+	switch strings.ToLower(key) {
+	case "null", "true", "false", "y", "n", "yes", "no", "on", "off":
+		return quoteYAMLString(key)
+	}
+	for i := range len(key) {
+		c := key[i]
+		if !asciiLetter(c) && (c < '0' || c > '9') && !strings.ContainsRune("_-/{}.~", rune(c)) {
+			return quoteYAMLString(key)
+		}
+	}
+	return key
+}
+
+func asciiLetter(c byte) bool {
+	return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
+}
+
+func quoteYAMLString(s string) string {
+	encoded, _ := json.Marshal(s) // Strings always marshal successfully.
+	return string(encoded)
 }
 
 func writeYAMLList(buf *bytes.Buffer, value []any, indent int) {
@@ -133,7 +161,7 @@ func formatYAMLScalar(value any) string {
 	case nil:
 		return "null"
 	case string:
-		return strconv.Quote(v)
+		return quoteYAMLString(v)
 	case bool:
 		return strconv.FormatBool(v)
 	case float64:

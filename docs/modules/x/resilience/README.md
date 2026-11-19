@@ -39,7 +39,11 @@
 
 ## Circuit Breaker
 
-`circuitbreaker.New` creates a three-state breaker (Closed → Open → Half-Open):
+`circuitbreaker.New` creates a three-state breaker (Closed → Open → Half-Open).
+
+In half-open state, `MaxRequests` limits concurrent probes. Completing a
+probe releases its slot. Sequential success can reach `SuccessThreshold`
+even when that threshold exceeds the concurrency limit.
 
 ```go
 import "github.com/birdordev/plumego/x/resilience/circuitbreaker"

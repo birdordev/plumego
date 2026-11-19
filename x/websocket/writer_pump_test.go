@@ -236,3 +236,23 @@ func TestWriteMessageContextReturnsOnCloseWhileBlocked(t *testing.T) {
 		t.Fatal("WriteMessageContext did not return after close")
 	}
 }
+
+func TestWriteMessageContextDoesNotQueueAfterCancellation(t *testing.T) {
+	c := &Conn{
+		sendQueue:    make(chan Outbound, 1),
+		closeC:       make(chan struct{}),
+		sendBehavior: SendBlock,
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	err := c.WriteMessageContext(ctx, OpcodeText, []byte("canceled"))
+	if !errors.Is(err, context.Canceled) || len(c.sendQueue) != 0 {
+		t.Fatalf("write = %v, queue length = %d", err, len(c.sendQueue))
+	}
+	if err := c.WriteMessageContext(nil, OpcodeText, []byte("live")); err != nil {
+		t.Fatal(err)
+	}
+	if got := string((<-c.sendQueue).Data); got != "live" {
+		t.Fatalf("queued data = %q", got)
+	}
+}

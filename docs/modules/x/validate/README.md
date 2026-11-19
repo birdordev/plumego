@@ -189,6 +189,9 @@ See `reference/with-rest` for a complete working example.
 
 Both functions return the original decoder error if decoding fails. The
 handler can map that error to HTTP 400 without exposing decoder details.
+On a decoding error, the returned value may already contain some decoded
+fields. On a validation error, `Bind` returns the decoded value. Check the
+error before using either result.
 `Bind` wraps a validator failure in a `validate.ValidationError` value. Its
 `Unwrap` method preserves the original error. Pass its `APIError` field to
 `contract.WriteError` for this response:

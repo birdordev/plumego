@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -120,8 +121,11 @@ func (w *ConfigWatcher) checkAndReload() error {
 		return fmt.Errorf("failed to stat file: %w", err)
 	}
 
-	// Check if file has been modified
-	if !stat.ModTime().After(w.lastMod) {
+	modTime := stat.ModTime()
+	w.mu.RLock()
+	changed := modTime.After(w.lastMod)
+	w.mu.RUnlock()
+	if !changed {
 		return nil
 	}
 
@@ -136,38 +140,42 @@ func (w *ConfigWatcher) checkAndReload() error {
 		return fmt.Errorf("failed to merge with environment: %w", err)
 	}
 
-	// Update configuration atomically
+	// Another reload may have committed while this one was reading the file.
 	w.mu.Lock()
+	if !modTime.After(w.lastMod) {
+		w.mu.Unlock()
+		return nil
+	}
 	w.config = newConfig
-	w.lastMod = stat.ModTime()
-	callbacks := make([]func(*ShardingConfig), len(w.onChange))
-	copy(callbacks, w.onChange)
+	w.lastMod = modTime
+	callbacks := slices.Clone(w.onChange)
 	w.mu.Unlock()
 
 	// Call onChange callbacks
 	for _, fn := range callbacks {
-		fn(newConfig)
+		fn(newConfig.clone())
 	}
 
 	return nil
 }
 
-// Get returns the current configuration (thread-safe)
+// Get returns a caller-owned snapshot of the current configuration.
 func (w *ConfigWatcher) Get() *ShardingConfig {
 	w.mu.RLock()
-	defer w.mu.RUnlock()
+	config := w.config
+	w.mu.RUnlock()
 
-	// Return a copy to prevent modification
-	config := *w.config
-	return &config
+	// Published configurations are immutable.
+	return config.clone()
 }
 
-// Reload manually reloads the configuration
+// Reload publishes a newer file version. Each modification time is published
+// once. Callbacks run outside the lock and may overlap across versions.
 func (w *ConfigWatcher) Reload() error {
 	return w.checkAndReload()
 }
 
-// AddOnChange adds a callback to be called when configuration changes
+// AddOnChange registers a callback that receives its own configuration snapshot.
 func (w *ConfigWatcher) AddOnChange(fn func(*ShardingConfig)) {
 	w.mu.Lock()
 	defer w.mu.Unlock()

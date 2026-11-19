@@ -157,8 +157,12 @@ rpcGroup.Any("/*path", transcoder.Handler())
 ```
 
 The gateway does not perform protocol translation. It adapts the handler
-registration shape and enforces the method. Protocol framing (gRPC binary,
-Connect JSON, etc.) is the responsibility of the caller-owned handler.
+registration shape and dispatches by method. Multiple methods can share a path.
+A pattern without a method registers GET. HEAD requires explicit registration.
+A method mismatch returns HTTP 405 and an `Allow` header listing the methods
+registered for the matched path. Duplicate methods and invalid or conflicting
+patterns return registration errors. Protocol framing (gRPC binary, Connect JSON,
+etc.) is the responsibility of the caller-owned handler.
 
 ---
 

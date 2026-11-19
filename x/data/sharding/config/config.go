@@ -3,8 +3,10 @@ package config
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"net/url"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -156,6 +158,50 @@ type RangeConfig struct {
 
 	// Shard is the target shard index
 	Shard int `json:"shard"`
+}
+
+// clone copies a watcher snapshot. Range endpoints originate in JSON files.
+func (c *ShardingConfig) clone() *ShardingConfig {
+	snapshot := *c
+	snapshot.Shards = slices.Clone(c.Shards)
+	for i := range snapshot.Shards {
+		shard := &snapshot.Shards[i]
+		shard.Replicas = slices.Clone(shard.Replicas)
+		shard.ReplicaWeights = slices.Clone(shard.ReplicaWeights)
+	}
+	snapshot.ShardingRules = slices.Clone(c.ShardingRules)
+	for i := range snapshot.ShardingRules {
+		rule := &snapshot.ShardingRules[i]
+		rule.ActualTableNames = maps.Clone(rule.ActualTableNames)
+		strategy := &rule.StrategyConfig
+		strategy.Mapping = maps.Clone(strategy.Mapping)
+		strategy.Ranges = slices.Clone(strategy.Ranges)
+		for i := range strategy.Ranges {
+			bounds := &strategy.Ranges[i]
+			bounds.Start = cloneJSONValue(bounds.Start)
+			bounds.End = cloneJSONValue(bounds.End)
+		}
+	}
+	return &snapshot
+}
+
+func cloneJSONValue(value any) any {
+	switch value := value.(type) {
+	case map[string]any:
+		copy := maps.Clone(value)
+		for key, entry := range value {
+			copy[key] = cloneJSONValue(entry)
+		}
+		return copy
+	case []any:
+		copy := slices.Clone(value)
+		for i, entry := range value {
+			copy[i] = cloneJSONValue(entry)
+		}
+		return copy
+	default:
+		return value
+	}
 }
 
 // DefaultConfig returns a default sharding configuration

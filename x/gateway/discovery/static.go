@@ -2,6 +2,7 @@ package discovery
 
 import (
 	"context"
+	"slices"
 	"sync"
 )
 
@@ -28,14 +29,14 @@ type Static struct {
 	mu       sync.RWMutex
 }
 
-// NewStatic creates a new static discovery with the given service map
+// NewStatic creates a static discovery with its own copy of the service map
+// and backend lists.
 func NewStatic(services map[string][]string) *Static {
-	if services == nil {
-		services = make(map[string][]string)
+	owned := make(map[string][]string, len(services))
+	for name, backends := range services {
+		owned[name] = slices.Clone(backends)
 	}
-	return &Static{
-		services: services,
-	}
+	return &Static{services: owned}
 }
 
 // Resolve returns the list of backend URLs for a service
@@ -103,13 +104,13 @@ func (s *Static) Close() error {
 	return nil
 }
 
-// UpdateService updates the backends for a service
+// UpdateService replaces the backends for a service with a copy of backends.
 // This is useful for testing or manual updates
 func (s *Static) UpdateService(serviceName string, backends []string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	s.services[serviceName] = backends
+	s.services[serviceName] = slices.Clone(backends)
 }
 
 // RemoveService removes a service from the registry

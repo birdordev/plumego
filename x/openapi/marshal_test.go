@@ -209,3 +209,25 @@ func TestMarshalYAMLRetainsEmptyCollections(t *testing.T) {
 		t.Errorf("empty children = %q", got)
 	}
 }
+
+func TestYAMLMapKeysPreserveStringType(t *testing.T) {
+	doc := Document{Paths: map[string]PathItem{
+		"/users/{id}":       {},
+		"/reports: summary": {},
+		"#comment":          {},
+		"":                  {},
+		"/items": {Get: &Operation{Responses: map[string]Response{
+			"200": {Description: "OK"},
+			"on":  {Description: "example"},
+		}}},
+	}}
+	data, err := MarshalYAML(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []string{`/users/{id}:`, `"/reports: summary":`, `"#comment":`, `"":`, `"200":`, `"on":`} {
+		if !strings.Contains(string(data), key) {
+			t.Errorf("missing key %s in:\n%s", key, data)
+		}
+	}
+}

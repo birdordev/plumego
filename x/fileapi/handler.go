@@ -319,12 +319,18 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	pageSize := int64(query.PageSize)
+	totalPages := total / pageSize
+	if total%pageSize > 0 {
+		totalPages++
+	}
+
 	_ = contract.WriteResponse(w, r, http.StatusOK, listResponse{
 		Items:     files,
 		Total:     total,
 		Page:      query.Page,
 		PageSize:  query.PageSize,
-		TotalPage: (total + int64(query.PageSize) - 1) / int64(query.PageSize),
+		TotalPage: totalPages,
 	}, nil)
 }
 

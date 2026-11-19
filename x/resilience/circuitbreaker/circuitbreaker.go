@@ -34,7 +34,6 @@ import (
 	"errors"
 	"fmt"
 	"sync"
-	"sync/atomic"
 	"time"
 )
 
@@ -71,19 +70,13 @@ type CircuitBreaker struct {
 	name   string
 	config Config
 
-	// State management
-	state        atomic.Int32
-	stateChanged time.Time
+	// stateMu protects transitions, admitted probes, and their statistics.
 	stateMu      sync.RWMutex
-
-	// Metrics (closed state)
-	requests  atomic.Uint64
-	failures  atomic.Uint64
-	successes atomic.Uint64
-
-	// Metrics (half-open state)
-	halfOpenRequests  atomic.Uint64
-	halfOpenSuccesses atomic.Uint64
+	state        State
+	stateChanged time.Time
+	generation   uint64
+	inFlight     uint64
+	counts       Counts
 
 	// Hooks
 	onStateChange func(from, to State)
@@ -187,184 +180,172 @@ func New(config Config) *CircuitBreaker {
 		clock:         &realClock{},
 	}
 
-	cb.state.Store(int32(StateClosed))
-
 	return cb
 }
 
 // Call executes the function with circuit breaker protection
-func (cb *CircuitBreaker) Call(fn func() error) error {
-	// Check if we can proceed
-	if err := cb.beforeRequest(); err != nil {
+func (cb *CircuitBreaker) Call(fn func() error) (err error) {
+	generation, err := cb.beforeRequest()
+	if err != nil {
 		return err
 	}
-
-	// Execute function
-	err := fn()
-
-	// Record result
-	cb.afterRequest(err)
-
+	completed := false
+	defer func() { cb.afterRequest(generation, err, completed) }()
+	err = fn()
+	completed = true
 	return err
 }
 
 // CallWithContext executes the function with context
 func (cb *CircuitBreaker) CallWithContext(ctx context.Context, fn func() error) error {
-	// Check context first
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-
 	return cb.Call(fn)
 }
 
-// beforeRequest checks if the request can proceed
-func (cb *CircuitBreaker) beforeRequest() error {
-	state := cb.State()
-
-	switch state {
-	case StateClosed:
-		// Allow request
-		return nil
-
-	case StateOpen:
-		// Check if we should transition to half-open
-		cb.stateMu.RLock()
-		elapsed := cb.clock.Since(cb.stateChanged)
-		cb.stateMu.RUnlock()
-
-		if elapsed >= cb.config.Timeout {
-			// Transition to half-open
-			cb.setState(StateHalfOpen)
-			return nil
+func (cb *CircuitBreaker) beforeRequest() (uint64, error) {
+	var notify func()
+	cb.stateMu.Lock()
+	defer func() {
+		cb.stateMu.Unlock()
+		if notify != nil {
+			notify()
 		}
+	}()
 
-		// Circuit is open, fail fast
-		return ErrCircuitOpen
-
-	case StateHalfOpen:
-		// Check if we've reached max concurrent requests
-		current := cb.halfOpenRequests.Load()
-		if current >= cb.config.MaxRequests {
-			return ErrTooManyRequests
+	if cb.state == StateOpen {
+		if cb.clock.Since(cb.stateChanged) < cb.config.Timeout {
+			return 0, ErrCircuitOpen
 		}
-
-		// Allow request
-		return nil
-
-	default:
-		return ErrCircuitOpen
+		notify = cb.setStateLocked(StateHalfOpen)
 	}
+	if cb.state == StateHalfOpen {
+		if cb.inFlight >= cb.config.MaxRequests {
+			return 0, ErrTooManyRequests
+		}
+		cb.inFlight++
+	}
+	return cb.generation, nil
 }
 
-// afterRequest records the request result
-func (cb *CircuitBreaker) afterRequest(err error) {
-	state := cb.State()
+func (cb *CircuitBreaker) afterRequest(generation uint64, err error, completed bool) {
+	var notify func()
+	cb.stateMu.Lock()
+	if generation != cb.generation {
+		cb.stateMu.Unlock()
+		return
+	}
 
-	switch state {
-	case StateClosed:
-		cb.requests.Add(1)
-
-		if err != nil {
-			cb.failures.Add(1)
-			cb.checkShouldOpen()
-		} else {
-			cb.successes.Add(1)
-		}
-
-	case StateHalfOpen:
-		cb.halfOpenRequests.Add(1)
-
-		if err != nil {
-			// Failure in half-open, reopen circuit
-			cb.setState(StateOpen)
-		} else {
-			cb.halfOpenSuccesses.Add(1)
-
-			// Check if we've met success threshold
-			if cb.halfOpenSuccesses.Load() >= cb.config.SuccessThreshold {
-				cb.setState(StateClosed)
+	if cb.state == StateHalfOpen {
+		cb.inFlight--
+		if completed {
+			if err != nil {
+				notify = cb.setStateLocked(StateOpen)
+			} else {
+				cb.counts.ConsecutiveSuccesses++
+				if cb.counts.ConsecutiveSuccesses >= cb.config.SuccessThreshold {
+					notify = cb.setStateLocked(StateClosed)
+				}
 			}
 		}
-	}
-}
-
-// checkShouldOpen checks if the circuit should open
-func (cb *CircuitBreaker) checkShouldOpen() {
-	requests := cb.requests.Load()
-	if requests < cb.config.MinRequests {
-		return
-	}
-
-	counts := cb.Counts()
-
-	// Use custom trip function if provided
-	if cb.config.ShouldTrip != nil {
-		if cb.config.ShouldTrip(counts) {
-			cb.setState(StateOpen)
+		cb.stateMu.Unlock()
+		if notify != nil {
+			notify()
 		}
 		return
 	}
 
-	// Default: check failure rate
-	if counts.FailureRate() >= cb.config.FailureThreshold {
-		cb.setState(StateOpen)
+	if !completed {
+		cb.stateMu.Unlock()
+		return
+	}
+	cb.counts.Requests++
+	if err == nil {
+		cb.counts.Successes++
+		cb.stateMu.Unlock()
+		return
+	}
+	cb.counts.Failures++
+	counts := cb.counts
+	if counts.Requests < cb.config.MinRequests {
+		cb.stateMu.Unlock()
+		return
+	}
+	if cb.config.ShouldTrip == nil {
+		if counts.FailureRate() >= cb.config.FailureThreshold {
+			notify = cb.setStateLocked(StateOpen)
+		}
+		cb.stateMu.Unlock()
+	} else {
+		cb.stateMu.Unlock()
+		if cb.config.ShouldTrip(counts) {
+			cb.stateMu.Lock()
+			// The callback may have overlapped a newer state or changed it itself.
+			if generation == cb.generation {
+				notify = cb.setStateLocked(StateOpen)
+			}
+			cb.stateMu.Unlock()
+		}
+	}
+	if notify != nil {
+		notify()
 	}
 }
 
-// setState changes the circuit breaker state
 func (cb *CircuitBreaker) setState(newState State) {
 	cb.stateMu.Lock()
-	defer cb.stateMu.Unlock()
+	notify := cb.setStateLocked(newState)
+	cb.stateMu.Unlock()
+	if notify != nil {
+		notify()
+	}
+}
 
-	oldState := State(cb.state.Load())
+// setStateLocked applies the transition and returns a notification for the caller
+// to dispatch after unlocking.
+func (cb *CircuitBreaker) setStateLocked(newState State) func() {
+	oldState := cb.state
 	if oldState == newState {
-		return
+		return nil
 	}
 
-	// Update state
-	cb.state.Store(int32(newState))
+	cb.state = newState
 	cb.stateChanged = cb.clock.Now()
-
-	// Reset metrics based on new state
+	cb.generation++
+	cb.inFlight = 0
 	switch newState {
 	case StateClosed:
-		cb.requests.Store(0)
-		cb.failures.Store(0)
-		cb.successes.Store(0)
-
-	case StateOpen:
-		// Keep metrics for analysis
-
+		cb.counts.Requests = 0
+		cb.counts.Failures = 0
+		cb.counts.Successes = 0
 	case StateHalfOpen:
-		cb.halfOpenRequests.Store(0)
-		cb.halfOpenSuccesses.Store(0)
+		cb.counts.ConsecutiveSuccesses = 0
 	}
 
-	// Call hook in a goroutine; recover from callback panics so a buggy
-	// observer cannot crash the application.
 	if fn := cb.onStateChange; fn != nil {
-		go func(from, to State, f func(State, State)) {
-			defer func() { _ = recover() }()
-			f(from, to)
-		}(oldState, newState, fn)
+		return func() {
+			go func() {
+				defer func() { _ = recover() }()
+				fn(oldState, newState)
+			}()
+		}
 	}
+	return nil
 }
 
 // State returns the current state
 func (cb *CircuitBreaker) State() State {
-	return State(cb.state.Load())
+	cb.stateMu.RLock()
+	defer cb.stateMu.RUnlock()
+	return cb.state
 }
 
 // Counts returns current metrics
 func (cb *CircuitBreaker) Counts() Counts {
-	return Counts{
-		Requests:             cb.requests.Load(),
-		Successes:            cb.successes.Load(),
-		Failures:             cb.failures.Load(),
-		ConsecutiveSuccesses: cb.halfOpenSuccesses.Load(),
-		ConsecutiveFailures:  0, // Not tracked currently
-	}
+	cb.stateMu.RLock()
+	defer cb.stateMu.RUnlock()
+	return cb.counts
 }
 
 // Reset resets the circuit breaker to closed state
@@ -389,8 +370,8 @@ func (cb *CircuitBreaker) Stats() Stats {
 
 	return Stats{
 		Name:          cb.name,
-		State:         cb.State(),
-		Counts:        cb.Counts(),
+		State:         cb.state,
+		Counts:        cb.counts,
 		StateChanged:  cb.stateChanged,
 		StateDuration: cb.clock.Since(cb.stateChanged),
 	}

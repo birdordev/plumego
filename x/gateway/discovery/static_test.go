@@ -538,3 +538,24 @@ func TestStatic_RemoveBackend_LastElement(t *testing.T) {
 		t.Errorf("backends = %v, want [http://host1:8080]", backends)
 	}
 }
+
+func TestStaticOwnsBackendLists(t *testing.T) {
+	input := map[string][]string{"api": {"http://original.invalid"}}
+	s := NewStatic(input)
+	input["api"][0] = "http://edited.invalid"
+	delete(input, "api")
+	check := func(want string) []string {
+		t.Helper()
+		got, err := s.Resolve(t.Context(), "api")
+		if err != nil || len(got) != 1 || got[0] != want {
+			t.Fatalf("Resolve = %v, %v, want [%s]", got, err, want)
+		}
+		return got
+	}
+	check("http://original.invalid")
+	update := []string{"http://updated.invalid"}
+	s.UpdateService("api", update)
+	update[0] = "http://edited.invalid"
+	check("http://updated.invalid")[0] = "http://edited.invalid"
+	check("http://updated.invalid")
+}

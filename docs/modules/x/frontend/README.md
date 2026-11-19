@@ -112,6 +112,8 @@
   x/frontend emits no log or metric and keeps best-effort downgrade behavior.
 - Asset responses include `Vary: Accept-Encoding` even when only the original
   asset exists, because the request can refuse the identity encoding.
+- With SPA fallback enabled, a missing extensionless path varies by `Accept`.
+  Both the fallback response and the 404 include `Vary: Accept`.
 - Non-`http.Dir` caller-provided filesystems try accepted compressed variants
   lazily. A filesystem with reliable variant metadata can supply
   `WithPrecompressedVariantPlan` to skip unlisted candidates.

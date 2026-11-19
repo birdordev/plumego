@@ -42,6 +42,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
@@ -181,7 +182,17 @@ func Middleware(config Config) mw.Middleware {
 
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			version := extractVersion(r, cfg, acceptRe)
+			var version int
+			var segment pathVersion
+			if cfg.Strategy == StrategyURLPath {
+				segment = parsePathVersion(r.URL, cfg.PathPrefix)
+				version = segment.number
+			} else {
+				version = extractVersion(r, cfg, acceptRe)
+			}
+			if version <= 0 {
+				version = cfg.DefaultVersion
+			}
 
 			if len(cfg.SupportedVersions) > 0 && !isVersionSupported(version, cfg.SupportedVersions) {
 				if cfg.OnVersionMismatch != nil {
@@ -195,8 +206,10 @@ func Middleware(config Config) mw.Middleware {
 				return
 			}
 
-			if cfg.Strategy == StrategyURLPath && cfg.StripVersionFromPath {
-				r.URL.Path = stripVersionFromPath(r.URL.Path, cfg.PathPrefix, version)
+			if segment.number > 0 && cfg.StripVersionFromPath {
+				forwarded := *r
+				forwarded.URL = segment.strip(r.URL)
+				r = &forwarded
 			}
 
 			if cfg.OnVersionExtracted != nil {
@@ -230,26 +243,18 @@ func VersionFromContext(ctx context.Context) int {
 	return 0
 }
 
-// extractVersion extracts version from request based on strategy
+// extractVersion handles version sources that do not rewrite the request path.
 func extractVersion(r *http.Request, config Config, acceptRe *regexp.Regexp) int {
-	var version int
-
 	switch config.Strategy {
 	case StrategyAcceptHeader:
-		version = extractFromAccept(r, acceptRe)
-	case StrategyURLPath:
-		version = extractFromPath(r, config.PathPrefix)
+		return extractFromAccept(r, acceptRe)
 	case StrategyQueryParam:
-		version = extractFromQuery(r, config.ParamName)
+		return extractFromQuery(r, config.ParamName)
 	case StrategyCustomHeader:
-		version = extractFromHeader(r, config.HeaderName)
+		return extractFromHeader(r, config.HeaderName)
+	default:
+		return 0
 	}
-
-	if version <= 0 {
-		version = config.DefaultVersion
-	}
-
-	return version
 }
 
 // extractFromAccept extracts version from Accept header using a pre-compiled regex
@@ -269,33 +274,56 @@ func extractFromAccept(r *http.Request, re *regexp.Regexp) int {
 	return 0
 }
 
-// extractFromPath extracts version from URL path
-// Example: /v2/users/123 -> 2
-func extractFromPath(r *http.Request, pathPrefix string) int {
-	path := r.URL.Path
+type pathVersion struct {
+	number     int
+	pathEnd    int
+	escapedEnd int
+}
 
-	if !strings.HasPrefix(path, pathPrefix) {
-		return 0
+func parsePathVersion(u *url.URL, prefix string) pathVersion {
+	path, ok := strings.CutPrefix(u.Path, prefix)
+	if !ok {
+		return pathVersion{}
 	}
-
-	remaining := strings.TrimPrefix(path, pathPrefix)
-
-	var versionStr string
-	for i, ch := range remaining {
-		if ch >= '0' && ch <= '9' {
-			versionStr += string(ch)
-		} else if i > 0 {
-			break
-		} else {
-			return 0
+	digits, _, _ := strings.Cut(path, "/")
+	for i := range len(digits) {
+		if digits[i] < '0' || digits[i] > '9' {
+			return pathVersion{}
 		}
 	}
-
-	if v, err := strconv.Atoi(versionStr); err == nil {
-		return v
+	number, err := strconv.Atoi(digits)
+	if err != nil || number <= 0 {
+		return pathVersion{}
 	}
 
-	return 0
+	// Keep the original spelling for stripping (including leading zeros).
+	// A percent-encoded slash does not delimit a URL path segment.
+	pathEnd := len(prefix) + len(digits)
+	escaped := u.EscapedPath()
+	escapedEnd := 0
+	for range pathEnd {
+		if escaped[escapedEnd] == '%' {
+			escapedEnd += 3
+		} else {
+			escapedEnd++
+		}
+	}
+	if escapedEnd < len(escaped) && escaped[escapedEnd] != '/' {
+		return pathVersion{}
+	}
+	return pathVersion{number: number, pathEnd: pathEnd, escapedEnd: escapedEnd}
+}
+
+func (v pathVersion) strip(u *url.URL) *url.URL {
+	result := *u
+	result.Path = u.Path[v.pathEnd:]
+	if result.Path == "" {
+		result.Path = "/"
+		result.RawPath = ""
+	} else if u.RawPath != "" {
+		result.RawPath = u.EscapedPath()[v.escapedEnd:]
+	}
+	return &result
 }
 
 // extractFromQuery extracts version from query parameter
@@ -336,22 +364,6 @@ func isVersionSupported(version int, supported []int) bool {
 		}
 	}
 	return false
-}
-
-// stripVersionFromPath removes version prefix from path
-// Example: /v2/users/123 -> /users/123
-func stripVersionFromPath(path, pathPrefix string, version int) string {
-	versionPrefix := fmt.Sprintf("%s%d", pathPrefix, version)
-
-	if strings.HasPrefix(path, versionPrefix+"/") {
-		return strings.TrimPrefix(path, versionPrefix)
-	}
-
-	if path == versionPrefix {
-		return "/"
-	}
-
-	return path
 }
 
 // Extractor is a custom version extractor function

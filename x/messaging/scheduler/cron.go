@@ -263,10 +263,15 @@ func buildRange(min, max, step int) []int {
 }
 
 // Next returns the next time after the given time that matches the spec.
+// It returns zero if no match exists within one Gregorian calendar cycle.
 func (c CronSpec) Next(after time.Time) time.Time {
 	// Handle @every interval syntax
 	if c.interval > 0 {
 		return after.Add(c.interval)
+	}
+
+	if len(c.months) == 0 || !c.hasPossibleDay() {
+		return time.Time{}
 	}
 
 	// Convert to the spec's timezone
@@ -276,7 +281,14 @@ func (c CronSpec) Next(after time.Time) time.Time {
 	}
 	next := after.In(loc).Truncate(time.Second).Add(time.Second)
 
-	for i := 0; i < 366*24*60*60; i++ {
+	limit := next.AddDate(400, 0, 0) // The Gregorian calendar repeats every 400 years.
+	previous := after
+	for next.Before(limit) {
+		// A local time in a clock transition can normalize backwards.
+		if !next.After(previous) {
+			next = previous.Truncate(time.Second).Add(time.Second).In(loc)
+		}
+		previous = next
 		if !containsInt(c.months, int(next.Month())) {
 			next = time.Date(next.Year(), next.Month()+1, 1, 0, 0, 0, 0, next.Location())
 			continue
@@ -337,6 +349,21 @@ func (c CronSpec) Next(after time.Time) time.Time {
 		return next
 	}
 	return time.Time{}
+}
+
+// hasPossibleDay rules out impossible month/day combinations when only
+// day-of-month is restricted. February is tested in a leap year.
+func (c CronSpec) hasPossibleDay() bool {
+	if c.domStar || !c.dowStar {
+		return true
+	}
+	for _, month := range c.months {
+		lastDay := time.Date(2000, time.Month(month)+1, 0, 0, 0, 0, 0, time.UTC).Day()
+		if c.dom[0] <= lastDay {
+			return true
+		}
+	}
+	return false
 }
 
 func containsInt(list []int, value int) bool {

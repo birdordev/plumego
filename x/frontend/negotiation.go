@@ -2,7 +2,6 @@ package frontend
 
 import (
 	"net/http"
-	"path"
 	"strconv"
 	"strings"
 )
@@ -39,15 +38,21 @@ func parseWeightedToken(part string) (weightedToken, bool) {
 	return weightedToken{value: value, quality: q}, true
 }
 
-func shouldFallbackToIndex(r *http.Request, filePath string) bool {
-	if path.Ext(filePath) != "" {
-		return false
+func varyOnAccept(header http.Header) {
+	for _, line := range header.Values("Vary") {
+		for field := range strings.SplitSeq(line, ",") {
+			field = strings.TrimSpace(field)
+			if field == "*" || strings.EqualFold(field, "Accept") {
+				return
+			}
+		}
 	}
+	header.Add("Vary", "Accept")
+}
+
+func acceptsIndex(r *http.Request) bool {
 	accept := strings.TrimSpace(r.Header.Get("Accept"))
-	if accept == "" {
-		return true
-	}
-	return acceptsHTML(accept)
+	return accept == "" || acceptsHTML(accept)
 }
 
 func acceptsHTML(header string) bool {

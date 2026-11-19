@@ -1,9 +1,11 @@
 package frontend
 
 import (
+	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -37,5 +39,43 @@ func assertErrorContains(t *testing.T, err error, want string) {
 	}
 	if !strings.Contains(err.Error(), want) {
 		t.Fatalf("error = %v, want mention of %q", err, want)
+	}
+}
+
+func TestSPAFallbackVariesByAccept(t *testing.T) {
+	root := t.TempDir()
+	writeTestFile(t, root, "index.html", "<html>index</html>")
+	writeTestFile(t, root, "existing", "asset")
+
+	for _, enabled := range []bool{true, false} {
+		h, err := NewHandlerFS(http.Dir(root), WithFallback(enabled))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, tc := range []struct {
+			path   string
+			accept string
+			status int
+			vary   []string
+		}{
+			{"/spa-route", "text/html", http.StatusOK, []string{"Origin", "Accept", "Accept-Encoding"}},
+			{"/spa-route", "application/json", http.StatusNotFound, []string{"Origin", "Accept"}},
+			{"/missing.js", "text/html", http.StatusNotFound, []string{"Origin"}},
+			{"/existing", "application/json", http.StatusOK, []string{"Origin", "Accept-Encoding"}},
+		} {
+			if !enabled && tc.path == "/spa-route" {
+				tc.status, tc.vary = http.StatusNotFound, []string{"Origin"}
+			}
+			for _, method := range []string{http.MethodGet, http.MethodHead} {
+				req := httptest.NewRequest(method, tc.path, nil)
+				req.Header.Set("Accept", tc.accept)
+				rec := httptest.NewRecorder()
+				rec.Header().Set("Vary", "Origin")
+				h.ServeHTTP(rec, req)
+				if rec.Code != tc.status || !slices.Equal(rec.Header().Values("Vary"), tc.vary) {
+					t.Errorf("fallback=%v %s %s %q: status=%d vary=%v, want %d %v", enabled, method, tc.path, tc.accept, rec.Code, rec.Header().Values("Vary"), tc.status, tc.vary)
+				}
+			}
+		}
 	}
 }

@@ -374,43 +374,29 @@ func TestCustomExtractor(t *testing.T) {
 	}
 }
 
-func TestStripVersionFromPath(t *testing.T) {
-	tests := []struct {
-		name         string
-		path         string
-		pathPrefix   string
-		version      int
-		expectedPath string
+func TestURLPathVersionSegment(t *testing.T) {
+	for _, tc := range []struct {
+		target  string
+		prefix  string
+		version int
+		path    string
+		escaped string
 	}{
-		{
-			name:         "Strip /v2/ from path",
-			path:         "/v2/users/123",
-			pathPrefix:   "/v",
-			version:      2,
-			expectedPath: "/users/123",
-		},
-		{
-			name:         "Strip /v3/ from path",
-			path:         "/v3/products",
-			pathPrefix:   "/v",
-			version:      3,
-			expectedPath: "/products",
-		},
-		{
-			name:         "Path without version",
-			path:         "/users/123",
-			pathPrefix:   "/v",
-			version:      1,
-			expectedPath: "/users/123",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := stripVersionFromPath(tt.path, tt.pathPrefix, tt.version)
-			if result != tt.expectedPath {
-				t.Errorf("Expected %s, got %s", tt.expectedPath, result)
-			}
+		{"/v2", "/v", 2, "/", "/"},
+		{"/v2/items", "/v", 2, "/items", "/items"},
+		{"/v2report", "/v", 1, "/v2report", "/v2report"},
+		{"/v02/items/a%2Fb", "/v", 2, "/items/a/b", "/items/a%2Fb"},
+		{"/v2%2Fitems", "/v", 1, "/v2/items", "/v2%2Fitems"},
+		{"/api-%30%32/items", "/api-", 2, "/items", "/items"},
+	} {
+		t.Run(tc.target, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, tc.target, nil)
+			h := Middleware(Config{Strategy: StrategyURLPath, PathPrefix: tc.prefix})(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+				if v := VersionFromContext(r.Context()); v != tc.version || r.URL.Path != tc.path || r.URL.EscapedPath() != tc.escaped {
+					t.Errorf("version=%d path=%q escaped=%q, want %d %q %q", v, r.URL.Path, r.URL.EscapedPath(), tc.version, tc.path, tc.escaped)
+				}
+			}))
+			h.ServeHTTP(httptest.NewRecorder(), req)
 		})
 	}
 }

@@ -2540,3 +2540,46 @@ func TestWithRandomSeedSupportsDifferentSequences(t *testing.T) {
 		t.Fatal("expected different seeds to produce different jitter sequences")
 	}
 }
+
+func TestImpossibleCronLeavesScheduleIntact(t *testing.T) {
+	s := New()
+	task := func(context.Context) error { return nil }
+	const impossible = "0 0 31 2 *"
+	if _, err := s.AddCron("invalid", impossible, task); !errors.Is(err, ErrInvalidCronExpr) {
+		t.Fatalf("AddCron = %v, want invalid cron error", err)
+	}
+	id, err := s.AddCron("original", CronDaily, task)
+	if err != nil {
+		t.Fatal(err)
+	}
+	before, _ := s.Status(id)
+	if err := s.UpdateCron(id, impossible); !errors.Is(err, ErrInvalidCronExpr) {
+		t.Fatalf("UpdateCron = %v, want invalid cron error", err)
+	}
+	after, _ := s.Status(id)
+	if after.CronExpr != before.CronExpr || !after.NextRun.Equal(before.NextRun) {
+		t.Fatalf("schedule changed after failed update: before=%+v after=%+v", before, after)
+	}
+}
+
+func TestCronNextCalendarBoundaries(t *testing.T) {
+	for _, tc := range []struct {
+		expr  string
+		after time.Time
+		want  time.Time
+	}{
+		{"0 0 31 2 *", time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), time.Time{}},
+		{"0 0 29 2 *", time.Date(2096, 3, 1, 0, 0, 0, 0, time.UTC), time.Date(2104, 2, 29, 0, 0, 0, 0, time.UTC)},
+		{"0 0 31 2 1", time.Date(2024, 2, 1, 0, 0, 0, 0, time.UTC), time.Date(2024, 2, 5, 0, 0, 0, 0, time.UTC)},
+	} {
+		t.Run(tc.expr, func(t *testing.T) {
+			spec, err := ParseCronSpec(tc.expr)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := spec.Next(tc.after); !got.Equal(tc.want) {
+				t.Fatalf("Next = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
