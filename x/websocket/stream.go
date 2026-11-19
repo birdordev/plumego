@@ -162,9 +162,10 @@ func resetStreamReader(sr *streamReader) {
 // The reader consumes continuation frames incrementally and enforces ReadLimit
 // across the complete fragmented message, but it is not a zero-copy or
 // unbounded streaming API: each frame payload is buffered before being returned
-// through the reader. Caller must read the returned ReadCloser to EOF and then
-// Close it to keep the connection reusable. Closing before EOF closes the parent
-// connection because the continuation stream cannot be safely abandoned.
+// through the reader. Read to EOF and then close the reader to consume the
+// complete message. Close can discard unread buffered data once the final
+// frame has arrived. If continuation frames are still pending, Close closes
+// the parent connection. Release the reader with Close and do not use it again.
 func (c *Conn) ReadMessageReader() (byte, io.ReadCloser, error) {
 	if c.IsClosed() {
 		return 0, nil, ErrConnClosed

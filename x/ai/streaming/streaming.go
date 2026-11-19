@@ -148,17 +148,16 @@ func (sm *StreamManager) SendUpdate(workflowID string, update *ProgressUpdate) e
 	return stream.SendJSON("progress", string(jsonData))
 }
 
-// Close closes a stream and unregisters it.
+// Close unregisters the stream before waiting for it to close.
 func (sm *StreamManager) Close(workflowID string) error {
 	sm.mu.Lock()
-	defer sm.mu.Unlock()
-
 	stream, ok := sm.streams[workflowID]
+	delete(sm.streams, workflowID)
+	sm.mu.Unlock()
+
 	if !ok {
 		return nil
 	}
-
-	delete(sm.streams, workflowID)
 	return stream.Close()
 }
 

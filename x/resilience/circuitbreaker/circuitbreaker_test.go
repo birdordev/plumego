@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -995,4 +996,141 @@ func TestSetStateSameStateNoop(t *testing.T) {
 	if called.Load() {
 		t.Error("OnStateChange should not be called for same-state transition")
 	}
+}
+
+type informationalHeaderRecorder struct {
+	*httptest.ResponseRecorder
+	codes []int
+}
+
+func (w *informationalHeaderRecorder) WriteHeader(code int) {
+	w.codes = append(w.codes, code)
+	if code >= 200 || code == http.StatusSwitchingProtocols {
+		w.ResponseRecorder.WriteHeader(code)
+	}
+}
+
+func TestStatusWriterTracksFinalResponse(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		write      func(*statusWriter) error
+		wantCodes  []int
+		wantStatus int
+	}{
+		{"informational then success", func(w *statusWriter) error {
+			w.WriteHeader(100)
+			w.WriteHeader(103)
+			w.WriteHeader(204)
+			w.WriteHeader(500)
+			return nil
+		}, []int{100, 103, 204}, 204},
+		{"body commits success", func(w *statusWriter) error {
+			w.WriteHeader(103)
+			_, err := w.Write([]byte("fixture"))
+			return err
+		}, []int{103, 200}, 200},
+		{"flush commits success", func(w *statusWriter) error {
+			w.WriteHeader(103)
+			if err := http.NewResponseController(w).Flush(); err != nil {
+				return err
+			}
+			w.WriteHeader(500)
+			return nil
+		}, []int{103}, 200},
+		{"switching protocols commits", func(w *statusWriter) error {
+			w.WriteHeader(101)
+			w.WriteHeader(500)
+			return nil
+		}, []int{101}, 101},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			target := &informationalHeaderRecorder{ResponseRecorder: httptest.NewRecorder()}
+			w := &statusWriter{ResponseWriter: target, statusCode: 200}
+			if err := tc.write(w); err != nil {
+				t.Fatal(err)
+			}
+			if !slices.Equal(target.codes, tc.wantCodes) || !w.written || w.statusCode != tc.wantStatus || target.Code != tc.wantStatus {
+				t.Errorf("forwarded=%v writer status=%d committed=%v target status=%d", target.codes, w.statusCode, w.written, target.Code)
+			}
+		})
+	}
+}
+
+func TestStatusWriterFinalFailureTripsBothMiddlewareEntrypoints(t *testing.T) {
+	for _, custom := range []bool{false, true} {
+		cfg := Config{MinRequests: 1}
+		wrap := Middleware(cfg)
+		if custom {
+			wrap = MiddlewareWithErrorHandler(cfg, func(w http.ResponseWriter, _ *http.Request, _ *CircuitBreaker, err error) {
+				if !errors.Is(err, ErrCircuitOpen) {
+					t.Errorf("unexpected callback error: %v", err)
+				}
+				w.WriteHeader(503)
+			})
+		}
+		calls := 0
+		handler := wrap(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			calls++
+			w.WriteHeader(103)
+			w.WriteHeader(500)
+		}))
+		r := httptest.NewRequest(http.MethodGet, "/", nil)
+		first := &informationalHeaderRecorder{ResponseRecorder: httptest.NewRecorder()}
+		handler.ServeHTTP(first, r)
+		second := httptest.NewRecorder()
+		handler.ServeHTTP(second, r)
+		if !slices.Equal(first.codes, []int{103, 500}) || second.Code != 503 || calls != 1 {
+			t.Errorf("custom=%v headers=%v next=%d downstream calls=%d", custom, first.codes, second.Code, calls)
+		}
+	}
+}
+
+func TestMiddlewareWithErrorHandlerOwnsOnlyRejectedResponses(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		rejections := make(chan error, 2)
+		entered := make(chan struct{})
+		release := make(chan struct{})
+		finished := make(chan struct{})
+		var calls atomic.Int32
+		wrap := MiddlewareWithErrorHandler(Config{MinRequests: 1, Timeout: time.Second, MaxRequests: 1},
+			func(w http.ResponseWriter, _ *http.Request, _ *CircuitBreaker, err error) {
+				rejections <- err
+				w.WriteHeader(503)
+				_, _ = w.Write([]byte("rejected"))
+			})
+		handler := wrap(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			if calls.Add(1) == 1 {
+				w.WriteHeader(500)
+				_, _ = w.Write([]byte("downstream"))
+				return
+			}
+			close(entered)
+			<-release
+		}))
+		makeRequest := func() *httptest.ResponseRecorder {
+			w := httptest.NewRecorder()
+			handler.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/", nil))
+			return w
+		}
+		first := makeRequest()
+		if first.Code != 500 || first.Body.String() != "downstream" {
+			t.Fatalf("downstream code=%d, body=%q", first.Code, first.Body.String())
+		}
+		if next := makeRequest(); next.Code != 503 || next.Body.String() != "rejected" {
+			t.Fatalf("open code=%d, body=%q", next.Code, next.Body.String())
+		}
+		if err := <-rejections; !errors.Is(err, ErrCircuitOpen) {
+			t.Errorf("open rejection: %v", err)
+		}
+		time.Sleep(time.Second) // Advance the fake clock to the half-open deadline.
+		go func() { defer close(finished); makeRequest() }()
+		defer func() { close(release); <-finished }()
+		<-entered
+		if next := makeRequest(); next.Code != 503 || next.Body.String() != "rejected" {
+			t.Errorf("half-open code=%d, body=%q", next.Code, next.Body.String())
+		}
+		if err := <-rejections; !errors.Is(err, ErrTooManyRequests) {
+			t.Errorf("half-open rejection: %v", err)
+		}
+	})
 }

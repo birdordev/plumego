@@ -2,6 +2,7 @@ package discovery
 
 import (
 	"context"
+	"errors"
 	"slices"
 	"sync"
 )
@@ -27,6 +28,9 @@ import (
 type Static struct {
 	services map[string][]string
 	mu       sync.RWMutex
+	done     chan struct{}
+	closed   bool
+	watchers sync.WaitGroup
 }
 
 // NewStatic creates a static discovery with its own copy of the service map
@@ -36,14 +40,17 @@ func NewStatic(services map[string][]string) *Static {
 	for name, backends := range services {
 		owned[name] = slices.Clone(backends)
 	}
-	return &Static{services: owned}
+	return &Static{services: owned, done: make(chan struct{})}
 }
 
 // Resolve returns the list of backend URLs for a service
 func (s *Static) Resolve(ctx context.Context, serviceName string) ([]string, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
+	return s.resolveLocked(serviceName)
+}
 
+func (s *Static) resolveLocked(serviceName string) ([]string, error) {
 	backends, exists := s.services[serviceName]
 	if !exists {
 		return nil, ErrServiceNotFound
@@ -60,25 +67,34 @@ func (s *Static) Resolve(ctx context.Context, serviceName string) ([]string, err
 	return result, nil
 }
 
-// Watch returns a channel for backend updates
-// Note: Static discovery doesn't support watching, so this returns
-// the current state and never sends updates
+var errStaticClosed = errors.New("discovery: static watcher is closed")
+
+// Watch sends the current backends once. The channel closes when ctx is
+// canceled or the discovery instance is closed.
 func (s *Static) Watch(ctx context.Context, serviceName string) (<-chan []string, error) {
 	ch := make(chan []string, 1)
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
-	// Send current state
-	backends, err := s.Resolve(ctx, serviceName)
+	if s.closed {
+		close(ch)
+		return ch, errStaticClosed
+	}
+	backends, err := s.resolveLocked(serviceName)
 	if err != nil {
 		close(ch)
 		return ch, err
 	}
 
 	ch <- backends
-
-	// Keep channel open until context is cancelled
+	s.watchers.Add(1)
 	go func() {
-		<-ctx.Done()
-		close(ch)
+		defer s.watchers.Done()
+		defer close(ch)
+		select {
+		case <-ctx.Done():
+		case <-s.done:
+		}
 	}()
 
 	return ch, nil
@@ -99,8 +115,18 @@ func (s *Static) Health(ctx context.Context, serviceID string, healthy bool) err
 	return unsupportedOperation("static health")
 }
 
-// Close closes the discovery client
+// Close rejects new watches and waits for existing watch channels to close.
+// Resolve and backend edits remain available.
 func (s *Static) Close() error {
+	s.mu.Lock()
+	if !s.closed {
+		s.closed = true
+		if s.done != nil {
+			close(s.done)
+		}
+	}
+	s.mu.Unlock()
+	s.watchers.Wait()
 	return nil
 }
 

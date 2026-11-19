@@ -1,6 +1,7 @@
 package idempotency
 
 import (
+	"errors"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -222,5 +223,24 @@ func TestKVStoreCompleteOnlyInProgress(t *testing.T) {
 	}
 	if err := idem.Complete(ctx, record.Key, []byte("again")); err != ErrNotFound {
 		t.Fatalf("second Complete = %v, want ErrNotFound", err)
+	}
+}
+
+func TestKVStorePutIfAbsentDoesNotReportSuccessOnSetFailure(t *testing.T) {
+	store, err := kvstore.NewKVStore(kvstore.Config{DataDir: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	wrapper := NewKVStore(store, KVConfig{Now: func() time.Time {
+		// With no expiry and no existing key, the clock first runs after Get.
+		if err := store.Close(); err != nil {
+			t.Error(err)
+		}
+		return time.Unix(100, 0)
+	}})
+	created, err := wrapper.PutIfAbsent(t.Context(), Record{Key: "fixture"})
+	if created || !errors.Is(err, kvstore.ErrStoreClosed) {
+		t.Errorf("created=%v err=%v", created, err)
 	}
 }

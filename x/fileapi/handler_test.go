@@ -10,6 +10,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -1047,6 +1048,49 @@ func TestHandlerUploadThumbnailOptionsComeFromMultipart(t *testing.T) {
 			h.Upload(w, req)
 			if w.Code != http.StatusOK || got.GenerateThumb != tc.generate || got.ThumbWidth != tc.width || got.ThumbHeight != tc.height {
 				t.Errorf("status=%d thumbnail=(%v, %d, %d), want 200 (%v, %d, %d)", w.Code, got.GenerateThumb, got.ThumbWidth, got.ThumbHeight, tc.generate, tc.width, tc.height)
+			}
+		})
+	}
+}
+
+func TestHandlerGetURLExpiryDurationBounds(t *testing.T) {
+	const maxSeconds = math.MaxInt64 / int64(time.Second)
+	for _, tc := range []struct {
+		expiry string
+		want   int64
+	}{
+		{"", 900},
+		{"3600", 3600},
+		{strconv.FormatInt(maxSeconds, 10), maxSeconds},
+		{strconv.FormatInt(maxSeconds+1, 10), 0},
+		{"9223372036854775808", 0},
+		{"-1", 0},
+		{"0", 0},
+	} {
+		t.Run(tc.expiry, func(t *testing.T) {
+			var calls int
+			var got time.Duration
+			storage := &mockStorage{getURLFunc: func(_ context.Context, _ string, expiry time.Duration) (string, error) {
+				calls++
+				got = expiry
+				return "http://example.invalid", nil
+			}}
+			r := httptest.NewRequest(http.MethodGet, "/files/fixture/url?expiry="+tc.expiry, nil)
+			r = r.WithContext(tenantcore.WithTenantID(r.Context(), "fixture"))
+			r = withRouteParam(r, "id", "fixture")
+			w := httptest.NewRecorder()
+			NewHandler(storage, &mockMetadataManager{}).GetURL(w, r)
+			if tc.want == 0 {
+				if w.Code != http.StatusBadRequest || calls != 0 {
+					t.Errorf("status=%d storage calls=%d", w.Code, calls)
+				}
+				return
+			}
+			if w.Code != http.StatusOK || calls != 1 || got != time.Duration(tc.want)*time.Second {
+				t.Fatalf("status=%d storage calls=%d expiry=%v", w.Code, calls, got)
+			}
+			if result := decodeResponseData[urlResponse](t, w); result.ExpiresIn != strconv.FormatInt(tc.want, 10) {
+				t.Errorf("expires_in=%q, want %d", result.ExpiresIn, tc.want)
 			}
 		})
 	}

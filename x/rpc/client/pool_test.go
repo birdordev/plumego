@@ -281,3 +281,36 @@ func TestInterceptorsClassifyWrappedRPCStatus(t *testing.T) {
 		})
 	}
 }
+
+type valuePoolConn struct{}
+
+func (valuePoolConn) Close() error { return nil }
+
+type slicePoolConn []int
+
+func (slicePoolConn) Close() error { return nil }
+
+func TestPoolDoesNotCacheTypedNilDial(t *testing.T) {
+	for _, invalid := range []Conn{(*fakeConn)(nil), slicePoolConn(nil)} {
+		calls := 0
+		p := New(func(context.Context, string, ...DialOption) (Conn, error) {
+			calls++
+			if calls == 1 {
+				return invalid, nil
+			}
+			return valuePoolConn{}, nil
+		})
+		defer p.Close()
+		if conn, err := p.Dial(t.Context(), "fixture"); conn != nil || err == nil {
+			t.Errorf("%T: first dial=%#v,%v", invalid, conn, err)
+		}
+		for range 2 {
+			if conn, err := p.Dial(t.Context(), "fixture"); conn != (valuePoolConn{}) || err != nil {
+				t.Errorf("%T: subsequent dial=%#v,%v", invalid, conn, err)
+			}
+		}
+		if calls != 2 {
+			t.Errorf("dialer calls=%d, want 2", calls)
+		}
+	}
+}

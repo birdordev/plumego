@@ -6,7 +6,8 @@ var (
 	// Outbound / delivery
 
 	// ErrQueueFull is returned when the delivery queue has reached capacity.
-	ErrQueueFull = errors.New("webhook: delivery queue full")
+	ErrQueueFull   = errors.New("webhook: delivery queue full")
+	errQueueClosed = errors.New("webhook: delivery queue closed")
 
 	// ErrSignatureMismatch is returned when a webhook signature does not match the expected value.
 	ErrSignatureMismatch = errors.New("webhook: signature verification failed")

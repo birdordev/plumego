@@ -1,10 +1,12 @@
 package streaming
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http/httptest"
+	"sync"
 	"testing"
 	"time"
 
@@ -483,5 +485,103 @@ func TestGetStepType(t *testing.T) {
 				t.Errorf("expected %s, got %s", tt.expected, result)
 			}
 		})
+	}
+}
+
+type stalledStreamWriter struct {
+	*httptest.ResponseRecorder
+	once    sync.Once
+	entered chan struct{}
+	release chan struct{}
+}
+
+func (w *stalledStreamWriter) Write(p []byte) (int, error) {
+	w.once.Do(func() { close(w.entered); <-w.release })
+	return w.ResponseRecorder.Write(p)
+}
+
+func TestStreamManagerCloseDetachesBeforeWaitingForWriter(t *testing.T) {
+	manager := NewStreamManager()
+	writer := &stalledStreamWriter{
+		ResponseRecorder: httptest.NewRecorder(),
+		entered:          make(chan struct{}),
+		release:          make(chan struct{}),
+	}
+	original, err := sse.NewStream(t.Context(), writer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	original.SetKeepAliveInterval(0)
+	replacement, err := sse.NewStream(t.Context(), httptest.NewRecorder())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer replacement.Close()
+	replacement.SetKeepAliveInterval(0)
+	if err := manager.Register("original", original); err != nil {
+		t.Fatal(err)
+	}
+
+	sent := make(chan error, 1)
+	go func() { sent <- original.SendData("sample") }()
+	<-writer.entered
+	var releaseOnce sync.Once
+	release := func() { releaseOnce.Do(func() { close(writer.release) }) }
+	defer release()
+	closed := make(chan error, 1)
+	go func() { closed <- manager.Close("original") }()
+	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+	defer cancel()
+
+	checked := make(chan error, 1)
+	go func() {
+		ticker := time.NewTicker(time.Millisecond)
+		defer ticker.Stop()
+		for {
+			if _, ok := manager.Get("original"); !ok {
+				break
+			}
+			select {
+			case <-ctx.Done():
+				checked <- ctx.Err()
+				return
+			case <-ticker.C:
+			}
+		}
+		if err := manager.Register("other", replacement); err != nil {
+			checked <- err
+			return
+		}
+		if got, ok := manager.Get("other"); !ok || got != replacement {
+			checked <- errors.New("other stream unavailable")
+			return
+		}
+		checked <- manager.Register("original", replacement)
+	}()
+	select {
+	case err := <-checked:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-ctx.Done():
+		t.Fatal("stream registry blocked while closing another stream")
+	}
+	select {
+	case err := <-closed:
+		t.Fatalf("Close returned before the writer was released: %v", err)
+	default:
+	}
+	release()
+	if err := <-sent; err != nil {
+		t.Fatal(err)
+	}
+	if err := <-closed; err != nil {
+		t.Fatal(err)
+	}
+	if got, ok := manager.Get("original"); !ok || got != replacement {
+		t.Fatal("replacement stream lost")
+	}
+	if err := replacement.SendData("replacement active"); err != nil {
+		t.Fatal(err)
 	}
 }

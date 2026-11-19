@@ -559,3 +559,83 @@ func TestStaticOwnsBackendLists(t *testing.T) {
 	check("http://updated.invalid")[0] = "http://edited.invalid"
 	check("http://updated.invalid")
 }
+
+func TestStaticCloseEndsAllWatches(t *testing.T) {
+	d := NewStatic(map[string][]string{"fixture": {"http://example.invalid"}})
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	canceled, err := d.Watch(ctx, "fixture")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := <-canceled; len(got) != 1 {
+		t.Fatalf("initial backends=%v", got)
+	}
+	cancel()
+	select {
+	case _, ok := <-canceled:
+		if ok {
+			t.Fatal("unexpected update after cancel")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("watch remained open after context canceled")
+	}
+
+	var watchers sync.WaitGroup
+	start := make(chan struct{})
+	for range 20 {
+		watchers.Go(func() {
+			<-start
+			ch, err := d.Watch(t.Context(), "fixture")
+			if err != nil && err != errStaticClosed {
+				t.Errorf("Watch returned %v", err)
+				return
+			}
+			count := 0
+			for {
+				select {
+				case _, ok := <-ch:
+					if !ok {
+						if err == nil && count != 1 || err != nil && count != 0 {
+							t.Errorf("updates=%d err=%v", count, err)
+						}
+						return
+					}
+					count++
+				case <-time.After(time.Second):
+					t.Error("watch remained open after Close")
+					return
+				}
+			}
+		})
+	}
+	active, err := d.Watch(t.Context(), "fixture")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := <-active; len(got) != 1 {
+		t.Fatalf("initial backends=%v", got)
+	}
+	close(start)
+	if err := d.Close(); err != nil {
+		t.Error(err)
+	}
+	if err := d.Close(); err != nil {
+		t.Error(err)
+	}
+	if _, ok := <-active; ok {
+		t.Error("active watch remains open")
+	}
+	watchers.Wait()
+	ch, err := d.Watch(t.Context(), "fixture")
+	if err != errStaticClosed {
+		t.Errorf("Watch after Close returned %v", err)
+	}
+	if _, ok := <-ch; ok {
+		t.Error("Watch after Close returned an update")
+	}
+	d.UpdateService("fixture", []string{"http://updated.invalid"})
+	if got, err := d.Resolve(t.Context(), "fixture"); err != nil || len(got) != 1 || got[0] != "http://updated.invalid" {
+		t.Errorf("Resolve after Close = %v,%v", got, err)
+	}
+}

@@ -333,15 +333,16 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	}, nil)
 }
 
-// GetURL returns a temporary access URL for the file.
+// GetURL returns a temporary access URL for the file. An explicit expiry must
+// be a positive number of seconds representable as a time.Duration.
 // GET /files/{id}/url?expiry=3600
 func (h *Handler) GetURL(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
 	expiry := 15 * time.Minute
 	if s := r.URL.Query().Get("expiry"); s != "" {
-		seconds, err := parsePositiveIntParam("expiry", s, 0)
-		if err != nil {
+		seconds, err := strconv.ParseInt(s, 10, 64)
+		if err != nil || seconds <= 0 || seconds > math.MaxInt64/int64(time.Second) {
 			writeInvalidQueryError(w, r, "expiry")
 			return
 		}
@@ -361,7 +362,7 @@ func (h *Handler) GetURL(w http.ResponseWriter, r *http.Request) {
 
 	_ = contract.WriteResponse(w, r, http.StatusOK, urlResponse{
 		URL:       fileURL,
-		ExpiresIn: strconv.Itoa(int(expiry.Seconds())),
+		ExpiresIn: strconv.FormatInt(int64(expiry/time.Second), 10),
 	}, nil)
 }
 

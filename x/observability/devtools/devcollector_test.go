@@ -2,6 +2,7 @@ package devtools
 
 import (
 	"context"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -361,5 +362,74 @@ func TestDevCollectorDBSnapshotRetentionWindow(t *testing.T) {
 		if series.Table == "expired_users" {
 			t.Fatalf("expected expired db table series to be pruned")
 		}
+	}
+}
+
+func TestDevCollectorClearOrdersHTTPAndDBObservations(t *testing.T) {
+	for _, name := range []string{"HTTP", "DB"} {
+		t.Run(name, func(t *testing.T) {
+			cfg := DefaultDevCollectorConfig()
+			cfg.MaxSamples = 2
+			cfg.DBMaxSlow = 2
+			d := NewDevCollector(cfg)
+			d.startedAt = time.Unix(99, 0)
+			observe := func(label string) {
+				if name == "HTTP" {
+					d.ObserveHTTP(t.Context(), "GET", "/"+label, 200, 1, time.Millisecond)
+				} else {
+					d.ObserveDB(t.Context(), label, "fixture", "SELECT * FROM items", 1, time.Second, nil)
+				}
+			}
+			entered, resume, finished := make(chan struct{}), make(chan struct{}), make(chan struct{})
+			var calls atomic.Int32
+			d.now = func() time.Time {
+				if calls.Add(1) == 1 {
+					close(entered)
+					<-resume
+					return time.Unix(100, 0)
+				}
+				return time.Unix(101, 0)
+			}
+			go func() { defer close(finished); observe("first") }()
+			<-entered
+			d.Clear()
+			close(resume)
+			<-finished
+
+			assertTotal := func(want int64) {
+				t.Helper()
+				total := d.Snapshot().Total.Count
+				if name == "DB" {
+					total = d.DBSnapshot().Total.Count
+				}
+				stats := d.GetStats().TotalRecords
+				if total != want || stats != want {
+					t.Errorf("snapshot=%d stats=%d want=%d", total, stats, want)
+				}
+			}
+			assertTotal(1)
+			if name == "HTTP" && len(d.Snapshot().Recent) != 1 {
+				t.Error("observation committed after Clear was pruned")
+			}
+			if name == "DB" && len(d.DBSnapshot().Slow) != 1 {
+				t.Error("DB observation committed after Clear was pruned")
+			}
+			observe("second")
+			observe("third")
+			assertTotal(3)
+			if name == "HTTP" {
+				got := d.Snapshot().Recent
+				if len(got) != 2 || got[0].Path != "/second" || got[1].Path != "/third" {
+					t.Errorf("HTTP retention=%+v", got)
+				}
+			} else {
+				got := d.DBSnapshot().Slow
+				if len(got) != 2 || got[0].Operation != "second" || got[1].Operation != "third" {
+					t.Errorf("DB retention=%+v", got)
+				}
+			}
+			d.Clear()
+			assertTotal(0)
+		})
 	}
 }

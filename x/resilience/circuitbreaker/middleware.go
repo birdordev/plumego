@@ -51,7 +51,8 @@ func Middleware(config Config) func(http.Handler) http.Handler {
 	}
 }
 
-// MiddlewareWithErrorHandler creates a circuit breaker middleware with custom error handling
+// MiddlewareWithErrorHandler delegates circuit admission rejections to errorHandler.
+// Downstream 5xx responses count as failures and remain owned by the downstream handler.
 func MiddlewareWithErrorHandler(config Config, errorHandler ErrorHandler) func(http.Handler) http.Handler {
 	cb := New(config)
 
@@ -68,7 +69,7 @@ func MiddlewareWithErrorHandler(config Config, errorHandler ErrorHandler) func(h
 				return nil
 			})
 
-			if err != nil {
+			if errors.Is(err, ErrCircuitOpen) || errors.Is(err, ErrTooManyRequests) {
 				errorHandler(w, r, cb, err)
 				return
 			}
@@ -76,12 +77,12 @@ func MiddlewareWithErrorHandler(config Config, errorHandler ErrorHandler) func(h
 	}
 }
 
-// ErrorHandler handles circuit breaker errors
+// ErrorHandler writes a response for a request rejected by the circuit.
 type ErrorHandler func(w http.ResponseWriter, r *http.Request, cb *CircuitBreaker, err error)
 
 const CodeCircuitOpen = "CIRCUIT_OPEN"
 
-// statusWriter wraps http.ResponseWriter to capture status code
+// statusWriter records the final status while forwarding informational responses.
 type statusWriter struct {
 	http.ResponseWriter
 	statusCode int
@@ -93,18 +94,26 @@ func (w *statusWriter) Unwrap() http.ResponseWriter {
 }
 
 func (w *statusWriter) WriteHeader(code int) {
-	if !w.written {
+	if w.written {
+		return
+	}
+	w.ResponseWriter.WriteHeader(code)
+	if code >= 200 || code == http.StatusSwitchingProtocols {
 		w.statusCode = code
 		w.written = true
-		w.ResponseWriter.WriteHeader(code)
 	}
 }
 
-func (w *statusWriter) Flush() {
-	if f, ok := w.ResponseWriter.(http.Flusher); ok {
-		f.Flush()
+func (w *statusWriter) FlushError() error {
+	err := http.NewResponseController(w.ResponseWriter).Flush()
+	if !w.written && !errors.Is(err, http.ErrNotSupported) {
+		w.statusCode = http.StatusOK
+		w.written = true
 	}
+	return err
 }
+
+func (w *statusWriter) Flush() { _ = w.FlushError() }
 
 func (w *statusWriter) Write(b []byte) (int, error) {
 	if !w.written {

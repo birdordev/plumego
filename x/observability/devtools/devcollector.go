@@ -125,6 +125,8 @@ type DevDBRedactionConfig struct {
 type DevCollector struct {
 	base *recordbuffer.Collector
 
+	// mu orders HTTP and DB observations and Clear across the base collector
+	// and the corresponding dev snapshots.
 	mu         sync.RWMutex
 	startedAt  time.Time
 	window     time.Duration
@@ -280,8 +282,6 @@ func (d *DevCollector) Record(ctx context.Context, record metrics.MetricRecord) 
 
 // ObserveHTTP records an HTTP metric.
 func (d *DevCollector) ObserveHTTP(ctx context.Context, method, path string, status, bytes int, duration time.Duration) {
-	d.base.ObserveHTTP(ctx, method, path, status, bytes, duration)
-
 	key := seriesKey(method, path)
 	now := d.now()
 	errorHit := status >= 400
@@ -290,6 +290,12 @@ func (d *DevCollector) ObserveHTTP(ctx context.Context, method, path string, sta
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
+	// An observation prepared before Clear but committed after it belongs
+	// to the new retention window.
+	if now.Before(d.startedAt) {
+		now = d.startedAt
+	}
+	d.base.ObserveHTTP(ctx, method, path, status, bytes, duration)
 	d.total.record(status, bytes, durationMS, now)
 
 	s := d.series[key]
@@ -329,7 +335,6 @@ func (d *DevCollector) ObserveIPC(ctx context.Context, operation, addr, transpor
 // ObserveDB records a DB metric via extension-owned helpers.
 func (d *DevCollector) ObserveDB(ctx context.Context, operation, driver, query string, rows int, duration time.Duration, err error) {
 	record := featuremetrics.DBRecord(operation, driver, query, rows, duration, err)
-	d.base.Record(ctx, record)
 
 	durationMS := duration.Seconds() * 1000
 	now := d.now()
@@ -341,6 +346,12 @@ func (d *DevCollector) ObserveDB(ctx context.Context, operation, driver, query s
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
+	// An observation prepared before Clear but committed after it belongs
+	// to the new retention window.
+	if now.Before(d.startedAt) {
+		now = d.startedAt
+	}
+	d.base.Record(ctx, record)
 	d.dbTotal.record(operation, driver, durationMS, float64(rows), errorHit, now)
 
 	series := d.dbSeries[key]
@@ -374,6 +385,8 @@ func (d *DevCollector) ObserveDB(ctx context.Context, operation, driver, query s
 
 // GetStats returns aggregate stats from the underlying base collector.
 func (d *DevCollector) GetStats() metrics.CollectorStats {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
 	stats := d.base.GetStats()
 	if stats.ActiveSeries == 0 && len(stats.NameBreakdown) > 0 {
 		stats.ActiveSeries = len(stats.NameBreakdown)
@@ -383,9 +396,10 @@ func (d *DevCollector) GetStats() metrics.CollectorStats {
 
 // Clear resets the collector state.
 func (d *DevCollector) Clear() {
-	d.base.Clear()
+	now := d.now()
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	d.base.Clear()
 	d.total = newHTTPSeries("ALL", "ALL", d.maxValues)
 	d.series = make(map[string]*httpSeries)
 	d.samples = d.samples[:0]
@@ -393,7 +407,9 @@ func (d *DevCollector) Clear() {
 	d.dbSeries = make(map[string]*dbSeries)
 	d.dbTableSeries = make(map[string]*dbSeries)
 	d.dbSlow = d.dbSlow[:0]
-	d.startedAt = d.now()
+	if now.After(d.startedAt) {
+		d.startedAt = now
+	}
 }
 
 func (d *DevCollector) retentionCutoff(now time.Time) time.Time {

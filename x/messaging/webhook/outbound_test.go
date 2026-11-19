@@ -11,7 +11,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/birdordev/plumego/contract"
@@ -895,4 +897,50 @@ func decodeWebhookData[T any](t *testing.T, rec *httptest.ResponseRecorder) T {
 		t.Fatalf("decode success data: %v", err)
 	}
 	return body
+}
+
+func TestQueueRejectsEnqueueAfterClose(t *testing.T) {
+	for _, policy := range []DropPolicy{DropNewest, FailFast, BlockWithLimit} {
+		q := NewQueue(1, policy, time.Hour)
+		q.Close()
+		q.Close()
+		if err := q.Enqueue(t.Context(), Task{DeliveryID: "fixture"}); !errors.Is(err, errQueueClosed) {
+			t.Errorf("policy %v: Enqueue after close = %v", policy, err)
+		}
+		if _, open := <-q.Chan(); open {
+			t.Errorf("policy %v: channel remains open", policy)
+		}
+	}
+}
+
+func TestQueueCloseWakesBlockedSendersAndPreservesBufferedTasks(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		q := NewQueue(1, BlockWithLimit, time.Hour)
+		if err := q.Enqueue(t.Context(), Task{DeliveryID: "accepted"}); err != nil {
+			t.Fatal(err)
+		}
+		result := make(chan error, 1)
+		go func() { result <- q.Enqueue(t.Context(), Task{DeliveryID: "waiting"}) }()
+		synctest.Wait()
+		select {
+		case err := <-result:
+			t.Fatalf("sender was not blocked: %v", err)
+		default:
+		}
+
+		var closers sync.WaitGroup
+		for range 3 {
+			closers.Go(q.Close)
+		}
+		closers.Wait()
+		if err := <-result; !errors.Is(err, errQueueClosed) {
+			t.Errorf("blocked sender = %v", err)
+		}
+		if task, open := <-q.Chan(); !open || task.DeliveryID != "accepted" {
+			t.Errorf("buffered task: %+v, open=%v", task, open)
+		}
+		if _, open := <-q.Chan(); open {
+			t.Error("channel did not close after draining")
+		}
+	})
 }

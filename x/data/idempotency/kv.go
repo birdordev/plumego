@@ -93,6 +93,8 @@ func (s *KVStore) Get(_ context.Context, key string) (Record, bool, error) {
 	return record, true, nil
 }
 
+// PutIfAbsent reports true only when storage confirms a new record. When
+// storage returns an error, callers can read back to resolve the outcome.
 func (s *KVStore) PutIfAbsent(ctx context.Context, record Record) (bool, error) {
 	if s == nil || s.store == nil {
 		return false, ErrNotFound
@@ -129,7 +131,10 @@ func (s *KVStore) PutIfAbsent(ctx context.Context, record Record) (bool, error) 
 		return false, err
 	}
 
-	return true, s.store.Set(s.key(record.Key), data, s.ttl(record))
+	if err := s.store.Set(s.key(record.Key), data, s.ttl(record)); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 func (s *KVStore) Complete(ctx context.Context, key string, response []byte) error {

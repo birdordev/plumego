@@ -5,6 +5,7 @@ package client
 import (
 	"context"
 	"errors"
+	"reflect"
 	"sync"
 )
 
@@ -64,7 +65,7 @@ func (p *Pool) Dial(ctx context.Context, target string, opts ...DialOption) (Con
 	if err != nil {
 		return nil, err
 	}
-	if conn == nil {
+	if isNilConn(conn) {
 		return nil, errors.New("rpc client dialer returned a nil connection")
 	}
 
@@ -82,6 +83,19 @@ func (p *Pool) Dial(ctx context.Context, target string, opts ...DialOption) (Con
 	p.conns[target] = conn
 	p.mu.Unlock()
 	return conn, nil
+}
+
+func isNilConn(conn Conn) bool {
+	if conn == nil {
+		return true
+	}
+	v := reflect.ValueOf(conn)
+	switch v.Kind() {
+	case reflect.Chan, reflect.Func, reflect.Map, reflect.Pointer, reflect.Slice:
+		return v.IsNil()
+	default:
+		return false
+	}
 }
 
 func (p *Pool) Close() error {
