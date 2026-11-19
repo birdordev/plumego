@@ -26,6 +26,63 @@ type orderingMessagePayload struct {
 	Worker int
 }
 
+func TestAudit08OrderingNamespace(t *testing.T) {
+	for _, tc := range []struct {
+		name, topic, key string
+		level            OrderLevel
+		wantSecond       string
+	}{
+		{"topic and key", "same", "same", OrderPerKey, "1"},
+		{"topic and global", globalQueueIdentifier, "", OrderGlobal, "1"},
+		{"single topic", "same", "", OrderPerTopic, "2"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := DefaultOrderingConfig()
+			cfg.MaxBatchSize = 1
+			cfg.SequenceCheckEnabled = true
+			broker := NewOrdered(cfg)
+			defer broker.Close()
+
+			ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
+			defer cancel()
+			first, err := broker.Subscribe(ctx, tc.topic, SubOptions{BufferSize: 4})
+			if err != nil {
+				t.Fatal(err)
+			}
+			secondTopic, second := tc.topic, first
+			if tc.level != OrderPerTopic {
+				secondTopic = "other"
+				second, err = broker.Subscribe(ctx, secondTopic, SubOptions{BufferSize: 4})
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			receive := func(sub Subscription, want string) {
+				t.Helper()
+				select {
+				case msg := <-sub.C():
+					if got := msg.Meta[MetaKeySequence]; got != want {
+						t.Fatalf("sequence = %q, want %q", got, want)
+					}
+				case <-ctx.Done():
+					t.Fatalf("missing sequence %s, stats: %+v", want, broker.OrderingStats())
+				}
+			}
+			if err := broker.PublishOrdered(tc.topic, Message{Data: "first"}, OrderPerTopic); err != nil {
+				t.Fatal(err)
+			}
+			receive(first, "1")
+			if err := broker.PublishWithKey(secondTopic, tc.key, Message{Data: "second"}, tc.level); err != nil {
+				t.Fatal(err)
+			}
+			receive(second, tc.wantSecond)
+			if got := broker.OrderingStats().SequenceErrors; got != 0 {
+				t.Errorf("sequence errors = %d, want 0", got)
+			}
+		})
+	}
+}
+
 func TestOrderedPubSub_Basic(t *testing.T) {
 	config := DefaultOrderingConfig()
 	ops := NewOrdered(config)

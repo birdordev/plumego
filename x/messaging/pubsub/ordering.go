@@ -67,7 +67,8 @@ func DefaultOrderingConfig() OrderingConfig {
 	}
 }
 
-// OrderedPubSub wraps InProcBroker with ordering guarantees
+// OrderedPubSub wraps InProcBroker with ordering guarantees.
+// Topic, partition key, and global queues have independent sequence spaces.
 type OrderedPubSub struct {
 	*InProcBroker
 
@@ -78,10 +79,6 @@ type OrderedPubSub struct {
 	topicQueues map[string]*orderedQueue
 	keyQueues   map[string]*orderedQueue
 	globalQueue *orderedQueue
-
-	// Sequence tracking
-	sequences   map[string]*sequenceTracker
-	sequencesMu sync.RWMutex
 
 	// Background workers
 	ctx    context.Context
@@ -106,6 +103,7 @@ type orderedQueue struct {
 	sequence  uint64
 	batch     []orderedMessage
 	batchSize int
+	verified  sequenceTracker // Owned by the queue worker.
 
 	// Per-queue statistics
 	processed      atomic.Uint64
@@ -154,7 +152,6 @@ func NewOrdered(config OrderingConfig, opts ...Option) *OrderedPubSub {
 		config:       config,
 		topicQueues:  make(map[string]*orderedQueue),
 		keyQueues:    make(map[string]*orderedQueue),
-		sequences:    make(map[string]*sequenceTracker),
 		ctx:          ctx,
 		cancel:       cancel,
 	}
@@ -241,22 +238,16 @@ func (ops *OrderedPubSub) enqueueOrdered(queue *orderedQueue, topic string, msg 
 }
 
 // startQueueWorker starts a worker to process an ordered queue
-func (ops *OrderedPubSub) startQueueWorker(queue *orderedQueue, identifier string) {
+func (ops *OrderedPubSub) startQueueWorker(queue *orderedQueue) {
 	ops.wg.Add(1)
 	go func() {
 		defer ops.wg.Done()
-		ops.processQueue(queue, identifier)
+		ops.processQueue(queue)
 	}()
 }
 
 // processQueue processes messages from an ordered queue.
-// The identifier parameter represents the ordering key for this queue:
-//   - For OrderPerTopic: the topic name
-//   - For OrderPerKey: the partition key
-//   - For OrderGlobal: globalQueueIdentifier
-//
-// It is used for sequence verification and per-queue statistics tracking.
-func (ops *OrderedPubSub) processQueue(queue *orderedQueue, identifier string) {
+func (ops *OrderedPubSub) processQueue(queue *orderedQueue) {
 	ticker := time.NewTicker(ops.config.BatchTimeout)
 	defer ticker.Stop()
 
@@ -268,7 +259,7 @@ func (ops *OrderedPubSub) processQueue(queue *orderedQueue, identifier string) {
 				// concurrent non-blocking sender would panic). Workers exit via
 				// ctx.Done() instead. This branch is here for safety completeness
 				// but is unreachable in normal operation.
-				ops.flushBatch(queue, identifier)
+				ops.flushBatch(queue)
 				return
 			}
 
@@ -279,26 +270,22 @@ func (ops *OrderedPubSub) processQueue(queue *orderedQueue, identifier string) {
 			queue.mu.Unlock()
 
 			if shouldFlush {
-				ops.flushBatch(queue, identifier)
+				ops.flushBatch(queue)
 			}
 
 		case <-ticker.C:
 			// Periodic flush
-			ops.flushBatch(queue, identifier)
+			ops.flushBatch(queue)
 
 		case <-ops.ctx.Done():
-			ops.flushBatch(queue, identifier)
+			ops.flushBatch(queue)
 			return
 		}
 	}
 }
 
-// flushBatch flushes a batch of messages for the queue identified by identifier.
-// The identifier is used as the sequence tracking key, ensuring that:
-//   - Per-topic queues track sequences by topic name
-//   - Per-key queues track sequences by partition key
-//   - Global queue uses a single shared sequence space
-func (ops *OrderedPubSub) flushBatch(queue *orderedQueue, identifier string) {
+// flushBatch publishes a batch in its queue's admission order.
+func (ops *OrderedPubSub) flushBatch(queue *orderedQueue) {
 	queue.mu.Lock()
 	if len(queue.batch) == 0 {
 		queue.mu.Unlock()
@@ -315,7 +302,7 @@ func (ops *OrderedPubSub) flushBatch(queue *orderedQueue, identifier string) {
 	for _, om := range batch {
 		// Verify sequence if enabled
 		if ops.config.SequenceCheckEnabled {
-			if err := ops.verifySequence(om, identifier); err != nil {
+			if err := queue.verifySequence(om.sequence); err != nil {
 				ops.sequenceErrors.Add(1)
 				queue.sequenceErrors.Add(1)
 				continue
@@ -377,6 +364,8 @@ type OrderingStats struct {
 	// For topic queues the key is the topic name, for key queues
 	// it is the partition key, and for the global queue it is
 	// globalQueueIdentifier ("__global__").
+	// For duplicate identifiers, key queue statistics take precedence over
+	// topic queue statistics, and global statistics take precedence over both.
 	QueueStats map[string]QueueStat
 }
 

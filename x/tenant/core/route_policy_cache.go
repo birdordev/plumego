@@ -15,11 +15,10 @@ type RoutePolicyCache interface {
 
 // InMemoryRoutePolicyCache is a TTL cache for route policies.
 type InMemoryRoutePolicyCache struct {
-	mu       sync.RWMutex
-	entries  map[string]routePolicyCacheEntry
-	maxSize  int
-	ttl      time.Duration
-	lastTrim time.Time
+	mu      sync.RWMutex
+	entries map[string]routePolicyCacheEntry
+	maxSize int
+	ttl     time.Duration
 }
 
 type routePolicyCacheEntry struct {
@@ -37,10 +36,9 @@ func NewInMemoryRoutePolicyCache(maxSize int, ttl time.Duration) *InMemoryRouteP
 	}
 
 	return &InMemoryRoutePolicyCache{
-		entries:  make(map[string]routePolicyCacheEntry),
-		maxSize:  maxSize,
-		ttl:      ttl,
-		lastTrim: time.Now().UTC(),
+		entries: make(map[string]routePolicyCacheEntry),
+		maxSize: maxSize,
+		ttl:     ttl,
 	}
 }
 

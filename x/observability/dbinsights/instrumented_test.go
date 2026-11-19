@@ -192,8 +192,45 @@ func TestInstrumentedDB_QueryRowContext(t *testing.T) {
 	if row == nil {
 		t.Fatal("expected non-nil row")
 	}
-	if collector.DBCallCount() != 1 {
-		t.Fatalf("expected 1 DB call, got %d", collector.DBCallCount())
+	if calls := collector.GetDBCalls(); len(calls) != 1 || calls[0].Rows != 1 || calls[0].Err != nil {
+		t.Fatalf("unexpected DB calls: %+v", calls)
+	}
+	if err := row.Scan(); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("Scan error = %v, want sql.ErrNoRows", err)
+	}
+}
+
+func TestAudit08QueryRowError(t *testing.T) {
+	driverErr := errors.New("query failed")
+	for _, tc := range []struct {
+		name     string
+		canceled bool
+		want     error
+	}{
+		{"canceled", true, context.Canceled},
+		{"driver", false, driverErr},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			db := newMockDB(func(db *mockDB) { db.queryErr = driverErr })
+			defer db.Close()
+			collector := testmetrics.NewMockCollector()
+			idb := NewInstrumentedDB(db, collector, "postgres")
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			if tc.canceled {
+				cancel()
+			}
+			row := idb.QueryRowContext(ctx, "SELECT 1")
+			if err := row.Err(); !errors.Is(err, tc.want) {
+				t.Fatalf("Row.Err = %v, want %v", err, tc.want)
+			}
+			if calls := collector.GetDBCalls(); len(calls) != 1 || calls[0].Rows != 0 || !errors.Is(calls[0].Err, tc.want) {
+				t.Fatalf("observations = %+v, want one with zero rows and %v", calls, tc.want)
+			}
+			if err := row.Scan(); !errors.Is(err, tc.want) {
+				t.Fatalf("Scan error = %v, want %v", err, tc.want)
+			}
+		})
 	}
 }
 

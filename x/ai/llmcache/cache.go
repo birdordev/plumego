@@ -119,8 +119,8 @@ func NewMemoryCache(ttl time.Duration, maxSize int) *MemoryCache {
 
 // Get implements Cache.
 func (c *MemoryCache) Get(ctx context.Context, key *CacheKey) (*CacheEntry, error) {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
+	c.mu.Lock()
+	defer c.mu.Unlock()
 
 	entry, ok := c.entries[key.Hash]
 	if !ok {
@@ -144,13 +144,13 @@ func (c *MemoryCache) Get(ctx context.Context, key *CacheKey) (*CacheEntry, erro
 	return &copied, nil
 }
 
-// Set implements Cache.
+// Set implements Cache. Only inserting a new key at capacity evicts an entry.
 func (c *MemoryCache) Set(ctx context.Context, key *CacheKey, entry *CacheEntry) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
 	// Check size limit
-	if len(c.entries) >= c.maxSize {
+	if _, exists := c.entries[key.Hash]; !exists && len(c.entries) >= c.maxSize {
 		// Simple eviction: remove oldest
 		c.evictOldest()
 	}

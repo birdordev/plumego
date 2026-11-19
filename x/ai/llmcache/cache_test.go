@@ -2,12 +2,106 @@ package llmcache
 
 import (
 	"context"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/birdordev/plumego/x/ai/provider"
 	"github.com/birdordev/plumego/x/ai/tokenizer"
 )
+
+func TestAudit08LLMCacheConcurrentCounters(t *testing.T) {
+	ctx := t.Context()
+	cache := NewMemoryCache(time.Hour, 2)
+	key := &CacheKey{Hash: "present"}
+	missing := &CacheKey{Hash: "missing"}
+	expired := &CacheKey{Hash: "expired"}
+	if err := cache.Set(ctx, key, &CacheEntry{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := cache.Set(ctx, expired, &CacheEntry{ExpiresAt: time.Now().Add(-time.Hour)}); err != nil {
+		t.Fatal(err)
+	}
+	const workers, calls = 8, 100
+	var wg sync.WaitGroup
+	for range workers {
+		wg.Go(func() {
+			for range calls {
+				if _, err := cache.Get(ctx, key); err != nil {
+					t.Error(err)
+				}
+				if _, err := cache.Get(ctx, missing); err == nil {
+					t.Error("missing entry was found")
+				}
+				if _, err := cache.Get(ctx, expired); err == nil {
+					t.Error("expired entry was found")
+				}
+				_ = cache.Stats()
+			}
+		})
+	}
+	wg.Wait()
+	if stats := cache.Stats(); stats.Hits != workers*calls || stats.Misses != 2*workers*calls {
+		t.Errorf("unexpected concurrent counters: %+v", stats)
+	}
+	entry, err := cache.Get(ctx, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if entry.HitCount != workers*calls+1 {
+		t.Errorf("hit count = %d, want %d", entry.HitCount, workers*calls+1)
+	}
+	if err := cache.Clear(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if stats := cache.Stats(); stats != (CacheStats{}) {
+		t.Errorf("stats after Clear = %+v", stats)
+	}
+	if _, err := cache.Get(ctx, key); err == nil {
+		t.Error("cleared entry was found")
+	}
+}
+
+func TestAudit08LLMCacheReplaceAtCapacity(t *testing.T) {
+	ctx := t.Context()
+	cache := NewMemoryCache(time.Hour, 2)
+	a, b, c := &CacheKey{Hash: "a"}, &CacheKey{Hash: "b"}, &CacheKey{Hash: "c"}
+	now := time.Now()
+	set := func(key *CacheKey, createdAt time.Time, requestHash string) {
+		t.Helper()
+		if err := cache.Set(ctx, key, &CacheEntry{CreatedAt: createdAt, RequestHash: requestHash}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	mustGet := func(key *CacheKey, wantHash string) {
+		t.Helper()
+		entry, err := cache.Get(ctx, key)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if entry.RequestHash != wantHash {
+			t.Errorf("entry %q has hash %q, want %q", key.Hash, entry.RequestHash, wantHash)
+		}
+	}
+	set(a, now, "a")
+	set(b, now.Add(time.Second), "old")
+	set(b, now.Add(2*time.Second), "new")
+	mustGet(a, "a")
+	mustGet(b, "new")
+	if got := cache.Stats().Evictions; got != 0 {
+		t.Errorf("evictions after replacement = %d, want 0", got)
+	}
+
+	set(c, now.Add(3*time.Second), "c")
+	mustGet(b, "new")
+	mustGet(c, "c")
+	if _, err := cache.Get(ctx, a); err == nil {
+		t.Error("oldest entry was not evicted")
+	}
+	if got := cache.Stats().Evictions; got != 1 {
+		t.Errorf("evictions after insertion = %d, want 1", got)
+	}
+}
 
 func TestMemoryCache_SetGet(t *testing.T) {
 	cache := NewMemoryCache(1*time.Hour, 100)

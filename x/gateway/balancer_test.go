@@ -1,6 +1,9 @@
 package gateway
 
 import (
+	"errors"
+	"math"
+	"slices"
 	"sync"
 	"testing"
 )
@@ -175,28 +178,62 @@ func TestWeightedRoundRobinNoHealthy(t *testing.T) {
 	}
 }
 
-func TestWeightedRoundRobinProportionalDistribution(t *testing.T) {
-	pool, _ := NewBackendPool(nil)
-	a, _ := NewBackend("http://a:8080")
-	a.Weight = 3
-	b2, _ := NewBackend("http://b:8080")
-	b2.Weight = 1
-	pool.AddBackend(a)
-	pool.AddBackend(b2)
-
-	balancer := NewWeightedRoundRobinBalancer()
-	counts := map[string]int{}
-	for i := 0; i < 40; i++ {
-		be, err := balancer.Next(pool)
-		if err != nil {
-			t.Fatalf("Next: %v", err)
-		}
-		counts[be.URL]++
+func TestAudit08WeightedDistribution(t *testing.T) {
+	for _, tc := range []struct {
+		name                 string
+		first, second, wantA int
+	}{
+		{"proportional", 3, 1, 30},
+		{"equal", 2, 2, 20},
+		{"zero counts as one", 0, 1, 20},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			pool := mustPool(t, "http://a:8080", "http://b:8080")
+			backends := pool.Backends()
+			backends[0].Weight, backends[1].Weight = tc.first, tc.second
+			balancer := NewWeightedRoundRobinBalancer()
+			countA := 0
+			for range 40 {
+				backend, err := balancer.Next(pool)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if backend == backends[0] {
+					countA++
+				}
+			}
+			if countA != tc.wantA {
+				t.Errorf("selection counts = %d/%d, want %d/%d", countA, 40-countA, tc.wantA, 40-tc.wantA)
+			}
+		})
 	}
+}
 
-	// a should receive ~3x more than b
-	if counts["http://a:8080"] <= counts["http://b:8080"] {
-		t.Errorf("weighted distribution wrong: a=%d b=%d", counts["http://a:8080"], counts["http://b:8080"])
+func TestWeightedRoundRobinWeightLimits(t *testing.T) {
+	pool := mustPool(t, "http://a:8080", "http://b:8080")
+	backends := pool.Backends()
+	balancer := NewWeightedRoundRobinBalancer()
+	backends[0].Weight = math.MaxInt / 2
+	backends[1].Weight = math.MaxInt / 2
+	if got, err := balancer.Next(pool); err != nil || got != backends[0] {
+		t.Fatalf("near-limit round: backend=%v, err=%v", got, err)
+	}
+	previous := slices.Clone(balancer.currentWeight)
+	for _, invalid := range [][2]int{{-1, 1}, {math.MaxInt, 1}, {1, math.MaxInt - 1}} {
+		backends[0].Weight, backends[1].Weight = invalid[0], invalid[1]
+		if _, err := balancer.Next(pool); !errors.Is(err, ErrInvalidConfig) {
+			t.Errorf("weights %v: err=%v, want ErrInvalidConfig", invalid, err)
+		}
+		if !slices.Equal(balancer.currentWeight, previous) {
+			t.Fatalf("failed round changed scores: %v, want %v", balancer.currentWeight, previous)
+		}
+	}
+	backends[0].SetHealthy(false)
+	backends[1].Weight = math.MaxInt
+	for range 2 {
+		if got, err := balancer.Next(pool); err != nil || got != backends[1] {
+			t.Fatalf("single maximum weight: backend=%v, err=%v", got, err)
+		}
 	}
 }
 

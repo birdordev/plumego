@@ -1,6 +1,7 @@
 package idempotency
 
 import (
+	"encoding/json"
 	"errors"
 	"sync"
 	"sync/atomic"
@@ -9,6 +10,53 @@ import (
 
 	kvstore "github.com/birdordev/plumego/store/kv"
 )
+
+func TestAudit08ExpiredLookupPreservesNewClaim(t *testing.T) {
+	base, err := kvstore.NewKVStore(kvstore.Config{DataDir: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer base.Close()
+
+	now := time.Now()
+	old, err := json.Marshal(Record{Key: "test", ExpiresAt: now.Add(-time.Hour)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := base.Set("idem:test", old, time.Hour); err != nil {
+		t.Fatal(err)
+	}
+
+	read, release := make(chan struct{}), make(chan struct{})
+	done := make(chan struct{})
+	reader := NewKVStore(base, KVConfig{Now: func() time.Time {
+		close(read)
+		<-release
+		return now
+	}})
+	writer := NewKVStore(base, KVConfig{Now: func() time.Time { return now }})
+	go func() {
+		defer close(done)
+		if _, found, err := reader.Get(t.Context(), "test"); found || err != nil {
+			t.Errorf("expired lookup: found=%v, err=%v", found, err)
+		}
+	}()
+	<-read
+	claim := Record{Key: "test", RequestHash: "new", ExpiresAt: now.Add(time.Hour)}
+	created, err := writer.PutIfAbsent(t.Context(), claim)
+	close(release)
+	<-done
+	if err != nil || !created {
+		t.Fatalf("new claim: created=%v, err=%v", created, err)
+	}
+	got, found, err := writer.Get(t.Context(), claim.Key)
+	if err != nil || !found || got.RequestHash != claim.RequestHash {
+		t.Fatalf("lookup new claim: found=%v, hash=%q, err=%v", found, got.RequestHash, err)
+	}
+	if created, err := writer.PutIfAbsent(t.Context(), claim); err != nil || created {
+		t.Fatalf("claim retry: created=%v, err=%v", created, err)
+	}
+}
 
 func TestKVStoreIdempotency(t *testing.T) {
 	store, err := kvstore.NewKVStore(kvstore.Config{DataDir: t.TempDir()})

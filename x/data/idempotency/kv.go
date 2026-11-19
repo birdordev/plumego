@@ -63,6 +63,8 @@ func NewKVStore(store *kvstore.KVStore, cfg KVConfig) *KVStore {
 	}
 }
 
+// Get returns a miss for an expired record. Physical cleanup is left to the
+// underlying store so a stale read cannot remove a newer claim.
 func (s *KVStore) Get(_ context.Context, key string) (Record, bool, error) {
 	if s == nil || s.store == nil {
 		return Record{}, false, ErrNotFound
@@ -86,7 +88,6 @@ func (s *KVStore) Get(_ context.Context, key string) (Record, bool, error) {
 	}
 
 	if s.isExpired(record) {
-		_ = s.store.Delete(s.key(key))
 		return Record{}, false, nil
 	}
 

@@ -33,39 +33,26 @@ func (ops *OrderedPubSub) createOrderedQueue(identifier string, level OrderLevel
 	case OrderGlobal:
 		ops.globalQueue = queue
 	}
-	ops.startQueueWorker(queue, identifier)
+	ops.startQueueWorker(queue)
 	return queue
 }
 
-// verifySequence verifies message sequence using the queue identifier as the
-// sequence tracking key. This ensures correct behavior across all ordering levels:
-//   - OrderPerTopic: identifier is the topic, so sequences are tracked per-topic
-//   - OrderPerKey: identifier is the partition key, so sequences are tracked per-key
-//   - OrderGlobal: identifier is globalQueueIdentifier, so all messages share one sequence space
-func (ops *OrderedPubSub) verifySequence(om orderedMessage, identifier string) error {
-	ops.sequencesMu.Lock()
-	tracker, exists := ops.sequences[identifier]
-	if !exists {
-		tracker = &sequenceTracker{
-			missing: make(map[uint64]bool),
-		}
-		ops.sequences[identifier] = tracker
-	}
-	ops.sequencesMu.Unlock()
-
-	tracker.mu.Lock()
-	defer tracker.mu.Unlock()
-
+// verifySequence is called only by this queue's worker.
+func (queue *orderedQueue) verifySequence(sequence uint64) error {
+	tracker := &queue.verified
 	expected := tracker.lastSequence + 1
-	if om.sequence < expected {
+	if sequence < expected {
 		return ErrOutOfOrderMessage
 	}
 
-	if om.sequence > expected {
+	if sequence > expected {
+		if tracker.missing == nil {
+			tracker.missing = make(map[uint64]bool)
+		}
 		// Gap detected - record missing sequences up to the cap.
 		// If the cap is reached we stop tracking further gaps to prevent
 		// unbounded memory growth from permanently lost messages.
-		for seq := expected; seq < om.sequence; seq++ {
+		for seq := expected; seq < sequence; seq++ {
 			if len(tracker.missing) >= maxMissingSequences {
 				break
 			}
@@ -74,8 +61,8 @@ func (ops *OrderedPubSub) verifySequence(om orderedMessage, identifier string) e
 	}
 
 	// Check if this fills a gap
-	delete(tracker.missing, om.sequence)
-	tracker.lastSequence = om.sequence
+	delete(tracker.missing, sequence)
+	tracker.lastSequence = sequence
 
 	return nil
 }

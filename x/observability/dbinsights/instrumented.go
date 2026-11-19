@@ -59,13 +59,20 @@ func (idb *InstrumentedDB) QueryContext(ctx context.Context, query string, args 
 	return rows, err
 }
 
+// QueryRowContext observes errors already available through Row.Err. Errors
+// discovered later by Scan remain with the caller.
 func (idb *InstrumentedDB) QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row {
 	start := time.Now()
 	row := idb.db.QueryRowContext(ctx, query, args...)
 	duration := time.Since(start)
 
 	if idb.observer != nil {
-		idb.observer.ObserveDB(ctx, "query", idb.driver, query, 1, duration, nil)
+		err := row.Err()
+		rows := 1
+		if err != nil {
+			rows = 0
+		}
+		idb.observer.ObserveDB(ctx, "query", idb.driver, query, rows, duration, err)
 	}
 
 	return row

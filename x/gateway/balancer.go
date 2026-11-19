@@ -1,7 +1,9 @@
 package gateway
 
 import (
+	"fmt"
 	"hash/fnv"
+	"math"
 	"math/rand"
 	"sync"
 	"sync/atomic"
@@ -101,7 +103,9 @@ func NewWeightedRoundRobinBalancer() *WeightedRoundRobinBalancer {
 	return &WeightedRoundRobinBalancer{}
 }
 
-// Next returns the next backend using weighted round-robin
+// Next returns the next backend using smooth weighted round-robin.
+// Zero weights count as one. Negative weights or arithmetic that exceeds the
+// integer range return ErrInvalidConfig without advancing the weights.
 func (b *WeightedRoundRobinBalancer) Next(pool *BackendPool) (*Backend, error) {
 	backends := pool.HealthyBackends()
 	if len(backends) == 0 {
@@ -111,54 +115,40 @@ func (b *WeightedRoundRobinBalancer) Next(pool *BackendPool) (*Backend, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
-	// Initialize or resize weights if needed
-	if len(b.currentWeight) != len(backends) {
-		b.currentWeight = make([]int, len(backends))
-	}
-
-	// Calculate max weight
-	maxWeight := 0
-	for _, backend := range backends {
-		if backend.Weight > maxWeight {
-			maxWeight = backend.Weight
-		}
-	}
-
-	if maxWeight == 0 {
-		maxWeight = 1
-	}
-
-	// Weighted round-robin algorithm
-	var selected *Backend
-	maxCurrent := 0
-
+	totalWeight, selected, maxCurrent := 0, 0, 0
+	sameSize := len(b.currentWeight) == len(backends)
 	for i, backend := range backends {
 		weight := backend.Weight
 		if weight == 0 {
 			weight = 1
 		}
-
-		b.currentWeight[i] += weight
-
-		if selected == nil || b.currentWeight[i] > maxCurrent {
-			maxCurrent = b.currentWeight[i]
-			selected = backend
+		if weight < 0 || totalWeight > math.MaxInt-weight {
+			return nil, fmt.Errorf("%w: invalid weighted round-robin total", ErrInvalidConfig)
+		}
+		totalWeight += weight
+		current := 0
+		if sameSize {
+			current = b.currentWeight[i]
+		}
+		if current > math.MaxInt-weight {
+			return nil, fmt.Errorf("%w: weighted round-robin score exceeds integer range", ErrInvalidConfig)
+		}
+		score := current + weight
+		if i == 0 || score > maxCurrent {
+			selected, maxCurrent = i, score
 		}
 	}
 
-	if selected == nil {
-		return nil, ErrNoHealthyBackends
+	// Apply the round only after validating all weights and scores.
+	if !sameSize {
+		b.currentWeight = make([]int, len(backends))
 	}
-
-	// Find selected backend index
 	for i, backend := range backends {
-		if backend == selected {
-			b.currentWeight[i] -= maxWeight
-			break
-		}
+		b.currentWeight[i] += max(backend.Weight, 1)
 	}
-
-	return selected, nil
+	// The previous scores sum to zero, so the winning score is nonnegative.
+	b.currentWeight[selected] = maxCurrent - totalWeight
+	return backends[selected], nil
 }
 
 // Reset resets the weighted balancer state
