@@ -2,6 +2,8 @@ package sharding
 
 import (
 	"fmt"
+	"reflect"
+	"slices"
 	"sort"
 	"time"
 )
@@ -41,7 +43,8 @@ type RangeDefinition struct {
 
 // NewRangeStrategy creates a new range-based sharding strategy.
 // The ranges slice defines the mapping from value ranges to shard indices.
-// Ranges must not overlap and should be provided in sorted order by Start value.
+// Ranges must not overlap. All endpoints must use the same concrete integer,
+// string, or time.Time type. A copy is sorted by Start for lookup.
 //
 // Example:
 //
@@ -55,17 +58,10 @@ func NewRangeStrategy(ranges []RangeDefinition) (*RangeStrategy, error) {
 		return nil, fmt.Errorf("range strategy requires at least one range definition")
 	}
 
-	// Validate ranges
-	if err := validateRanges(ranges); err != nil {
+	sorted := slices.Clone(ranges)
+	if err := validateAndSortRanges(sorted); err != nil {
 		return nil, err
 	}
-
-	// Sort ranges by start value for efficient lookup
-	sorted := make([]RangeDefinition, len(ranges))
-	copy(sorted, ranges)
-	sort.Slice(sorted, func(i, j int) bool {
-		return compareValues(sorted[i].Start, sorted[j].Start) < 0
-	})
 
 	return &RangeStrategy{
 		ranges: sorted,
@@ -73,7 +69,8 @@ func NewRangeStrategy(ranges []RangeDefinition) (*RangeStrategy, error) {
 }
 
 // Shard finds the target shard for a given key by searching the range definitions.
-// Uses binary search for efficient lookup in O(log n) time.
+// Uses binary search for efficient lookup in O(log n) time. A key with a
+// different concrete type from the configured endpoints returns ErrInvalidShardKey.
 //
 // Example:
 //
@@ -84,6 +81,10 @@ func (r *RangeStrategy) Shard(key any, numShards int) (int, error) {
 		return 0, err
 	}
 	if err := validateNumShards(numShards); err != nil {
+		return 0, err
+	}
+
+	if err := r.validateKeyType(key); err != nil {
 		return 0, err
 	}
 
@@ -112,7 +113,7 @@ func (r *RangeStrategy) Shard(key any, numShards int) (int, error) {
 }
 
 // ShardRange finds all shards that overlap with the given value range.
-// This is efficient because only the relevant shards need to be queried.
+// Bounds must use the same concrete type as the configured endpoints.
 //
 // Example:
 //
@@ -121,6 +122,16 @@ func (r *RangeStrategy) Shard(key any, numShards int) (int, error) {
 func (r *RangeStrategy) ShardRange(start, end any, numShards int) ([]int, error) {
 	if err := validateNumShards(numShards); err != nil {
 		return nil, err
+	}
+
+	if len(r.ranges) == 0 {
+		return nil, ErrNoMatchingRange
+	}
+	if err := r.validateKeyType(start); err != nil {
+		return nil, fmt.Errorf("range start: %w", err)
+	}
+	if err := r.validateKeyType(end); err != nil {
+		return nil, fmt.Errorf("range end: %w", err)
 	}
 
 	// Ensure start <= end
@@ -159,47 +170,41 @@ func (r *RangeStrategy) Name() string {
 	return "range"
 }
 
-// validateRanges checks that range definitions are valid and non-overlapping.
-func validateRanges(ranges []RangeDefinition) error {
+func (r *RangeStrategy) validateKeyType(key any) error {
+	if len(r.ranges) > 0 && reflect.TypeOf(key) != reflect.TypeOf(r.ranges[0].Start) {
+		return fmt.Errorf("%w: got %T, want %T", ErrInvalidShardKey, key, r.ranges[0].Start)
+	}
+	return nil
+}
+
+// validateAndSortRanges checks endpoints before comparing any boundaries.
+func validateAndSortRanges(ranges []RangeDefinition) error {
+	first := ranges[0].Start
+	switch first.(type) {
+	case int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64, string, time.Time:
+	default:
+		return fmt.Errorf("%w: unsupported range endpoint type %T", ErrInvalidShardKey, first)
+	}
+	want := reflect.TypeOf(first)
 	for i, r := range ranges {
-		// Check that Start < End
+		if reflect.TypeOf(r.Start) != want || reflect.TypeOf(r.End) != want {
+			return fmt.Errorf("%w: range %d has endpoint types %T and %T, want %v", ErrInvalidShardKey, i, r.Start, r.End, want)
+		}
 		if compareValues(r.Start, r.End) >= 0 {
 			return fmt.Errorf("%w: range %d has start >= end", ErrInvalidRangeOrder, i)
 		}
-
-		// Check for consistent types
-		if err := validateComparableTypes(r.Start, r.End); err != nil {
-			return fmt.Errorf("range %d: %w", i, err)
-		}
-
-		// Check shard index is non-negative
 		if r.Shard < 0 {
 			return fmt.Errorf("range %d: shard index cannot be negative", i)
 		}
 	}
 
-	// Check for overlaps (after sorting, each range's end should be <= next range's start)
-	sorted := make([]RangeDefinition, len(ranges))
-	copy(sorted, ranges)
-	sort.Slice(sorted, func(i, j int) bool {
-		return compareValues(sorted[i].Start, sorted[j].Start) < 0
+	sort.Slice(ranges, func(i, j int) bool {
+		return compareValues(ranges[i].Start, ranges[j].Start) < 0
 	})
-
-	for i := 0; i < len(sorted)-1; i++ {
-		if compareValues(sorted[i].End, sorted[i+1].Start) > 0 {
-			return fmt.Errorf("%w: ranges %v and %v overlap", ErrOverlappingRanges, sorted[i], sorted[i+1])
+	for i := 0; i+1 < len(ranges); i++ {
+		if compareValues(ranges[i].End, ranges[i+1].Start) > 0 {
+			return fmt.Errorf("%w: ranges %v and %v overlap", ErrOverlappingRanges, ranges[i], ranges[i+1])
 		}
-	}
-
-	return nil
-}
-
-// validateComparableTypes checks that two values are of comparable types.
-func validateComparableTypes(a, b any) error {
-	typeA := fmt.Sprintf("%T", a)
-	typeB := fmt.Sprintf("%T", b)
-	if typeA != typeB {
-		return fmt.Errorf("incompatible types: %T and %T", a, b)
 	}
 	return nil
 }

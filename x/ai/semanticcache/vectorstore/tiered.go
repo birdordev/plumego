@@ -303,9 +303,16 @@ func (t *TieredBackend) Close() error {
 	return nil
 }
 
-// Stats returns combined statistics.
+// Stats combines L1 entry counts and the tiered hit rate. It reports L1
+// statistics errors to the caller.
 func (t *TieredBackend) Stats(ctx context.Context) (*BackendStats, error) {
-	l1Stats, _ := t.l1.Stats(ctx)
+	l1Stats, err := t.l1.Stats(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("read L1 statistics: %w", err)
+	}
+	if l1Stats == nil {
+		return nil, errors.New("missing L1 statistics")
+	}
 
 	return &BackendStats{
 		Name:         "tiered",

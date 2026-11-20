@@ -5,6 +5,7 @@ package client
 import (
 	"context"
 	"errors"
+	"fmt"
 	"reflect"
 	"sync"
 )
@@ -44,7 +45,9 @@ func New(dial Dialer, defaultOpts ...DialOption) *Pool {
 
 // Dial returns a pooled connection or opens one for target. If the pool closes
 // during a successful dial, the error includes ErrPoolClosed and any error
-// from closing the newly opened connection.
+// from closing the newly opened connection. If a concurrent dial already
+// cached a connection, Dial reuses it after closing the redundant connection.
+// A cleanup failure returns an error and leaves the cached connection available.
 func (p *Pool) Dial(ctx context.Context, target string, opts ...DialOption) (Conn, error) {
 	p.mu.Lock()
 	if p.closed {
@@ -82,7 +85,9 @@ func (p *Pool) Dial(ctx context.Context, target string, opts ...DialOption) (Con
 	}
 	if existing, ok := p.conns[target]; ok {
 		p.mu.Unlock()
-		_ = conn.Close()
+		if err := conn.Close(); err != nil {
+			return nil, fmt.Errorf("close redundant RPC connection: %w", err)
+		}
 		return existing, nil
 	}
 	p.conns[target] = conn

@@ -3,6 +3,7 @@ package tenant
 import (
 	"context"
 	"testing"
+	"testing/synctest"
 	"time"
 )
 
@@ -232,4 +233,46 @@ func TestInMemoryRoutePolicySnapshots(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestInMemoryRoutePolicyCache_RefreshDoesNotEvict(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ctx := t.Context()
+		cache := NewInMemoryRoutePolicyCache(2, time.Hour)
+		set := func(id, strategy string) {
+			t.Helper()
+			if err := cache.Set(ctx, id, RoutePolicy{TenantID: id, Strategy: strategy}); err != nil {
+				t.Fatal(err)
+			}
+		}
+		set("refresh", "original")
+		set("other", "original")
+		time.Sleep(30 * time.Minute)
+		for range 8 {
+			set("refresh", "updated")
+			if policy, ok := cache.Get(ctx, "other"); !ok || policy.Strategy != "original" || len(cache.entries) != 2 {
+				t.Fatal("refresh evicted or changed the other live policy")
+			}
+		}
+
+		time.Sleep(31 * time.Minute)
+		if _, ok := cache.Get(ctx, "other"); ok {
+			t.Fatal("other policy should be expired")
+		}
+		if policy, ok := cache.Get(ctx, "refresh"); !ok || policy.Strategy != "updated" {
+			t.Fatal("refresh did not replace the policy and extend its TTL")
+		}
+		set("refresh", "updated again")
+		if _, exists := cache.entries["other"]; !exists || len(cache.entries) != 2 {
+			t.Fatal("refresh evicted the expired policy before inserting a new key")
+		}
+
+		set("new", "new")
+		if _, exists := cache.entries["other"]; exists || len(cache.entries) != 2 {
+			t.Fatal("insert did not evict the expired policy")
+		}
+		if policy, ok := cache.Get(ctx, "refresh"); !ok || policy.Strategy != "updated again" {
+			t.Fatal("insert evicted the refreshed policy")
+		}
+	})
 }

@@ -398,3 +398,46 @@ func TestPoolDoesNotCacheTypedNilDial(t *testing.T) {
 		}
 	}
 }
+
+func TestPoolReportsRedundantDialCloseError(t *testing.T) {
+	cause := errors.New("test redundant close failure")
+	discarded := &discardedDialConn{err: cause}
+	winner := &fakeConn{}
+	entered, release := make(chan struct{}), make(chan struct{})
+	var calls atomic.Int32
+	pool := New(func(context.Context, string, ...DialOption) (Conn, error) {
+		if calls.Add(1) == 1 {
+			close(entered)
+			<-release
+			return discarded, nil
+		}
+		return winner, nil
+	})
+	defer pool.Close()
+
+	type dialResult struct {
+		conn Conn
+		err  error
+	}
+	result := make(chan dialResult, 1)
+	go func() {
+		conn, err := pool.Dial(t.Context(), "sample")
+		result <- dialResult{conn, err}
+	}()
+	<-entered
+	conn, err := pool.Dial(t.Context(), "sample")
+	close(release)
+	if err != nil || conn != winner {
+		t.Fatalf("winning Dial = %v, %v", conn, err)
+	}
+	got := <-result
+	if got.conn != nil || !errors.Is(got.err, cause) || discarded.calls != 1 {
+		t.Fatalf("redundant Dial = %v, %v, closes=%d", got.conn, got.err, discarded.calls)
+	}
+	if conn, err := pool.Dial(t.Context(), "sample"); err != nil || conn != winner || calls.Load() != 2 {
+		t.Fatalf("cached Dial = %v, %v, calls=%d", conn, err, calls.Load())
+	}
+	if err := pool.Close(); err != nil || discarded.calls != 1 {
+		t.Errorf("Close after redundant failure = %v, discarded closes=%d", err, discarded.calls)
+	}
+}

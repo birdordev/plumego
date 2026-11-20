@@ -226,7 +226,7 @@ func (c *DevTools) RegisterRoutes(r routeRegistrar) error {
 	}
 
 	if err := r.AddRoute(http.MethodPost, DevToolsReloadPath, http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		if err := c.reloadEnv(req.Context()); err != nil {
+		if err := c.reloadEnv(); err != nil {
 			_ = contract.WriteError(w, req, contract.NewErrorBuilder().
 				Type(contract.TypeInternal).
 				Message("env reload failed").
@@ -294,8 +294,8 @@ func (c *DevTools) Health() (string, health.HealthStatus) {
 	return "devtools", status
 }
 
-func (c *DevTools) reloadEnv(ctx context.Context) error {
-	_ = ctx
+// reloadEnv synchronously reads and applies the configured local env file.
+func (c *DevTools) reloadEnv() error {
 	if c.envFile == "" {
 		return fmt.Errorf("env file not configured")
 	}
@@ -340,7 +340,7 @@ func (c *DevTools) watchEnvFile(ctx context.Context) {
 			if result.Err != nil {
 				c.logger.Warn("Devtools env watch error", log.Fields{"error": result.Err})
 			} else if result.Data != nil {
-				if err := c.reloadEnv(ctx); err != nil {
+				if err := c.reloadEnv(); err != nil {
 					c.logger.Warn("Devtools env reload failed", log.Fields{"error": err})
 				}
 			}

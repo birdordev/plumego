@@ -294,3 +294,51 @@ func TestTieredSearchCountsPromotionWithColdHit(t *testing.T) {
 		t.Errorf("promotion statistics = %+v, want %+v", got, want)
 	}
 }
+
+type controlledStatsBackend struct {
+	*MemoryBackend
+	stats func(context.Context) (*BackendStats, error)
+}
+
+func (b *controlledStatsBackend) Stats(ctx context.Context) (*BackendStats, error) {
+	return b.stats(ctx)
+}
+
+func TestTieredStatsHandlesL1Failures(t *testing.T) {
+	cause := errors.New("test statistics failure")
+	hot := &controlledStatsBackend{MemoryBackend: NewMemoryBackend(MemoryConfig{})}
+	store, err := NewTieredBackend(TieredConfig{L1: hot, Dimensions: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := t.Context()
+	hot.stats = func(context.Context) (*BackendStats, error) { return nil, cause }
+	if stats, err := store.Stats(ctx); stats != nil || !errors.Is(err, cause) || !strings.Contains(err.Error(), "L1") {
+		t.Fatalf("Stats with failed L1 = %+v, %v", stats, err)
+	}
+
+	cancelled, cancel := context.WithCancel(ctx)
+	cancel()
+	hot.stats = func(ctx context.Context) (*BackendStats, error) { return nil, ctx.Err() }
+	if stats, err := store.Stats(cancelled); stats != nil || !errors.Is(err, context.Canceled) {
+		t.Fatalf("Stats with cancelled context = %+v, %v", stats, err)
+	}
+
+	hot.stats = func(context.Context) (*BackendStats, error) { return nil, nil }
+	if stats, err := store.Stats(ctx); stats != nil || err == nil {
+		t.Fatalf("Stats with missing L1 data = %+v, %v", stats, err)
+	}
+
+	store.ResetStats()
+	entry := &Entry{ID: "sample", Vector: []float64{1}}
+	if err := store.Add(ctx, entry); err != nil {
+		t.Fatal(err)
+	}
+	if hits, err := store.Search(ctx, entry.Vector, 1, 0.9); err != nil || len(hits) != 1 {
+		t.Fatalf("Search after failed Stats = %v, %v", hits, err)
+	}
+	hot.stats = hot.MemoryBackend.Stats
+	if stats, err := store.Stats(ctx); err != nil || stats.TotalEntries != 1 || stats.HitRate != 1 || stats.Dimensions != 1 {
+		t.Fatalf("Stats after recovery = %+v, %v", stats, err)
+	}
+}

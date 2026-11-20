@@ -1,6 +1,7 @@
 package pubsub
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
@@ -9,6 +10,7 @@ import (
 	"path/filepath"
 	"slices"
 	"testing"
+	"testing/synctest"
 	"time"
 )
 
@@ -714,5 +716,72 @@ func TestPersistentPubSubRotationCanRetryOpeningSegment(t *testing.T) {
 	defer reopened.Close()
 	if !slices.Equal(restored, []string{"first", "second"}) {
 		t.Errorf("restored = %v", restored)
+	}
+}
+
+type asyncFlushTestWriter struct {
+	err   error
+	calls int
+}
+
+func (w *asyncFlushTestWriter) Write(data []byte) (int, error) {
+	w.calls++
+	if w.err != nil {
+		return 0, w.err
+	}
+	return len(data), nil
+}
+
+func TestAsyncWALFlushTracksResultAndLatchesFailure(t *testing.T) {
+	cause := errors.New("test async flush failure")
+	for _, tt := range []struct {
+		name string
+		err  error
+	}{
+		{name: "success"},
+		{name: "failure", err: cause},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				ctx, cancel := newBackgroundLifecycle()
+				writer := &asyncFlushTestWriter{err: tt.err}
+				broker := &PersistentPubSub{
+					InProcBroker: New(),
+					ctx:          ctx,
+					cancel:       cancel,
+					walWriter:    bufio.NewWriter(writer),
+					config:       PersistenceConfig{FlushInterval: time.Second, SnapshotInterval: time.Hour},
+				}
+				defer broker.Close()
+				if _, err := broker.walWriter.WriteString("pending data"); err != nil {
+					t.Fatal(err)
+				}
+				broker.startBackgroundWorkers()
+				synctest.Wait()
+				time.Sleep(time.Second)
+				synctest.Wait()
+				stats := broker.PersistenceStats()
+				if tt.err == nil {
+					if writer.calls != 1 || stats.WALFlushes != 1 || stats.PersistErrors != 0 {
+						t.Fatalf("successful flush: calls=%d, stats=%+v", writer.calls, stats)
+					}
+					return
+				}
+				if writer.calls != 1 || stats.WALFlushes != 0 || stats.PersistErrors != 1 {
+					t.Fatalf("failed flush: calls=%d, stats=%+v", writer.calls, stats)
+				}
+				time.Sleep(3 * time.Second)
+				synctest.Wait()
+				if got := broker.PersistenceStats(); got != stats || writer.calls != 1 {
+					t.Fatalf("later ticks retried or recounted the failed flush: calls=%d stats=%+v", writer.calls, got)
+				}
+				if err := broker.PublishPersistent("test", Message{ID: "later"}, DurabilityAsync); !errors.Is(err, cause) {
+					t.Errorf("later write = %v", err)
+				}
+				if err := broker.Close(); !errors.Is(err, cause) {
+					t.Errorf("Close = %v", err)
+				}
+			})
+		})
 	}
 }

@@ -1,6 +1,7 @@
 package sharding
 
 import (
+	"errors"
 	"testing"
 	"time"
 )
@@ -780,5 +781,56 @@ func TestRangeStrategyValidation(t *testing.T) {
 				t.Errorf("NewRangeStrategy() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
+	}
+}
+
+func TestRangeStrategyRejectsIncompatibleEndpointTypes(t *testing.T) {
+	for _, tt := range []struct {
+		name   string
+		ranges []RangeDefinition
+	}{
+		{"mixed endpoints", []RangeDefinition{{Start: 0, End: int64(10)}}},
+		{"mixed ranges", []RangeDefinition{{Start: 0, End: 10}, {Start: int64(10), End: int64(20)}}},
+		{"unsupported", []RangeDefinition{{Start: 0.0, End: 1.0}}},
+		{"nil", []RangeDefinition{{Start: nil, End: nil}}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if strategy, err := NewRangeStrategy(tt.ranges); strategy != nil || !errors.Is(err, ErrInvalidShardKey) {
+				t.Fatalf("NewRangeStrategy = %v, %v", strategy, err)
+			}
+		})
+	}
+}
+
+func TestRangeStrategyChecksQueryTypesBeforeComparing(t *testing.T) {
+	ranges := []RangeDefinition{
+		{Start: int64(10), End: int64(20), Shard: 1},
+		{Start: int64(0), End: int64(10), Shard: 0},
+	}
+	strategy, err := NewRangeStrategy(ranges)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ranges[0].Shard != 1 {
+		t.Fatal("constructor sorted the caller's slice")
+	}
+	for _, key := range []any{1, "1", []int{1}} {
+		if _, err := strategy.Shard(key, 2); !errors.Is(err, ErrInvalidShardKey) {
+			t.Errorf("Shard(%T) = %v", key, err)
+		}
+	}
+	if _, err := strategy.Shard(nil, 2); !errors.Is(err, ErrNilShardKey) {
+		t.Errorf("Shard(nil) = %v", err)
+	}
+	for _, bounds := range [][2]any{{1, int64(15)}, {int64(1), 15}, {nil, nil}} {
+		if _, err := strategy.ShardRange(bounds[0], bounds[1], 2); !errors.Is(err, ErrInvalidShardKey) {
+			t.Errorf("ShardRange(%T, %T) = %v", bounds[0], bounds[1], err)
+		}
+	}
+	if shard, err := strategy.Shard(int64(10), 2); err != nil || shard != 1 {
+		t.Errorf("Shard at boundary = %d, %v", shard, err)
+	}
+	if shards, err := strategy.ShardRange(int64(15), int64(1), 2); err != nil || len(shards) != 2 || shards[0] != 0 || shards[1] != 1 {
+		t.Errorf("ShardRange with reversed bounds = %v, %v", shards, err)
 	}
 }

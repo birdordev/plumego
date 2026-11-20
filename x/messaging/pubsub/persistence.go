@@ -94,6 +94,7 @@ type PersistentPubSub struct {
 	walSequence atomic.Uint64
 	walSize     atomic.Int64
 	rotationErr error // protected by walMu
+	walFlushErr error // first asynchronous flush failure, protected by walMu
 	walUnusable bool  // protected by walMu
 
 	// Snapshot
@@ -450,7 +451,8 @@ func (pps *PersistentPubSub) verifyWALEntry(entry *walEntry) bool {
 // PublishPersistent publishes a message with specific durability.
 // If WAL rotation cannot finalize the old segment, subsequent persistent
 // writes fail with that error. If only the new segment cannot be opened,
-// writes can continue in the old segment and retry rotation.
+// writes can continue in the old segment and retry rotation. A failed
+// asynchronous flush also prevents subsequent persistent writes.
 func (pps *PersistentPubSub) PublishPersistent(topic string, msg Message, durability DurabilityLevel) error {
 	if pps.closed.Load() {
 		return ErrPersistenceClosed
@@ -483,6 +485,9 @@ func (pps *PersistentPubSub) writeWAL(topic string, msg Message, durability Dura
 		return ErrPersistenceClosed
 	}
 
+	if pps.walFlushErr != nil {
+		return pps.walFlushErr
+	}
 	if pps.walUnusable {
 		return pps.rotationErr
 	}
@@ -562,7 +567,7 @@ func (pps *PersistentPubSub) writeWAL(topic string, msg Message, durability Dura
 // rotateWAL publishes a new segment only after the old one is finalized.
 func (pps *PersistentPubSub) rotateWAL() {
 	pps.walMu.Lock()
-	if pps.closed.Load() || pps.walUnusable {
+	if pps.closed.Load() || pps.walUnusable || pps.walFlushErr != nil {
 		pps.walMu.Unlock()
 		return
 	}
@@ -682,12 +687,7 @@ func (pps *PersistentPubSub) startBackgroundWorkers() {
 		for {
 			select {
 			case <-ticker.C:
-				pps.walMu.Lock()
-				if pps.walWriter != nil {
-					_ = pps.walWriter.Flush()
-					pps.walFlushes.Add(1)
-				}
-				pps.walMu.Unlock()
+				pps.flushAsyncWAL()
 
 			case <-pps.ctx.Done():
 				return
@@ -714,9 +714,23 @@ func (pps *PersistentPubSub) startBackgroundWorkers() {
 	}()
 }
 
+func (pps *PersistentPubSub) flushAsyncWAL() {
+	pps.walMu.Lock()
+	defer pps.walMu.Unlock()
+	if pps.closed.Load() || pps.walWriter == nil || pps.walUnusable || pps.walFlushErr != nil {
+		return
+	}
+	if err := pps.walWriter.Flush(); err != nil {
+		pps.walFlushErr = fmt.Errorf("flush WAL asynchronously: %w", err)
+		pps.persistErrors.Add(1)
+		return
+	}
+	pps.walFlushes.Add(1)
+}
+
 // Close stops the workers, flushes and syncs the WAL, and closes the broker.
-// It reports unresolved rotation and finalization errors without creating a snapshot. Once shutdown
-// has started, subsequent calls return nil without repeating cleanup.
+// It reports unresolved rotation, asynchronous flush, and finalization errors.
+// Once shutdown has started, subsequent calls return nil without repeating cleanup.
 func (pps *PersistentPubSub) Close() error {
 	if pps.closed.Swap(true) {
 		return nil
@@ -731,12 +745,14 @@ func (pps *PersistentPubSub) Close() error {
 	if pps.rotationErr != nil {
 		errs = append(errs, pps.rotationErr)
 	}
-	if pps.walWriter != nil {
+	if pps.walFlushErr != nil {
+		errs = append(errs, pps.walFlushErr)
+	} else if pps.walWriter != nil {
 		if err := pps.walWriter.Flush(); err != nil {
 			errs = append(errs, fmt.Errorf("flush WAL: %w", err))
 		}
-		pps.walWriter = nil
 	}
+	pps.walWriter = nil
 	if pps.walFile != nil {
 		if err := pps.walFile.Sync(); err != nil {
 			errs = append(errs, fmt.Errorf("sync WAL: %w", err))
@@ -768,7 +784,7 @@ func (pps *PersistentPubSub) PersistenceStats() PersistenceStats {
 // PersistenceStats holds persistence metrics
 type PersistenceStats struct {
 	WALWrites      uint64
-	WALFlushes     uint64
+	WALFlushes     uint64 // Successful flushes counted by the write and background paths.
 	WALBytesWrite  int64
 	Snapshots      uint64
 	RestoreCount   uint64

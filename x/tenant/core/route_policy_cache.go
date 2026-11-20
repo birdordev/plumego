@@ -62,7 +62,8 @@ func (c *InMemoryRoutePolicyCache) Get(_ context.Context, tenantID string) (Rout
 	return cloneRoutePolicy(entry.policy), true
 }
 
-// Set stores a policy in the cache.
+// Set stores a policy and refreshes its TTL. Only a new key can trigger
+// eviction when the cache is full.
 func (c *InMemoryRoutePolicyCache) Set(ctx context.Context, tenantID string, policy RoutePolicy) error {
 	if c == nil {
 		return nil
@@ -70,7 +71,7 @@ func (c *InMemoryRoutePolicyCache) Set(ctx context.Context, tenantID string, pol
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	if len(c.entries) >= c.maxSize {
+	if _, exists := c.entries[tenantID]; !exists && len(c.entries) >= c.maxSize {
 		now := time.Now().UTC()
 		evicted := false
 		for key, entry := range c.entries {
