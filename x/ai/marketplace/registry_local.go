@@ -3,6 +3,7 @@ package marketplace
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -262,7 +263,9 @@ func (r *LocalAgentRegistry) Delete(ctx context.Context, id string, ver string) 
 	return nil
 }
 
-// Rate adds a rating for an agent.
+// Rate saves an agent rating before refreshing the aggregate on each version.
+// If some versions fail to update, it returns their errors. Retry with the
+// same user rating to refresh the aggregate without adding a second rating.
 func (r *LocalAgentRegistry) Rate(ctx context.Context, rating *Rating) error {
 	r.mu.Lock()
 
@@ -349,9 +352,11 @@ func (r *LocalAgentRegistry) updateAggregateRating(ctx context.Context, agentID 
 		return err
 	}
 
+	var failures []error
 	for _, ver := range versions {
 		metadata, err := r.Get(ctx, agentID, ver)
 		if err != nil {
+			failures = append(failures, fmt.Errorf("read agent rating target %s@%s: %w", agentID, ver, err))
 			continue
 		}
 
@@ -360,13 +365,16 @@ func (r *LocalAgentRegistry) updateAggregateRating(ctx context.Context, agentID 
 		metadataPath := filepath.Join(r.baseDir, agentID, ver, "metadata.json")
 		data, err := json.MarshalIndent(metadata, "", "  ")
 		if err != nil {
+			failures = append(failures, fmt.Errorf("encode agent rating target %s@%s: %w", agentID, ver, err))
 			continue
 		}
 
-		_ = os.WriteFile(metadataPath, data, 0644)
+		if err := os.WriteFile(metadataPath, data, 0644); err != nil {
+			failures = append(failures, fmt.Errorf("write agent rating target %s@%s: %w", agentID, ver, err))
+		}
 	}
 
-	return nil
+	return errors.Join(failures...)
 }
 
 // ResolveDependencies resolves all dependencies for an agent.
@@ -695,7 +703,9 @@ func (r *LocalWorkflowRegistry) Delete(ctx context.Context, id string, ver strin
 	return nil
 }
 
-// Rate adds a rating for a workflow.
+// Rate saves a workflow rating before refreshing the aggregate on each version.
+// If some versions fail to update, it returns their errors. Retry with the
+// same user rating to refresh the aggregate without adding a second rating.
 func (r *LocalWorkflowRegistry) Rate(ctx context.Context, rating *Rating) error {
 	r.mu.Lock()
 
@@ -782,9 +792,11 @@ func (r *LocalWorkflowRegistry) updateAggregateRating(ctx context.Context, workf
 		return err
 	}
 
+	var failures []error
 	for _, ver := range versions {
 		template, err := r.Get(ctx, workflowID, ver)
 		if err != nil {
+			failures = append(failures, fmt.Errorf("read workflow rating target %s@%s: %w", workflowID, ver, err))
 			continue
 		}
 
@@ -793,11 +805,14 @@ func (r *LocalWorkflowRegistry) updateAggregateRating(ctx context.Context, workf
 		templatePath := filepath.Join(r.baseDir, workflowID, ver, "template.json")
 		data, err := json.MarshalIndent(template, "", "  ")
 		if err != nil {
+			failures = append(failures, fmt.Errorf("encode workflow rating target %s@%s: %w", workflowID, ver, err))
 			continue
 		}
 
-		_ = os.WriteFile(templatePath, data, 0644)
+		if err := os.WriteFile(templatePath, data, 0644); err != nil {
+			failures = append(failures, fmt.Errorf("write workflow rating target %s@%s: %w", workflowID, ver, err))
+		}
 	}
 
-	return nil
+	return errors.Join(failures...)
 }

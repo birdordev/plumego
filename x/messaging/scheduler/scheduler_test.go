@@ -2828,3 +2828,127 @@ func TestCancelRetriesPersistenceWithoutRepeatingDependents(t *testing.T) {
 		}
 	})
 }
+
+type terminalDeleteStore struct {
+	*MemoryStore
+	failures int
+	calls    int
+}
+
+func (s *terminalDeleteStore) Delete(id JobID) error {
+	s.calls++
+	if s.calls <= s.failures {
+		return errors.New("test terminal delete failure")
+	}
+	return s.MemoryStore.Delete(id)
+}
+
+func TestTerminalJobPersistenceCleanup(t *testing.T) {
+	const id JobID = "terminal"
+	for _, tt := range []struct {
+		name       string
+		failures   int
+		maxRuns    int
+		runErr     error
+		wantRuns   int
+		wantState  JobState
+		wantCalls  int
+		wantStored int
+	}{
+		{name: "success", wantRuns: 1, wantState: JobStateCompleted, wantCalls: 1},
+		{name: "transient delete failure", failures: 1, wantRuns: 1, wantState: JobStateCompleted, wantCalls: 2},
+		{name: "persistent delete failure", failures: 2, wantRuns: 1, wantState: JobStateCompleted, wantCalls: 2, wantStored: 1},
+		{name: "MaxRuns", maxRuns: 1, wantRuns: 1, wantState: JobStateCompleted, wantCalls: 1},
+		{name: "retries exhausted", failures: 1, runErr: errors.New("test task failure"), wantRuns: 2, wantState: JobStateFailed, wantCalls: 2},
+		{name: "retries exhausted with persistent delete failure", failures: 2, runErr: errors.New("test task failure"), wantRuns: 2, wantState: JobStateFailed, wantCalls: 2, wantStored: 1},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				store := &terminalDeleteStore{MemoryStore: NewMemoryStore(), failures: tt.failures}
+				var output bytes.Buffer
+				var s *Scheduler
+				logger := saveDiagnosticLogger{
+					StructuredLogger: log.NewLogger(log.LoggerConfig{Format: log.LoggerFormatJSON, Output: &output, ErrorOutput: &output}),
+					onError: func() {
+						if got, ok := s.Status(id); !ok || got.State != tt.wantState {
+							t.Errorf("status during diagnostic = %+v, present = %t", got, ok)
+						}
+					},
+				}
+				s = New(WithWorkers(1), WithStore(store), WithLogger(logger))
+				runs, dependentRuns := 0, 0
+				if _, err := s.Schedule(id, time.Now(), func(context.Context) error {
+					runs++
+					return tt.runErr
+				}, WithTaskName("terminal-task"), WithMaxRuns(tt.maxRuns), WithRetryPolicy(RetryPolicy{MaxAttempts: 2})); err != nil {
+					t.Fatal(err)
+				}
+				if _, err := s.Schedule("dependent", time.Now(), func(context.Context) error {
+					dependentRuns++
+					return nil
+				}, WithDependsOn(DependencyFailureContinue, id)); err != nil {
+					t.Fatal(err)
+				}
+				s.Start()
+				synctest.Wait()
+				if err := s.Stop(t.Context()); err != nil {
+					t.Fatal(err)
+				}
+
+				if status, ok := s.Status(id); !ok || status.State != tt.wantState {
+					t.Errorf("status = %+v, present = %t; want %s", status, ok, tt.wantState)
+				}
+				stored, err := store.List()
+				if err != nil || len(stored) != tt.wantStored || store.calls != tt.wantCalls {
+					t.Errorf("stored = %+v, error = %v, delete calls = %d; want %d records and %d calls", stored, err, store.calls, tt.wantStored, tt.wantCalls)
+				}
+				if runs != tt.wantRuns || dependentRuns != 1 {
+					t.Errorf("job runs = %d, dependent runs = %d; want %d and 1", runs, dependentRuns, tt.wantRuns)
+				}
+				diagnostic := "scheduler terminal job cleanup failed"
+				if tt.wantStored != 0 {
+					if strings.Count(output.String(), diagnostic) != 1 ||
+						!strings.Contains(output.String(), `"job_id":"terminal"`) ||
+						!strings.Contains(output.String(), `"operation":"delete"`) ||
+						!strings.Contains(output.String(), "test terminal delete failure") {
+						t.Errorf("missing cleanup diagnostic: %s", output.String())
+					}
+				} else if strings.Contains(output.String(), diagnostic) {
+					t.Errorf("unexpected cleanup diagnostic: %s", output.String())
+				}
+			})
+		})
+	}
+
+	t.Run("replacement while old job is running", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			store := &terminalDeleteStore{MemoryStore: NewMemoryStore()}
+			s := New(WithWorkers(1), WithStore(store))
+			started, release := make(chan struct{}), make(chan struct{})
+			s.Start()
+			if _, err := s.Schedule(id, time.Now(), func(context.Context) error {
+				close(started)
+				<-release
+				return nil
+			}, WithTaskName("old-task"), WithMaxRuns(1)); err != nil {
+				t.Fatal(err)
+			}
+			<-started
+			_, replaceErr := s.Schedule(id, time.Now().Add(time.Hour), func(context.Context) error {
+				return nil
+			}, ReplaceExisting(), WithTaskName("replacement-task"))
+			close(release)
+			if replaceErr != nil {
+				t.Fatal(replaceErr)
+			}
+			synctest.Wait()
+			if err := s.Stop(t.Context()); err != nil {
+				t.Fatal(err)
+			}
+			stored, err := store.List()
+			if err != nil || len(stored) != 1 || stored[0].TaskName != "replacement-task" || store.calls != 1 {
+				t.Errorf("stored = %+v, error = %v, delete calls = %d; want only replacement and its predecessor's cancellation", stored, err, store.calls)
+			}
+		})
+	})
+}

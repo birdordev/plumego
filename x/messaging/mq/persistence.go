@@ -42,7 +42,7 @@ type PersistenceBackend interface {
 	Close() error
 }
 
-// KVPersistence implements PersistenceBackend using store/kv.
+// KVPersistence implements PersistenceBackend using x/data/kvengine.
 type KVPersistence struct {
 	store  *kvengine.KVStore
 	mu     sync.RWMutex

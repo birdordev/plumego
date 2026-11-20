@@ -1,7 +1,12 @@
 package marketplace
 
 import (
+	"encoding/json"
+	"errors"
+	"io/fs"
+	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -471,5 +476,109 @@ func TestLocalWorkflowRegistry_Basic(t *testing.T) {
 	}
 	if len(retrieved.Steps) != len(template.Steps) {
 		t.Errorf("expected %d steps, got %d", len(template.Steps), len(retrieved.Steps))
+	}
+}
+
+func TestLocalRegistryRatingReportsPartialUpdate(t *testing.T) {
+	for _, kind := range []string{"agent", "workflow"} {
+		t.Run(kind, func(t *testing.T) {
+			const id = "example"
+			ctx := t.Context()
+			root := t.TempDir()
+			var rate func(*Rating) error
+			var filename string
+			versions := []string{"1.0.0", "2.0.0"}
+			if kind == "agent" {
+				registry, err := NewLocalAgentRegistry(root)
+				if err != nil {
+					t.Fatal(err)
+				}
+				for _, version := range versions {
+					if err := registry.Publish(ctx, &AgentMetadata{ID: id, Version: version}); err != nil {
+						t.Fatal(err)
+					}
+				}
+				rate = func(rating *Rating) error { return registry.Rate(ctx, rating) }
+				filename = "metadata.json"
+			} else {
+				registry, err := NewLocalWorkflowRegistry(root)
+				if err != nil {
+					t.Fatal(err)
+				}
+				for _, version := range versions {
+					if err := registry.Publish(ctx, &WorkflowTemplate{ID: id, Version: version}); err != nil {
+						t.Fatal(err)
+					}
+				}
+				rate = func(rating *Rating) error { return registry.Rate(ctx, rating) }
+				filename = "template.json"
+			}
+
+			path := func(version string) string { return filepath.Join(root, id, version, filename) }
+			checkRating := func(version string, want float64) {
+				t.Helper()
+				data, err := os.ReadFile(path(version))
+				if err != nil {
+					t.Fatal(err)
+				}
+				var stored struct{ Rating float64 }
+				if err := json.Unmarshal(data, &stored); err != nil {
+					t.Fatal(err)
+				}
+				if stored.Rating != want {
+					t.Errorf("version %s rating = %v, want %v", version, stored.Rating, want)
+				}
+			}
+
+			rating := &Rating{TargetID: id, UserID: "reviewer", Score: 2}
+			if err := rate(rating); err != nil {
+				t.Fatal(err)
+			}
+			checkRating("1.0.0", 2)
+			checkRating("2.0.0", 2)
+
+			badPath := path("1.0.0")
+			original, err := os.ReadFile(badPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(badPath, []byte("{"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			rating.Score = 4
+			var syntaxErr *json.SyntaxError
+			if err := rate(rating); !errors.As(err, &syntaxErr) || !strings.Contains(err.Error(), id+"@1.0.0") {
+				t.Errorf("Rate with corrupt version = %v, want versioned JSON syntax error", err)
+			}
+			checkRating("2.0.0", 4)
+			if err := os.WriteFile(badPath, original, 0600); err != nil {
+				t.Fatal(err)
+			}
+			if err := rate(rating); err != nil {
+				t.Fatal(err)
+			}
+			checkRating("1.0.0", 4)
+			checkRating("2.0.0", 4)
+
+			t.Run("read-only version", func(t *testing.T) {
+				if err := os.Chmod(badPath, 0400); err != nil {
+					t.Fatal(err)
+				}
+				writable, err := os.OpenFile(badPath, os.O_WRONLY, 0)
+				if err == nil {
+					_ = writable.Close()
+					t.Skip("filesystem permissions allow writes to the read-only fixture")
+				}
+				if !errors.Is(err, fs.ErrPermission) {
+					t.Fatal(err)
+				}
+				rating.Score = 5
+				if err := rate(rating); !errors.Is(err, fs.ErrPermission) || !strings.Contains(err.Error(), id+"@1.0.0") {
+					t.Errorf("Rate with read-only version = %v, want versioned write error", err)
+				}
+				checkRating("1.0.0", 4)
+				checkRating("2.0.0", 5)
+			})
+		})
 	}
 }

@@ -290,6 +290,10 @@ func (s *Scheduler) execute(j *job, enqueuedAt time.Time) {
 		s.metricsSink.ObserveRun(j.id, elapsed, nil, queueDelay)
 	}
 	s.mu.Lock()
+	if s.jobs[j.id] != j || j.canceled.Load() {
+		s.mu.Unlock()
+		return
+	}
 	j.nextAttempt = 1
 	j.runCount++
 	maxRunsReached := j.options.MaxRuns > 0 && j.runCount >= int64(j.options.MaxRuns)
@@ -308,25 +312,24 @@ func (s *Scheduler) execute(j *job, enqueuedAt time.Time) {
 		s.pushScheduleItemLocked(j, s.clock.Now(), true)
 		s.wakeScheduler()
 	}
+	cleanupErr := s.deleteTerminalJobLocked(j)
 	s.mu.Unlock()
 
 	if j.kind == jobKindCron && !pending && !maxRunsReached {
 		s.scheduleNext(j, start)
 	}
-	if j.kind == jobKindDelay && s.store != nil {
-		_ = s.store.Delete(j.id)
-	}
+	s.reportTerminalCleanupFailure(j.id, cleanupErr)
 
 	// Trigger dependent jobs on success. Must happen BEFORE retireJobLocked so
 	// that the dependents map entry for this job is still intact.
-	s.triggerDependentJobs(j.id)
+	s.triggerDependentJobs(j)
 
 	// Retire the job after dependents have been triggered. retireJobLocked only
 	// stops future scheduling; it preserves the Completed state and does not
 	// re-notify dependents (they were already handled above as a success).
 	if maxRunsReached {
 		s.mu.Lock()
-		s.retireJobLocked(j.id, j)
+		s.retireJobLocked(j)
 		s.mu.Unlock()
 	}
 }

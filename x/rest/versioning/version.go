@@ -178,7 +178,7 @@ func Middleware(config Config) mw.Middleware {
 	// Pre-compile Accept header regex at construction time
 	var acceptRe *regexp.Regexp
 	if cfg.Strategy == StrategyAcceptHeader {
-		pattern := regexp.QuoteMeta(cfg.VendorPrefix) + `\.v(\d+)(?:\+|;|$)`
+		pattern := regexp.QuoteMeta(cfg.VendorPrefix) + `\.v(\d+)(?:\+|;|[ \t]*(?:,|$))`
 		acceptRe = regexp.MustCompile(pattern)
 	}
 
@@ -261,7 +261,7 @@ func extractVersion(r *http.Request, config Config, acceptRe *regexp.Regexp) int
 
 // extractFromAccept extracts version from Accept header using a pre-compiled regex
 func extractFromAccept(r *http.Request, re *regexp.Regexp) int {
-	accept := r.Header.Get("Accept")
+	accept := strings.Join(r.Header.Values("Accept"), ",")
 	if accept == "" || re == nil {
 		return 0
 	}

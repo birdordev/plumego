@@ -8,6 +8,9 @@ import "time"
 type Store interface {
 	Save(job StoredJob) error
 	// Delete removes a persisted job. Cancel may retry deletion after an error.
+	// Terminal execution cleanup retries once immediately. If both attempts
+	// fail, the configured logger reports the failure and a remaining record
+	// may be restored and executed again after restart.
 	Delete(id JobID) error
 	// List may return readable jobs together with an error for other records.
 	List() ([]StoredJob, error)

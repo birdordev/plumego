@@ -73,8 +73,13 @@ func (s *Scheduler) handleFailure(j *job, err error) {
 func (s *Scheduler) handleRetriesExhausted(j *job, err error, attempts int, deadLetterCb func(context.Context, JobID, error)) {
 	if j.kind == jobKindDelay {
 		s.mu.Lock()
-		s.setJobStateLocked(j, JobStateFailed)
+		var cleanupErr error
+		if s.jobs[j.id] == j && !j.canceled.Load() {
+			s.setJobStateLocked(j, JobStateFailed)
+			cleanupErr = s.deleteTerminalJobLocked(j)
+		}
 		s.mu.Unlock()
+		s.reportTerminalCleanupFailure(j.id, cleanupErr)
 	}
 	if s.dlq != nil {
 		s.addToDeadLetterQueue(j, err, attempts)
@@ -85,15 +90,9 @@ func (s *Scheduler) handleRetriesExhausted(j *job, err error, attempts int, dead
 	if j.kind == jobKindCron {
 		s.scheduleNext(j, s.clock.Now())
 	}
-	if j.kind == jobKindDelay && s.store != nil {
-		_ = s.store.Delete(j.id)
-	}
 	// Only notify dependents of failure after all retry attempts are exhausted.
 	// Moving this here (rather than on every failure) prevents dependents from
 	// being marked failed when the job succeeds on a subsequent retry attempt.
-	s.mu.Lock()
-	s.dependencyStatus[j.id] = false
-	s.mu.Unlock()
 	s.handleDependentJobsOnFailure(j)
 }
 

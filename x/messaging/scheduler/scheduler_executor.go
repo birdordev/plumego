@@ -1,6 +1,10 @@
 package scheduler
 
-import "github.com/birdordev/plumego/log"
+import (
+	"errors"
+
+	"github.com/birdordev/plumego/log"
+)
 
 func (s *Scheduler) logError(msg string, err error) {
 	if s.logger == nil || err == nil {
@@ -28,6 +32,28 @@ func (s *Scheduler) persistJobLocked(j *job) error {
 		DependencyPolicy: j.options.DependencyPolicy,
 	}
 	return s.store.Save(job)
+}
+
+// deleteTerminalJobLocked serializes deletion with replacement and persistence
+// of a job with the same ID. Call with s.mu held.
+func (s *Scheduler) deleteTerminalJobLocked(j *job) error {
+	if s.store == nil || j.kind != jobKindDelay || j.options.TaskName == "" || s.jobs[j.id] != j {
+		return nil
+	}
+	if err := s.store.Delete(j.id); err != nil {
+		if retryErr := s.store.Delete(j.id); retryErr != nil {
+			return errors.Join(err, retryErr)
+		}
+	}
+	return nil
+}
+
+func (s *Scheduler) reportTerminalCleanupFailure(id JobID, err error) {
+	if err != nil && s.logger != nil {
+		s.logger.Error("scheduler terminal job cleanup failed", log.Fields{
+			"job_id": id, "operation": "delete", "error": err.Error(),
+		})
+	}
 }
 
 func (s *Scheduler) loadPersisted() {
@@ -102,10 +128,14 @@ func (s *Scheduler) lookupTask(name string) TaskFunc {
 }
 
 // triggerDependentJobs checks and triggers jobs that depend on the completed job.
-func (s *Scheduler) triggerDependentJobs(completedJobID JobID) {
+func (s *Scheduler) triggerDependentJobs(completedJob *job) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	completedJobID := completedJob.id
+	if s.jobs[completedJobID] != completedJob || completedJob.canceled.Load() {
+		return
+	}
 	dependentIDs := s.dependents[completedJobID]
 	if len(dependentIDs) == 0 {
 		return
@@ -136,6 +166,10 @@ func (s *Scheduler) handleDependentJobsOnFailure(failedJob *job) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	if s.jobs[failedJob.id] != failedJob || failedJob.canceled.Load() {
+		return
+	}
+	s.dependencyStatus[failedJob.id] = false
 	dependentIDs := s.dependents[failedJob.id]
 	if len(dependentIDs) == 0 {
 		return
@@ -212,18 +246,18 @@ func (s *Scheduler) finishJobCancellationLocked(id JobID, j *job) {
 //   - Does not notify dependents via DependencyFailurePolicy; the caller has
 //     already set dependencyStatus[id]=true and triggerDependentJobs will handle
 //     them as a normal successful completion.
-//   - Still cleans up the schedule queue slot, store entry, and dependency maps
+//   - Still cleans up the schedule queue slot and dependency maps
 //     so the job does not run again.
 //
 // Must be called with s.mu held.
-func (s *Scheduler) retireJobLocked(id JobID, j *job) {
+func (s *Scheduler) retireJobLocked(j *job) {
+	if s.jobs[j.id] != j || j.canceled.Load() {
+		return
+	}
 	j.canceled.Store(true)
 	// State is already JobStateCompleted — do not override.
-	if s.store != nil {
-		_ = s.store.Delete(id)
-	}
 	// Clean up dependency tracking (same as cancelJobLocked, minus dependent notification).
-	s.cleanupDependencyTrackingLocked(id, j)
+	s.cleanupDependencyTrackingLocked(j.id, j)
 }
 
 // notifyDependentsCanceledLocked applies DependencyFailurePolicy to each job

@@ -5,6 +5,7 @@ package sqlx
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 
 	storedb "github.com/birdordev/plumego/store/db"
@@ -40,15 +41,19 @@ var (
 	_ Tx         = (*tx)(nil)
 )
 
-// New opens a SQL database and verifies connectivity with Ping.
+// New opens a SQL database and verifies connectivity with Ping. If Ping
+// fails, New closes the handle and returns any cleanup error with the failure.
 func New(driverName, dataSourceName string) (*DB, error) {
 	opened, err := sql.Open(driverName, dataSourceName)
 	if err != nil {
 		return nil, fmt.Errorf("%w: open sql database: %w", storedb.ErrConnectionFailed, err)
 	}
 	if err := opened.Ping(); err != nil {
-		_ = opened.Close()
-		return nil, fmt.Errorf("%w: ping sql database: %w", storedb.ErrConnectionFailed, err)
+		pingErr := fmt.Errorf("%w: ping sql database: %w", storedb.ErrConnectionFailed, err)
+		if closeErr := opened.Close(); closeErr != nil {
+			return nil, errors.Join(pingErr, fmt.Errorf("close sql database after failed ping: %w", closeErr))
+		}
+		return nil, pingErr
 	}
 	return NewWithDB(opened), nil
 }

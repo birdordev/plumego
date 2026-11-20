@@ -5,8 +5,12 @@ import (
 	"database/sql"
 	"database/sql/driver"
 	"errors"
+	"fmt"
 	"io"
+	"sync/atomic"
 	"testing"
+
+	storedb "github.com/birdordev/plumego/store/db"
 )
 
 func init() {
@@ -89,6 +93,60 @@ func TestBeginTxCommitAndRollbackSucceed(t *testing.T) {
 func TestNilDBQueryReturnsError(t *testing.T) {
 	if _, err := (*DB)(nil).Query(t.Context(), "select 1"); err == nil {
 		t.Fatal("Query() error = nil, want error")
+	}
+}
+
+var pingTestDriverID atomic.Uint64
+
+type pingTestDriver struct{ conn *pingTestConn }
+
+func (d pingTestDriver) Open(string) (driver.Conn, error) { return d.conn, nil }
+
+type pingTestConn struct {
+	testConn
+	pingErr, closeErr error
+	closeCalls        int
+}
+
+func (c *pingTestConn) Ping(context.Context) error { return c.pingErr }
+
+func (c *pingTestConn) Close() error {
+	c.closeCalls++
+	return c.closeErr
+}
+
+func TestNewReportsPingCleanupFailure(t *testing.T) {
+	pingErr := errors.New("test ping failure")
+	closeErr := errors.New("test close failure")
+	for _, tt := range []struct {
+		name     string
+		pingErr  error
+		closeErr error
+	}{
+		{name: "ping succeeds"},
+		{name: "ping fails", pingErr: pingErr},
+		{name: "ping and cleanup fail", pingErr: pingErr, closeErr: closeErr},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			conn := &pingTestConn{pingErr: tt.pingErr, closeErr: tt.closeErr}
+			driverName := fmt.Sprintf("plumego-sqlx-test-ping-%d", pingTestDriverID.Add(1))
+			sql.Register(driverName, pingTestDriver{conn: conn})
+			db, err := New(driverName, "")
+			if tt.pingErr == nil {
+				if db == nil || err != nil || conn.closeCalls != 0 {
+					t.Fatalf("New = %v, %v, close calls = %d; want open handle", db, err, conn.closeCalls)
+				}
+				if err := db.Close(); err != nil || conn.closeCalls != 1 {
+					t.Fatalf("Close = %v, close calls = %d", err, conn.closeCalls)
+				}
+				return
+			}
+
+			if db != nil || !errors.Is(err, storedb.ErrConnectionFailed) || !errors.Is(err, tt.pingErr) ||
+				errors.Is(err, closeErr) != (tt.closeErr != nil) || conn.closeCalls != 1 {
+				t.Fatalf("New = %v, %v, close calls = %d; want connection and ping errors and cleanup error %v", db, err, conn.closeCalls, tt.closeErr)
+			}
+		})
 	}
 }
 

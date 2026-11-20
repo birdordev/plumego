@@ -44,6 +44,10 @@ To report registration errors during startup, build the controller with
 `NewDBResource` and call `RegisterResourceRoutes`. Stop assembly and discard
 the router on failure because some routes may have been installed.
 
+For API versioning via `Accept`, `x/rest/versioning` reads all field lines in
+order and uses the first matching vendor media range. Requests without a match
+use the configured default version.
+
 ## Main risks when changing this module
 
 - non-canonical resource route registration

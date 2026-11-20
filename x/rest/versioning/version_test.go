@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"testing"
 
 	"github.com/birdordev/plumego/contract"
@@ -483,6 +484,43 @@ func TestVersionConfigOwnsSupportedVersions(t *testing.T) {
 			check(versions, func() { versions[0] = 3 })
 			check(nil, func() {})
 			check([]int{}, func() {})
+		})
+	}
+}
+
+func TestStrategyAcceptHeaderMultipleLines(t *testing.T) {
+	for _, tt := range []struct {
+		name    string
+		accept  []string
+		version int
+		status  int
+	}{
+		{"version on second line", []string{"application/json", "application/vnd.api.v2+json"}, 2, http.StatusNoContent},
+		{"combined field", []string{"application/json, application/vnd.api.v2+json"}, 2, http.StatusNoContent},
+		{"first match wins", []string{"application/vnd.api.v3+json", "application/vnd.api.v2+json"}, 3, http.StatusNoContent},
+		{"first match without suffix", []string{"application/vnd.api.v3 ", "application/vnd.api.v2+json"}, 3, http.StatusNoContent},
+		{"unsupported version on later line", []string{"application/json", "application/vnd.api.v4+json"}, 0, http.StatusNotAcceptable},
+		{"no matching version", []string{"application/json", "text/plain"}, 1, http.StatusNoContent},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			seen := 0
+			h := Middleware(Config{SupportedVersions: []int{1, 2, 3}})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				seen = VersionFromContext(r.Context())
+				w.WriteHeader(http.StatusNoContent)
+			}))
+			r := httptest.NewRequest(http.MethodGet, "/items", nil)
+			for _, value := range tt.accept {
+				r.Header.Add("Accept", value)
+			}
+			w := httptest.NewRecorder()
+			h.ServeHTTP(w, r)
+			wantHeader := ""
+			if tt.version != 0 {
+				wantHeader = strconv.Itoa(tt.version)
+			}
+			if header := w.Header().Get("X-API-Version"); w.Code != tt.status || seen != tt.version || header != wantHeader {
+				t.Errorf("status=%d handler version=%d header=%q; want %d, %d, %q", w.Code, seen, header, tt.status, tt.version, wantHeader)
+			}
 		})
 	}
 }
