@@ -3,8 +3,10 @@ package distributed
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
+	"testing/synctest"
 
 	"github.com/birdordev/plumego/x/ai/orchestration"
 )
@@ -359,5 +361,86 @@ func TestRemoteStepStateSnapshot(t *testing.T) {
 	}
 	if got, _ := wf.GetState("output"); got != "success" {
 		t.Fatalf("parallel output: %v", got)
+	}
+}
+
+func TestDistributedParallelStepHonorsMaxWorkers(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		limit      int
+		firstBatch int
+		cancel     bool
+	}{
+		{"one", 1, 1, false},
+		{"two", 2, 2, false},
+		{"default", 3, 3, false},
+		{"unlimited", 0, 3, false},
+		{"canceled", 1, 1, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				ctx, cancel := context.WithCancel(t.Context())
+				defer cancel()
+				dispatched := make(chan *WorkflowTask, 3)
+				q := &remoteStepTestQueue{
+					results: make(chan *TaskResult, 3),
+					enqueue: func(task *WorkflowTask) error { dispatched <- task; return nil },
+				}
+				wf := orchestration.NewWorkflow("wf", "workflow", "")
+				step := testDistributedParallelStep(q, &orchestration.Agent{}, &orchestration.Agent{}, &orchestration.Agent{})
+				step.OutputKeys = []string{"first", "second", "third"}
+				if tc.name != "default" {
+					step.MaxWorkers = tc.limit
+				}
+				done := make(chan error, 1)
+				go func() {
+					result, err := step.Execute(ctx, wf)
+					if err == nil && result.Output != "result-0" {
+						err = fmt.Errorf("representative output = %v", result.Output)
+					}
+					done <- err
+				}()
+				synctest.Wait()
+				if got := len(dispatched); got != tc.firstBatch {
+					t.Fatalf("before any results, dispatched %d tasks, want %d", got, tc.firstBatch)
+				}
+				complete := func(task *WorkflowTask) {
+					q.results <- &TaskResult{TaskID: task.ID, AgentResult: &orchestration.AgentResult{
+						Output: fmt.Sprintf("result-%d", task.StepIndex),
+					}}
+				}
+				if tc.cancel {
+					cancel()
+					if err := <-done; !errors.Is(err, context.Canceled) || len(dispatched) != 1 || len(wf.SnapshotState()) != 0 {
+						t.Fatalf("canceled execution error = %v, remaining dispatches = %d", err, len(dispatched))
+					}
+					return
+				}
+				batch := make([]*WorkflowTask, tc.firstBatch)
+				for i := range batch {
+					batch[i] = <-dispatched
+				}
+				for completed := 0; completed < 3; completed++ {
+					last := len(batch) - 1
+					complete(batch[last])
+					batch = batch[:last]
+					synctest.Wait()
+					for len(dispatched) > 0 {
+						batch = append(batch, <-dispatched)
+					}
+					if want := min(tc.firstBatch, 2-completed); len(batch) != want {
+						t.Fatalf("after %d results, in flight = %d, want %d", completed+1, len(batch), want)
+					}
+				}
+				if err := <-done; err != nil {
+					t.Fatal(err)
+				}
+				for i, key := range step.OutputKeys {
+					if got, _ := wf.GetState(key); got != fmt.Sprintf("result-%d", i) {
+						t.Errorf("output %s = %v", key, got)
+					}
+				}
+			})
+		})
 	}
 }

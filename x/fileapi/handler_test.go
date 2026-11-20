@@ -1273,3 +1273,44 @@ func TestUploadMultipartFileOwnership(t *testing.T) {
 		})
 	}
 }
+
+func TestGetURLPropagatesRequestCancellation(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		request := withRouteParam(httptest.NewRequest(http.MethodGet, "/files/asset/url", nil), "id", "asset")
+		ctx, cancel := context.WithCancel(tenantcore.WithTenantID(request.Context(), "sample"))
+		defer cancel()
+		entered := make(chan struct{})
+		observed := make(chan error, 1)
+		storage := &mockStorage{getURLFunc: func(got context.Context, path string, expiry time.Duration) (string, error) {
+			if got != ctx || path != "test/path.txt" || expiry != 15*time.Minute {
+				t.Errorf("GetURL storage inputs: ctx matches = %t, path = %q, expiry = %v", got == ctx, path, expiry)
+			}
+			close(entered)
+			<-got.Done()
+			observed <- got.Err()
+			return "", errors.Join(got.Err(), errors.New("storage diagnostic"))
+		}}
+		h := NewHandler(storage, &mockMetadataManager{})
+		rec := &downloadStatusRecorder{ResponseRecorder: httptest.NewRecorder()}
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			h.GetURL(rec, request.WithContext(ctx))
+		}()
+		<-entered
+		cancel()
+		synctest.Wait()
+		select {
+		case <-done:
+		default:
+			t.Fatal("GetURL did not return after cancellation")
+		}
+		if err := <-observed; !errors.Is(err, context.Canceled) {
+			t.Fatalf("storage observed %v", err)
+		}
+		if rec.Code != http.StatusInternalServerError || len(rec.statuses) != 1 ||
+			!strings.Contains(rec.Body.String(), "failed to generate url") || strings.Contains(rec.Body.String(), "storage diagnostic") {
+			t.Fatalf("GetURL response = %v, %q", rec.statuses, rec.Body.String())
+		}
+	})
+}

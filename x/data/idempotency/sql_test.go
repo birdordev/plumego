@@ -1,6 +1,7 @@
 package idempotency
 
 import (
+	"context"
 	"database/sql"
 	"database/sql/driver"
 	"encoding/json"
@@ -25,7 +26,9 @@ func (d *mockDriver) Open(name string) (driver.Conn, error) {
 
 // mockDB holds rows keyed by idempotency key.
 type mockDB struct {
-	rows map[string]mockRow
+	rows           map[string]mockRow
+	deleteErr      error
+	deleteCountErr error
 }
 
 type mockRow struct {
@@ -134,8 +137,26 @@ func (s *mockStmt) Exec(args []driver.Value) (driver.Result, error) {
 		if len(args) < 1 {
 			return nil, errors.New("mock: not enough args for DELETE")
 		}
+		if db.deleteErr != nil {
+			return nil, db.deleteErr
+		}
 		key := args[0].(string)
+		row, exists := db.rows[key]
+		if !exists {
+			return mockResult{0}, nil
+		}
+		if len(args) == 2 {
+			if !strings.Contains(q, "AND EXPIRES_AT <=") {
+				return nil, errors.New("mock: DELETE missing expiry condition")
+			}
+			if row.expiresAt == nil || row.expiresAt.After(args[1].(time.Time)) {
+				return mockResult{0}, nil
+			}
+		}
 		delete(db.rows, key)
+		if db.deleteCountErr != nil {
+			return mockCountError{db.deleteCountErr}, nil
+		}
 		return mockResult{1}, nil
 	}
 	return mockResult{0}, nil
@@ -160,6 +181,11 @@ type mockResult struct{ affected int64 }
 
 func (r mockResult) LastInsertId() (int64, error) { return 0, nil }
 func (r mockResult) RowsAffected() (int64, error) { return r.affected, nil }
+
+type mockCountError struct{ error }
+
+func (r mockCountError) LastInsertId() (int64, error) { return 0, nil }
+func (r mockCountError) RowsAffected() (int64, error) { return 0, r.error }
 
 type mockRows struct {
 	rows []mockRow
@@ -435,10 +461,7 @@ func TestSQLStore_BuildInsert_Postgres(t *testing.T) {
 		CreatedAt:   time.Now(),
 		UpdatedAt:   time.Now(),
 	}
-	query, args, err := s.buildInsert(rec)
-	if err != nil {
-		t.Fatalf("buildInsert: %v", err)
-	}
+	query, args := s.insertStatement(s.cfg.Table, rec)
 	if !strings.Contains(query, "$1") {
 		t.Fatalf("postgres query should use $N placeholders: %s", query)
 	}
@@ -450,10 +473,7 @@ func TestSQLStore_BuildInsert_Postgres(t *testing.T) {
 func TestSQLStore_BuildInsert_MySQL(t *testing.T) {
 	s := NewSQLStore(nil, SQLConfig{Dialect: DialectMySQL, Table: "keys"})
 	rec := Record{Key: "k", Status: StatusInProgress, CreatedAt: time.Now(), UpdatedAt: time.Now()}
-	query, args, err := s.buildInsert(rec)
-	if err != nil {
-		t.Fatalf("buildInsert: %v", err)
-	}
+	query, args := s.insertStatement(s.cfg.Table, rec)
 	if !strings.Contains(query, "?") {
 		t.Fatalf("mysql query should use ? placeholders: %s", query)
 	}
@@ -464,10 +484,7 @@ func TestSQLStore_BuildInsert_MySQL(t *testing.T) {
 
 func TestSQLStore_DefaultDialectIsPostgres(t *testing.T) {
 	s := NewSQLStore(nil, SQLConfig{Table: "keys"})
-	query, _, err := s.buildInsert(Record{Key: "k"})
-	if err != nil {
-		t.Fatalf("buildInsert: %v", err)
-	}
+	query, _ := s.insertStatement(s.cfg.Table, Record{Key: "k"})
 	if !strings.Contains(query, "$1") {
 		t.Fatalf("zero-value dialect should default to postgres placeholders: %s", query)
 	}
@@ -509,5 +526,145 @@ func TestRecord_JSONRoundTrip(t *testing.T) {
 	}
 	if got.Key != rec.Key || got.Status != rec.Status {
 		t.Fatalf("round-trip mismatch: %+v", got)
+	}
+}
+
+func TestSQLStoreReclaimsOnlyExpiredKeys(t *testing.T) {
+	for _, dialect := range []Dialect{DialectPostgres, DialectMySQL} {
+		t.Run(string(dialect), func(t *testing.T) {
+			_, db := newSQLStore(t)
+			// The in-memory driver stores its rows on the connection.
+			db.SetMaxOpenConns(1)
+			now := time.Now()
+			store := NewSQLStore(db, SQLConfig{Dialect: dialect, Now: func() time.Time { return now }})
+			ctx := t.Context()
+
+			for _, record := range []Record{
+				{Key: "expired", ExpiresAt: now.Add(time.Minute)},
+				{Key: "active", ExpiresAt: now.Add(time.Hour)},
+				{Key: "permanent"},
+			} {
+				if claimed, err := store.PutIfAbsent(ctx, record); err != nil || !claimed {
+					t.Fatalf("seed %q = %t, %v", record.Key, claimed, err)
+				}
+			}
+			now = now.Add(time.Minute)
+			for _, key := range []string{"active", "permanent"} {
+				if claimed, err := store.PutIfAbsent(ctx, Record{Key: key}); err != nil || claimed {
+					t.Fatalf("reclaim %q = %t, %v", key, claimed, err)
+				}
+			}
+
+			type claimResult struct {
+				claimed bool
+				err     error
+			}
+			start := make(chan struct{})
+			results := make(chan claimResult, 2)
+			for range 2 {
+				go func() {
+					<-start
+					claimed, err := store.PutIfAbsent(ctx, Record{Key: "expired", RequestHash: "replacement"})
+					results <- claimResult{claimed, err}
+				}()
+			}
+			close(start)
+			winners := 0
+			for range 2 {
+				result := <-results
+				if result.err != nil {
+					t.Fatal(result.err)
+				}
+				if result.claimed {
+					winners++
+				}
+			}
+			record, found, err := store.Get(ctx, "expired")
+			if winners != 1 || err != nil || !found || record.RequestHash != "replacement" {
+				t.Fatalf("winners = %d, read = %+v, %t, %v", winners, record, found, err)
+			}
+			if err := store.deleteExpired(ctx, store.cfg.Table, "expired", now); err != nil {
+				t.Fatal(err)
+			}
+			if _, found, err := store.Get(ctx, "expired"); !found || err != nil {
+				t.Fatalf("stale cleanup removed a valid claim: %t, %v", found, err)
+			}
+		})
+	}
+}
+
+func TestSQLStoreUsesConsistentKeys(t *testing.T) {
+	store, db := newSQLStore(t)
+	ctx := t.Context()
+
+	// Simulate an older raw key. Upgrading does not merge or delete that row.
+	query, args := store.insertStatement(store.cfg.Table, Record{Key: " order ", Status: StatusInProgress, RequestHash: "legacy"})
+	if _, err := db.ExecContext(ctx, query, args...); err != nil {
+		t.Fatal(err)
+	}
+	const key = " order "
+	if inserted, err := store.PutIfAbsent(ctx, Record{Key: key, RequestHash: "canonical"}); !inserted || err != nil {
+		t.Fatalf("PutIfAbsent = %t, %v", inserted, err)
+	}
+	if inserted, err := store.PutIfAbsent(ctx, Record{Key: "order"}); inserted || err != nil {
+		t.Fatalf("second canonical claim = %t, %v", inserted, err)
+	}
+	if err := store.Complete(ctx, key, []byte("done")); err != nil {
+		t.Fatal(err)
+	}
+	record, found, err := store.Get(ctx, key)
+	if !found || err != nil || record.Key != "order" || record.RequestHash != "canonical" ||
+		record.Status != StatusCompleted || string(record.Response) != "done" {
+		t.Fatalf("Get = %+v, %t, %v", record, found, err)
+	}
+	if err := store.Delete(ctx, key); err != nil {
+		t.Fatal(err)
+	}
+	var legacyKey string
+	err = db.QueryRowContext(ctx, "SELECT key, request_hash, status, response, created_at, updated_at, expires_at FROM idempotency_keys WHERE key = ?", key).Scan(
+		&legacyKey, new(string), new(string), new([]byte), new(time.Time), new(time.Time), new(sql.NullTime),
+	)
+	if err != nil || legacyKey != key {
+		t.Fatalf("legacy key = %q, %v", legacyKey, err)
+	}
+}
+
+func TestSQLStoreDeleteReportsMissingAndDriverErrors(t *testing.T) {
+	store, db := newSQLStore(t)
+	ctx := t.Context()
+	if err := store.Delete(ctx, "missing"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("Delete missing = %v", err)
+	}
+	if inserted, err := store.PutIfAbsent(ctx, Record{Key: "present"}); !inserted || err != nil {
+		t.Fatalf("seed = %t, %v", inserted, err)
+	}
+	injected := errors.New("cannot read affected row count")
+	withMock := func(ctx context.Context, set func(*mockDB)) {
+		t.Helper()
+		conn, err := db.Conn(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer conn.Close()
+		if err := conn.Raw(func(raw any) error {
+			set(raw.(*mockConn).db)
+			return nil
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	withMock(ctx, func(db *mockDB) { db.deleteErr = injected })
+	if err := store.Delete(ctx, "present"); !errors.Is(err, injected) {
+		t.Fatalf("Delete execution error = %v", err)
+	}
+	withMock(ctx, func(db *mockDB) {
+		db.deleteErr = nil
+		db.deleteCountErr = injected
+	})
+	if err := store.Delete(ctx, "present"); !errors.Is(err, injected) {
+		t.Fatalf("Delete row count error = %v", err)
+	}
+	if err := store.Delete(ctx, "present"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("Delete again = %v", err)
 	}
 }

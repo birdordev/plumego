@@ -405,3 +405,36 @@ func TestSlidingWindowQuotaManager_RetryAfterAccuracy(t *testing.T) {
 		t.Errorf("expected RetryAfter ~%v, got %v", expectedRetryAfter, result.RetryAfter)
 	}
 }
+
+func TestSlidingWindowQuotaDeleteTenantIsolatesState(t *testing.T) {
+	config := NewInMemoryConfigManager()
+	for _, tenant := range []string{"first", "second"} {
+		config.SetTenantConfig(Config{
+			TenantID: tenant,
+			Quota: QuotaConfig{Limits: []QuotaLimit{{
+				Window: QuotaWindowMinute, Requests: 2, Tokens: 3,
+			}}},
+		})
+	}
+	manager := NewSlidingWindowQuotaManager(config)
+	req := QuotaRequest{Requests: 2, Tokens: 3, Now: time.Unix(100, 0)}
+	for _, tenant := range []string{"first", "second"} {
+		got, err := manager.Allow(t.Context(), tenant, req)
+		if err != nil || !got.Allowed || got.RemainingRequests != 0 || got.RemainingTokens != 0 {
+			t.Fatalf("initial %s quota = %+v, %v", tenant, got, err)
+		}
+	}
+	manager.DeleteTenant("first")
+	manager.DeleteTenant("first")
+	manager.DeleteTenant("unseen")
+	req.Requests = 1
+	req.Tokens = 1
+	if got, err := manager.Allow(t.Context(), "first", req); err != nil || !got.Allowed ||
+		got.RemainingRequests != 1 || got.RemainingTokens != 2 {
+		t.Fatalf("deleted tenant quota = %+v, %v", got, err)
+	}
+	if got, err := manager.Allow(t.Context(), "second", req); !errors.Is(err, ErrQuotaExceeded) || got.Allowed ||
+		got.RemainingRequests != 0 || got.RemainingTokens != 0 {
+		t.Fatalf("other tenant quota = %+v, %v", got, err)
+	}
+}

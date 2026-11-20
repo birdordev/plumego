@@ -28,6 +28,7 @@ const (
 
 // WorkflowTask represents a distributed workflow step to be executed.
 type WorkflowTask struct {
+	// ID is an opaque identifier for this dispatch, including after a resume.
 	ID            string            `json:"id"`
 	ExecutionID   string            `json:"execution_id"`
 	WorkflowID    string            `json:"workflow_id"`

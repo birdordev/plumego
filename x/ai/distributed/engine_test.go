@@ -604,3 +604,50 @@ func TestEngineStopsOnCheckpointPersistenceFailure(t *testing.T) {
 		})
 	}
 }
+
+func TestResumeIgnoresPriorDispatchResult(t *testing.T) {
+	for _, lateError := range []string{"", "prior dispatch failed"} {
+		synctest.Test(t, func(t *testing.T) {
+			persistence := &engineTestPersistence{}
+			var results chan *TaskResult
+			var firstID, resumedID string
+			initialFailure := "initial failure"
+			queue := engineTestQueue{
+				subscribe: func(context.Context, string) (<-chan *TaskResult, error) {
+					results = make(chan *TaskResult, 2)
+					return results, nil
+				},
+				enqueue: func(_ context.Context, task *WorkflowTask) error {
+					if firstID == "" {
+						firstID = task.ID
+						results <- &TaskResult{TaskID: firstID, Error: initialFailure}
+						return nil
+					}
+					resumedID = task.ID
+					results <- &TaskResult{TaskID: firstID, Error: lateError, AgentResult: &orchestration.AgentResult{Output: "old"}}
+					results <- &TaskResult{TaskID: resumedID, AgentResult: &orchestration.AgentResult{Output: "current"}}
+					return nil
+				},
+			}
+			engine := newEngineForTest(queue, persistence, engineTestStep(nil))
+			executionID, err := engine.ExecuteAsync(t.Context(), "workflow", nil, DefaultExecutionOptions())
+			if err != nil {
+				t.Fatal(err)
+			}
+			synctest.Wait()
+			before, err := engine.GetExecutionStatus(t.Context(), executionID)
+			if err != nil || before.Status != StatusFailed || !strings.Contains(before.Error, initialFailure) {
+				t.Fatalf("initial run = %+v, %v", before, err)
+			}
+			if err := engine.Resume(t.Context(), executionID); err != nil {
+				t.Fatal(err)
+			}
+			synctest.Wait()
+			got, err := engine.GetExecutionStatus(t.Context(), executionID)
+			if err != nil || firstID == resumedID || got.Status != StatusCompleted ||
+				len(got.Results) != 1 || got.Results[0].Output != "current" {
+				t.Fatalf("resumed run = %+v, %v; dispatch IDs: %q, %q", got, err, firstID, resumedID)
+			}
+		})
+	}
+}

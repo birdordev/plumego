@@ -5,6 +5,7 @@ import (
 	"errors"
 	"path/filepath"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	kv "github.com/birdordev/plumego/store/kv"
@@ -473,6 +474,107 @@ func TestWorkerStartRejectsNegativeHeartbeat(t *testing.T) {
 		}
 		if err := worker.Stop(t.Context()); err != nil {
 			t.Fatal(err)
+		}
+	}
+}
+
+func TestWorkerPoolSubscribeCanReadPoolState(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		var pool *WorkerPool
+		var subscriptions []context.Context
+		entered := make(chan struct{})
+		release := make(chan struct{})
+		q := lifecycleQueue{subscribe: func(ctx context.Context) error {
+			count := pool.WorkerCount()
+			running := pool.IsRunning()
+			if count != len(subscriptions) || running != (count > 0) {
+				t.Errorf("committed state during Subscribe = %d, %t", count, running)
+			}
+			subscriptions = append(subscriptions, ctx)
+			if len(subscriptions) == 2 {
+				close(entered)
+				<-release
+			}
+			return nil
+		}}
+		pool = NewWorkerPool(q, nil, PoolConfig{WorkerCount: 1})
+		if err := pool.Start(t.Context()); err != nil {
+			t.Fatal(err)
+		}
+		scaled := make(chan error, 1)
+		go func() { scaled <- pool.Scale(t.Context(), 2) }()
+		<-entered
+
+		waitCtx, cancel := context.WithCancel(t.Context())
+		waiting := make(chan error, 1)
+		go func() { waiting <- pool.Scale(waitCtx, 3) }()
+		synctest.Wait()
+		cancel()
+		if err := <-waiting; !errors.Is(err, context.Canceled) {
+			t.Fatalf("waiting scale = %v, want cancellation", err)
+		}
+		stopped := make(chan error, 1)
+		go func() { stopped <- pool.Stop(t.Context()) }()
+		synctest.Wait()
+		if count := pool.WorkerCount(); count != 1 {
+			t.Fatalf("uncommitted worker count = %d", count)
+		}
+		close(release)
+		if err := <-scaled; err != nil {
+			t.Fatal(err)
+		}
+		if err := <-stopped; err != nil {
+			t.Fatal(err)
+		}
+		if pool.WorkerCount() != 0 || pool.IsRunning() {
+			t.Fatal("pool retained workers after Stop")
+		}
+		for _, ctx := range subscriptions {
+			if !errors.Is(ctx.Err(), context.Canceled) {
+				t.Fatal("subscription not canceled")
+			}
+		}
+	})
+}
+
+func TestWorkerPoolScaleRollsBackNewWorkers(t *testing.T) {
+	injected := errors.New("subscription failed")
+	var subscriptions []context.Context
+	q := lifecycleQueue{subscribe: func(ctx context.Context) error {
+		subscriptions = append(subscriptions, ctx)
+		if len(subscriptions) == 3 {
+			return injected
+		}
+		return nil
+	}}
+	pool := NewWorkerPool(q, nil, PoolConfig{WorkerCount: 1})
+	if err := pool.Start(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if pool.IsRunning() {
+			if err := pool.Stop(context.Background()); err != nil {
+				t.Error(err)
+			}
+		}
+	})
+	if err := pool.Scale(t.Context(), 3); !errors.Is(err, injected) {
+		t.Fatalf("scale error = %v", err)
+	}
+	if pool.WorkerCount() != 1 || pool.config.WorkerCount != 1 || !pool.IsRunning() ||
+		subscriptions[0].Err() != nil || !errors.Is(subscriptions[1].Err(), context.Canceled) ||
+		!errors.Is(subscriptions[2].Err(), context.Canceled) {
+		t.Fatal("expansion did not roll back only the new workers")
+	}
+	if err := pool.Scale(t.Context(), 3); err != nil || pool.WorkerCount() != 3 {
+		t.Fatalf("retry scale = %v, workers = %d", err, pool.WorkerCount())
+	}
+	if err := pool.Stop(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	for _, ctx := range subscriptions {
+		if !errors.Is(ctx.Err(), context.Canceled) {
+			t.Fatal("subscription not canceled")
 		}
 	}
 }

@@ -2,6 +2,7 @@ package distributed
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"maps"
@@ -395,7 +396,7 @@ func (e *DistributedEngine) executeStepDistributed(
 ) (*orchestration.AgentResult, error) {
 	timeout := e.executionTimeout(options)
 	task := &WorkflowTask{
-		ID:            fmt.Sprintf("%s-%d", executionID, stepIndex),
+		ID:            fmt.Sprintf("%s-%d-%s", executionID, stepIndex, rand.Text()),
 		ExecutionID:   executionID,
 		WorkflowID:    workflow.ID,
 		StepIndex:     stepIndex,

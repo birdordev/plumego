@@ -178,6 +178,15 @@ file metadata persistence behind the stable `store/file` contracts.
   compatibility fallback behavior for existing tests and simple drivers, and it
   only matches duplicate/unique-key wording rather than arbitrary constraint
   failures.
+- The SQL provider can claim an expired key directly. It conditionally removes
+  the expired row, then relies on the database's unique key constraint for
+  concurrent claims. Deleting a missing key returns `ErrNotFound`.
+- The SQL provider trims surrounding whitespace on every key operation. Before
+  upgrading a database that accepted keys with surrounding whitespace, pause
+  claims and review those rows alongside their trimmed keys. Normalize each
+  unambiguous row, and resolve collisions using the existing records' business
+  meaning and state before resuming claims. The provider leaves those legacy
+  rows in place.
 - `Complete` is a conditional transition: only an existing, unexpired
   `in_progress` record can become `completed`. Missing, expired, or already
   final records return the existing not-found/expired sentinel behavior instead

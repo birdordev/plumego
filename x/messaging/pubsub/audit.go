@@ -50,10 +50,12 @@ type AuditConfig struct {
 	// BufferSize for async writes. Zero uses an unbuffered queue; negative values are invalid in async mode.
 	BufferSize int
 
-	// IncludeMessageData includes full message data in audit logs
+	// IncludeMessageData is reserved for compatibility. Log always copies the
+	// operation data explicitly supplied by the caller.
 	IncludeMessageData bool
 
-	// IncludeStackTrace includes stack traces for errors
+	// IncludeStackTrace is reserved for compatibility. Log does not collect
+	// stack traces.
 	IncludeStackTrace bool
 
 	// LogFile path for persistent audit logs (optional)
@@ -268,7 +270,9 @@ func (al *AuditLogger) openLogFile() error {
 }
 
 // Log records an audit entry and copies ordinary containers in data within
-// the clone depth limit. Sequence numbers follow in-memory append order.
+// the clone depth limit. Callers must omit sensitive values from data and
+// errors. File encoding invokes custom marshalers outside the file lock.
+// Sequence numbers follow in-memory append order.
 // With asynchronous writing, success can mean an entry was queued. Close
 // waits for accepted calls and reports background write failures. A synchronous
 // file rotation failure is returned to the caller; later writes can retry.
@@ -412,11 +416,18 @@ func (al *AuditLogger) storeInMemory(entry *AuditEntry, hashData string) {
 
 // writeToFile writes entry to log file
 func (al *AuditLogger) writeToFile(entry *AuditEntry) error {
-	al.logFileMu.Lock()
-	defer al.logFileMu.Unlock()
 	if al.config.LogFile == "" {
 		return nil
 	}
+	// Encoding may invoke caller-supplied marshalers.
+	data, err := json.Marshal(entry)
+	if err != nil {
+		return err
+	}
+	data = append(data, '\n')
+
+	al.logFileMu.Lock()
+	defer al.logFileMu.Unlock()
 	if al.logFile == nil {
 		if err := al.openLogFile(); err != nil {
 			return err
@@ -429,14 +440,6 @@ func (al *AuditLogger) writeToFile(entry *AuditEntry) error {
 			return err
 		}
 	}
-
-	// Write as JSON line
-	data, err := json.Marshal(entry)
-	if err != nil {
-		return err
-	}
-
-	data = append(data, '\n')
 
 	n, err := al.logFile.Write(data)
 	if err != nil {

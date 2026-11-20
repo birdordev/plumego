@@ -47,6 +47,7 @@ import (
 	"context"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -77,17 +78,15 @@ func New(config Config) (*Proxy, error) {
 		return nil, err
 	}
 
-	var pool *BackendPool
-	var err error
+	// Discovery may create backends after New returns.
+	if cfg.CircuitBreakerConfig != nil {
+		breakerConfig := *cfg.CircuitBreakerConfig
+		cfg.CircuitBreakerConfig = &breakerConfig
+	}
 
-	if len(cfg.Targets) > 0 {
-		pool, err = NewBackendPool(cfg.Targets)
-		if err != nil {
-			return nil, err
-		}
-	} else {
-		// Service discovery will populate backends dynamically
-		pool = &BackendPool{backends: make([]*Backend, 0)}
+	pool, err := NewBackendPool(cfg.Targets)
+	if err != nil {
+		return nil, err
 	}
 
 	transportPool := NewTransportPool(cfg.Transport)
@@ -103,11 +102,8 @@ func New(config Config) (*Proxy, error) {
 		proxy.lcBalancer = lcb
 	}
 
-	if cfg.CircuitBreakerEnabled {
-		for _, backend := range pool.Backends() {
-			cb := newBackendCircuitBreaker(backend.URL, cfg.CircuitBreakerConfig)
-			backend.SetCircuitBreaker(cb)
-		}
+	for _, backend := range pool.Backends() {
+		proxy.configureBackend(backend)
 	}
 
 	if cfg.HealthCheck != nil {
@@ -429,11 +425,55 @@ func (p *Proxy) watchServiceDiscovery(ctx context.Context) {
 			if !ok {
 				return
 			}
-			if err := p.pool.UpdateBackends(backends); err == nil {
-				// Reset load balancer state on backend changes
-				p.balancer.Reset()
-			}
+			p.applyDiscoverySnapshot(backends)
 		}
+	}
+}
+
+func (p *Proxy) configureBackend(backend *Backend) {
+	if p.config.CircuitBreakerEnabled {
+		backend.SetCircuitBreaker(newBackendCircuitBreaker(backend.URL, p.config.CircuitBreakerConfig))
+	}
+}
+
+// applyDiscoverySnapshot is called by the single discovery watcher.
+func (p *Proxy) applyDiscoverySnapshot(urls []string) {
+	current := p.pool.Backends()
+	byURL := make(map[string][]*Backend, len(current))
+	for _, backend := range current {
+		key := backend.ParsedURL.String()
+		byURL[key] = append(byURL[key], backend)
+	}
+
+	next := make([]*Backend, 0, len(urls))
+	membershipChanged := len(current) != len(urls)
+	for _, target := range urls {
+		parsed, err := url.Parse(target)
+		if err != nil || parsed.Hostname() == "" {
+			return
+		}
+		switch parsed.Scheme {
+		case "http", "https", "ws", "wss":
+		default:
+			return
+		}
+
+		key := parsed.String()
+		if existing := byURL[key]; len(existing) > 0 {
+			next = append(next, existing[0])
+			byURL[key] = existing[1:]
+			continue
+		}
+
+		backend := newBackend(target, parsed)
+		p.configureBackend(backend)
+		next = append(next, backend)
+		membershipChanged = true
+	}
+
+	p.pool.replaceBackends(next)
+	if membershipChanged {
+		p.balancer.Reset()
 	}
 }
 

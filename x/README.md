@@ -1,36 +1,32 @@
 # Plumego Extensions (`x/*`)
 
-`x/*` 是 Plumego 的能力扩展层，承载 beta 和 experimental 功能。稳定根（`core`, `router`, `contract`, ...）保持零运行时依赖，扩展层按需引入外部依赖。
+扩展包与稳定根同属主 Go 模块，默认只使用 Go 标准库。新增第三方依赖需要明确批准，`x/*` 不设独立的 `go.mod`。详见[仓库规则](../AGENTS.md#2-non-negotiables)。
 
-> 扩展生命周期遵循 [Extension Maturity Model](../docs/concepts/extension-maturity.md)。
+## 扩展家族成熟度
 
-## Maturity Matrix
+家族状态以各自的 `module.yaml` 为准。子包和专项接口可以有独立的成熟度与发布证据，见[扩展成熟度模型](../docs/concepts/extension-maturity.md)和[Beta 证据清单](../specs/extension-beta-evidence.yaml)。
 
-| 扩展族 | 子包 | 成熟度 | 推荐入口 | 可生产使用 |
-|---|---|---|---|---|
-| **ai** | provider, session, streaming, tool | ⭐ Experimental | `x/ai/provider` | ⚠️ 评估中 |
-| **data** | cache, kvengine, pgx, sharding | ⭐ Experimental | `docs/modules/x/data/README.md` | ⚠️ 评估中 |
-| **fileapi** | - | ⭐ Experimental | `x/fileapi` | ⚠️ 评估中 |
-| **frontend** | - | 🔶 Beta | `x/frontend` | ✅ 可用 |
-| **gateway** | discovery, ipc, transform | 🔶 Beta | `x/gateway` | ✅ 可用 |
-| **messaging** | pubsub, scheduler, webhook | 🔶 Beta | `x/messaging/pubsub` | ✅ 可用 |
-| **observability** | ops, exporter | 🔶 Beta | `x/observability/ops` | ✅ 可用 |
-| **openapi** | - | ⭐ Experimental | `x/openapi` | ⚠️ 评估中 |
-| **resilience** | circuitbreaker, retry | 🔶 Beta | `x/resilience/circuitbreaker` | ✅ 可用 |
-| **rest** | - | 🔶 Beta | `x/rest` | ✅ 可用 |
-| **rpc** | server | ⭐ Experimental | `x/rpc/server` | ⚠️ 评估中 |
-| **tenant** | core, policy, quota, resolve, transport | 🔶 Beta | `x/tenant/core` | ✅ 可用 |
-| **validate** | - | 🔶 Beta | `x/validate` | ✅ 可用 |
-| **websocket** | - | 🔶 Beta | `x/websocket` | ✅ 可用 |
-
-> ⭐ = Experimental · 🔶 = Beta · ✅ = GA-track
->
-> 权威来源: `specs/extension-maturity.yaml` 和 `specs/extension-beta-evidence.yaml`
+| 扩展家族 | 状态 | 使用指南 |
+|---|---|---|
+| [ai](ai/module.yaml) | Experimental | [AI 扩展](../docs/modules/x/ai/README.md) |
+| [data](data/module.yaml) | Experimental | [数据扩展](../docs/modules/x/data/README.md) |
+| [fileapi](fileapi/module.yaml) | Experimental | [文件 API](../docs/modules/x/fileapi/README.md) |
+| [frontend](frontend/module.yaml) | Beta | [前端静态资源](../docs/modules/x/frontend/README.md) |
+| [gateway](gateway/module.yaml) | Beta | [网关与代理](../docs/modules/x/gateway/README.md) |
+| [messaging](messaging/module.yaml) | Beta | [消息服务](../docs/modules/x/messaging/README.md) |
+| [observability](observability/module.yaml) | Beta | [可观测性](../docs/modules/x/observability/README.md) |
+| [openapi](openapi/module.yaml) | Experimental | [OpenAPI 生成](../docs/modules/x/openapi/README.md) |
+| [resilience](resilience/module.yaml) | Experimental | [熔断与限流](../docs/modules/x/resilience/README.md) |
+| [rest](rest/module.yaml) | Beta | [REST 资源](../docs/modules/x/rest/README.md) |
+| [rpc](rpc/module.yaml) | Experimental | [RPC 适配器](../docs/modules/x/rpc/README.md) |
+| [tenant](tenant/module.yaml) | Beta | [租户能力](../docs/modules/x/tenant/README.md) |
+| [validate](validate/module.yaml) | Experimental | [请求绑定](../docs/modules/x/validate/README.md) |
+| [websocket](websocket/module.yaml) | Beta | [WebSocket](../docs/modules/x/websocket/README.md) |
 
 ## 导入约束
 
 - 稳定根（`core`, `router`, `contract`, ...）**禁止**导入 `x/*`
-- `x/*` 之间导入需遵循 `specs/dependency-rules.yaml` 的 `cross-extension` 约束
+- `x/*` 之间导入需遵循 [依赖规则](../specs/dependency-rules.yaml)
 - `reference/*` 可自由选择所需扩展
 
 ## 快速开始

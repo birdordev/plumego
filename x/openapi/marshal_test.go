@@ -7,6 +7,8 @@ import (
 	"io"
 	"strings"
 	"testing"
+
+	"github.com/birdordev/plumego/router"
 )
 
 func TestMarshalJSONProducesValidJSON(t *testing.T) {
@@ -280,5 +282,35 @@ func TestDocumentWritersPreserveFailureBoundaries(t *testing.T) {
 				t.Errorf("writer error = %v, writes = %d", err, w.calls)
 			}
 		})
+	}
+}
+
+func TestGeneratedCyclicSchemaDoesNotWritePartialDocument(t *testing.T) {
+	items := &Schema{Type: "array"}
+	items.Items = items
+	properties := Schema{Type: "object", Properties: make(map[string]Schema)}
+	properties.Properties["child"] = properties
+	for _, schema := range []struct {
+		name  string
+		value Schema
+	}{{"items", *items}, {"properties", properties}} {
+		for _, format := range []struct {
+			name  string
+			write func(io.Writer, Document) error
+		}{{"json", WriteJSON}, {"yaml", WriteYAML}} {
+			t.Run(schema.name+"/"+format.name, func(t *testing.T) {
+				doc := New().Generate([]router.RouteInfo{{Method: "GET", Path: "/items"}}, map[string]Op{
+					"GET /items": {Responses: map[string]Response{
+						"200": {Description: "Items", Content: JSONContent(schema.value)},
+					}},
+				})
+				var target bytes.Buffer
+				err := format.write(&target, doc)
+				var encodeErr *json.UnsupportedValueError
+				if !errors.As(err, &encodeErr) || target.Len() != 0 {
+					t.Fatalf("Write = %v, output bytes = %d", err, target.Len())
+				}
+			})
+		}
 	}
 }

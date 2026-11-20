@@ -131,7 +131,9 @@
 - Directory mounts and `http.Dir` inputs resolve the configured root to an
   absolute canonical path at construction time.
 - Directory mounts and `http.Dir` inputs fail fast when the configured index
-  file is missing or is a directory.
+  file is missing or is a directory. A requested directory resolves only its
+  direct index candidate. If the candidate is a directory, the configured
+  fallback or 404 handling applies.
 - Directory-backed assets are treated as static deployment artifacts. Variant
   metadata is captured at mount construction time and does not provide a
   runtime atomic snapshot if files are mutated in place.

@@ -32,6 +32,8 @@ func DefaultSQLConfig() SQLConfig {
 	}
 }
 
+// SQLStore trims surrounding whitespace from keys for all operations. Existing
+// rows written with noncanonical keys are left for an explicit data migration.
 type SQLStore struct {
 	db  *sql.DB
 	cfg SQLConfig
@@ -82,26 +84,32 @@ func (s *SQLStore) Get(ctx context.Context, key string) (Record, bool, error) {
 	}
 	rec.Status = Status(status)
 
-	if !rec.ExpiresAt.IsZero() && !rec.ExpiresAt.After(s.now()) {
-		_ = s.Delete(ctx, key)
-		return Record{}, false, nil
+	if !rec.ExpiresAt.IsZero() {
+		now := s.now()
+		if !rec.ExpiresAt.After(now) {
+			// A concurrent claim may already have replaced the expired row.
+			_ = s.deleteExpired(ctx, table, key, now)
+			return Record{}, false, nil
+		}
 	}
 
 	return rec, true, nil
 }
 
+// PutIfAbsent reclaims expired keys. Concurrent inserts are arbitrated by the
+// database's unique key constraint.
 func (s *SQLStore) PutIfAbsent(ctx context.Context, record Record) (bool, error) {
 	if s == nil || s.db == nil {
 		return false, ErrNotFound
 	}
-	if strings.TrimSpace(record.Key) == "" {
+	record.Key = strings.TrimSpace(record.Key)
+	if record.Key == "" {
 		return false, ErrInvalidKey
 	}
-	if !record.ExpiresAt.IsZero() && !record.ExpiresAt.After(s.now()) {
+	now := s.now()
+	if !record.ExpiresAt.IsZero() && !record.ExpiresAt.After(now) {
 		return false, ErrExpired
 	}
-
-	now := s.now()
 	if record.CreatedAt.IsZero() {
 		record.CreatedAt = now
 	}
@@ -110,10 +118,14 @@ func (s *SQLStore) PutIfAbsent(ctx context.Context, record Record) (bool, error)
 		record.Status = StatusInProgress
 	}
 
-	query, args, err := s.buildInsert(record)
+	table, err := s.tableName()
 	if err != nil {
 		return false, err
 	}
+	if err := s.deleteExpired(ctx, table, record.Key, now); err != nil {
+		return false, fmt.Errorf("reclaim expired idempotency key: %w", err)
+	}
+	query, args := s.insertStatement(table, record)
 	_, err = s.db.ExecContext(ctx, query, args...)
 	if err != nil {
 		if s.isDuplicateError(err) {
@@ -178,16 +190,27 @@ func (s *SQLStore) Delete(ctx context.Context, key string) error {
 	}
 
 	query := fmt.Sprintf("DELETE FROM %s WHERE key = %s", table, s.placeholder(1))
-	_, err = s.db.ExecContext(ctx, query, key)
+	res, err := s.db.ExecContext(ctx, query, key)
+	if err != nil {
+		return err
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+func (s *SQLStore) deleteExpired(ctx context.Context, table, key string, cutoff time.Time) error {
+	query := fmt.Sprintf("DELETE FROM %s WHERE key = %s AND expires_at <= %s", table, s.placeholder(1), s.placeholder(2))
+	_, err := s.db.ExecContext(ctx, query, key, cutoff)
 	return err
 }
 
-func (s *SQLStore) buildInsert(record Record) (string, []any, error) {
-	table, err := s.tableName()
-	if err != nil {
-		return "", nil, err
-	}
-
+func (s *SQLStore) insertStatement(table string, record Record) (string, []any) {
 	cols := []string{"key", "request_hash", "status", "response", "created_at", "updated_at", "expires_at"}
 	placeholders := make([]string, 0, len(cols))
 	args := make([]any, 0, len(cols))
@@ -196,7 +219,7 @@ func (s *SQLStore) buildInsert(record Record) (string, []any, error) {
 	}
 	args = append(args, record.Key, record.RequestHash, string(record.Status), record.Response, record.CreatedAt, record.UpdatedAt, nullTime(record.ExpiresAt))
 	query := fmt.Sprintf("INSERT INTO %s (%s) VALUES (%s)", table, strings.Join(cols, ", "), strings.Join(placeholders, ", "))
-	return query, args, nil
+	return query, args
 }
 
 func (s *SQLStore) placeholder(idx int) string {

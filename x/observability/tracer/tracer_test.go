@@ -346,3 +346,44 @@ func TestRecordErrorOptionsCanReadTracer(t *testing.T) {
 		}
 	}
 }
+
+func TestCollectorFilterReentryAndSnapshotOwnership(t *testing.T) {
+	collector := NewSimpleTraceCollector()
+	now := time.Now()
+	collector.Collect(&Trace{ID: "first", StartTime: now, Attributes: map[string]any{"source": "trace"},
+		Spans: []*Span{{Attributes: map[string]any{"source": "span"},
+			Events: []SpanEvent{{Attributes: map[string]any{"source": "event"}}}}},
+	})
+	collector.Collect(&Trace{ID: "second", StartTime: now})
+	filtered := make(chan []*Trace, 1)
+	go func() {
+		filtered <- collector.GetTraces(func(trace *Trace) bool {
+			if _, ok := collector.GetTrace(trace.ID); !ok {
+				t.Errorf("filter could not read trace %q", trace.ID)
+			}
+			if trace.ID != "first" {
+				return false
+			}
+			trace.Attributes["source"] = "filter"
+			trace.Spans[0].Attributes["source"] = "filter"
+			return true
+		})
+	}()
+
+	select {
+	case matches := <-filtered:
+		if len(matches) != 1 || matches[0].ID != "first" ||
+			matches[0].Attributes["source"] != "filter" || matches[0].Spans[0].Attributes["source"] != "filter" {
+			t.Fatalf("filter returned %+v", matches)
+		}
+		matches[0].Spans[0].Events[0].Attributes["source"] = "caller"
+	case <-time.After(5 * time.Second):
+		t.Fatal("collector filter could not reenter GetTrace")
+	}
+
+	original, ok := collector.GetTrace("first")
+	if !ok || original.Attributes["source"] != "trace" ||
+		original.Spans[0].Attributes["source"] != "span" || original.Spans[0].Events[0].Attributes["source"] != "event" {
+		t.Fatalf("stored trace changed: %+v", original)
+	}
+}

@@ -3,6 +3,7 @@ package websocket
 import (
 	"errors"
 	"testing"
+	"testing/synctest"
 	"time"
 )
 
@@ -71,30 +72,31 @@ func TestHubTryJoinAfterStopDoesNotRegister(t *testing.T) {
 }
 
 func TestHubStopReturnsWhenBlockingSendQueueIsFull(t *testing.T) {
-	hub := mustNewHubConfig(t, HubConfig{WorkerCount: 1, JobQueueSize: 1})
+	synctest.Test(t, func(t *testing.T) {
+		hub := mustNewHubConfig(t, HubConfig{WorkerCount: 1, JobQueueSize: 1})
+		conn := &Conn{
+			sendQueue:    make(chan Outbound, 1),
+			closeC:       make(chan struct{}),
+			sendBehavior: SendBlock,
+		}
+		conn.sendQueue <- Outbound{Op: OpcodeText, Data: []byte("full")}
+		mustTryJoin(t, hub, "room", conn)
 
-	conn := &Conn{
-		sendQueue:    make(chan Outbound, 1),
-		closeC:       make(chan struct{}),
-		sendBehavior: SendBlock,
-	}
-	conn.sendQueue <- Outbound{Op: OpcodeText, Data: []byte("full")}
-	mustTryJoin(t, hub, "room", conn)
+		result := hub.TryBroadcastRoom("room", OpcodeText, []byte("blocked"))
+		if result.Enqueued != 1 {
+			t.Fatalf("broadcast result = %+v", result)
+		}
+		synctest.Wait()
+		if len(hub.jobQueue) != 0 || len(conn.sendQueue) != cap(conn.sendQueue) {
+			t.Fatal("worker did not take the job while the connection queue was full")
+		}
 
-	hub.BroadcastRoom("room", OpcodeText, []byte("blocked"))
-	time.Sleep(25 * time.Millisecond)
-
-	done := make(chan struct{})
-	go func() {
+		start := time.Now()
 		hub.Stop()
-		close(done)
-	}()
-
-	select {
-	case <-done:
-	case <-time.After(500 * time.Millisecond):
-		t.Fatal("hub Stop blocked on full connection send queue")
-	}
+		if elapsed := time.Since(start); elapsed > hubWorkerDefaultSendTimeout {
+			t.Fatalf("hub stop took %v", elapsed)
+		}
+	})
 }
 
 func TestHubStopConcurrentBroadcast(t *testing.T) {

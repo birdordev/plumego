@@ -972,3 +972,59 @@ func TestAuditOwnsFilterConfiguration(t *testing.T) {
 		t.Fatalf("records = %v, err = %v", records, err)
 	}
 }
+
+type auditMarshalFunc func() ([]byte, error)
+
+func (marshal auditMarshalFunc) MarshalJSON() ([]byte, error) { return marshal() }
+
+func TestAuditMarshalCanReadLoggerStats(t *testing.T) {
+	for _, mode := range []struct {
+		name  string
+		async bool
+	}{{"sync", false}, {"async", true}} {
+		t.Run(mode.name, func(t *testing.T) {
+			cfg := DefaultAuditConfig()
+			cfg.AsyncMode = mode.async
+			cfg.LogFile = filepath.Join(t.TempDir(), "audit.log")
+			audit, err := NewAuditLogger(cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			injected := errors.New("marshal failed")
+			done := make(chan error, 1)
+			go func() {
+				ok := auditMarshalFunc(func() ([]byte, error) {
+					audit.Stats()
+					return []byte(`"value"`), nil
+				})
+				if err := audit.Log(OpPublish, "topic", "actor", "source", map[string]any{"value": ok}, true, nil); err != nil {
+					done <- errors.Join(err, audit.Close())
+					return
+				}
+				fail := auditMarshalFunc(func() ([]byte, error) { return nil, injected })
+				err := audit.Log(OpPublish, "topic", "actor", "source", map[string]any{"value": fail}, true, nil)
+				done <- errors.Join(err, audit.Close())
+			}()
+
+			select {
+			case err := <-done:
+				var marshalErr *json.MarshalerError
+				if !errors.Is(err, injected) || !errors.As(err, &marshalErr) {
+					t.Fatalf("encoding error = %v", err)
+				}
+			case <-time.After(5 * time.Second):
+				t.Fatal("audit marshal callback could not read Stats")
+			}
+
+			raw, err := os.ReadFile(cfg.LogFile)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var entry AuditEntry
+			if err := json.Unmarshal(raw, &entry); err != nil || entry.Data["value"] != "value" {
+				t.Fatalf("audit file contains %q, decode error = %v", raw, err)
+			}
+		})
+	}
+}

@@ -125,7 +125,10 @@ Available backends:
 | `Etcd` | `NewEtcd(endpoints, EtcdConfig)` | etcd v3 HTTP gateway with explicit registration and health updates |
 
 All backends implement the `Discovery` interface. `Resolve` returns ready
-backend URLs, `Watch` delivers backend-list updates, and `Register`,
+backend URLs and `Watch` delivers backend-list updates. The proxy applies the
+same circuit breaker configuration to static and discovered backends. A
+discovery snapshot retains health and breaker state for URLs still present;
+removing a URL discards its state. `Register`,
 `Deregister`, and `Health` are supported by etcd. Static and Kubernetes return
 `ErrNotSupported` for unsupported mutation operations.
 

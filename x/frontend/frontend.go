@@ -83,7 +83,7 @@ func (h *handler) stripPrefix(requestPath string) (string, bool) {
 
 // serveIndex serves the configured index file, falling back to 404 if not found.
 func (h *handler) serveIndex(w http.ResponseWriter, r *http.Request) {
-	served, err := h.serveFile(w, r, h.cfg.IndexFile)
+	served, err := h.serveAsset(w, r, h.cfg.IndexFile, true, false)
 	if err != nil {
 		h.serveInternalError(w, r)
 	} else if !served {
@@ -100,6 +100,10 @@ func (h *handler) serveFile(w http.ResponseWriter, r *http.Request, filePath str
 }
 
 func (h *handler) serveFileWithPolicy(w http.ResponseWriter, r *http.Request, filePath string, includeAssetCache bool) (bool, error) {
+	return h.serveAsset(w, r, filePath, includeAssetCache, true)
+}
+
+func (h *handler) serveAsset(w http.ResponseWriter, r *http.Request, filePath string, includeAssetCache, resolveDirectory bool) (bool, error) {
 	cleaned, ok := cleanAssetPath(filePath)
 	if !ok {
 		return false, nil
@@ -122,16 +126,20 @@ func (h *handler) serveFileWithPolicy(w http.ResponseWriter, r *http.Request, fi
 		}
 		return false, fmt.Errorf("open %q: %w", filePath, err)
 	}
-	defer func() { _ = f.Close() }()
-
 	stat, err := f.Stat()
 	if err != nil {
+		_ = f.Close()
 		return false, fmt.Errorf("stat %q: %w", filePath, err)
 	}
 
 	if stat.IsDir() {
-		return h.serveFileWithPolicy(w, r, path.Join(filePath, h.cfg.IndexFile), includeAssetCache)
+		_ = f.Close()
+		if !resolveDirectory {
+			return false, nil
+		}
+		return h.serveAsset(w, r, path.Join(filePath, h.cfg.IndexFile), includeAssetCache, false)
 	}
+	defer func() { _ = f.Close() }()
 
 	if preFile, preStat, encoding := h.tryLazyPrecompressed(r, filePath); preFile != nil {
 		defer func() { _ = preFile.Close() }()

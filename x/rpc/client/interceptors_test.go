@@ -3,6 +3,8 @@ package client
 import (
 	"context"
 	"errors"
+	"fmt"
+	"slices"
 	"testing"
 
 	"github.com/birdordev/plumego/contract"
@@ -74,5 +76,32 @@ func TestTracingInterceptorEndsSpanOnPanic(t *testing.T) {
 				t.Error("panic payload included in span status")
 			}
 		})
+	}
+}
+
+func TestRetryInterceptorPreservesFinalErrorAndOptions(t *testing.T) {
+	first := errors.New("first attempt")
+	last := errors.New("last attempt")
+	retryable := codedError{code: "Unavailable"}
+	failures := []error{fmt.Errorf("first: %w", errors.Join(first, retryable)), fmt.Errorf("last: %w", errors.Join(last, retryable))}
+	const method = "/fixture.Service/Read"
+	request := new(string)
+	reply := new(int)
+	opts := []CallOption{"first option", 42}
+	calls := 0
+	ctx := t.Context()
+	err := RetryInterceptor(len(failures), "Unavailable")(ctx, method, request, reply,
+		func(gotCtx context.Context, gotMethod string, gotRequest, gotReply any, gotOpts ...CallOption) error {
+			if gotCtx != ctx || gotMethod != method || gotRequest != request || gotReply != reply || !slices.Equal(gotOpts, opts) {
+				t.Fatalf("attempt %d parameters = %q, %v, %v, %v", calls+1, gotMethod, gotRequest, gotReply, gotOpts)
+			}
+			calls++
+			if calls > len(failures) {
+				t.Fatal("attempt limit exceeded")
+			}
+			return failures[calls-1]
+		}, opts...)
+	if calls != len(failures) || err != failures[1] || !errors.Is(err, last) || errors.Is(err, first) {
+		t.Fatalf("calls = %d, final error = %v", calls, err)
 	}
 }

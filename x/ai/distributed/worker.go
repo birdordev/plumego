@@ -2,9 +2,9 @@ package distributed
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/birdordev/plumego/x/ai/orchestration"
@@ -230,14 +230,18 @@ func (e *StepExecutor) ExecuteTask(ctx context.Context, task *WorkflowTask) (*or
 	return result, workflow.State, nil
 }
 
-// WorkerPool manages multiple workers.
+// WorkerPool manages multiple workers. Lifecycle calls serialize and can wait
+// for an earlier transition until their context is canceled. Queue adapters may
+// read the last committed WorkerCount and IsRunning during Subscribe. Adapters
+// must return from Subscribe before calling pool lifecycle methods.
 type WorkerPool struct {
-	workers  []*Worker
-	queue    TaskQueue
-	executor *StepExecutor
-	config   PoolConfig
-	running  atomic.Bool
-	mu       sync.RWMutex
+	workers    []*Worker
+	queue      TaskQueue
+	executor   *StepExecutor
+	config     PoolConfig
+	running    bool
+	transition chan struct{}
+	mu         sync.RWMutex
 }
 
 // PoolConfig configures a worker pool.
@@ -269,110 +273,131 @@ func NewWorkerPool(queue TaskQueue, executor *StepExecutor, config PoolConfig) *
 		queue:    queue,
 		executor: executor,
 		config:   config,
-		workers:  make([]*Worker, 0, config.WorkerCount),
 	}
 }
 
 // Start starts all workers in the pool.
 func (p *WorkerPool) Start(ctx context.Context) error {
-	if p.running.Load() {
-		return fmt.Errorf("pool already running")
-	}
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	if p.running.Load() {
-		return fmt.Errorf("pool already running")
+	if _, err := p.beginTransition(ctx, false); err != nil {
+		return err
 	}
 
-	p.running.Store(true)
-
-	// Create and start workers
-	for i := 0; i < p.config.WorkerCount; i++ {
-		worker := NewWorker(p.queue, p.executor, WorkerConfig{
-			ID:          fmt.Sprintf("worker-%d", i),
-			Concurrency: p.config.Concurrency,
-		})
-
-		if err := worker.Start(ctx); err != nil {
-			// Stop already started workers
-			_ = p.stopWorkers(ctx)
-			p.running.Store(false)
-			return fmt.Errorf("failed to start worker %d: %w", i, err)
-		}
-
-		p.workers = append(p.workers, worker)
-	}
-
-	return nil
+	count := p.config.WorkerCount
+	workers, err := p.startWorkers(ctx, 0, count)
+	p.finishTransition(workers, err == nil, count)
+	return err
 }
 
 // Stop stops all workers in the pool.
 func (p *WorkerPool) Stop(ctx context.Context) error {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	if !p.running.Swap(false) {
-		return fmt.Errorf("pool not running")
+	workers, err := p.beginTransition(ctx, true)
+	if err != nil {
+		return err
 	}
-	return p.stopWorkers(ctx)
+
+	var stopErr error
+	for _, worker := range workers {
+		stopErr = errors.Join(stopErr, worker.Stop(ctx))
+	}
+	p.finishTransition(nil, false, p.config.WorkerCount)
+	return stopErr
 }
 
-// stopWorkers stops all workers (caller must hold lock).
-func (p *WorkerPool) stopWorkers(ctx context.Context) error {
-	var lastErr error
-	for _, worker := range p.workers {
-		if err := worker.Stop(ctx); err != nil {
-			lastErr = err
-		}
-	}
-	p.workers = p.workers[:0]
-	return lastErr
-}
-
-// Scale changes the number of workers in a running pool.
+// Scale changes the number of workers in a running pool. If an expansion fails,
+// the existing pool stays active and subscriptions added by the call are canceled.
 func (p *WorkerPool) Scale(ctx context.Context, count int) error {
 	if count <= 0 {
 		return fmt.Errorf("worker count must be positive")
 	}
-
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
-	if !p.running.Load() {
-		return fmt.Errorf("pool not running")
+	workers, err := p.beginTransition(ctx, true)
+	if err != nil {
+		return err
 	}
 
-	current := len(p.workers)
-
-	if count == current {
-		return nil
-	}
-
-	if count < current {
-		// Scale down
+	current := len(workers)
+	switch {
+	case count < current:
 		for i := count; i < current; i++ {
-			if err := p.workers[i].Stop(ctx); err != nil {
+			if err := workers[i].Stop(ctx); err != nil {
+				p.finishTransition(workers, true, p.config.WorkerCount)
 				return fmt.Errorf("failed to stop worker %d: %w", i, err)
 			}
 		}
-		p.workers = p.workers[:count]
-	} else {
-		// Scale up
-		for i := current; i < count; i++ {
+		workers = workers[:count]
+	case count > current:
+		added, err := p.startWorkers(ctx, current, count)
+		if err != nil {
+			p.finishTransition(workers, true, p.config.WorkerCount)
+			return err
+		}
+		workers = append(workers, added...)
+	}
+	p.finishTransition(workers, true, count)
+	return nil
+}
+
+// beginTransition reserves the next lifecycle change without holding a lock
+// across queue calls. Other lifecycle callers can wait without blocking readers.
+func (p *WorkerPool) beginTransition(ctx context.Context, wantRunning bool) ([]*Worker, error) {
+	for {
+		p.mu.Lock()
+		if done := p.transition; done != nil {
+			p.mu.Unlock()
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-done:
+				continue
+			}
+		}
+		if p.running != wantRunning {
+			p.mu.Unlock()
+			if wantRunning {
+				return nil, fmt.Errorf("pool not running")
+			}
+			return nil, fmt.Errorf("pool already running")
+		}
+		p.transition = make(chan struct{})
+		workers := p.workers
+		p.mu.Unlock()
+		return workers, nil
+	}
+}
+
+func (p *WorkerPool) finishTransition(workers []*Worker, running bool, count int) {
+	p.mu.Lock()
+	p.workers = workers
+	p.running = running
+	p.config.WorkerCount = count
+	close(p.transition)
+	p.transition = nil
+	p.mu.Unlock()
+}
+
+func (p *WorkerPool) startWorkers(ctx context.Context, first, count int) ([]*Worker, error) {
+	started := make([]*Worker, 0, count-first)
+	for i := first; i < count; i++ {
+		err := ctx.Err()
+		if err == nil {
 			worker := NewWorker(p.queue, p.executor, WorkerConfig{
 				ID:          fmt.Sprintf("worker-%d", i),
 				Concurrency: p.config.Concurrency,
 			})
-
-			if err := worker.Start(ctx); err != nil {
-				return fmt.Errorf("failed to start worker %d: %w", i, err)
+			err = worker.Start(ctx)
+			if err == nil {
+				started = append(started, worker)
+				err = ctx.Err()
 			}
-
-			p.workers = append(p.workers, worker)
+		}
+		if err != nil {
+			err = fmt.Errorf("failed to start worker %d: %w", i, err)
+			for j := len(started) - 1; j >= 0; j-- {
+				err = errors.Join(err, started[j].Stop(ctx))
+			}
+			return nil, err
 		}
 	}
-
-	p.config.WorkerCount = count
-	return nil
+	return started, nil
 }
 
 // WorkerCount returns the current number of workers.
@@ -384,5 +409,7 @@ func (p *WorkerPool) WorkerCount() int {
 
 // IsRunning returns whether the pool is running.
 func (p *WorkerPool) IsRunning() bool {
-	return p.running.Load()
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.running
 }

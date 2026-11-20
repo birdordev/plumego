@@ -108,8 +108,10 @@ type DistributedParallelStep struct {
 	Queue       TaskQueue
 	ExecutionID string
 	WorkflowID  string
-	MaxWorkers  int
-	Timeout     time.Duration
+	// MaxWorkers bounds the number of tasks awaiting results for this step. A
+	// nonpositive value allows all agents to be dispatched together.
+	MaxWorkers int
+	Timeout    time.Duration
 }
 
 // NewDistributedParallelStep creates a new distributed parallel step.
@@ -139,7 +141,8 @@ func NewDistributedParallelStep(
 // if the subscription closes before all results arrive or a successful task
 // has no agent result. Outputs are stored in agent order on success, and the
 // first agent's result is returned. InputFn receives a shallow state snapshot.
-// The subscription ends when Execute returns.
+// The result timeout starts after the initial dispatch window and also applies
+// to refilling the window. The subscription ends when Execute returns.
 func (d *DistributedParallelStep) Execute(ctx context.Context, wf *orchestration.Workflow) (*orchestration.AgentResult, error) {
 	if len(d.Agents) == 0 {
 		return nil, fmt.Errorf("distributed parallel step requires at least one agent")
@@ -157,41 +160,58 @@ func (d *DistributedParallelStep) Execute(ctx context.Context, wf *orchestration
 		return nil, fmt.Errorf("failed to subscribe to results: %w", err)
 	}
 
-	pending := make(map[string]int, len(d.Agents))
-	for i, agent := range d.Agents {
-		taskID := fmt.Sprintf("%s-%s-%d-%d", d.ExecutionID, d.StepName, i, time.Now().UnixNano())
-		pending[taskID] = i
-
+	limit := len(d.Agents)
+	if d.MaxWorkers > 0 {
+		limit = min(limit, d.MaxWorkers)
+	}
+	pending := make(map[string]int, limit)
+	next := 0
+	enqueue := func(ctx context.Context) error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		i := next
+		agent := d.Agents[i]
+		now := time.Now()
 		task := &WorkflowTask{
-			ID:            taskID,
+			ID:            fmt.Sprintf("%s-%s-%d-%d", d.ExecutionID, d.StepName, i, now.UnixNano()),
 			ExecutionID:   d.ExecutionID,
 			WorkflowID:    d.WorkflowID,
 			StepIndex:     i,
 			StepName:      fmt.Sprintf("%s-agent-%d", d.StepName, i),
 			WorkflowState: map[string]any{"input": inputs[i], "agent": agent.Name},
 			Priority:      5,
-			CreatedAt:     time.Now(),
+			CreatedAt:     now,
 			Timeout:       d.Timeout,
 		}
-
 		if err := d.Queue.Enqueue(ctx, task); err != nil {
-			return nil, fmt.Errorf("failed to enqueue task %d: %w", i, err)
+			return fmt.Errorf("failed to enqueue task %d: %w", i, err)
+		}
+		pending[task.ID] = i
+		next++
+		return nil
+	}
+	for next < limit {
+		if err := enqueue(ctx); err != nil {
+			return nil, err
 		}
 	}
 
 	results := make([]*orchestration.AgentResult, len(d.Agents))
-
 	timeout := d.Timeout
 	if timeout == 0 {
 		timeout = 5 * time.Minute
 	}
-
-	timer := time.NewTimer(timeout)
-	defer timer.Stop()
+	timeoutErr := fmt.Errorf("distributed parallel execution timeout after %v", timeout)
+	waitCtx, stop := context.WithTimeoutCause(ctx, timeout, timeoutErr)
+	defer stop()
 	for len(pending) > 0 {
 		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
+		case <-waitCtx.Done():
+			if ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
+			return nil, timeoutErr
 		case result, ok := <-resultChan:
 			if !ok {
 				return nil, fmt.Errorf("task result subscription closed")
@@ -211,8 +231,17 @@ func (d *DistributedParallelStep) Execute(ctx context.Context, wf *orchestration
 			}
 			results[i] = result.AgentResult
 			delete(pending, result.TaskID)
-		case <-timer.C:
-			return nil, fmt.Errorf("distributed parallel execution timeout after %v", timeout)
+			if next < len(d.Agents) {
+				if err := enqueue(waitCtx); err != nil {
+					if ctx.Err() != nil {
+						return nil, ctx.Err()
+					}
+					if context.Cause(waitCtx) == timeoutErr {
+						return nil, timeoutErr
+					}
+					return nil, err
+				}
+			}
 		}
 	}
 

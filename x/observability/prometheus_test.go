@@ -452,3 +452,35 @@ func TestPrometheusTotalSurvivesSeriesEviction(t *testing.T) {
 	collector.Clear()
 	assertTotal("0")
 }
+
+func TestPrometheusDurationFamilyMetadata(t *testing.T) {
+	collector := NewPrometheusCollector("app")
+	collector.ObserveHTTP(t.Context(), http.MethodGet, "/ping", http.StatusOK, 0, 10*time.Millisecond)
+	collector.ObserveHTTP(t.Context(), http.MethodGet, "/ping", http.StatusOK, 0, 20*time.Millisecond)
+	rec := httptest.NewRecorder()
+	collector.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+
+	const family = "app_http_request_duration_seconds"
+	const labels = `{method="GET",path="/ping",status="200"}`
+	want := map[string]bool{
+		"# HELP " + family + " HTTP request latencies in seconds.": false,
+		"# TYPE " + family + " summary":                            false,
+		family + "_sum" + labels + " 0.030000000":                  false,
+		family + "_count" + labels + " 2":                          false,
+		family + "_min" + labels + " 0.010000000":                  false,
+		family + "_max" + labels + " 0.020000000":                  false,
+	}
+	for line := range strings.SplitSeq(rec.Body.String(), "\n") {
+		if strings.Contains(line, family) {
+			if seen, ok := want[line]; !ok || seen {
+				t.Fatalf("unexpected or duplicate line: %q", line)
+			}
+			want[line] = true
+		}
+	}
+	for line, seen := range want {
+		if !seen {
+			t.Errorf("missing %q", line)
+		}
+	}
+}

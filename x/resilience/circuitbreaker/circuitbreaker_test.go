@@ -1134,3 +1134,35 @@ func TestMiddlewareWithErrorHandlerOwnsOnlyRejectedResponses(t *testing.T) {
 		}
 	})
 }
+
+func TestUnsupportedFlushKeepsFinalCircuitStatus(t *testing.T) {
+	type plainWriter struct{ http.ResponseWriter }
+	for _, custom := range []bool{false, true} {
+		cfg := Config{MinRequests: 1}
+		wrap := Middleware(cfg)
+		if custom {
+			wrap = MiddlewareWithErrorHandler(cfg, func(w http.ResponseWriter, _ *http.Request, _ *CircuitBreaker, err error) {
+				if !errors.Is(err, ErrCircuitOpen) {
+					t.Errorf("rejection = %v", err)
+				}
+				w.WriteHeader(http.StatusServiceUnavailable)
+			})
+		}
+		calls := 0
+		handler := wrap(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			calls++
+			if err := http.NewResponseController(w).Flush(); !errors.Is(err, http.ErrNotSupported) {
+				t.Errorf("Flush = %v", err)
+			}
+			w.WriteHeader(http.StatusInternalServerError)
+		}))
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		first := httptest.NewRecorder()
+		handler.ServeHTTP(plainWriter{first}, req)
+		second := httptest.NewRecorder()
+		handler.ServeHTTP(plainWriter{second}, req)
+		if first.Code != http.StatusInternalServerError || second.Code != http.StatusServiceUnavailable || calls != 1 {
+			t.Errorf("custom=%t: first=%d next=%d calls=%d", custom, first.Code, second.Code, calls)
+		}
+	}
+}

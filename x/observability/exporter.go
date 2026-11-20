@@ -46,8 +46,8 @@ func (e *PrometheusExporter) Handler() http.Handler {
 		}
 
 		_, _ = fmt.Fprintln(w)
-		_, _ = fmt.Fprintf(w, "# HELP %s_http_request_duration_seconds_sum Sum of HTTP request latencies in seconds.\n", e.collector.namespace)
-		_, _ = fmt.Fprintf(w, "# TYPE %s_http_request_duration_seconds_summary summary\n", e.collector.namespace)
+		_, _ = fmt.Fprintf(w, "# HELP %s_http_request_duration_seconds HTTP request latencies in seconds.\n", e.collector.namespace)
+		_, _ = fmt.Fprintf(w, "# TYPE %s_http_request_duration_seconds summary\n", e.collector.namespace)
 
 		for _, key := range sortedKeys(durations) {
 			stats := durations[key]

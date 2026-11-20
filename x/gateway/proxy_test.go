@@ -751,3 +751,70 @@ func TestProxyAppliesEmptyDiscoverySnapshot(t *testing.T) {
 		}
 	}
 }
+
+func TestProxyDiscoveryPreservesBackendPolicy(t *testing.T) {
+	updates := make(chan []string)
+	balancer := NewRoundRobinBalancer()
+	p, err := New(Config{
+		Discovery:             &snapshotDiscovery{updates: updates},
+		ServiceName:           "reports",
+		LoadBalancer:          balancer,
+		CircuitBreakerEnabled: true,
+		CircuitBreakerConfig: &CircuitBreakerConfig{
+			MinRequests: 1,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.Close()
+
+	const target = "http://backend.example"
+	publish := func(urls ...string) {
+		updates <- urls
+		// The watcher can receive the second snapshot only after applying the first.
+		updates <- urls
+	}
+	publish(target)
+	original := p.pool.GetBackend(target)
+	if original == nil || !original.HasCircuitBreaker() {
+		t.Fatal("discovered backend has no circuit breaker")
+	}
+	backendErr := errors.New("backend unavailable")
+	if err := original.Execute(func() error { return backendErr }); !errors.Is(err, backendErr) {
+		t.Fatalf("first request error = %v", err)
+	}
+	if original.circuitBreaker.State().String() != "open" {
+		t.Fatal("discovered backend circuit did not open")
+	}
+	original.RecordFailure(1)
+
+	publish("HTTP://backend.example", "http://other.example")
+	if got := p.pool.GetBackend(target); got != original || got.IsHealthy() ||
+		got.Stats().TotalFailures != 1 || got.circuitBreaker.State().String() != "open" {
+		t.Fatalf("repeated snapshot lost backend state: %+v", got)
+	}
+	if _, err := balancer.Next(p.pool); err != nil {
+		t.Fatal(err)
+	}
+	publish(target, "http://other.example")
+	if balancer.counter.Load() != 1 {
+		t.Fatal("unchanged membership reset the load balancer")
+	}
+	for _, invalid := range []string{"http://[invalid", "relative", "unknown://backend.example"} {
+		publish("http://new.example", invalid)
+		if p.pool.Count() != 2 || p.pool.GetBackend(target) != original || balancer.counter.Load() != 1 {
+			t.Fatalf("invalid snapshot containing %q changed the pool", invalid)
+		}
+	}
+	publish()
+	if p.pool.Count() != 0 {
+		t.Fatal("empty snapshot did not clear the pool")
+	}
+	publish(target)
+	replacement := p.pool.GetBackend(target)
+	if replacement == nil || replacement == original || !replacement.IsHealthy() ||
+		replacement.Stats().TotalFailures != 0 || replacement.circuitBreaker.State().String() != "closed" {
+		t.Fatal("rediscovered backend did not start with fresh state")
+	}
+}

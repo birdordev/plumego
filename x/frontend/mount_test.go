@@ -584,3 +584,29 @@ func TestMountServesNestedDirectoryIndex(t *testing.T) {
 		}
 	}
 }
+
+func TestMountDoesNotDescendThroughDirectoryIndex(t *testing.T) {
+	dir := t.TempDir()
+	writeTestFile(t, dir, "index.html", "root index")
+	writeTestFile(t, dir, "docs/index.html/index.html", "nested file")
+	for _, fallback := range []bool{false, true} {
+		mount, err := NewMountFromDir(dir, WithFallback(fallback))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, method := range []string{http.MethodGet, http.MethodHead} {
+			rec := httptest.NewRecorder()
+			mount.Handler().ServeHTTP(rec, httptest.NewRequest(method, "/docs/", nil))
+			want := http.StatusNotFound
+			if fallback {
+				want = http.StatusOK
+			}
+			if rec.Code != want || strings.Contains(rec.Body.String(), "nested file") {
+				t.Fatalf("%s fallback=%t: got %d %q, want %d", method, fallback, rec.Code, rec.Body.String(), want)
+			}
+			if fallback && method == http.MethodGet && rec.Body.String() != "root index" {
+				t.Fatalf("fallback body = %q", rec.Body.String())
+			}
+		}
+	}
+}

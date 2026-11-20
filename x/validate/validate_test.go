@@ -234,11 +234,14 @@ func TestBindPreservesPartialValueOnTypeError(t *testing.T) {
 	}
 }
 
-type capturingRequestValidator struct{ inputs []any }
+type capturingRequestValidator struct {
+	inputs []any
+	err    error
+}
 
 func (v *capturingRequestValidator) Validate(input any) error {
 	v.inputs = append(v.inputs, input)
-	return nil
+	return v.err
 }
 
 func TestBindReadsOnlyFirstJSONValue(t *testing.T) {
@@ -274,5 +277,28 @@ func TestBindPreservesCallerBodyLimitError(t *testing.T) {
 	}
 	if validator.called {
 		t.Fatal("validator ran on an incomplete body")
+	}
+}
+
+func TestBindPointerTargetsAndNull(t *testing.T) {
+	const body = `{"name":"widget"}`
+	failure := errors.New("validator declined pointer input")
+	validator := &capturingRequestValidator{err: failure}
+	value, err := Bind[*createItemRequest](newJSONRequest(body), validator)
+	if value == nil || value.Name != "widget" || len(validator.inputs) != 1 || validator.inputs[0] != value {
+		t.Fatalf("pointer Bind = %+v, inputs = %v", value, validator.inputs)
+	}
+	var validationErr ValidationError
+	if !errors.Is(err, failure) || !errors.As(err, &validationErr) || validationErr.Code() != contract.CodeValidationError {
+		t.Fatalf("Bind = %v, want classified validation error", err)
+	}
+
+	validator = &capturingRequestValidator{}
+	value, err = Bind[*createItemRequest](newJSONRequest("null"), validator)
+	if value != nil || err != nil || len(validator.inputs) != 1 {
+		t.Fatalf("null Bind = %+v, %v; inputs = %v", value, err, validator.inputs)
+	}
+	if pointer, ok := validator.inputs[0].(*createItemRequest); !ok || pointer != nil {
+		t.Fatalf("validator received %v (%T), want a nil *createItemRequest", pointer, validator.inputs[0])
 	}
 }

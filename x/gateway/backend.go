@@ -45,6 +45,10 @@ func NewBackend(urlStr string) (*Backend, error) {
 		return nil, err
 	}
 
+	return newBackend(urlStr, parsedURL), nil
+}
+
+func newBackend(urlStr string, parsedURL *url.URL) *Backend {
 	backend := &Backend{
 		URL:       urlStr,
 		ParsedURL: parsedURL,
@@ -55,7 +59,7 @@ func NewBackend(urlStr string) (*Backend, error) {
 	// Mark as healthy by default
 	backend.healthy.Store(true)
 
-	return backend, nil
+	return backend
 }
 
 // IsHealthy returns whether the backend is healthy
@@ -247,11 +251,14 @@ func (p *BackendPool) UpdateBackends(urls []string) error {
 		newBackends = append(newBackends, backend)
 	}
 
-	p.mu.Lock()
-	p.backends = newBackends
-	p.mu.Unlock()
-
+	p.replaceBackends(newBackends)
 	return nil
+}
+
+func (p *BackendPool) replaceBackends(backends []*Backend) {
+	p.mu.Lock()
+	p.backends = backends
+	p.mu.Unlock()
 }
 
 // GetBackend returns a backend by URL
