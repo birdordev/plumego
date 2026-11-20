@@ -114,6 +114,10 @@
   asset exists, because the request can refuse the identity encoding.
 - With SPA fallback enabled, a missing extensionless path varies by `Accept`.
   Both the fallback response and the 404 include `Vary: Accept`.
+  Across all header lines, `text/html` takes precedence over `text/*`, then
+  `*/*`. A matching range with quality zero prevents the fallback when it is
+  the most specific match. If no range matches HTML, a positive
+  `application/xhtml+xml` range can still signal navigation.
 - Non-`http.Dir` caller-provided filesystems try accepted compressed variants
   lazily. A filesystem with reliable variant metadata can supply
   `WithPrecompressedVariantPlan` to skip unlisted candidates.

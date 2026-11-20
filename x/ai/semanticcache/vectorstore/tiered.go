@@ -263,17 +263,22 @@ func (t *TieredBackend) applyToTiers(operation string, apply func(Backend) error
 	return errors.Join(failures...)
 }
 
-// Update updates an entry in all tiers.
+// Update updates an entry in L1, then attempts to update the optional tiers.
+// It returns an L1 failure directly and reports optional-tier failures through OnError.
 func (t *TieredBackend) Update(ctx context.Context, entry *Entry) error {
 	if err := t.l1.Update(ctx, entry); err != nil {
 		return err
 	}
 
 	if t.l2 != nil {
-		_ = t.l2.Update(ctx, entry)
+		if err := t.l2.Update(ctx, entry); err != nil {
+			t.reportBackgroundError("l2", "update", err)
+		}
 	}
 	if t.l3 != nil {
-		_ = t.l3.Update(ctx, entry)
+		if err := t.l3.Update(ctx, entry); err != nil {
+			t.reportBackgroundError("l3", "update", err)
+		}
 	}
 
 	return nil

@@ -9,7 +9,7 @@
 //   - Half-Open: Testing if service recovered, limited requests allowed
 //
 // State transitions:
-//   - Closed -> Open: Failure rate exceeds threshold
+//   - Closed -> Open: By default, the failure rate reaches or exceeds the threshold after enough requests
 //   - Open -> Half-Open: After timeout period
 //   - Half-Open -> Closed: Success rate meets threshold
 //   - Half-Open -> Open: Failures continue
@@ -91,7 +91,8 @@ type Config struct {
 	Name string
 
 	// FailureThreshold is the failure rate threshold (0.0-1.0)
-	// When exceeded, the circuit opens
+	// The default policy opens the circuit when the failure rate reaches or
+	// exceeds this threshold and at least MinRequests have completed.
 	// Default: 0.5 (50%)
 	FailureThreshold float64
 

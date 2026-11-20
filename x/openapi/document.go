@@ -75,6 +75,7 @@ type PathItem struct {
 	Delete  *Operation `json:"delete,omitempty"`
 	Head    *Operation `json:"head,omitempty"`
 	Options *Operation `json:"options,omitempty"`
+	Trace   *Operation `json:"trace,omitempty"`
 }
 
 // Operation describes one OpenAPI operation.

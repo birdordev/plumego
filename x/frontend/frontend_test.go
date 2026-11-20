@@ -114,3 +114,48 @@ func TestSPAFallbackReadsAllAcceptLines(t *testing.T) {
 		}
 	}
 }
+
+func TestSPAFallbackHonorsSpecificHTMLRefusal(t *testing.T) {
+	root := t.TempDir()
+	writeTestFile(t, root, "index.html", "<html>SPA index</html>")
+	h, err := NewHandlerFS(http.Dir(root), WithFallback(true))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, tt := range []struct {
+		name   string
+		path   string
+		accept []string
+		status int
+		vary   bool
+	}{
+		{"exact refusal", "/route", []string{"text/html;q=0, */*;q=1"}, http.StatusNotFound, true},
+		{"refusal across lines", "/route", []string{"text/*", "text/html;q=0"}, http.StatusNotFound, true},
+		{"refusal across reversed lines", "/route", []string{"text/html;q=0", "text/*"}, http.StatusNotFound, true},
+		{"type refusal", "/route", []string{"text/*;q=0, */*"}, http.StatusNotFound, true},
+		{"exact acceptance", "/route", []string{"text/*;q=0, text/html;q=0.2"}, http.StatusOK, true},
+		{"no accept header", "/route", nil, http.StatusOK, true},
+		{"XHTML navigation", "/route", []string{"application/xhtml+xml"}, http.StatusOK, true},
+		{"XHTML with explicit HTML refusal", "/route", []string{"application/xhtml+xml, text/html;q=0"}, http.StatusNotFound, true},
+		{"missing asset", "/missing.js", []string{"text/html"}, http.StatusNotFound, false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			for _, method := range []string{http.MethodGet, http.MethodHead} {
+				req := httptest.NewRequest(method, tt.path, nil)
+				for _, line := range tt.accept {
+					req.Header.Add("Accept", line)
+				}
+				rec := httptest.NewRecorder()
+				h.ServeHTTP(rec, req)
+				if rec.Code != tt.status || slices.Contains(rec.Header().Values("Vary"), "Accept") != tt.vary {
+					t.Errorf("%s: status=%d Vary=%v, want status=%d and Vary: Accept=%t", method, rec.Code, rec.Header().Values("Vary"), tt.status, tt.vary)
+				}
+				wantIndex := method == http.MethodGet && tt.status == http.StatusOK
+				if strings.Contains(rec.Body.String(), "SPA index") != wantIndex {
+					t.Errorf("%s: body = %q, want SPA index presence=%t", method, rec.Body.String(), wantIndex)
+				}
+			}
+		})
+	}
+}

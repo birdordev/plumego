@@ -160,5 +160,7 @@ func setOperation(item *PathItem, method string, op *Operation) {
 		item.Head = op
 	case http.MethodOptions:
 		item.Options = op
+	case http.MethodTrace:
+		item.Trace = op
 	}
 }

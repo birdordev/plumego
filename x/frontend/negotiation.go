@@ -52,30 +52,43 @@ func varyOnAccept(header http.Header) {
 }
 
 func acceptsIndex(r *http.Request) bool {
-	hasAcceptedTypes := false
+	hasAccept := false
+	acceptsXHTML := false
+	bestSpecificity := 0
+	bestQuality := 0.0
 	for _, line := range r.Header.Values("Accept") {
 		line = strings.TrimSpace(line)
 		if line == "" {
 			continue
 		}
-		hasAcceptedTypes = true
-		if acceptsHTML(line) {
-			return true
+		hasAccept = true
+		for part := range strings.SplitSeq(line, ",") {
+			token, ok := parseWeightedToken(part)
+			if !ok {
+				continue
+			}
+			var specificity int
+			switch token.value {
+			case "text/html":
+				specificity = 3
+			case "text/*":
+				specificity = 2
+			case "*/*":
+				specificity = 1
+			case "application/xhtml+xml":
+				acceptsXHTML = acceptsXHTML || token.quality > 0
+				continue
+			default:
+				continue
+			}
+			if specificity > bestSpecificity || (specificity == bestSpecificity && token.quality > bestQuality) {
+				bestSpecificity = specificity
+				bestQuality = token.quality
+			}
 		}
 	}
-	return !hasAcceptedTypes
-}
-
-func acceptsHTML(header string) bool {
-	for _, part := range strings.Split(header, ",") {
-		token, ok := parseWeightedToken(part)
-		if !ok || token.quality <= 0 {
-			continue
-		}
-		switch token.value {
-		case "text/html", "application/xhtml+xml", "*/*", "text/*":
-			return true
-		}
+	if bestSpecificity > 0 {
+		return bestQuality > 0
 	}
-	return false
+	return !hasAccept || acceptsXHTML
 }

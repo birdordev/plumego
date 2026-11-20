@@ -110,7 +110,7 @@ func (b *InProcBroker) CloseWithContext(ctx context.Context) error {
 		if b.persistenceManager != nil {
 			if err := b.persistenceManager.close(); err != nil {
 				persistenceErr := fmt.Errorf("failed to close persistence: %w", err)
-				b.lastError = persistenceErr
+				b.recordPersistenceError(persistenceErr)
 				return errors.Join(persistenceErr, b.ps.Close())
 			}
 		}

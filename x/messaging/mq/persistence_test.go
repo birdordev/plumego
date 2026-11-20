@@ -1,6 +1,7 @@
 package mq
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -395,6 +396,75 @@ type controlledPersistenceClose struct {
 	PersistenceBackend
 	err   error
 	calls int
+}
+
+type failingPersistence struct {
+	PersistenceBackend
+	err error
+}
+
+func (p failingPersistence) SaveMessage(context.Context, string, Message) error {
+	return p.err
+}
+
+func (p failingPersistence) Close() error { return p.err }
+
+func TestBrokerPersistenceErrorSnapshotConcurrent(t *testing.T) {
+	storageErr := errors.New("test persistence failure")
+	message := Message{ID: "sample", Data: "data"}
+	for _, tt := range []struct {
+		name     string
+		run      func(*InProcBroker) error
+		wantErr  error
+		wantText string
+	}{
+		{"publish", func(b *InProcBroker) error { return b.Publish(t.Context(), "sample", message) },
+			nil, "failed to persist message: test persistence failure"},
+		{"publish batch", func(b *InProcBroker) error { return b.PublishBatch(t.Context(), "sample", []Message{message}) },
+			nil, "failed to persist message: test persistence failure"},
+		{"close", func(b *InProcBroker) error { return b.CloseWithContext(t.Context()) },
+			storageErr, "failed to close persistence: test persistence failure"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			// Use the Broker interface so HealthCheck only reads the MQ snapshot.
+			ps := struct{ pubsub.Broker }{pubsub.New()}
+			broker, err := NewInProcBroker(ps)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = broker.Close() })
+			broker.config.EnablePersistence = true
+			broker.persistenceManager = newPersistenceManager(broker, failingPersistence{err: storageErr})
+			if got := broker.HealthCheck().Metrics.LastError; got != "" {
+				t.Fatalf("initial LastError = %q, want empty", got)
+			}
+
+			started, done, readerDone := make(chan struct{}), make(chan struct{}), make(chan struct{})
+			go func() {
+				defer close(readerDone)
+				close(started)
+				for {
+					_ = broker.HealthCheck()
+					select {
+					case <-done:
+						return
+					default:
+					}
+				}
+			}()
+			<-started
+			err = tt.run(broker)
+			close(done)
+			<-readerDone
+
+			if !errors.Is(err, tt.wantErr) {
+				t.Errorf("operation error = %v, want %v", err, tt.wantErr)
+			}
+			if got := broker.HealthCheck().Metrics.LastError; got != tt.wantText {
+				t.Errorf("LastError = %q, want %q", got, tt.wantText)
+			}
+		})
+	}
 }
 
 func (p *controlledPersistenceClose) Close() error {

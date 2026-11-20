@@ -35,6 +35,63 @@ func TestGenerateStaticRouteWithoutHintUsesDefaultResponse(t *testing.T) {
 	}
 }
 
+func TestGenerateIncludesTrace(t *testing.T) {
+	r := router.NewRouter()
+	handler := http.HandlerFunc(func(http.ResponseWriter, *http.Request) {})
+	for _, route := range []struct{ method, path string }{
+		{http.MethodGet, "/diagnostics/:id"},
+		{http.MethodTrace, "/diagnostics/:id"},
+		{http.MethodGet, "/healthz"},
+	} {
+		if err := r.AddRoute(route.method, route.path, handler); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	doc := New().Generate(r.Routes(), map[string]Op{
+		"TRACE /diagnostics/:id": {Summary: "Describe diagnostic route"},
+	})
+	data, err := MarshalJSON(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded struct {
+		Paths map[string]map[string]Operation
+	}
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	operations := decoded.Paths["/diagnostics/{id}"]
+	trace, ok := operations["trace"]
+	if !ok || trace.Summary != "Describe diagnostic route" || len(trace.Parameters) != 1 ||
+		trace.Parameters[0].Name != "id" || trace.Parameters[0].In != "path" || !trace.Parameters[0].Required {
+		t.Fatalf("decoded TRACE = %+v, want hinted operation with required id path parameter", trace)
+	}
+	if _, ok := operations["get"]; !ok {
+		t.Error("GET missing from shared path")
+	}
+	if _, ok := decoded.Paths["/healthz"]["trace"]; ok {
+		t.Error("unexpected TRACE on a GET-only path")
+	}
+
+	yaml, err := MarshalYAML(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"    trace:\n      parameters:\n",
+		"          in: \"path\"\n          name: \"id\"\n          required: true\n",
+		"      summary: \"Describe diagnostic route\"\n",
+	} {
+		if !strings.Contains(string(yaml), want) {
+			t.Errorf("YAML is missing %q:\n%s", want, yaml)
+		}
+	}
+	if strings.Count(string(yaml), "    trace:\n") != 1 {
+		t.Errorf("want exactly one TRACE operation in YAML:\n%s", yaml)
+	}
+}
+
 func TestGenerateParameterizedRouteUsesOpenAPIPathTemplate(t *testing.T) {
 	doc := New().Generate([]router.RouteInfo{{
 		Method: http.MethodGet,

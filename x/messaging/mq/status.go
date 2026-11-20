@@ -145,8 +145,8 @@ func (b *InProcBroker) getMetricsSnapshot() MetricsSnapshot {
 	}
 
 	// Add error and panic information
-	if b.lastError != nil {
-		snapshot.LastError = b.lastError.Error()
+	if message := b.lastPersistenceError.Load(); message != nil {
+		snapshot.LastError = *message
 	}
 	if b.lastPanic != nil {
 		snapshot.LastPanic = b.lastPanic.Error()

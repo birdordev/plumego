@@ -128,7 +128,7 @@ if err := openapi.WriteJSON(os.Stdout, doc); err != nil {
 |---|---|
 | `Document` | Root OpenAPI 3.1 document (`openapi`, `info`, `paths`) |
 | `Info` | Document metadata (`title`, `version`) |
-| `PathItem` | Per-path operations (Get, Post, Put, Patch, Delete, Head, Options) |
+| `PathItem` | Per-path operations (Get, Post, Put, Patch, Delete, Head, Options, Trace) |
 | `Operation` | Single HTTP method operation with summary, tags, parameters, requestBody, responses |
 | `Op` | Operation hint supplied by callers; merged into the generated `Operation` |
 | `Param` | Path, query, or header parameter |
@@ -136,6 +136,9 @@ if err := openapi.WriteJSON(os.Stdout, doc); err != nil {
 | `RequestBody` | Request body descriptor with content map |
 | `Response` | Response descriptor with description and optional content |
 | `MediaType` | Media type descriptor with schema |
+
+The experimental `PathItem.Trace` field holds an explicitly registered
+`TRACE` operation. JSON and YAML omit the field on paths without that method.
 
 ---
 

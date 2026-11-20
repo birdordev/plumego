@@ -59,9 +59,11 @@ type InProcBroker struct {
 	panicHandler  PanicHandler
 	config        Config
 	startTime     time.Time
-	lastError     error
 	lastPanic     error
 	lastPanicTime time.Time
+
+	// Persistence failures can be recorded while HealthCheck reads the snapshot.
+	lastPersistenceError atomic.Pointer[string]
 
 	priorityMu     sync.Mutex
 	priorityQueues map[string]*priorityDispatcher
@@ -82,6 +84,11 @@ type InProcBroker struct {
 
 	// consumerGroupMgr is lazily initialized for InProcPubSub backends.
 	consumerGroupMgr *pubsub.ConsumerGroupManager
+}
+
+func (b *InProcBroker) recordPersistenceError(err error) {
+	message := err.Error()
+	b.lastPersistenceError.Store(&message)
 }
 
 // Option configures the broker.
@@ -303,7 +310,7 @@ func (b *InProcBroker) Publish(ctx context.Context, topic string, msg Message) e
 			if err := b.persistenceManager.saveMessage(ctx, topic, msg); err != nil {
 				// Log error but don't fail the publish
 				// This ensures availability over consistency
-				b.lastError = fmt.Errorf("failed to persist message: %w", err)
+				b.recordPersistenceError(fmt.Errorf("failed to persist message: %w", err))
 			}
 		}
 
@@ -333,7 +340,7 @@ func (b *InProcBroker) PublishBatch(ctx context.Context, topic string, msgs []Me
 		if b.config.EnablePersistence && b.persistenceManager != nil {
 			for _, msg := range msgs {
 				if err := b.persistenceManager.saveMessage(ctx, topic, msg); err != nil {
-					b.lastError = fmt.Errorf("failed to persist message: %w", err)
+					b.recordPersistenceError(fmt.Errorf("failed to persist message: %w", err))
 				}
 			}
 		}

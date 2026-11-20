@@ -14,6 +14,8 @@ type failingBackend struct {
 	addErr      error
 	addBatchErr error
 	searchErr   error
+	updateErr   error
+	updateCalls int
 }
 
 func (b *failingBackend) Add(context.Context, *Entry) error { return b.addErr }
@@ -32,7 +34,10 @@ func (b *failingBackend) Delete(context.Context, string) error { return nil }
 
 func (b *failingBackend) DeleteBatch(context.Context, []string) error { return nil }
 
-func (b *failingBackend) Update(context.Context, *Entry) error { return nil }
+func (b *failingBackend) Update(context.Context, *Entry) error {
+	b.updateCalls++
+	return b.updateErr
+}
 
 func (b *failingBackend) Count(context.Context) (int64, error) { return 0, nil }
 
@@ -79,6 +84,58 @@ func TestTieredBackendReportsBackgroundAddFailures(t *testing.T) {
 	}
 	if got[1].Tier != "l3" || got[1].Operation != "add" || !errors.Is(got[1].Err, l3Err) {
 		t.Fatalf("unexpected second background error: %+v", got[1])
+	}
+}
+
+func TestTieredBackendReportsBackgroundUpdateFailures(t *testing.T) {
+	l1Err := errors.New("l1 update failed")
+	l2Err := errors.New("l2 update failed")
+	l3Err := errors.New("l3 update failed")
+	for _, tt := range []struct {
+		name      string
+		tierErrs  [3]error
+		wantCalls [3]int
+		want      []TieredBackgroundError
+	}{
+		{
+			name:      "optional tier failures",
+			tierErrs:  [3]error{nil, l2Err, l3Err},
+			wantCalls: [3]int{1, 1, 1},
+			want: []TieredBackgroundError{
+				{Tier: "l2", Operation: "update", Err: l2Err},
+				{Tier: "l3", Operation: "update", Err: l3Err},
+			},
+		},
+		{name: "L1 failure", tierErrs: [3]error{l1Err, l2Err, l3Err}, wantCalls: [3]int{1, 0, 0}},
+		{name: "success", wantCalls: [3]int{1, 1, 1}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			l1 := &failingBackend{updateErr: tt.tierErrs[0]}
+			l2 := &failingBackend{updateErr: tt.tierErrs[1]}
+			l3 := &failingBackend{updateErr: tt.tierErrs[2]}
+			var got []TieredBackgroundError
+			backend, err := NewTieredBackend(TieredConfig{
+				L1: l1, L2: l2, L3: l3,
+				OnError: func(event TieredBackgroundError) { got = append(got, event) },
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := backend.Update(t.Context(), &Entry{ID: "sample"}); !errors.Is(err, tt.tierErrs[0]) {
+				t.Errorf("Update = %v, want %v", err, tt.tierErrs[0])
+			}
+			if calls := [3]int{l1.updateCalls, l2.updateCalls, l3.updateCalls}; calls != tt.wantCalls {
+				t.Errorf("Update calls = %v, want %v", calls, tt.wantCalls)
+			}
+			if len(got) != len(tt.want) {
+				t.Fatalf("diagnostics = %+v, want %+v", got, tt.want)
+			}
+			for i, want := range tt.want {
+				if got[i].Tier != want.Tier || got[i].Operation != want.Operation || !errors.Is(got[i].Err, want.Err) {
+					t.Errorf("diagnostic %d = %+v, want %+v", i, got[i], want)
+				}
+			}
+		})
 	}
 }
 
