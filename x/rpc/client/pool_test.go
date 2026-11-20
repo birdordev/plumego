@@ -441,3 +441,26 @@ func TestPoolReportsRedundantDialCloseError(t *testing.T) {
 		t.Errorf("Close after redundant failure = %v, discarded closes=%d", err, discarded.calls)
 	}
 }
+
+func TestPoolCloseJoinsCachedConnectionErrors(t *testing.T) {
+	first := &discardedDialConn{err: errors.New("first close failed")}
+	second := &discardedDialConn{err: errors.New("second close failed")}
+	connections := map[string]*discardedDialConn{"first": first, "second": second}
+	pool := New(func(_ context.Context, target string, _ ...DialOption) (Conn, error) {
+		return connections[target], nil
+	})
+	for _, target := range []string{"first", "second"} {
+		if _, err := pool.Dial(t.Context(), target); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := pool.Close(); !errors.Is(err, first.err) || !errors.Is(err, second.err) {
+		t.Fatalf("Close = %v", err)
+	}
+	if err := pool.Close(); err != nil || first.calls != 1 || second.calls != 1 {
+		t.Fatalf("second Close = %v; connection closes = %d, %d", err, first.calls, second.calls)
+	}
+	if _, err := pool.Dial(t.Context(), "first"); !errors.Is(err, ErrPoolClosed) {
+		t.Fatalf("Dial after Close = %v", err)
+	}
+}

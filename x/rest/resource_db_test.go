@@ -457,3 +457,28 @@ func TestRepositoryUpdateClassifiesRowsAffected(t *testing.T) {
 		})
 	}
 }
+
+func TestSQLBuilderUsesStableFilterOrdering(t *testing.T) {
+	builder := NewSQLBuilder("items", "id").WithColumns("name")
+	for i := range 20 {
+		filters := make(map[string]string)
+		if i%2 == 0 {
+			filters["category"] = "books"
+			filters["active"] = "yes"
+		} else {
+			filters["active"] = "yes"
+			filters["category"] = "books"
+		}
+		params := &QueryParams{Search: "Go", Filters: filters, Limit: 5, Offset: 10}
+		selectSQL, selectArgs := builder.BuildSelectQuery(params)
+		countSQL, countArgs := builder.BuildCountQuery(params)
+		const where = " WHERE (name LIKE ?) AND active = ? AND category = ?"
+		if selectSQL != "SELECT name FROM items"+where+" LIMIT ? OFFSET ?" ||
+			!slices.Equal(selectArgs, []any{"%Go%", "yes", "books", 5, 10}) {
+			t.Fatalf("select = %s, args=%v", selectSQL, selectArgs)
+		}
+		if countSQL != "SELECT COUNT(*) FROM items"+where || !slices.Equal(countArgs, []any{"%Go%", "yes", "books"}) {
+			t.Fatalf("count = %s, args=%v", countSQL, countArgs)
+		}
+	}
+}

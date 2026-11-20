@@ -220,3 +220,16 @@ func TestBindValidationErrorHTTPResponse(t *testing.T) {
 		t.Errorf("code = %d, body = %s", w.Code, w.Body.String())
 	}
 }
+
+func TestBindPreservesPartialValueOnTypeError(t *testing.T) {
+	type request struct {
+		Name  string `json:"name"`
+		Count int    `json:"count"`
+	}
+	validator := &requestValidator{}
+	value, err := Bind[request](newJSONRequest(`{"name":"item","count":"unknown"}`), validator)
+	var typeErr *json.UnmarshalTypeError
+	if !errors.As(err, &typeErr) || typeErr.Field != "count" || value.Name != "item" || value.Count != 0 || validator.called {
+		t.Fatalf("Bind = %+v, %v; validator called = %t", value, err, validator.called)
+	}
+}

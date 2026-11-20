@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 )
 
@@ -1147,4 +1148,65 @@ func TestNewConsulRejectsNegativeWaitTime(t *testing.T) {
 			t.Errorf("interval %s: NewConsul = %v, %v", tt.input, got, err)
 		}
 	}
+}
+
+type consulTestRoundTripper func(*http.Request) (*http.Response, error)
+
+func (f consulTestRoundTripper) RoundTrip(r *http.Request) (*http.Response, error) {
+	return f(r)
+}
+
+func TestConsulCloseCancelsInFlightPoll(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		c, err := NewConsul("consul.test", ConsulConfig{WaitTime: time.Millisecond, Timeout: time.Second})
+		if err != nil {
+			t.Fatal(err)
+		}
+		started := make(chan *http.Request, 1)
+		release := make(chan struct{})
+		defer close(release)
+		c.client.Transport = consulTestRoundTripper(func(r *http.Request) (*http.Response, error) {
+			select {
+			case started <- r:
+			default:
+			}
+			select {
+			case <-r.Context().Done():
+				return nil, r.Context().Err()
+			case <-release:
+				return nil, context.Canceled
+			}
+		})
+		firstCtx, cancel := context.WithCancel(t.Context())
+		defer cancel()
+		first, err := c.Watch(firstCtx, "service")
+		if err != nil {
+			t.Fatal(err)
+		}
+		second, err := c.Watch(t.Context(), "service")
+		if err != nil {
+			t.Fatal(err)
+		}
+		request := <-started
+		if _, ok := request.Context().Deadline(); !ok {
+			t.Fatal("polling lost its request timeout")
+		}
+		cancel()
+		if _, ok := <-first; ok {
+			t.Fatal("canceled subscription still open")
+		}
+		if request.Context().Err() != nil {
+			t.Fatal("canceling one subscriber canceled the shared request")
+		}
+		if err := c.Close(); err != nil {
+			t.Fatal(err)
+		}
+		if _, ok := <-second; ok {
+			t.Fatal("subscription still open after Close")
+		}
+		synctest.Wait()
+		if !errors.Is(request.Context().Err(), context.Canceled) {
+			t.Fatalf("in-flight request context = %v", request.Context().Err())
+		}
+	})
 }

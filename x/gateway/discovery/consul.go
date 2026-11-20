@@ -227,7 +227,7 @@ func (c *Consul) Health(ctx context.Context, serviceID string, healthy bool) err
 	return ErrNotSupported
 }
 
-// Close stops all watchers and closes their subscription channels before returning.
+// Close cancels all watcher requests and closes their subscription channels.
 func (c *Consul) Close() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -265,18 +265,20 @@ type consulWatcher struct {
 	consul      *Consul
 	serviceName string
 	subscribers []chan []string
-	stopChan    chan struct{}
+	ctx         context.Context
+	cancel      context.CancelFunc
 	stopOnce    sync.Once
 	mu          sync.RWMutex
 }
 
 // newConsulWatcher creates a new watcher for the given service
 func newConsulWatcher(consul *Consul, serviceName string) *consulWatcher {
+	ctx, cancel := context.WithCancel(context.Background())
 	return &consulWatcher{
 		consul:      consul,
 		serviceName: serviceName,
 		subscribers: make([]chan []string, 0),
-		stopChan:    make(chan struct{}),
+		ctx:         ctx, cancel: cancel,
 	}
 }
 
@@ -287,7 +289,7 @@ func (w *consulWatcher) subscribe(ctx context.Context) <-chan []string {
 
 	w.mu.Lock()
 	select {
-	case <-w.stopChan:
+	case <-w.ctx.Done():
 		close(ch)
 		w.mu.Unlock()
 		return ch
@@ -298,7 +300,7 @@ func (w *consulWatcher) subscribe(ctx context.Context) <-chan []string {
 
 	go func() {
 		select {
-		case <-w.stopChan:
+		case <-w.ctx.Done():
 			return
 		case <-ctx.Done():
 		}
@@ -324,7 +326,7 @@ func (w *consulWatcher) watch() {
 	for {
 		select {
 		case <-ticker.C:
-			ctx, cancel := context.WithTimeout(context.Background(), w.consul.config.Timeout)
+			ctx, cancel := context.WithTimeout(w.ctx, w.consul.config.Timeout)
 			backends, err := w.consul.Resolve(ctx, w.serviceName)
 			cancel()
 
@@ -332,7 +334,7 @@ func (w *consulWatcher) watch() {
 				w.notify(backends)
 			}
 
-		case <-w.stopChan:
+		case <-w.ctx.Done():
 			return
 		}
 	}
@@ -357,7 +359,7 @@ func (w *consulWatcher) stop() {
 	w.stopOnce.Do(func() {
 		w.mu.Lock()
 		defer w.mu.Unlock()
-		close(w.stopChan)
+		w.cancel()
 		for _, ch := range w.subscribers {
 			close(ch)
 		}

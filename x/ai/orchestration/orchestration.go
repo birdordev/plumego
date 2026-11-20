@@ -7,6 +7,8 @@ package orchestration
 import (
 	"context"
 	"fmt"
+	"maps"
+	"slices"
 	"sync"
 	"time"
 
@@ -87,7 +89,8 @@ func (s *SequentialStep) Name() string {
 	return s.StepName
 }
 
-// ParallelStep executes one or more agents concurrently.
+// ParallelStep executes one or more agents concurrently. It returns the first
+// agent result on success and stores each configured output under its OutputKey.
 type ParallelStep struct {
 	StepName   string
 	Agents     []*Agent
@@ -140,7 +143,6 @@ func (p *ParallelStep) Execute(ctx context.Context, wf *Workflow) (*AgentResult,
 	}
 	wf.mu.Unlock()
 
-	// Return first result (combined result)
 	return results[0], nil
 }
 
@@ -177,7 +179,8 @@ func (c *ConditionalStep) Name() string {
 	return c.StepName
 }
 
-// RetryStep retries a step on failure.
+// RetryStep retries a step on failure, stopping before an attempt if the
+// execution context has been canceled.
 type RetryStep struct {
 	StepName   string
 	Step       Step
@@ -191,6 +194,9 @@ func (r *RetryStep) Execute(ctx context.Context, wf *Workflow) (*AgentResult, er
 	var lastErr error
 
 	for i := 0; i <= r.MaxRetries; i++ {
+		if err := ctx.Err(); err != nil {
+			return lastResult, err
+		}
 		lastResult, lastErr = r.Step.Execute(ctx, wf)
 		if lastErr == nil {
 			return lastResult, nil
@@ -273,7 +279,8 @@ func NewEngine() *Engine {
 	}
 }
 
-// RegisterWorkflow registers a workflow.
+// RegisterWorkflow registers a workflow definition. Steps and their configuration
+// must be set before registration and remain immutable during execution.
 func (e *Engine) RegisterWorkflow(wf *Workflow) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -292,20 +299,21 @@ func (e *Engine) GetWorkflow(id string) (*Workflow, error) {
 	return wf, nil
 }
 
-// Execute executes a workflow.
+// Execute executes a workflow with a private copy of the steps slice and
+// top-level state map. Step objects and values nested in state remain shared.
 func (e *Engine) Execute(ctx context.Context, workflowID string, initialState map[string]any) ([]*AgentResult, error) {
-	wf, err := e.GetWorkflow(workflowID)
+	definition, err := e.GetWorkflow(workflowID)
 	if err != nil {
 		return nil, err
 	}
 
-	// Initialize state
-	wf.mu.Lock()
-	wf.State = initialState
+	wf := &Workflow{
+		ID: definition.ID, Name: definition.Name, Description: definition.Description,
+		Steps: slices.Clone(definition.Steps), State: maps.Clone(initialState),
+	}
 	if wf.State == nil {
 		wf.State = make(map[string]any)
 	}
-	wf.mu.Unlock()
 
 	// Execute steps
 	results := make([]*AgentResult, 0, len(wf.Steps))

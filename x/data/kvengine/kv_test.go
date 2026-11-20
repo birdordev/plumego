@@ -443,56 +443,57 @@ func TestStats(t *testing.T) {
 }
 
 func TestPersistence(t *testing.T) {
-	dataDir := fmt.Sprintf("testdata_%d", time.Now().UnixNano())
-	defer os.RemoveAll(dataDir)
+	for _, mode := range []WALSyncMode{WALSyncImmediate, WALSyncInterval} {
+		t.Run(string(mode), func(t *testing.T) {
+			dir := t.TempDir()
+			opts := Options{
+				DataDir:       dir,
+				MaxEntries:    1000,
+				MaxMemoryMB:   10,
+				ShardCount:    4,
+				WALSyncMode:   mode,
+				FlushInterval: time.Hour,
+			}
+			store, err := NewKVStore(opts)
+			if err != nil {
+				t.Fatalf("open initial store: %v", err)
+			}
+			t.Cleanup(func() { _ = store.Close() })
 
-	opts := Options{
-		DataDir:     dataDir,
-		MaxEntries:  1000,
-		MaxMemoryMB: 10,
-		ShardCount:  4,
-	}
+			entries := map[string][]byte{"persistent1": []byte("value1"), "persistent2": []byte("value2"), "persistent3": []byte("value3")}
+			for key, value := range entries {
+				if err := store.Set(key, value, 0); err != nil {
+					t.Fatalf("write %s: %v", key, err)
+				}
+			}
+			if err := store.Close(); err != nil {
+				t.Fatalf("close initial store: %v", err)
+			}
 
-	// Create store and add data
-	kv1, err := NewKVStore(opts)
-	if err != nil {
-		t.Fatalf("Failed to create first store: %v", err)
-	}
+			info, err := os.Stat(filepath.Join(dir, "store.wal"))
+			if err != nil {
+				t.Fatalf("inspect WAL after initial close: %v", err)
+			}
+			if info.Size() == 0 {
+				t.Fatal("WAL is empty after initial close")
+			}
 
-	testData := map[string][]byte{
-		"persistent1": []byte("value1"),
-		"persistent2": []byte("value2"),
-		"persistent3": []byte("value3"),
-	}
-
-	for k, v := range testData {
-		if err = kv1.Set(k, v, 0); err != nil {
-			t.Fatalf("Failed to set %s: %v", k, err)
-		}
-	}
-
-	// Force WAL flush
-	time.Sleep(50 * time.Millisecond)
-	kv1.Close()
-
-	// Create new store with same data directory
-	kv2, err := NewKVStore(opts)
-	if err != nil {
-		t.Fatalf("Failed to create second store: %v", err)
-	}
-	defer kv2.Close()
-
-	// Verify data persisted
-	for k, expectedV := range testData {
-		v, err := kv2.Get(k)
-		if err != nil {
-			t.Errorf("Failed to get %s: %v", k, err)
-			continue
-		}
-
-		if !bytes.Equal(v, expectedV) {
-			t.Errorf("Value mismatch for %s: expected %s, got %s", k, expectedV, v)
-		}
+			reopened, err := NewKVStore(opts)
+			if err != nil {
+				t.Fatalf("reopen store (WAL %d bytes): %v", info.Size(), err)
+			}
+			t.Cleanup(func() {
+				if err := reopened.Close(); err != nil {
+					t.Errorf("close reopened store: %v", err)
+				}
+			})
+			for key, want := range entries {
+				got, err := reopened.Get(key)
+				if err != nil || !bytes.Equal(got, want) {
+					t.Errorf("read %s after reopen (WAL %d bytes) = %q, %v; want %q", key, info.Size(), got, err, want)
+				}
+			}
+		})
 	}
 }
 

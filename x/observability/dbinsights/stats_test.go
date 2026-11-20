@@ -228,3 +228,23 @@ func TestExtractTableName(t *testing.T) {
 		})
 	}
 }
+
+func TestAggregatorPreservesZeroMinimumDuration(t *testing.T) {
+	aggregator := NewAggregator(time.Second)
+	const query = "SELECT * FROM records"
+	assertMin := func(want time.Duration) {
+		t.Helper()
+		operation, hasOperation := aggregator.GetOperationStats("query")
+		table, hasTable := aggregator.GetTableStats("records")
+		global := aggregator.GetGlobalStats()
+		if !hasOperation || !hasTable || global.MinDuration != want || operation.MinDuration != want || table.MinDuration != want {
+			t.Fatalf("global=%v operation=%v table=%v; want %v", global.MinDuration, operation.MinDuration, table.MinDuration, want)
+		}
+	}
+	aggregator.RecordQuery("query", query, 0, nil)
+	aggregator.RecordQuery("query", query, time.Millisecond, nil)
+	assertMin(0)
+	aggregator.Reset()
+	aggregator.RecordQuery("query", query, time.Millisecond, nil)
+	assertMin(time.Millisecond)
+}

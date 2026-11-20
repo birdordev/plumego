@@ -71,6 +71,24 @@ fmt.Printf("Status: %s, Progress: %d/%d\\n",
     len(workflow.Steps))
 ```
 
+## Execution and recovery
+
+For distributed execution, the engine subscribes to queue results before
+enqueuing the first incomplete step. It waits for the result matching the
+current task and releases the subscription when the execution ends.
+
+Checkpoints advance the recovery cursor only after their snapshot has been
+saved. When a step result exists, the engine writes it before saving the
+snapshot. A result record can therefore exist even when the checkpoint fails.
+Execution stops on either failure. Resume uses the last readable snapshot
+and skips steps recorded as complete, including in older snapshots. Steps
+with external side effects should be prepared for retries.
+
+Pause saves the paused state before requesting cancellation. If saving fails,
+Pause returns the error and leaves the execution active. The paused state
+remains visible when the canceled step exits. Resume can start once the
+previous run has exited.
+
 ## Worker Setup
 
 ```go

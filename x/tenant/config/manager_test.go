@@ -390,6 +390,8 @@ type snapshotConnector struct {
 	writeErr    error
 	firstRead   chan struct{}
 	releaseRead chan struct{}
+	nextErr     error
+	rowsClosed  int
 }
 
 func (c *snapshotConnector) Connect(context.Context) (driver.Conn, error) {
@@ -408,7 +410,11 @@ func (c *snapshotConn) QueryContext(ctx context.Context, _ string, _ []driver.Na
 	state.mu.Lock()
 	state.queries++
 	first := state.queries == 1
-	rows := &snapshotRows{metadata: state.metadata, read: state.deleted}
+	rows := &snapshotRows{metadata: state.metadata, read: state.deleted, nextErr: state.nextErr, onClose: func() {
+		state.mu.Lock()
+		defer state.mu.Unlock()
+		state.rowsClosed++
+	}}
 	state.mu.Unlock()
 	if first && state.firstRead != nil {
 		close(state.firstRead)
@@ -439,14 +445,24 @@ func (c *snapshotConn) ExecContext(_ context.Context, query string, args []drive
 type snapshotRows struct {
 	read     bool
 	metadata string
+	nextErr  error
+	onClose  func()
 }
 
 func (*snapshotRows) Columns() []string {
 	return []string{"id", "quota_limits", "allowed_models", "allowed_tools", "allowed_methods", "allowed_paths", "metadata", "updated_at"}
 }
-func (*snapshotRows) Close() error { return nil }
+func (r *snapshotRows) Close() error {
+	if r.onClose != nil {
+		r.onClose()
+	}
+	return nil
+}
 func (r *snapshotRows) Next(dest []driver.Value) error {
 	if r.read {
+		if r.nextErr != nil {
+			return r.nextErr
+		}
 		return io.EOF
 	}
 	r.read = true
@@ -548,5 +564,23 @@ func TestTenantConfigInvalidationFencesPendingFill(t *testing.T) {
 				t.Errorf("queries = %d, want %d", connector.queries, scenario.wantQueries)
 			}
 		})
+	}
+}
+
+func TestListTenantsPreservesPartialRowsAndError(t *testing.T) {
+	readFailure := errors.New("tenant row iteration failed")
+	connector := &snapshotConnector{metadata: `{"region":"test"}`, nextErr: readFailure}
+	database := sql.OpenDB(connector)
+	t.Cleanup(func() { _ = database.Close() })
+
+	manager := NewDBTenantConfigManager(database)
+	result, err := manager.ListTenants(t.Context(), 5, 0)
+	if !errors.Is(err, readFailure) || len(result) != 1 || result[0].TenantID != "sample" {
+		t.Fatalf("ListTenants = %+v, %v", result, err)
+	}
+	connector.mu.Lock()
+	defer connector.mu.Unlock()
+	if connector.rowsClosed != 1 {
+		t.Fatalf("rows closed %d times", connector.rowsClosed)
 	}
 }

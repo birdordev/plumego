@@ -2,6 +2,7 @@ package frontend
 
 import (
 	"fmt"
+	"maps"
 	"net/http"
 	"path"
 	"strings"
@@ -76,13 +77,15 @@ func WithFallback(enabled bool) Option {
 // WithHeaders applies additional headers to every successful file response.
 //
 // Header names are canonicalized and values are trimmed during mount
-// construction. Values containing CR, LF, NUL, or other control characters are
+// construction. Aliases of the same name must have the same trimmed value.
+// Values containing CR, LF, NUL, or other control characters are
 // rejected. Transport-managed headers such as Content-Type, Content-Encoding,
 // Cache-Control, Vary, range/conditional headers, and hop-by-hop headers cannot
 // be set with this option.
 func WithHeaders(headers map[string]string) Option {
+	headers = maps.Clone(headers)
 	return func(cfg *config) {
-		cfg.Headers = cloneHeaders(headers)
+		cfg.Headers = headers
 	}
 }
 
@@ -144,7 +147,8 @@ type PrecompressedVariants struct {
 // option is useful for remote, generated, or embedded filesystems where lazy
 // `.br`/`.gz` probing on original responses is too expensive. The plan is used
 // only when the filesystem cannot provide a directory-backed plan. Callers own
-// the correctness of the supplied metadata.
+// the correctness of the supplied metadata. Aliases of the same normalized
+// asset path must specify matching variants.
 func WithPrecompressedVariantPlan(variants map[string]PrecompressedVariants) Option {
 	variants = clonePrecompressedVariantPlan(variants)
 	return func(cfg *config) {
@@ -327,6 +331,9 @@ func normalizePrecompressedVariantPlan(raw map[string]PrecompressedVariants) (ma
 		if !ok {
 			return nil, fmt.Errorf("frontend precompressed variant path %q must be a relative asset path", filePath)
 		}
+		if existing, ok := normalized[cleaned]; ok && existing != variants {
+			return nil, fmt.Errorf("frontend precompressed variant path %q has conflicting variants", cleaned)
+		}
 		normalized[cleaned] = variants
 	}
 	if len(normalized) == 0 {
@@ -363,24 +370,6 @@ func normalizeHeaderOptionValue(name, value string) (string, error) {
 		return "", fmt.Errorf("frontend %s contains invalid value", name)
 	}
 	return value, nil
-}
-
-func cloneHeaders(headers map[string]string) map[string]string {
-	if len(headers) == 0 {
-		return nil
-	}
-	copied := make(map[string]string, len(headers))
-	for key, value := range headers {
-		cleanKey := http.CanonicalHeaderKey(strings.TrimSpace(key))
-		if cleanKey == "" {
-			continue
-		}
-		copied[cleanKey] = strings.TrimSpace(value)
-	}
-	if len(copied) == 0 {
-		return nil
-	}
-	return copied
 }
 
 func cloneMIMETypes(mimeTypes map[string]string) map[string]string {
@@ -421,6 +410,9 @@ func normalizeHeaders(headers map[string]string) (map[string]string, error) {
 		cleanValue := strings.TrimSpace(value)
 		if !isSafeHeaderValue(cleanValue) {
 			return nil, fmt.Errorf("frontend header %q contains invalid value", cleanKey)
+		}
+		if existing, ok := normalized[cleanKey]; ok && existing != cleanValue {
+			return nil, fmt.Errorf("frontend header %q has conflicting values", cleanKey)
 		}
 		normalized[cleanKey] = cleanValue
 	}

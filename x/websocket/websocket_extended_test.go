@@ -894,3 +894,18 @@ func TestStreamReaderReturnsParentCloseError(t *testing.T) {
 		_ = right.Close()
 	}
 }
+
+type continuationReadError struct{ err error }
+
+func (r continuationReadError) Read([]byte) (int, error) { return 0, r.err }
+
+func TestReadMessagePreservesContinuationIOError(t *testing.T) {
+	readFailure := errors.New("continuation read failed")
+	firstFrame := maskedFrame(OpcodeText, false, []byte("first fragment"))
+	conn := newFrameReadConn(nil)
+	conn.br = bufio.NewReader(io.MultiReader(bytes.NewReader(firstFrame), continuationReadError{readFailure}))
+	op, payload, err := conn.ReadMessage()
+	if !errors.Is(err, readFailure) || op != 0 || payload != nil {
+		t.Fatalf("ReadMessage = %d, %q, %v", op, payload, err)
+	}
+}

@@ -206,13 +206,15 @@ func (w *Worker) pollLoop() {
 			continue
 		}
 
-		for _, task := range tasks {
+		w.trackInflight(tasks)
+		for i, task := range tasks {
 			select {
 			case <-w.runCtx.Done():
+				// Forced shutdown owns the remaining leases. They were
+				// reserved but will never reach a handler.
+				w.inflight.Add(-int64(len(tasks) - i))
 				return
 			case w.tasksCh <- task:
-				w.trackInflight(task)
-				w.inflight.Add(1)
 			}
 		}
 	}
@@ -402,9 +404,12 @@ func (w *Worker) observeLatency(task Task) {
 	collector.ObserveMQ(context.Background(), "queue_latency", task.Topic, time.Since(task.CreatedAt), nil, false)
 }
 
-func (w *Worker) trackInflight(task Task) {
+func (w *Worker) trackInflight(tasks []Task) {
 	w.inflightMu.Lock()
-	w.inflightTasks[task.ID] = task
+	for _, task := range tasks {
+		w.inflightTasks[task.ID] = task
+	}
+	w.inflight.Add(int64(len(tasks)))
 	w.inflightMu.Unlock()
 }
 
@@ -438,7 +443,9 @@ func (w *Worker) releaseInflight(ctx context.Context) error {
 		})
 		if err != nil && !errors.Is(err, ErrLeaseLost) && !errors.Is(err, ErrTaskNotFound) {
 			releaseErr = errors.Join(releaseErr, err)
+			continue
 		}
+		w.untrackInflight(task.ID)
 	}
 	return releaseErr
 }
@@ -459,7 +466,9 @@ func (w *Worker) forceStop(ctx context.Context) error {
 	if w.runCancel != nil {
 		w.runCancel()
 	}
-	return w.releaseInflight(ctx)
+	// Let a Reserve already returning hand off its leases before taking the
+	// cleanup snapshot. If it outlives the stop budget, leases expire normally.
+	return errors.Join(waitForPoll(ctx, w.pollDone), w.releaseInflight(ctx))
 }
 
 func (w *Worker) markDeduped(task Task) {

@@ -261,3 +261,24 @@ func TestGenerateCompletesRequiredPathParameters(t *testing.T) {
 		t.Errorf("YAML contains %d required parameters, want 5:\n%s", got, yaml)
 	}
 }
+
+func TestGeneratePrefersNamedRouteHint(t *testing.T) {
+	const path = "/items/:id"
+	route := router.RouteInfo{Method: http.MethodGet, Path: path, Meta: router.RouteMeta{Name: "item.get"}}
+	hints := map[string]Op{
+		"item.get":                  {Summary: "Named operation", Params: []Param{QueryParam("named", String)}},
+		http.MethodGet + " " + path: {Summary: "Fallback operation", Params: []Param{QueryParam("fallback", String)}},
+	}
+	for _, tc := range []struct{ routeName, summary, query string }{
+		{"item.get", "Named operation", "named"},
+		{"missing", "Fallback operation", "fallback"},
+	} {
+		route.Meta.Name = tc.routeName
+		op := New().Generate([]router.RouteInfo{route}, hints).Paths["/items/{id}"].Get
+		if op == nil || op.Summary != tc.summary || len(op.Parameters) != 2 ||
+			op.Parameters[0].Name != tc.query || op.Parameters[0].In != "query" ||
+			op.Parameters[1].Name != "id" || op.Parameters[1].In != "path" || !op.Parameters[1].Required {
+			t.Fatalf("operation for %q = %+v", tc.routeName, op)
+		}
+	}
+}

@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/birdordev/plumego/contract"
@@ -1137,4 +1138,42 @@ func TestDownloadClosesReaderAfterCommittedReadFailure(t *testing.T) {
 	if len(w.statuses) != 1 || w.statuses[0] != http.StatusOK || w.Body.String() != "partial" || reader.closeCalls != 1 {
 		t.Errorf("statuses = %v, body = %q, reader closes = %d", w.statuses, w.Body.String(), reader.closeCalls)
 	}
+}
+
+func TestFileListPropagatesRequestCancellation(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		queryStarted := make(chan struct{})
+		observed := make(chan error, 1)
+		metadata := &mockMetadataManager{listFunc: func(ctx context.Context, _ datafile.Query) ([]*datafile.File, int64, error) {
+			close(queryStarted)
+			<-ctx.Done()
+			observed <- ctx.Err()
+			return nil, 0, ctx.Err()
+		}}
+		handler := NewHandler(&mockStorage{}, metadata)
+		request := httptest.NewRequest(http.MethodGet, "/files", nil)
+		ctx, cancel := context.WithCancel(tenantcore.WithTenantID(request.Context(), "sample"))
+		defer cancel()
+		recorder := &downloadStatusRecorder{ResponseRecorder: httptest.NewRecorder()}
+		finished := make(chan struct{})
+		go func() {
+			defer close(finished)
+			handler.List(recorder, request.WithContext(ctx))
+		}()
+
+		<-queryStarted
+		cancel()
+		synctest.Wait()
+		select {
+		case <-finished:
+		default:
+			t.Fatal("List did not exit after cancellation")
+		}
+		if err := <-observed; !errors.Is(err, context.Canceled) {
+			t.Fatalf("metadata observed %v", err)
+		}
+		if recorder.Code != http.StatusInternalServerError || len(recorder.statuses) != 1 {
+			t.Fatalf("List response = %d, statuses = %v", recorder.Code, recorder.statuses)
+		}
+	})
 }

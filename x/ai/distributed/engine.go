@@ -2,7 +2,10 @@ package distributed
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"maps"
+	"slices"
 	"sync"
 	"time"
 
@@ -75,12 +78,17 @@ func DefaultRetryPolicy() *RetryPolicy {
 
 // executionContext tracks execution state.
 type executionContext struct {
-	executionID string
-	workflowID  string
-	snapshot    *ExecutionSnapshot
-	cancel      context.CancelFunc
-	results     chan *TaskResult
-	mu          sync.Mutex
+	// mu serializes snapshot persistence and state transitions for this execution.
+	// Persistence methods must honor their context and must not reenter Pause for
+	// the same execution. Steps and queue operations run outside this lock.
+	mu       sync.Mutex
+	snapshot *ExecutionSnapshot
+	cancel   context.CancelFunc
+	done     chan struct{}
+	finished bool
+	// result and err are written before done closes and read only afterward.
+	result []*orchestration.AgentResult
+	err    error
 }
 
 // NewDistributedEngine creates a new distributed execution engine.
@@ -110,357 +118,390 @@ func (e *DistributedEngine) ExecuteAsync(
 	initialState map[string]any,
 	options ExecutionOptions,
 ) (string, error) {
-	// Generate execution ID
-	executionID := fmt.Sprintf("%s-%d", workflowID, time.Now().UnixNano())
-
-	// Get workflow
-	workflow, err := e.localEngine.GetWorkflow(workflowID)
-	if err != nil {
-		return "", fmt.Errorf("workflow not found: %w", err)
-	}
-
-	// Create initial snapshot
-	snapshot := &ExecutionSnapshot{
-		ExecutionID:    executionID,
-		WorkflowID:     workflowID,
-		State:          initialState,
-		CompletedSteps: []int{},
-		CurrentStep:    0,
-		Results:        []*orchestration.AgentResult{},
-		Status:         StatusPending,
-		CreatedAt:      time.Now(),
-		UpdatedAt:      time.Now(),
-		TTL:            24 * time.Hour,
-	}
-
-	// Save initial snapshot
-	if err := e.persistence.SaveSnapshot(ctx, snapshot); err != nil {
-		return "", fmt.Errorf("failed to save initial snapshot: %w", err)
-	}
-
-	// Create execution context
-	execCtx, cancel := context.WithCancel(ctx)
-	e.executionsMu.Lock()
-	e.executions[executionID] = &executionContext{
-		executionID: executionID,
-		workflowID:  workflowID,
-		snapshot:    snapshot,
-		cancel:      cancel,
-		results:     make(chan *TaskResult, len(workflow.Steps)),
-	}
-	e.executionsMu.Unlock()
-
-	// Execute in background
-	go e.executeWorkflow(execCtx, workflow, executionID, initialState, options)
-
-	return executionID, nil
+	id, _, err := e.startExecution(ctx, workflowID, initialState, options)
+	return id, err
 }
 
-// ExecuteSync executes a workflow synchronously.
+func (e *DistributedEngine) startExecution(
+	ctx context.Context,
+	workflowID string,
+	initialState map[string]any,
+	options ExecutionOptions,
+) (string, *executionContext, error) {
+	workflow, err := e.localEngine.GetWorkflow(workflowID)
+	if err != nil {
+		return "", nil, err
+	}
+
+	now := time.Now()
+	id := fmt.Sprintf("%s-%d", workflowID, now.UnixNano())
+	snapshot := &ExecutionSnapshot{
+		ExecutionID:    id,
+		WorkflowID:     workflowID,
+		State:          maps.Clone(initialState),
+		CompletedSteps: []int{},
+		Results:        []*orchestration.AgentResult{},
+		Status:         StatusPending,
+		CreatedAt:      now,
+		UpdatedAt:      now,
+		TTL:            24 * time.Hour,
+	}
+	runCtx, execution, err := e.reserveExecution(ctx, id)
+	if err != nil {
+		return "", nil, err
+	}
+	if err := e.persistence.SaveSnapshot(runCtx, snapshot); err != nil {
+		e.cleanupExecution(id, execution)
+		return "", nil, fmt.Errorf("save initial snapshot: %w", err)
+	}
+	e.launchExecution(runCtx, workflow, execution, snapshot, options)
+	return id, execution, nil
+}
+
+// ExecuteSync executes a workflow synchronously. If execution fails, it returns
+// completed results and the underlying failure, including persistence errors.
 func (e *DistributedEngine) ExecuteSync(
 	ctx context.Context,
 	workflowID string,
 	initialState map[string]any,
 	options ExecutionOptions,
 ) ([]*orchestration.AgentResult, error) {
-	executionID, err := e.ExecuteAsync(ctx, workflowID, initialState, options)
+	_, execution, err := e.startExecution(ctx, workflowID, initialState, options)
 	if err != nil {
 		return nil, err
 	}
 
-	// Wait for completion
-	return e.waitForCompletion(ctx, executionID, options.Timeout)
+	timeout := e.executionTimeout(options)
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	select {
+	case <-execution.done:
+		return execution.result, execution.err
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case <-timer.C:
+		return nil, fmt.Errorf("execution timeout after %v", timeout)
+	}
 }
 
-// executeWorkflow executes a workflow (internal).
-func (e *DistributedEngine) executeWorkflow(
+func (e *DistributedEngine) executionTimeout(options ExecutionOptions) time.Duration {
+	if options.Timeout != 0 {
+		return options.Timeout
+	}
+	return e.config.DefaultTimeout
+}
+
+func (e *DistributedEngine) reserveExecution(ctx context.Context, id string) (context.Context, *executionContext, error) {
+	e.executionsMu.Lock()
+	defer e.executionsMu.Unlock()
+	if _, exists := e.executions[id]; exists {
+		return nil, nil, fmt.Errorf("execution %s is already active", id)
+	}
+
+	runCtx, cancel := context.WithCancel(ctx)
+	execution := &executionContext{cancel: cancel, done: make(chan struct{})}
+	e.executions[id] = execution
+	return runCtx, execution, nil
+}
+
+func (e *DistributedEngine) launchExecution(
 	ctx context.Context,
-	workflow *orchestration.Workflow,
-	executionID string,
-	initialState map[string]any,
+	definition *orchestration.Workflow,
+	execution *executionContext,
+	snapshot *ExecutionSnapshot,
 	options ExecutionOptions,
 ) {
-	defer e.cleanupExecution(executionID)
-
-	// Get execution context
-	e.executionsMu.RLock()
-	execCtx, ok := e.executions[executionID]
-	e.executionsMu.RUnlock()
-	if !ok {
-		return
+	workflow := &orchestration.Workflow{
+		ID: definition.ID, Name: definition.Name, Description: definition.Description,
+		Steps: slices.Clone(definition.Steps), State: maps.Clone(snapshot.State),
 	}
-
-	// Update status to running
-	execCtx.mu.Lock()
-	execCtx.snapshot.Status = StatusRunning
-	execCtx.snapshot.State = initialState
-	execCtx.mu.Unlock()
-	_ = e.persistence.SaveSnapshot(ctx, execCtx.snapshot)
-
-	// Execute steps
-	for i, step := range workflow.Steps {
-		select {
-		case <-ctx.Done():
-			e.updateSnapshotStatus(ctx, execCtx, StatusCancelled, "execution cancelled")
-			return
-		default:
-		}
-
-		// Update current step
-		execCtx.mu.Lock()
-		execCtx.snapshot.CurrentStep = i
-		execCtx.mu.Unlock()
-
-		// Execute step
-		var result *orchestration.AgentResult
-		var err error
-
-		if options.Distributed {
-			// Distributed execution via task queue
-			result, err = e.executeStepDistributed(ctx, workflow, step, i, execCtx, options)
-		} else {
-			// Local execution
-			result, err = step.Execute(ctx, workflow)
-		}
-
-		if err != nil {
-			e.updateSnapshotStatus(ctx, execCtx, StatusFailed, err.Error())
-			return
-		}
-
-		// Save result
-		execCtx.mu.Lock()
-		execCtx.snapshot.Results = append(execCtx.snapshot.Results, result)
-		execCtx.snapshot.CompletedSteps = append(execCtx.snapshot.CompletedSteps, i)
-		execCtx.snapshot.State = workflow.State
-		execCtx.mu.Unlock()
-
-		// Save checkpoint if enabled
-		if options.Checkpoints {
-			_ = e.persistence.SaveSnapshot(ctx, execCtx.snapshot)
-			_ = e.persistence.SaveStepResult(ctx, executionID, i, result)
-		}
+	if workflow.State == nil {
+		workflow.State = make(map[string]any)
 	}
-
-	// Mark as completed
-	e.updateSnapshotStatus(ctx, execCtx, StatusCompleted, "")
+	execution.mu.Lock()
+	execution.snapshot = snapshot
+	execution.mu.Unlock()
+	go func() {
+		defer close(execution.done)
+		defer e.cleanupExecution(snapshot.ExecutionID, execution)
+		status, err := e.runWorkflow(ctx, workflow, execution, snapshot, options)
+		e.finishExecution(ctx, execution, status, err)
+	}()
 }
 
-// executeStepDistributed executes a step via task queue.
+func (e *DistributedEngine) runWorkflow(
+	ctx context.Context,
+	workflow *orchestration.Workflow,
+	execution *executionContext,
+	initial *ExecutionSnapshot,
+	options ExecutionOptions,
+) (ExecutionStatus, error) {
+	// Older snapshots can point at the most recently completed step.
+	start := initial.CurrentStep
+	completed := make(map[int]struct{}, len(initial.CompletedSteps))
+	for _, index := range initial.CompletedSteps {
+		completed[index] = struct{}{}
+	}
+	for start < len(workflow.Steps) {
+		if _, ok := completed[start]; !ok {
+			break
+		}
+		start++
+	}
+	if err := e.markRunning(ctx, execution, start); err != nil {
+		return StatusFailed, err
+	}
+
+	var results <-chan *TaskResult
+	for i := start; i < len(workflow.Steps); i++ {
+		if err := ctx.Err(); err != nil {
+			return StatusCancelled, err
+		}
+		if _, ok := completed[i]; ok {
+			continue
+		}
+
+		step := workflow.Steps[i]
+		var result *orchestration.AgentResult
+		var err error
+		if options.Distributed {
+			if results == nil {
+				if e.taskQueue == nil {
+					return StatusFailed, errors.New("distributed execution requires a task queue")
+				}
+				results, err = e.taskQueue.SubscribeResults(ctx, initial.ExecutionID)
+				if err != nil {
+					return StatusFailed, fmt.Errorf("subscribe to task results: %w", err)
+				}
+				if results == nil {
+					return StatusFailed, errors.New("task result subscription returned a nil channel")
+				}
+			}
+			result, err = e.executeStepDistributed(ctx, workflow, step, i, initial.ExecutionID, results, options)
+		} else {
+			result, err = step.Execute(ctx, workflow)
+		}
+		if ctx.Err() != nil {
+			return StatusCancelled, ctx.Err()
+		}
+		if err != nil {
+			return StatusFailed, fmt.Errorf("execute step %s: %w", step.Name(), err)
+		}
+		if err := e.completeStep(ctx, execution, workflow.State, i, result, options.Checkpoints); err != nil {
+			return StatusFailed, err
+		}
+	}
+	return StatusCompleted, nil
+}
+
+func (e *DistributedEngine) markRunning(ctx context.Context, execution *executionContext, start int) error {
+	execution.mu.Lock()
+	defer execution.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	next := *execution.snapshot
+	next.Status = StatusRunning
+	next.CurrentStep = start
+	next.Error = ""
+	return e.saveExecutionSnapshot(ctx, execution, &next)
+}
+
+func (e *DistributedEngine) completeStep(
+	ctx context.Context,
+	execution *executionContext,
+	state map[string]any,
+	index int,
+	result *orchestration.AgentResult,
+	checkpoint bool,
+) error {
+	execution.mu.Lock()
+	defer execution.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	next := *execution.snapshot
+	next.State = maps.Clone(state)
+	next.CurrentStep = index + 1
+	next.CompletedSteps = append(slices.Clone(next.CompletedSteps), index)
+	next.Results = append(slices.Clone(next.Results), result)
+
+	if !checkpoint {
+		execution.snapshot = &next
+		return nil
+	}
+	// The snapshot is the recovery commit point. A separately stored step result
+	// can remain if saving the snapshot fails.
+	if result != nil {
+		if err := e.persistence.SaveStepResult(ctx, next.ExecutionID, index, result); err != nil {
+			return fmt.Errorf("save checkpoint result for step %d: %w", index, err)
+		}
+	}
+	return e.saveExecutionSnapshot(ctx, execution, &next)
+}
+
+// saveExecutionSnapshot publishes the new in-memory state only after
+// persistence succeeds. The caller holds execution.mu.
+func (e *DistributedEngine) saveExecutionSnapshot(ctx context.Context, execution *executionContext, next *ExecutionSnapshot) error {
+	next.UpdatedAt = time.Now()
+	if err := e.persistence.SaveSnapshot(ctx, next); err != nil {
+		return fmt.Errorf("save %s snapshot at step %d: %w", next.Status, next.CurrentStep, err)
+	}
+	execution.snapshot = next
+	return nil
+}
+
+func (e *DistributedEngine) finishExecution(ctx context.Context, execution *executionContext, status ExecutionStatus, cause error) {
+	execution.mu.Lock()
+	defer execution.mu.Unlock()
+	execution.finished = true
+	execution.result = execution.snapshot.Results
+	if execution.snapshot.Status == StatusPaused {
+		execution.err = errors.New("execution paused")
+		return
+	}
+	if ctx.Err() != nil && (cause == nil || errors.Is(cause, ctx.Err())) {
+		status = StatusCancelled
+		cause = ctx.Err()
+	}
+
+	// Terminal state remains observable after cancellation. Bound the detached
+	// write using the engine's existing persistence lifetime budget.
+	saveCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), e.config.DefaultTimeout)
+	defer cancel()
+
+	next := *execution.snapshot
+	next.Status = status
+	if cause != nil {
+		next.Error = cause.Error()
+	}
+	saveErr := e.saveExecutionSnapshot(saveCtx, execution, &next)
+	if saveErr != nil && status == StatusCompleted {
+		next.Status = StatusFailed
+		next.Error = saveErr.Error()
+		saveErr = errors.Join(saveErr, e.saveExecutionSnapshot(saveCtx, execution, &next))
+	}
+	execution.err = errors.Join(cause, saveErr)
+}
+
 func (e *DistributedEngine) executeStepDistributed(
 	ctx context.Context,
 	workflow *orchestration.Workflow,
 	step orchestration.Step,
 	stepIndex int,
-	execCtx *executionContext,
+	executionID string,
+	results <-chan *TaskResult,
 	options ExecutionOptions,
 ) (*orchestration.AgentResult, error) {
-	// Create task
+	timeout := e.executionTimeout(options)
 	task := &WorkflowTask{
-		ID:            fmt.Sprintf("%s-%d", execCtx.executionID, stepIndex),
-		ExecutionID:   execCtx.executionID,
-		WorkflowID:    execCtx.workflowID,
+		ID:            fmt.Sprintf("%s-%d", executionID, stepIndex),
+		ExecutionID:   executionID,
+		WorkflowID:    workflow.ID,
 		StepIndex:     stepIndex,
 		StepName:      step.Name(),
-		WorkflowState: execCtx.snapshot.State,
+		WorkflowState: maps.Clone(workflow.State),
 		Priority:      5,
 		CreatedAt:     time.Now(),
-		Timeout:       options.Timeout,
+		Timeout:       timeout,
 	}
-
-	// Enqueue task
 	if err := e.taskQueue.Enqueue(ctx, task); err != nil {
-		return nil, fmt.Errorf("failed to enqueue task: %w", err)
-	}
-
-	// Wait for result with timeout
-	timeout := options.Timeout
-	if timeout == 0 {
-		timeout = e.config.DefaultTimeout
+		return nil, fmt.Errorf("enqueue task: %w", err)
 	}
 
 	timer := time.NewTimer(timeout)
 	defer timer.Stop()
-	select {
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	case result := <-execCtx.results:
-		if result.Error != "" {
-			return result.AgentResult, fmt.Errorf("%s", result.Error)
-		}
-		// Update workflow state with result state
-		if result.UpdatedState != nil {
-			for k, v := range result.UpdatedState {
-				workflow.State[k] = v
-			}
-		}
-		return result.AgentResult, nil
-	case <-timer.C:
-		return nil, fmt.Errorf("task execution timeout after %v", timeout)
-	}
-}
-
-// Resume resumes a paused or failed execution.
-func (e *DistributedEngine) Resume(ctx context.Context, executionID string) error {
-	// Load snapshot
-	snapshot, err := e.persistence.LoadSnapshot(ctx, executionID)
-	if err != nil {
-		return fmt.Errorf("failed to load snapshot: %w", err)
-	}
-
-	if snapshot.Status == StatusCompleted {
-		return fmt.Errorf("execution already completed")
-	}
-
-	// Get workflow
-	workflow, err := e.localEngine.GetWorkflow(snapshot.WorkflowID)
-	if err != nil {
-		return fmt.Errorf("workflow not found: %w", err)
-	}
-
-	// Continue from current step
-	options := DefaultExecutionOptions()
-	go e.resumeWorkflow(ctx, workflow, snapshot, options)
-
-	return nil
-}
-
-// resumeWorkflow resumes workflow execution from snapshot.
-func (e *DistributedEngine) resumeWorkflow(
-	ctx context.Context,
-	workflow *orchestration.Workflow,
-	snapshot *ExecutionSnapshot,
-	options ExecutionOptions,
-) {
-	// Restore workflow state
-	workflow.State = snapshot.State
-
-	// Continue from current step
-	for i := snapshot.CurrentStep; i < len(workflow.Steps); i++ {
-		step := workflow.Steps[i]
-
-		var result *orchestration.AgentResult
-		var err error
-
-		if options.Distributed {
-			execCtx := &executionContext{
-				executionID: snapshot.ExecutionID,
-				workflowID:  snapshot.WorkflowID,
-				snapshot:    snapshot,
-				results:     make(chan *TaskResult, 1),
-			}
-			result, err = e.executeStepDistributed(ctx, workflow, step, i, execCtx, options)
-		} else {
-			result, err = step.Execute(ctx, workflow)
-		}
-
-		if err != nil {
-			snapshot.Status = StatusFailed
-			snapshot.Error = err.Error()
-			_ = e.persistence.SaveSnapshot(ctx, snapshot)
-			return
-		}
-
-		snapshot.Results = append(snapshot.Results, result)
-		snapshot.CompletedSteps = append(snapshot.CompletedSteps, i)
-		snapshot.CurrentStep = i + 1
-		_ = e.persistence.SaveSnapshot(ctx, snapshot)
-	}
-
-	snapshot.Status = StatusCompleted
-	_ = e.persistence.SaveSnapshot(ctx, snapshot)
-}
-
-// Pause pauses an execution.
-func (e *DistributedEngine) Pause(ctx context.Context, executionID string) error {
-	e.executionsMu.RLock()
-	execCtx, ok := e.executions[executionID]
-	e.executionsMu.RUnlock()
-
-	if !ok {
-		return fmt.Errorf("execution not found: %s", executionID)
-	}
-
-	execCtx.cancel()
-	e.updateSnapshotStatus(ctx, execCtx, StatusPaused, "paused by user")
-
-	return nil
-}
-
-// GetExecutionStatus retrieves execution status.
-func (e *DistributedEngine) GetExecutionStatus(
-	ctx context.Context,
-	executionID string,
-) (*ExecutionSnapshot, error) {
-	return e.persistence.LoadSnapshot(ctx, executionID)
-}
-
-// waitForCompletion waits for execution to complete.
-func (e *DistributedEngine) waitForCompletion(
-	ctx context.Context,
-	executionID string,
-	timeout time.Duration,
-) ([]*orchestration.AgentResult, error) {
-	if timeout == 0 {
-		timeout = e.config.DefaultTimeout
-	}
-
-	ticker := time.NewTicker(time.Second)
-	defer ticker.Stop()
-
-	deadline := time.Now().Add(timeout)
-
 	for {
 		select {
 		case <-ctx.Done():
 			return nil, ctx.Err()
-		case <-ticker.C:
-			if time.Now().After(deadline) {
-				return nil, fmt.Errorf("execution timeout after %v", timeout)
+		case result, ok := <-results:
+			if !ok {
+				return nil, errors.New("task result subscription closed")
 			}
-
-			snapshot, err := e.persistence.LoadSnapshot(ctx, executionID)
-			if err != nil {
-				return nil, err
+			if result == nil || result.TaskID != task.ID {
+				continue
 			}
-
-			switch snapshot.Status {
-			case StatusCompleted:
-				return snapshot.Results, nil
-			case StatusFailed:
-				return snapshot.Results, fmt.Errorf("execution failed: %s", snapshot.Error)
-			case StatusCancelled:
-				return snapshot.Results, fmt.Errorf("execution cancelled")
+			if result.Error != "" {
+				return result.AgentResult, errors.New(result.Error)
 			}
+			maps.Copy(workflow.State, result.UpdatedState)
+			return result.AgentResult, nil
+		case <-timer.C:
+			return nil, fmt.Errorf("task execution timeout after %v", timeout)
 		}
 	}
 }
 
-// updateSnapshotStatus updates snapshot status.
-func (e *DistributedEngine) updateSnapshotStatus(
-	ctx context.Context,
-	execCtx *executionContext,
-	status ExecutionStatus,
-	errorMsg string,
-) {
-	execCtx.mu.Lock()
-	execCtx.snapshot.Status = status
-	execCtx.snapshot.Error = errorMsg
-	execCtx.snapshot.UpdatedAt = time.Now()
-	execCtx.mu.Unlock()
-
-	_ = e.persistence.SaveSnapshot(ctx, execCtx.snapshot)
+// Resume restarts an inactive execution using its persisted snapshot. Steps
+// already recorded as complete are skipped, including in older snapshots.
+func (e *DistributedEngine) Resume(ctx context.Context, executionID string) error {
+	runCtx, execution, err := e.reserveExecution(ctx, executionID)
+	if err != nil {
+		return err
+	}
+	snapshot, err := e.persistence.LoadSnapshot(runCtx, executionID)
+	if err != nil {
+		e.cleanupExecution(executionID, execution)
+		return fmt.Errorf("load snapshot: %w", err)
+	}
+	if snapshot == nil || snapshot.ExecutionID != executionID {
+		e.cleanupExecution(executionID, execution)
+		return fmt.Errorf("persisted snapshot does not match execution %s", executionID)
+	}
+	if snapshot.Status == StatusCompleted || snapshot.CurrentStep < 0 {
+		e.cleanupExecution(executionID, execution)
+		return fmt.Errorf("execution %s cannot resume at step %d with status %s", executionID, snapshot.CurrentStep, snapshot.Status)
+	}
+	workflow, err := e.localEngine.GetWorkflow(snapshot.WorkflowID)
+	if err != nil {
+		e.cleanupExecution(executionID, execution)
+		return err
+	}
+	if snapshot.CurrentStep > len(workflow.Steps) {
+		e.cleanupExecution(executionID, execution)
+		return fmt.Errorf("execution %s cannot resume past the last step", executionID)
+	}
+	e.launchExecution(runCtx, workflow, execution, snapshot, DefaultExecutionOptions())
+	return nil
 }
 
-// cleanupExecution removes execution context.
-func (e *DistributedEngine) cleanupExecution(executionID string) {
-	e.executionsMu.Lock()
-	defer e.executionsMu.Unlock()
-
-	if execCtx, ok := e.executions[executionID]; ok {
-		close(execCtx.results)
-		delete(e.executions, executionID)
+// Pause persists the paused state before canceling an active execution. It
+// returns a persistence error if saving fails, and an error for terminal states.
+func (e *DistributedEngine) Pause(ctx context.Context, executionID string) error {
+	e.executionsMu.RLock()
+	execution := e.executions[executionID]
+	e.executionsMu.RUnlock()
+	if execution == nil {
+		return fmt.Errorf("execution not found: %s", executionID)
 	}
+
+	execution.mu.Lock()
+	defer execution.mu.Unlock()
+	snapshot := execution.snapshot
+	if execution.finished || snapshot == nil || (snapshot.Status != StatusPending && snapshot.Status != StatusRunning) {
+		return fmt.Errorf("execution %s cannot be paused", executionID)
+	}
+	next := *snapshot
+	next.Status = StatusPaused
+	next.Error = "paused by user"
+	if err := e.saveExecutionSnapshot(ctx, execution, &next); err != nil {
+		return err
+	}
+	execution.cancel()
+	return nil
+}
+
+// GetExecutionStatus retrieves execution status from persistence.
+func (e *DistributedEngine) GetExecutionStatus(ctx context.Context, executionID string) (*ExecutionSnapshot, error) {
+	return e.persistence.LoadSnapshot(ctx, executionID)
+}
+
+func (e *DistributedEngine) cleanupExecution(id string, execution *executionContext) {
+	execution.cancel()
+	e.executionsMu.Lock()
+	delete(e.executions, id)
+	e.executionsMu.Unlock()
 }
 
 // Close closes the distributed engine.

@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 
@@ -124,9 +125,9 @@ func (b *SQLBuilder) writeWhere(query *strings.Builder, params *QueryParams) []a
 		}
 		conditions = append(conditions, "("+strings.Join(search, " OR ")+")")
 	}
-	for key, value := range params.Filters {
+	for _, key := range slices.Sorted(maps.Keys(params.Filters)) {
 		conditions = append(conditions, key+" = ?")
-		args = append(args, value)
+		args = append(args, params.Filters[key])
 	}
 	if len(conditions) > 0 {
 		query.WriteString(" WHERE ")

@@ -2,8 +2,10 @@ package ratelimit_test
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/birdordev/plumego/x/resilience/ratelimit"
@@ -156,5 +158,51 @@ func TestWaitOnCanceledContextDoesNotConsumeToken(t *testing.T) {
 	}
 	if err := bucket.WaitN(ctx, 0); err != nil {
 		t.Fatalf("WaitN(0) = %v", err)
+	}
+}
+
+func TestWaitNObservesLiveRateUpdate(t *testing.T) {
+	for _, canceled := range []bool{false, true} {
+		name := "updated"
+		if canceled {
+			name = "canceled"
+		}
+		t.Run(name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				bucket := ratelimit.New(0, 1)
+				if !bucket.Allow() {
+					t.Fatal("failed to exhaust the initial token")
+				}
+				ctx, cancel := context.WithCancel(t.Context())
+				defer cancel()
+				result := make(chan error, 1)
+				go func() { result <- bucket.WaitN(ctx, 2) }()
+				synctest.Wait()
+				select {
+				case err := <-result:
+					t.Fatalf("WaitN returned before update: %v", err)
+				default:
+				}
+				if canceled {
+					cancel()
+					if err := <-result; !errors.Is(err, context.Canceled) {
+						t.Fatalf("WaitN = %v", err)
+					}
+					bucket.UpdateRate(2000, 2)
+					time.Sleep(time.Millisecond)
+					if bucket.Remaining() != 2 {
+						t.Fatal("canceled waiter consumed newly available tokens")
+					}
+					return
+				}
+				bucket.UpdateRate(2000, 2)
+				if err := <-result; err != nil {
+					t.Fatalf("WaitN = %v", err)
+				}
+				if bucket.Remaining() != 0 {
+					t.Fatal("wait did not consume exactly two tokens")
+				}
+			})
+		})
 	}
 }

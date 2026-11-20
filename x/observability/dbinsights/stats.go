@@ -103,7 +103,7 @@ func (a *Aggregator) updateStats(stats *QueryStats, duration time.Duration, err 
 	}
 
 	stats.TotalDuration += duration
-	if stats.MinDuration == 0 || duration < stats.MinDuration {
+	if stats.TotalQueries == 1 || duration < stats.MinDuration {
 		stats.MinDuration = duration
 	}
 	if duration > stats.MaxDuration {

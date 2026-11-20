@@ -3,8 +3,10 @@ package orchestration
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/birdordev/plumego/x/ai/provider"
@@ -114,10 +116,14 @@ func TestParallelStep_Execute(t *testing.T) {
 	}
 
 	wf := NewWorkflow("wf-1", "Test Workflow", "Test")
-	_, err := step.Execute(t.Context(), wf)
+	result, err := step.Execute(t.Context(), wf)
 
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
+	}
+
+	if result == nil || result.AgentID != agent1.ID || result.Output != "response 1" {
+		t.Fatalf("first agent result = %+v", result)
 	}
 
 	// Check both results are stored
@@ -499,5 +505,120 @@ func TestParallelStepRejectsEmptyAgents(t *testing.T) {
 	}
 	if got, ok := wf.GetState("output"); !ok || got != "single result" {
 		t.Errorf("one-agent state output = %v, present = %t", got, ok)
+	}
+}
+
+type workflowTestStep func(context.Context, *Workflow) (*AgentResult, error)
+
+func (workflowTestStep) Name() string { return "test" }
+
+func (s workflowTestStep) Execute(ctx context.Context, workflow *Workflow) (*AgentResult, error) {
+	return s(ctx, workflow)
+}
+
+func TestEngineExecutionOwnsWorkflowState(t *testing.T) {
+	engine := NewEngine()
+	firstStarted, secondStarted, finish := make(chan struct{}), make(chan struct{}), make(chan struct{})
+	definition := NewWorkflow("workflow", "Workflow", "").AddStep(workflowTestStep(func(ctx context.Context, workflow *Workflow) (*AgentResult, error) {
+		value, _ := workflow.GetState("input")
+		switch value {
+		case "first":
+			close(firstStarted)
+		case "second":
+			close(secondStarted)
+		}
+		select {
+		case <-finish:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+		workflow.SetState("output", value)
+		current, _ := workflow.GetState("input")
+		output, _ := workflow.GetState("output")
+		if current != value || output != value {
+			return nil, fmt.Errorf("input=%v output=%v; want %v", current, output, value)
+		}
+		return &AgentResult{Output: value.(string)}, nil
+	}))
+	engine.RegisterWorkflow(definition)
+	registered, err := engine.GetWorkflow("workflow")
+	if err != nil || registered != definition {
+		t.Fatalf("GetWorkflow = %v, %v", registered, err)
+	}
+
+	first := map[string]any{"input": "first"}
+	second := map[string]any{"input": "second"}
+	type executionOutcome struct {
+		result []*AgentResult
+		err    error
+	}
+	start := func(state map[string]any) <-chan executionOutcome {
+		done := make(chan executionOutcome, 1)
+		go func() {
+			result, err := engine.Execute(t.Context(), "workflow", state)
+			done <- executionOutcome{result, err}
+		}()
+		return done
+	}
+	firstDone := start(first)
+	<-firstStarted
+	secondDone := start(second)
+	<-secondStarted
+	close(finish)
+	for _, tc := range []struct {
+		name  string
+		state map[string]any
+		done  <-chan executionOutcome
+	}{{"first", first, firstDone}, {"second", second, secondDone}} {
+		got := <-tc.done
+		if got.err != nil || len(got.result) != 1 || got.result[0].Output != tc.name {
+			t.Errorf("%s Execute = %+v", tc.name, got)
+		}
+		if _, ok := tc.state["output"]; ok {
+			t.Errorf("%s input was modified: %v", tc.name, tc.state)
+		}
+	}
+	if len(definition.State) != 0 {
+		t.Fatalf("definition state = %v", definition.State)
+	}
+}
+
+func TestRetryStepStopsBeforeCanceledAttempt(t *testing.T) {
+	for _, before := range []bool{true, false} {
+		t.Run(fmt.Sprint(before), func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				ctx, cancel := context.WithCancel(t.Context())
+				defer cancel()
+				first := make(chan struct{})
+				calls := 0
+				partial := &AgentResult{Output: "partial"}
+				step := &RetryStep{MaxRetries: 2, Delay: time.Hour, Step: workflowTestStep(func(context.Context, *Workflow) (*AgentResult, error) {
+					calls++
+					close(first)
+					return partial, errors.New("retry")
+				})}
+				type outcome struct {
+					result *AgentResult
+					err    error
+				}
+				done := make(chan outcome, 1)
+				if before {
+					cancel()
+				}
+				go func() {
+					result, err := step.Execute(ctx, NewWorkflow("workflow", "", ""))
+					done <- outcome{result, err}
+				}()
+				if !before {
+					<-first
+					synctest.Wait()
+					cancel()
+				}
+				got := <-done
+				if !errors.Is(got.err, context.Canceled) || before && (calls != 0 || got.result != nil) || !before && (calls != 1 || got.result != partial) {
+					t.Fatalf("calls=%d outcome=%+v", calls, got)
+				}
+			})
+		})
 	}
 }

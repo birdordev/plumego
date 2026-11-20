@@ -1,8 +1,15 @@
 package distributed
 
 import (
+	"context"
+	"errors"
+	"fmt"
 	"path/filepath"
+	"slices"
+	"strings"
+	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	kv "github.com/birdordev/plumego/store/kv"
@@ -299,5 +306,301 @@ func TestDistributedEngine_Close(t *testing.T) {
 	err = engine.Close()
 	if err != nil {
 		t.Fatalf("Close failed: %v", err)
+	}
+}
+
+type engineTestStep func(context.Context, *orchestration.Workflow) (*orchestration.AgentResult, error)
+
+func (engineTestStep) Name() string { return "test-step" }
+
+func (s engineTestStep) Execute(ctx context.Context, wf *orchestration.Workflow) (*orchestration.AgentResult, error) {
+	return s(ctx, wf)
+}
+
+type engineTestQueue struct {
+	TaskQueue
+	subscribe func(context.Context, string) (<-chan *TaskResult, error)
+	enqueue   func(context.Context, *WorkflowTask) error
+}
+
+func (q engineTestQueue) SubscribeResults(ctx context.Context, id string) (<-chan *TaskResult, error) {
+	return q.subscribe(ctx, id)
+}
+
+func (q engineTestQueue) Enqueue(ctx context.Context, task *WorkflowTask) error {
+	return q.enqueue(ctx, task)
+}
+
+type engineTestPersistence struct {
+	WorkflowPersistence
+	mu       sync.Mutex
+	snapshot ExecutionSnapshot
+	save     func(*ExecutionSnapshot) error
+	saveStep func(int) error
+}
+
+func (p *engineTestPersistence) SaveSnapshot(_ context.Context, snapshot *ExecutionSnapshot) error {
+	if p.save != nil {
+		if err := p.save(snapshot); err != nil {
+			return err
+		}
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.snapshot = *snapshot
+	return nil
+}
+
+func (p *engineTestPersistence) LoadSnapshot(context.Context, string) (*ExecutionSnapshot, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	snapshot := p.snapshot
+	return &snapshot, nil
+}
+
+func (p *engineTestPersistence) SaveStepResult(_ context.Context, _ string, index int, _ *orchestration.AgentResult) error {
+	if p.saveStep != nil {
+		return p.saveStep(index)
+	}
+	return nil
+}
+
+func newEngineForTest(queue TaskQueue, persistence WorkflowPersistence, steps ...orchestration.Step) *DistributedEngine {
+	local := orchestration.NewEngine()
+	workflow := orchestration.NewWorkflow("workflow", "Workflow", "")
+	for _, step := range steps {
+		workflow.AddStep(step)
+	}
+	local.RegisterWorkflow(workflow)
+	return NewDistributedEngine(local, queue, persistence, DefaultEngineConfig())
+}
+
+func TestEngineReceivesSubscribedTaskResults(t *testing.T) {
+	injected := errors.New("subscribe failed")
+	for _, tc := range []struct {
+		name      string
+		wantError string
+	}{
+		{name: "success"},
+		{name: "closed", wantError: "subscription closed"},
+		{name: "remote error", wantError: "worker failed"},
+		{name: "subscribe error", wantError: "subscribe failed"},
+		{name: "cancellation", wantError: "context canceled"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			resultCh := make(chan *TaskResult, 4)
+			subscribed := make(chan context.Context, 1)
+			var subscriptions, steps int
+			queue := engineTestQueue{
+				subscribe: func(ctx context.Context, id string) (<-chan *TaskResult, error) {
+					subscriptions++
+					if tc.name == "subscribe error" {
+						return nil, injected
+					}
+					subscribed <- ctx
+					return resultCh, nil
+				},
+				enqueue: func(_ context.Context, task *WorkflowTask) error {
+					steps++
+					if subscriptions != 1 {
+						return errors.New("expected subscription before enqueue")
+					}
+					if tc.name == "cancellation" {
+						cancel()
+						return nil
+					}
+					if tc.name == "closed" {
+						close(resultCh)
+						return nil
+					}
+					if task.StepIndex == 1 && task.WorkflowState["first"] != "value" {
+						return errors.New("missing previous step state")
+					}
+					resultCh <- nil
+					resultCh <- &TaskResult{TaskID: "unrelated", Error: "ignore"}
+					if tc.name == "remote error" {
+						resultCh <- &TaskResult{TaskID: task.ID, Error: "worker failed"}
+					} else {
+						resultCh <- &TaskResult{TaskID: task.ID, AgentResult: &orchestration.AgentResult{Output: "done"}, UpdatedState: map[string]any{"first": "value"}}
+					}
+					return nil
+				},
+			}
+			step := engineTestStep(nil)
+			engine := newEngineForTest(queue, &engineTestPersistence{}, step, step)
+			got, err := engine.ExecuteSync(ctx, "workflow", nil, ExecutionOptions{Distributed: true, Timeout: time.Second, Checkpoints: true})
+			if tc.wantError == "" {
+				if err != nil || len(got) != 2 || got[0].Output != "done" || steps != 2 || subscriptions != 1 {
+					t.Fatalf("ExecuteSync = %v, %v; steps = %d; subscriptions = %d", got, err, steps, subscriptions)
+				}
+			} else if err == nil || !strings.Contains(err.Error(), tc.wantError) {
+				t.Fatalf("ExecuteSync error=%v, want %q", err, tc.wantError)
+			}
+			if tc.name == "subscribe error" {
+				if !errors.Is(err, injected) || steps != 0 {
+					t.Fatalf("subscription error=%v, steps=%d", err, steps)
+				}
+				return
+			}
+			select {
+			case subscriptionCtx := <-subscribed:
+				select {
+				case <-subscriptionCtx.Done():
+				case <-time.After(time.Second):
+					t.Fatal("result subscription still active")
+				}
+			case <-time.After(time.Second):
+				t.Fatal("subscription never started")
+			}
+		})
+	}
+}
+
+func TestResumeSkipsCommittedWorkflowSteps(t *testing.T) {
+	for _, cursor := range []int{0, 1} {
+		t.Run(fmt.Sprint(cursor), func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				p := &engineTestPersistence{snapshot: ExecutionSnapshot{
+					ExecutionID: "resume", WorkflowID: "workflow", Status: StatusFailed, CurrentStep: cursor,
+					CompletedSteps: []int{0}, Results: []*orchestration.AgentResult{{Output: "old"}},
+					State: map[string]any{"input": "saved"},
+				}}
+				resultCh := make(chan *TaskResult, 2)
+				var dispatched []int
+				q := engineTestQueue{
+					subscribe: func(context.Context, string) (<-chan *TaskResult, error) { return resultCh, nil },
+					enqueue: func(_ context.Context, task *WorkflowTask) error {
+						dispatched = append(dispatched, task.StepIndex)
+						if task.WorkflowState["input"] != "saved" {
+							return errors.New("snapshot state not restored")
+						}
+						resultCh <- &TaskResult{TaskID: task.ID, AgentResult: &orchestration.AgentResult{Output: "new"}}
+						return nil
+					},
+				}
+				step := engineTestStep(nil)
+				engine := newEngineForTest(q, p, step, step)
+				if err := engine.Resume(t.Context(), "resume"); err != nil {
+					t.Fatal(err)
+				}
+				synctest.Wait()
+				got, err := engine.GetExecutionStatus(t.Context(), "resume")
+				if err != nil || !slices.Equal(dispatched, []int{1}) || got.Status != StatusCompleted || got.CurrentStep != 2 ||
+					!slices.Equal(got.CompletedSteps, []int{0, 1}) || len(got.Results) != 2 || got.Results[0].Output != "old" || got.Results[1].Output != "new" {
+					t.Fatalf("snapshot=%+v dispatched=%v err=%v", got, dispatched, err)
+				}
+			})
+		})
+	}
+}
+
+func TestPausePreservesWinningExecutionState(t *testing.T) {
+	saveFailure := errors.New("pause write failed")
+	for _, mode := range []string{"pause wins", "completion wins", "pause write fails"} {
+		t.Run(mode, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				started := make(chan struct{})
+				proceed := make(chan struct{})
+				p := &engineTestPersistence{save: func(s *ExecutionSnapshot) error {
+					if mode == "pause write fails" && s.Status == StatusPaused {
+						return saveFailure
+					}
+					return nil
+				}}
+				engine := newEngineForTest(nil, p, engineTestStep(func(ctx context.Context, _ *orchestration.Workflow) (*orchestration.AgentResult, error) {
+					close(started)
+					select {
+					case <-ctx.Done():
+						return nil, ctx.Err()
+					case <-proceed:
+						return &orchestration.AgentResult{Output: "finished"}, nil
+					}
+				}))
+				id, err := engine.ExecuteAsync(t.Context(), "workflow", nil, ExecutionOptions{})
+				if err != nil {
+					t.Fatal(err)
+				}
+				<-started
+				if mode == "completion wins" {
+					close(proceed)
+					synctest.Wait()
+				}
+				err = engine.Pause(t.Context(), id)
+				want := StatusPaused
+				switch mode {
+				case "pause wins":
+					if err != nil {
+						t.Fatal(err)
+					}
+				case "completion wins":
+					if err == nil {
+						t.Fatal("Pause accepted a completed execution")
+					}
+					want = StatusCompleted
+				case "pause write fails":
+					close(proceed)
+					if !errors.Is(err, saveFailure) {
+						t.Fatalf("Pause error=%v", err)
+					}
+					want = StatusCompleted
+				}
+				synctest.Wait()
+				got, err := engine.GetExecutionStatus(t.Context(), id)
+				if err != nil || got.Status != want {
+					t.Fatalf("status=%+v err=%v; want %s", got, err, want)
+				}
+			})
+		})
+	}
+}
+
+func TestEngineStopsOnCheckpointPersistenceFailure(t *testing.T) {
+	checkpointErr := errors.New("checkpoint failure")
+	finishErr := errors.New("terminal save failure")
+	for _, mode := range []string{"result", "snapshot", "snapshot and terminal"} {
+		t.Run(mode, func(t *testing.T) {
+			var calls, resultWrites int
+			p := &engineTestPersistence{
+				save: func(s *ExecutionSnapshot) error {
+					if s.Status == StatusRunning && s.CurrentStep == 1 && mode != "result" {
+						return checkpointErr
+					}
+					if s.Status == StatusFailed && mode == "snapshot and terminal" {
+						return finishErr
+					}
+					return nil
+				},
+				saveStep: func(int) error {
+					resultWrites++
+					if mode == "result" {
+						return checkpointErr
+					}
+					return nil
+				},
+			}
+			step := engineTestStep(func(_ context.Context, wf *orchestration.Workflow) (*orchestration.AgentResult, error) {
+				calls++
+				wf.SetState("local", "step output")
+				return &orchestration.AgentResult{Output: "done"}, nil
+			})
+			engine := newEngineForTest(nil, p, step, step)
+			got, err := engine.ExecuteSync(t.Context(), "workflow", nil, ExecutionOptions{Checkpoints: true, Timeout: time.Second})
+			if calls != 1 || resultWrites != 1 || len(got) != 0 || !errors.Is(err, checkpointErr) {
+				t.Fatalf("calls=%d writes=%d results=%v err=%v", calls, resultWrites, got, err)
+			}
+			status := StatusFailed
+			if mode == "snapshot and terminal" {
+				status = StatusRunning
+				if !errors.Is(err, finishErr) {
+					t.Fatalf("terminal write error lost: %v", err)
+				}
+			}
+			snapshot, _ := p.LoadSnapshot(t.Context(), "")
+			if snapshot.Status != status || snapshot.CurrentStep != 0 || len(snapshot.CompletedSteps) != 0 || len(snapshot.State) != 0 {
+				t.Fatalf("incorrect recovery snapshot %+v", snapshot)
+			}
+		})
 	}
 }

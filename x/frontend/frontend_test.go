@@ -182,3 +182,45 @@ func TestMIMEOverridesRejectNormalizedConflicts(t *testing.T) {
 		}
 	}
 }
+
+func TestFrontendHeadersRejectCanonicalConflicts(t *testing.T) {
+	fsys := http.FS(fstest.MapFS{"index.html": {Data: []byte("index")}})
+	if _, err := NewHandlerFS(fsys, WithHeaders(map[string]string{"X-Custom": "left", "x-custom": "right"})); err == nil {
+		t.Fatal("accepted conflicting header values")
+	}
+
+	headers := map[string]string{"X-Custom": "value", " x-custom ": " value "}
+	option := WithHeaders(headers)
+	headers["X-Custom"] = "changed"
+	handler, err := NewHandlerFS(fsys, option)
+	if err != nil {
+		t.Fatal(err)
+	}
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/", nil))
+	if got := recorder.Header().Values("X-Custom"); !slices.Equal(got, []string{"value"}) {
+		t.Fatalf("X-Custom = %v", got)
+	}
+}
+
+func TestFrontendPlanRejectsNormalizedConflicts(t *testing.T) {
+	fsys := http.FS(fstest.MapFS{"static/app.js": {Data: []byte("original")}, "static/app.js.br": {Data: []byte("br")}})
+	variants := map[string]PrecompressedVariants{"static/app.js": {Brotli: true}, "static//app.js": {Gzip: true}}
+	if _, err := NewHandlerFS(fsys, WithPrecompressedVariantPlan(variants)); err == nil {
+		t.Fatal("accepted conflicting variants")
+	}
+	variants["static//app.js"] = PrecompressedVariants{Brotli: true}
+	for _, plan := range []map[string]PrecompressedVariants{variants, {"static/app.js": {Brotli: true}}} {
+		handler, err := NewHandlerFS(fsys, WithPrecompressed(true), WithPrecompressedVariantPlan(plan))
+		if err != nil {
+			t.Fatal(err)
+		}
+		request := httptest.NewRequest(http.MethodGet, "/static/app.js", nil)
+		request.Header.Set("Accept-Encoding", "br")
+		recorder := httptest.NewRecorder()
+		handler.ServeHTTP(recorder, request)
+		if recorder.Code != http.StatusOK || recorder.Header().Get("Content-Encoding") != "br" || recorder.Body.String() != "br" {
+			t.Fatalf("response = %d %v %q", recorder.Code, recorder.Header(), recorder.Body.String())
+		}
+	}
+}
