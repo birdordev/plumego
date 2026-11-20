@@ -236,3 +236,54 @@ func TestHealth_Disabled(t *testing.T) {
 		t.Errorf("expected degraded when disabled, got %v", status.Status)
 	}
 }
+
+func TestConfigureReportsRegistrationFailure(t *testing.T) {
+	cause := errors.New("test registration failure")
+	for _, tt := range []struct {
+		name    string
+		enabled bool
+		log     bool
+		err     error
+	}{
+		{name: "rejected", enabled: true, log: true, err: cause},
+		{name: "rejected without callback", enabled: true, err: cause},
+		{name: "registered", enabled: true, log: true},
+		{name: "disabled", log: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			var registrations, diagnostics int
+			hooks := pubsubdebug.Hooks{
+				EnsureMutable: func(string, string) error { return nil },
+				ConfigSnapshot: func() pubsubdebug.PubSubConfig {
+					return pubsubdebug.PubSubConfig{Enabled: tt.enabled}
+				},
+				RegisterRoute: func(method, path string, handler http.Handler) error {
+					registrations++
+					if method != http.MethodGet || path != "/_debug/pubsub" || handler == nil {
+						t.Errorf("registration = %s %s, handler=%v", method, path, handler)
+					}
+					return tt.err
+				},
+			}
+			if tt.log {
+				hooks.LogError = func(_ string, err error) {
+					diagnostics++
+					if !errors.Is(err, cause) {
+						t.Errorf("diagnostic error = %v", err)
+					}
+				}
+			}
+			pubsubdebug.Configure(hooks)
+			if tt.enabled && registrations != 1 || !tt.enabled && registrations != 0 {
+				t.Errorf("registration count = %d", registrations)
+			}
+			wantDiagnostics := 0
+			if tt.enabled && tt.log && tt.err != nil {
+				wantDiagnostics = 1
+			}
+			if diagnostics != wantDiagnostics {
+				t.Errorf("diagnostics = %d, want %d", diagnostics, wantDiagnostics)
+			}
+		})
+	}
+}

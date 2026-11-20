@@ -44,7 +44,15 @@ func NewLocalStorage(basePath, baseURL string, metadata MetadataManager) (*Local
 }
 
 // Put uploads a file to local storage under the tenant's directory tree.
+// It checks cancellation between reads and before publishing the file. A
+// reader blocked in Read must return before Put can observe cancellation.
 func (s *LocalStorage) Put(ctx context.Context, opts PutOptions) (*File, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, &storefile.Error{Op: "Put", Err: err}
+	}
 	tenantID, err := cleanTenantID(opts.TenantID)
 	if err != nil {
 		return nil, &storefile.Error{Op: "Put", Path: opts.TenantID, Err: err}
@@ -86,7 +94,7 @@ func (s *LocalStorage) Put(ctx context.Context, opts PutOptions) (*File, error) 
 	defer func() { _ = os.Remove(tmpPath) }()
 
 	hash := sha256.New()
-	size, err := io.Copy(io.MultiWriter(tmpFile, hash), opts.Reader)
+	size, err := io.Copy(io.MultiWriter(tmpFile, hash), localUploadReader{ctx, opts.Reader})
 	if err != nil {
 		_ = tmpFile.Close()
 		return nil, &storefile.Error{Op: "Put", Path: fullPath, Err: err}
@@ -101,12 +109,19 @@ func (s *LocalStorage) Put(ctx context.Context, opts PutOptions) (*File, error) 
 
 	hashString := hex.EncodeToString(hash.Sum(nil))
 
-	// Deduplication: return existing record if same hash exists
+	// Deduplication: return an existing record with the same hash.
+	var existing *File
 	if s.metadata != nil {
-		existing, err := s.metadata.GetByHash(ctx, tenantID, hashString)
-		if err == nil && existing != nil {
-			return existing, nil
+		if found, err := s.metadata.GetByHash(ctx, tenantID, hashString); err == nil {
+			existing = found
 		}
+	}
+
+	if err := ctx.Err(); err != nil {
+		return nil, &storefile.Error{Op: "Put", Path: fullPath, Err: err}
+	}
+	if existing != nil {
+		return existing, nil
 	}
 
 	if err := os.Rename(tmpPath, fullPath); err != nil {
@@ -161,6 +176,18 @@ func (s *LocalStorage) Put(ctx context.Context, opts PutOptions) (*File, error) 
 	}
 
 	return file, nil
+}
+
+type localUploadReader struct {
+	ctx    context.Context
+	reader io.Reader
+}
+
+func (r localUploadReader) Read(p []byte) (int, error) {
+	if err := r.ctx.Err(); err != nil {
+		return 0, err
+	}
+	return r.reader.Read(p)
 }
 
 func cleanupLocalPutAfterMetadataError(saveErr error, fullPath, thumbnailPath, basePath string) error {

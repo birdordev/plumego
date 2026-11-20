@@ -937,3 +937,109 @@ func TestLoadArchiveCommitsOnlyCompleteBatch(t *testing.T) {
 		})
 	}
 }
+
+func TestReplayStoreCopiesLiveAndArchivedPayloads(t *testing.T) {
+	dir := t.TempDir()
+	store := &ReplayStore{
+		config:     ReplayConfig{ArchiveEnabled: true, ArchiveDir: dir, IncludeData: true, MaxMessages: 10},
+		messages:   make(map[string]*ReplayMessage),
+		topicIndex: make(map[string][]string),
+	}
+	fields := map[string]string{"name": "original"}
+	store.storeMessage(Message{
+		ID: "live", Topic: "sample", Time: time.Now(),
+		Data: map[string]any{"items": []any{fields}},
+	})
+	fields["name"] = "changed by caller"
+	for id, data := range map[string]any{"nil": nil, "empty": []byte{}} {
+		store.storeMessage(Message{ID: id, Topic: "sample", Time: time.Now(), Data: data})
+	}
+	path := filepath.Join(dir, "archive.json")
+	data := []byte(`{"id":"archived","topic":"sample","data":{"name":"original"},"metadata":{"label":"original"}}
+{"id":"archived-nil","topic":"sample"}`)
+	if err := os.WriteFile(path, data, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.LoadArchive("archive.json"); err != nil {
+		t.Fatal(err)
+	}
+	live, err := store.GetByID("live")
+	if err != nil {
+		t.Fatal(err)
+	}
+	liveFields := func(message *ReplayMessage) map[string]string {
+		return message.Data.(map[string]any)["items"].([]any)[0].(map[string]string)
+	}
+	if liveFields(live)["name"] != "original" {
+		t.Fatal("capture retained the input payload")
+	}
+	liveFields(live)["name"] = "changed by GetByID caller"
+	live.Metadata["label"] = "changed by GetByID caller"
+
+	query := func() map[string]*ReplayMessage {
+		t.Helper()
+		rows, err := store.Query(ReplayQuery{IncludeArchived: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		byID := make(map[string]*ReplayMessage, len(rows))
+		for _, row := range rows {
+			byID[row.ID] = row
+		}
+		if len(byID) != 5 {
+			t.Fatalf("unexpected queried messages: %v", byID)
+		}
+		return byID
+	}
+	check := func(rows map[string]*ReplayMessage) {
+		t.Helper()
+		if liveFields(rows["live"])["name"] != "original" || len(rows["live"].Metadata) != 0 ||
+			rows["archived"].Data.(map[string]any)["name"] != "original" || rows["archived"].Metadata["label"] != "original" {
+			t.Fatal("stored payload or metadata was changed through a snapshot")
+		}
+		if rows["nil"].Data != nil || rows["archived-nil"].Metadata != nil || rows["live"].Metadata == nil {
+			t.Fatal("nil or empty metadata and payload semantics changed")
+		}
+		if empty, ok := rows["empty"].Data.([]byte); !ok || empty == nil || len(empty) != 0 {
+			t.Fatalf("empty payload = %#v", rows["empty"].Data)
+		}
+	}
+	rows := query()
+	check(rows)
+	liveFields(rows["live"])["name"] = "changed by Query caller"
+	rows["archived"].Data.(map[string]any)["name"] = "changed by Query caller"
+	rows["archived"].Metadata["label"] = "changed by Query caller"
+	check(query())
+}
+
+type replayCloneCallback struct {
+	call func()
+}
+
+func (c replayCloneCallback) Clone() any {
+	c.call()
+	return c
+}
+
+func TestReplayCopiesPayloadWithoutHoldingStoreLocks(t *testing.T) {
+	store := &ReplayStore{
+		config:     ReplayConfig{IncludeData: true, MaxMessages: 4},
+		messages:   make(map[string]*ReplayMessage),
+		topicIndex: make(map[string][]string),
+	}
+	calls := 0
+	payload := replayCloneCallback{call: func() {
+		calls++
+		store.storeMessage(Message{ID: "reentrant", Topic: "sample", Time: time.Now()})
+	}}
+	store.storeMessage(Message{ID: "sample", Topic: "sample", Time: time.Now(), Data: payload})
+	if _, err := store.GetByID("sample"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Query(ReplayQuery{MessageIDs: []string{"sample"}}); err != nil {
+		t.Fatal(err)
+	}
+	if calls != 3 {
+		t.Fatalf("clone callbacks = %d, want 3", calls)
+	}
+}

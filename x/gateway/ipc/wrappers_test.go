@@ -1328,3 +1328,106 @@ func TestHeartbeatAppliesTimeoutToEachOperation(t *testing.T) {
 		t.Errorf("write=%v, read=%v, last seen=%v", client.writeTimeout, client.readTimeout, hb.LastSeen())
 	}
 }
+
+type directionalFrameTestClient struct {
+	Client
+	read  func([]byte) (int, error)
+	write func([]byte) (int, error)
+}
+
+func (c directionalFrameTestClient) Read(data []byte) (int, error)  { return c.read(data) }
+func (c directionalFrameTestClient) Write(data []byte) (int, error) { return c.write(data) }
+
+func TestFramedClientReadAndWriteProgressIndependently(t *testing.T) {
+	for _, blocked := range []string{"read", "write"} {
+		t.Run(blocked, func(t *testing.T) {
+			entered, release := make(chan struct{}), make(chan struct{})
+			client := NewFramedClient(directionalFrameTestClient{
+				read: func(data []byte) (int, error) {
+					if blocked == "read" {
+						close(entered)
+						<-release
+					}
+					clear(data)
+					return len(data), nil
+				},
+				write: func(data []byte) (int, error) {
+					if blocked == "write" && len(data) == frameLenSize {
+						close(entered)
+						<-release
+					}
+					return len(data), nil
+				},
+			})
+			read := func() error {
+				msg, err := client.ReadMessage()
+				if err == nil && len(msg) != 0 {
+					t.Errorf("expected an empty frame, got %q", msg)
+				}
+				return err
+			}
+			write := func() error { return client.WriteMessage([]byte("sample")) }
+			first, second := read, write
+			if blocked == "write" {
+				first, second = write, read
+			}
+
+			firstDone, secondDone := make(chan error, 1), make(chan error, 1)
+			go func() { firstDone <- first() }()
+			<-entered
+			go func() { secondDone <- second() }()
+			waitingForSecond := false
+			select {
+			case err := <-secondDone:
+				if err != nil {
+					t.Error(err)
+				}
+			case <-time.After(time.Second):
+				waitingForSecond = true
+				t.Errorf("blocked %s prevented the other direction from completing", blocked)
+			}
+			close(release)
+			if waitingForSecond {
+				if err := <-secondDone; err != nil {
+					t.Error(err)
+				}
+			}
+			if err := <-firstDone; err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+
+func TestFramedClientConcurrentReadsPreserveBoundaries(t *testing.T) {
+	var wire bytes.Buffer
+	client := NewFramedClient(directionalFrameTestClient{read: wire.Read, write: wire.Write})
+	for _, message := range []string{"first", "second message"} {
+		if err := client.WriteMessage([]byte(message)); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	type result struct {
+		message string
+		err     error
+	}
+	results := make(chan result, 2)
+	for range 2 {
+		go func() {
+			data, err := client.ReadMessage()
+			results <- result{string(data), err}
+		}()
+	}
+	seen := make(map[string]int)
+	for range 2 {
+		got := <-results
+		if got.err != nil {
+			t.Error(got.err)
+		}
+		seen[got.message]++
+	}
+	if seen["first"] != 1 || seen["second message"] != 1 {
+		t.Errorf("received messages = %v", seen)
+	}
+}

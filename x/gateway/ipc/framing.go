@@ -24,13 +24,15 @@ type FramedClient interface {
 
 // framedClient wraps a Client with message framing support
 type framedClient struct {
-	client Client
-	mu     sync.Mutex
+	client  Client
+	readMu  sync.Mutex
+	writeMu sync.Mutex
 }
 
 // NewFramedClient creates a framed client wrapper with length-prefix protocol.
 // The protocol uses 4 bytes (uint32, big-endian) for message length, followed by the payload.
-// Maximum message size is 16MB.
+// Maximum message size is 16MB. Framed reads and writes serialize separately;
+// the underlying client must support a read and a write in parallel.
 func NewFramedClient(client Client) FramedClient {
 	return &framedClient{
 		client: client,
@@ -51,8 +53,8 @@ func (fc *framedClient) WriteMessageWithTimeout(msg []byte, timeout time.Duratio
 		return fmt.Errorf("message too large: %d bytes (max %d)", len(msg), maxFrameSize)
 	}
 
-	fc.mu.Lock()
-	defer fc.mu.Unlock()
+	fc.writeMu.Lock()
+	defer fc.writeMu.Unlock()
 
 	// Encode length prefix (4 bytes, big-endian)
 	lengthPrefix := make([]byte, frameLenSize)
@@ -97,8 +99,8 @@ func (fc *framedClient) ReadMessage() ([]byte, error) {
 }
 
 func (fc *framedClient) ReadMessageWithTimeout(timeout time.Duration) ([]byte, error) {
-	fc.mu.Lock()
-	defer fc.mu.Unlock()
+	fc.readMu.Lock()
+	defer fc.readMu.Unlock()
 
 	// Read length prefix (4 bytes)
 	lengthPrefix := make([]byte, frameLenSize)

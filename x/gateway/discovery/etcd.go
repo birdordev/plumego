@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"net/url"
 	"strings"
 	"time"
 )
@@ -349,8 +348,6 @@ func (e *Etcd) Close() error {
 // prefixRangeEnd returns the lexicographic end key for a prefix range scan.
 // It increments the last byte of the prefix that can be incremented.
 func prefixRangeEnd(prefix string) string {
-	b := []byte(url.QueryEscape(prefix))
-	// Use the raw prefix bytes for the range calculation.
 	raw := []byte(prefix)
 	for i := len(raw) - 1; i >= 0; i-- {
 		if raw[i] < 0xff {
@@ -360,8 +357,8 @@ func prefixRangeEnd(prefix string) string {
 			return string(end)
 		}
 	}
-	// All bytes are 0xff — use the empty key to mean "no upper bound".
-	_ = b
+	// An empty prefix or one containing only 0xff has no upper bound.
+	// A zero byte represents that case in the range request.
 	return "\x00"
 }
 

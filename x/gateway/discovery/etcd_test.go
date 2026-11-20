@@ -228,6 +228,10 @@ func TestPrefixRangeEnd(t *testing.T) {
 	}{
 		{"/services/svc/", "/services/svc0"},
 		{"a", "b"},
+		{"é", "ê"},
+		{"a\xff", "b"},
+		{"\xff\xff", "\x00"},
+		{"", "\x00"},
 	}
 	for _, tc := range cases {
 		got := prefixRangeEnd(tc.input)

@@ -27,7 +27,7 @@ func (rs *ReplayStore) storeMessage(msg Message) {
 		Metadata:  make(map[string]string),
 	}
 	if rs.config.IncludeData {
-		replayMsg.Data = msg.Data
+		replayMsg.Data = cloneData(msg.Data)
 	}
 	if data, err := json.Marshal(msg.Data); err == nil {
 		replayMsg.Size = len(data)

@@ -67,45 +67,13 @@ func (m *Manager) Cleanup(ctx context.Context, policy CleanupPolicy) error {
 	}
 }
 
-// Export exports cache entries to a file.
-func (m *Manager) Export(ctx context.Context, path string) error {
-	// Get all entries
-	// Note: This is a simplified implementation
-	// In production, you'd want to implement pagination
-	count, err := m.backend.Count(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to count entries: %w", err)
-	}
-
-	if count == 0 {
-		return fmt.Errorf("no entries to export")
-	}
-
-	// For now, we'll assume backends have a way to list all entries
-	// This would need to be added to the Backend interface for full functionality
-
-	export := &CacheExport{
-		Version:      "1.0",
-		ExportedAt:   time.Now(),
-		TotalEntries: count,
-		BackendType:  m.backend.Name(),
-		Dimensions:   m.provider.Dimensions(),
-		// Entries would be populated here
-	}
-
-	data, err := json.MarshalIndent(export, "", "  ")
-	if err != nil {
-		return fmt.Errorf("failed to marshal export: %w", err)
-	}
-
-	if err := os.WriteFile(path, data, 0644); err != nil {
-		return fmt.Errorf("failed to write export file: %w", err)
-	}
-
-	return nil
+// Export returns ErrUnsupportedMaintenance because Backend does not expose
+// a complete listing of entries. The destination is left untouched.
+func (m *Manager) Export(_ context.Context, _ string) error {
+	return fmt.Errorf("%w: export requires entry listing support", ErrUnsupportedMaintenance)
 }
 
-// Import imports cache entries from a file.
+// Import imports a version 1.0 cache file containing entries.
 func (m *Manager) Import(ctx context.Context, path string) error {
 	data, err := os.ReadFile(path)
 	if err != nil {

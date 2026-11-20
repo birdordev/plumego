@@ -8,7 +8,8 @@ import (
 	"github.com/birdordev/plumego/x/messaging/pubsub"
 )
 
-// Configure registers a snapshot endpoint when enabled.
+// Configure registers a snapshot endpoint when enabled. Configuration and
+// route registration failures are reported through LogError when supplied.
 func Configure(hooks Hooks) {
 	if hooks.EnsureMutable == nil || hooks.ConfigSnapshot == nil || hooks.RegisterRoute == nil {
 		return
@@ -35,7 +36,7 @@ func Configure(hooks Hooks) {
 		path = "/_debug/pubsub"
 	}
 
-	_ = hooks.RegisterRoute(http.MethodGet, path, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	if err := hooks.RegisterRoute(http.MethodGet, path, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if pub == nil {
 			_ = contract.WriteError(w, r, pubsubNotConfiguredError())
 			return
@@ -49,7 +50,9 @@ func Configure(hooks Hooks) {
 		}
 
 		_ = contract.WriteError(w, r, pubsubSnapshotUnsupportedError())
-	}))
+	})); err != nil && hooks.LogError != nil {
+		hooks.LogError("ConfigurePubSub failed", err)
+	}
 }
 
 // Hooks provide the minimal integration points for Configure.

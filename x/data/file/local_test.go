@@ -7,6 +7,7 @@ import (
 	"image/color"
 	"image/jpeg"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -767,5 +768,53 @@ func BenchmarkLocalStorage_Get(b *testing.B) {
 		reader, _ := storage.Get(ctx, result.Path)
 		_, _ = io.Copy(io.Discard, reader)
 		reader.Close()
+	}
+}
+
+type uploadTestReader func([]byte) (int, error)
+
+func (r uploadTestReader) Read(p []byte) (int, error) { return r(p) }
+
+func TestLocalStoragePutCancellationDoesNotPublish(t *testing.T) {
+	for _, stage := range []string{"before copy", "between reads", "last read"} {
+		t.Run(stage, func(t *testing.T) {
+			dir := t.TempDir()
+			storage, err := NewLocalStorage(dir, "", nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			if stage == "before copy" {
+				cancel()
+			}
+
+			calls := 0
+			reader := uploadTestReader(func(p []byte) (int, error) {
+				calls++
+				cancel()
+				n := copy(p, "sample")
+				if stage == "last read" {
+					return n, io.EOF
+				}
+				return n, nil
+			})
+			got, err := storage.Put(ctx, PutOptions{TenantID: "sample", FileName: "sample.txt", Reader: reader})
+			if got != nil || !errors.Is(err, context.Canceled) {
+				t.Fatalf("Put returned record=%v, err=%v", got, err)
+			}
+			if stage == "before copy" && calls != 0 || stage != "before copy" && calls != 1 {
+				t.Errorf("reader called %d times after cancellation at %s", calls, stage)
+			}
+			err = filepath.WalkDir(dir, func(path string, entry fs.DirEntry, err error) error {
+				if err == nil && !entry.IsDir() {
+					t.Errorf("cancelled Put left a file: %s", path)
+				}
+				return err
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+		})
 	}
 }

@@ -1,8 +1,13 @@
 package pubsub
 
-import "sort"
+import (
+	"maps"
+	"sort"
+)
 
-// Query searches for messages matching the query.
+// Query returns snapshots of messages matching the query. Metadata and common
+// payload containers are copied. Custom payloads follow the Message ownership
+// rules and can provide a Cloner or DeepCopier.
 func (rs *ReplayStore) Query(query ReplayQuery) ([]*ReplayMessage, error) {
 	if rs.closed.Load() {
 		return nil, ErrReplayClosed
@@ -55,6 +60,9 @@ func (rs *ReplayStore) Query(query ReplayQuery) ([]*ReplayMessage, error) {
 		results = results[:query.Limit]
 	}
 
+	for _, msg := range results {
+		copyReplayPayload(msg)
+	}
 	return results, nil
 }
 
@@ -126,20 +134,29 @@ func (rs *ReplayStore) sortMessages(messages []*ReplayMessage, sortBy string, as
 	}
 }
 
-// GetByID retrieves a message by ID.
+// GetByID retrieves a snapshot of an in-memory message by ID. Payload
+// ownership follows the rules documented for Query.
 func (rs *ReplayStore) GetByID(messageID string) (*ReplayMessage, error) {
 	if rs.closed.Load() {
 		return nil, ErrReplayClosed
 	}
 
 	rs.messagesMu.RLock()
-	defer rs.messagesMu.RUnlock()
 	msg, exists := rs.messages[messageID]
-
 	if !exists {
+		rs.messagesMu.RUnlock()
 		return nil, ErrMessageNotFound
 	}
-
 	msgCopy := *msg
+	rs.messagesMu.RUnlock()
+
+	copyReplayPayload(&msgCopy)
 	return &msgCopy, nil
+}
+
+// copyReplayPayload operates on a detached snapshot. Custom copiers can call
+// back into the store, so callers must release the replay locks first.
+func copyReplayPayload(msg *ReplayMessage) {
+	msg.Metadata = maps.Clone(msg.Metadata)
+	msg.Data = cloneData(msg.Data)
 }

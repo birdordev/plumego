@@ -3,6 +3,8 @@ package cachemanager_test
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/birdordev/plumego/x/ai/semanticcache/cachemanager"
@@ -185,5 +187,47 @@ func TestWarmer_WarmFromFileUnsupportedContract(t *testing.T) {
 	err := w.WarmFromFile(context.Background(), "queries.json")
 	if !errors.Is(err, cachemanager.ErrUnsupportedMaintenance) {
 		t.Fatalf("error=%v, want ErrUnsupportedMaintenance", err)
+	}
+}
+
+func TestExportUnsupportedLeavesDestinationUntouched(t *testing.T) {
+	manager, backend := newTestManager()
+	ctx := t.Context()
+	if err := backend.Add(ctx, &vectorstore.Entry{ID: "sample", Vector: []float64{1, 0, 0, 0}}); err != nil {
+		t.Fatal(err)
+	}
+
+	path := filepath.Join(t.TempDir(), "cache.json")
+	if err := manager.Export(ctx, path); !errors.Is(err, cachemanager.ErrUnsupportedMaintenance) {
+		t.Fatalf("Export = %v", err)
+	}
+	if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("export created the destination: %v", err)
+	}
+
+	const existing = "existing file"
+	if err := os.WriteFile(path, []byte(existing), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.Export(ctx, path); !errors.Is(err, cachemanager.ErrUnsupportedMaintenance) {
+		t.Fatalf("Export over existing file = %v", err)
+	}
+	if data, err := os.ReadFile(path); err != nil || string(data) != existing {
+		t.Fatalf("destination = %q, %v", data, err)
+	}
+}
+
+func TestImportStillRestoresExistingFileWithEntries(t *testing.T) {
+	manager, backend := newTestManager()
+	path := filepath.Join(t.TempDir(), "cache.json")
+	data := []byte(`{"version":"1.0","dimensions":4,"total_entries":1,"entries":[{"id":"sample","vector":[1,0,0,0]}]}`)
+	if err := os.WriteFile(path, data, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.Import(t.Context(), path); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := backend.Get(t.Context(), "sample"); err != nil || got.ID != "sample" || len(got.Vector) != 4 {
+		t.Fatalf("imported entry = %+v, %v", got, err)
 	}
 }
