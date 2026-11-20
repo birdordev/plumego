@@ -1,7 +1,9 @@
 package ipc
 
 import (
+	"container/list"
 	"context"
+	"errors"
 	"net"
 	"sync"
 	"time"
@@ -9,7 +11,7 @@ import (
 
 // PoolConfig holds configuration for connection pool
 type PoolConfig struct {
-	MaxConns     int           // Maximum number of connections in pool
+	MaxConns     int           // Maximum number of established connections and pending dials
 	MaxIdleConns int           // Maximum number of idle connections to retain
 	MaxIdleTime  time.Duration // Maximum time a connection can be idle before being closed
 	DialTimeout  time.Duration // Timeout for creating new connections
@@ -40,10 +42,11 @@ type Pool struct {
 	config  *Config
 	poolCfg *PoolConfig
 
-	mu      sync.Mutex
-	conns   []*poolConn
-	waiting []chan *poolConn
-	closed  bool
+	mu           sync.Mutex
+	conns        []*poolConn
+	pendingDials int
+	waiting      list.List // of chan struct{}, in arrival order
+	closed       bool
 
 	stopCh chan struct{}
 }
@@ -64,7 +67,6 @@ func NewPool(addr string, poolCfg *PoolConfig, opts ...Option) (*Pool, error) {
 		config:  config,
 		poolCfg: poolCfg,
 		conns:   make([]*poolConn, 0, poolCfg.MaxConns),
-		waiting: make([]chan *poolConn, 0),
 		stopCh:  make(chan struct{}),
 	}
 
@@ -79,124 +81,172 @@ func (p *Pool) Get() (Client, error) {
 	return p.GetWithContext(context.Background())
 }
 
-// GetWithContext acquires a connection from the pool with context
+// GetWithContext acquires a connection until one is available or ctx is done.
+// A closed pool returns ErrClientClosed. Expired idle connections are detached
+// before being closed, and dials that finish after closure are discarded.
 func (p *Pool) GetWithContext(ctx context.Context) (Client, error) {
-	p.mu.Lock()
+	return p.getWithContext(ctx, dialPlatformWithContext)
+}
 
-	if p.closed {
-		p.mu.Unlock()
-		return nil, ErrClientClosed
-	}
-
-	// Try to find an idle connection
-	for i, pc := range p.conns {
-		if !pc.inUse {
-			// Check if connection is still valid
-			if time.Since(pc.lastUsed) > p.poolCfg.MaxIdleTime {
-				// Connection too old, remove it
-				_ = pc.client.Close()
-				p.conns = append(p.conns[:i], p.conns[i+1:]...)
-				continue
-			}
-
-			pc.inUse = true
-			pc.lastUsed = time.Now()
+func (p *Pool) getWithContext(ctx context.Context, dial func(context.Context, string, *Config) (Client, error)) (Client, error) {
+	var waiter *list.Element
+	var ready chan struct{}
+	for {
+		p.mu.Lock()
+		if p.closed {
+			p.removeWaiterLocked(waiter)
 			p.mu.Unlock()
-			return &poolClient{conn: pc}, nil
+			return nil, ErrClientClosed
 		}
-	}
-
-	// No idle connection, try to create new one
-	if len(p.conns) < p.poolCfg.MaxConns {
-		p.mu.Unlock()
-		client, err := dialPlatformWithContext(ctx, p.addr, p.config)
-		if err != nil {
+		if err := ctx.Err(); err != nil {
+			p.removeWaiterLocked(waiter)
+			p.mu.Unlock()
 			return nil, err
 		}
 
-		pc := &poolConn{
-			client:    client,
-			pool:      p,
-			createdAt: time.Now(),
-			lastUsed:  time.Now(),
-			inUse:     true,
-		}
-
-		p.mu.Lock()
-		p.conns = append(p.conns, pc)
-		p.mu.Unlock()
-
-		return &poolClient{conn: pc}, nil
-	}
-
-	// Pool is full, wait for a connection to be released
-	waiter := make(chan *poolConn, 1)
-	p.waiting = append(p.waiting, waiter)
-	p.mu.Unlock()
-
-	select {
-	case pc := <-waiter:
-		return &poolClient{conn: pc}, nil
-	case <-ctx.Done():
-		// Remove from waiting list
-		p.mu.Lock()
-		for i, w := range p.waiting {
-			if w == waiter {
-				p.waiting = append(p.waiting[:i], p.waiting[i+1:]...)
-				break
+		var expired []*poolConn
+		// Only the oldest waiter may claim a connection or start a dial.
+		if first := p.waiting.Front(); first == nil || first == waiter {
+			var idle *poolConn
+			idle, expired = p.takeIdleLocked(time.Now())
+			if idle != nil {
+				p.removeWaiterLocked(waiter)
+				p.mu.Unlock()
+				closePoolConnections(expired)
+				return &poolClient{conn: idle}, nil
+			}
+			if len(p.conns)+p.pendingDials < p.poolCfg.MaxConns {
+				p.pendingDials++
+				p.removeWaiterLocked(waiter)
+				p.mu.Unlock()
+				closePoolConnections(expired)
+				return p.dialReserved(ctx, dial)
 			}
 		}
+
+		if waiter == nil {
+			ready = make(chan struct{}, 1)
+			waiter = p.waiting.PushBack(ready)
+		}
 		p.mu.Unlock()
-		return nil, ctx.Err()
+		closePoolConnections(expired)
+
+		select {
+		case <-ready:
+		case <-ctx.Done():
+		case <-p.stopCh:
+		}
 	}
 }
 
-// put returns a connection to the pool
+// takeIdleLocked selects the first reusable connection and detaches all expired idle connections.
+func (p *Pool) takeIdleLocked(now time.Time) (idle *poolConn, expired []*poolConn) {
+	kept := p.conns[:0]
+	for _, pc := range p.conns {
+		if !pc.inUse {
+			if now.Sub(pc.lastUsed) > p.poolCfg.MaxIdleTime {
+				expired = append(expired, pc)
+				continue
+			}
+			if idle == nil {
+				idle = pc
+				idle.inUse = true
+				idle.lastUsed = now
+			}
+		}
+		kept = append(kept, pc)
+	}
+	clear(p.conns[len(kept):])
+	p.conns = kept
+	return idle, expired
+}
+
+func (p *Pool) dialReserved(ctx context.Context, dial func(context.Context, string, *Config) (Client, error)) (Client, error) {
+	client, err := dial(ctx, p.addr, p.config)
+
+	p.mu.Lock()
+	p.pendingDials--
+	if p.closed {
+		err = ErrClientClosed
+	} else if err == nil {
+		err = ctx.Err()
+	}
+	if err != nil {
+		p.notifyLocked()
+		p.mu.Unlock()
+		if client != nil {
+			if closeErr := client.Close(); closeErr != nil {
+				err = errors.Join(err, closeErr)
+			}
+		}
+		return nil, err
+	}
+
+	now := time.Now()
+	pc := &poolConn{client: client, pool: p, createdAt: now, lastUsed: now, inUse: true}
+	p.conns = append(p.conns, pc)
+	p.mu.Unlock()
+	return &poolClient{conn: pc}, nil
+}
+
+// removeWaiterLocked advances the queue when the oldest caller leaves.
+func (p *Pool) removeWaiterLocked(waiter *list.Element) {
+	if waiter == nil {
+		return
+	}
+	wasFirst := p.waiting.Front() == waiter
+	p.waiting.Remove(waiter)
+	if wasFirst {
+		p.notifyLocked()
+	}
+}
+
+// notifyLocked tells the oldest waiter to recheck state without transferring a lease.
+func (p *Pool) notifyLocked() {
+	if next := p.waiting.Front(); next != nil {
+		select {
+		case next.Value.(chan struct{}) <- struct{}{}:
+		default:
+		}
+	}
+}
+
+// put returns a connection to the pool.
 func (p *Pool) put(pc *poolConn) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
 	if p.closed {
-		_ = pc.client.Close()
 		return
 	}
 
 	pc.lastUsed = time.Now()
 	pc.inUse = false
-
-	// Wake up waiting goroutine if any
-	if len(p.waiting) > 0 {
-		waiter := p.waiting[0]
-		p.waiting = p.waiting[1:]
-		pc.inUse = true
-		waiter <- pc
-	}
+	p.notifyLocked()
 }
 
-// Close closes the pool and all connections
+// Close closes the pool and all established connections. Any pending dial
+// that returns a connection after closure is responsible for closing it.
 func (p *Pool) Close() error {
 	p.mu.Lock()
-	defer p.mu.Unlock()
-
 	if p.closed {
+		p.mu.Unlock()
 		return nil
 	}
 	p.closed = true
 	close(p.stopCh)
+	conns := p.conns
+	p.conns = nil
+	p.mu.Unlock()
 
-	// Close all connections
-	for _, pc := range p.conns {
+	closePoolConnections(conns)
+	return nil
+}
+
+func closePoolConnections(conns []*poolConn) {
+	for _, pc := range conns {
 		_ = pc.client.Close()
 	}
-	p.conns = nil
-
-	// Wake up all waiting goroutines
-	for _, waiter := range p.waiting {
-		close(waiter)
-	}
-	p.waiting = nil
-
-	return nil
 }
 
 // cleanup periodically removes idle connections
@@ -240,12 +290,13 @@ func (p *Pool) cleanup() {
 			}
 
 			p.conns = filtered
+			if len(toClose) > 0 {
+				p.notifyLocked()
+			}
 			p.mu.Unlock()
 
 			// Close connections outside lock
-			for _, pc := range toClose {
-				_ = pc.client.Close()
-			}
+			closePoolConnections(toClose)
 
 		case <-p.stopCh:
 			return
@@ -260,7 +311,7 @@ func (p *Pool) Stats() PoolStats {
 
 	stats := PoolStats{
 		TotalConns: len(p.conns),
-		Waiting:    len(p.waiting),
+		Waiting:    p.waiting.Len(),
 	}
 
 	for _, pc := range p.conns {

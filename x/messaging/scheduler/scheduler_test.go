@@ -1,14 +1,19 @@
 package scheduler
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"testing/synctest"
 	"time"
+
+	"github.com/birdordev/plumego/log"
 )
 
 type metricsSink struct {
@@ -2678,5 +2683,86 @@ func TestStopBeforeStartSkipsRecovery(t *testing.T) {
 	case <-store.entered:
 		t.Fatal("Start attempted recovery after shutdown")
 	default:
+	}
+}
+
+type rejectingSaveStore struct {
+	*MemoryStore
+	err error
+}
+
+func (s rejectingSaveStore) Save(StoredJob) error { return s.err }
+
+type saveDiagnosticLogger struct {
+	log.StructuredLogger
+	onError func()
+}
+
+func (l saveDiagnosticLogger) Error(msg string, fields ...log.Fields) {
+	l.onError()
+	l.StructuredLogger.Error(msg, fields...)
+}
+
+func TestScheduleReportsBestEffortSaveFailure(t *testing.T) {
+	for _, tt := range []struct {
+		name    string
+		saveErr error
+	}{
+		{name: "saved"},
+		{name: "save failed", saveErr: errors.New("store refused write")},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				const id JobID = "job-123"
+				const taskName = "test-task-payload"
+				var output bytes.Buffer
+				base := log.NewLogger(log.LoggerConfig{
+					Format: log.LoggerFormatJSON, Output: &output, ErrorOutput: &output,
+				})
+				memory := NewMemoryStore()
+				var store Store = memory
+				if tt.saveErr != nil {
+					store = rejectingSaveStore{MemoryStore: memory, err: tt.saveErr}
+				}
+				var s *Scheduler
+				logger := saveDiagnosticLogger{StructuredLogger: base, onError: func() {
+					if _, ok := s.Status(id); !ok {
+						t.Error("scheduler could not read the job while logging")
+					}
+				}}
+				s = New(WithStore(store), WithLogger(logger))
+				s.Start()
+				defer func() {
+					if err := s.Stop(t.Context()); err != nil {
+						t.Error(err)
+					}
+				}()
+
+				ran := make(chan struct{})
+				got, err := s.Schedule(id, time.Now().Add(time.Minute), func(context.Context) error {
+					close(ran)
+					return nil
+				}, WithTaskName(taskName))
+				if got != id || err != nil {
+					t.Fatalf("Schedule = %q, %v", got, err)
+				}
+				if tt.saveErr == nil {
+					stored, err := memory.List()
+					if err != nil || len(stored) != 1 || stored[0].ID != id || output.Len() != 0 {
+						t.Errorf("stored = %v, %v, logs = %s", stored, err, output.String())
+					}
+				} else {
+					var fields map[string]any
+					if err := json.Unmarshal(output.Bytes(), &fields); err != nil {
+						t.Fatalf("invalid JSON diagnostic %q: %v", output.String(), err)
+					}
+					if fields["job_id"] != string(id) || fields["error"] != tt.saveErr.Error() ||
+						strings.Contains(output.String(), taskName) {
+						t.Errorf("unexpected save diagnostic: %s", output.String())
+					}
+				}
+				<-ran
+			})
+		})
 	}
 }

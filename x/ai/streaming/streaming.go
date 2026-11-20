@@ -256,7 +256,6 @@ func (se *StreamingEngine) executeWithProgress(
 		return []*orchestration.AgentResult{}, nil
 	}
 
-	startTime := time.Now()
 	results := make([]*orchestration.AgentResult, 0, totalSteps)
 
 	for idx, step := range workflow.Steps {
@@ -293,8 +292,6 @@ func (se *StreamingEngine) executeWithProgress(
 			Result:     result,
 		})
 	}
-
-	_ = time.Since(startTime) // Track duration if needed
 
 	return results, nil
 }

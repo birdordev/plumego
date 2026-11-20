@@ -49,7 +49,8 @@ type Config struct {
 	FallbackToPrimary bool
 }
 
-// HealthCheckConfig configures health checking behavior
+// HealthCheckConfig configures health checking behavior. When enabled,
+// each zero-valued setting uses its corresponding default.
 type HealthCheckConfig struct {
 	// Enabled turns health checking on/off
 	Enabled bool
@@ -135,11 +136,14 @@ func New(config Config) (*Cluster, error) {
 		config.RoutingPolicy = NewTransactionAwarePolicy(NewSQLTypePolicy())
 	}
 
-	// Apply default health check values only if enabled and interval is 0
-	if config.HealthCheck.Enabled && config.HealthCheck.Interval == 0 {
+	if config.HealthCheck.Enabled {
 		defaults := DefaultHealthCheckConfig()
-		config.HealthCheck.Interval = defaults.Interval
-		config.HealthCheck.Timeout = defaults.Timeout
+		if config.HealthCheck.Interval == 0 {
+			config.HealthCheck.Interval = defaults.Interval
+		}
+		if config.HealthCheck.Timeout == 0 {
+			config.HealthCheck.Timeout = defaults.Timeout
+		}
 		if config.HealthCheck.FailureThreshold == 0 {
 			config.HealthCheck.FailureThreshold = defaults.FailureThreshold
 		}

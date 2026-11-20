@@ -908,3 +908,49 @@ func BenchmarkLoadBalancerNext(b *testing.B) {
 		_, _ = lb.Next(replicas)
 	}
 }
+
+func TestNewAppliesHealthCheckDefaultsPerField(t *testing.T) {
+	defaults := DefaultHealthCheckConfig()
+	for _, tt := range []struct {
+		name  string
+		input HealthCheckConfig
+		want  HealthCheckConfig
+	}{
+		{name: "all defaults", input: HealthCheckConfig{Enabled: true}, want: defaults},
+		{
+			name:  "explicit interval",
+			input: HealthCheckConfig{Enabled: true, Interval: time.Minute},
+			want:  HealthCheckConfig{Enabled: true, Interval: time.Minute, Timeout: defaults.Timeout, FailureThreshold: defaults.FailureThreshold, RecoveryThreshold: defaults.RecoveryThreshold},
+		},
+		{
+			name:  "explicit timeout",
+			input: HealthCheckConfig{Enabled: true, Timeout: time.Second},
+			want:  HealthCheckConfig{Enabled: true, Interval: defaults.Interval, Timeout: time.Second, FailureThreshold: defaults.FailureThreshold, RecoveryThreshold: defaults.RecoveryThreshold},
+		},
+		{
+			name:  "explicit thresholds",
+			input: HealthCheckConfig{Enabled: true, FailureThreshold: 7, RecoveryThreshold: 4},
+			want:  HealthCheckConfig{Enabled: true, Interval: defaults.Interval, Timeout: defaults.Timeout, FailureThreshold: 7, RecoveryThreshold: 4},
+		},
+		{
+			name:  "disabled",
+			input: HealthCheckConfig{Timeout: time.Second},
+			want:  HealthCheckConfig{Timeout: time.Second},
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			cluster, err := New(Config{Primary: newStubDB(), HealthCheck: tt.input})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() {
+				if err := cluster.Close(); err != nil {
+					t.Error(err)
+				}
+			}()
+			if got := cluster.healthConfig; got != tt.want {
+				t.Errorf("health config = %+v, want %+v", got, tt.want)
+			}
+		})
+	}
+}

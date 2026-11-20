@@ -13,7 +13,8 @@ type RoutePolicyCache interface {
 	Delete(ctx context.Context, tenantID string) error
 }
 
-// InMemoryRoutePolicyCache is a TTL cache for route policies.
+// InMemoryRoutePolicyCache is a TTL cache for route policies. The cache copies
+// Payload and Metadata on both reads and writes.
 type InMemoryRoutePolicyCache struct {
 	mu      sync.RWMutex
 	entries map[string]routePolicyCacheEntry
@@ -58,7 +59,7 @@ func (c *InMemoryRoutePolicyCache) Get(_ context.Context, tenantID string) (Rout
 	if time.Now().UTC().After(entry.expiresAt) {
 		return RoutePolicy{}, false
 	}
-	return entry.policy, true
+	return cloneRoutePolicy(entry.policy), true
 }
 
 // Set stores a policy in the cache.
@@ -89,7 +90,7 @@ func (c *InMemoryRoutePolicyCache) Set(ctx context.Context, tenantID string, pol
 	}
 
 	c.entries[tenantID] = routePolicyCacheEntry{
-		policy:    policy,
+		policy:    cloneRoutePolicy(policy),
 		expiresAt: time.Now().UTC().Add(c.ttl),
 	}
 	return nil

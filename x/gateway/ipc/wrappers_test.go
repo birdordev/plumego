@@ -3,6 +3,7 @@ package ipc
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"strings"
 	"sync"
@@ -1035,4 +1036,265 @@ func TestNewAddr(t *testing.T) {
 	if addr.String() != "/tmp/test.sock" {
 		t.Fatalf("String = %q, want /tmp/test.sock", addr.String())
 	}
+}
+
+type poolTestConn struct {
+	Client
+	closes int
+}
+
+func (c *poolTestConn) Close() error {
+	c.closes++
+	return nil
+}
+
+type poolGetResult struct {
+	client Client
+	err    error
+}
+
+func TestPoolWaitingGetAfterReturnOrClose(t *testing.T) {
+	for _, tt := range []struct {
+		name  string
+		close bool
+	}{
+		{name: "returned connection"},
+		{name: "closed pool", close: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				p := &Pool{poolCfg: &PoolConfig{MaxConns: 1, MaxIdleTime: time.Hour}, stopCh: make(chan struct{})}
+				raw := &poolTestConn{}
+				conn := &poolConn{client: raw, pool: p, inUse: true}
+				p.conns = []*poolConn{conn}
+				lease := &poolClient{conn: conn}
+				result := make(chan poolGetResult, 1)
+				go func() {
+					client, err := p.GetWithContext(t.Context())
+					result <- poolGetResult{client, err}
+				}()
+				synctest.Wait()
+				if p.Stats().Waiting != 1 {
+					t.Fatal("GetWithContext did not wait for the full pool")
+				}
+
+				if tt.close {
+					if err := p.Close(); err != nil {
+						t.Fatal(err)
+					}
+				}
+				if err := lease.Close(); err != nil {
+					t.Fatal(err)
+				}
+				got := <-result
+				if tt.close {
+					if got.client != nil || !errors.Is(got.err, ErrClientClosed) || raw.closes != 1 {
+						t.Errorf("GetWithContext = %T, %v, underlying closes = %d", got.client, got.err, raw.closes)
+					}
+				} else if acquired, ok := got.client.(*poolClient); got.err != nil || !ok || acquired.conn != conn {
+					t.Errorf("GetWithContext = %v, %v, want a lease on the returned connection", got.client, got.err)
+				}
+				if err := p.Close(); err != nil {
+					t.Fatal(err)
+				}
+			})
+		})
+	}
+}
+
+func TestPoolGetRemovesExpiredIdleConnections(t *testing.T) {
+	for _, tt := range []struct {
+		name  string
+		conns string
+		want  PoolStats
+	}{
+		{name: "consecutive and trailing", conns: "EEAFEF", want: PoolStats{TotalConns: 3, InUse: 2, Idle: 1}},
+		{name: "all expired", conns: "EEE", want: PoolStats{TotalConns: 1, InUse: 1}},
+		{name: "none expired", conns: "AFF", want: PoolStats{TotalConns: 3, InUse: 2, Idle: 1}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			p := &Pool{poolCfg: &PoolConfig{MaxConns: len(tt.conns), MaxIdleTime: time.Hour}}
+			now := time.Now()
+			var expired []*poolTestConn
+			var firstFresh *poolConn
+			for _, kind := range tt.conns {
+				raw := &poolTestConn{}
+				pc := &poolConn{client: raw, pool: p, lastUsed: now, inUse: kind == 'A'}
+				if kind == 'E' {
+					pc.lastUsed = now.Add(-2 * time.Hour)
+					expired = append(expired, raw)
+				}
+				if kind == 'F' && firstFresh == nil {
+					firstFresh = pc
+				}
+				p.conns = append(p.conns, pc)
+			}
+			dials := 0
+			client, err := p.getWithContext(t.Context(), func(context.Context, string, *Config) (Client, error) {
+				dials++
+				return &poolTestConn{}, nil
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if firstFresh == nil {
+				if dials != 1 {
+					t.Errorf("dial count = %d, want 1", dials)
+				}
+			} else if dials != 0 || client.(*poolClient).conn != firstFresh {
+				t.Error("Get did not reuse the first fresh connection")
+			}
+			if got := p.Stats(); got != tt.want {
+				t.Errorf("stats = %+v, want %+v", got, tt.want)
+			}
+			for _, raw := range expired {
+				if raw.closes != 1 {
+					t.Errorf("expired connection closed %d times, want once", raw.closes)
+				}
+			}
+		})
+	}
+}
+
+func TestPoolDialReservationReleasesCapacity(t *testing.T) {
+	for _, outcome := range []string{"success", "failure", "canceled", "closed"} {
+		t.Run(outcome, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				p := &Pool{poolCfg: &PoolConfig{MaxConns: 1, MaxIdleTime: time.Hour}, stopCh: make(chan struct{})}
+				ctx, cancel := context.WithCancel(t.Context())
+				defer cancel()
+
+				started, release := make(chan struct{}), make(chan struct{})
+				dialErr := errors.New("dial failed")
+				raw := &poolTestConn{}
+				first := make(chan poolGetResult, 1)
+				go func() {
+					client, err := p.getWithContext(ctx, func(context.Context, string, *Config) (Client, error) {
+						close(started)
+						<-release
+						if outcome == "failure" {
+							return nil, dialErr
+						}
+						return raw, nil
+					})
+					first <- poolGetResult{client, err}
+				}()
+				<-started
+
+				secondRaw := &poolTestConn{}
+				second := make(chan poolGetResult, 1)
+				go func() {
+					client, err := p.getWithContext(t.Context(), func(context.Context, string, *Config) (Client, error) {
+						return secondRaw, nil
+					})
+					second <- poolGetResult{client, err}
+				}()
+				synctest.Wait()
+				if got := p.Stats(); got.Waiting != 1 || got.TotalConns != 0 {
+					t.Errorf("stats during first dial = %+v, want one waiter and zero established connections", got)
+				}
+
+				var firstErr error
+				switch outcome {
+				case "failure":
+					firstErr = dialErr
+				case "canceled":
+					cancel()
+					firstErr = context.Canceled
+				case "closed":
+					if err := p.Close(); err != nil {
+						t.Fatal(err)
+					}
+					firstErr = ErrClientClosed
+				}
+				close(release)
+				got := <-first
+				if firstErr == nil {
+					if got.err != nil || got.client == nil {
+						t.Fatalf("first Get = %T, %v", got.client, got.err)
+					}
+					synctest.Wait()
+					if p.Stats().Waiting != 1 {
+						t.Error("second Get must wait until the established connection is returned")
+					}
+					if err := got.client.Close(); err != nil {
+						t.Fatal(err)
+					}
+				} else if got.client != nil || !errors.Is(got.err, firstErr) {
+					t.Errorf("first Get = %T, %v, want %v", got.client, got.err, firstErr)
+				}
+				if (outcome == "closed" || outcome == "canceled") && raw.closes != 1 {
+					t.Errorf("discarded connection closed %d times, want once", raw.closes)
+				}
+
+				got = <-second
+				if outcome == "closed" {
+					if got.client != nil || !errors.Is(got.err, ErrClientClosed) || p.Stats() != (PoolStats{}) {
+						t.Errorf("closed pool: second Get = %T, %v, stats = %+v", got.client, got.err, p.Stats())
+					}
+				} else {
+					want := secondRaw
+					if outcome == "success" {
+						want = raw
+					}
+					if acquired, ok := got.client.(*poolClient); got.err != nil || !ok || acquired.conn.client != want {
+						t.Errorf("second Get = %T, %v, want a lease on the expected connection", got.client, got.err)
+					}
+				}
+				if err := p.Close(); err != nil {
+					t.Fatal(err)
+				}
+			})
+		})
+	}
+}
+
+func TestPoolWaitersAcquireInOrderAfterCancellation(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		p := &Pool{poolCfg: &PoolConfig{MaxConns: 1, MaxIdleTime: time.Hour}, stopCh: make(chan struct{})}
+		conn := &poolConn{client: &poolTestConn{}, pool: p, inUse: true}
+		p.conns = []*poolConn{conn}
+		lease := &poolClient{conn: conn}
+		ctx, cancel := context.WithCancel(t.Context())
+		defer cancel()
+		results := make([]chan poolGetResult, 3)
+		for i := range results {
+			waitCtx := t.Context()
+			if i == 0 {
+				waitCtx = ctx
+			}
+			results[i] = make(chan poolGetResult, 1)
+			go func() {
+				client, err := p.GetWithContext(waitCtx)
+				results[i] <- poolGetResult{client, err}
+			}()
+			synctest.Wait()
+			if got := p.Stats().Waiting; got != i+1 {
+				t.Fatalf("waiting = %d, want %d", got, i+1)
+			}
+		}
+		cancel()
+		if got := <-results[0]; got.client != nil || !errors.Is(got.err, context.Canceled) {
+			t.Fatalf("canceled Get = %T, %v", got.client, got.err)
+		}
+		for _, result := range results[1:] {
+			if err := lease.Close(); err != nil {
+				t.Fatal(err)
+			}
+			synctest.Wait()
+			select {
+			case got := <-result:
+				var ok bool
+				lease, ok = got.client.(*poolClient)
+				if got.err != nil || !ok || lease.conn != conn {
+					t.Fatalf("Get = %T, %v, want the returned connection", got.client, got.err)
+				}
+			default:
+				t.Fatal("oldest waiting caller did not acquire the returned connection")
+			}
+		}
+		if err := p.Close(); err != nil {
+			t.Fatal(err)
+		}
+	})
 }

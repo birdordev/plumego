@@ -9,15 +9,9 @@ func (s *Scheduler) logError(msg string, err error) {
 	s.logger.Error(msg, log.Fields{"error": err.Error()})
 }
 
-func (s *Scheduler) persistJobLocked(j *job) {
-	if s.store == nil || j == nil {
-		return
-	}
-	if j.kind != jobKindDelay {
-		return
-	}
-	if j.options.TaskName == "" {
-		return
+func (s *Scheduler) persistJobLocked(j *job) error {
+	if s.store == nil || j == nil || j.kind != jobKindDelay || j.options.TaskName == "" {
+		return nil
 	}
 	job := StoredJob{
 		ID:               j.id,
@@ -33,7 +27,7 @@ func (s *Scheduler) persistJobLocked(j *job) {
 		Dependencies:     append([]JobID(nil), j.options.Dependencies...),
 		DependencyPolicy: j.options.DependencyPolicy,
 	}
-	_ = s.store.Save(job)
+	return s.store.Save(job)
 }
 
 func (s *Scheduler) loadPersisted() {

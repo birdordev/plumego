@@ -164,3 +164,72 @@ func (p *testRoutePolicyProvider) RoutePolicy(ctx context.Context, tenantID stri
 		UpdatedAt: time.Now().UTC(),
 	}, nil
 }
+
+func TestInMemoryRoutePolicySnapshots(t *testing.T) {
+	for _, name := range []string{"store", "cache"} {
+		t.Run(name, func(t *testing.T) {
+			ctx := t.Context()
+			const tenantID = "sample"
+			var save func(RoutePolicy) error
+			var read func() RoutePolicy
+			if name == "store" {
+				store := NewInMemoryRoutePolicyStore()
+				save = func(policy RoutePolicy) error { return store.SetRoutePolicy(ctx, policy) }
+				read = func() RoutePolicy {
+					policy, err := store.RoutePolicy(ctx, tenantID)
+					if err != nil {
+						t.Fatal(err)
+					}
+					return policy
+				}
+			} else {
+				cache := NewInMemoryRoutePolicyCache(2, time.Hour)
+				save = func(policy RoutePolicy) error { return cache.Set(ctx, tenantID, policy) }
+				read = func() RoutePolicy {
+					policy, ok := cache.Get(ctx, tenantID)
+					if !ok {
+						t.Fatal("cached policy missing")
+					}
+					return policy
+				}
+			}
+
+			if err := save(RoutePolicy{TenantID: tenantID}); err != nil {
+				t.Fatal(err)
+			}
+			if got := read(); got.Payload != nil || got.Metadata != nil {
+				t.Errorf("nil values were replaced: %+v", got)
+			}
+			empty := RoutePolicy{TenantID: tenantID, Payload: []byte{}, Metadata: map[string]string{}}
+			if err := save(empty); err != nil {
+				t.Fatal(err)
+			}
+			if got := read(); got.Payload == nil || len(got.Payload) != 0 || got.Metadata == nil || len(got.Metadata) != 0 {
+				t.Errorf("empty values were replaced: %+v", got)
+			}
+
+			input := RoutePolicy{
+				TenantID:  tenantID,
+				Strategy:  "weighted",
+				UpdatedAt: time.Now().UTC(),
+				Payload:   []byte("original"),
+				Metadata:  map[string]string{"key": "value"},
+			}
+			if err := save(input); err != nil {
+				t.Fatal(err)
+			}
+			input.Payload[0] = 'x'
+			input.Metadata["key"] = "changed"
+			first := read()
+			if first.TenantID != tenantID || first.Strategy != input.Strategy || first.UpdatedAt != input.UpdatedAt ||
+				string(first.Payload) != "original" || first.Metadata["key"] != "value" {
+				t.Fatalf("unexpected policy after input mutation: %+v", first)
+			}
+			first.Payload[0] = 'y'
+			first.Metadata["key"] = "changed again"
+			if got := read(); string(got.Payload) != "original" || got.Metadata["key"] != "value" {
+				t.Errorf("unexpected policy after result mutation: %+v", got)
+			}
+		})
+	}
+}

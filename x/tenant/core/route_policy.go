@@ -2,6 +2,8 @@ package tenant
 
 import (
 	"context"
+	"maps"
+	"slices"
 	"sync"
 	"time"
 )
@@ -16,6 +18,12 @@ type RoutePolicy struct {
 	UpdatedAt time.Time
 }
 
+func cloneRoutePolicy(policy RoutePolicy) RoutePolicy {
+	policy.Payload = slices.Clone(policy.Payload)
+	policy.Metadata = maps.Clone(policy.Metadata)
+	return policy
+}
+
 // RoutePolicyProvider loads routing policy for a tenant.
 type RoutePolicyProvider interface {
 	RoutePolicy(ctx context.Context, tenantID string) (RoutePolicy, error)
@@ -28,7 +36,8 @@ type RoutePolicyStore interface {
 	DeleteRoutePolicy(ctx context.Context, tenantID string) error
 }
 
-// InMemoryRoutePolicyStore stores route policies in memory.
+// InMemoryRoutePolicyStore stores route policies in memory. The store copies
+// Payload and Metadata on both reads and writes.
 type InMemoryRoutePolicyStore struct {
 	mu      sync.RWMutex
 	entries map[string]RoutePolicy
@@ -47,13 +56,12 @@ func (s *InMemoryRoutePolicyStore) RoutePolicy(ctx context.Context, tenantID str
 		return RoutePolicy{}, ErrRoutePolicyNotFound
 	}
 	s.mu.RLock()
-	defer s.mu.RUnlock()
-
 	policy, ok := s.entries[tenantID]
+	s.mu.RUnlock()
 	if !ok {
 		return RoutePolicy{}, ErrRoutePolicyNotFound
 	}
-	return policy, nil
+	return cloneRoutePolicy(policy), nil
 }
 
 // SetRoutePolicy stores policy for a tenant.
@@ -66,7 +74,7 @@ func (s *InMemoryRoutePolicyStore) SetRoutePolicy(ctx context.Context, policy Ro
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.entries[policy.TenantID] = policy
+	s.entries[policy.TenantID] = cloneRoutePolicy(policy)
 	return nil
 }
 

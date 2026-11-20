@@ -588,25 +588,26 @@ func (t *Tracer) RecordSpanEvent(span *Span, name string, options ...EventOption
 	t.updateCollectedSpan(span)
 }
 
-// RecordError records an error on the given span.
+// RecordError records an error on the given span. Error formatting and
+// options run before acquiring the tracer lock.
 func (t *Tracer) RecordError(span *Span, err error, options ...ErrorOption) {
 	if span == nil || err == nil {
 		return
 	}
-	t.mu.Lock()
-	defer t.mu.Unlock()
-
-	span.Status.Code = StatusCodeError
-	span.Status.Description = err.Error()
-
+	message := err.Error()
 	errorAttrs := map[string]any{
 		"error.type":    fmt.Sprintf("%T", err),
-		"error.message": err.Error(),
+		"error.message": message,
 		"error.stack":   fmt.Sprintf("%+v", err),
 	}
 	for _, option := range options {
 		option(errorAttrs)
 	}
+
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	span.Status.Code = StatusCodeError
+	span.Status.Description = message
 	for k, v := range errorAttrs {
 		span.Attributes[k] = v
 	}

@@ -2,7 +2,9 @@ package scheduler
 
 import "time"
 
-// Store persists scheduled jobs (best-effort).
+// Store persists scheduled jobs on a best-effort basis. A save failure leaves
+// the job scheduled in memory and is reported through the configured logger.
+// The job may be unavailable for restoration after a restart.
 type Store interface {
 	Save(job StoredJob) error
 	Delete(id JobID) error

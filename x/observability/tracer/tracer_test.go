@@ -1,6 +1,8 @@
 package tracer
 
 import (
+	"errors"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -294,5 +296,53 @@ func TestNewTracerValidConfig(t *testing.T) {
 	}
 	if tracer == nil {
 		t.Fatal("NewTracer valid config returned nil tracer")
+	}
+}
+
+func TestRecordErrorOptionsCanReadTracer(t *testing.T) {
+	config := DefaultTracerConfig()
+	config.SamplingRate = 1
+	tracer, err := NewTracer(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, span := tracer.StartTrace(t.Context(), "errors")
+	if span == nil {
+		t.Fatal("expected an active span")
+	}
+
+	const records = 8
+	recorded := errors.New("recorded error")
+	var wg sync.WaitGroup
+	for i := range records {
+		wg.Go(func() {
+			tracer.RecordError(span, recorded, func(attrs map[string]any) {
+				if tracer.GetActiveSpan(ctx) != span {
+					t.Error("active span lookup failed")
+				}
+				attrs[fmt.Sprintf("record.%d", i)] = true
+			})
+		})
+	}
+	wg.Wait()
+
+	trace, ok := tracer.collector.GetTrace(span.TraceID)
+	if !ok || len(trace.Spans) != 1 {
+		t.Fatalf("collected trace = %+v, found = %v", trace, ok)
+	}
+	for _, got := range []*Span{span, trace.Spans[0]} {
+		if got.Status.Code != StatusCodeError || got.Status.Description != recorded.Error() {
+			t.Errorf("unexpected status: %+v", got.Status)
+		}
+		if got.Attributes["error.type"] != fmt.Sprintf("%T", recorded) ||
+			got.Attributes["error.message"] != recorded.Error() ||
+			got.Attributes["error.stack"] != fmt.Sprintf("%+v", recorded) {
+			t.Errorf("unexpected error attributes: %+v", got.Attributes)
+		}
+		for i := range records {
+			if got.Attributes[fmt.Sprintf("record.%d", i)] != true {
+				t.Errorf("missing attributes from record %d", i)
+			}
+		}
 	}
 }

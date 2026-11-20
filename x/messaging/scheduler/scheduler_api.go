@@ -286,8 +286,17 @@ func (s *Scheduler) addJob(id JobID, kind jobKind, task TaskFunc, spec CronSpec,
 		}
 	}
 
+	var persistErr error
 	s.mu.Lock()
-	defer s.mu.Unlock()
+	defer func() {
+		s.mu.Unlock()
+		if persistErr != nil && s.logger != nil {
+			s.logger.Error("scheduler persist job failed", log.Fields{
+				"job_id": id,
+				"error":  persistErr.Error(),
+			})
+		}
+	}()
 	if s.closed {
 		return "", ErrSchedulerClosed
 	}
@@ -360,7 +369,7 @@ func (s *Scheduler) addJob(id JobID, kind jobKind, task TaskFunc, spec CronSpec,
 		}
 	}
 
-	s.persistJobLocked(j)
+	persistErr = s.persistJobLocked(j)
 	return id, nil
 }
 
