@@ -15,6 +15,9 @@ func (h *Hub) dispatchJobs(conns []*Conn, op byte, data []byte, label string) Br
 		h.broadcastDropped.Add(uint64(result.Dropped))
 		return result
 	}
+	if result.Attempted == 0 {
+		return result
+	}
 	// Jobs share one immutable snapshot of the caller's payload.
 	payload := slices.Clone(data)
 	for _, c := range conns {
@@ -45,14 +48,6 @@ func (h *Hub) dispatchJobs(conns []*Conn, op byte, data []byte, label string) Br
 	h.broadcastEnqueued.Add(uint64(result.Enqueued))
 	h.broadcastSkipped.Add(uint64(result.Skipped))
 	h.broadcastDropped.Add(uint64(result.Dropped))
-	return result
-}
-
-func (h *Hub) recordSkippedBroadcast(skipped int) BroadcastResult {
-	result := BroadcastResult{Skipped: skipped}
-	if skipped > 0 {
-		h.broadcastSkipped.Add(uint64(skipped))
-	}
 	return result
 }
 
@@ -102,22 +97,11 @@ func (h *Hub) tryBroadcastRoom(room string, op byte, data []byte, validator Room
 		*connsList = make([]*Conn, 0, len(rs))
 	}
 	for c := range rs {
-		if c != nil && !c.IsClosed() {
-			*connsList = append(*connsList, c)
-		}
+		*connsList = append(*connsList, c)
 	}
-	skipped := len(rs) - len(*connsList)
 	h.mu.RUnlock()
 
-	if len(*connsList) == 0 {
-		return h.recordSkippedBroadcast(skipped)
-	}
-	result := h.dispatchJobs(*connsList, op, data, "room:"+room)
-	result.Skipped += skipped
-	if skipped > 0 {
-		h.broadcastSkipped.Add(uint64(skipped))
-	}
-	return result
+	return h.dispatchJobs(*connsList, op, data, "room:"+room)
 }
 
 // BroadcastAll broadcasts to all clients.
@@ -150,29 +134,16 @@ func (h *Hub) TryBroadcastAll(op byte, data []byte) BroadcastResult {
 	h.mu.RLock()
 	// Fast path: single room needs no deduplication map.
 	if len(h.rooms) == 1 {
-		total := 0
 		for _, rs := range h.rooms {
-			total += len(rs)
 			if cap(*connsList) < len(rs) {
 				*connsList = make([]*Conn, 0, len(rs))
 			}
 			for c := range rs {
-				if c != nil && !c.IsClosed() {
-					*connsList = append(*connsList, c)
-				}
+				*connsList = append(*connsList, c)
 			}
 		}
-		skipped := total - len(*connsList)
 		h.mu.RUnlock()
-		if len(*connsList) > 0 {
-			result := h.dispatchJobs(*connsList, op, data, "all")
-			result.Skipped += skipped
-			if skipped > 0 {
-				h.broadcastSkipped.Add(uint64(skipped))
-			}
-			return result
-		}
-		return h.recordSkippedBroadcast(skipped)
+		return h.dispatchJobs(*connsList, op, data, "all")
 	}
 
 	// Multi-room path: deduplicate connections that span multiple rooms.
@@ -183,14 +154,9 @@ func (h *Hub) TryBroadcastAll(op byte, data []byte) BroadcastResult {
 	if cap(*connsList) < estimatedSize {
 		*connsList = make([]*Conn, 0, estimatedSize)
 	}
-	skipped := 0
 	seen := make(map[*Conn]struct{}, estimatedSize)
 	for _, rs := range h.rooms {
 		for c := range rs {
-			if c == nil || c.IsClosed() {
-				skipped++
-				continue
-			}
 			if _, dup := seen[c]; !dup {
 				seen[c] = struct{}{}
 				*connsList = append(*connsList, c)
@@ -199,13 +165,5 @@ func (h *Hub) TryBroadcastAll(op byte, data []byte) BroadcastResult {
 	}
 	h.mu.RUnlock()
 
-	if len(*connsList) == 0 {
-		return h.recordSkippedBroadcast(skipped)
-	}
-	result := h.dispatchJobs(*connsList, op, data, "all")
-	result.Skipped += skipped
-	if skipped > 0 {
-		h.broadcastSkipped.Add(uint64(skipped))
-	}
-	return result
+	return h.dispatchJobs(*connsList, op, data, "all")
 }

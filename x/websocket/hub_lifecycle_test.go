@@ -776,3 +776,30 @@ func TestHubRangeConnsCallbackCanLeave(t *testing.T) {
 		t.Fatal("RangeConns callback could not leave the room")
 	}
 }
+
+func TestBroadcastAccountsForClosedTargets(t *testing.T) {
+	h := mustNewHubConfig(t, HubConfig{WorkerCount: 1, JobQueueSize: 4})
+	defer h.Stop()
+	c := &Conn{}
+	if got := h.TryBroadcastRoom("empty", OpcodeText, nil); got != (BroadcastResult{}) {
+		t.Fatalf("empty room: %+v", got)
+	}
+	if err := h.TryJoin("first", c); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.TryJoin("second", c); err != nil {
+		t.Fatal(err)
+	}
+	c.closed.Store(1)
+	for _, got := range []BroadcastResult{
+		h.TryBroadcastRoom("first", OpcodeText, nil),
+		h.TryBroadcastAll(OpcodeText, nil),
+	} {
+		if got.Attempted != 1 || got.Skipped != 1 || got.Enqueued != 0 || got.Dropped != 0 || !got.Rejected() {
+			t.Errorf("closed target: %+v", got)
+		}
+	}
+	if got := h.Metrics(); got.BroadcastAttempted != 2 || got.BroadcastSkipped != 2 || got.BroadcastEnqueued != 0 || got.BroadcastDropped != 0 {
+		t.Errorf("metrics: %+v", got)
+	}
+}

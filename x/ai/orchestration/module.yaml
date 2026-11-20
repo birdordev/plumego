@@ -37,6 +37,7 @@ public_entrypoints:
   - Agent
   - AgentResult
   - Workflow
+  - Workflow.SnapshotState
   - Step
   - SequentialStep
   - ParallelStep

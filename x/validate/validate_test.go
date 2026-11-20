@@ -255,3 +255,24 @@ func TestBindReadsOnlyFirstJSONValue(t *testing.T) {
 		t.Errorf("validator inputs = %v", validator.inputs)
 	}
 }
+
+func TestBindPreservesCallerBodyLimitError(t *testing.T) {
+	const limit = 8
+	newRequest := func() *http.Request {
+		req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{"name":"long value"}`))
+		req.Body = http.MaxBytesReader(httptest.NewRecorder(), req.Body, limit)
+		return req
+	}
+	validator := &requestValidator{}
+	_, jsonErr := BindJSON[createItemRequest](newRequest())
+	_, bindErr := Bind[createItemRequest](newRequest(), validator)
+	for _, err := range []error{jsonErr, bindErr} {
+		var sizeErr *http.MaxBytesError
+		if !errors.As(err, &sizeErr) || sizeErr.Limit != limit {
+			t.Errorf("body error: %v", err)
+		}
+	}
+	if validator.called {
+		t.Fatal("validator ran on an incomplete body")
+	}
+}

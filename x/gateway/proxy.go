@@ -404,7 +404,8 @@ func (p *Proxy) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// watchServiceDiscovery watches for backend updates from service discovery.
+// watchServiceDiscovery replaces the backend pool with each discovery snapshot.
+// An empty snapshot removes all backends.
 func (p *Proxy) watchServiceDiscovery(ctx context.Context) {
 	defer p.discoveryWG.Done()
 
@@ -427,9 +428,6 @@ func (p *Proxy) watchServiceDiscovery(ctx context.Context) {
 		case backends, ok := <-updateChan:
 			if !ok {
 				return
-			}
-			if len(backends) == 0 {
-				continue
 			}
 			if err := p.pool.UpdateBackends(backends); err == nil {
 				// Reset load balancer state on backend changes

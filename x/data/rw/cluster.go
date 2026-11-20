@@ -25,7 +25,7 @@ type Config struct {
 	// Primary database connection
 	Primary *sql.DB
 
-	// Replica database connections
+	// Replica database connections. Entries must be non-nil.
 	Replicas []*sql.DB
 
 	// Replica weights for weighted load balancing (optional)
@@ -114,6 +114,11 @@ func New(config Config) (*Cluster, error) {
 		return nil, ErrNoPrimary
 	}
 	replicas := append([]*sql.DB(nil), config.Replicas...)
+	for i, replica := range replicas {
+		if replica == nil {
+			return nil, fmt.Errorf("rw: replica %d is nil", i)
+		}
+	}
 	replicaWeights := append([]int(nil), config.ReplicaWeights...)
 	if err := validateReplicaWeights(replicaWeights, len(replicas)); err != nil {
 		return nil, err
@@ -137,6 +142,9 @@ func New(config Config) (*Cluster, error) {
 	}
 
 	if config.HealthCheck.Enabled {
+		if config.HealthCheck.Interval < 0 {
+			return nil, fmt.Errorf("rw: health check interval must be nonnegative: %s", config.HealthCheck.Interval)
+		}
 		defaults := DefaultHealthCheckConfig()
 		if config.HealthCheck.Interval == 0 {
 			config.HealthCheck.Interval = defaults.Interval
@@ -263,7 +271,8 @@ func (c *Cluster) PingContext(ctx context.Context) error {
 
 // Close stops the health checker and closes all database connections.
 // It waits for the health checker goroutine to exit before closing connections
-// to prevent pings against already-closed *sql.DB handles.
+// to prevent pings against already-closed *sql.DB handles. Close joins all
+// database close errors and returns the same result on later calls.
 func (c *Cluster) Close() error {
 	c.closeOnce.Do(func() {
 		if c.health != nil {
@@ -282,9 +291,7 @@ func (c *Cluster) Close() error {
 			}
 		}
 
-		if len(errs) > 0 {
-			c.closeErr = errs[0]
-		}
+		c.closeErr = errors.Join(errs...)
 	})
 	return c.closeErr
 }

@@ -74,26 +74,37 @@ previous run has exited.
 
 ## Worker Setup
 
+Register the steps that the queue can dispatch. The caller owns the returned
+pool and should handle the error from `pool.Stop(ctx)` at shutdown.
+
 ```go
-// Create worker pool
-executor := distributed.NewStepExecutor(localEngine)
+import (
+    "context"
+    "errors"
 
-// Register steps
-executor.RegisterStep("extract", extractStep)
-executor.RegisterStep("transform", transformStep)
-executor.RegisterStep("load", loadStep)
+    "github.com/birdordev/plumego/x/ai/distributed"
+    "github.com/birdordev/plumego/x/ai/orchestration"
+)
 
-pool := distributed.NewWorkerPool(queue, executor, distributed.PoolConfig{
-    WorkerCount: 4,
-    Concurrency: 4,
-})
-
-// Start workers
-pool.Start(ctx)
-defer pool.Stop(ctx)
-
-// Dynamic scaling
-pool.Scale(ctx, 8) // Scale up to 8 workers
+func startWorkerPool(
+    ctx context.Context,
+    queue distributed.TaskQueue,
+    engine *orchestration.Engine,
+    steps []orchestration.Step,
+) (*distributed.WorkerPool, error) {
+    executor := distributed.NewStepExecutor(engine)
+    for _, step := range steps {
+        executor.RegisterStep(step.Name(), step)
+    }
+    pool := distributed.NewWorkerPool(queue, executor, distributed.DefaultPoolConfig())
+    if err := pool.Start(ctx); err != nil {
+        return nil, err
+    }
+    if err := pool.Scale(ctx, 8); err != nil {
+        return nil, errors.Join(err, pool.Stop(ctx))
+    }
+    return pool, nil
+}
 ```
 
 ## Distributed Parallel Execution
@@ -137,16 +148,38 @@ err = distributed.RetryWithPolicy(ctx, distributed.DefaultRetryPolicy(), func() 
 
 ## Monitoring
 
-```go
-// Add metrics collection
-collector := metrics.NewPrometheusCollector()
-instrumentedEngine := distributed.NewInstrumentedDistributedEngine(engine, collector)
+Adapt the workflow records to the application's metrics recorder. The wrapper
+emits `workflow_execution_started`, `workflow_execution_completed`,
+`workflow_resume`, and `workflow_pause` through the corresponding methods.
 
-// Metrics automatically collected:
-// - workflow_execution_started
-// - workflow_execution_completed
-// - workflow_resume
-// - workflow_pause
+```go
+import (
+    "context"
+
+    "github.com/birdordev/plumego/metrics"
+    "github.com/birdordev/plumego/x/ai/distributed"
+)
+
+type workflowMetricRecorder struct {
+    recorder metrics.Recorder
+}
+
+func (r workflowMetricRecorder) Record(ctx context.Context, record distributed.MetricRecord) {
+    r.recorder.Record(ctx, metrics.MetricRecord{
+        Name: record.Name,
+        Value: record.Value,
+        Labels: metrics.MetricLabels(record.Labels),
+        Duration: record.Duration,
+        Error: record.Error,
+    })
+}
+
+func instrumentWorkflowEngine(
+    engine *distributed.DistributedEngine,
+    recorder metrics.Recorder,
+) *distributed.InstrumentedDistributedEngine {
+    return distributed.NewInstrumentedDistributedEngine(engine, workflowMetricRecorder{recorder: recorder})
+}
 ```
 
 ## Architecture
@@ -171,13 +204,6 @@ instrumentedEngine := distributed.NewInstrumentedDistributedEngine(engine, colle
                │Pool     │       │Pool     │
                └─────────┘       └─────────┘
 ```
-
-## Performance
-
-- **Task Distribution**: < 10ms latency (P99)
-- **Throughput**: > 1000 tasks/sec (4 workers)
-- **Fault Recovery**: < 5 seconds
-- **Checkpoint Overhead**: < 5% execution time
 
 ## Testing
 

@@ -36,7 +36,8 @@ func NewRemoteStep(
 }
 
 // Execute subscribes before dispatch and waits for the result matching the task ID.
-// The subscription is canceled when Execute returns.
+// The task carries a shallow snapshot of the workflow state. The subscription
+// is canceled when Execute returns.
 func (r *RemoteStep) Execute(ctx context.Context, wf *orchestration.Workflow) (*orchestration.AgentResult, error) {
 	// Create task
 	task := &WorkflowTask{
@@ -44,7 +45,7 @@ func (r *RemoteStep) Execute(ctx context.Context, wf *orchestration.Workflow) (*
 		ExecutionID:   r.ExecutionID,
 		WorkflowID:    r.WorkflowID,
 		StepName:      r.Step.Name(),
-		WorkflowState: wf.State,
+		WorkflowState: wf.SnapshotState(),
 		Priority:      5,
 		CreatedAt:     time.Now(),
 		Timeout:       r.Timeout,
@@ -137,12 +138,13 @@ func NewDistributedParallelStep(
 // Execute subscribes before dispatch and collects one result per task. It fails
 // if the subscription closes before all results arrive or a successful task
 // has no agent result. Outputs are stored in agent order on success, and the
-// first agent's result is returned. The subscription ends when Execute returns.
+// first agent's result is returned. InputFn receives a shallow state snapshot.
+// The subscription ends when Execute returns.
 func (d *DistributedParallelStep) Execute(ctx context.Context, wf *orchestration.Workflow) (*orchestration.AgentResult, error) {
 	if len(d.Agents) == 0 {
 		return nil, fmt.Errorf("distributed parallel step requires at least one agent")
 	}
-	inputs := d.InputFn(wf.State)
+	inputs := d.InputFn(wf.SnapshotState())
 
 	if len(inputs) != len(d.Agents) {
 		return nil, fmt.Errorf("input count (%d) does not match agent count (%d)", len(inputs), len(d.Agents))

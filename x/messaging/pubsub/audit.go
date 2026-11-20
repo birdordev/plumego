@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"sort"
 	"sync"
 	"sync/atomic"
@@ -176,11 +177,10 @@ type AuditLogger struct {
 	entriesMu      sync.RWMutex
 	retainedAnchor string // Predecessor hash of the first retained entry.
 	maxInMemory    int
-	nextSequence   atomic.Uint64
+	nextSequence   uint64
 
 	// Last entry hash for chaining
-	lastHash   string
-	lastHashMu sync.RWMutex
+	lastHash string // guarded by entriesMu
 
 	// File logging
 	logFile   *os.File
@@ -202,7 +202,7 @@ type AuditLogger struct {
 	activeLogs  sync.WaitGroup
 }
 
-// NewAuditLogger creates a new audit logger
+// NewAuditLogger creates a new audit logger with its own filter slices.
 func NewAuditLogger(config AuditConfig) (*AuditLogger, error) {
 	if !config.Enabled {
 		return nil, errors.New("audit logging is not enabled")
@@ -211,6 +211,8 @@ func NewAuditLogger(config AuditConfig) (*AuditLogger, error) {
 		return nil, fmt.Errorf("audit buffer size must be nonnegative: %d", config.BufferSize)
 	}
 
+	config.Operations = slices.Clone(config.Operations)
+	config.Topics = slices.Clone(config.Topics)
 	ctx, cancel := context.WithCancel(context.Background())
 
 	al := &AuditLogger{
@@ -266,9 +268,10 @@ func (al *AuditLogger) openLogFile() error {
 }
 
 // Log records an audit entry and copies ordinary containers in data within
-// the clone depth limit.
+// the clone depth limit. Sequence numbers follow in-memory append order.
 // With asynchronous writing, success can mean an entry was queued. Close
-// waits for accepted calls and reports background write failures.
+// waits for accepted calls and reports background write failures. A synchronous
+// file rotation failure is returned to the caller; later writes can retry.
 func (al *AuditLogger) Log(operation AuditOperation, topic, actor, source string, data map[string]any, success bool, err error) error {
 	if al.closed.Load() {
 		return ErrAuditClosed
@@ -294,6 +297,11 @@ func (al *AuditLogger) Log(operation AuditOperation, topic, actor, source string
 		entry.Error = err.Error()
 	}
 
+	var hashData string
+	if al.config.VerifyIntegrity {
+		hashData = fmt.Sprint(entry.Data)
+	}
+
 	al.admissionMu.Lock()
 	if al.closed.Load() {
 		al.admissionMu.Unlock()
@@ -303,20 +311,7 @@ func (al *AuditLogger) Log(operation AuditOperation, topic, actor, source string
 	al.admissionMu.Unlock()
 	defer al.activeLogs.Done()
 
-	entry.Sequence = al.nextSequence.Add(1)
-
-	// Add integrity hash if enabled
-	if al.config.VerifyIntegrity {
-		al.lastHashMu.RLock()
-		entry.PreviousHash = al.lastHash
-		al.lastHashMu.RUnlock()
-
-		entry.Hash = al.calculateHash(entry)
-
-		al.lastHashMu.Lock()
-		al.lastHash = entry.Hash
-		al.lastHashMu.Unlock()
-	}
+	al.storeInMemory(entry, hashData)
 
 	// Update stats
 	al.stats.TotalEntries.Add(1)
@@ -325,9 +320,6 @@ func (al *AuditLogger) Log(operation AuditOperation, topic, actor, source string
 	} else {
 		al.stats.FailedOps.Add(1)
 	}
-
-	// Store in memory
-	al.storeInMemory(entry)
 
 	// Write to file
 	if al.config.AsyncMode {
@@ -376,7 +368,7 @@ func (al *AuditLogger) shouldAudit(op AuditOperation, topic string) bool {
 }
 
 // calculateHash computes SHA-256 hash of an entry
-func (al *AuditLogger) calculateHash(entry *AuditEntry) string {
+func (al *AuditLogger) calculateHash(entry *AuditEntry, hashData string) string {
 	h := sha256.New()
 
 	// Hash components
@@ -387,7 +379,7 @@ func (al *AuditLogger) calculateHash(entry *AuditEntry) string {
 	_, _ = fmt.Fprintf(h, "%s", entry.Actor)
 	_, _ = fmt.Fprintf(h, "%s", entry.Source)
 	_, _ = fmt.Fprintf(h, "%s", entry.MessageID)
-	_, _ = fmt.Fprintf(h, "%v", entry.Data)
+	_, _ = fmt.Fprint(h, hashData)
 	_, _ = fmt.Fprintf(h, "%t", entry.Success)
 	_, _ = fmt.Fprintf(h, "%s", entry.Error)
 	_, _ = fmt.Fprintf(h, "%s", entry.PreviousHash)
@@ -396,10 +388,17 @@ func (al *AuditLogger) calculateHash(entry *AuditEntry) string {
 }
 
 // storeInMemory stores entry in memory (circular buffer)
-func (al *AuditLogger) storeInMemory(entry *AuditEntry) {
+func (al *AuditLogger) storeInMemory(entry *AuditEntry, hashData string) {
 	al.entriesMu.Lock()
 	defer al.entriesMu.Unlock()
 
+	al.nextSequence++
+	entry.Sequence = al.nextSequence
+	if al.config.VerifyIntegrity {
+		entry.PreviousHash = al.lastHash
+		entry.Hash = al.calculateHash(entry, hashData)
+		al.lastHash = entry.Hash
+	}
 	al.entries = append(al.entries, entry)
 
 	// Keep only last N entries
@@ -415,8 +414,13 @@ func (al *AuditLogger) storeInMemory(entry *AuditEntry) {
 func (al *AuditLogger) writeToFile(entry *AuditEntry) error {
 	al.logFileMu.Lock()
 	defer al.logFileMu.Unlock()
-	if al.logFile == nil {
+	if al.config.LogFile == "" {
 		return nil
+	}
+	if al.logFile == nil {
+		if err := al.openLogFile(); err != nil {
+			return err
+		}
 	}
 
 	// Check if rotation is needed
@@ -445,39 +449,43 @@ func (al *AuditLogger) writeToFile(entry *AuditEntry) error {
 	return nil
 }
 
-// rotateLogFile rotates the current log file
+// rotateLogFile rotates the log under logFileMu. Every attempt restores an
+// active handle when possible. A failed archive operation may have moved
+// older files, but the active path is only renamed after those moves succeed.
 func (al *AuditLogger) rotateLogFile() error {
-	// Close current file
-	if err := al.logFile.Close(); err != nil {
+	closeErr := al.logFile.Close()
+	al.logFile = nil
+	if closeErr != nil {
+		return errors.Join(fmt.Errorf("close audit file for rotation: %w", closeErr), al.openLogFile())
+	}
+
+	rotateErr := al.rotateAuditPaths()
+	reopenErr := al.openLogFile()
+	if err := errors.Join(rotateErr, reopenErr); err != nil {
 		return err
 	}
-
-	// Rotate existing files
-	for i := al.config.MaxLogFiles - 1; i >= 0; i-- {
-		oldPath := al.logFilePath(i)
-		newPath := al.logFilePath(i + 1)
-
-		if i == al.config.MaxLogFiles-1 {
-			// Delete oldest file
-			_ = os.Remove(newPath)
-		}
-
-		if _, err := os.Stat(oldPath); err == nil {
-			_ = os.Rename(oldPath, newPath)
-		}
-	}
-
-	// Rename current to .1
-	_ = os.Rename(al.config.LogFile, al.logFilePath(1))
-
-	// Create new log file
-	if err := al.openLogFile(); err != nil {
-		return err
-	}
-
 	al.stats.LogRotations.Add(1)
-	al.stats.CurrentLogSize = 0
+	return nil
+}
 
+func (al *AuditLogger) rotateAuditPaths() error {
+	// Preserve the active file even when no positive retention count was set.
+	last := max(al.config.MaxLogFiles, 1)
+	if err := os.Remove(al.logFilePath(last)); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("remove oldest audit archive: %w", err)
+	}
+	for i := last - 1; i >= 0; i-- {
+		oldPath := al.logFilePath(i)
+		if _, err := os.Stat(oldPath); err != nil {
+			if i > 0 && errors.Is(err, os.ErrNotExist) {
+				continue
+			}
+			return fmt.Errorf("stat audit file for rotation: %w", err)
+		}
+		if err := os.Rename(oldPath, al.logFilePath(i+1)); err != nil {
+			return fmt.Errorf("rename audit file for rotation: %w", err)
+		}
+	}
 	return nil
 }
 
@@ -648,10 +656,11 @@ func (al *AuditLogger) Verify() error {
 	}
 
 	al.entriesMu.RLock()
-	defer al.entriesMu.RUnlock()
-
+	entries := slices.Clone(al.entries)
 	prevHash := al.retainedAnchor
-	for _, entry := range al.entries {
+	al.entriesMu.RUnlock()
+
+	for _, entry := range entries {
 		// Verify previous hash
 		if entry.PreviousHash != prevHash {
 			al.stats.VerifyFailures.Add(1)
@@ -659,7 +668,7 @@ func (al *AuditLogger) Verify() error {
 		}
 
 		// Verify entry hash
-		expectedHash := al.calculateHash(entry)
+		expectedHash := al.calculateHash(entry, fmt.Sprint(entry.Data))
 		if entry.Hash != expectedHash {
 			al.stats.VerifyFailures.Add(1)
 			return fmt.Errorf("%w: sequence %d hash mismatch", ErrAuditCorrupted, entry.Sequence)

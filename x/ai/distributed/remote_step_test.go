@@ -306,3 +306,58 @@ func TestDistributedParallelStepCollectsDistinctResults(t *testing.T) {
 		})
 	}
 }
+
+type stateSnapshotQueue struct {
+	failQueue
+	enqueue func(*WorkflowTask) error
+	results chan *TaskResult
+}
+
+func (q stateSnapshotQueue) Enqueue(_ context.Context, task *WorkflowTask) error {
+	return q.enqueue(task)
+}
+
+func (q stateSnapshotQueue) SubscribeResults(context.Context, string) (<-chan *TaskResult, error) {
+	return q.results, nil
+}
+
+func TestRemoteStepStateSnapshot(t *testing.T) {
+	wf := &orchestration.Workflow{State: map[string]any{"input": "original"}}
+	failure := errors.New("queue failure")
+	q := &stateSnapshotQueue{results: make(chan *TaskResult, 1), enqueue: func(task *WorkflowTask) error {
+		task.WorkflowState["input"] = "adapter change"
+		return failure
+	}}
+	step := NewRemoteStep(&noopStep{name: "step"}, q, "ex", "wf")
+	if _, err := step.Execute(t.Context(), wf); !errors.Is(err, failure) {
+		t.Fatalf("Execute: %v", err)
+	}
+	if got, _ := wf.GetState("input"); got != "original" {
+		t.Fatalf("state after failed enqueue: %v", got)
+	}
+	q.enqueue = func(task *WorkflowTask) error {
+		q.results <- &TaskResult{TaskID: task.ID, AgentResult: &orchestration.AgentResult{Output: "success"}, UpdatedState: map[string]any{"saved": true}}
+		return nil
+	}
+	step.Queue = q
+	if _, err := step.Execute(t.Context(), wf); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := wf.GetState("saved"); got != true {
+		t.Fatalf("result state: %v", got)
+	}
+	parallel := NewDistributedParallelStep("parallel", []*orchestration.Agent{{Name: "agent"}}, func(state map[string]any) []string {
+		input := state["input"].(string)
+		state["input"] = "callback change"
+		return []string{input}
+	}, []string{"output"}, q, "ex", "wf")
+	if _, err := parallel.Execute(t.Context(), wf); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := wf.GetState("input"); got != "original" {
+		t.Fatalf("state after parallel callback: %v", got)
+	}
+	if got, _ := wf.GetState("output"); got != "success" {
+		t.Fatalf("parallel output: %v", got)
+	}
+}

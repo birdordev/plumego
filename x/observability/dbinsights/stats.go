@@ -1,8 +1,10 @@
 package dbinsights
 
 import (
+	"cmp"
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -199,7 +201,8 @@ func (a *Aggregator) GetAllTableStats() map[string]QueryStats {
 	return result
 }
 
-// GetTopSlowTables returns the top N tables by slow query count.
+// GetTopSlowTables returns the top N tables by descending slow query count,
+// breaking ties by ascending table name.
 // A nonpositive n returns an empty slice.
 func (a *Aggregator) GetTopSlowTables(n int) []TableStat {
 	if n <= 0 {
@@ -267,13 +270,12 @@ func (a *Aggregator) getTopSlowTablesLocked(n int) []TableStat {
 		})
 	}
 
-	for i := 0; i < len(tables); i++ {
-		for j := i + 1; j < len(tables); j++ {
-			if tables[j].SlowQueries > tables[i].SlowQueries {
-				tables[i], tables[j] = tables[j], tables[i]
-			}
+	slices.SortFunc(tables, func(a, b TableStat) int {
+		if order := cmp.Compare(b.SlowQueries, a.SlowQueries); order != 0 {
+			return order
 		}
-	}
+		return cmp.Compare(a.Table, b.Table)
+	})
 
 	if n > len(tables) {
 		n = len(tables)

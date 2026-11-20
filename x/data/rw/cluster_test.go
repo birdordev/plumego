@@ -6,6 +6,7 @@ import (
 	"database/sql/driver"
 	"errors"
 	"io"
+	"strings"
 	"testing"
 	"time"
 )
@@ -30,7 +31,9 @@ func (d stubDriver) Open(name string) (driver.Conn, error) {
 }
 
 type stubConn struct {
-	pingErr error
+	pingErr    error
+	closeErr   error
+	closeCalls int
 }
 
 func (c *stubConn) Prepare(query string) (driver.Stmt, error) {
@@ -38,7 +41,8 @@ func (c *stubConn) Prepare(query string) (driver.Stmt, error) {
 }
 
 func (c *stubConn) Close() error {
-	return nil
+	c.closeCalls++
+	return c.closeErr
 }
 
 func (c *stubConn) Begin() (driver.Tx, error) {
@@ -952,5 +956,38 @@ func TestNewAppliesHealthCheckDefaultsPerField(t *testing.T) {
 				t.Errorf("health config = %+v, want %+v", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestNewClusterRejectsNilReplica(t *testing.T) {
+	primary := sql.OpenDB(&stubConnector{conn: &stubConn{}})
+	defer primary.Close()
+	cluster, err := New(Config{Primary: primary, Replicas: []*sql.DB{primary, nil}, HealthCheck: DefaultHealthCheckConfig()})
+	if cluster != nil || err == nil || !strings.Contains(err.Error(), "replica 1") {
+		t.Fatalf("New = %v, %v", cluster, err)
+	}
+	if err := primary.PingContext(t.Context()); err != nil {
+		t.Fatalf("caller-owned primary: %v", err)
+	}
+}
+
+func TestClusterCloseJoinsErrors(t *testing.T) {
+	primaryErr, replicaErr := errors.New("primary close"), errors.New("replica close")
+	first, second := &stubConn{closeErr: primaryErr}, &stubConn{closeErr: replicaErr}
+	primary, replica := sql.OpenDB(&stubConnector{conn: first}), sql.OpenDB(&stubConnector{conn: second})
+	c, err := New(Config{Primary: primary, Replicas: []*sql.DB{replica}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := c.PingContext(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	for range 2 {
+		if err := c.Close(); !errors.Is(err, primaryErr) || !errors.Is(err, replicaErr) {
+			t.Fatalf("Close = %v", err)
+		}
+	}
+	if first.closeCalls != 1 || second.closeCalls != 1 {
+		t.Fatalf("close calls = %d/%d", first.closeCalls, second.closeCalls)
 	}
 }

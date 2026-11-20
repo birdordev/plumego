@@ -54,6 +54,7 @@ func (b *TokenBucket) Allow() bool {
 }
 
 // AllowN reports whether n tokens are available, consuming them if so.
+// A request larger than the current burst capacity is refused.
 func (b *TokenBucket) AllowN(n int64) bool {
 	if n <= 0 {
 		return true
@@ -66,7 +67,7 @@ func (b *TokenBucket) AllowN(n int64) bool {
 // take consumes tokens with b.mu held.
 func (b *TokenBucket) take(n int64) bool {
 	b.replenish(time.Now())
-	if b.tokens < float64(n) {
+	if n > b.burst || b.tokens < float64(n) {
 		return false
 	}
 	b.tokens -= float64(n)

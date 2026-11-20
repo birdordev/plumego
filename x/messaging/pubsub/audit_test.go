@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -863,5 +864,111 @@ func TestAuditVerifyAfterRetentionEviction(t *testing.T) {
 		if err := al.Verify(); err != nil {
 			t.Fatalf("Verify after %d writes = %v", i+1, err)
 		}
+	}
+}
+
+type auditPauseFormatting struct {
+	Entered chan struct{}
+	Resume  chan struct{}
+	Once    *sync.Once
+}
+
+func (p auditPauseFormatting) String() string {
+	p.Once.Do(func() { close(p.Entered); <-p.Resume })
+	return "ordinary audit entry"
+}
+
+func TestAuditConcurrentChain(t *testing.T) {
+	cfg := DefaultAuditConfig()
+	cfg.AsyncMode = false
+	a, err := NewAuditLogger(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer a.Close()
+	entered, resume := make(chan struct{}), make(chan struct{})
+	finished := make(chan error, 1)
+	go func() {
+		finished <- a.Log(AuditOperation("publish"), "reports", "", "", map[string]any{"note": auditPauseFormatting{entered, resume, &sync.Once{}}}, true, nil)
+	}()
+	<-entered
+	secondErr := a.Log(AuditOperation("publish"), "reports", "", "", nil, true, nil)
+	close(resume)
+	if firstErr := <-finished; firstErr != nil || secondErr != nil {
+		t.Fatalf("log errors: %v / %v", firstErr, secondErr)
+	}
+	if err := a.Verify(); err != nil {
+		t.Fatalf("two accepted ordinary writes: %v", err)
+	}
+}
+
+func TestAuditRotationReportsFailure(t *testing.T) {
+	cfg := DefaultAuditConfig()
+	cfg.AsyncMode = false
+	cfg.VerifyIntegrity = false
+	cfg.LogFile = filepath.Join(t.TempDir(), "audit.log")
+	cfg.MaxLogSize, cfg.MaxLogFiles = 1, 1
+	a, err := NewAuditLogger(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer a.Close()
+	if err := a.Log(AuditOperation("publish"), "reports", "", "", nil, true, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(cfg.LogFile+".1", 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(cfg.LogFile+".1", "keep"), []byte("keep"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	var pathErr *os.PathError
+	size := a.Stats().CurrentLogSize
+	if err := a.Log(OpPublish, "reports", "", "", nil, true, nil); !errors.As(err, &pathErr) {
+		t.Fatalf("rotation error = %v, want filesystem error", err)
+	}
+	stats := a.Stats()
+	if stats.LogRotations.Load() != 0 || stats.CurrentLogSize != size {
+		t.Fatalf("failed rotation changed stats: rotations=%d size=%d", stats.LogRotations.Load(), stats.CurrentLogSize)
+	}
+	if err := os.RemoveAll(cfg.LogFile + ".1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.Log(OpPublish, "reports", "", "", nil, true, nil); err != nil {
+		t.Fatal(err)
+	}
+	archived, err := os.ReadFile(cfg.LogFile + ".1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var entry AuditEntry
+	if err := json.Unmarshal(archived, &entry); err != nil || entry.Sequence != 1 {
+		t.Fatalf("archived record sequence=%d err=%v", entry.Sequence, err)
+	}
+	if a.Stats().LogRotations.Load() != 1 {
+		t.Fatal("retry did not record a successful rotation")
+	}
+}
+
+func TestAuditOwnsFilterConfiguration(t *testing.T) {
+	cfg := DefaultAuditConfig()
+	cfg.Operations = []AuditOperation{OpPublish}
+	cfg.Topics = []string{"reports"}
+	a, err := NewAuditLogger(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer a.Close()
+	cfg.Operations[0] = OpSubscribe
+	cfg.Topics[0] = "other"
+	if err := a.Log(OpPublish, "reports", "", "", nil, true, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.Log(OpSubscribe, "other", "", "", nil, true, nil); err != nil {
+		t.Fatal(err)
+	}
+	records, err := a.Query(AuditQuery{})
+	if err != nil || len(records) != 1 || records[0].Operation != OpPublish || records[0].Topic != "reports" {
+		t.Fatalf("records = %v, err = %v", records, err)
 	}
 }

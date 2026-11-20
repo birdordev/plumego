@@ -265,3 +265,26 @@ func TestAggregatorTopSlowTablesNonPositiveLimit(t *testing.T) {
 		t.Errorf("all tables = %v", got)
 	}
 }
+
+func TestTopSlowTablesBreaksTies(t *testing.T) {
+	for _, order := range [][]string{{"zeta", "alpha"}, {"alpha", "zeta"}} {
+		a := NewAggregator(time.Second)
+		for _, table := range order {
+			a.RecordQuery("query", "SELECT * FROM "+table, 2*time.Second, nil)
+		}
+		a.RecordQuery("query", "SELECT * FROM zeta", 2*time.Second, nil)
+		a.RecordQuery("query", "SELECT * FROM alpha", 2*time.Second, nil)
+		a.RecordQuery("query", "SELECT * FROM most_slow", 2*time.Second, nil)
+		a.RecordQuery("query", "SELECT * FROM most_slow", 2*time.Second, nil)
+		a.RecordQuery("query", "SELECT * FROM most_slow", 2*time.Second, nil)
+		got := a.GetTopSlowTables(2)
+		if len(got) != 2 || got[0].Table != "most_slow" || got[1].Table != "alpha" {
+			t.Fatalf("top two = %+v", got)
+		}
+		summary := a.Summary()
+		alpha, zeta := strings.Index(summary, "alpha -"), strings.Index(summary, "zeta -")
+		if alpha < 0 || zeta < alpha {
+			t.Fatalf("summary tie order:\n%s", summary)
+		}
+	}
+}

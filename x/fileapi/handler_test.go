@@ -10,6 +10,8 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -1203,5 +1205,71 @@ func TestDownloadClosesReaderAfterCommittedWriteFailure(t *testing.T) {
 	NewHandler(storage, metadata).Download(recorder, req)
 	if len(recorder.statuses) != 1 || recorder.statuses[0] != http.StatusOK || recorder.writes != 1 || reader.closeCalls != 1 {
 		t.Errorf("status commits = %v, writes = %d, reader closes = %d", recorder.statuses, recorder.writes, reader.closeCalls)
+	}
+}
+
+func TestUploadMultipartFileOwnership(t *testing.T) {
+	temp := t.TempDir()
+	t.Setenv("TMPDIR", temp)
+	t.Setenv("TMP", temp)
+	t.Setenv("TEMP", temp)
+	for _, alreadyParsed := range []bool{false, true} {
+		t.Run(strconv.FormatBool(alreadyParsed), func(t *testing.T) {
+			var body bytes.Buffer
+			w := multipart.NewWriter(&body)
+			part, err := w.CreateFormFile("file", "asset.txt")
+			if err != nil {
+				t.Fatal(err)
+			}
+			const length = multipartMemoryLimit + 1
+			if _, err := io.WriteString(part, strings.Repeat("x", length)); err != nil {
+				t.Fatal(err)
+			}
+			if err := w.Close(); err != nil {
+				t.Fatal(err)
+			}
+			req := httptest.NewRequest(http.MethodPost, "/files", &body)
+			req.Header.Set("Content-Type", w.FormDataContentType())
+			req = req.WithContext(tenantcore.WithTenantID(req.Context(), "tenant"))
+			if alreadyParsed {
+				if err := req.ParseMultipartForm(multipartMemoryLimit); err != nil {
+					t.Fatal(err)
+				}
+				t.Cleanup(func() {
+					if err := req.MultipartForm.RemoveAll(); err != nil {
+						t.Error(err)
+					}
+				})
+			}
+			called := false
+			storage := &mockStorage{putFunc: func(_ context.Context, opts datafile.PutOptions) (*datafile.File, error) {
+				called = true
+				if file, ok := opts.Reader.(*os.File); !ok || filepath.Dir(file.Name()) != temp {
+					t.Errorf("multipart reader did not spill to private directory: %T", opts.Reader)
+				}
+				return nil, errors.New("storage failure")
+			}}
+			rec := httptest.NewRecorder()
+			NewHandler(storage, &mockMetadataManager{}).Upload(rec, req)
+			if !called || rec.Code != http.StatusInternalServerError {
+				t.Fatalf("upload called=%t, status=%d", called, rec.Code)
+			}
+			if alreadyParsed {
+				f, _, err := req.FormFile("file")
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer f.Close()
+				var first [1]byte
+				if _, err := io.ReadFull(f, first[:]); err != nil || first[0] != 'x' {
+					t.Fatalf("caller-owned file: %q, %v", first, err)
+				}
+			} else {
+				files, err := os.ReadDir(temp)
+				if err != nil || len(files) != 0 {
+					t.Fatalf("handler-owned files left behind: %v (%v)", files, err)
+				}
+			}
+		})
 	}
 }

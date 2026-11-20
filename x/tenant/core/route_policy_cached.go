@@ -16,7 +16,8 @@ func NewCachedRoutePolicyProvider(provider RoutePolicyProvider, cache RoutePolic
 	}
 }
 
-// RoutePolicy resolves policy using cache before hitting provider.
+// RoutePolicy checks the cache before querying the provider. It returns
+// the resolved policy even if populating the cache fails.
 func (c *CachedRoutePolicyProvider) RoutePolicy(ctx context.Context, tenantID string) (RoutePolicy, error) {
 	if c == nil || c.provider == nil {
 		return RoutePolicy{}, ErrRoutePolicyNotFound

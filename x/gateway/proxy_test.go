@@ -713,3 +713,41 @@ func (d *blockingDiscovery) Watch(ctx context.Context, _ string) (<-chan []strin
 	}()
 	return updates, nil
 }
+
+type snapshotDiscovery struct {
+	stubDiscovery
+	updates chan []string
+}
+
+func (d snapshotDiscovery) Watch(context.Context, string) (<-chan []string, error) {
+	return d.updates, nil
+}
+
+func TestProxyAppliesEmptyDiscoverySnapshot(t *testing.T) {
+	first := startBackend(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("first")) }))
+	second := startBackend(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("second")) }))
+	updates := make(chan []string)
+	p, err := New(Config{Discovery: &snapshotDiscovery{updates: updates}, ServiceName: "reports"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.Close()
+	for _, entry := range []struct {
+		backends []string
+		status   int
+		body     string
+	}{
+		{[]string{first.URL}, http.StatusOK, "first"},
+		{nil, http.StatusServiceUnavailable, ""},
+		{[]string{second.URL}, http.StatusOK, "second"},
+	} {
+		updates <- entry.backends
+		// The next receive can occur only after the first snapshot is applied.
+		updates <- entry.backends
+		w := httptest.NewRecorder()
+		p.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/", nil))
+		if w.Code != entry.status || (entry.body != "" && w.Body.String() != entry.body) {
+			t.Fatalf("backends %v produced %d %q, want %d %q", entry.backends, w.Code, w.Body.String(), entry.status, entry.body)
+		}
+	}
+}

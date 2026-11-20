@@ -56,7 +56,9 @@ type Discovery interface {
 	// Returns ErrNoInstances if service has no healthy instances
 	Resolve(ctx context.Context, serviceName string) ([]string, error)
 
-	// Watch returns a channel that receives backend updates
+	// Watch returns a channel that receives backend snapshots. Polling adapters
+	// publish an empty snapshot when a previously available service loses all
+	// instances or disappears. Transient resolution errors preserve the last list.
 	// The channel is closed when the context is cancelled
 	// Returns ErrNotSupported if watching is not implemented
 	Watch(ctx context.Context, serviceName string) (<-chan []string, error)
@@ -199,7 +201,8 @@ func watchBackendLists(
 				pollCtx, cancelPoll := context.WithTimeout(watchCtx, timeout)
 				current, err := resolve(pollCtx, serviceName)
 				cancelPoll()
-				if err != nil || stringSlicesEqual(current, last) {
+				current, valid := resolvedBackends(current, err)
+				if !valid || stringSlicesEqual(current, last) {
 					continue
 				}
 				// This goroutine is the only sender. Dropping the pending
@@ -214,4 +217,11 @@ func watchBackendLists(
 		}
 	}()
 	return updates, nil
+}
+
+func resolvedBackends(backends []string, err error) ([]string, bool) {
+	if errors.Is(err, ErrNoInstances) || errors.Is(err, ErrServiceNotFound) {
+		return nil, true
+	}
+	return backends, err == nil
 }

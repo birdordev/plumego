@@ -457,3 +457,28 @@ func TestHealthCheckCancelsActivePing(t *testing.T) {
 		})
 	}
 }
+
+func TestHealthCheckerIntervalConfiguration(t *testing.T) {
+	db := sql.OpenDB(&stubConnector{conn: &stubConn{}})
+	defer db.Close()
+	for _, interval := range []time.Duration{-time.Second, 0, time.Second} {
+		config := HealthCheckConfig{Enabled: true, Interval: interval}
+		checker := NewHealthChecker(config)
+		want := interval
+		if want <= 0 {
+			want = DefaultHealthCheckConfig().Interval
+		}
+		if checker.config.Interval != want {
+			t.Fatalf("interval %v normalized to %v, want %v", interval, checker.config.Interval, want)
+		}
+		checker.Start(t.Context(), &Cluster{})
+		checker.Stop()
+	}
+	c, err := New(Config{Primary: db, Replicas: []*sql.DB{db}, HealthCheck: HealthCheckConfig{Enabled: true, Interval: -time.Second}})
+	if c != nil || err == nil {
+		t.Fatalf("cluster with negative interval: %v, %v", c, err)
+	}
+	if err := db.PingContext(t.Context()); err != nil {
+		t.Fatalf("caller-owned database: %v", err)
+	}
+}

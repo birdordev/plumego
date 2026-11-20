@@ -508,3 +508,25 @@ func TestRepositoryDeleteClassifiesRowsAffected(t *testing.T) {
 		})
 	}
 }
+
+func TestRepositoryFindByIDClassifiesRowFailure(t *testing.T) {
+	sentinel := errors.New("read first row")
+	for _, tc := range []struct {
+		name            string
+		fail, errorWant error
+	}{
+		{"empty", nil, sql.ErrNoRows},
+		{"driver failure", sentinel, sentinel},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rows := &repositoryListRows{columns: []string{"id"}, read: true, endErr: tc.fail}
+			db := sql.OpenDB(repositoryListConnector{rows: rows})
+			defer db.Close()
+			repo := NewBaseRepository[string](db, NewSQLBuilder("items", "id").WithColumns("id"))
+			got, err := repo.FindByID(t.Context(), "item-1")
+			if got != nil || !errors.Is(err, tc.errorWant) || rows.closeCalls != 1 {
+				t.Fatalf("FindByID = %v, %v; row close calls %d", got, err, rows.closeCalls)
+			}
+		})
+	}
+}

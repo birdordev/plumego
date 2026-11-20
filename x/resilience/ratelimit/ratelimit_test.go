@@ -245,3 +245,17 @@ func TestNonFiniteRateDoesNotReplenishTokens(t *testing.T) {
 		})
 	}
 }
+
+func TestTokenBucketRejectsAboveIntegerCapacity(t *testing.T) {
+	const burst = 1 << 53
+	b := ratelimit.New(0, burst)
+	if b.AllowN(burst + 1) {
+		t.Fatal("allowed request above capacity")
+	}
+	if got := b.Remaining(); got != burst {
+		t.Fatalf("remaining = %d, want %d", got, burst)
+	}
+	if !b.AllowN(burst) {
+		t.Fatal("exact capacity was not available")
+	}
+}

@@ -144,7 +144,7 @@ func completePathParameters(params []Param, names []string) []Param {
 	return params
 }
 
-func setOperation(item *PathItem, method string, op *Operation) {
+func setOperation(item *PathItem, method string, op *Operation) bool {
 	switch method {
 	case http.MethodGet:
 		item.Get = op
@@ -162,5 +162,8 @@ func setOperation(item *PathItem, method string, op *Operation) {
 		item.Options = op
 	case http.MethodTrace:
 		item.Trace = op
+	default:
+		return false
 	}
+	return true
 }

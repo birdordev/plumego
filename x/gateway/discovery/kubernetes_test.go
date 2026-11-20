@@ -260,9 +260,17 @@ func newPollingWatchFixture(t *testing.T, adapter string, serve func(*http.Reque
 		}
 		var body []byte
 		if adapter == "kubernetes" {
-			body = k8sEndpointFixture([]string{host}, 8080, "")
+			var hosts []string
+			if host != "" {
+				hosts = []string{host}
+			}
+			body = k8sEndpointFixture(hosts, 8080, "")
 		} else {
-			body = etcdRangeBody([]Instance{{ID: "first", Name: "service", Address: host, Port: 8080, Healthy: true}})
+			var instances []Instance
+			if host != "" {
+				instances = []Instance{{ID: "first", Name: "service", Address: host, Port: 8080, Healthy: true}}
+			}
+			body = etcdRangeBody(instances)
 		}
 		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(body))}, nil
 	})
@@ -415,5 +423,67 @@ func TestPollingDiscoveryRejectsNegativeInterval(t *testing.T) {
 		if k.config.PollInterval != want || e.config.PollInterval != want {
 			t.Errorf("interval %v: got %v and %v; want %v", interval, k.config.PollInterval, e.config.PollInterval, want)
 		}
+	}
+}
+
+func TestDiscoveryWatchPublishesEmpty(t *testing.T) {
+	for _, adapter := range []string{"kubernetes", "etcd", "consul"} {
+		t.Run(adapter, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				step := 0
+				resolve := func(*http.Request) (string, error) {
+					step++
+					switch step {
+					case 1:
+						return "127.0.0.1", nil
+					case 2:
+						return "", errors.New("temporary transport failure")
+					case 3:
+						return "", nil
+					default:
+						return "127.0.0.2", nil
+					}
+				}
+				var d Discovery
+				if adapter == "consul" {
+					d = newConsulWatchFixture(t, resolve)
+				} else {
+					d = newPollingWatchFixture(t, adapter, resolve)
+				}
+				updates, err := d.Watch(t.Context(), "service")
+				if err != nil {
+					t.Fatal(err)
+				}
+				if adapter == "consul" {
+					time.Sleep(time.Second)
+				}
+				synctest.Wait()
+				assertUpdate := func(want []string) {
+					t.Helper()
+					select {
+					case got, ok := <-updates:
+						if !ok || !slices.Equal(got, want) {
+							t.Fatalf("step %d: snapshot %v (open %t), want %v", step, got, ok, want)
+						}
+					default:
+						t.Fatalf("step %d: missing snapshot %v", step, want)
+					}
+				}
+				assertUpdate([]string{"http://127.0.0.1:8080"})
+				time.Sleep(time.Second)
+				synctest.Wait()
+				select {
+				case got := <-updates:
+					t.Fatalf("transient failure published %v", got)
+				default:
+				}
+				time.Sleep(time.Second)
+				synctest.Wait()
+				assertUpdate(nil)
+				time.Sleep(time.Second)
+				synctest.Wait()
+				assertUpdate([]string{"http://127.0.0.2:8080"})
+			})
+		})
 	}
 }

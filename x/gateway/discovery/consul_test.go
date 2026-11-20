@@ -1281,3 +1281,24 @@ func TestConsulStopsWatcherAfterLastSubscriber(t *testing.T) {
 		}
 	})
 }
+
+func newConsulWatchFixture(t *testing.T, resolve func(*http.Request) (string, error)) *Consul {
+	t.Helper()
+	c, err := NewConsul("discovery.test", ConsulConfig{WaitTime: time.Second, Timeout: time.Second})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = c.Close() })
+	c.client.Transport = consulTestRoundTripper(func(r *http.Request) (*http.Response, error) {
+		host, err := resolve(r)
+		if err != nil {
+			return nil, err
+		}
+		body := "[]"
+		if host != "" {
+			body = fmt.Sprintf(`[{"Service":{"ID":"first","Service":"service","Address":%q,"Port":8080}}]`, host)
+		}
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(body))}, nil
+	})
+	return c
+}

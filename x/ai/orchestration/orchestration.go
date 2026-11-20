@@ -69,7 +69,7 @@ type SequentialStep struct {
 
 // Execute implements Step.
 func (s *SequentialStep) Execute(ctx context.Context, wf *Workflow) (*AgentResult, error) {
-	input := s.InputFn(wf.snapshotState())
+	input := s.InputFn(wf.SnapshotState())
 
 	result, err := executeAgent(ctx, s.Agent, input)
 	if err != nil {
@@ -105,7 +105,7 @@ func (p *ParallelStep) Execute(ctx context.Context, wf *Workflow) (*AgentResult,
 	if len(p.Agents) == 0 {
 		return nil, fmt.Errorf("parallel step requires at least one agent")
 	}
-	inputs := p.InputFn(wf.snapshotState())
+	inputs := p.InputFn(wf.SnapshotState())
 
 	if len(inputs) != len(p.Agents) {
 		return nil, fmt.Errorf("input count (%d) does not match agent count (%d)", len(inputs), len(p.Agents))
@@ -163,7 +163,7 @@ type ConditionalStep struct {
 
 // Execute implements Step.
 func (c *ConditionalStep) Execute(ctx context.Context, wf *Workflow) (*AgentResult, error) {
-	condition := c.Condition(wf.snapshotState())
+	condition := c.Condition(wf.SnapshotState())
 
 	if condition {
 		return c.TrueStep.Execute(ctx, wf)
@@ -347,7 +347,9 @@ func (wf *Workflow) AddStep(step Step) *Workflow {
 	return wf
 }
 
-func (wf *Workflow) snapshotState() map[string]any {
+// SnapshotState returns a shallow copy of the state under the workflow lock.
+// The caller owns the map. Nested values retain their original ownership.
+func (wf *Workflow) SnapshotState() map[string]any {
 	wf.mu.RLock()
 	defer wf.mu.RUnlock()
 	return maps.Clone(wf.State)

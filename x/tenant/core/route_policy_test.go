@@ -2,6 +2,7 @@ package tenant
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -275,4 +276,39 @@ func TestInMemoryRoutePolicyCache_RefreshDoesNotEvict(t *testing.T) {
 			t.Fatal("insert evicted the refreshed policy")
 		}
 	})
+}
+
+type failingRoutePolicyCache struct {
+	RoutePolicyCache
+	fillErr   error
+	deleteErr error
+	fills     int
+}
+
+func (*failingRoutePolicyCache) Get(context.Context, string) (RoutePolicy, bool) {
+	return RoutePolicy{}, false
+}
+func (c *failingRoutePolicyCache) Set(context.Context, string, RoutePolicy) error {
+	c.fills++
+	return c.fillErr
+}
+func (c *failingRoutePolicyCache) Delete(context.Context, string) error { return c.deleteErr }
+
+func TestCachedRoutePolicyBestEffortFill(t *testing.T) {
+	cache := &failingRoutePolicyCache{fillErr: errors.New("cache fill"), deleteErr: errors.New("cache delete")}
+	store := NewInMemoryRoutePolicyStore()
+	policy := RoutePolicy{TenantID: "tenant", Strategy: "weighted"}
+	if err := store.SetRoutePolicy(t.Context(), policy); err != nil {
+		t.Fatal(err)
+	}
+	provider := NewCachedRoutePolicyProvider(store, cache)
+	if got, err := provider.RoutePolicy(t.Context(), policy.TenantID); err != nil || got.Strategy != policy.Strategy || cache.fills != 1 {
+		t.Fatalf("policy=%+v fills=%d err=%v", got, cache.fills, err)
+	}
+	if _, err := provider.RoutePolicy(t.Context(), "missing"); !errors.Is(err, ErrRoutePolicyNotFound) || cache.fills != 1 {
+		t.Fatalf("provider failure=%v fills=%d", err, cache.fills)
+	}
+	if err := provider.Invalidate(t.Context(), policy.TenantID); !errors.Is(err, cache.deleteErr) {
+		t.Fatalf("invalidate: %v", err)
+	}
 }

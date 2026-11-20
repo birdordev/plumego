@@ -21,8 +21,12 @@ type HealthChecker struct {
 	wg          sync.WaitGroup
 }
 
-// NewHealthChecker creates a new health checker
+// NewHealthChecker creates a health checker. A nonpositive interval uses
+// the default interval.
 func NewHealthChecker(config HealthCheckConfig) *HealthChecker {
+	if config.Interval <= 0 {
+		config.Interval = DefaultHealthCheckConfig().Interval
+	}
 	return &HealthChecker{
 		config:    config,
 		failures:  make(map[int]int),

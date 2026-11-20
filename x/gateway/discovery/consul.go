@@ -333,11 +333,12 @@ func (w *consulWatcher) unsubscribe(ch chan []string) {
 	}
 }
 
-// watch polls Consul at WaitTime intervals and notifies all subscribers on change
+// watch polls Consul and clears the last list on authoritative absence.
 func (w *consulWatcher) watch() {
 	ticker := time.NewTicker(w.consul.config.WaitTime)
 	defer ticker.Stop()
 
+	hadBackends := false
 	for {
 		select {
 		case <-ticker.C:
@@ -345,8 +346,10 @@ func (w *consulWatcher) watch() {
 			backends, err := w.consul.Resolve(ctx, w.serviceName)
 			cancel()
 
-			if err == nil && len(backends) > 0 {
+			backends, valid := resolvedBackends(backends, err)
+			if valid && (len(backends) > 0 || hadBackends) {
 				w.notify(backends)
+				hadBackends = len(backends) > 0
 			}
 
 		case <-w.ctx.Done():
@@ -357,10 +360,17 @@ func (w *consulWatcher) watch() {
 
 // notify sends the current backend list to all subscribers (non-blocking)
 func (w *consulWatcher) notify(backends []string) {
-	w.mu.RLock()
-	defer w.mu.RUnlock()
+	w.mu.Lock()
+	defer w.mu.Unlock()
 
 	for _, ch := range w.subscribers {
+		if len(backends) == 0 {
+			// A pending older snapshot must not hide the only empty update.
+			select {
+			case <-ch:
+			default:
+			}
+		}
 		select {
 		case ch <- slices.Clone(backends):
 		default:

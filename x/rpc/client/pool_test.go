@@ -492,3 +492,36 @@ func TestPoolOwnsDialOptionSlices(t *testing.T) {
 		t.Errorf("dial options = %v, caller per-dial options = %v", observed, firstOpts)
 	}
 }
+
+func TestPoolRetryAfterCanceledDial(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	entered := make(chan struct{})
+	calls := 0
+	conn := &fakeConn{}
+	p := New(func(ctx context.Context, _ string, _ ...DialOption) (Conn, error) {
+		calls++
+		if calls == 1 {
+			close(entered)
+			<-ctx.Done()
+			return nil, ctx.Err()
+		}
+		return conn, nil
+	})
+	defer p.Close()
+	finished := make(chan error, 1)
+	go func() { _, err := p.Dial(ctx, "target"); finished <- err }()
+	<-entered
+	cancel()
+	if err := <-finished; !errors.Is(err, context.Canceled) {
+		t.Fatalf("first dial: %v", err)
+	}
+	for range 2 {
+		if got, err := p.Dial(t.Context(), "target"); err != nil || got != conn {
+			t.Fatalf("retry dial: %v, %v", got, err)
+		}
+	}
+	if calls != 2 {
+		t.Fatalf("dial calls: %d", calls)
+	}
+}

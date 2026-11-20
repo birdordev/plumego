@@ -561,3 +561,26 @@ func TestMountRegisterPreservesSequentialFailure(t *testing.T) {
 		}
 	}
 }
+
+func TestMountServesNestedDirectoryIndex(t *testing.T) {
+	dir := t.TempDir()
+	writeTestFile(t, dir, "index.html", "root index")
+	writeTestFile(t, dir, "docs/index.html", "docs index")
+	writeTestFile(t, dir, "docs/site.css", "docs CSS")
+	routes := router.NewRouter()
+	if err := RegisterFS(routes, http.Dir(dir), WithFallback(false), WithIndexCacheControl("no-cache"), WithCacheControl("public, max-age=600")); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct{ method, path, body, cache string }{
+		{http.MethodGet, "/", "root index", "no-cache"},
+		{http.MethodGet, "/docs/", "docs index", "no-cache"},
+		{http.MethodHead, "/docs/", "", "no-cache"},
+		{http.MethodGet, "/docs/site.css", "docs CSS", "public, max-age=600"},
+	} {
+		rec := httptest.NewRecorder()
+		routes.ServeHTTP(rec, httptest.NewRequest(tc.method, tc.path, nil))
+		if got := rec.Header().Get("Cache-Control"); rec.Code != http.StatusOK || rec.Body.String() != tc.body || got != tc.cache {
+			t.Errorf("%s %s = %d %q Cache-Control %q", tc.method, tc.path, rec.Code, rec.Body.String(), got)
+		}
+	}
+}

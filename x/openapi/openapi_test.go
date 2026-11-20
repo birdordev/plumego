@@ -305,3 +305,14 @@ func TestGenerateIsolatesOperationsUsingSameHint(t *testing.T) {
 		t.Fatal("changing an operation affected the source hint or another generated operation")
 	}
 }
+
+func TestGenerateSkipsMethodsWithoutOperations(t *testing.T) {
+	doc := New().Generate([]router.RouteInfo{
+		{Method: http.MethodConnect, Path: "/only-connect"},
+		{Method: http.MethodGet, Path: "/mixed"},
+		{Method: http.MethodConnect, Path: "/mixed"},
+	}, map[string]Op{"GET /mixed": {Summary: "keep me"}})
+	if len(doc.Paths) != 1 || doc.Paths["/mixed"].Get == nil || doc.Paths["/mixed"].Get.Summary != "keep me" {
+		t.Fatalf("paths: %+v", doc.Paths)
+	}
+}

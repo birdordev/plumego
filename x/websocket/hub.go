@@ -18,7 +18,8 @@ type hubJob struct {
 
 const hubWorkerDefaultSendTimeout = 100 * time.Millisecond
 
-// BroadcastResult describes a broadcast fanout attempt.
+// BroadcastResult describes a broadcast fanout attempt. Attempted counts
+// unique targets, including skipped closed connections.
 type BroadcastResult struct {
 	Attempted int  `json:"attempted"`
 	Enqueued  int  `json:"enqueued"`

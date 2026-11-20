@@ -45,7 +45,7 @@ func DefaultWorkerConfig() WorkerConfig {
 // NewWorker creates a new workflow task worker.
 func NewWorker(queue TaskQueue, executor *StepExecutor, config WorkerConfig) *Worker {
 	if config.ID == "" {
-		config = DefaultWorkerConfig()
+		config.ID = DefaultWorkerConfig().ID
 	}
 	if config.Concurrency <= 0 {
 		config.Concurrency = 4
@@ -64,8 +64,12 @@ func NewWorker(queue TaskQueue, executor *StepExecutor, config WorkerConfig) *Wo
 	}
 }
 
-// Start starts the worker.
+// Start starts the worker. A negative heartbeat interval is rejected before
+// subscribing to the queue.
 func (w *Worker) Start(ctx context.Context) error {
+	if w.heartbeat < 0 {
+		return fmt.Errorf("worker heartbeat interval must be nonnegative: %s", w.heartbeat)
+	}
 	w.lifecycle.Lock()
 	if w.starting || w.running || w.finished {
 		w.lifecycle.Unlock()
@@ -271,12 +275,16 @@ func NewWorkerPool(queue TaskQueue, executor *StepExecutor, config PoolConfig) *
 
 // Start starts all workers in the pool.
 func (p *WorkerPool) Start(ctx context.Context) error {
-	if p.running.Swap(true) {
+	if p.running.Load() {
+		return fmt.Errorf("pool already running")
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.running.Load() {
 		return fmt.Errorf("pool already running")
 	}
 
-	p.mu.Lock()
-	defer p.mu.Unlock()
+	p.running.Store(true)
 
 	// Create and start workers
 	for i := 0; i < p.config.WorkerCount; i++ {
@@ -300,13 +308,11 @@ func (p *WorkerPool) Start(ctx context.Context) error {
 
 // Stop stops all workers in the pool.
 func (p *WorkerPool) Stop(ctx context.Context) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	if !p.running.Swap(false) {
 		return fmt.Errorf("pool not running")
 	}
-
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
 	return p.stopWorkers(ctx)
 }
 
@@ -322,7 +328,7 @@ func (p *WorkerPool) stopWorkers(ctx context.Context) error {
 	return lastErr
 }
 
-// Scale changes the number of workers.
+// Scale changes the number of workers in a running pool.
 func (p *WorkerPool) Scale(ctx context.Context, count int) error {
 	if count <= 0 {
 		return fmt.Errorf("worker count must be positive")
@@ -330,6 +336,10 @@ func (p *WorkerPool) Scale(ctx context.Context, count int) error {
 
 	p.mu.Lock()
 	defer p.mu.Unlock()
+
+	if !p.running.Load() {
+		return fmt.Errorf("pool not running")
+	}
 
 	current := len(p.workers)
 

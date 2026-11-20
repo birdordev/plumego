@@ -2,6 +2,7 @@ package distributed
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 	"testing"
 	"time"
@@ -408,4 +409,70 @@ func TestWorker_HandleTask(t *testing.T) {
 			t.Error("expected error for nil task")
 		}
 	})
+}
+
+func TestWorkerPoolScaleRequiresRunning(t *testing.T) {
+	var subscriptions []context.Context
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	q := lifecycleQueue{subscribe: func(ctx context.Context) error {
+		subscriptions = append(subscriptions, ctx)
+		if len(subscriptions) == 2 {
+			close(entered)
+			<-release
+		}
+		return nil
+	}}
+	p := NewWorkerPool(q, nil, PoolConfig{WorkerCount: 1})
+	if err := p.Scale(t.Context(), 2); err == nil || len(subscriptions) != 0 {
+		t.Fatalf("cold scale: subscriptions=%d err=%v", len(subscriptions), err)
+	}
+	if err := p.Start(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	scaled := make(chan error, 1)
+	go func() { scaled <- p.Scale(t.Context(), 2) }()
+	<-entered
+	stopped := make(chan error, 1)
+	stopping := make(chan struct{})
+	go func() {
+		close(stopping)
+		stopped <- p.Stop(t.Context())
+	}()
+	<-stopping
+	close(release)
+	if err := <-scaled; err != nil {
+		t.Fatal(err)
+	}
+	if err := <-stopped; err != nil {
+		t.Fatal(err)
+	}
+	for _, ctx := range subscriptions {
+		if !errors.Is(ctx.Err(), context.Canceled) {
+			t.Fatal("subscription not canceled")
+		}
+	}
+	if err := p.Scale(t.Context(), 3); err == nil || p.WorkerCount() != 0 || p.IsRunning() || len(subscriptions) != 2 {
+		t.Fatalf("stopped scale: workers=%d subscriptions=%d err=%v", p.WorkerCount(), len(subscriptions), err)
+	}
+}
+
+func TestWorkerStartRejectsNegativeHeartbeat(t *testing.T) {
+	for _, interval := range []time.Duration{-time.Second, 0, time.Second} {
+		calls := 0
+		worker := NewWorker(lifecycleQueue{subscribe: func(context.Context) error { calls++; return nil }}, nil, WorkerConfig{Heartbeat: interval})
+		err := worker.Start(t.Context())
+		if interval < 0 {
+			if err == nil || calls != 0 {
+				t.Fatalf("invalid heartbeat: calls=%d err=%v", calls, err)
+			}
+			continue
+		}
+		if err != nil || calls != 1 {
+			t.Fatalf("heartbeat %v: calls=%d err=%v", interval, calls, err)
+		}
+		if err := worker.Stop(t.Context()); err != nil {
+			t.Fatal(err)
+		}
+	}
 }
