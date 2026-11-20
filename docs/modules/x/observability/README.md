@@ -49,9 +49,8 @@
 - the exported `*_http_requests_total_all` counter includes evicted label
   series and resets on `Clear()`. `GetStats()` reports the resident HTTP
   series alongside the base collector statistics.
-- use error-returning constructors for dynamic wiring: `NewPrometheusExporterE`,
-  `tracer.NewProbabilitySamplerE`, and `tracer.NewTracerE`; the shorter
-  constructors remain for trusted in-code defaults and existing callers
+- use the error-returning constructors `NewPrometheusExporter`,
+  `tracer.NewProbabilitySampler`, and `tracer.NewTracer` for dynamic wiring
 - keep `OpenTelemetryTracer` scoped per service; `Clear()` and `WithMaxSpans()` exist for bounded test use, not for production hot-path eviction
 - `OpenTelemetryTracer` stores W3C-shaped trace/span identifiers in
   `contract.TraceContext`; invalid inbound `X-Trace-ID` values may be recorded

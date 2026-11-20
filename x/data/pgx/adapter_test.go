@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"reflect"
 	"testing"
+
+	storedb "github.com/birdordev/plumego/store/db"
 )
 
 func TestQueryRowReturnsScannedValue(t *testing.T) {
@@ -251,4 +253,17 @@ func scanValues(dest []any, values []any) error {
 		target.Elem().Set(source)
 	}
 	return nil
+}
+
+func TestQueryRowWithoutPoolReturnsClassifiableScanError(t *testing.T) {
+	for _, db := range []*DB{nil, NewWithPool(nil)} {
+		value := "unchanged"
+		row := db.QueryRow(t.Context(), "select name")
+		if row == nil {
+			t.Fatal("QueryRow must return a scannable error row")
+		}
+		if err := row.Scan(&value); !errors.Is(err, storedb.ErrQueryFailed) || value != "unchanged" {
+			t.Errorf("Scan = %v, value = %q; want ErrQueryFailed and unchanged value", err, value)
+		}
+	}
 }

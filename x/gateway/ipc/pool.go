@@ -4,6 +4,7 @@ import (
 	"container/list"
 	"context"
 	"errors"
+	"fmt"
 	"net"
 	"sync"
 	"time"
@@ -51,10 +52,13 @@ type Pool struct {
 	stopCh chan struct{}
 }
 
-// NewPool creates a new connection pool
+// NewPool creates a connection pool. A negative MaxConns is invalid.
 func NewPool(addr string, poolCfg *PoolConfig, opts ...Option) (*Pool, error) {
 	if poolCfg == nil {
 		poolCfg = DefaultPoolConfig()
+	}
+	if poolCfg.MaxConns < 0 {
+		return nil, fmt.Errorf("ipc pool: MaxConns must not be negative: %d", poolCfg.MaxConns)
 	}
 
 	config := DefaultConfig()
@@ -226,7 +230,8 @@ func (p *Pool) put(pc *poolConn) {
 }
 
 // Close closes the pool and all established connections. Any pending dial
-// that returns a connection after closure is responsible for closing it.
+// that returns a connection after closure is responsible for closing it. Close
+// reports all errors from closing established connections.
 func (p *Pool) Close() error {
 	p.mu.Lock()
 	if p.closed {
@@ -239,10 +244,16 @@ func (p *Pool) Close() error {
 	p.conns = nil
 	p.mu.Unlock()
 
-	closePoolConnections(conns)
-	return nil
+	var failures []error
+	for _, pc := range conns {
+		if err := pc.client.Close(); err != nil {
+			failures = append(failures, err)
+		}
+	}
+	return errors.Join(failures...)
 }
 
+// closePoolConnections performs best-effort cleanup for background eviction.
 func closePoolConnections(conns []*poolConn) {
 	for _, pc := range conns {
 		_ = pc.client.Close()

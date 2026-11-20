@@ -140,3 +140,17 @@ func TestShutdownWaitersOwnTheirDeadline(t *testing.T) {
 		t.Fatal("Stop was not called")
 	}
 }
+
+func TestServerRejectsTypedNilRuntime(t *testing.T) {
+	var typedNil *fakeRuntime
+	for _, runtime := range []Runtime{nil, typedNil} {
+		s := New(runtime)
+		for _, err := range []error{
+			s.RegisterService("desc", "impl"), s.Serve(nil), s.GracefulStop(t.Context()),
+		} {
+			if !errors.Is(err, ErrRuntimeNil) {
+				t.Errorf("runtime %T: got %v, want ErrRuntimeNil", runtime, err)
+			}
+		}
+	}
+}

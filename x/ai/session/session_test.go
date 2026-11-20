@@ -1,6 +1,8 @@
 package session
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"math"
 	"sync"
@@ -518,5 +520,37 @@ func TestManagerGetMessagesPaginationBounds(t *testing.T) {
 		if (err != nil) != tc.wantError || len(messages) != tc.count {
 			t.Errorf("GetMessages(%d, %d) returned %d messages, err = %v", tc.offset, tc.limit, len(messages), err)
 		}
+	}
+}
+
+type expirationTestStorage struct {
+	*MemoryStorage
+	deleteErr error
+	calls     int
+}
+
+func (s *expirationTestStorage) Delete(ctx context.Context, id string) error {
+	s.calls++
+	if s.deleteErr != nil {
+		return s.deleteErr
+	}
+	return s.MemoryStorage.Delete(ctx, id)
+}
+
+func TestExpiredSessionReportsCleanupFailure(t *testing.T) {
+	ctx := t.Context()
+	const id = "expired"
+	sentinel := errors.New("test cleanup error")
+	storage := &expirationTestStorage{MemoryStorage: NewMemoryStorage(), deleteErr: sentinel}
+	if err := storage.Save(ctx, &Session{ID: id, ExpiresAt: time.Now().Add(-time.Hour)}); err != nil {
+		t.Fatal(err)
+	}
+	manager := NewManager(storage)
+	if got, err := manager.Get(ctx, id); got != nil || !errors.Is(err, sentinel) || storage.Count() != 1 {
+		t.Fatalf("Get = %v, %v, stored = %d", got, err, storage.Count())
+	}
+	storage.deleteErr = nil
+	if got, err := manager.Get(ctx, id); got != nil || err == nil || err.Error() != "session expired" || storage.Count() != 0 || storage.calls != 2 {
+		t.Fatalf("retry Get = %v, %v, stored = %d, delete calls = %d", got, err, storage.Count(), storage.calls)
 	}
 }

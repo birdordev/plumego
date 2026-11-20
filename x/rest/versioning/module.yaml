@@ -30,6 +30,7 @@ allowed_imports:
   - stdlib
   - middleware
   - contract
+  - internal/httputil
 
 forbidden_imports:
   - core/**

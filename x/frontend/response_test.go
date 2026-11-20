@@ -1,6 +1,7 @@
 package frontend
 
 import (
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -800,5 +801,19 @@ func TestErrorPageRejectingIdentityKeepsOriginalStatus(t *testing.T) {
 				t.Errorf("%s %s: status=%d Vary=%q", method, path, rec.Code, rec.Header().Get("Vary"))
 			}
 		}
+	}
+}
+
+func TestStatusCodeWriterFlushCapability(t *testing.T) {
+	rec := httptest.NewRecorder()
+	// Expose only the base writer interface on the wrapped side.
+	base := struct{ http.ResponseWriter }{rec}
+	w := &statusCodeWriter{ResponseWriter: base, code: http.StatusNotFound}
+	if err := http.NewResponseController(w).Flush(); !errors.Is(err, http.ErrNotSupported) {
+		t.Errorf("Flush = %v, want ErrNotSupported", err)
+	}
+	w.ResponseWriter = rec
+	if err := http.NewResponseController(w).Flush(); err != nil || !rec.Flushed {
+		t.Errorf("Flush = %v, recorder flushed = %t", err, rec.Flushed)
 	}
 }

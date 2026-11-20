@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strconv"
 	"testing"
 
@@ -522,5 +523,50 @@ func TestStrategyAcceptHeaderMultipleLines(t *testing.T) {
 				t.Errorf("status=%d handler version=%d header=%q; want %d, %d, %q", w.Code, seen, header, tt.status, tt.version, wantHeader)
 			}
 		})
+	}
+}
+
+func TestAcceptVersionResponsesVaryByAccept(t *testing.T) {
+	for _, tt := range []struct {
+		name       string
+		strategy   Strategy
+		accept     string
+		vary, want []string
+		status     int
+	}{
+		{"match", StrategyAcceptHeader, "application/vnd.api.v2+json", []string{"Origin", "DPR"}, []string{"Origin", "DPR", "Accept"}, http.StatusNoContent},
+		{"default", StrategyAcceptHeader, "", nil, []string{"Accept"}, http.StatusNoContent},
+		{"rejected", StrategyAcceptHeader, "application/vnd.api.v3+json", []string{"Origin"}, []string{"Origin", "Accept"}, http.StatusNotAcceptable},
+		{"present", StrategyAcceptHeader, "application/vnd.api.v2+json", []string{"Origin, accept"}, []string{"Origin, accept"}, http.StatusNoContent},
+		{"wildcard", StrategyAcceptHeader, "", []string{"*"}, []string{"*"}, http.StatusNoContent},
+		{"query strategy", StrategyQueryParam, "", []string{"Origin"}, []string{"Origin"}, http.StatusNoContent},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			h := Middleware(Config{Strategy: tt.strategy, SupportedVersions: []int{1, 2}})(
+				http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) }),
+			)
+			r := httptest.NewRequest(http.MethodGet, "/items", nil)
+			r.Header.Set("Accept", tt.accept)
+			w := httptest.NewRecorder()
+			for _, value := range tt.vary {
+				w.Header().Add("Vary", value)
+			}
+			h.ServeHTTP(w, r)
+			if got := w.Result().Header.Values("Vary"); w.Code != tt.status || !slices.Equal(got, tt.want) {
+				t.Errorf("status = %d, Vary = %v; want %d, %v", w.Code, got, tt.status, tt.want)
+			}
+		})
+	}
+}
+
+func TestAcceptVersionMergesVaryAtCommit(t *testing.T) {
+	h := Middleware(Config{})(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Vary", "Origin")
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/items", nil))
+	if got := w.Result().Header.Values("Vary"); !slices.Equal(got, []string{"Origin", "Accept"}) {
+		t.Errorf("Vary = %v, want both Origin and Accept", got)
 	}
 }

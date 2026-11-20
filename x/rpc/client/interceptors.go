@@ -81,14 +81,22 @@ func RetryInterceptor(maxAttempts int, retryCodes ...Code) UnaryInterceptor {
 	}
 }
 
+// TracingInterceptor ends the call span on return or panic.
 func TracingInterceptor(tracer TraceStarter) UnaryInterceptor {
-	return func(ctx context.Context, method string, req any, reply any, invoker UnaryInvoker, opts ...CallOption) error {
-		var span *obstracer.Span
-		if tracer != nil {
-			ctx, span = tracer.StartTrace(ctx, method, obstracer.WithSpanKind(obstracer.SpanKindClient))
+	return func(ctx context.Context, method string, req any, reply any, invoker UnaryInvoker, opts ...CallOption) (err error) {
+		if tracer == nil {
+			return invoker(ctx, method, req, reply, opts...)
 		}
-		err := invoker(ctx, method, req, reply, opts...)
-		if tracer != nil {
+
+		ctx, span := tracer.StartTrace(ctx, method, obstracer.WithSpanKind(obstracer.SpanKindClient))
+		completed := false
+		defer func() {
+			if !completed {
+				tracer.EndSpan(span, obstracer.WithSpanStatus(obstracer.SpanStatus{
+					Code: obstracer.StatusCodeError, Description: "RPC invocation interrupted",
+				}))
+				return
+			}
 			if err != nil {
 				tracer.RecordError(span, err)
 			}
@@ -96,7 +104,9 @@ func TracingInterceptor(tracer TraceStarter) UnaryInterceptor {
 				Code:        spanStatusCode(err),
 				Description: string(errorCode(err)),
 			}))
-		}
+		}()
+		err = invoker(ctx, method, req, reply, opts...)
+		completed = true
 		return err
 	}
 }

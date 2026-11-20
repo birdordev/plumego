@@ -170,7 +170,8 @@ func (m *Manager) Create(ctx context.Context, opts CreateOptions) (*Session, err
 	return session, nil
 }
 
-// Get retrieves a session.
+// Get retrieves a session. An expired session is rejected and deleted on access.
+// If deleting it fails, the returned error wraps the cleanup failure.
 func (m *Manager) Get(ctx context.Context, sessionID string) (*Session, error) {
 	defer m.lockSession(sessionID)()
 	return m.loadSession(ctx, sessionID)
@@ -185,7 +186,9 @@ func (m *Manager) loadSession(ctx context.Context, sessionID string) (*Session, 
 
 	// Check expiration
 	if time.Now().After(session.ExpiresAt) {
-		_ = m.storage.Delete(ctx, sessionID)
+		if err := m.storage.Delete(ctx, sessionID); err != nil {
+			return nil, fmt.Errorf("session expired: cleanup failed: %w", err)
+		}
 		return nil, fmt.Errorf("session expired")
 	}
 

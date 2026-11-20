@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"crypto/tls"
 	"sync"
 	"testing"
 	"time"
@@ -133,5 +134,26 @@ func TestTransportPoolConcurrentGet(t *testing.T) {
 	// All goroutines should have received the same transport
 	if pool.Count() != 1 {
 		t.Errorf("Count = %d, want 1 (concurrent creation should not duplicate)", pool.Count())
+	}
+}
+
+func TestTransportPoolOwnsConfigSnapshot(t *testing.T) {
+	cfg := DefaultTransportConfig()
+	cfg.TLSClientConfig = &tls.Config{MinVersion: tls.VersionTLS12}
+	wantTimeout := cfg.ResponseHeaderTimeout
+	pool := NewTransportPool(cfg)
+	t.Cleanup(pool.Close)
+	first := pool.Get("http://first.example")
+
+	cfg.ResponseHeaderTimeout = time.Second
+	cfg.TLSClientConfig.MinVersion = tls.VersionTLS13
+	second := pool.Get("http://second.example")
+	for _, tr := range []struct {
+		timeout   time.Duration
+		tlsConfig *tls.Config
+	}{{first.ResponseHeaderTimeout, first.TLSClientConfig}, {second.ResponseHeaderTimeout, second.TLSClientConfig}} {
+		if tr.timeout != wantTimeout || tr.tlsConfig == nil || tr.tlsConfig.MinVersion != tls.VersionTLS12 {
+			t.Errorf("transport timeout = %v, TLS config = %+v", tr.timeout, tr.tlsConfig)
+		}
 	}
 }

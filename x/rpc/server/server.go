@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"net"
+	"reflect"
 	"sync"
 )
 
@@ -32,7 +33,15 @@ type shutdownState struct {
 	done  chan struct{}
 }
 
+// New wraps a runtime. Nil and typed nil runtimes return ErrRuntimeNil from Server operations.
 func New(runtime Runtime) *Server {
+	value := reflect.ValueOf(runtime)
+	switch value.Kind() {
+	case reflect.Chan, reflect.Func, reflect.Map, reflect.Pointer, reflect.Slice:
+		if value.IsNil() {
+			runtime = nil
+		}
+	}
 	return &Server{
 		runtime:  runtime,
 		shutdown: &shutdownState{done: make(chan struct{})},

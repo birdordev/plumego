@@ -1095,3 +1095,46 @@ func TestHandlerGetURLExpiryDurationBounds(t *testing.T) {
 		})
 	}
 }
+
+type downloadTestReader struct {
+	io.Reader
+	closeCalls int
+}
+
+func (r *downloadTestReader) Close() error {
+	r.closeCalls++
+	return nil
+}
+
+type downloadTestReadError struct{ err error }
+
+func (r downloadTestReadError) Read([]byte) (int, error) { return 0, r.err }
+
+type downloadStatusRecorder struct {
+	*httptest.ResponseRecorder
+	statuses []int
+}
+
+func (w *downloadStatusRecorder) WriteHeader(status int) {
+	w.statuses = append(w.statuses, status)
+	w.ResponseRecorder.WriteHeader(status)
+}
+
+func TestDownloadClosesReaderAfterCommittedReadFailure(t *testing.T) {
+	reader := &downloadTestReader{Reader: io.MultiReader(strings.NewReader("partial"), downloadTestReadError{err: io.ErrUnexpectedEOF})}
+	storage := &mockStorage{getFunc: func(context.Context, string) (io.ReadCloser, error) { return reader, nil }}
+	metadata := &mockMetadataManager{getFunc: func(_ context.Context, tenantID, id string) (*datafile.File, error) {
+		return &datafile.File{
+			File:     storefile.File{ID: id, Path: "item.txt", Name: "item.txt", Size: 12, MimeType: "text/plain"},
+			TenantID: tenantID,
+		}, nil
+	}}
+	h := NewHandler(storage, metadata)
+	req := withRouteParam(httptest.NewRequest(http.MethodGet, "/files/item", nil), "id", "item")
+	req = req.WithContext(tenantcore.WithTenantID(req.Context(), "test-tenant"))
+	w := &downloadStatusRecorder{ResponseRecorder: httptest.NewRecorder()}
+	h.Download(w, req)
+	if len(w.statuses) != 1 || w.statuses[0] != http.StatusOK || w.Body.String() != "partial" || reader.closeCalls != 1 {
+		t.Errorf("statuses = %v, body = %q, reader closes = %d", w.statuses, w.Body.String(), reader.closeCalls)
+	}
+}

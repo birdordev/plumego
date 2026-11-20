@@ -87,10 +87,16 @@ type TransportPool struct {
 	mu         sync.RWMutex
 }
 
-// NewTransportPool creates a new transport pool
+// NewTransportPool creates a pool from a snapshot of config. TLS values
+// referenced by the copied tls.Config follow the standard library's ownership
+// rules and must remain immutable.
 func NewTransportPool(config *TransportConfig) *TransportPool {
 	if config == nil {
 		config = DefaultTransportConfig()
+	} else {
+		copy := *config
+		copy.TLSClientConfig = config.TLSClientConfig.Clone()
+		config = &copy
 	}
 
 	return &TransportPool{

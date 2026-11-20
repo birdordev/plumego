@@ -3,6 +3,8 @@ package openapi
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
+	"io"
 	"strings"
 	"testing"
 )
@@ -242,5 +244,41 @@ func TestYAMLExplicitLongMappingKeys(t *testing.T) {
 	want := "inner:\n  " + short + ": 7\n  ? " + long + "\n  : \"scalar\"\n  ? " + long + "map\n  :\n    label: \"value\"\n"
 	if out.String() != want {
 		t.Fatal("unexpected short or explicit long key formatting")
+	}
+}
+
+type rejectingDocumentWriter struct {
+	err   error
+	calls int
+}
+
+func (w *rejectingDocumentWriter) Write([]byte) (int, error) {
+	w.calls++
+	return 0, w.err
+}
+
+func TestDocumentWritersPreserveFailureBoundaries(t *testing.T) {
+	schema := &Schema{Type: "array"}
+	schema.Items = schema
+	cyclic := Document{Paths: map[string]PathItem{
+		"/example": {Get: &Operation{Responses: map[string]Response{
+			"200": {Content: JSONContent(*schema)},
+		}}},
+	}}
+	for _, format := range []struct {
+		name  string
+		write func(io.Writer, Document) error
+	}{{"json", WriteJSON}, {"yaml", WriteYAML}} {
+		t.Run(format.name, func(t *testing.T) {
+			sentinel := errors.New("test document write failed")
+			w := &rejectingDocumentWriter{err: sentinel}
+			var encodingErr *json.UnsupportedValueError
+			if err := format.write(w, cyclic); !errors.As(err, &encodingErr) || w.calls != 0 {
+				t.Errorf("cyclic document error = %v, writes = %d", err, w.calls)
+			}
+			if err := format.write(w, sampleDocument()); !errors.Is(err, sentinel) || w.calls != 1 {
+				t.Errorf("writer error = %v, writes = %d", err, w.calls)
+			}
+		})
 	}
 }

@@ -31,12 +31,6 @@ func (s *statusCodeWriter) WriteHeader(code int) {
 	}
 }
 
-func (s *statusCodeWriter) Flush() {
-	if f, ok := s.ResponseWriter.(http.Flusher); ok {
-		f.Flush()
-	}
-}
-
 func (s *statusCodeWriter) Write(b []byte) (int, error) {
 	if !s.wroteHeader {
 		s.WriteHeader(s.code)

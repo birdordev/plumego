@@ -52,8 +52,12 @@ func Middleware(config Config) func(http.Handler) http.Handler {
 }
 
 // MiddlewareWithErrorHandler delegates circuit admission rejections to errorHandler.
+// A nil errorHandler uses the default rejection responses.
 // Downstream 5xx responses count as failures and remain owned by the downstream handler.
 func MiddlewareWithErrorHandler(config Config, errorHandler ErrorHandler) func(http.Handler) http.Handler {
+	if errorHandler == nil {
+		return Middleware(config)
+	}
 	cb := New(config)
 
 	return func(next http.Handler) http.Handler {

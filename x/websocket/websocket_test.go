@@ -825,3 +825,21 @@ func TestServerRetriesCanceledShutdown(t *testing.T) {
 		t.Fatal("shutdown retry did not close the pending connection")
 	}
 }
+
+func TestServerShutdownReportsConnectionError(t *testing.T) {
+	cfg := DefaultWebSocketConfig()
+	cfg.Secret = validSecret()
+	server, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = server.Shutdown(t.Context()) })
+	sentinel := errors.New("test connection close failed")
+	conn := joinShutdownTestConn(t, server.Hub(), sentinel, nil)
+	if err := server.Shutdown(t.Context()); !errors.Is(err, sentinel) {
+		t.Errorf("Shutdown = %v, want connection error", err)
+	}
+	if err := server.Shutdown(t.Context()); err != nil || server.Hub() != nil || conn.closeCalls != 1 {
+		t.Errorf("repeat Shutdown = %v, hub present = %t, close calls = %d", err, server.Hub() != nil, conn.closeCalls)
+	}
+}

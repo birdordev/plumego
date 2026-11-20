@@ -1,9 +1,11 @@
 package validate
 
 import (
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -187,4 +189,34 @@ func newJSONRequest(body string) *http.Request {
 		panic(err)
 	}
 	return req
+}
+
+func TestBindValidationErrorHTTPResponse(t *testing.T) {
+	sentinel := errors.New("test validator detail")
+	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, err := Bind[createItemRequest](r, &requestValidator{err: sentinel})
+		var validationErr ValidationError
+		if !errors.Is(err, sentinel) || !errors.As(err, &validationErr) {
+			t.Fatalf("Bind = %v, want ValidationError wrapping the validator error", err)
+		}
+		if err := contract.WriteError(w, r, validationErr.APIError); err != nil {
+			t.Fatal(err)
+		}
+	})
+	r := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{"name":"item"}`))
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, r)
+	var response struct {
+		Error struct {
+			Code, Message, Category, Type string
+		}
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	got := response.Error
+	if w.Code != http.StatusBadRequest || got.Code != contract.CodeValidationError || got.Message != "validation failed" ||
+		got.Category != "client_error" || got.Type != "bad_request" || strings.Contains(w.Body.String(), sentinel.Error()) {
+		t.Errorf("code = %d, body = %s", w.Code, w.Body.String())
+	}
 }

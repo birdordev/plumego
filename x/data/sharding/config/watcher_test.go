@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -661,4 +662,41 @@ func TestWatcherSnapshotsAreIsolated(t *testing.T) {
 		t.Fatal(err)
 	}
 	check(w.Get())
+}
+
+func TestConfigWatcherRejectsNonpositiveInterval(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	data := []byte(`{
+		"shards": [{"name": "shard0", "primary": {"driver": "mysql", "host": "localhost", "database": "test"}}],
+		"sharding_rules": [{"table_name": "users", "shard_key_column": "id", "strategy": "mod"}],
+		"cross_shard_policy": "deny",
+		"log_level": "info"
+	}`)
+	if err := os.WriteFile(path, data, 0600); err != nil {
+		t.Fatal(err)
+	}
+	for _, interval := range []time.Duration{0, -time.Second} {
+		w, err := NewConfigWatcher(path, WithWatchInterval(interval))
+		if w != nil || err == nil || !strings.Contains(err.Error(), "watch interval") {
+			t.Errorf("interval %v: NewConfigWatcher = %v, %v", interval, w, err)
+		}
+	}
+	for _, opts := range [][]WatcherOption{nil, {WithWatchInterval(time.Hour)}} {
+		w, err := NewConfigWatcher(path, opts...)
+		if err != nil {
+			t.Fatal(err)
+		}
+		done := make(chan error, 1)
+		go func() { done <- w.Start(t.Context()) }()
+		select {
+		case err := <-done:
+			t.Fatalf("watcher stopped before Stop: %v", err)
+		default:
+		}
+		w.Stop()
+		// Stop may win before Start acquires ownership.
+		if err := <-done; err != nil && err.Error() != "config watcher has been stopped" {
+			t.Errorf("Start returned %v", err)
+		}
+	}
 }

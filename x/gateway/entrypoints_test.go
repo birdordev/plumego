@@ -1,10 +1,12 @@
 package gateway
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/birdordev/plumego/router"
 )
@@ -231,6 +233,73 @@ func TestRegisterProxy_InvalidArgsReturnErrors(t *testing.T) {
 			}
 			if proxy != nil {
 				t.Fatal("RegisterProxy returned proxy for invalid args")
+			}
+		})
+	}
+}
+
+type registrationDiscovery struct {
+	started chan context.Context
+	updates chan []string
+}
+
+func (d registrationDiscovery) Resolve(context.Context, string) ([]string, error) {
+	return []string{"http://example.test"}, nil
+}
+
+func (d registrationDiscovery) Watch(ctx context.Context, _ string) (<-chan []string, error) {
+	d.started <- ctx
+	return d.updates, nil
+}
+
+func TestRegisterProxyClosesOnRegistrationFailure(t *testing.T) {
+	for _, name := range []string{"duplicate", "invalid path", "success"} {
+		t.Run(name, func(t *testing.T) {
+			r := router.NewRouter()
+			path := "/route"
+			switch name {
+			case "duplicate":
+				if err := RegisterRoute(r, path, http.NotFoundHandler()); err != nil {
+					t.Fatal(err)
+				}
+			case "invalid path":
+				path = "/:duplicate/:duplicate"
+			}
+			expected := RegisterRoute(r, path, http.NotFoundHandler())
+			if expected == nil {
+				r = router.NewRouter()
+			}
+			if (expected == nil) != (name == "success") {
+				t.Fatalf("registration fixture returned %v", expected)
+			}
+
+			d := registrationDiscovery{make(chan context.Context, 1), make(chan []string)}
+			t.Cleanup(func() { close(d.updates) })
+			p, err := RegisterProxy(r, path, Config{Discovery: d, ServiceName: "test"})
+			if p != nil {
+				t.Cleanup(p.Close)
+			}
+			if expected != nil {
+				if p != nil || err == nil || err.Error() != expected.Error() {
+					t.Fatalf("RegisterProxy = %v, %v, want registration error %v", p, err, expected)
+				}
+			} else if p == nil || err != nil {
+				t.Fatalf("RegisterProxy = %v, %v, want a proxy", p, err)
+			}
+
+			select {
+			case ctx := <-d.started:
+				if p != nil {
+					if ctx.Err() != nil {
+						t.Fatalf("registered proxy already canceled discovery: %v", ctx.Err())
+					}
+					p.Close()
+				}
+				if !errors.Is(ctx.Err(), context.Canceled) {
+					t.Errorf("discovery context error = %v, want canceled", ctx.Err())
+				}
+			case <-time.After(2 * time.Second):
+				t.Fatal("discovery watch did not start")
 			}
 		})
 	}

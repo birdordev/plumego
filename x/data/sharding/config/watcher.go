@@ -42,7 +42,7 @@ func WithOnChange(fn func(*ShardingConfig)) WatcherOption {
 	}
 }
 
-// NewConfigWatcher creates a new configuration file watcher
+// NewConfigWatcher creates a new configuration file watcher. The watch interval must be positive.
 func NewConfigWatcher(path string, opts ...WatcherOption) (*ConfigWatcher, error) {
 	// Load initial configuration
 	config, err := LoadFromJSONFile(path)
@@ -71,6 +71,9 @@ func NewConfigWatcher(path string, opts ...WatcherOption) (*ConfigWatcher, error
 		opt(watcher)
 	}
 
+	if watcher.interval <= 0 {
+		return nil, fmt.Errorf("watch interval must be positive: %s", watcher.interval)
+	}
 	return watcher, nil
 }
 

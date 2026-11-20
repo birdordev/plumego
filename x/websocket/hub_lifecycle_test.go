@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	stdlog "log"
+	"net"
 	"strings"
 	"testing"
 	"time"
@@ -669,5 +670,80 @@ func TestHubRoomLogsEscapeControls(t *testing.T) {
 	}
 	if !strings.Contains(buf.String(), `room\r\nFORGED\x1b[2J`) {
 		t.Fatal("escaped room name is missing")
+	}
+}
+
+type shutdownTestConn struct {
+	net.Conn
+	err        error
+	onClose    func()
+	closeCalls int
+}
+
+func (c *shutdownTestConn) Close() error {
+	c.closeCalls++
+	if c.onClose != nil {
+		c.onClose()
+	}
+	_ = c.Conn.Close()
+	return c.err
+}
+
+func joinShutdownTestConn(t *testing.T, h *Hub, closeErr error, onClose func()) *shutdownTestConn {
+	t.Helper()
+	left, right := net.Pipe()
+	t.Cleanup(func() { _ = right.Close() })
+	raw := &shutdownTestConn{Conn: left, err: closeErr, onClose: onClose}
+	conn, err := NewConn(raw, 1, 0, 0)
+	if err != nil {
+		_ = left.Close()
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close() })
+	mustTryJoin(t, h, "room", conn)
+	return raw
+}
+
+func TestHubShutdownReportsConnectionErrors(t *testing.T) {
+	firstErr := errors.New("first close failed")
+	secondErr := errors.New("second close failed")
+	for _, cancelAfterFirst := range []bool{false, true} {
+		name := "all connections"
+		if cancelAfterFirst {
+			name = "canceled after first close"
+		}
+		t.Run(name, func(t *testing.T) {
+			hub := mustNewHubConfig(t, HubConfig{WorkerCount: 1, JobQueueSize: 1})
+			t.Cleanup(hub.Stop)
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			var onClose func()
+			if cancelAfterFirst {
+				onClose = cancel
+			}
+			first := joinShutdownTestConn(t, hub, firstErr, onClose)
+			second := joinShutdownTestConn(t, hub, secondErr, onClose)
+			err := hub.Shutdown(ctx)
+			if cancelAfterFirst {
+				if !errors.Is(err, context.Canceled) || first.closeCalls+second.closeCalls != 1 {
+					t.Fatalf("Shutdown = %v, calls = %d, %d; want one close and cancellation", err, first.closeCalls, second.closeCalls)
+				}
+				closedErr, pendingErr := firstErr, secondErr
+				if first.closeCalls == 0 {
+					closedErr, pendingErr = secondErr, firstErr
+				}
+				if !errors.Is(err, closedErr) || errors.Is(err, pendingErr) {
+					t.Errorf("Shutdown = %v, want cancellation and %v", err, closedErr)
+				}
+				if err := hub.Shutdown(t.Context()); !errors.Is(err, pendingErr) || errors.Is(err, closedErr) {
+					t.Errorf("Shutdown retry = %v, want %v", err, pendingErr)
+				}
+			} else if !errors.Is(err, firstErr) || !errors.Is(err, secondErr) {
+				t.Errorf("Shutdown = %v, want both close failures", err)
+			}
+			if err := hub.Shutdown(t.Context()); err != nil || first.closeCalls != 1 || second.closeCalls != 1 {
+				t.Errorf("repeat Shutdown = %v, calls = %d, %d", err, first.closeCalls, second.closeCalls)
+			}
+		})
 	}
 }

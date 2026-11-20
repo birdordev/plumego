@@ -49,6 +49,7 @@ import (
 	"strings"
 
 	"github.com/birdordev/plumego/contract"
+	"github.com/birdordev/plumego/internal/httputil"
 	mw "github.com/birdordev/plumego/middleware"
 )
 
@@ -133,7 +134,8 @@ type Config struct {
 
 	// StripVersionFromPath removes version from URL path (for StrategyURLPath)
 	// Example: /v2/users/123 becomes /users/123
-	// Default: true
+	// Middleware treats false as the default true and always strips the prefix
+	// for a recognized URL path version.
 	StripVersionFromPath bool
 
 	// OnVersionMismatch is called when unsupported version is requested
@@ -184,6 +186,11 @@ func Middleware(config Config) mw.Middleware {
 
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if cfg.Strategy == StrategyAcceptHeader {
+				variant := httputil.NewVaryWriter(w, "Accept")
+				defer variant.Prepare()
+				w = variant
+			}
 			var version int
 			var segment pathVersion
 			if cfg.Strategy == StrategyURLPath {

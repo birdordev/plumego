@@ -46,7 +46,8 @@ the router on failure because some routes may have been installed.
 
 For API versioning via `Accept`, `x/rest/versioning` reads all field lines in
 order and uses the first matching vendor media range. Requests without a match
-use the configured default version.
+use the configured default version. Responses from this strategy include
+`Vary: Accept` so caches distinguish requests that select different versions.
 
 ## Main risks when changing this module
 

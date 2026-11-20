@@ -1431,3 +1431,60 @@ func TestFramedClientConcurrentReadsPreserveBoundaries(t *testing.T) {
 		t.Errorf("received messages = %v", seen)
 	}
 }
+
+func TestNewPoolRejectsNegativeCapacity(t *testing.T) {
+	cfg := DefaultPoolConfig()
+	cfg.MaxConns = -1
+	p, err := NewPool("unused", cfg)
+	if p != nil {
+		_ = p.Close()
+	}
+	if p != nil || err == nil {
+		t.Fatalf("NewPool = %v, %v, want a capacity error", p, err)
+	}
+	for _, cfg := range []*PoolConfig{nil, {MaxConns: 1}} {
+		p, err := NewPool("unused", cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := p.Close(); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+type poolCloseTestClient struct {
+	Client
+	err   error
+	calls int
+}
+
+func (c *poolCloseTestClient) Close() error {
+	c.calls++
+	return c.err
+}
+
+func TestPoolCloseReportsConnectionErrors(t *testing.T) {
+	firstErr := errors.New("first close error")
+	secondErr := errors.New("second close error")
+	p, err := NewPool("unused", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first := &poolCloseTestClient{err: firstErr}
+	second := &poolCloseTestClient{err: secondErr}
+	success := &poolCloseTestClient{}
+	p.mu.Lock()
+	p.conns = []*poolConn{{client: first}, {client: second}, {client: success}}
+	p.mu.Unlock()
+
+	if err := p.Close(); !errors.Is(err, firstErr) || !errors.Is(err, secondErr) {
+		t.Errorf("Close = %v, want both connection errors", err)
+	}
+	if err := p.Close(); err != nil || first.calls != 1 || second.calls != 1 || success.calls != 1 {
+		t.Errorf("repeat close = %v, calls = %d, %d, %d", err, first.calls, second.calls, success.calls)
+	}
+	if conn, err := p.Get(); conn != nil || err == nil {
+		t.Errorf("Get after close = %v, %v, want a closed-pool error", conn, err)
+	}
+}

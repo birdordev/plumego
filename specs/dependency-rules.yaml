@@ -332,6 +332,7 @@ modules:
       - x/gateway/cache
       - x/gateway/transform
       - x/messaging/webhook
+      - x/rest/versioning
     deny:
       - core/**
       - router/**
@@ -767,6 +768,7 @@ modules:
       - stdlib
       - middleware
       - contract
+      - internal/httputil
     deny:
       - core/**
       - store/**

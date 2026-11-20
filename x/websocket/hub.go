@@ -2,6 +2,7 @@ package websocket
 
 import (
 	"context"
+	"errors"
 	"io"
 	"log"
 	"sync"
@@ -486,7 +487,8 @@ func (h *Hub) Stop() {
 }
 
 // Shutdown rejects new joins, hard-closes registered connections, and stops
-// the hub. Cancellation leaves pending connections available to a later retry.
+// the hub. It reports errors from attempted closes and leaves connections not
+// yet attempted on cancellation available to a later retry.
 // A nil context is treated as context.Background().
 func (h *Hub) Shutdown(ctx context.Context) error {
 	if ctx == nil {
@@ -512,14 +514,20 @@ func (h *Hub) Shutdown(ctx context.Context) error {
 	h.mu.Unlock()
 
 	defer h.Stop()
+	var failures []error
 	for _, conn := range pending {
 		if err := ctx.Err(); err != nil {
-			return err
+			if len(failures) == 0 {
+				return err
+			}
+			return errors.Join(append(failures, err)...)
 		}
-		_ = conn.Close()
+		if err := conn.Close(); err != nil {
+			failures = append(failures, err)
+		}
 		h.mu.Lock()
 		delete(h.pendingShutdown, conn)
 		h.mu.Unlock()
 	}
-	return nil
+	return errors.Join(failures...)
 }

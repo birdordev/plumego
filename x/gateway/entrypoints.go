@@ -90,6 +90,7 @@ func RegisterRoute(r *router.Router, path string, handler http.Handler) error {
 }
 
 // RegisterProxy constructs a gateway proxy and binds it to a path.
+// It closes the proxy if route registration fails.
 func RegisterProxy(r *router.Router, path string, cfg GatewayConfig) (*GatewayProxy, error) {
 	if r == nil {
 		return nil, errRegisterNilRouter
@@ -102,6 +103,7 @@ func RegisterProxy(r *router.Router, path string, cfg GatewayConfig) (*GatewayPr
 		return nil, err
 	}
 	if err := RegisterRoute(r, path, proxy); err != nil {
+		proxy.Close()
 		return nil, err
 	}
 	return proxy, nil

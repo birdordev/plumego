@@ -59,3 +59,32 @@ func TestHealthReportHandler(t *testing.T) {
 		t.Fatal("expected health report status")
 	}
 }
+
+func TestTrackerResetPreservesManagerReadiness(t *testing.T) {
+	manager, err := NewManager(Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = manager.Close() })
+	tracker := NewTracker(manager)
+	const name = "healthy"
+	if err := tracker.RegisterComponent(&mockChecker{name: name, healthy: true}); err != nil {
+		t.Fatal(err)
+	}
+	tracker.MarkReady()
+	tracker.CheckAllComponents(t.Context())
+	if !tracker.Readiness().Ready || tracker.GetMetrics().CheckCount == 0 || len(tracker.GetHealthHistory()) == 0 {
+		t.Fatal("expected ready manager and populated tracker before Reset")
+	}
+	tracker.Reset()
+	if got := tracker.GetMetrics(); got.CheckCount != 0 || len(got.ComponentMetrics) != 0 || len(tracker.GetHealthHistory()) != 0 {
+		t.Errorf("Reset left metrics or history: %+v", got)
+	}
+	if _, ok := tracker.GetComponentHealth(name); !ok || !tracker.Readiness().Ready {
+		t.Error("Reset changed the wrapped manager's component or readiness state")
+	}
+	tracker.CheckAllComponents(t.Context())
+	if got := tracker.GetMetrics().CheckCount; got != 1 || len(tracker.GetHealthHistory()) == 0 {
+		t.Errorf("new check count = %d, history = %d", got, len(tracker.GetHealthHistory()))
+	}
+}

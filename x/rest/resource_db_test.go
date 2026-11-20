@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
+	"database/sql/driver"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -296,5 +298,86 @@ func TestSQLBuilderOwnsColumns(t *testing.T) {
 	query, _ = b.WithColumns(columns...).BuildSelectQuery(params)
 	if query != "SELECT id, description FROM items WHERE (id LIKE ? OR description LIKE ?)" {
 		t.Errorf("updated query = %q", query)
+	}
+}
+
+type repositoryListConnector struct {
+	driver.Connector
+	rows *repositoryListRows
+}
+
+func (c repositoryListConnector) Connect(context.Context) (driver.Conn, error) {
+	return repositoryListConn{rows: c.rows}, nil
+}
+
+type repositoryListConn struct {
+	driver.Conn
+	rows *repositoryListRows
+}
+
+func (repositoryListConn) Close() error { return nil }
+
+func (c repositoryListConn) QueryContext(_ context.Context, query string, _ []driver.NamedValue) (driver.Rows, error) {
+	if strings.HasPrefix(query, "SELECT COUNT(*)") {
+		return &repositoryListRows{columns: []string{"count"}, value: int64(4)}, nil
+	}
+	return c.rows, nil
+}
+
+type repositoryListRows struct {
+	columns    []string
+	value      driver.Value
+	endErr     error
+	read       bool
+	closeCalls int
+}
+
+func (r *repositoryListRows) Columns() []string { return r.columns }
+
+func (r *repositoryListRows) Next(dest []driver.Value) error {
+	if r.read {
+		if r.endErr != nil {
+			return r.endErr
+		}
+		return io.EOF
+	}
+	r.read = true
+	dest[0] = r.value
+	return nil
+}
+
+func (r *repositoryListRows) Close() error {
+	r.closeCalls++
+	return nil
+}
+
+func TestRepositoryFindAllPropagatesIterationFailure(t *testing.T) {
+	sentinel := errors.New("test iteration failure")
+	for _, tt := range []struct {
+		name   string
+		endErr error
+	}{{"success", nil}, {"fails after a row", sentinel}} {
+		t.Run(tt.name, func(t *testing.T) {
+			rows := &repositoryListRows{columns: []string{"id"}, value: "item-1", endErr: tt.endErr}
+			db := sql.OpenDB(repositoryListConnector{rows: rows})
+			t.Cleanup(func() { _ = db.Close() })
+			builder := NewSQLBuilder("items", "id").WithColumns("id").WithScanFunc(func(rows *sql.Rows) (any, error) {
+				var id string
+				err := rows.Scan(&id)
+				return id, err
+			})
+			repo := NewBaseRepository[string](db, builder)
+			items, count, err := repo.FindAll(t.Context(), &QueryParams{})
+			if tt.endErr != nil {
+				if items != nil || count != 0 || !errors.Is(err, sentinel) {
+					t.Errorf("FindAll = %v, %d, %v; want iteration failure without partial values", items, count, err)
+				}
+			} else if !slices.Equal(items, []string{"item-1"}) || count != 4 || err != nil {
+				t.Errorf("FindAll = %v, %d, %v; want one item and total count 4", items, count, err)
+			}
+			if !rows.read || rows.closeCalls != 1 {
+				t.Errorf("cursor read = %t, close calls = %d", rows.read, rows.closeCalls)
+			}
+		})
 	}
 }
