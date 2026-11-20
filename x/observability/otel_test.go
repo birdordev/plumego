@@ -389,3 +389,32 @@ func TestOpenTelemetryTracerClearReleasesSpanBuffer(t *testing.T) {
 		t.Fatalf("after recording again: %+v", stats)
 	}
 }
+
+func TestEvictionClearsSpanAttributes(t *testing.T) {
+	tracer := NewOpenTelemetryTracer("retention").WithMaxSpans(3)
+	record := func(id string) {
+		tracer.record(Span{SpanID: id, Attributes: map[string]string{"label": id}})
+	}
+	record("first")
+	record("second")
+	record("third")
+	before := tracer.spans
+	record("fourth")
+	if before[0].Attributes != nil {
+		t.Error("record retained attributes in the evicted slot")
+	}
+	before = tracer.spans
+	tracer.WithMaxSpans(1)
+	for i, span := range before[:2] {
+		if span.Attributes != nil {
+			t.Errorf("trim retained attributes in evicted slot %d", i)
+		}
+	}
+	got := tracer.Spans()
+	if len(got) != 1 || got[0].SpanID != "fourth" || got[0].Attributes["label"] != "fourth" {
+		t.Fatalf("retained spans = %+v", got)
+	}
+	if stats := tracer.GetSpanStats(); stats.DroppedSpans != 3 || stats.MaxRetention != 1 {
+		t.Errorf("stats = %+v", stats)
+	}
+}

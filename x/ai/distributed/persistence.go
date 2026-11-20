@@ -95,6 +95,8 @@ type kvBackend interface {
 // KVPersistence implements WorkflowPersistence using a key-value store.
 // Snapshot mutations are serialized within one instance. Backend operations
 // called during a snapshot mutation must return before reentering one.
+// With legacy KV methods, cancellation is checked before each call.
+// A call in progress can be canceled only if the backend supports its context variant.
 type KVPersistence struct {
 	store          kvBackend
 	snapshotWrites chan struct{}
@@ -135,17 +137,18 @@ func (p *KVPersistence) SaveWorkflow(ctx context.Context, wf *orchestration.Work
 	}
 
 	key := prefixWorkflow + wf.ID
-	return p.store.Set(key, jsonData, 0) // No TTL for workflow definitions
+	return p.writeValue(ctx, key, jsonData, 0) // No TTL for workflow definitions
 }
 
-// LoadWorkflow loads a workflow definition by ID and reports invalid stored records as errors.
+// LoadWorkflow loads a workflow definition by ID and rejects records with a
+// missing or mismatched ID.
 func (p *KVPersistence) LoadWorkflow(ctx context.Context, id string) (*orchestration.Workflow, error) {
 	if id == "" {
 		return nil, fmt.Errorf("workflow ID cannot be empty")
 	}
 
 	key := prefixWorkflow + id
-	data, err := p.store.Get(key)
+	data, err := p.readValue(ctx, key)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load workflow %s: %w", id, err)
 	}
@@ -158,8 +161,8 @@ func (p *KVPersistence) LoadWorkflow(ctx context.Context, id string) (*orchestra
 	if err := json.Unmarshal(data, &wfData); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal workflow %s: %w", id, err)
 	}
-	if wfData.ID == "" {
-		return nil, fmt.Errorf("stored workflow %s has an empty ID", id)
+	if wfData.ID != id {
+		return nil, fmt.Errorf("stored workflow record does not match requested ID %s", id)
 	}
 
 	// Note: Steps are not persisted (they contain functions)
@@ -182,7 +185,7 @@ func (p *KVPersistence) DeleteWorkflow(ctx context.Context, id string) error {
 	}
 
 	key := prefixWorkflow + id
-	return p.store.Delete(key)
+	return p.deleteValue(ctx, key)
 }
 
 // SaveSnapshot persists an execution state snapshot.
@@ -214,16 +217,8 @@ func (p *KVPersistence) SaveSnapshot(ctx context.Context, snapshot *ExecutionSna
 	}
 	defer p.unlockSnapshots()
 
-	var saveErr error
-	if store, ok := p.store.(interface {
-		SetContext(context.Context, string, []byte, time.Duration) error
-	}); ok {
-		saveErr = store.SetContext(ctx, key, jsonData, ttl)
-	} else {
-		saveErr = p.store.Set(key, jsonData, ttl)
-	}
-	if saveErr != nil {
-		return fmt.Errorf("failed to save snapshot: %w", saveErr)
+	if err := p.writeValue(ctx, key, jsonData, ttl); err != nil {
+		return fmt.Errorf("failed to save snapshot: %w", err)
 	}
 	return nil
 }
@@ -268,6 +263,9 @@ func (p *KVPersistence) DeleteSnapshot(ctx context.Context, executionID string) 
 
 // SaveStepResult persists a step execution result.
 func (p *KVPersistence) SaveStepResult(ctx context.Context, executionID string, stepIndex int, result *orchestration.AgentResult) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if executionID == "" {
 		return fmt.Errorf("execution ID cannot be empty")
 	}
@@ -281,7 +279,7 @@ func (p *KVPersistence) SaveStepResult(ctx context.Context, executionID string, 
 	}
 
 	key := fmt.Sprintf("%s%s:%d", prefixStepResult, executionID, stepIndex)
-	return p.store.Set(key, jsonData, 24*time.Hour) // 24 hour retention
+	return p.writeValue(ctx, key, jsonData, 24*time.Hour) // 24 hour retention
 }
 
 // LoadStepResults loads stored results by ascending step index. The backend
@@ -447,6 +445,18 @@ func (p *KVPersistence) scanKeys(ctx context.Context, prefix string) ([]string, 
 		}
 	}
 	return matches, ctx.Err()
+}
+
+func (p *KVPersistence) writeValue(ctx context.Context, key string, value []byte, ttl time.Duration) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if store, ok := p.store.(interface {
+		SetContext(context.Context, string, []byte, time.Duration) error
+	}); ok {
+		return store.SetContext(ctx, key, value, ttl)
+	}
+	return p.store.Set(key, value, ttl)
 }
 
 func (p *KVPersistence) readValue(ctx context.Context, key string) ([]byte, error) {

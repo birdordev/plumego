@@ -3,6 +3,7 @@ package distributed
 import (
 	"context"
 	"errors"
+	"slices"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -90,18 +91,21 @@ func TestRetryWithPolicy_ZeroRetries(t *testing.T) {
 }
 
 func TestRetryWithPolicy_MaxDelayClamp(t *testing.T) {
-	// Multiplier would grow delay past MaxDelay; verify it clamps and does not block.
-	calls := 0
-	err := RetryWithPolicy(t.Context(), &RetryPolicy{MaxRetries: 3, InitialDelay: time.Millisecond, MaxDelay: time.Millisecond, Multiplier: 100}, func() error {
-		calls++
-		return errors.New("fail")
+	synctest.Test(t, func(t *testing.T) {
+		sentinel := errors.New("test retry failure")
+		start := time.Now()
+		var attempts []time.Duration
+		err := RetryWithPolicy(t.Context(), &RetryPolicy{
+			MaxRetries: 4, InitialDelay: time.Second, MaxDelay: 3 * time.Second, Multiplier: 2,
+		}, func() error {
+			attempts = append(attempts, time.Since(start))
+			return sentinel
+		})
+		want := []time.Duration{0, time.Second, 3 * time.Second, 6 * time.Second, 9 * time.Second}
+		if !errors.Is(err, sentinel) || !slices.Equal(attempts, want) {
+			t.Errorf("attempts = %v, error = %v; want %v and %v", attempts, err, want, sentinel)
+		}
 	})
-	if err == nil {
-		t.Error("expected error")
-	}
-	if calls != 4 { // 1 + 3 retries
-		t.Errorf("expected 4 calls, got %d", calls)
-	}
 }
 
 // --- RecoverStaleTasks (stub — always returns 0, nil) ---
@@ -246,5 +250,29 @@ func TestMonitorTimeoutsWaitsOnlyForCancellation(t *testing.T) {
 				t.Fatalf("interval %v: %v", interval, err)
 			}
 		})
+	}
+}
+
+func TestRetryWithPolicyRejectsInvalidInputs(t *testing.T) {
+	calls := 0
+	operation := func() error { calls++; return nil }
+	for _, tc := range []struct {
+		name      string
+		policy    *RetryPolicy
+		operation func() error
+		want      string
+	}{
+		{"nil policy", nil, operation, "retry policy is required"},
+		{"nil operation", DefaultRetryPolicy(), nil, "retry operation is required"},
+		{"negative count", &RetryPolicy{MaxRetries: -1}, operation, "retry policy MaxRetries must be non-negative"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := RetryWithPolicy(t.Context(), tc.policy, tc.operation); err == nil || err.Error() != tc.want {
+				t.Errorf("error = %v, want %q", err, tc.want)
+			}
+		})
+	}
+	if calls != 0 {
+		t.Errorf("operation called %d times for invalid inputs", calls)
 	}
 }

@@ -803,3 +803,27 @@ func TestBroadcastAccountsForClosedTargets(t *testing.T) {
 		t.Errorf("metrics: %+v", got)
 	}
 }
+
+func TestActiveConnectionsDeduplicateRooms(t *testing.T) {
+	hub := mustNewHubConfig(t, HubConfig{WorkerCount: 1, JobQueueSize: 4})
+	t.Cleanup(hub.Stop)
+	conn := newMockConn()
+	t.Cleanup(func() { _ = conn.Close() })
+
+	for _, room := range []string{"one", "two"} {
+		if err := hub.TryJoin(room, conn); err != nil {
+			t.Fatal(err)
+		}
+	}
+	check := func(active, registrations int) {
+		t.Helper()
+		if gotActive, gotRegistrations := hub.GetActiveConnectionCount(), hub.GetRoomRegistrationCount(); gotActive != active || gotRegistrations != registrations {
+			t.Errorf("active = %d, registrations = %d; want %d, %d", gotActive, gotRegistrations, active, registrations)
+		}
+	}
+	check(1, 2)
+	hub.Leave("one", conn)
+	check(1, 1)
+	hub.Leave("two", conn)
+	check(0, 0)
+}

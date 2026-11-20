@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/birdordev/plumego/contract"
+	"github.com/birdordev/plumego/router"
 	"github.com/birdordev/plumego/x/messaging/mq"
 )
 
@@ -262,4 +263,59 @@ func decodeMessagingAPIData[T any](t *testing.T, rec *httptest.ResponseRecorder)
 		t.Fatalf("decode success data: %v", err)
 	}
 	return body
+}
+
+type statsRouteStore struct {
+	mq.TaskStore
+	err error
+}
+
+func (s statsRouteStore) Stats(context.Context) (mq.Stats, error) {
+	return mq.Stats{Queued: 9, Leased: 3, Dead: 2, Expired: 1}, s.err
+}
+
+func TestStatsRoutePreservesResponseContract(t *testing.T) {
+	internal := errors.New("internal test storage failure")
+	for _, tc := range []struct {
+		name     string
+		storeErr error
+		status   int
+	}{
+		{"success", nil, http.StatusOK},
+		{"store failure", internal, http.StatusInternalServerError},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			svc := New(Config{TaskStore: statsRouteStore{err: tc.storeErr}})
+			r := router.NewRouter()
+			if err := RegisterRoutes(r, svc, ""); err != nil {
+				t.Fatal(err)
+			}
+			rec := httptest.NewRecorder()
+			r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/messages/stats", nil))
+			if rec.Code != tc.status {
+				t.Fatalf("status = %d, want %d; body = %s", rec.Code, tc.status, rec.Body)
+			}
+			if tc.storeErr == nil {
+				if got := decodeMessagingAPIData[ServiceStats](t, rec); got != (ServiceStats{Queued: 9, InFlight: 3, Dead: 2, Expired: 1}) {
+					t.Errorf("stats = %+v", got)
+				}
+				return
+			}
+			if strings.Contains(rec.Body.String(), internal.Error()) {
+				t.Error("response exposes backend error")
+			}
+			var env struct {
+				Error struct {
+					Code    string `json:"code"`
+					Message string `json:"message"`
+				} `json:"error"`
+			}
+			if err := json.Unmarshal(rec.Body.Bytes(), &env); err != nil {
+				t.Fatal(err)
+			}
+			if env.Error.Code != CodeStatsError || env.Error.Message != "message stats unavailable" {
+				t.Errorf("error envelope = %+v", env)
+			}
+		})
+	}
 }

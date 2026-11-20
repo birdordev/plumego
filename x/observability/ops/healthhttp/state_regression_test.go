@@ -184,3 +184,39 @@ func TestHealthResponsesDoNotExposeCheckerErrorText(t *testing.T) {
 		t.Fatal("health response exposes raw checker error")
 	}
 }
+
+type trackerCloseManager struct {
+	Manager
+	err   error
+	calls int
+}
+
+func (m *trackerCloseManager) Close() error {
+	m.calls++
+	return errors.Join(m.Manager.Close(), m.err)
+}
+
+func TestTrackerClosePreservesManagerContract(t *testing.T) {
+	manager, err := NewManager(Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sentinel := errors.New("test close failure")
+	wrapped := &trackerCloseManager{Manager: manager, err: sentinel}
+	tracker := NewTracker(wrapped)
+	tracker.MarkReady()
+	handler := ReadinessHandlerWithManager(tracker)
+	check := func(want int) {
+		t.Helper()
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/ready", nil))
+		if rec.Code != want {
+			t.Errorf("readiness status = %d, want %d; body = %s", rec.Code, want, rec.Body)
+		}
+	}
+	check(http.StatusOK)
+	if err := tracker.Close(); !errors.Is(err, sentinel) || wrapped.calls != 1 {
+		t.Errorf("Close error = %v, calls = %d", err, wrapped.calls)
+	}
+	check(http.StatusServiceUnavailable)
+}

@@ -1342,3 +1342,48 @@ func TestDownloadIgnoresAccessTimeUpdateFailure(t *testing.T) {
 		t.Fatalf("statuses=%v body=%q closes=%d", w.statuses, w.Body.String(), reader.closeCalls)
 	}
 }
+
+func TestUploadNegativeLimitRestoresDefault(t *testing.T) {
+	var body bytes.Buffer
+	form := multipart.NewWriter(&body)
+	part, err := form.CreateFormFile("file", "test.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	const contents = "payload"
+	if _, err := io.WriteString(part, contents); err != nil {
+		t.Fatal(err)
+	}
+	if err := form.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	calls := 0
+	storage := &mockStorage{putFunc: func(_ context.Context, opts datafile.PutOptions) (*datafile.File, error) {
+		calls++
+		got, err := io.ReadAll(opts.Reader)
+		if err != nil || string(got) != contents {
+			t.Errorf("stored contents = %q, error = %v", got, err)
+		}
+		return &datafile.File{}, nil
+	}}
+	h := NewHandler(storage, &mockMetadataManager{}).WithMaxSize(0)
+	upload := func() *httptest.ResponseRecorder {
+		r := httptest.NewRequest(http.MethodPost, "/files", bytes.NewReader(body.Bytes()))
+		r.Header.Set("Content-Type", form.FormDataContentType())
+		r = r.WithContext(tenantcore.WithTenantID(r.Context(), "tenant"))
+		rec := httptest.NewRecorder()
+		h.Upload(rec, r)
+		return rec
+	}
+	if rec := upload(); rec.Code != http.StatusRequestEntityTooLarge || calls != 0 {
+		t.Fatalf("with zero limit: status = %d, store calls = %d", rec.Code, calls)
+	}
+	h.WithMaxSize(-1)
+	if h.maxSize != 100<<20 {
+		t.Errorf("restored limit = %d; want 100 MiB", h.maxSize)
+	}
+	if rec := upload(); rec.Code != http.StatusOK || calls != 1 {
+		t.Fatalf("with restored limit: status = %d, store calls = %d", rec.Code, calls)
+	}
+}

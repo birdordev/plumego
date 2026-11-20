@@ -26,11 +26,12 @@ func HeaderOrDefault(value, fallback string) string {
 	return value
 }
 
+// SetRetryAfterHeader writes positive delays truncated to whole seconds.
 func SetRetryAfterHeader(w http.ResponseWriter, retry time.Duration) {
 	if retry <= 0 {
 		return
 	}
-	w.Header().Set("Retry-After", strconv.Itoa(int(retry.Seconds())))
+	w.Header().Set("Retry-After", strconv.FormatInt(int64(retry/time.Second), 10))
 }
 
 func SetRateLimitHeaders(w http.ResponseWriter, limit, remaining int64) {

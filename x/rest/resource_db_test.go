@@ -411,8 +411,9 @@ func TestSQLBuilderNilQueryParams(t *testing.T) {
 
 type repositoryExecConnector struct {
 	driver.Connector
-	result driver.Result
-	err    error
+	result  driver.Result
+	err     error
+	observe func(string, []driver.NamedValue)
 }
 
 func (c repositoryExecConnector) Connect(context.Context) (driver.Conn, error) {
@@ -424,7 +425,10 @@ type repositoryExecConn repositoryExecConnector
 func (repositoryExecConn) Prepare(string) (driver.Stmt, error) { return nil, driver.ErrSkip }
 func (repositoryExecConn) Begin() (driver.Tx, error)           { return nil, driver.ErrSkip }
 func (repositoryExecConn) Close() error                        { return nil }
-func (c repositoryExecConn) ExecContext(context.Context, string, []driver.NamedValue) (driver.Result, error) {
+func (c repositoryExecConn) ExecContext(_ context.Context, query string, args []driver.NamedValue) (driver.Result, error) {
+	if c.observe != nil {
+		c.observe(query, args)
+	}
 	return c.result, c.err
 }
 
@@ -526,6 +530,46 @@ func TestRepositoryFindByIDClassifiesRowFailure(t *testing.T) {
 			got, err := repo.FindByID(t.Context(), "item-1")
 			if got != nil || !errors.Is(err, tc.errorWant) || rows.closeCalls != 1 {
 				t.Fatalf("FindByID = %v, %v; row close calls %d", got, err, rows.closeCalls)
+			}
+		})
+	}
+}
+
+func TestRepositoryCreateBindsValuesAndPreservesErrors(t *testing.T) {
+	extractErr := errors.New("test value extraction failed")
+	execErr := errors.New("test INSERT failed")
+	for _, tc := range []struct {
+		name                         string
+		extractErr, execErr, wantErr error
+		wantCalls                    int
+	}{
+		{"success", nil, nil, nil, 1},
+		{"extract failure", extractErr, nil, extractErr, 0},
+		{"driver failure", nil, execErr, execErr, 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			item := &dbResourceTestItem{ID: "new-id", Name: "new name"}
+			calls := 0
+			db := sql.OpenDB(repositoryExecConnector{
+				result: driver.RowsAffected(1),
+				err:    tc.execErr,
+				observe: func(query string, args []driver.NamedValue) {
+					calls++
+					wantArgs := []driver.NamedValue{{Ordinal: 1, Value: item.ID}, {Ordinal: 2, Value: item.Name}}
+					if query != "INSERT INTO items (id, name) VALUES (?, ?)" || !slices.Equal(args, wantArgs) {
+						t.Errorf("execution = %q, %v", query, args)
+					}
+				},
+			})
+			t.Cleanup(func() { _ = db.Close() })
+			builder := NewSQLBuilder("items", "id").WithColumns("id", "name").
+				WithInsertFunc(func(data any) ([]any, error) {
+					got := data.(*dbResourceTestItem)
+					return []any{got.ID, got.Name}, tc.extractErr
+				})
+			repo := NewBaseRepository[dbResourceTestItem](db, builder)
+			if err := repo.Create(t.Context(), item); !errors.Is(err, tc.wantErr) || calls != tc.wantCalls {
+				t.Errorf("create error = %v, exec calls = %d; want %v, %d", err, calls, tc.wantErr, tc.wantCalls)
 			}
 		})
 	}

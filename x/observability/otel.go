@@ -61,6 +61,8 @@ func NewOpenTelemetryTracer(name string) *OpenTelemetryTracer {
 	}
 }
 
+// WithMaxSpans sets the retention limit and releases references held by
+// spans evicted when the limit shrinks. A non-positive limit is unlimited.
 func (t *OpenTelemetryTracer) WithMaxSpans(max int) *OpenTelemetryTracer {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -72,8 +74,10 @@ func (t *OpenTelemetryTracer) WithMaxSpans(max int) *OpenTelemetryTracer {
 
 	t.maxSpans = max
 	if len(t.spans) > max {
-		t.droppedSpans += len(t.spans) - max
-		t.spans = t.spans[len(t.spans)-max:]
+		drop := len(t.spans) - max
+		clear(t.spans[:drop])
+		t.spans = t.spans[drop:]
+		t.droppedSpans += drop
 	}
 
 	return t
@@ -195,6 +199,7 @@ func (t *OpenTelemetryTracer) record(span Span) {
 	defer t.mu.Unlock()
 
 	if t.maxSpans > 0 && len(t.spans) >= t.maxSpans {
+		t.spans[0] = Span{}
 		t.spans = t.spans[1:]
 		t.droppedSpans++
 	}

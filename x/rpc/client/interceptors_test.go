@@ -105,3 +105,23 @@ func TestRetryInterceptorPreservesFinalErrorAndOptions(t *testing.T) {
 		t.Fatalf("calls = %d, final error = %v", calls, err)
 	}
 }
+
+func TestTracingInterceptorWithoutTracerPassesThrough(t *testing.T) {
+	const method = "/fixture.Service/Read"
+	ctx := t.Context()
+	request, reply := new(string), new(int)
+	opts := []CallOption{"first option", 42}
+	sentinel := errors.New("test invocation failure")
+	calls := 0
+	err := TracingInterceptor(nil)(ctx, method, request, reply,
+		func(gotCtx context.Context, gotMethod string, gotRequest, gotReply any, gotOpts ...CallOption) error {
+			calls++
+			if gotCtx != ctx || gotMethod != method || gotRequest != request || gotReply != reply || !slices.Equal(gotOpts, opts) {
+				t.Errorf("invocation parameters = %q, %v, %v, %v", gotMethod, gotRequest, gotReply, gotOpts)
+			}
+			return sentinel
+		}, opts...)
+	if calls != 1 || !errors.Is(err, sentinel) {
+		t.Errorf("invocation calls = %d, error = %v", calls, err)
+	}
+}

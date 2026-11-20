@@ -20,7 +20,8 @@ type HealthChecker struct {
 	wg      sync.WaitGroup
 }
 
-// NewHealthChecker creates a new HealthChecker
+// NewHealthChecker creates a new HealthChecker. A non-positive interval uses
+// the default interval of 10 seconds.
 func NewHealthChecker(pool *BackendPool, config *HealthCheckConfig) *HealthChecker {
 	cfg := config.WithDefaults()
 	ctx, cancel := context.WithCancel(context.Background())

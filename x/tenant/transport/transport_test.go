@@ -170,3 +170,11 @@ func TestErrorCodes_AreNonEmpty(t *testing.T) {
 		}
 	}
 }
+
+func TestRetryAfterUsesExactSeconds(t *testing.T) {
+	w := httptest.NewRecorder()
+	transport.SetRetryAfterHeader(w, 9_000_000_000*time.Second-time.Nanosecond)
+	if got := w.Header().Get("Retry-After"); got != "8999999999" {
+		t.Errorf("Retry-After = %q, want 8999999999", got)
+	}
+}

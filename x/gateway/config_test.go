@@ -241,3 +241,13 @@ func TestProxyRejectsNegativeTimeout(t *testing.T) {
 		}
 	}
 }
+
+func TestProxyRejectsNegativeHealthInterval(t *testing.T) {
+	proxy, err := New(Config{
+		Targets:     []string{"http://backend.example"},
+		HealthCheck: &HealthCheckConfig{Interval: -time.Second},
+	})
+	if proxy != nil || !errors.Is(err, ErrInvalidConfig) {
+		t.Fatalf("New = %v, %v; want nil proxy and ErrInvalidConfig", proxy, err)
+	}
+}

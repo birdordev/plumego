@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -885,5 +886,40 @@ func TestGzipErrorPagesKeepStatusForGetAndHead(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+func TestMissingIndexAfterConstructionReturnsNotFound(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		opts     []Option
+		wantBody string
+	}{
+		{"default", nil, "not found"},
+		{"custom", []Option{WithNotFoundPage("404.html")}, "custom missing page"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			writeTestFile(t, dir, "index.html", "home page")
+			writeTestFile(t, dir, "404.html", "custom missing page")
+			h, err := NewHandlerFS(http.Dir(dir), tc.opts...)
+			if err != nil {
+				t.Fatal(err)
+			}
+			req := httptest.NewRequest(http.MethodGet, "/", nil)
+			before := httptest.NewRecorder()
+			h.ServeHTTP(before, req)
+			if before.Code != http.StatusOK || before.Body.String() != "home page" {
+				t.Fatalf("initial index response = %d %q", before.Code, before.Body.String())
+			}
+			if err := os.Remove(filepath.Join(dir, "index.html")); err != nil {
+				t.Fatal(err)
+			}
+			after := httptest.NewRecorder()
+			h.ServeHTTP(after, req)
+			if after.Code != http.StatusNotFound || !strings.Contains(after.Body.String(), tc.wantBody) {
+				t.Errorf("missing index response = %d %q", after.Code, after.Body.String())
+			}
+		})
 	}
 }

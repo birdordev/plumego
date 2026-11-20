@@ -388,17 +388,17 @@ func isTerminalState(state JobState) bool {
 	}
 }
 
-// resumeJobLocked resumes a paused job and reschedules it. Must be called with s.mu held.
+// resumeJobLocked unpauses a job and reschedules it when its dependencies
+// are ready. Must be called with s.mu held.
 func (s *Scheduler) resumeJobLocked(j *job) {
 	j.paused.Store(false)
-
-	switch j.kind {
-	case jobKindCron:
-		j.runAt = j.cron.Next(s.clock.Now())
-		s.pushScheduleLocked(j, j.runAt)
-	case jobKindDelay:
-		s.pushScheduleLocked(j, j.runAt)
+	if !s.dependenciesReadyLocked(j) {
+		return
 	}
+	if j.kind == jobKindCron {
+		j.runAt = j.cron.Next(s.clock.Now())
+	}
+	s.pushScheduleLocked(j, j.runAt)
 }
 
 // resolveDependencyLocked records that this job no longer waits on id.
@@ -411,14 +411,18 @@ func (j *job) resolveDependencyLocked(id JobID) {
 }
 
 func (s *Scheduler) scheduleDependentIfReadyLocked(j *job) bool {
-	if j.paused.Load() || (j.kind == jobKindDelay && j.state != JobStateQueued) {
+	if j.paused.Load() || (j.kind == jobKindDelay && j.state != JobStateQueued) || !s.dependenciesReadyLocked(j) {
 		return false
 	}
+	s.pushScheduleLocked(j, j.runAt)
+	return true
+}
+
+func (s *Scheduler) dependenciesReadyLocked(j *job) bool {
 	for _, dependency := range j.options.Dependencies {
 		if _, resolved := j.resolvedDependencies[dependency]; !resolved && !s.dependencyStatus[dependency] {
 			return false
 		}
 	}
-	s.pushScheduleLocked(j, j.runAt)
 	return true
 }

@@ -351,3 +351,24 @@ func TestGenerateKeepsDistinctOperationsOnSharedPath(t *testing.T) {
 		}
 	}
 }
+
+func TestGenerateIncludesRootRoute(t *testing.T) {
+	r := router.NewRouter()
+	handler := http.HandlerFunc(func(http.ResponseWriter, *http.Request) {})
+	for _, path := range []string{"/", "/healthz"} {
+		if err := r.AddRoute(http.MethodGet, path, handler); err != nil {
+			t.Fatal(err)
+		}
+	}
+	doc := New().Generate(r.Routes(), nil)
+	if len(doc.Paths) != 2 || doc.Paths["/healthz"].Get == nil {
+		t.Fatalf("expected root and health routes, got %+v", doc.Paths)
+	}
+	root := doc.Paths["/"]
+	if root.Get == nil || root != (PathItem{Get: root.Get}) {
+		t.Fatalf("unexpected root operations: %+v", root)
+	}
+	if len(root.Get.Parameters) != 0 || root.Get.Responses["200"].Description != "OK" {
+		t.Errorf("unexpected root operation: %+v", root.Get)
+	}
+}

@@ -160,7 +160,7 @@ func (s *Scheduler) Pause(id JobID) bool {
 	return true
 }
 
-// Resume unpauses a job and schedules its next run.
+// Resume unpauses a job and schedules its next run when its dependencies are ready.
 func (s *Scheduler) Resume(id JobID) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -203,7 +203,7 @@ func (s *Scheduler) PauseByTags(tags ...string) int {
 	)
 }
 
-// ResumeByGroup resumes all paused jobs in the specified group.
+// ResumeByGroup unpauses jobs in the group and schedules those with ready dependencies.
 // Returns the number of jobs resumed.
 func (s *Scheduler) ResumeByGroup(group string) int {
 	if group == "" {
@@ -217,7 +217,7 @@ func (s *Scheduler) ResumeByGroup(group string) int {
 	)
 }
 
-// ResumeByTags resumes all paused jobs that have ALL of the specified tags.
+// ResumeByTags unpauses jobs matching all tags and schedules those with ready dependencies.
 // Returns the number of jobs resumed.
 func (s *Scheduler) ResumeByTags(tags ...string) int {
 	if len(tags) == 0 {
@@ -379,10 +379,7 @@ func (s *Scheduler) addJob(id JobID, kind jobKind, task TaskFunc, spec CronSpec,
 		s.dependents[depID] = append(s.dependents[depID], id)
 	}
 
-	if !j.paused.Load() && len(jobOpts.Dependencies) == 0 {
-		// Only schedule if no dependencies or dependencies already met
-		s.pushScheduleLocked(j, j.runAt)
-	} else if len(jobOpts.Dependencies) > 0 {
+	if !s.scheduleDependentIfReadyLocked(j) && len(jobOpts.Dependencies) > 0 {
 		// Job has dependencies, will be triggered when dependencies complete
 		if s.logger != nil {
 			s.logger.Info("job has dependencies, waiting for completion", log.Fields{

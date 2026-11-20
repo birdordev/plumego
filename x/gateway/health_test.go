@@ -341,3 +341,30 @@ func TestHealthCheckerProbeTimeoutMarksUnhealthy(t *testing.T) {
 		}
 	})
 }
+
+func TestGatewayHealthIntervalConfiguration(t *testing.T) {
+	for _, tc := range []struct {
+		name           string
+		interval, want time.Duration
+	}{
+		{"default", 0, 10 * time.Second},
+		{"negative", -time.Second, 10 * time.Second},
+		{"explicit", time.Minute, time.Minute},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				pool, err := NewBackendPool(nil)
+				if err != nil {
+					t.Fatal(err)
+				}
+				checker := NewHealthChecker(pool, &HealthCheckConfig{Interval: tc.interval})
+				if checker.config.Interval != tc.want {
+					t.Fatalf("interval = %v, want %v", checker.config.Interval, tc.want)
+				}
+				checker.Start()
+				synctest.Wait()
+				checker.Stop()
+			})
+		})
+	}
+}

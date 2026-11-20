@@ -3,6 +3,9 @@ package file
 import (
 	"strings"
 	"testing"
+	"time"
+
+	storefile "github.com/birdordev/plumego/store/file"
 )
 
 // --- isPathSafe ---
@@ -135,5 +138,34 @@ func TestMimeExtRoundTrip(t *testing.T) {
 		if got := extToMime(ext); !strings.HasPrefix(got, strings.Split(mime, "/")[0]) {
 			t.Errorf("extToMime(mimeToExt(%q)) = %q, expected mime family match", mime, got)
 		}
+	}
+}
+
+func TestFileCloneOwnsSupportedMutableFields(t *testing.T) {
+	accessed, deleted := time.Unix(1, 0), time.Unix(2, 0)
+	payload := []byte{1, 2}
+	nested := map[string]any{"payload": payload}
+	original := File{
+		File: storefile.File{
+			Metadata:     map[string]any{"nested": nested},
+			LastAccessAt: &accessed,
+			DeletedAt:    &deleted,
+		},
+		TenantID: "tenant", UploadedBy: "owner", Width: 640, Height: 480, ThumbnailPath: "thumbnail",
+	}
+	cloned := original.Clone()
+	if cloned.TenantID != original.TenantID || cloned.UploadedBy != original.UploadedBy ||
+		cloned.Width != original.Width || cloned.Height != original.Height || cloned.ThumbnailPath != original.ThumbnailPath {
+		t.Errorf("extension fields changed in clone: %+v", cloned)
+	}
+	*cloned.LastAccessAt = time.Unix(10, 0)
+	*cloned.DeletedAt = time.Unix(20, 0)
+	clonedNested := cloned.Metadata["nested"].(map[string]any)
+	clonedNested["payload"].([]byte)[0] = 9
+	clonedNested["new"] = true
+	cloned.Metadata["added"] = true
+
+	if accessed.Unix() != 1 || deleted.Unix() != 2 || payload[0] != 1 || len(nested) != 1 || len(original.Metadata) != 1 {
+		t.Errorf("clone mutation changed the original: %+v", original)
 	}
 }

@@ -6,36 +6,27 @@
 //   - Query parameter: /users/123?version=2
 //   - Custom header: X-API-Version: 2
 //
-// Example usage:
+// Each middleware instance uses one strategy. This example wraps a standard
+// HTTP handler and selects the version from the Accept header:
 //
 //	import (
+//		"net/http"
+//
 //		"github.com/birdordev/plumego/x/rest/versioning"
-//		"github.com/birdordev/plumego/core"
 //	)
 //
-//	app := core.New(core.DefaultConfig())
+//	func versionedHandler(next http.Handler) http.Handler {
+//		return versioning.Middleware(versioning.Config{
+//			Strategy:          versioning.StrategyAcceptHeader,
+//			VendorPrefix:      "application/vnd.myapi",
+//			DefaultVersion:    1,
+//			SupportedVersions: []int{1, 2, 3},
+//		})(next)
+//	}
 //
-//	// Accept header strategy
-//	app.Use(versioning.Middleware(versioning.Config{
-//		Strategy:          versioning.StrategyAcceptHeader,
-//		VendorPrefix:      "application/vnd.myapi",
-//		DefaultVersion:    1,
-//		SupportedVersions: []int{1, 2, 3},
-//	}))
-//
-//	// URL path strategy
-//	app.Use(versioning.Middleware(versioning.Config{
-//		Strategy:          versioning.StrategyURLPath,
-//		PathPrefix:        "/v",
-//		DefaultVersion:    1,
-//		SupportedVersions: []int{1, 2, 3},
-//	}))
-//
-//	// Access version in handler
-//	app.Get("/users/:id", func(w http.ResponseWriter, r *http.Request) {
-//		version := versioning.VersionFromContext(r.Context())
-//		// Handle request based on version
-//	})
+// The wrapped handler reads the selected version with
+// versioning.VersionFromContext(r.Context()). For versioned paths, use
+// StrategyURLPath instead of StrategyAcceptHeader and set PathPrefix if needed.
 package versioning
 
 import (

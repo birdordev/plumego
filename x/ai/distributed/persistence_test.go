@@ -636,3 +636,142 @@ func TestKVPersistenceSerializesSnapshotCleanupAndRefresh(t *testing.T) {
 		}
 	})
 }
+
+type contextTestBackend struct {
+	kvBackend
+	access func(context.Context, string, time.Duration) error
+}
+
+func (s contextTestBackend) SetContext(ctx context.Context, key string, _ []byte, ttl time.Duration) error {
+	return s.access(ctx, key, ttl)
+}
+
+func (s contextTestBackend) GetContext(ctx context.Context, key string) ([]byte, error) {
+	return nil, s.access(ctx, key, 0)
+}
+
+func (s contextTestBackend) DeleteContext(ctx context.Context, key string) error {
+	return s.access(ctx, key, 0)
+}
+
+func TestWorkflowPersistenceHonorsContext(t *testing.T) {
+	const id = "workflow"
+	workflow := &orchestration.Workflow{ID: id}
+	operations := []struct {
+		name string
+		call func(*KVPersistence, context.Context) error
+	}{
+		{"save", func(p *KVPersistence, ctx context.Context) error { return p.SaveWorkflow(ctx, workflow) }},
+		{"load", func(p *KVPersistence, ctx context.Context) error {
+			_, err := p.LoadWorkflow(ctx, id)
+			return err
+		}},
+		{"delete", func(p *KVPersistence, ctx context.Context) error { return p.DeleteWorkflow(ctx, id) }},
+	}
+	store, err := kv.NewKVStore(kv.Config{DataDir: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := store.Close(); err != nil {
+			t.Error(err)
+		}
+	})
+	legacy := NewKVPersistence(scanTestBackend{kvBackend: store})
+	if err := legacy.SaveWorkflow(t.Context(), workflow); err != nil {
+		t.Fatal(err)
+	}
+	for _, op := range operations {
+		t.Run(op.name, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(t.Context())
+			cancel()
+			unexpected := errors.New("legacy backend called with canceled context")
+			untouched := NewKVPersistence(scanTestBackend{
+				write:  func(string, []byte, time.Duration) error { return unexpected },
+				read:   func(string) ([]byte, error) { return nil, unexpected },
+				remove: func(string) error { return unexpected },
+			})
+			if err := op.call(untouched, ctx); !errors.Is(err, context.Canceled) {
+				t.Errorf("pre-canceled operation error = %v", err)
+			}
+			synctest.Test(t, func(t *testing.T) {
+				ctx, cancel := context.WithCancel(t.Context())
+				defer cancel()
+				called := false
+				p := NewKVPersistence(contextTestBackend{access: func(got context.Context, key string, ttl time.Duration) error {
+					called = true
+					if got != ctx || key != prefixWorkflow+id || ttl != 0 {
+						t.Errorf("backend context, key, ttl = %v, %q, %v", got, key, ttl)
+						return unexpected
+					}
+					<-got.Done()
+					return got.Err()
+				}})
+				done := make(chan error, 1)
+				go func() { done <- op.call(p, ctx) }()
+				synctest.Wait()
+				if !called {
+					t.Error("context-aware backend was not called")
+				}
+				cancel()
+				if err := <-done; !errors.Is(err, context.Canceled) {
+					t.Errorf("in-flight cancellation error = %v", err)
+				}
+			})
+		})
+	}
+	if got, err := legacy.LoadWorkflow(t.Context(), id); err != nil || got.ID != id {
+		t.Fatalf("legacy round trip = %v, %v", got, err)
+	}
+	if err := legacy.DeleteWorkflow(t.Context(), id); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := legacy.LoadWorkflow(t.Context(), id); err == nil {
+		t.Error("legacy delete left the record readable")
+	}
+}
+
+func TestSaveStepResultHonorsContext(t *testing.T) {
+	const executionID = "execution"
+	const step = 2
+	result := &orchestration.AgentResult{}
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	writes := 0
+	legacy := NewKVPersistence(scanTestBackend{write: func(key string, _ []byte, ttl time.Duration) error {
+		writes++
+		if key != prefixStepResult+executionID+":2" || ttl != 24*time.Hour {
+			t.Errorf("legacy key and TTL = %q, %v", key, ttl)
+		}
+		return nil
+	}})
+	if err := legacy.SaveStepResult(ctx, executionID, step, result); !errors.Is(err, context.Canceled) || writes != 0 {
+		t.Fatalf("canceled write error = %v, writes = %d", err, writes)
+	}
+	if err := legacy.SaveStepResult(t.Context(), executionID, step, result); err != nil || writes != 1 {
+		t.Fatalf("legacy write error = %v, writes = %d", err, writes)
+	}
+	p := NewKVPersistence(contextTestBackend{access: func(got context.Context, key string, ttl time.Duration) error {
+		if got != t.Context() || key != prefixStepResult+executionID+":2" || ttl != 24*time.Hour {
+			t.Errorf("backend context, key, TTL = %v, %q, %v", got, key, ttl)
+		}
+		writes++
+		return nil
+	}})
+	if err := p.SaveStepResult(t.Context(), executionID, step, result); err != nil || writes != 2 {
+		t.Fatalf("context-aware write error = %v, total writes = %d", err, writes)
+	}
+}
+
+func TestLoadWorkflowRejectsMismatchedRecord(t *testing.T) {
+	const id = "requested"
+	p := NewKVPersistence(scanTestBackend{read: func(key string) ([]byte, error) {
+		if key != prefixWorkflow+id {
+			t.Errorf("unexpected key %q", key)
+		}
+		return []byte(`{"id":"another","name":"Other workflow"}`), nil
+	}})
+	if wf, err := p.LoadWorkflow(t.Context(), id); wf != nil || err == nil || !strings.Contains(err.Error(), id) {
+		t.Fatalf("LoadWorkflow = %v, %v; want a mismatch error for %q", wf, err, id)
+	}
+}

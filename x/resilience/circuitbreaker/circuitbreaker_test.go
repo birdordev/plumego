@@ -1166,3 +1166,45 @@ func TestUnsupportedFlushKeepsFinalCircuitStatus(t *testing.T) {
 		}
 	}
 }
+
+type legacyFlushRecorder struct {
+	*httptest.ResponseRecorder
+	headers []int
+	flushes int
+}
+
+func (w *legacyFlushRecorder) WriteHeader(status int) {
+	w.headers = append(w.headers, status)
+	w.ResponseRecorder.WriteHeader(status)
+}
+
+func (w *legacyFlushRecorder) Flush() {
+	w.flushes++
+	if len(w.headers) == 0 {
+		w.WriteHeader(http.StatusOK)
+	}
+	w.ResponseRecorder.Flush()
+}
+
+func TestMiddlewareLegacyFlushCommitsResponse(t *testing.T) {
+	calls := 0
+	handler := Middleware(Config{MinRequests: 1})(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls++
+		flusher, ok := w.(http.Flusher)
+		if !ok {
+			t.Fatal("middleware writer does not expose http.Flusher")
+		}
+		flusher.Flush()
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	for range 2 {
+		w := &legacyFlushRecorder{ResponseRecorder: httptest.NewRecorder()}
+		handler.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/", nil))
+		if w.Code != http.StatusOK || len(w.headers) != 1 || w.headers[0] != http.StatusOK || w.flushes != 1 {
+			t.Errorf("status = %d, submitted headers = %v, flushes = %d", w.Code, w.headers, w.flushes)
+		}
+	}
+	if calls != 2 {
+		t.Errorf("downstream calls = %d; want 2", calls)
+	}
+}

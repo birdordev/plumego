@@ -3024,3 +3024,108 @@ func TestContinuePolicyWaitsForOtherDependencies(t *testing.T) {
 		})
 	}
 }
+
+func TestResumeWaitsForDependencies(t *testing.T) {
+	for _, method := range []string{"single", "group", "tags"} {
+		t.Run(method, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				s := New(WithWorkers(2))
+				release := make(chan struct{})
+				runs := 0
+				if _, err := s.Schedule("parent", time.Now(), func(context.Context) error {
+					<-release
+					return nil
+				}); err != nil {
+					t.Fatal(err)
+				}
+				if _, err := s.Schedule("child", time.Now(), func(context.Context) error {
+					runs++
+					return nil
+				}, Paused(), WithGroup("group"), WithTags("tag"), WithDependsOn(DependencyFailureCancel, "parent")); err != nil {
+					t.Fatal(err)
+				}
+				s.Start()
+				synctest.Wait()
+				switch method {
+				case "single":
+					if !s.Resume("child") {
+						t.Error("Resume rejected paused child")
+					}
+				case "group":
+					if n := s.ResumeByGroup("group"); n != 1 {
+						t.Errorf("ResumeByGroup = %d", n)
+					}
+				case "tags":
+					if n := s.ResumeByTags("tag"); n != 1 {
+						t.Errorf("ResumeByTags = %d", n)
+					}
+				}
+				synctest.Wait()
+				if runs != 0 {
+					t.Errorf("child ran %d times before dependency completed", runs)
+				}
+				close(release)
+				synctest.Wait()
+				if runs != 1 {
+					t.Errorf("total runs = %d, want 1", runs)
+				}
+				if err := s.Stop(t.Context()); err != nil {
+					t.Error(err)
+				}
+			})
+		})
+	}
+}
+
+func TestRegistrationUsesCompletedDependencies(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		s := New(WithWorkers(2))
+		release := make(chan struct{})
+		if _, err := s.Schedule("completed", time.Now(), func(context.Context) error { return nil }); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := s.Schedule("pending", time.Now(), func(context.Context) error {
+			<-release
+			return nil
+		}); err != nil {
+			t.Fatal(err)
+		}
+		s.Start()
+		defer func() {
+			if err := s.Stop(t.Context()); err != nil {
+				t.Error(err)
+			}
+		}()
+		releaseParent := sync.OnceFunc(func() { close(release) })
+		defer releaseParent()
+		synctest.Wait()
+		if status, ok := s.Status("completed"); !ok || status.State != JobStateCompleted {
+			t.Fatalf("parent status = %+v, present = %t", status, ok)
+		}
+		immediate, waiting, paused := 0, 0, 0
+		register := func(id JobID, runs *int, opts ...JobOption) {
+			t.Helper()
+			if _, err := s.Schedule(id, time.Now(), func(context.Context) error {
+				(*runs)++
+				return nil
+			}, opts...); err != nil {
+				t.Error(err)
+			}
+		}
+		register("immediate", &immediate, WithDependsOn(DependencyFailureCancel, "completed"))
+		register("waiting", &waiting, WithDependsOn(DependencyFailureCancel, "completed", "pending"))
+		register("paused", &paused, Paused(), WithDependsOn(DependencyFailureCancel, "completed"))
+		synctest.Wait()
+		if immediate != 1 || waiting != 0 || paused != 0 {
+			t.Errorf("initial runs (immediate, waiting, paused) = %d, %d, %d", immediate, waiting, paused)
+		}
+		releaseParent()
+		if !s.Resume("paused") {
+			t.Error("Resume rejected paused job")
+		}
+		synctest.Wait()
+		if immediate != 1 || waiting != 1 || paused != 1 {
+			t.Errorf("final runs (immediate, waiting, paused) = %d, %d, %d", immediate, waiting, paused)
+		}
+	})
+}

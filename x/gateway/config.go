@@ -99,7 +99,7 @@ type Config struct {
 
 // Validate validates the proxy configuration
 func (c *Config) Validate() error {
-	if c.RetryCount < 0 || c.Timeout < 0 {
+	if c.RetryCount < 0 || c.Timeout < 0 || (c.HealthCheck != nil && c.HealthCheck.Interval < 0) {
 		return ErrInvalidConfig
 	}
 
@@ -200,7 +200,7 @@ func defaultErrorHandler(w http.ResponseWriter, r *http.Request, err error) {
 // HealthCheckConfig configures active health checking
 type HealthCheckConfig struct {
 	// Interval is the time between health checks
-	// Default: 10 seconds
+	// Zero uses 10 seconds. Proxy configuration rejects negative intervals.
 	Interval time.Duration
 
 	// Timeout is the health check timeout
@@ -227,7 +227,7 @@ type HealthCheckConfig struct {
 func (h *HealthCheckConfig) WithDefaults() *HealthCheckConfig {
 	config := *h
 
-	if config.Interval == 0 {
+	if config.Interval <= 0 {
 		config.Interval = 10 * time.Second
 	}
 

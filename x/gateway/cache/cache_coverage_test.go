@@ -493,3 +493,38 @@ func TestMemoryStoreResizeNonPositive(t *testing.T) {
 		}
 	}
 }
+
+func TestMemoryStoreCleanupPreservesAccounting(t *testing.T) {
+	store := NewMemoryStore(3)
+	now := time.Now()
+	expired, valid := now.Add(-time.Hour), now.Add(time.Hour)
+	put := func(key, body string, expires time.Time) {
+		store.Set(key, &CachedResponse{Body: []byte(body), Size: int64(len(body)), ExpiresAt: expires}, 0)
+	}
+	put("expired-1", "old", expired)
+	put("keep", "valid", valid)
+	put("expired-2", "older", expired)
+
+	if removed := store.CleanupExpired(); removed != 2 {
+		t.Fatalf("CleanupExpired = %d, want 2", removed)
+	}
+	if stats := store.Stats(); stats.Items != 1 || stats.Size != 5 || stats.Evictions != 0 {
+		t.Errorf("stats after cleanup = %+v", stats)
+	}
+	if got, ok := store.Get("keep"); !ok || string(got.Body) != "valid" {
+		t.Fatalf("surviving response = %+v, %t", got, ok)
+	}
+	if _, ok := store.Get("expired-1"); ok {
+		t.Error("expired response is still present")
+	}
+	put("oldest", "one", valid)
+	put("newer", "two", valid)
+	store.Get("keep")
+	put("newest", "three", valid)
+	if _, ok := store.Get("oldest"); ok {
+		t.Error("oldest remaining entry was not evicted")
+	}
+	if stats := store.Stats(); stats.Items != 3 || stats.Size != 13 || stats.Evictions != 1 {
+		t.Errorf("stats after eviction = %+v", stats)
+	}
+}
