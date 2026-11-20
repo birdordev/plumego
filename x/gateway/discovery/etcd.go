@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 )
@@ -54,7 +55,8 @@ type EtcdConfig struct {
 // NewEtcd creates an etcd discovery client.
 //
 // endpoints is a list of etcd endpoint URLs, e.g. ["http://etcd1:2379", "http://etcd2:2379"].
-// The client tries each endpoint in order and uses the first that succeeds.
+// The client copies the list and tries each endpoint in order, using the
+// first that succeeds.
 func NewEtcd(endpoints []string, config EtcdConfig) (*Etcd, error) {
 	if len(endpoints) == 0 {
 		return nil, fmt.Errorf("%w: at least one endpoint required", ErrInvalidConfig)
@@ -70,7 +72,7 @@ func NewEtcd(endpoints []string, config EtcdConfig) (*Etcd, error) {
 	}
 
 	return &Etcd{
-		endpoints: endpoints,
+		endpoints: slices.Clone(endpoints),
 		config:    config,
 		client:    &http.Client{Timeout: config.Timeout},
 	}, nil

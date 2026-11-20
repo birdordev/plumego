@@ -92,9 +92,14 @@ func (s *CacheStats) HitRate() float64 {
 	return float64(s.Hits) / float64(total)
 }
 
+type memoryCacheRecord struct {
+	CacheEntry
+	model string
+}
+
 // MemoryCache implements in-memory LLM response caching.
 type MemoryCache struct {
-	entries map[string]*CacheEntry
+	entries map[string]*memoryCacheRecord
 	stats   CacheStats
 	ttl     time.Duration
 	maxSize int
@@ -111,7 +116,7 @@ func NewMemoryCache(ttl time.Duration, maxSize int) *MemoryCache {
 	}
 
 	return &MemoryCache{
-		entries: make(map[string]*CacheEntry),
+		entries: make(map[string]*memoryCacheRecord),
 		ttl:     ttl,
 		maxSize: maxSize,
 	}
@@ -138,7 +143,7 @@ func (c *MemoryCache) Get(ctx context.Context, key *CacheKey) (*CacheEntry, erro
 	entry.HitCount++
 
 	// Return copy to avoid external mutation
-	copied := *entry
+	copied := entry.CacheEntry
 	copied.Response = copyResponse(entry.Response)
 
 	return &copied, nil
@@ -161,7 +166,7 @@ func (c *MemoryCache) Set(ctx context.Context, key *CacheKey, entry *CacheEntry)
 		copied.ExpiresAt = time.Now().Add(c.ttl)
 	}
 	copied.Response = copyResponse(entry.Response)
-	c.entries[key.Hash] = &copied
+	c.entries[key.Hash] = &memoryCacheRecord{CacheEntry: copied, model: key.Model}
 
 	// Update stats
 	c.stats.TotalTokens += int64(entry.Usage.TotalTokens)
@@ -183,7 +188,7 @@ func (c *MemoryCache) Clear(ctx context.Context) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	c.entries = make(map[string]*CacheEntry)
+	c.entries = make(map[string]*memoryCacheRecord)
 	c.stats = CacheStats{}
 	return nil
 }
@@ -245,18 +250,9 @@ func BuildCacheKey(req *provider.CompletionRequest) *CacheKey {
 	return key
 }
 
-// NormalizePrompt normalizes a prompt for caching.
+// NormalizePrompt collapses whitespace to single spaces and preserves case.
 func NormalizePrompt(prompt string) string {
-	// Trim whitespace
-	normalized := strings.TrimSpace(prompt)
-
-	// Remove multiple spaces
-	normalized = strings.Join(strings.Fields(normalized), " ")
-
-	// Lowercase for better cache hits (optional - can be configurable)
-	// normalized = strings.ToLower(normalized)
-
-	return normalized
+	return strings.Join(strings.Fields(prompt), " ")
 }
 
 // computeHash computes a cache key hash.
@@ -363,18 +359,18 @@ func (p *CachingProvider) CountTokens(text string) (int, error) {
 	return p.provider.CountTokens(text)
 }
 
-// InvalidateByModel invalidates all cache entries for a model.
+// InvalidateByModel removes entries whose key model exactly matches model
+// and returns the number removed. An empty model matches empty key models.
 func (c *MemoryCache) InvalidateByModel(model string) int {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
 	count := 0
 	for hash, entry := range c.entries {
-		// Check if entry is for this model (stored in hash)
-		// This is approximate - in production, store model in entry
-		_ = entry
-		delete(c.entries, hash)
-		count++
+		if entry.model == model {
+			delete(c.entries, hash)
+			count++
+		}
 	}
 
 	return count

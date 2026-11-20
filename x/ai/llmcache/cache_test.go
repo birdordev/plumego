@@ -392,6 +392,16 @@ func TestNormalizePrompt(t *testing.T) {
 			input:    "hello\t\tworld",
 			expected: "hello world",
 		},
+		{
+			name:     "unicode whitespace and case",
+			input:    "\u00a0Hello\u2003世界\u3000",
+			expected: "Hello 世界",
+		},
+		{
+			name:     "only whitespace",
+			input:    "\t\n\u2003",
+			expected: "",
+		},
 	}
 
 	for _, tt := range tests {
@@ -491,4 +501,37 @@ func (m *mockProvider) GetModel(ctx context.Context, modelID string) (*provider.
 
 func (m *mockProvider) CountTokens(text string) (int, error) {
 	return len(text) / 4, nil
+}
+
+func TestMemoryCacheInvalidateByModelPreservesOtherModels(t *testing.T) {
+	cache := NewMemoryCache(time.Hour, 5)
+	target := &CacheKey{Model: "target", Hash: "target"}
+	other := &CacheKey{Model: "other", Hash: "other"}
+	empty := &CacheKey{Hash: "empty"}
+	replacement := &CacheKey{Model: "other", Hash: "shared"}
+
+	keys := []*CacheKey{target, other, empty, {Model: "target", Hash: "shared"}, replacement}
+	for _, key := range keys {
+		if err := cache.Set(t.Context(), key, &CacheEntry{}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if got := cache.InvalidateByModel(target.Model); got != 1 {
+		t.Errorf("removed %d target entries, want 1", got)
+	}
+	if _, err := cache.Get(t.Context(), target); err == nil {
+		t.Error("target entry remained in cache")
+	}
+	if got := cache.InvalidateByModel("unknown"); got != 0 {
+		t.Errorf("removed %d entries for an unknown model, want 0", got)
+	}
+	if got := cache.InvalidateByModel(""); got != 1 {
+		t.Errorf("removed %d entries for the empty model, want 1", got)
+	}
+	for _, key := range []*CacheKey{other, replacement} {
+		if _, err := cache.Get(t.Context(), key); err != nil {
+			t.Errorf("lookup for %q: %v", key.Hash, err)
+		}
+	}
 }

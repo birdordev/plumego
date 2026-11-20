@@ -3,6 +3,7 @@ package healthhttp
 import (
 	"context"
 	"errors"
+	"slices"
 	"sync"
 	"time"
 
@@ -533,17 +534,24 @@ func (t *Tracker) GenerateReport() HealthReport {
 	}
 }
 
-// GetHealthHistory returns tracked aggregate health history.
+func cloneHealthHistoryEntry(entry HealthHistoryEntry) HealthHistoryEntry {
+	entry.Components = slices.Clone(entry.Components)
+	return entry
+}
+
+// GetHealthHistory returns an independent snapshot of aggregate health history.
 func (t *Tracker) GetHealthHistory() []HealthHistoryEntry {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 
 	result := make([]HealthHistoryEntry, len(t.history))
-	copy(result, t.history)
+	for i, entry := range t.history {
+		result[i] = cloneHealthHistoryEntry(entry)
+	}
 	return result
 }
 
-// QueryHealthHistory returns filtered aggregate health history.
+// QueryHealthHistory returns an independent snapshot of the filtered history.
 func (t *Tracker) QueryHealthHistory(query HealthHistoryQuery) HealthHistoryQueryResult {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
@@ -591,7 +599,11 @@ func (t *Tracker) QueryHealthHistory(query HealthHistoryQuery) HealthHistoryQuer
 
 	entries := make([]HealthHistoryEntry, 0)
 	if offset < len(filtered) {
-		entries = filtered[offset:end]
+		// Keep entries outside the page inaccessible to the caller.
+		entries = filtered[offset:end:end]
+		for i, entry := range entries {
+			entries[i] = cloneHealthHistoryEntry(entry)
+		}
 	}
 
 	return HealthHistoryQueryResult{
@@ -603,7 +615,8 @@ func (t *Tracker) QueryHealthHistory(query HealthHistoryQuery) HealthHistoryQuer
 	}
 }
 
-// GetHealthHistoryStats returns statistics about tracked history.
+// GetHealthHistoryStats returns statistics with independent snapshots of the
+// first and last tracked entries.
 func (t *Tracker) GetHealthHistoryStats() HistoryStats {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
@@ -619,8 +632,8 @@ func (t *Tracker) GetHealthHistoryStats() HistoryStats {
 		stateCounts[string(entry.State)]++
 	}
 
-	oldest := t.history[0]
-	newest := t.history[len(t.history)-1]
+	oldest := cloneHealthHistoryEntry(t.history[0])
+	newest := cloneHealthHistoryEntry(t.history[len(t.history)-1])
 
 	return HistoryStats{
 		TotalEntries:   len(t.history),

@@ -252,3 +252,35 @@ func TestStringSlicesEqual(t *testing.T) {
 		t.Error("different-length slices reported as equal")
 	}
 }
+
+func TestEtcdOwnsEndpointOrder(t *testing.T) {
+	first := Instance{ID: "first", Name: "sample", Address: "127.0.0.1", Port: 10101, Healthy: true}
+	second := Instance{ID: "second", Name: "sample", Address: "127.0.0.1", Port: 20202, Healthy: true}
+	serve := func(instance Instance) *httptest.Server {
+		body := etcdRangeBody([]Instance{instance})
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			_, _ = w.Write(body)
+		}))
+		t.Cleanup(server.Close)
+		return server
+	}
+	primary, fallback := serve(first), serve(second)
+
+	endpoints := []string{primary.URL, fallback.URL}
+	discovery, err := NewEtcd(endpoints, EtcdConfig{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	endpoints[0], endpoints[1] = endpoints[1], endpoints[0]
+
+	assertResolution := func(want string) {
+		t.Helper()
+		got, err := discovery.Resolve(t.Context(), first.Name)
+		if err != nil || len(got) != 1 || got[0] != want {
+			t.Fatalf("Resolve = %v, %v, want [%s]", got, err, want)
+		}
+	}
+	assertResolution(first.URL())
+	primary.Close()
+	assertResolution(second.URL())
+}

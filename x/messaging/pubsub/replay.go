@@ -230,14 +230,18 @@ func (rs *ReplayStore) startCapturing() error {
 	return nil
 }
 
-// Replay replays messages matching the query
+// Replay publishes messages matching the query and returns the number published.
+// It continues after a publish failure and reports the failure count in an error
+// that wraps the first publish error. Retrying the same query can publish
+// successful messages again.
 func (rs *ReplayStore) Replay(query ReplayQuery) (int, error) {
 	messages, err := rs.Query(query)
 	if err != nil {
 		return 0, err
 	}
 
-	replayed := 0
+	replayed, failed := 0, 0
+	var firstPublishErr error
 	for _, msg := range messages {
 		// Reconstruct original message
 		original := Message{
@@ -247,21 +251,28 @@ func (rs *ReplayStore) Replay(query ReplayQuery) (int, error) {
 			Time:  msg.Timestamp,
 		}
 
-		// Publish to topic
-		if err := rs.ps.Publish(msg.Topic, original); err == nil {
-			// Update replay metadata
-			rs.messagesMu.Lock()
-			if stored, ok := rs.messages[msg.ID]; ok {
-				stored.ReplayCount++
-				stored.LastReplay = time.Now()
+		if err := rs.ps.Publish(msg.Topic, original); err != nil {
+			if firstPublishErr == nil {
+				firstPublishErr = err
 			}
-			rs.messagesMu.Unlock()
-
-			replayed++
-			rs.stats.ReplayedMessages.Add(1)
+			failed++
+			continue
 		}
+
+		rs.messagesMu.Lock()
+		if stored, ok := rs.messages[msg.ID]; ok {
+			stored.ReplayCount++
+			stored.LastReplay = time.Now()
+		}
+		rs.messagesMu.Unlock()
+
+		replayed++
+		rs.stats.ReplayedMessages.Add(1)
 	}
 
+	if firstPublishErr != nil {
+		return replayed, fmt.Errorf("replay: failed to publish %d of %d messages: %w", failed, len(messages), firstPublishErr)
+	}
 	return replayed, nil
 }
 

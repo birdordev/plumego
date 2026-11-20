@@ -187,3 +187,52 @@ func newHistoryManager(t *testing.T) (*Tracker, *mutableChecker) {
 
 	return manager, checker
 }
+
+func TestHealthHistoryComponentsAreDetached(t *testing.T) {
+	tracker, checker := newHistoryManager(t)
+	tracker.CheckAllComponents(t.Context())
+
+	snapshot := tracker.GetHealthHistory()
+	page := tracker.QueryHealthHistory(HealthHistoryQuery{Component: checker.name, Limit: 1})
+	stats := tracker.GetHealthHistoryStats()
+	if len(snapshot) != 1 || page.Total != 1 || len(page.Entries) != 1 || stats.OldestEntry == nil || stats.NewestEntry == nil {
+		t.Fatalf("expected one history record, got history %v, page %+v, stats %+v", snapshot, page, stats)
+	}
+
+	for name, components := range map[string][]string{
+		"history": snapshot[0].Components,
+		"query":   page.Entries[0].Components,
+		"oldest":  stats.OldestEntry.Components,
+		"newest":  stats.NewestEntry.Components,
+	} {
+		if len(components) != 1 || components[0] != checker.name {
+			t.Fatalf("%s components = %v, want [%s]", name, components, checker.name)
+		}
+		components[0] = "changed"
+		if got := tracker.GetHealthHistory()[0].Components[0]; got != checker.name {
+			t.Fatalf("changing %s altered the stored component to %q", name, got)
+		}
+	}
+}
+
+func TestHealthHistoryPreservesEmptyComponentsAndPagination(t *testing.T) {
+	tracker := NewTracker(nil)
+	tracker.history = []HealthHistoryEntry{
+		{Message: "first"},
+		{Message: "second", Components: []string{}},
+	}
+
+	snapshot := tracker.GetHealthHistory()
+	if snapshot[0].Components != nil || snapshot[1].Components == nil || len(snapshot[1].Components) != 0 {
+		t.Fatalf("snapshot changed nil or empty components: %+v", snapshot)
+	}
+	firstPage := tracker.QueryHealthHistory(HealthHistoryQuery{Limit: 1})
+	if len(firstPage.Entries) != 1 || cap(firstPage.Entries) != 1 || !firstPage.HasMore {
+		t.Fatalf("first page = %+v, capacity = %d", firstPage, cap(firstPage.Entries))
+	}
+	page := tracker.QueryHealthHistory(HealthHistoryQuery{Offset: 1, Limit: 1})
+	if page.Total != 2 || page.Offset != 1 || page.HasMore || len(page.Entries) != 1 ||
+		page.Entries[0].Message != "second" || page.Entries[0].Components == nil || len(page.Entries[0].Components) != 0 {
+		t.Fatalf("unexpected second page: %+v", page)
+	}
+}

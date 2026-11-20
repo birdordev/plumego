@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -1041,5 +1042,64 @@ func TestReplayCopiesPayloadWithoutHoldingStoreLocks(t *testing.T) {
 	}
 	if calls != 3 {
 		t.Fatalf("clone callbacks = %d, want 3", calls)
+	}
+}
+
+func TestReplayReportsPublishFailures(t *testing.T) {
+	for _, tt := range []struct {
+		name      string
+		closed    bool
+		wantCount int
+		wantCode  ErrorCode
+		wantText  string
+	}{
+		{"closed broker", true, 0, ErrCodeClosed, "2 of 2"},
+		{"partial success", false, 1, ErrCodeInvalidTopic, "1 of 2"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			broker := New()
+			if tt.closed {
+				if err := broker.Close(); err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				defer broker.Close()
+			}
+			// Seed replay history directly to exercise an invalid stored topic.
+			store := &ReplayStore{
+				ps:         broker,
+				config:     ReplayConfig{MaxMessages: 2},
+				messages:   make(map[string]*ReplayMessage),
+				topicIndex: make(map[string][]string),
+			}
+			at := time.Now()
+			store.storeMessage(Message{ID: "invalid", Time: at})
+			store.storeMessage(Message{ID: "valid", Topic: "sample", Time: at.Add(time.Second)})
+
+			if count, err := store.Replay(ReplayQuery{MessageIDs: []string{"missing"}}); count != 0 || err != nil {
+				t.Fatalf("empty Replay = %d, %v, want 0, nil", count, err)
+			}
+			if count, err := store.Replay(ReplayQuery{StartTime: at, EndTime: at.Add(-time.Second)}); count != 0 || !errors.Is(err, ErrInvalidTimeRange) {
+				t.Fatalf("invalid Replay query = %d, %v", count, err)
+			}
+
+			count, err := store.Replay(ReplayQuery{SortBy: "timestamp", Ascending: true})
+			var publishErr *Error
+			if count != tt.wantCount || !errors.As(err, &publishErr) || publishErr.Code != tt.wantCode || !strings.Contains(err.Error(), tt.wantText) {
+				t.Fatalf("Replay = %d, %v, want %d and error code %s with %q", count, err, tt.wantCount, tt.wantCode, tt.wantText)
+			}
+			if got := store.Stats().ReplayedMessages.Load(); got != uint64(tt.wantCount) {
+				t.Errorf("replay statistics = %d, want %d", got, tt.wantCount)
+			}
+			for id, want := range map[string]int{"invalid": 0, "valid": tt.wantCount} {
+				msg, err := store.GetByID(id)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if msg.ReplayCount != want || msg.LastReplay.IsZero() != (want == 0) {
+					t.Errorf("message %s replay metadata = (%d, %v), want count %d", id, msg.ReplayCount, msg.LastReplay, want)
+				}
+			}
+		})
 	}
 }

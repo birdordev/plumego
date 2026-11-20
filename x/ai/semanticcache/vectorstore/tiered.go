@@ -41,7 +41,8 @@ type TieredBackgroundError struct {
 	Err       error
 }
 
-// TieredStats holds statistics for tiered cache.
+// TieredStats holds statistics for the tiered cache. Search counters exclude
+// queries that fail in every configured tier.
 type TieredStats struct {
 	L1Hits       int64
 	L2Hits       int64
@@ -118,14 +119,25 @@ func (t *TieredBackend) AddBatch(ctx context.Context, entries []*Entry) error {
 	return nil
 }
 
-// Search searches across tiers with automatic promotion. Each
-// completed search updates its counters together.
+// Search searches across tiers with automatic promotion. If every configured
+// tier fails, Search returns their errors together and leaves the counters
+// unchanged. Otherwise a search without results counts as a miss.
 func (t *TieredBackend) Search(ctx context.Context, query []float64, topK int, threshold float64) ([]*SearchResult, error) {
 	var outcome TieredStats
+	var failures []error
+	succeeded := false
+	searchTier := func(name string, backend Backend) []*SearchResult {
+		results, err := backend.Search(ctx, query, topK, threshold)
+		if err != nil {
+			failures = append(failures, fmt.Errorf("%s search failed: %w", name, err))
+			return nil
+		}
+		succeeded = true
+		return results
+	}
 
 	// Try L1 first (fastest)
-	results, err := t.l1.Search(ctx, query, topK, threshold)
-	if err == nil && len(results) > 0 {
+	if results := searchTier("L1", t.l1); len(results) > 0 {
 		outcome.L1Hits++
 		t.recordSearch(outcome)
 		return results, nil
@@ -133,8 +145,7 @@ func (t *TieredBackend) Search(ctx context.Context, query []float64, topK int, t
 
 	// Try L2
 	if t.l2 != nil {
-		results, err = t.l2.Search(ctx, query, topK, threshold)
-		if err == nil && len(results) > 0 {
+		if results := searchTier("L2", t.l2); len(results) > 0 {
 			outcome.L2Hits++
 
 			// Promote to L1
@@ -151,8 +162,7 @@ func (t *TieredBackend) Search(ctx context.Context, query []float64, topK int, t
 
 	// Try L3
 	if t.l3 != nil {
-		results, err = t.l3.Search(ctx, query, topK, threshold)
-		if err == nil && len(results) > 0 {
+		if results := searchTier("L3", t.l3); len(results) > 0 {
 			outcome.L3Hits++
 
 			// Promote to L2 and L1
@@ -168,6 +178,10 @@ func (t *TieredBackend) Search(ctx context.Context, query []float64, topK int, t
 			t.recordSearch(outcome)
 			return results, nil
 		}
+	}
+
+	if !succeeded {
+		return nil, errors.Join(failures...)
 	}
 
 	// Cache miss

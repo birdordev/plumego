@@ -12,6 +12,7 @@ type failingBackend struct {
 	name        string
 	addErr      error
 	addBatchErr error
+	searchErr   error
 }
 
 func (b *failingBackend) Add(context.Context, *Entry) error { return b.addErr }
@@ -19,7 +20,7 @@ func (b *failingBackend) Add(context.Context, *Entry) error { return b.addErr }
 func (b *failingBackend) AddBatch(context.Context, []*Entry) error { return b.addBatchErr }
 
 func (b *failingBackend) Search(context.Context, []float64, int, float64) ([]*SearchResult, error) {
-	return nil, nil
+	return nil, b.searchErr
 }
 
 func (b *failingBackend) Get(context.Context, string) (*Entry, error) {
@@ -340,5 +341,48 @@ func TestTieredStatsHandlesL1Failures(t *testing.T) {
 	hot.stats = hot.MemoryBackend.Stats
 	if stats, err := store.Stats(ctx); err != nil || stats.TotalEntries != 1 || stats.HitRate != 1 || stats.Dimensions != 1 {
 		t.Fatalf("Stats after recovery = %+v, %v", stats, err)
+	}
+}
+
+func TestTieredSearchReportsAllTierFailures(t *testing.T) {
+	l1Err := errors.New("hot backend failure")
+	l2Err := errors.New("intermediate backend failure")
+	store, err := NewTieredBackend(TieredConfig{
+		L1: &failingBackend{searchErr: l1Err},
+		L2: &failingBackend{searchErr: l2Err},
+		L3: &failingBackend{searchErr: context.Canceled},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	results, err := store.Search(t.Context(), []float64{1}, 1, 0)
+	if results != nil || !errors.Is(err, l1Err) || !errors.Is(err, l2Err) || !errors.Is(err, context.Canceled) {
+		t.Fatalf("Search = %v, %v, want all tier errors", results, err)
+	}
+	for _, tier := range []string{"L1", "L2", "L3"} {
+		if !strings.Contains(err.Error(), tier+" search failed") {
+			t.Errorf("Search error %q lacks context for %s", err, tier)
+		}
+	}
+	if stats := store.TieredStats(); *stats != (TieredStats{}) {
+		t.Errorf("failed search updated counters: %+v", stats)
+	}
+}
+
+func TestTieredSearchCountsSuccessfulEmptyTierAsMiss(t *testing.T) {
+	store, err := NewTieredBackend(TieredConfig{
+		L1: &failingBackend{searchErr: errors.New("hot backend failure")},
+		L3: NewMemoryBackend(MemoryConfig{}),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	results, err := store.Search(t.Context(), []float64{1}, 1, 0)
+	if err != nil || results == nil || len(results) != 0 {
+		t.Fatalf("Search = %v, %v, want successful empty result", results, err)
+	}
+	if stats := store.TieredStats(); *stats != (TieredStats{Misses: 1, TotalQueries: 1}) {
+		t.Errorf("miss counters = %+v", stats)
 	}
 }
