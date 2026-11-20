@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"testing"
 	"time"
 )
@@ -196,4 +197,33 @@ func TestKubernetes_Close(t *testing.T) {
 
 func TestKubernetes_ImplementsDiscovery(t *testing.T) {
 	var _ Discovery = (*Kubernetes)(nil)
+}
+
+func TestDiscoveryFormatsIPv6Backend(t *testing.T) {
+	want := []string{"http://[2001:db8::1]:8080", "http://192.0.2.1:8080", "http://example.test:8080"}
+	t.Run("consul", func(t *testing.T) {
+		s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			_, _ = w.Write([]byte("[{\"Service\":{\"Address\":\"2001:db8::1\",\"Port\":8080}},{\"Service\":{\"Address\":\"192.0.2.1\",\"Port\":8080}},{\"Service\":{\"Address\":\"example.test\",\"Port\":8080}}]"))
+		}))
+		defer s.Close()
+		c, err := NewConsul(s.Listener.Addr().String(), ConsulConfig{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, err := c.Resolve(t.Context(), "example")
+		if err != nil || !slices.Equal(got, want) {
+			t.Errorf("Resolve = %v, %v; want %v", got, err, want)
+		}
+	})
+	t.Run("kubernetes", func(t *testing.T) {
+		body := k8sEndpointFixture([]string{"2001:db8::1", "192.0.2.1", "example.test"}, 8080, "http")
+		k := newTestKubernetes(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			_, _ = w.Write(body)
+		}))
+		k.config.PortName = "http"
+		got, err := k.Resolve(t.Context(), "example")
+		if err != nil || !slices.Equal(got, want) {
+			t.Errorf("Resolve = %v, %v; want %v", got, err, want)
+		}
+	})
 }

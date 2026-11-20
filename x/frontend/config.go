@@ -169,6 +169,7 @@ func WithErrorPage(page string) Option {
 }
 
 // WithMIMETypes sets custom Content-Type mappings for file extensions.
+// Conflicting values for the same normalized extension are rejected.
 //
 // Extensions may omit the leading dot; it is added automatically, and extension
 // keys are lowercased. Empty values are ignored. Empty or malformed extension
@@ -301,6 +302,9 @@ func normalizeMIMETypes(raw map[string]string) (map[string]string, error) {
 		}
 		if !isSafeHeaderValue(mime) {
 			return nil, fmt.Errorf("frontend MIME type %q contains invalid value", normalizedExt)
+		}
+		if existing, ok := normalized[normalizedExt]; ok && existing != mime {
+			return nil, fmt.Errorf("frontend MIME type %q has conflicting values", normalizedExt)
 		}
 		normalized[normalizedExt] = mime
 	}

@@ -1,7 +1,10 @@
 package distributed
 
 import (
+	"encoding/json"
+	"errors"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -294,5 +297,45 @@ func TestKVPersistence_Close(t *testing.T) {
 	err := persistence.Close()
 	if err != nil {
 		t.Fatalf("Close failed: %v", err)
+	}
+}
+
+func TestKVPersistenceLoadWorkflowRejectsInvalidFields(t *testing.T) {
+	store, err := kv.NewKVStore(kv.Config{DataDir: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	p := NewKVPersistence(store)
+	for _, tt := range []struct{ name, raw string }{
+		{"wrong type", "{\"id\":12,\"name\":\"Example\"}"},
+		{"missing ID", "{\"name\":\"Example\"}"},
+		{"malformed JSON", "{"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			const id = "example"
+			if err := store.Set(prefixWorkflow+id, []byte(tt.raw), 0); err != nil {
+				t.Fatal(err)
+			}
+			wf, err := p.LoadWorkflow(t.Context(), id)
+			if wf != nil || err == nil || !strings.Contains(err.Error(), id) {
+				t.Fatalf("LoadWorkflow = %v, %v; want error with ID context", wf, err)
+			}
+			switch tt.name {
+			case "wrong type":
+				var decodeErr *json.UnmarshalTypeError
+				if !errors.As(err, &decodeErr) || decodeErr.Field != "id" {
+					t.Errorf("expected an ID field error, got %v", err)
+				}
+			case "malformed JSON":
+				var syntaxErr *json.SyntaxError
+				if !errors.As(err, &syntaxErr) {
+					t.Errorf("expected a JSON syntax error, got %v", err)
+				}
+			}
+		})
+	}
+	if wf, err := p.LoadWorkflow(t.Context(), "missing"); err == nil || wf != nil || errors.Unwrap(err) == nil {
+		t.Errorf("missing record = %v, %v; want wrapped storage error", wf, err)
 	}
 }

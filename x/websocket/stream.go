@@ -2,6 +2,7 @@ package websocket
 
 import (
 	"bytes"
+	"errors"
 	"io"
 	"sync"
 	"time"
@@ -134,13 +135,14 @@ func (sr *streamReader) Close() error {
 	resetStreamReader(sr)
 	sr.readMu.Unlock()
 
+	var closeErr error
 	if unfinished {
-		_ = parent.Close()
+		closeErr = parent.Close()
 	}
 	if sr.buf.Cap() <= maxPooledMessageBufferCap {
 		streamReaderPool.Put(sr)
 	}
-	return nil
+	return closeErr
 }
 
 func resetStreamReader(sr *streamReader) {
@@ -165,7 +167,8 @@ func resetStreamReader(sr *streamReader) {
 // through the reader. Read to EOF and then close the reader to consume the
 // complete message. Close can discard unread buffered data once the final
 // frame has arrived. If continuation frames are still pending, Close closes
-// the parent connection. Release the reader with Close and do not use it again.
+// the parent connection and reports any connection close error. Release the
+// reader with Close and do not use it again.
 func (c *Conn) ReadMessageReader() (byte, io.ReadCloser, error) {
 	if c.IsClosed() {
 		return 0, nil, ErrConnClosed
@@ -227,7 +230,9 @@ func (c *Conn) ReadMessage() (byte, []byte, error) {
 	buf := msgBufPool.Get().(*bytes.Buffer)
 	buf.Reset()
 	_, err = io.Copy(buf, stream)
-	_ = stream.Close()
+	if closeErr := stream.Close(); closeErr != nil {
+		err = errors.Join(err, closeErr)
+	}
 	if err != nil {
 		putMessageBuffer(buf)
 		return 0, nil, err

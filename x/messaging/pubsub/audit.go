@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"sync"
 	"sync/atomic"
@@ -45,7 +46,7 @@ type AuditConfig struct {
 	// AsyncMode writes audit logs asynchronously
 	AsyncMode bool
 
-	// BufferSize for async writes
+	// BufferSize for async writes. Zero uses an unbuffered queue; negative values are invalid in async mode.
 	BufferSize int
 
 	// IncludeMessageData includes full message data in audit logs
@@ -186,6 +187,7 @@ type AuditLogger struct {
 
 	// Async writing
 	asyncQueue chan *AuditEntry
+	asyncErr   error // Written by asyncWriter and read after wg.Wait.
 
 	// Statistics
 	stats AuditStats
@@ -201,6 +203,9 @@ type AuditLogger struct {
 func NewAuditLogger(config AuditConfig) (*AuditLogger, error) {
 	if !config.Enabled {
 		return nil, errors.New("audit logging is not enabled")
+	}
+	if config.AsyncMode && config.BufferSize < 0 {
+		return nil, fmt.Errorf("audit buffer size must be nonnegative: %d", config.BufferSize)
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -257,7 +262,9 @@ func (al *AuditLogger) openLogFile() error {
 	return nil
 }
 
-// Log records an audit entry
+// Log records an audit entry and copies ordinary containers in data within
+// the clone depth limit.
+// With asynchronous writing, success can mean an entry was queued. Close reports background write failures.
 func (al *AuditLogger) Log(operation AuditOperation, topic, actor, source string, data map[string]any, success bool, err error) error {
 	if al.closed.Load() {
 		return ErrAuditClosed
@@ -276,7 +283,7 @@ func (al *AuditLogger) Log(operation AuditOperation, topic, actor, source string
 		Topic:     topic,
 		Actor:     actor,
 		Source:    source,
-		Data:      data,
+		Data:      cloneAuditData(data),
 		Success:   success,
 	}
 
@@ -477,19 +484,36 @@ func (al *AuditLogger) asyncWriter() {
 	for {
 		select {
 		case entry := <-al.asyncQueue:
-			_ = al.writeToFile(entry)
+			al.writeAsync(entry)
 		case <-al.ctx.Done():
 			// Drain queue
 			for len(al.asyncQueue) > 0 {
 				entry := <-al.asyncQueue
-				_ = al.writeToFile(entry)
+				al.writeAsync(entry)
 			}
 			return
 		}
 	}
 }
 
-// Query searches audit logs with filters
+func (al *AuditLogger) writeAsync(entry *AuditEntry) {
+	if err := al.writeToFile(entry); err != nil && al.asyncErr == nil {
+		al.asyncErr = fmt.Errorf("write audit entry: %w", err)
+	}
+}
+
+// cloneAuditData uses the bounded reflection path for nested containers,
+// including data that cannot be encoded as JSON.
+func cloneAuditData(data map[string]any) map[string]any {
+	if data == nil {
+		return nil
+	}
+	cloned, _ := cloneValue(reflect.ValueOf(data), 0)
+	return cloned.Interface().(map[string]any)
+}
+
+// Query searches audit logs with filters and returns copies of ordinary data
+// containers within the clone depth limit.
 func (al *AuditLogger) Query(query AuditQuery) ([]*AuditEntry, error) {
 	if al.closed.Load() {
 		return nil, ErrAuditClosed
@@ -537,6 +561,9 @@ func (al *AuditLogger) Query(query AuditQuery) ([]*AuditEntry, error) {
 		results = results[:query.Limit]
 	}
 
+	for _, entry := range results {
+		entry.Data = cloneAuditData(entry.Data)
+	}
 	return results, nil
 }
 
@@ -649,7 +676,7 @@ func (al *AuditLogger) Stats() *AuditStats {
 	return stats
 }
 
-// Close stops the audit logger and flushes pending writes
+// Close drains queued writes and closes the log file. It returns the first\n// background write error and any file close error.
 func (al *AuditLogger) Close() error {
 	if !al.closed.CompareAndSwap(false, true) {
 		return ErrAuditClosed
@@ -658,12 +685,14 @@ func (al *AuditLogger) Close() error {
 	al.cancel()
 	al.wg.Wait()
 
-	// Close log file
+	var closeErr error
 	al.logFileMu.Lock()
 	if al.logFile != nil {
-		_ = al.logFile.Close()
+		if err := al.logFile.Close(); err != nil {
+			closeErr = fmt.Errorf("close audit log: %w", err)
+		}
 	}
 	al.logFileMu.Unlock()
 
-	return nil
+	return errors.Join(al.asyncErr, closeErr)
 }

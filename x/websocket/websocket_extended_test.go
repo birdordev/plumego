@@ -866,3 +866,31 @@ func TestConnWriteMessageBlockWithClose(t *testing.T) {
 	err := c.WriteMessage(OpcodeText, []byte("test"))
 	assertErrorContains(t, err, "closed")
 }
+
+func TestStreamReaderReturnsParentCloseError(t *testing.T) {
+	sentinel := errors.New("test close failure")
+	for _, complete := range []bool{false, true} {
+		left, right := net.Pipe()
+		raw := &shutdownTestConn{Conn: left, err: sentinel}
+		conn, err := NewConn(raw, 1, 0, 0)
+		if err != nil {
+			_ = left.Close()
+			_ = right.Close()
+			t.Fatal(err)
+		}
+		reader := &streamReader{parent: conn, done: complete}
+		err = reader.Close()
+		if complete {
+			if err != nil || raw.closeCalls != 0 || conn.IsClosed() {
+				t.Errorf("complete reader Close = %v, attempts = %d, closed = %t", err, raw.closeCalls, conn.IsClosed())
+			}
+		} else if !errors.Is(err, sentinel) || raw.closeCalls != 1 || !conn.IsClosed() {
+			t.Errorf("unfinished reader Close = %v, attempts = %d, closed = %t", err, raw.closeCalls, conn.IsClosed())
+		}
+		_ = conn.Close()
+		if raw.closeCalls != 1 {
+			t.Errorf("connection close attempts = %d", raw.closeCalls)
+		}
+		_ = right.Close()
+	}
+}

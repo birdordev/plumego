@@ -54,6 +54,7 @@ func (b *SQLBuilder) WithUpdateFunc(fn func(any) ([]any, error)) *SQLBuilder {
 }
 
 // BuildSelectQuery builds a SELECT query with pagination, sorting, and filtering.
+// Nil params are equivalent to an empty set of query options.
 func (b *SQLBuilder) BuildSelectQuery(params *QueryParams) (string, []any) {
 	var query strings.Builder
 	query.WriteString("SELECT ")
@@ -65,6 +66,9 @@ func (b *SQLBuilder) BuildSelectQuery(params *QueryParams) (string, []any) {
 	query.WriteString(" FROM ")
 	query.WriteString(b.table)
 
+	if params == nil {
+		return query.String(), nil
+	}
 	args := b.writeWhere(&query, params)
 
 	if len(params.Sort) > 0 {
@@ -92,7 +96,7 @@ func (b *SQLBuilder) BuildSelectQuery(params *QueryParams) (string, []any) {
 	return query.String(), args
 }
 
-// BuildCountQuery builds a COUNT query with filtering.
+// BuildCountQuery builds a COUNT query. Nil params select the unfiltered count.
 func (b *SQLBuilder) BuildCountQuery(params *QueryParams) (string, []any) {
 	var query strings.Builder
 	query.WriteString("SELECT COUNT(*) FROM ")
@@ -106,6 +110,9 @@ func (b *SQLBuilder) BuildCountQuery(params *QueryParams) (string, []any) {
 // writeWhere uses the same filtering rules for selection and counting.
 // Search applies only to configured columns.
 func (b *SQLBuilder) writeWhere(query *strings.Builder, params *QueryParams) []any {
+	if params == nil {
+		return nil
+	}
 	var conditions []string
 	var args []any
 

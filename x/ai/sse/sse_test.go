@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -393,5 +395,25 @@ func TestStream_SendDataMultilineWriteError(t *testing.T) {
 	}
 	if w.Flushed || w.Body.String() != "data: a\n" {
 		t.Errorf("body = %q, flushed = %v", w.Body.String(), w.Flushed)
+	}
+}
+
+func TestHandleRecognizesWrappedTermination(t *testing.T) {
+	request := httptest.NewRequest(http.MethodGet, "/", nil)
+	for _, end := range []error{context.Canceled, context.DeadlineExceeded, io.EOF} {
+		t.Run(end.Error(), func(t *testing.T) {
+			for _, err := range []error{end, fmt.Errorf("test handler: %w", end)} {
+				rec := httptest.NewRecorder()
+				Handle(func(*Stream) error { return err }).ServeHTTP(rec, request)
+				if rec.Body.Len() != 0 {
+					t.Errorf("handler error %v produced %q", err, rec.Body.String())
+				}
+			}
+		})
+	}
+	rec := httptest.NewRecorder()
+	Handle(func(*Stream) error { return errors.New("test business failure") }).ServeHTTP(rec, request)
+	if got := rec.Body.String(); got != "event: error\ndata: "+defaultErrorEventData+"\n\n" {
+		t.Errorf("unexpected error event: %q", got)
 	}
 }

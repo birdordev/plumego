@@ -1,6 +1,7 @@
 package dbinsights
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"testing"
@@ -205,5 +206,65 @@ func TestTruncateQuery(t *testing.T) {
 		if got != tt.want {
 			t.Errorf("truncateQuery(%q, %d) = %q, want %q", tt.query, tt.maxLen, got, tt.want)
 		}
+	}
+}
+
+func TestDetectorKeepsLimitForNonpositiveOption(t *testing.T) {
+	for _, size := range []int{0, -1} {
+		d := NewDetector(WithMaxRecords(1), WithMaxRecords(size))
+		for range 2 {
+			if !d.Check("exec", "test", "select 1", time.Second, nil) {
+				t.Fatalf("size %d: sample was not recorded", size)
+			}
+		}
+		if len(d.GetSlowQueries()) != 1 || d.GetTotalDetected() != 2 {
+			t.Errorf("size %d: records=%v detected=%d", size, d.GetSlowQueries(), d.GetTotalDetected())
+		}
+		d.Clear()
+		if len(d.GetSlowQueries()) != 0 || !d.Check("exec", "test", "select 1", time.Second, nil) {
+			t.Errorf("size %d: Clear displaced the configured limit", size)
+		}
+	}
+}
+
+func TestSlowQueryDBExecPreservesDriverFailure(t *testing.T) {
+	sentinel := errors.New("test driver failure")
+	for _, tt := range []struct {
+		name      string
+		driverErr error
+		canceled  bool
+		wantErr   error
+	}{
+		{name: "success"},
+		{name: "driver failure", driverErr: sentinel, wantErr: sentinel},
+		{name: "canceled context", canceled: true, wantErr: context.Canceled},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			db := newMockDB(func(mock *mockDB) { mock.execErr = tt.driverErr })
+			t.Cleanup(func() { _ = db.Close() })
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			if tt.canceled {
+				cancel()
+			}
+			slow := NewSlowQueryDB(NewInstrumentedDB(db, testmetrics.NewMockCollector(), "test"), "test", WithThreshold(0))
+			result, err := slow.ExecContext(ctx, "UPDATE example SET enabled = true")
+			if !errors.Is(err, tt.wantErr) {
+				t.Errorf("ExecContext = %v, want %v", err, tt.wantErr)
+			}
+			if tt.wantErr == nil {
+				if result == nil {
+					t.Fatal("successful ExecContext returned nil result")
+				}
+				if rows, err := result.RowsAffected(); rows != 1 || err != nil {
+					t.Errorf("RowsAffected = %d, %v", rows, err)
+				}
+			}
+			recorded := slow.GetDetector().GetSlowQueries()
+			if len(recorded) != 1 || recorded[0].Operation != "exec" || recorded[0].Driver != "test" ||
+				!errors.Is(recorded[0].Error, tt.wantErr) {
+				t.Errorf("recorded = %+v, want matching exec result", recorded)
+			}
+		})
 	}
 }

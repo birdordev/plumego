@@ -26,7 +26,7 @@ func NewRecoveryManager(
 	}
 }
 
-// RecoverStaleTasks scans for failed/stale tasks and retries them.
+// RecoverStaleTasks is reserved for stale-task scanning. It currently returns\n// zero without scanning or retrying tasks.
 func (rm *RecoveryManager) RecoverStaleTasks(ctx context.Context, staleThreshold time.Duration) (int, error) {
 	// This would require scanning the KV store for tasks that haven't been updated
 	// within the threshold. For now, return 0 as this requires key scanning support.
@@ -49,7 +49,7 @@ func (rm *RecoveryManager) RecoverFailedExecution(ctx context.Context, execution
 	return rm.engine.Resume(ctx, executionID)
 }
 
-// MonitorTimeouts monitors for task timeouts and handles them.
+// MonitorTimeouts waits for cancellation. It does not currently scan for or\n// handle timed-out executions.
 func (rm *RecoveryManager) MonitorTimeouts(ctx context.Context, interval time.Duration) error {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
@@ -67,6 +67,7 @@ func (rm *RecoveryManager) MonitorTimeouts(ctx context.Context, interval time.Du
 }
 
 // RetryWithPolicy retries an operation with exponential backoff.
+// Cancellation prevents the next attempt from starting.
 func RetryWithPolicy(
 	ctx context.Context,
 	policy *RetryPolicy,
@@ -81,6 +82,9 @@ func RetryWithPolicy(
 	defer timer.Stop()
 
 	for i := 0; i <= policy.MaxRetries; i++ {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		lastErr = operation()
 		if lastErr == nil {
 			return nil

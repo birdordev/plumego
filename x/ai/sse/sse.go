@@ -3,6 +3,7 @@ package sse
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -254,7 +255,8 @@ func (s *Stream) runKeepAlive(ticker *time.Ticker, stop <-chan struct{}) {
 // Handler wraps an SSE handler function.
 type Handler func(*Stream) error
 
-// Handle creates an http.HandlerFunc from an SSE handler.
+// Handle creates an http.HandlerFunc from an SSE handler. Cancellation,
+// deadline expiry and EOF can be wrapped and still end the stream quietly.
 func Handle(handler Handler) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// Create stream
@@ -271,7 +273,7 @@ func Handle(handler Handler) http.HandlerFunc {
 		// Call handler
 		if err := handler(stream); err != nil {
 			// If error is context cancellation, it's expected
-			if err != context.Canceled && err != context.DeadlineExceeded && err != io.EOF {
+			if !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) && !errors.Is(err, io.EOF) {
 				// Try to send error event
 				_ = stream.Send(&Event{
 					Event: "error",

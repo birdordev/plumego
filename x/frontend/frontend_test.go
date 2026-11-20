@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"testing/fstest"
 )
 
 // writeTestFile creates a file at dir/relPath with the given content,
@@ -157,5 +158,27 @@ func TestSPAFallbackHonorsSpecificHTMLRefusal(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestMIMEOverridesRejectNormalizedConflicts(t *testing.T) {
+	files := http.FS(fstest.MapFS{
+		"index.html": {Data: []byte("index")},
+		"app.demo":   {Data: []byte("example")},
+		"app.other":  {Data: []byte("other")},
+	})
+	if h, err := NewHandlerFS(files, WithMIMETypes(map[string]string{".Demo": "text/plain", "demo": "application/json"})); err == nil || h != nil {
+		t.Fatalf("conflicting options: handler=%v error=%v", h, err)
+	}
+	h, err := NewHandlerFS(files, WithMIMETypes(map[string]string{".Demo": "text/plain", "demo": "text/plain", "other": "application/json"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for path, want := range map[string]string{"/app.demo": "text/plain", "/app.other": "application/json"} {
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+		if got := rec.Header().Get("Content-Type"); rec.Code != http.StatusOK || got != want {
+			t.Errorf("%s status=%d Content-Type=%q, want %q", path, rec.Code, got, want)
+		}
 	}
 }

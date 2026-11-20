@@ -87,7 +87,7 @@ func (s *SequentialStep) Name() string {
 	return s.StepName
 }
 
-// ParallelStep executes multiple agents concurrently.
+// ParallelStep executes one or more agents concurrently.
 type ParallelStep struct {
 	StepName   string
 	Agents     []*Agent
@@ -97,6 +97,9 @@ type ParallelStep struct {
 
 // Execute implements Step.
 func (p *ParallelStep) Execute(ctx context.Context, wf *Workflow) (*AgentResult, error) {
+	if len(p.Agents) == 0 {
+		return nil, fmt.Errorf("parallel step requires at least one agent")
+	}
 	wf.mu.RLock()
 	inputs := p.InputFn(wf.State)
 	wf.mu.RUnlock()

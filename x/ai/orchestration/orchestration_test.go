@@ -477,3 +477,27 @@ func TestStepName(t *testing.T) {
 		})
 	}
 }
+
+func TestParallelStepRejectsEmptyAgents(t *testing.T) {
+	step := &ParallelStep{InputFn: func(map[string]any) []string {
+		t.Error("input callback ran for an invalid empty step")
+		return nil
+	}}
+	if got, err := step.Execute(t.Context(), NewWorkflow("id", "name", "")); got != nil || err == nil {
+		t.Fatalf("Execute = %v, %v; want an error", got, err)
+	}
+
+	step.Agents = []*Agent{{
+		ID: "agent", Name: "Agent", Model: "test-model", Provider: &mockProvider{response: "single result"},
+	}}
+	step.InputFn = func(map[string]any) []string { return []string{"single input"} }
+	step.OutputKeys = []string{"output"}
+	wf := NewWorkflow("id", "name", "")
+	result, err := step.Execute(t.Context(), wf)
+	if err != nil || result == nil || result.Output != "single result" {
+		t.Fatalf("one-agent Execute = %+v, %v", result, err)
+	}
+	if got, ok := wf.GetState("output"); !ok || got != "single result" {
+		t.Errorf("one-agent state output = %v, present = %t", got, ok)
+	}
+}

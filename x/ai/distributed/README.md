@@ -117,8 +117,12 @@ workflow.AddStep(parallelStep)
 
 ## Fault Tolerance
 
+`RecoverFailedExecution` resumes a specific failed execution. The
+`RecoverStaleTasks` placeholder returns zero without scanning or retrying tasks.
+`MonitorTimeouts` waits for context cancellation and performs no timeout checks.
+
 ```go
-// Auto-recovery
+// Create a recovery manager
 recovery := distributed.NewRecoveryManager(persistence, queue, engine)
 
 // Recover failed execution

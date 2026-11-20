@@ -381,3 +381,79 @@ func TestRepositoryFindAllPropagatesIterationFailure(t *testing.T) {
 		})
 	}
 }
+
+func TestSQLBuilderNilQueryParams(t *testing.T) {
+	builder := NewSQLBuilder("items", "id").WithColumns("id").WithScanFunc(func(rows *sql.Rows) (any, error) {
+		var id string
+		err := rows.Scan(&id)
+		return id, err
+	})
+	for _, build := range []func(*QueryParams) (string, []any){builder.BuildSelectQuery, builder.BuildCountQuery} {
+		got, gotArgs := build(nil)
+		want, wantArgs := build(&QueryParams{})
+		if got != want || len(gotArgs) != 0 || len(wantArgs) != 0 {
+			t.Errorf("nil query = %q %v; empty query = %q %v", got, gotArgs, want, wantArgs)
+		}
+	}
+	query, args := builder.BuildSelectQuery(&QueryParams{Filters: map[string]string{"id": "item"}, Limit: 2})
+	if !strings.Contains(query, "WHERE id = ?") || !strings.Contains(query, "LIMIT ?") || len(args) != 2 {
+		t.Errorf("nonempty query = %q %v", query, args)
+	}
+	rows := &repositoryListRows{columns: []string{"id"}, value: "item"}
+	db := sql.OpenDB(repositoryListConnector{rows: rows})
+	t.Cleanup(func() { _ = db.Close() })
+	repo := NewBaseRepository[string](db, builder)
+	items, count, err := repo.FindAll(t.Context(), nil)
+	if err != nil || count != 4 || !slices.Equal(items, []string{"item"}) {
+		t.Errorf("FindAll with nil params = %v, %d, %v", items, count, err)
+	}
+}
+
+type repositoryUpdateConnector struct {
+	driver.Connector
+	result driver.Result
+}
+
+func (c repositoryUpdateConnector) Connect(context.Context) (driver.Conn, error) {
+	return repositoryUpdateConn(c), nil
+}
+
+type repositoryUpdateConn repositoryUpdateConnector
+
+func (repositoryUpdateConn) Prepare(string) (driver.Stmt, error) { return nil, driver.ErrSkip }
+func (repositoryUpdateConn) Begin() (driver.Tx, error)           { return nil, driver.ErrSkip }
+func (repositoryUpdateConn) Close() error                        { return nil }
+func (c repositoryUpdateConn) ExecContext(context.Context, string, []driver.NamedValue) (driver.Result, error) {
+	return c.result, nil
+}
+
+type repositoryUpdateResult struct {
+	driver.Result
+	err error
+}
+
+func (r repositoryUpdateResult) RowsAffected() (int64, error) { return 0, r.err }
+
+func TestRepositoryUpdateClassifiesRowsAffected(t *testing.T) {
+	sentinel := errors.New("test rows affected failure")
+	for _, tt := range []struct {
+		name    string
+		result  driver.Result
+		wantErr error
+	}{
+		{"one row", driver.RowsAffected(1), nil},
+		{"zero rows", driver.RowsAffected(0), sql.ErrNoRows},
+		{"driver error", repositoryUpdateResult{err: sentinel}, sentinel},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			db := sql.OpenDB(repositoryUpdateConnector{result: tt.result})
+			t.Cleanup(func() { _ = db.Close() })
+			b := NewSQLBuilder("items", "id").WithColumns("id", "name").
+				WithUpdateFunc(func(data any) ([]any, error) { return []any{data.(*dbResourceTestItem).Name}, nil })
+			repo := NewBaseRepository[dbResourceTestItem](db, b)
+			if err := repo.Update(t.Context(), "item", &dbResourceTestItem{Name: "updated"}); !errors.Is(err, tt.wantErr) {
+				t.Errorf("Update = %v, want %v", err, tt.wantErr)
+			}
+		})
+	}
+}

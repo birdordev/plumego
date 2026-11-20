@@ -1037,3 +1037,114 @@ func TestConsulConfig_Defaults(t *testing.T) {
 		t.Error("default IncludeUnhealthy = true, want false")
 	}
 }
+
+func TestConsulCloseClosesActiveSubscriptions(t *testing.T) {
+	c, err := NewConsul("example.test", ConsulConfig{WaitTime: time.Hour})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = c.Close() })
+
+	subscribe := func(ctx context.Context) <-chan []string {
+		t.Helper()
+		ch, err := c.Watch(ctx, "example")
+		if err != nil {
+			t.Fatal(err)
+		}
+		return ch
+	}
+	assertClosed := func(ch <-chan []string) {
+		t.Helper()
+		select {
+		case _, ok := <-ch:
+			if ok {
+				t.Error("subscription remained open")
+			}
+		case <-time.After(2 * time.Second):
+			t.Error("subscription did not close")
+		}
+	}
+
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	first := subscribe(ctx)
+	second := subscribe(t.Context())
+	third := subscribe(t.Context())
+	cancel()
+	assertClosed(first)
+	select {
+	case <-second:
+		t.Fatal("canceling one subscriber affected another")
+	default:
+	}
+
+	c.mu.Lock()
+	watcher := c.watchers["example"]
+	c.mu.Unlock()
+	var wg sync.WaitGroup
+	wg.Go(func() {
+		for range 100 {
+			watcher.notify([]string{"http://example.test"})
+		}
+	})
+	if err := c.Close(); err != nil {
+		t.Fatal(err)
+	}
+	wg.Wait()
+	for _, ch := range []<-chan []string{second, third} {
+		select {
+		case _, ok := <-ch:
+			if ok {
+				select {
+				case _, open := <-ch:
+					if open {
+						t.Error("expected one buffered update at most")
+					}
+				default:
+					t.Error("subscription still open after draining buffer")
+				}
+			}
+		default:
+			t.Error("Close returned before closing the subscription")
+		}
+	}
+	if err := c.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestConsulNotificationsOwnEndpointSlices(t *testing.T) {
+	c, err := NewConsul("example.test", ConsulConfig{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	watcher := newConsulWatcher(c, "example")
+	t.Cleanup(watcher.stop)
+	first, second := watcher.subscribe(t.Context()), watcher.subscribe(t.Context())
+	original := []string{"http://example.test:80"}
+	watcher.notify(original)
+	watcher.notify([]string{"http://ignored.test:80"}) // Both buffers are full.
+
+	a, b := <-first, <-second
+	a[0] = "changed"
+	if b[0] != "http://example.test:80" || original[0] != b[0] {
+		t.Errorf("peer = %v, source = %v", b, original)
+	}
+	select {
+	case got := <-second:
+		t.Errorf("unexpected second update: %v", got)
+	default:
+	}
+}
+
+func TestNewConsulRejectsNegativeWaitTime(t *testing.T) {
+	if got, err := NewConsul("example.test", ConsulConfig{WaitTime: -time.Second}); got != nil || err == nil {
+		t.Fatalf("NewConsul = %v, %v; want a configuration error", got, err)
+	}
+	for _, tt := range []struct{ input, want time.Duration }{{0, 30 * time.Second}, {time.Second, time.Second}} {
+		got, err := NewConsul("example.test", ConsulConfig{WaitTime: tt.input})
+		if err != nil || got.config.WaitTime != tt.want {
+			t.Errorf("interval %s: NewConsul = %v, %v", tt.input, got, err)
+		}
+	}
+}

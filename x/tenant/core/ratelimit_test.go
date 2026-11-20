@@ -1,6 +1,7 @@
 package tenant
 
 import (
+	"errors"
 	"testing"
 	"time"
 )
@@ -131,4 +132,30 @@ func TestTenantRateLimitRefillsBeforeReconfiguration(t *testing.T) {
 			t.Errorf("%s: got %+v, %v; want allowed=%v remaining=%d limit=%d burst=%d err=%v", tc.name, result, err, tc.allowed, tc.remaining, tc.rate, tc.burst, wantErr)
 		}
 	}
+}
+
+func TestTenantRateLimiterDeleteIsScoped(t *testing.T) {
+	p := NewInMemoryRateLimitManager()
+	for _, tenant := range []string{"first", "second"} {
+		p.SetRateLimit(tenant, RateLimitConfig{RequestsPerSecond: 1, Burst: 1})
+	}
+	l := NewTokenBucketRateLimiter(p)
+	request := RateLimitRequest{Tokens: 1, Now: time.Unix(1_700_000_000, 0)}
+	check := func(tenant string, want bool) {
+		t.Helper()
+		got, err := l.Allow(t.Context(), tenant, request)
+		if got.Allowed != want || (want && err != nil) || (!want && !errors.Is(err, ErrRateLimitExceeded)) {
+			t.Errorf("Allow(%s) = %+v, %v; want allowed=%t", tenant, got, err, want)
+		}
+	}
+	check("first", true)
+	check("second", true)
+	check("first", false)
+	check("second", false)
+	l.DeleteTenant("first")
+	l.DeleteTenant("first")
+	l.DeleteTenant("unseen")
+	check("first", true)
+	check("first", false)
+	check("second", false)
 }

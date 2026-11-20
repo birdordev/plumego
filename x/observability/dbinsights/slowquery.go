@@ -40,9 +40,12 @@ func WithThreshold(threshold time.Duration) DetectorOption {
 }
 
 // WithMaxRecords sets the maximum number of slow queries to keep.
+// A nonpositive value preserves the current limit.
 func WithMaxRecords(max int) DetectorOption {
 	return func(d *Detector) {
-		d.maxRecords = max
+		if max > 0 {
+			d.maxRecords = max
+		}
 	}
 }
 

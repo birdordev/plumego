@@ -248,3 +248,56 @@ func (r *testRows) Next(dest []driver.Value) error {
 	copy(dest, row)
 	return nil
 }
+
+func TestSQLXTransactionOperationsRespectTerminalState(t *testing.T) {
+	db := newTestDB(t)
+	t.Cleanup(func() { _ = db.Close() })
+	ctx := t.Context()
+	for _, mode := range []string{"commit", "rollback"} {
+		t.Run(mode, func(t *testing.T) {
+			tx, err := db.BeginTx(ctx, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = tx.Rollback() })
+			var value string
+			if err := tx.QueryRow(ctx, "select single name").Scan(&value); err != nil || value != "plumego" {
+				t.Errorf("transaction Scan = %q, %v", value, err)
+			}
+			rows, err := tx.Query(ctx, "select name")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !rows.Next() {
+				t.Error("active transaction returned no rows")
+			}
+			if err := rows.Close(); err != nil {
+				t.Fatal(err)
+			}
+			res, err := tx.Exec(ctx, "update example set enabled = true")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if count, err := res.RowsAffected(); count != 3 || err != nil {
+				t.Errorf("RowsAffected = %d, %v", count, err)
+			}
+			if mode == "commit" {
+				err = tx.Commit()
+			} else {
+				err = tx.Rollback()
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := tx.QueryRow(ctx, "select single name").Scan(&value); !errors.Is(err, sql.ErrTxDone) {
+				t.Errorf("terminal Scan = %v", err)
+			}
+			if rows, err := tx.Query(ctx, "select name"); rows != nil || !errors.Is(err, sql.ErrTxDone) {
+				t.Errorf("terminal Query = %v, %v", rows, err)
+			}
+			if result, err := tx.Exec(ctx, "update example set enabled = true"); result != nil || !errors.Is(err, sql.ErrTxDone) {
+				t.Errorf("terminal Exec = %v, %v", result, err)
+			}
+		})
+	}
+}

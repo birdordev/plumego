@@ -6,9 +6,11 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"time"
 )
 
@@ -190,7 +192,7 @@ func (k *Kubernetes) extractBackends(ep k8sEndpoints) []string {
 			continue
 		}
 		for _, addr := range subset.Addresses {
-			backends = append(backends, fmt.Sprintf("http://%s:%d", addr.IP, port))
+			backends = append(backends, "http://"+net.JoinHostPort(addr.IP, strconv.Itoa(port)))
 		}
 	}
 	return backends

@@ -1,9 +1,12 @@
 package pubsub
 
 import (
+	"bytes"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -641,5 +644,148 @@ func BenchmarkAuditLogger_Query(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_, _ = al.Query(AuditQuery{Limit: 100})
+	}
+}
+
+func TestAuditCloseReportsAsyncWriteFailure(t *testing.T) {
+	for _, mode := range []string{"successful drain", "encoding error then success", "closed file"} {
+		t.Run(mode, func(t *testing.T) {
+			cfg := DefaultAuditConfig()
+			cfg.VerifyIntegrity = false
+			cfg.LogFile = filepath.Join(t.TempDir(), "audit.jsonl")
+			al, err := NewAuditLogger(cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = al.Close() })
+			if mode == "closed file" {
+				if err := al.logFile.Close(); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if mode == "encoding error then success" {
+				if err := al.Log(OpPublish, "invalid", "test", "", map[string]any{"value": make(chan int)}, true, nil); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := al.Log(OpPublish, "valid", "test", "", nil, true, nil); err != nil {
+				t.Fatal(err)
+			}
+			err = al.Close()
+			switch mode {
+			case "successful drain":
+				if err != nil {
+					t.Fatalf("Close = %v", err)
+				}
+			case "encoding error then success":
+				var typeErr *json.UnsupportedTypeError
+				if !errors.As(err, &typeErr) {
+					t.Fatalf("Close = %v, want an encoding error", err)
+				}
+			case "closed file":
+				if !errors.Is(err, os.ErrClosed) || !strings.Contains(err.Error(), "close audit log") || !strings.Contains(err.Error(), "write audit entry") {
+					t.Fatalf("Close = %v, want both write and close errors", err)
+				}
+			}
+			if mode != "closed file" {
+				data, err := os.ReadFile(cfg.LogFile)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if bytes.Count(data, []byte("\n")) != 1 || !bytes.Contains(data, []byte("\"valid\"")) {
+					t.Errorf("expected exactly one successfully written entry, got %q", data)
+				}
+			}
+			if err := al.Close(); !errors.Is(err, ErrAuditClosed) {
+				t.Errorf("repeat Close = %v, want ErrAuditClosed", err)
+			}
+		})
+	}
+}
+
+func TestAuditLogAndQueryOwnData(t *testing.T) {
+	for _, async := range []bool{false, true} {
+		name := "synchronous"
+		if async {
+			name = "asynchronous"
+		}
+		t.Run(name, func(t *testing.T) {
+			cfg := DefaultAuditConfig()
+			cfg.AsyncMode = async
+			cfg.LogFile = filepath.Join(t.TempDir(), "audit.jsonl")
+			al, err := NewAuditLogger(cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = al.Close() })
+
+			input := map[string]any{"nested": []any{map[string]any{"label": "original"}}}
+			label := func(data map[string]any) map[string]any { return data["nested"].([]any)[0].(map[string]any) }
+			if err := al.Log(OpPublish, "snapshot", "test", "", input, true, nil); err != nil {
+				t.Fatal(err)
+			}
+			label(input)["label"] = "caller edit"
+			query := func() *AuditEntry {
+				t.Helper()
+				entries, err := al.Query(AuditQuery{Topics: []string{"snapshot"}})
+				if err != nil || len(entries) != 1 {
+					t.Fatalf("Query = %v, %v", entries, err)
+				}
+				return entries[0]
+			}
+			read := query()
+			if got := label(read.Data)["label"]; got != "original" {
+				t.Errorf("stored label = %v", got)
+			}
+			label(read.Data)["label"] = "query edit"
+			if got := label(query().Data)["label"]; got != "original" {
+				t.Errorf("queried label = %v", got)
+			}
+			if err := al.Log(OpPublish, "nil", "test", "", nil, true, nil); err != nil {
+				t.Fatal(err)
+			}
+			entries, err := al.Query(AuditQuery{Topics: []string{"nil"}})
+			if err != nil || len(entries) != 1 || entries[0].Data != nil {
+				t.Errorf("nil snapshot = %v, %v", entries, err)
+			}
+			if err := al.Close(); err != nil {
+				t.Fatal(err)
+			}
+			data, err := os.ReadFile(cfg.LogFile)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Contains(data, []byte("original")) || bytes.Contains(data, []byte("caller edit")) || bytes.Contains(data, []byte("query edit")) {
+				t.Errorf("unexpected audit file: %s", data)
+			}
+		})
+	}
+}
+
+func TestNewAuditLoggerRejectsNegativeAsyncBuffer(t *testing.T) {
+	cfg := DefaultAuditConfig()
+	cfg.LogFile = filepath.Join(t.TempDir(), "audit.jsonl")
+	cfg.BufferSize = -1
+	if al, err := NewAuditLogger(cfg); al != nil || err == nil {
+		t.Fatalf("NewAuditLogger = %v, %v; want a capacity error", al, err)
+	}
+	if _, err := os.Stat(cfg.LogFile); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("invalid settings created a log file: %v", err)
+	}
+	for _, tt := range []struct {
+		async bool
+		size  int
+	}{{true, 0}, {true, 1}, {false, -1}} {
+		cfg.AsyncMode, cfg.BufferSize = tt.async, tt.size
+		al, err := NewAuditLogger(cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := al.Log(OpPublish, "valid", "test", "", nil, true, nil); err != nil {
+			t.Error(err)
+		}
+		if err := al.Close(); err != nil {
+			t.Error(err)
+		}
 	}
 }

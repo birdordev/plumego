@@ -132,7 +132,7 @@ func (p *KVPersistence) SaveWorkflow(ctx context.Context, wf *orchestration.Work
 	return p.store.Set(key, jsonData, 0) // No TTL for workflow definitions
 }
 
-// LoadWorkflow loads a workflow definition by ID.
+// LoadWorkflow loads a workflow definition by ID and reports invalid stored records as errors.
 func (p *KVPersistence) LoadWorkflow(ctx context.Context, id string) (*orchestration.Workflow, error) {
 	if id == "" {
 		return nil, fmt.Errorf("workflow ID cannot be empty")
@@ -144,17 +144,24 @@ func (p *KVPersistence) LoadWorkflow(ctx context.Context, id string) (*orchestra
 		return nil, fmt.Errorf("failed to load workflow %s: %w", id, err)
 	}
 
-	var wfData map[string]any
+	var wfData struct {
+		ID          string `json:"id"`
+		Name        string `json:"name"`
+		Description string `json:"description"`
+	}
 	if err := json.Unmarshal(data, &wfData); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal workflow: %w", err)
+		return nil, fmt.Errorf("failed to unmarshal workflow %s: %w", id, err)
+	}
+	if wfData.ID == "" {
+		return nil, fmt.Errorf("stored workflow %s has an empty ID", id)
 	}
 
 	// Note: Steps are not persisted (they contain functions)
 	// Workflow definitions should be registered in the engine separately
 	wf := &orchestration.Workflow{
-		ID:          wfData["id"].(string),
-		Name:        wfData["name"].(string),
-		Description: wfData["description"].(string),
+		ID:          wfData.ID,
+		Name:        wfData.Name,
+		Description: wfData.Description,
 		Steps:       []orchestration.Step{}, // Will be populated by engine
 		State:       make(map[string]any),
 	}

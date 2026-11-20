@@ -6,8 +6,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
+	"slices"
+	"strconv"
 	"sync"
 	"time"
 )
@@ -45,7 +48,7 @@ type ConsulConfig struct {
 	// Namespace for Consul Enterprise namespace filtering (sets the ?ns= query parameter)
 	Namespace string
 
-	// WaitTime for long polling (default: 30s)
+	// WaitTime sets the polling interval. Zero uses 30s; negative values are invalid.
 	WaitTime time.Duration
 
 	// Timeout for HTTP requests (default: 60s)
@@ -66,6 +69,9 @@ type ConsulConfig struct {
 func NewConsul(address string, config ConsulConfig) (*Consul, error) {
 	if config.Datacenter == "" {
 		config.Datacenter = "dc1"
+	}
+	if config.WaitTime < 0 {
+		return nil, fmt.Errorf("consul wait time must be nonnegative: %s", config.WaitTime)
 	}
 	if config.WaitTime == 0 {
 		config.WaitTime = 30 * time.Second
@@ -105,7 +111,7 @@ func (c *Consul) doRequest(ctx context.Context, method, reqURL string, body io.R
 	return c.client.Do(req)
 }
 
-// Resolve returns the list of backend URLs for a service
+// Resolve returns backend URLs for a service, including IPv4 and IPv6 endpoints.
 func (c *Consul) Resolve(ctx context.Context, serviceName string) ([]string, error) {
 	params := url.Values{}
 	params.Set("dc", c.config.Datacenter)
@@ -145,12 +151,12 @@ func (c *Consul) Resolve(ctx context.Context, serviceName string) ([]string, err
 
 	backends := make([]string, 0, len(entries))
 	for _, entry := range entries {
-		backends = append(backends, fmt.Sprintf("http://%s:%d", entry.Service.Address, entry.Service.Port))
+		backends = append(backends, "http://"+net.JoinHostPort(entry.Service.Address, strconv.Itoa(entry.Service.Port)))
 	}
 	return backends, nil
 }
 
-// Watch returns a channel for backend updates
+// Watch returns a channel of backend updates. Each subscription owns its slices.
 func (c *Consul) Watch(ctx context.Context, serviceName string) (<-chan []string, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -221,7 +227,7 @@ func (c *Consul) Health(ctx context.Context, serviceID string, healthy bool) err
 	return ErrNotSupported
 }
 
-// Close closes the Consul client and stops all watchers
+// Close stops all watchers and closes their subscription channels before returning.
 func (c *Consul) Close() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -275,21 +281,32 @@ func newConsulWatcher(consul *Consul, serviceName string) *consulWatcher {
 }
 
 // subscribe returns a channel that receives backend updates.
-// The channel is closed when ctx is cancelled.
+// The channel is closed when ctx is canceled or the watcher stops.
 func (w *consulWatcher) subscribe(ctx context.Context) <-chan []string {
 	ch := make(chan []string, 1)
 
 	w.mu.Lock()
+	select {
+	case <-w.stopChan:
+		close(ch)
+		w.mu.Unlock()
+		return ch
+	default:
+	}
 	w.subscribers = append(w.subscribers, ch)
 	w.mu.Unlock()
 
 	go func() {
-		<-ctx.Done()
+		select {
+		case <-w.stopChan:
+			return
+		case <-ctx.Done():
+		}
 		w.mu.Lock()
 		defer w.mu.Unlock()
 		for i, sub := range w.subscribers {
 			if sub == ch {
-				w.subscribers = append(w.subscribers[:i], w.subscribers[i+1:]...)
+				w.subscribers = slices.Delete(w.subscribers, i, i+1)
 				close(ch)
 				break
 			}
@@ -328,7 +345,7 @@ func (w *consulWatcher) notify(backends []string) {
 
 	for _, ch := range w.subscribers {
 		select {
-		case ch <- backends:
+		case ch <- slices.Clone(backends):
 		default:
 			// Skip if subscriber channel is full
 		}
@@ -338,6 +355,12 @@ func (w *consulWatcher) notify(backends []string) {
 // stop stops the watcher. Safe to call multiple times.
 func (w *consulWatcher) stop() {
 	w.stopOnce.Do(func() {
+		w.mu.Lock()
+		defer w.mu.Unlock()
 		close(w.stopChan)
+		for _, ch := range w.subscribers {
+			close(ch)
+		}
+		w.subscribers = nil
 	})
 }

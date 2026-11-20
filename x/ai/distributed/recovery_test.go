@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"testing/synctest"
 	"time"
 )
 
@@ -134,4 +135,40 @@ func TestRecoveryManager_MonitorTimeouts_ContextCancel(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Error("MonitorTimeouts did not return after context cancellation")
 	}
+}
+
+func TestRetryWithPolicySkipsCanceledOperation(t *testing.T) {
+	t.Run("before first attempt", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(t.Context())
+		cancel()
+		calls := 0
+		err := RetryWithPolicy(ctx, &RetryPolicy{}, func() error { calls++; return nil })
+		if calls != 0 || !errors.Is(err, context.Canceled) {
+			t.Errorf("calls = %d, error = %v", calls, err)
+		}
+	})
+	t.Run("during retry wait", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			started := make(chan struct{})
+			done := make(chan error, 1)
+			calls := 0
+			go func() {
+				done <- RetryWithPolicy(ctx, &RetryPolicy{MaxRetries: 3, InitialDelay: time.Hour}, func() error {
+					calls++
+					if calls == 1 {
+						close(started)
+					}
+					return errors.New("test operation failure")
+				})
+			}()
+			<-started
+			synctest.Wait()
+			cancel()
+			if err := <-done; calls != 1 || !errors.Is(err, context.Canceled) {
+				t.Errorf("calls = %d, error = %v", calls, err)
+			}
+		})
+	})
 }

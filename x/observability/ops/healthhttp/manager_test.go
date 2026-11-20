@@ -137,3 +137,28 @@ func TestManagerCheckComponentTimeout(t *testing.T) {
 		t.Fatalf("expected check_attempts to be 1, got %v", component.Details["check_attempts"])
 	}
 }
+
+func TestManagerSetConfigPreservesStateOnRejection(t *testing.T) {
+	m, err := NewManager(Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = m.Close() })
+	config := Config{Enabled: true, Timeout: time.Second, RetryCount: 1}
+	if err := m.SetConfig(config); err != nil || m.GetConfig() != config {
+		t.Fatalf("valid update: config=%+v error=%v", m.GetConfig(), err)
+	}
+	if err := m.SetConfig(Config{Timeout: -time.Second}); err == nil || m.GetConfig() != config {
+		t.Errorf("invalid update: config=%+v error=%v", m.GetConfig(), err)
+	}
+	m.MarkReady()
+	if !m.Readiness().Ready {
+		t.Fatal("expected ready before Close")
+	}
+	if err := m.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.SetConfig(Config{}); !errors.Is(err, errManagerClosed) || m.GetConfig() != config || m.Readiness().Ready {
+		t.Errorf("closed update: config=%+v readiness=%+v error=%v", m.GetConfig(), m.Readiness(), err)
+	}
+}
