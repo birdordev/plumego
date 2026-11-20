@@ -1314,3 +1314,31 @@ func TestGetURLPropagatesRequestCancellation(t *testing.T) {
 		}
 	})
 }
+
+func TestDownloadIgnoresAccessTimeUpdateFailure(t *testing.T) {
+	req := withRouteParam(httptest.NewRequest(http.MethodGet, "/files/item", nil), "id", "item")
+	req = tenantcore.RequestWithTenantID(req, "test-tenant")
+	updated := false
+	reader := &downloadTestReader{Reader: strings.NewReader("test content")}
+	metadata := &mockMetadataManager{updateAccessTimeFunc: func(ctx context.Context, tenant, id string) error {
+		if ctx != req.Context() || tenant != "test-tenant" || id != "item" {
+			t.Errorf("UpdateAccessTime got wrong context or %q/%q", tenant, id)
+		}
+		if updated {
+			t.Error("UpdateAccessTime was called more than once")
+		}
+		updated = true
+		return errors.New("update diagnostic")
+	}}
+	storage := &mockStorage{getFunc: func(ctx context.Context, path string) (io.ReadCloser, error) {
+		if ctx != req.Context() || path != "test/path.txt" || !updated {
+			t.Errorf("unexpected read arguments or order: path=%q updated=%t", path, updated)
+		}
+		return reader, nil
+	}}
+	w := &downloadStatusRecorder{ResponseRecorder: httptest.NewRecorder()}
+	NewHandler(storage, metadata).Download(w, req)
+	if len(w.statuses) != 1 || w.statuses[0] != http.StatusOK || w.Body.String() != "test content" || reader.closeCalls != 1 {
+		t.Fatalf("statuses=%v body=%q closes=%d", w.statuses, w.Body.String(), reader.closeCalls)
+	}
+}

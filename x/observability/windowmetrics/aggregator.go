@@ -2,6 +2,7 @@ package windowmetrics
 
 import (
 	"container/list"
+	"math"
 	"sort"
 	"sync"
 	"time"
@@ -90,7 +91,8 @@ func NewAggregator(window time.Duration) *Aggregator {
 	}
 }
 
-// Record adds a value to the aggregator for the specified metric name.
+// Record adds a finite value for the specified metric name. NaN and infinity
+// are ignored without allocating a bucket.
 //
 // Example:
 //
@@ -100,6 +102,10 @@ func NewAggregator(window time.Duration) *Aggregator {
 //	agg.Record("request_duration", 50.5)
 //	agg.Record("request_duration", 75.2)
 func (a *Aggregator) Record(name string, value float64) {
+	if math.IsNaN(value) || math.IsInf(value, 0) {
+		return
+	}
+
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	now := a.now()

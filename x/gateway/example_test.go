@@ -42,3 +42,33 @@ func ExampleRegisterProxy() {
 	// status: 200
 	// backend path: /edge
 }
+
+func ExampleNew() {
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintln(w, "forwarded:", r.URL.Path)
+	}))
+	defer backend.Close()
+
+	proxy, err := gateway.New(gateway.Config{Targets: []string{backend.URL}})
+	if err != nil {
+		fmt.Println("construct proxy:", err)
+		return
+	}
+	defer proxy.Close()
+
+	routes := router.NewRouter()
+	if err := routes.AddRoute(http.MethodGet, "/edge/*path", proxy); err != nil {
+		fmt.Println("register proxy:", err)
+		return
+	}
+	routes.Freeze()
+
+	response := httptest.NewRecorder()
+	routes.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/edge/item", nil))
+	fmt.Println("status:", response.Code)
+	fmt.Print(response.Body.String())
+
+	// Output:
+	// status: 200
+	// forwarded: /edge/item
+}

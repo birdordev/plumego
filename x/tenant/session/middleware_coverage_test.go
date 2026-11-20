@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"testing"
 	"time"
 
@@ -310,5 +311,55 @@ func TestSessionCheck_CustomSessionIDExtractor(t *testing.T) {
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200 with custom extractor, got %d", rec.Code)
+	}
+}
+
+type sessionValidationFunc struct {
+	fixedSessionValidator
+	validate func(context.Context, *Session, time.Time) error
+}
+
+func (v sessionValidationFunc) ValidateSession(ctx context.Context, s *Session, now time.Time) error {
+	return v.validate(ctx, s, now)
+}
+
+func TestSessionCheckUsesInjectedTimeAndStageOrder(t *testing.T) {
+	fixed := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
+	session := &Session{SessionID: "fixture", Status: SessionActive}
+	for _, reject := range []bool{false, true} {
+		req := withSessionClaim(httptest.NewRequest(http.MethodGet, "/", nil), session.SessionID)
+		var stages []string
+		lookup := WithSessionLookup(func(ctx context.Context, r *http.Request, p *authn.Principal) (*Session, error) {
+			stages = append(stages, "lookup")
+			if ctx != req.Context() || r != req || p == nil || p.Subject != "user-1" || p.Claims["session_id"] != session.SessionID {
+				t.Error("lookup did not receive the original request and principal")
+			}
+			return session, nil
+		})
+		now := WithSessionNow(func() time.Time { stages = append(stages, "clock"); return fixed })
+		validator := sessionValidationFunc{validate: func(ctx context.Context, got *Session, at time.Time) error {
+			stages = append(stages, "validate")
+			if ctx != req.Context() || got != session || !at.Equal(fixed) {
+				t.Errorf("unexpected validation args: session=%v time=%v", got, at)
+			}
+			if reject {
+				return ErrSessionExpired
+			}
+			return nil
+		}}
+		w := httptest.NewRecorder()
+		SessionCheck(nil, &validator, lookup, now)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			stages = append(stages, "next")
+			w.WriteHeader(http.StatusNoContent)
+		})).ServeHTTP(w, req)
+		want := []string{"lookup", "clock", "validate"}
+		status := http.StatusUnauthorized
+		if !reject {
+			status = http.StatusNoContent
+			want = append(want, "next")
+		}
+		if w.Code != status || !slices.Equal(stages, want) {
+			t.Fatalf("reject=%t status=%d stages=%v, want %d %v", reject, w.Code, stages, status, want)
+		}
 	}
 }

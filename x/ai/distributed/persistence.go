@@ -2,9 +2,12 @@
 package distributed
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -90,8 +93,11 @@ type kvBackend interface {
 }
 
 // KVPersistence implements WorkflowPersistence using a key-value store.
+// Snapshot mutations are serialized within one instance. Backend operations
+// called during a snapshot mutation must return before reentering one.
 type KVPersistence struct {
-	store kvBackend
+	store          kvBackend
+	snapshotWrites chan struct{}
 }
 
 // Storage key prefixes
@@ -99,13 +105,13 @@ const (
 	prefixWorkflow   = "distributed:workflow:"
 	prefixSnapshot   = "distributed:snapshot:"
 	prefixStepResult = "distributed:step:"
-	prefixExecution  = "distributed:execution:"
 )
 
 // NewKVPersistence creates a new KV-based workflow persistence layer.
 func NewKVPersistence(store kvBackend) *KVPersistence {
 	return &KVPersistence{
-		store: store,
+		store:          store,
+		snapshotWrites: make(chan struct{}, 1),
 	}
 }
 
@@ -181,6 +187,9 @@ func (p *KVPersistence) DeleteWorkflow(ctx context.Context, id string) error {
 
 // SaveSnapshot persists an execution state snapshot.
 func (p *KVPersistence) SaveSnapshot(ctx context.Context, snapshot *ExecutionSnapshot) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if snapshot == nil || snapshot.ExecutionID == "" {
 		return fmt.Errorf("invalid snapshot: nil or empty execution ID")
 	}
@@ -200,13 +209,23 @@ func (p *KVPersistence) SaveSnapshot(ctx context.Context, snapshot *ExecutionSna
 		ttl = 24 * time.Hour // Default 24 hour retention
 	}
 
-	if err := p.store.Set(key, jsonData, ttl); err != nil {
-		return fmt.Errorf("failed to save snapshot: %w", err)
+	if err := p.lockSnapshots(ctx); err != nil {
+		return err
 	}
+	defer p.unlockSnapshots()
 
-	// Also index by workflow ID for listing
-	indexKey := prefixExecution + snapshot.WorkflowID + ":" + snapshot.ExecutionID
-	return p.store.Set(indexKey, []byte(snapshot.ExecutionID), ttl)
+	var saveErr error
+	if store, ok := p.store.(interface {
+		SetContext(context.Context, string, []byte, time.Duration) error
+	}); ok {
+		saveErr = store.SetContext(ctx, key, jsonData, ttl)
+	} else {
+		saveErr = p.store.Set(key, jsonData, ttl)
+	}
+	if saveErr != nil {
+		return fmt.Errorf("failed to save snapshot: %w", saveErr)
+	}
+	return nil
 }
 
 // LoadSnapshot loads an execution state snapshot by execution ID.
@@ -214,19 +233,24 @@ func (p *KVPersistence) LoadSnapshot(ctx context.Context, executionID string) (*
 	if executionID == "" {
 		return nil, fmt.Errorf("execution ID cannot be empty")
 	}
+	return p.readSnapshot(ctx, prefixSnapshot+executionID)
+}
 
-	key := prefixSnapshot + executionID
-	data, err := p.store.Get(key)
+func (p *KVPersistence) readSnapshot(ctx context.Context, key string) (*ExecutionSnapshot, error) {
+	executionID := strings.TrimPrefix(key, prefixSnapshot)
+	data, err := p.readValue(ctx, key)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load snapshot %s: %w", executionID, err)
 	}
 
-	var snapshot ExecutionSnapshot
+	var snapshot *ExecutionSnapshot
 	if err := json.Unmarshal(data, &snapshot); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal snapshot: %w", err)
 	}
-
-	return &snapshot, nil
+	if snapshot == nil || executionID == "" || snapshot.ExecutionID != executionID {
+		return nil, fmt.Errorf("persisted snapshot does not match execution %s", executionID)
+	}
+	return snapshot, nil
 }
 
 // DeleteSnapshot removes an execution snapshot.
@@ -235,8 +259,11 @@ func (p *KVPersistence) DeleteSnapshot(ctx context.Context, executionID string) 
 		return fmt.Errorf("execution ID cannot be empty")
 	}
 
-	key := prefixSnapshot + executionID
-	return p.store.Delete(key)
+	if err := p.lockSnapshots(ctx); err != nil {
+		return err
+	}
+	defer p.unlockSnapshots()
+	return p.deleteValue(ctx, prefixSnapshot+executionID)
 }
 
 // SaveStepResult persists a step execution result.
@@ -257,64 +284,84 @@ func (p *KVPersistence) SaveStepResult(ctx context.Context, executionID string, 
 	return p.store.Set(key, jsonData, 24*time.Hour) // 24 hour retention
 }
 
-// LoadStepResults loads all step results for an execution.
+// LoadStepResults loads stored results by ascending step index. The backend
+// must support KeysContext. Errors reading an enumerated record are returned
+// to the caller, including when a record expires during the scan.
 func (p *KVPersistence) LoadStepResults(ctx context.Context, executionID string) ([]*orchestration.AgentResult, error) {
 	if executionID == "" {
 		return nil, fmt.Errorf("execution ID cannot be empty")
 	}
-
-	// Scan for all step results with prefix
 	prefix := prefixStepResult + executionID + ":"
 	keys, err := p.scanKeys(ctx, prefix)
 	if err != nil {
 		return nil, fmt.Errorf("failed to scan step results: %w", err)
 	}
 
-	results := make([]*orchestration.AgentResult, 0, len(keys))
-	for _, key := range keys {
-		data, err := p.store.Get(key)
-		if err != nil {
-			continue // Skip missing keys
-		}
-
-		var result orchestration.AgentResult
-		if err := json.Unmarshal(data, &result); err != nil {
-			continue // Skip invalid data
-		}
-
-		results = append(results, &result)
+	type stepKey struct {
+		index int
+		key   string
 	}
-
+	steps := make([]stepKey, 0, len(keys))
+	for _, key := range keys {
+		// Another execution ID can extend this prefix with a colon.
+		index, err := strconv.Atoi(strings.TrimPrefix(key, prefix))
+		if err == nil {
+			steps = append(steps, stepKey{index: index, key: key})
+		}
+	}
+	slices.SortFunc(steps, func(a, b stepKey) int {
+		return cmp.Compare(a.index, b.index)
+	})
+	results := make([]*orchestration.AgentResult, 0, len(steps))
+	for _, step := range steps {
+		data, err := p.readValue(ctx, step.key)
+		if err != nil {
+			return nil, fmt.Errorf("read step result %d: %w", step.index, err)
+		}
+		var result *orchestration.AgentResult
+		if err := json.Unmarshal(data, &result); err != nil {
+			return nil, fmt.Errorf("decode step result %d: %w", step.index, err)
+		}
+		if result == nil {
+			return nil, fmt.Errorf("step result %d is null", step.index)
+		}
+		results = append(results, result)
+	}
 	return results, nil
 }
 
-// ListExecutions returns all execution IDs for a workflow.
+// ListExecutions returns sorted execution IDs from live snapshots belonging to
+// workflowID. The backend must support KeysContext. Legacy execution index keys
+// are left to expire and no longer affect visibility.
 func (p *KVPersistence) ListExecutions(ctx context.Context, workflowID string) ([]string, error) {
 	if workflowID == "" {
 		return nil, fmt.Errorf("workflow ID cannot be empty")
 	}
-
-	prefix := prefixExecution + workflowID + ":"
-	keys, err := p.scanKeys(ctx, prefix)
+	keys, err := p.scanKeys(ctx, prefixSnapshot)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list executions: %w", err)
 	}
 
 	executionIDs := make([]string, 0, len(keys))
 	for _, key := range keys {
-		// Extract execution ID from key
-		parts := strings.Split(key, ":")
-		if len(parts) >= 3 {
-			executionIDs = append(executionIDs, parts[len(parts)-1])
+		snapshot, err := p.readSnapshot(ctx, key)
+		if err != nil {
+			return nil, err
+		}
+		if snapshot.WorkflowID == workflowID {
+			executionIDs = append(executionIDs, snapshot.ExecutionID)
 		}
 	}
-
+	slices.Sort(executionIDs)
 	return executionIDs, nil
 }
 
-// CleanupExpired removes expired execution snapshots.
+// CleanupExpired removes snapshots updated strictly before the cutoff. The
+// backend must support KeysContext. Each read and conditional delete is
+// serialized with snapshot writes through this instance. Independent writers
+// sharing the backend must coordinate with cleanup. On error the count covers
+// the deletions already completed.
 func (p *KVPersistence) CleanupExpired(ctx context.Context, before time.Time) (int, error) {
-	// Scan all snapshots
 	keys, err := p.scanKeys(ctx, prefixSnapshot)
 	if err != nil {
 		return 0, fmt.Errorf("failed to scan snapshots: %w", err)
@@ -322,26 +369,51 @@ func (p *KVPersistence) CleanupExpired(ctx context.Context, before time.Time) (i
 
 	count := 0
 	for _, key := range keys {
-		data, err := p.store.Get(key)
+		deleted, err := p.cleanupSnapshot(ctx, key, before)
 		if err != nil {
-			continue
+			return count, err
 		}
-
-		var snapshot ExecutionSnapshot
-		if err := json.Unmarshal(data, &snapshot); err != nil {
-			continue
-		}
-
-		// Delete if updated before the cutoff time
-		if snapshot.UpdatedAt.Before(before) {
-			if err := p.store.Delete(key); err == nil {
-				count++
-			}
+		if deleted {
+			count++
 		}
 	}
-
 	return count, nil
 }
+
+func (p *KVPersistence) cleanupSnapshot(ctx context.Context, key string, before time.Time) (bool, error) {
+	if err := p.lockSnapshots(ctx); err != nil {
+		return false, err
+	}
+	defer p.unlockSnapshots()
+
+	snapshot, err := p.readSnapshot(ctx, key)
+	if err != nil {
+		return false, err
+	}
+	if !snapshot.UpdatedAt.Before(before) {
+		return false, nil
+	}
+	if err := p.deleteValue(ctx, key); err != nil {
+		return false, fmt.Errorf("delete expired snapshot %s: %w", snapshot.ExecutionID, err)
+	}
+	return true, nil
+}
+
+// lockSnapshots waits for exclusive access without delaying cancellation.
+func (p *KVPersistence) lockSnapshots(ctx context.Context) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case p.snapshotWrites <- struct{}{}:
+		if err := ctx.Err(); err != nil {
+			p.unlockSnapshots()
+			return err
+		}
+		return nil
+	}
+}
+
+func (p *KVPersistence) unlockSnapshots() { <-p.snapshotWrites }
 
 // Close closes the persistence backend.
 func (p *KVPersistence) Close() error {
@@ -351,16 +423,52 @@ func (p *KVPersistence) Close() error {
 	return nil
 }
 
-// scanKeys scans for all keys with a given prefix.
 func (p *KVPersistence) scanKeys(ctx context.Context, prefix string) ([]string, error) {
-	// Note: This is a simplified implementation
-	// In production, use proper key scanning or indexing
-	keys := make([]string, 0)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	store, ok := p.store.(interface {
+		KeysContext(context.Context) ([]string, error)
+	})
+	if !ok {
+		return nil, fmt.Errorf("persistence backend does not support key enumeration")
+	}
+	keys, err := store.KeysContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	matches := make([]string, 0)
+	for _, key := range keys {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		if strings.HasPrefix(key, prefix) {
+			matches = append(matches, key)
+		}
+	}
+	return matches, ctx.Err()
+}
 
-	// The kv.Store interface doesn't have a Scan method, so we'll need to
-	// maintain an index or use a different approach in production
-	// For now, we'll return empty list - this should be implemented properly
-	// based on the actual kv.Store implementation
+func (p *KVPersistence) readValue(ctx context.Context, key string) ([]byte, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if store, ok := p.store.(interface {
+		GetContext(context.Context, string) ([]byte, error)
+	}); ok {
+		return store.GetContext(ctx, key)
+	}
+	return p.store.Get(key)
+}
 
-	return keys, nil
+func (p *KVPersistence) deleteValue(ctx context.Context, key string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if store, ok := p.store.(interface {
+		DeleteContext(context.Context, string) error
+	}); ok {
+		return store.DeleteContext(ctx, key)
+	}
+	return p.store.Delete(key)
 }

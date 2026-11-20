@@ -41,6 +41,7 @@ package versioning
 import (
 	"context"
 	"fmt"
+	"mime"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -109,7 +110,7 @@ type Config struct {
 	SupportedVersions []int
 
 	// For StrategyAcceptHeader:
-	// VendorPrefix is the vendor media type prefix
+	// VendorPrefix matches the media type itself, excluding its parameters.
 	// Example: "application/vnd.myapi" matches "application/vnd.myapi.v2+json"
 	// Default: "application/vnd.api"
 	VendorPrefix string
@@ -180,7 +181,7 @@ func Middleware(config Config) mw.Middleware {
 	// Pre-compile Accept header regex at construction time
 	var acceptRe *regexp.Regexp
 	if cfg.Strategy == StrategyAcceptHeader {
-		pattern := regexp.QuoteMeta(cfg.VendorPrefix) + `\.v(\d+)(?:\+|;|[ \t]*(?:,|$))`
+		pattern := "^" + regexp.QuoteMeta(strings.ToLower(cfg.VendorPrefix)) + `\.v(\d+)(?:\+.+)?$`
 		acceptRe = regexp.MustCompile(pattern)
 	}
 
@@ -266,21 +267,51 @@ func extractVersion(r *http.Request, config Config, acceptRe *regexp.Regexp) int
 	}
 }
 
-// extractFromAccept extracts version from Accept header using a pre-compiled regex
+// extractFromAccept takes the version from the first matching media type,
+// without treating parameter values as types or weighing acceptable ranges.
 func extractFromAccept(r *http.Request, re *regexp.Regexp) int {
-	accept := strings.Join(r.Header.Values("Accept"), ",")
-	if accept == "" || re == nil {
+	if re == nil {
 		return 0
 	}
-
-	matches := re.FindStringSubmatch(accept)
-	if len(matches) >= 2 {
-		if v, err := strconv.Atoi(matches[1]); err == nil {
-			return v
+	for _, line := range r.Header.Values("Accept") {
+		for line != "" {
+			var mediaRange string
+			mediaRange, line = cutMediaRange(line)
+			mediaType, _, _ := strings.Cut(mediaRange, ";")
+			mediaType, _, err := mime.ParseMediaType(mediaType)
+			if err != nil {
+				continue
+			}
+			if matches := re.FindStringSubmatch(mediaType); matches != nil {
+				version, err := strconv.Atoi(matches[1])
+				if err == nil {
+					return version
+				}
+				return 0
+			}
 		}
 	}
-
 	return 0
+}
+
+// cutMediaRange splits on the first comma outside a quoted parameter.
+func cutMediaRange(line string) (string, string) {
+	quoted := false
+	for i := 0; i < len(line); i++ {
+		switch line[i] {
+		case '"':
+			quoted = !quoted
+		case '\\':
+			if quoted {
+				i++
+			}
+		case ',':
+			if !quoted {
+				return line[:i], line[i+1:]
+			}
+		}
+	}
+	return line, ""
 }
 
 type pathVersion struct {

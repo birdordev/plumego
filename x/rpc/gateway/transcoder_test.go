@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/birdordev/plumego/contract"
 )
@@ -149,5 +150,44 @@ func TestRegisterUsesRequestContextOnlyAtDispatch(t *testing.T) {
 	transcoder.Handler().ServeHTTP(rec, request)
 	if rec.Code != http.StatusNoContent {
 		t.Errorf("dispatch returned %d, want %d", rec.Code, http.StatusNoContent)
+	}
+}
+
+func TestHandlerCanRegisterAnotherRPCPath(t *testing.T) {
+	transcoder := New("")
+	calls := 0
+	first := func(w http.ResponseWriter, r *http.Request, _ map[string]string) {
+		calls++
+		err := transcoder.Register(r.Context(), func(w http.ResponseWriter, _ *http.Request, _ map[string]string) {
+			w.WriteHeader(http.StatusCreated)
+		}, "GET /second")
+		if err != nil {
+			t.Error(err)
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}
+	if err := transcoder.Register(t.Context(), first, "GET /first"); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan int, 1)
+	go func() {
+		rec := httptest.NewRecorder()
+		transcoder.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/first", nil))
+		done <- rec.Code
+	}()
+	select {
+	case status := <-done:
+		if status != http.StatusNoContent || calls != 1 {
+			t.Fatalf("status=%d calls=%d", status, calls)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("handler could not reenter registration")
+	}
+	rec := httptest.NewRecorder()
+	transcoder.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/second", nil))
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("new route status = %d", rec.Code)
 	}
 }

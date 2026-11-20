@@ -79,6 +79,7 @@ func (t *OpenTelemetryTracer) WithMaxSpans(max int) *OpenTelemetryTracer {
 	return t
 }
 
+// Start begins a span and records the local request scheme from its TLS state.
 func (t *OpenTelemetryTracer) Start(ctx context.Context, r *http.Request) (context.Context, mwtracing.TraceSpan) {
 	spanID := t.generateSpanID()
 	parent, hasParent := contract.TraceContextFromContext(ctx)
@@ -100,6 +101,10 @@ func (t *OpenTelemetryTracer) Start(ctx context.Context, r *http.Request) (conte
 		parentID = string(parent.SpanID)
 	}
 
+	scheme := "http"
+	if r.TLS != nil {
+		scheme = "https"
+	}
 	handle := &spanHandle{
 		tracer:    t,
 		name:      "http.request",
@@ -111,7 +116,7 @@ func (t *OpenTelemetryTracer) Start(ctx context.Context, r *http.Request) (conte
 			"http.method":     r.Method,
 			"http.route":      r.URL.Path,
 			"http.user_agent": r.UserAgent(),
-			"http.scheme":     "http",
+			"http.scheme":     scheme,
 			"net.peer.name":   r.Host,
 			"net.transport":   "tcp",
 			"service.name":    t.name,
@@ -181,7 +186,7 @@ func (t *OpenTelemetryTracer) Clear() {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
-	t.spans = t.spans[:0]
+	t.spans = nil
 	t.droppedSpans = 0
 }
 

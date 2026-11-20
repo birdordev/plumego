@@ -206,8 +206,12 @@ func (k *KeyedBuckets) Remaining(key string) int {
 	return int(k.bucket(key).Remaining())
 }
 
-// Wait blocks until one token is available for the given key or ctx is cancelled.
+// Wait blocks until one token is available for the given key or ctx is canceled.
+// An already canceled context does not create a bucket.
 func (k *KeyedBuckets) Wait(ctx context.Context, key string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	return k.bucket(key).WaitN(ctx, 1)
 }
 

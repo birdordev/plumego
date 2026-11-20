@@ -2952,3 +2952,75 @@ func TestTerminalJobPersistenceCleanup(t *testing.T) {
 		})
 	})
 }
+
+func TestContinuePolicyWaitsForOtherDependencies(t *testing.T) {
+	for _, order := range []string{"failure first", "success first", "both fail", "cancellation first"} {
+		t.Run(order, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				s := New(WithWorkers(2))
+				first, second := make(chan struct{}), make(chan struct{})
+				failure := errors.New("test dependency failure")
+				register := func(id JobID, release <-chan struct{}, runErr error) {
+					t.Helper()
+					if _, err := s.Schedule(id, time.Now(), func(context.Context) error {
+						<-release
+						return runErr
+					}, WithRetryPolicy(RetryPolicy{MaxAttempts: 1})); err != nil {
+						t.Fatal(err)
+					}
+				}
+				var firstErr, secondErr error
+				switch order {
+				case "failure first":
+					firstErr = failure
+				case "success first":
+					secondErr = failure
+				case "both fail":
+					firstErr, secondErr = failure, failure
+				}
+				register("first", first, firstErr)
+				register("second", second, secondErr)
+
+				runs, canceledRuns := 0, 0
+				if _, err := s.Schedule("continue", time.Now(), func(context.Context) error {
+					runs++
+					return nil
+				}, WithDependsOn(DependencyFailureContinue, "first", "second")); err != nil {
+					t.Fatal(err)
+				}
+				if _, err := s.Schedule("cancel", time.Now(), func(context.Context) error {
+					canceledRuns++
+					return nil
+				}, WithDependsOn(DependencyFailureCancel, "first", "second")); err != nil {
+					t.Fatal(err)
+				}
+
+				s.Start()
+				defer func() {
+					if err := s.Stop(t.Context()); err != nil {
+						t.Error(err)
+					}
+				}()
+				synctest.Wait()
+				if order == "cancellation first" {
+					if !s.Cancel("first") {
+						t.Error("cancel first dependency failed")
+					}
+				}
+				close(first)
+				synctest.Wait()
+				if runs != 0 {
+					t.Errorf("dependent ran before the second dependency finished: %d", runs)
+				}
+				close(second)
+				synctest.Wait()
+				if runs != 1 || canceledRuns != 0 {
+					t.Fatalf("continue runs = %d, cancel runs = %d", runs, canceledRuns)
+				}
+				if status, ok := s.Status("cancel"); !ok || status.State != JobStateCanceled {
+					t.Fatalf("other dependent = %+v, present = %t", status, ok)
+				}
+			})
+		})
+	}
+}

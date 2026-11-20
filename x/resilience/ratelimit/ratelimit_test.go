@@ -259,3 +259,18 @@ func TestTokenBucketRejectsAboveIntegerCapacity(t *testing.T) {
 		t.Fatal("exact capacity was not available")
 	}
 }
+
+func TestKeyedWaitDoesNotAllocateCanceledBucket(t *testing.T) {
+	buckets := ratelimit.NewKeyed(0, 2)
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	if err := buckets.Wait(ctx, "new"); !errors.Is(err, context.Canceled) || buckets.Len() != 0 {
+		t.Fatalf("pre-canceled Wait = %v, buckets = %d", err, buckets.Len())
+	}
+	if err := buckets.Wait(t.Context(), "active"); err != nil || buckets.Len() != 1 {
+		t.Fatalf("active Wait = %v, buckets = %d", err, buckets.Len())
+	}
+	if err := buckets.Wait(ctx, "active"); !errors.Is(err, context.Canceled) || buckets.Remaining("active") != 1 {
+		t.Fatalf("canceled existing Wait = %v, remaining = %d", err, buckets.Remaining("active"))
+	}
+}

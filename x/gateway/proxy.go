@@ -19,28 +19,19 @@
 //		"github.com/birdordev/plumego/x/gateway"
 //	)
 //
-//	cfg := core.DefaultConfig()
-//	app := core.New(cfg, core.AppDependencies{})
-//
-//	// Register proxy as a route handler
-//	proxy := gateway.New(gateway.Config{
-//		Targets: []string{
-//			"http://backend-1:8080",
-//			"http://backend-2:8080",
-//		},
-//	})
-//	if err := app.Any("/api/*path", proxy); err != nil {
-//		panic(err)
+//	func registerProxy(app *core.App, backendURL string) (*gateway.Proxy, error) {
+//		proxy, err := gateway.New(gateway.Config{Targets: []string{backendURL}})
+//		if err != nil {
+//			return nil, err
+//		}
+//		if err := app.AddRoute(http.MethodGet, "/edge/*path", proxy); err != nil {
+//			proxy.Close()
+//			return nil, err
+//		}
+//		return proxy, nil
 //	}
 //
-//	// Or register through AddRoute when wiring wants an explicit method.
-//	if err := app.AddRoute(http.MethodGet, "/edge/*path", gateway.New(gateway.Config{
-//		Targets: []string{"http://backend:8080"},
-//	})); err != nil {
-//		panic(err)
-//	}
-//
-//	// Start with the explicit core lifecycle: Prepare + Server + Shutdown.
+// Close the returned proxy when the app no longer serves the registered route.
 package gateway
 
 import (

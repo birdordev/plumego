@@ -221,3 +221,23 @@ func (s *stubDiscovery) Resolve(_ context.Context, _ string) ([]string, error) {
 func (s *stubDiscovery) Watch(_ context.Context, _ string) (<-chan []string, error) {
 	return nil, nil
 }
+
+func TestProxyRejectsNegativeTimeout(t *testing.T) {
+	for _, tc := range []struct{ timeout, want time.Duration }{{-time.Second, 0}, {0, 30 * time.Second}, {time.Second, time.Second}} {
+		cfg := Config{Targets: []string{"http://example.invalid"}, Timeout: tc.timeout, WebSocketEnabled: true}
+		p, err := New(cfg)
+		if tc.timeout < 0 {
+			if p != nil || !errors.Is(err, ErrInvalidConfig) {
+				t.Fatalf("negative timeout: New=%v, %v", p, err)
+			}
+			continue
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(p.Close)
+		if p.config.Timeout != tc.want {
+			t.Fatalf("timeout=%v, want %v", p.config.Timeout, tc.want)
+		}
+	}
+}

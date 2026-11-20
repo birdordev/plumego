@@ -423,8 +423,8 @@ const (
 	// This removes the job from the scheduler entirely.
 	DependencyFailureCancel
 
-	// DependencyFailureContinue continues execution even if a dependency fails.
-	// This effectively ignores the dependency failure.
+	// DependencyFailureContinue treats a failed or canceled dependency as resolved
+	// for this job. It still waits for the remaining dependencies.
 	DependencyFailureContinue
 )
 

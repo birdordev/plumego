@@ -347,3 +347,45 @@ func TestOpenTelemetryTracerSpanSnapshotsOwnAttributes(t *testing.T) {
 		t.Error("snapshots share attributes")
 	}
 }
+
+func TestOpenTelemetryTracerRecordsLocalScheme(t *testing.T) {
+	const traceID = "0123456789abcdef0123456789abcdef"
+	const parentID = "0123456789abcdef"
+	ctx := contract.WithTraceContext(t.Context(), contract.TraceContext{TraceID: traceID, SpanID: parentID})
+	tracer := NewOpenTelemetryTracer("scheme")
+	for _, scheme := range []string{"http", "https"} {
+		req := httptest.NewRequest(http.MethodGet, scheme+"://example.invalid/resource", nil)
+		req.Header.Set("X-Forwarded-Proto", "ignored")
+		_, span := tracer.Start(ctx, req)
+		span.End(http.StatusOK, 0, "")
+	}
+	for i, span := range tracer.Spans() {
+		want := []string{"http", "https"}[i]
+		if span.Attributes["http.scheme"] != want || span.TraceID != traceID || span.ParentSpanID != parentID {
+			t.Fatalf("span %d: scheme=%q trace=%q parent=%q", i, span.Attributes["http.scheme"], span.TraceID, span.ParentSpanID)
+		}
+	}
+}
+
+func TestOpenTelemetryTracerClearReleasesSpanBuffer(t *testing.T) {
+	tracer := NewOpenTelemetryTracer("retention").WithMaxSpans(2)
+	record := func() {
+		t.Helper()
+		_, span := tracer.Start(t.Context(), httptest.NewRequest(http.MethodGet, "/sample", nil))
+		span.End(http.StatusInternalServerError, 0, "")
+	}
+	for range 3 {
+		record()
+	}
+	tracer.Clear()
+	stats := tracer.GetSpanStats()
+	if cap(tracer.spans) != 0 || len(tracer.Spans()) != 0 || stats != (SpanStats{MaxRetention: 2}) {
+		t.Fatalf("after clear: capacity=%d stats=%+v", cap(tracer.spans), stats)
+	}
+	for range 3 {
+		record()
+	}
+	if stats := tracer.GetSpanStats(); stats.TotalSpans != 2 || stats.DroppedSpans != 1 || stats.ErrorSpans != 2 {
+		t.Fatalf("after recording again: %+v", stats)
+	}
+}

@@ -202,7 +202,7 @@ func writeUploadTooLarge(w http.ResponseWriter, r *http.Request) {
 		Build())
 }
 
-// Download streams file content.
+// Download streams file content. Updating the access time is best effort.
 // GET /files/{id}
 func (h *Handler) Download(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()

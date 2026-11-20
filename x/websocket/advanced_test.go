@@ -444,3 +444,43 @@ func TestConcurrentHeartbeatUpdatesPreserveTimingOrder(t *testing.T) {
 		}
 	}
 }
+
+func TestRangeMetadataAllowsReentryAndEarlyStop(t *testing.T) {
+	conn := new(Conn)
+	fixtures := map[string]int{"first": 1, "second": 2, "third": 3}
+	for key, value := range fixtures {
+		conn.SetMetadata(key, value)
+	}
+	done := make(chan []string, 1)
+	go func() {
+		var visited []string
+		conn.RangeMetadata(func(key, value any) bool {
+			name := key.(string)
+			visited = append(visited, name)
+			if got, ok := conn.GetMetadata(name); !ok || got != value || value != fixtures[name] {
+				t.Errorf("metadata %s: iterated=%v fetched=%v found=%t", name, value, got, ok)
+			}
+			conn.DeleteMetadata(name)
+			return false
+		})
+		done <- visited
+	}()
+	select {
+	case visited := <-done:
+		if len(visited) != 1 {
+			t.Fatalf("visited keys=%v", visited)
+		}
+		for key, want := range fixtures {
+			got, ok := conn.GetMetadata(key)
+			if key == visited[0] {
+				if ok {
+					t.Errorf("deleted key %s is still present", key)
+				}
+			} else if !ok || got != want {
+				t.Errorf("metadata %s = %v, %t", key, got, ok)
+			}
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("iteration did not return after reentering metadata access")
+	}
+}

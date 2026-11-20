@@ -6,6 +6,8 @@ import (
 	"testing"
 	"testing/synctest"
 	"time"
+
+	"github.com/birdordev/plumego/x/ai/orchestration"
 )
 
 // --- RetryWithPolicy ---
@@ -171,4 +173,78 @@ func TestRetryWithPolicySkipsCanceledOperation(t *testing.T) {
 			}
 		})
 	})
+}
+
+type recoverySnapshotBackend struct {
+	WorkflowPersistence
+	snapshot *ExecutionSnapshot
+	err      error
+}
+
+func (p recoverySnapshotBackend) LoadSnapshot(context.Context, string) (*ExecutionSnapshot, error) {
+	return p.snapshot, p.err
+}
+
+func TestRecoveryManagerRejectsInvalidSnapshots(t *testing.T) {
+	readErr := errors.New("read failed")
+	for _, tc := range []struct {
+		name     string
+		snapshot *ExecutionSnapshot
+		err      error
+	}{
+		{"missing", nil, nil},
+		{"wrong execution", &ExecutionSnapshot{ExecutionID: "other", Status: StatusFailed}, nil},
+		{"non-failed", &ExecutionSnapshot{ExecutionID: "exec", Status: StatusCompleted}, nil},
+		{"adapter error", nil, readErr},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rm := NewRecoveryManager(recoverySnapshotBackend{snapshot: tc.snapshot, err: tc.err}, nil, nil)
+			err := rm.RecoverFailedExecution(t.Context(), "exec")
+			if err == nil || (tc.err != nil && !errors.Is(err, tc.err)) {
+				t.Fatalf("RecoverFailedExecution = %v", err)
+			}
+		})
+	}
+	synctest.Test(t, func(t *testing.T) {
+		p := &engineTestPersistence{snapshot: ExecutionSnapshot{WorkflowID: "workflow", ExecutionID: "exec", Status: StatusFailed}}
+		results := make(chan *TaskResult, 1)
+		q := engineTestQueue{
+			subscribe: func(context.Context, string) (<-chan *TaskResult, error) { return results, nil },
+			enqueue: func(_ context.Context, task *WorkflowTask) error {
+				results <- &TaskResult{TaskID: task.ID, AgentResult: &orchestration.AgentResult{Output: "done"}}
+				return nil
+			},
+		}
+		engine := newEngineForTest(q, p, engineTestStep(nil))
+		if err := NewRecoveryManager(p, q, engine).RecoverFailedExecution(t.Context(), "exec"); err != nil {
+			t.Fatal(err)
+		}
+		synctest.Wait()
+		snapshot, err := p.LoadSnapshot(t.Context(), "exec")
+		if err != nil || snapshot.Status != StatusCompleted {
+			t.Fatalf("recovered = %+v, %v", snapshot, err)
+		}
+	})
+}
+
+func TestMonitorTimeoutsWaitsOnlyForCancellation(t *testing.T) {
+	for _, interval := range []time.Duration{-time.Second, 0, time.Second} {
+		synctest.Test(t, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			result := make(chan error, 1)
+			// No persistence or queue is required for the cancellation-only wait.
+			go func() { result <- new(RecoveryManager).MonitorTimeouts(ctx, interval) }()
+			synctest.Wait()
+			select {
+			case err := <-result:
+				t.Fatalf("interval %v returned early: %v", interval, err)
+			default:
+			}
+			cancel()
+			if err := <-result; !errors.Is(err, context.Canceled) {
+				t.Fatalf("interval %v: %v", interval, err)
+			}
+		})
+	}
 }

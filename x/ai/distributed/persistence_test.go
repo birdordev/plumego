@@ -1,11 +1,14 @@
 package distributed
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	kv "github.com/birdordev/plumego/store/kv"
@@ -246,18 +249,10 @@ func TestKVPersistence_StepResults(t *testing.T) {
 			t.Fatalf("SaveStepResult failed: %v", err)
 		}
 
-		// Note: LoadStepResults may not work with the simplified implementation
-		// This test would need proper key scanning support
 		results, err := persistence.LoadStepResults(ctx, "exec-1")
-		if err != nil {
-			t.Fatalf("LoadStepResults failed: %v", err)
-		}
-
-		// With the simplified implementation, results may be empty
-		if len(results) > 0 {
-			if results[0].AgentID != "agent-1" && results[0].AgentID != "agent-2" {
-				t.Errorf("unexpected agent ID: %s", results[0].AgentID)
-			}
+		if err != nil || len(results) != 2 ||
+			results[0].AgentID != "agent-1" || results[1].AgentID != "agent-2" {
+			t.Fatalf("ordered results = %+v, %v", results, err)
 		}
 	})
 
@@ -338,4 +333,306 @@ func TestKVPersistenceLoadWorkflowRejectsInvalidFields(t *testing.T) {
 	if wf, err := p.LoadWorkflow(t.Context(), "missing"); err == nil || wf != nil || errors.Unwrap(err) == nil {
 		t.Errorf("missing record = %v, %v; want wrapped storage error", wf, err)
 	}
+}
+
+type scanTestBackend struct {
+	kvBackend
+	keys   func(context.Context) ([]string, error)
+	read   func(string) ([]byte, error)
+	remove func(string) error
+	write  func(string, []byte, time.Duration) error
+}
+
+func (s scanTestBackend) KeysContext(ctx context.Context) ([]string, error) { return s.keys(ctx) }
+func (s scanTestBackend) Get(key string) ([]byte, error) {
+	if s.read != nil {
+		return s.read(key)
+	}
+	return s.kvBackend.Get(key)
+}
+func (s scanTestBackend) Set(key string, value []byte, ttl time.Duration) error {
+	if s.write != nil {
+		return s.write(key, value, ttl)
+	}
+	return s.kvBackend.Set(key, value, ttl)
+}
+func (s scanTestBackend) Delete(key string) error {
+	if s.remove != nil {
+		return s.remove(key)
+	}
+	return s.kvBackend.Delete(key)
+}
+
+func TestKVPersistenceLoadsOrderedStepResults(t *testing.T) {
+	ctx := t.Context()
+	dir := t.TempDir()
+	store, err := kv.NewKVStore(kv.Config{DataDir: dir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	saved := NewKVPersistence(store)
+	for _, item := range []struct {
+		id     string
+		index  int
+		output string
+	}{{"run", 10, "ten"}, {"run", 2, "two"}, {"run:child", 0, "other"}} {
+		if err := saved.SaveStepResult(ctx, item.id, item.index, &orchestration.AgentResult{Output: item.output}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := saved.Close(); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := kv.NewKVStore(kv.Config{DataDir: dir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := reopened.Close(); err != nil {
+			t.Error(err)
+		}
+	})
+	results, err := NewKVPersistence(reopened).LoadStepResults(ctx, "run")
+	if err != nil || len(results) != 2 || results[0].Output != "two" || results[1].Output != "ten" {
+		t.Fatalf("ordered results = %+v, %v", results, err)
+	}
+
+	wrapped := NewKVPersistence(struct{ kvBackend }{reopened})
+	if _, err := wrapped.LoadStepResults(ctx, "run"); err == nil || !strings.Contains(err.Error(), "key enumeration") {
+		t.Fatalf("non-enumerable backend error = %v", err)
+	}
+	sentinel := errors.New("storage error")
+	for _, scanFails := range []bool{false, true} {
+		backend := scanTestBackend{
+			keys: func(received context.Context) ([]string, error) {
+				if received != ctx {
+					t.Error("scan received a different context")
+				}
+				if scanFails {
+					return nil, sentinel
+				}
+				return []string{prefixStepResult + "run:2"}, nil
+			},
+			read: func(string) ([]byte, error) { return nil, sentinel },
+		}
+		if _, err := NewKVPersistence(backend).LoadStepResults(ctx, "run"); !errors.Is(err, sentinel) {
+			t.Fatalf("scanFails=%t error = %v", scanFails, err)
+		}
+	}
+}
+
+func TestKVPersistenceListsOnlyLiveWorkflowSnapshots(t *testing.T) {
+	store, err := kv.NewKVStore(kv.Config{DataDir: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := store.Close(); err != nil {
+			t.Error(err)
+		}
+	})
+	p := NewKVPersistence(store)
+	ctx := t.Context()
+	legacy := ExecutionSnapshot{ExecutionID: "a:old", WorkflowID: "project:workflow"}
+	raw, err := json.Marshal(legacy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Set(prefixSnapshot+legacy.ExecutionID, raw, 0); err != nil {
+		t.Fatal(err)
+	}
+	const staleIndex = "distributed:execution:project:workflow:missing"
+	if err := store.Set(staleIndex, []byte("missing"), 0); err != nil {
+		t.Fatal(err)
+	}
+	for _, snapshot := range []*ExecutionSnapshot{
+		{ExecutionID: "z:new", WorkflowID: "project:workflow"},
+		{ExecutionID: "other-run", WorkflowID: "project"},
+	} {
+		if err := p.SaveSnapshot(ctx, snapshot); err != nil {
+			t.Fatal(err)
+		}
+	}
+	checkIDs := func(want ...string) {
+		t.Helper()
+		got, err := p.ListExecutions(ctx, "project:workflow")
+		if err != nil || !slices.Equal(got, want) {
+			t.Fatalf("ListExecutions=%v,%v want %v", got, err, want)
+		}
+	}
+	checkIDs("a:old", "z:new")
+	if err := p.DeleteSnapshot(ctx, "z:new"); err != nil {
+		t.Fatal(err)
+	}
+	checkIDs("a:old")
+	keys, err := store.KeysContext(ctx)
+	if err != nil || !slices.Equal(keys, []string{staleIndex, prefixSnapshot + "a:old", prefixSnapshot + "other-run"}) {
+		t.Fatalf("storage keys = %v, %v", keys, err)
+	}
+}
+
+func TestKVPersistenceCleanupPreservesRefreshedSnapshots(t *testing.T) {
+	store, err := kv.NewKVStore(kv.Config{DataDir: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := store.Close(); err != nil {
+			t.Error(err)
+		}
+	})
+	ctx := t.Context()
+	cutoff := time.Now().Add(-time.Hour)
+	for _, fixture := range []struct {
+		id      string
+		updated time.Time
+	}{
+		{"expired", cutoff.Add(-time.Second)},
+		{"zz-failing", cutoff.Add(-time.Second)},
+		{"refreshed", cutoff.Add(-time.Second)},
+		{"boundary", cutoff},
+	} {
+		raw, err := json.Marshal(ExecutionSnapshot{ExecutionID: fixture.id, UpdatedAt: fixture.updated})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := store.Set(prefixSnapshot+fixture.id, raw, 0); err != nil {
+			t.Fatal(err)
+		}
+	}
+	scanned := make(chan struct{})
+	resume := make(chan struct{})
+	blockScan := true
+	injected := errors.New("delete failure")
+	failDelete := true
+	backend := scanTestBackend{
+		kvBackend: store,
+		keys: func(ctx context.Context) ([]string, error) {
+			keys, err := store.KeysContext(ctx)
+			if blockScan {
+				close(scanned)
+				<-resume
+			}
+			return keys, err
+		},
+		remove: func(key string) error {
+			if failDelete && key == prefixSnapshot+"zz-failing" {
+				return injected
+			}
+			return store.Delete(key)
+		},
+	}
+	p := NewKVPersistence(backend)
+	type cleanupResult struct {
+		count int
+		err   error
+	}
+	done := make(chan cleanupResult, 1)
+	go func() {
+		n, err := p.CleanupExpired(ctx, cutoff)
+		done <- cleanupResult{n, err}
+	}()
+	<-scanned
+	refreshErr := p.SaveSnapshot(ctx, &ExecutionSnapshot{ExecutionID: "refreshed"})
+	close(resume)
+	result := <-done
+	if refreshErr != nil {
+		t.Fatal(refreshErr)
+	}
+	if result.count != 1 || !errors.Is(result.err, injected) {
+		t.Fatalf("first cleanup = %+v", result)
+	}
+	blockScan = false
+	failDelete = false
+	if count, err := p.CleanupExpired(ctx, cutoff); count != 1 || err != nil {
+		t.Fatalf("retry cleanup = %d, %v", count, err)
+	}
+	for _, id := range []string{"boundary", "refreshed"} {
+		if _, err := p.LoadSnapshot(ctx, id); err != nil {
+			t.Errorf("retained %s: %v", id, err)
+		}
+	}
+	cancelled, cancel := context.WithCancel(ctx)
+	cancel()
+	if count, err := p.CleanupExpired(cancelled, time.Now()); count != 0 || !errors.Is(err, context.Canceled) {
+		t.Fatalf("canceled cleanup = %d, %v", count, err)
+	}
+}
+
+func TestKVPersistenceSerializesSnapshotCleanupAndRefresh(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ctx := t.Context()
+		cutoff := time.Now()
+		key := prefixSnapshot + "run"
+		raw, err := json.Marshal(ExecutionSnapshot{ExecutionID: "run", UpdatedAt: cutoff.Add(-time.Minute)})
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		reading := make(chan struct{})
+		resume := make(chan struct{})
+		firstRead := true
+		var changes []string
+		p := NewKVPersistence(scanTestBackend{
+			keys: func(context.Context) ([]string, error) { return []string{key}, nil },
+			read: func(string) ([]byte, error) {
+				if firstRead {
+					firstRead = false
+					close(reading)
+					<-resume
+				}
+				return raw, nil
+			},
+			remove: func(string) error { changes = append(changes, "delete"); raw = nil; return nil },
+			write: func(_ string, value []byte, _ time.Duration) error {
+				changes = append(changes, "save")
+				raw = value
+				return nil
+			},
+		})
+
+		type result struct {
+			n   int
+			err error
+		}
+		cleaned := make(chan result, 1)
+		go func() { n, err := p.CleanupExpired(ctx, cutoff); cleaned <- result{n, err} }()
+		<-reading
+
+		canceledCtx, cancel := context.WithCancel(ctx)
+		canceledRefresh := make(chan error, 1)
+		go func() { canceledRefresh <- p.SaveSnapshot(canceledCtx, &ExecutionSnapshot{ExecutionID: "run"}) }()
+		synctest.Wait()
+		cancel()
+		synctest.Wait()
+		select {
+		case err := <-canceledRefresh:
+			if !errors.Is(err, context.Canceled) {
+				t.Errorf("waiting refresh = %v", err)
+			}
+		default:
+			t.Error("refresh did not respond to cancellation while waiting")
+		}
+
+		refreshed := make(chan error, 1)
+		go func() {
+			refreshed <- p.SaveSnapshot(ctx, &ExecutionSnapshot{ExecutionID: "run", Status: StatusCompleted})
+		}()
+		synctest.Wait()
+		if len(changes) != 0 {
+			t.Errorf("snapshot changed while cleanup was reading: %v", changes)
+		}
+		close(resume)
+
+		if got := <-cleaned; got.n != 1 || got.err != nil {
+			t.Fatalf("cleanup = %+v", got)
+		}
+		if err := <-refreshed; err != nil {
+			t.Fatal(err)
+		}
+		got, err := p.LoadSnapshot(ctx, "run")
+		if err != nil || got.Status != StatusCompleted || !slices.Equal(changes, []string{"delete", "save"}) {
+			t.Fatalf("snapshot=%+v error=%v operations=%v", got, err, changes)
+		}
+	})
 }

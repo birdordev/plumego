@@ -818,3 +818,31 @@ func TestProxyDiscoveryPreservesBackendPolicy(t *testing.T) {
 		t.Fatal("rediscovered backend did not start with fresh state")
 	}
 }
+
+func TestProxyRejectsNegativeRetryCount(t *testing.T) {
+	backend := startBackend(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	for _, retries := range []int{-1, 0, 1} {
+		proxy, err := New(Config{Targets: []string{backend.URL}, RetryCount: retries})
+		if retries < 0 {
+			if proxy != nil || !errors.Is(err, ErrInvalidConfig) {
+				t.Fatalf("New with negative retries = %v, %v", proxy, err)
+			}
+			continue
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(proxy.Close)
+		want := retries
+		if retries == 0 {
+			want = 2
+		}
+		rec := httptest.NewRecorder()
+		proxy.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
+		if proxy.config.RetryCount != want || rec.Code != http.StatusNoContent {
+			t.Fatalf("retries = %d, status = %d", proxy.config.RetryCount, rec.Code)
+		}
+	}
+}

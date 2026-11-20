@@ -570,3 +570,35 @@ func TestAcceptVersionMergesVaryAtCommit(t *testing.T) {
 		t.Errorf("Vary = %v, want both Origin and Accept", got)
 	}
 }
+
+func TestAcceptVersionUsesMediaTypeOnly(t *testing.T) {
+	for _, tt := range []struct {
+		name   string
+		accept []string
+		want   int
+	}{
+		{"media parameter", []string{`text/plain; note="application/vnd.api.v2+json"`}, 1},
+		{"quoted comma and escaped quote", []string{`text/plain; note="escaped \",application/vnd.api.v2+json,still quoted", application/vnd.api.v3+json`}, 3},
+		{"prefix lookalike", []string{"aapplication/vnd.api.v2+json"}, 1},
+		{"version on next line", []string{`text/plain; note="application/vnd.api.v2+json"`, "Application/Vnd.Api.V12+JSON; charset=utf-8"}, 12},
+		{"first type wins", []string{"application/vnd.api.v3; q=0.1, application/vnd.api.v2+json"}, 3},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			seen := 0
+			h := Middleware(Config{})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				seen = VersionFromContext(r.Context())
+				w.WriteHeader(http.StatusNoContent)
+			}))
+			r := httptest.NewRequest(http.MethodGet, "/", nil)
+			for _, value := range tt.accept {
+				r.Header.Add("Accept", value)
+			}
+			w := httptest.NewRecorder()
+			h.ServeHTTP(w, r)
+			if w.Code != http.StatusNoContent || seen != tt.want || w.Header().Get("X-API-Version") != strconv.Itoa(tt.want) ||
+				w.Header().Get("Vary") != "Accept" {
+				t.Fatalf("status=%d context version=%d headers=%v, want version %d", w.Code, seen, w.Header(), tt.want)
+			}
+		})
+	}
+}

@@ -1,7 +1,10 @@
 package frontend
 
 import (
+	"bytes"
+	"compress/gzip"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -815,5 +818,72 @@ func TestStatusCodeWriterFlushCapability(t *testing.T) {
 	w.ResponseWriter = rec
 	if err := http.NewResponseController(w).Flush(); err != nil || !rec.Flushed {
 		t.Errorf("Flush = %v, recorder flushed = %t", err, rec.Flushed)
+	}
+}
+
+func TestGzipErrorPagesKeepStatusForGetAndHead(t *testing.T) {
+	dir := t.TempDir()
+	for _, item := range []struct{ name, body string }{{"404.html", "missing page"}, {"500.html", "failed page"}} {
+		writeTestFile(t, dir, item.name, item.body)
+		var compressed bytes.Buffer
+		writer := gzip.NewWriter(&compressed)
+		if _, err := io.WriteString(writer, item.body); err != nil {
+			t.Fatal(err)
+		}
+		if err := writer.Close(); err != nil {
+			t.Fatal(err)
+		}
+		writeTestFile(t, dir, item.name+".gz", compressed.String())
+	}
+	h, err := NewHandlerFS(&errOnPathFS{base: http.Dir(dir), errPath: "unreadable"}, WithPrecompressed(true),
+		WithFallback(false), WithNotFoundPage("404.html"), WithErrorPage("500.html"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(h)
+	t.Cleanup(server.Close)
+	transport := &http.Transport{DisableCompression: true}
+	t.Cleanup(transport.CloseIdleConnections)
+	client := &http.Client{Transport: transport}
+	for _, item := range []struct {
+		path, body string
+		status     int
+	}{
+		{"/missing", "missing page", http.StatusNotFound},
+		{"/unreadable", "failed page", http.StatusInternalServerError},
+	} {
+		for _, method := range []string{http.MethodGet, http.MethodHead} {
+			t.Run(method+item.path, func(t *testing.T) {
+				req, err := http.NewRequestWithContext(t.Context(), method, server.URL+item.path, nil)
+				if err != nil {
+					t.Fatal(err)
+				}
+				req.Header.Set("Accept-Encoding", "gzip, identity;q=0")
+				resp, err := client.Do(req)
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer resp.Body.Close()
+				if resp.StatusCode != item.status || resp.Header.Get("Content-Encoding") != "gzip" || resp.Header.Get("Vary") != "Accept-Encoding" {
+					t.Fatalf("status=%d headers=%v", resp.StatusCode, resp.Header)
+				}
+				if method == http.MethodHead {
+					body, err := io.ReadAll(resp.Body)
+					if len(body) != 0 || err != nil {
+						t.Fatalf("HEAD body length=%d err=%v", len(body), err)
+					}
+					return
+				}
+				compressed, err := gzip.NewReader(resp.Body)
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer compressed.Close()
+				body, err := io.ReadAll(compressed)
+				if string(body) != item.body || err != nil {
+					t.Fatalf("decoded body=%q, %v", body, err)
+				}
+			})
+		}
 	}
 }

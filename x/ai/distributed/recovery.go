@@ -33,7 +33,8 @@ func (rm *RecoveryManager) RecoverStaleTasks(ctx context.Context, staleThreshold
 	return 0, nil
 }
 
-// RecoverFailedExecution attempts to recover a failed execution.
+// RecoverFailedExecution resumes a failed execution with a matching snapshot.
+// Missing snapshots and executions in other states return an error.
 func (rm *RecoveryManager) RecoverFailedExecution(ctx context.Context, executionID string) error {
 	// Load snapshot
 	snapshot, err := rm.persistence.LoadSnapshot(ctx, executionID)
@@ -41,6 +42,9 @@ func (rm *RecoveryManager) RecoverFailedExecution(ctx context.Context, execution
 		return fmt.Errorf("failed to load snapshot: %w", err)
 	}
 
+	if snapshot == nil || snapshot.ExecutionID != executionID {
+		return fmt.Errorf("persisted snapshot does not match execution %s", executionID)
+	}
 	if snapshot.Status != StatusFailed {
 		return fmt.Errorf("execution is not in failed state: %s", snapshot.Status)
 	}
@@ -49,21 +53,11 @@ func (rm *RecoveryManager) RecoverFailedExecution(ctx context.Context, execution
 	return rm.engine.Resume(ctx, executionID)
 }
 
-// MonitorTimeouts waits for cancellation. It does not currently scan for or\n// handle timed-out executions.
-func (rm *RecoveryManager) MonitorTimeouts(ctx context.Context, interval time.Duration) error {
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-ticker.C:
-			// Check for timed-out executions
-			// This requires scanning snapshots
-			// For production, implement proper timeout tracking
-		}
-	}
+// MonitorTimeouts waits for cancellation. The interval argument is reserved
+// for future timeout checks.
+func (rm *RecoveryManager) MonitorTimeouts(ctx context.Context, _ time.Duration) error {
+	<-ctx.Done()
+	return ctx.Err()
 }
 
 // RetryWithPolicy retries an operation with exponential backoff.

@@ -139,3 +139,30 @@ func TestMigratorStatusOwnsTimestamp(t *testing.T) {
 		t.Errorf("status error = %v", err)
 	}
 }
+
+type failingMigrationRunner struct {
+	fakeRunner
+	downContext       context.Context
+	downErr, closeErr error
+}
+
+func (r *failingMigrationRunner) Down(ctx context.Context) error {
+	r.downContext = ctx
+	return r.downErr
+}
+func (r *failingMigrationRunner) Close() error { return r.closeErr }
+
+func TestMigratorPreservesDownAndCloseErrors(t *testing.T) {
+	runner := &failingMigrationRunner{downErr: errors.New("rollback failure"), closeErr: errors.New("close failure")}
+	m, err := New(runner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := t.Context()
+	if err := m.Down(ctx); !errors.Is(err, ErrMigrationFailed) || !errors.Is(err, runner.downErr) || runner.downContext != ctx {
+		t.Fatalf("Down error=%v, original context=%t", err, runner.downContext == ctx)
+	}
+	if err := m.Close(); !errors.Is(err, runner.closeErr) {
+		t.Fatalf("Close error = %v", err)
+	}
+}

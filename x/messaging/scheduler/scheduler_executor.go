@@ -143,14 +143,13 @@ func (s *Scheduler) triggerDependentJobs(completedJob *job) {
 
 	for _, depJobID := range dependentIDs {
 		depJob, exists := s.jobs[depJobID]
-		if !exists || depJob.canceled.Load() || depJob.paused.Load() {
+		if !exists || depJob.canceled.Load() {
 			continue
 		}
-
-		if s.allDependenciesMetLocked(depJob) {
-			s.setJobStateIfIdleLocked(depJob, JobStateScheduled)
-			s.pushScheduleItemLocked(depJob, depJob.runAt, true)
-			s.wakeScheduler()
+		if depJob.options.DependencyPolicy == DependencyFailureContinue {
+			depJob.resolveDependencyLocked(completedJobID)
+		}
+		if s.scheduleDependentIfReadyLocked(depJob) {
 			if s.logger != nil {
 				s.logger.Info("triggering dependent job", log.Fields{
 					"job_id":     depJobID,
@@ -293,13 +292,8 @@ func (s *Scheduler) applyDependentPolicyLocked(depJobID JobID, depJob *job, trig
 		s.cancelJobLocked(depJobID, depJob)
 	case DependencyFailureContinue:
 		s.logDependentPolicy("continuing dependent job despite dependency "+event.noun, depJobID, triggerID, event.field, false)
-		// DependencyFailureContinue ignores the triggering dependency outcome for
-		// this scheduling decision only.
-		if s.allDependenciesMetExceptLocked(depJob, triggerID) {
-			s.setJobStateIfIdleLocked(depJob, JobStateScheduled)
-			s.pushScheduleItemLocked(depJob, depJob.runAt, true)
-			s.wakeScheduler()
-		}
+		depJob.resolveDependencyLocked(triggerID)
+		s.scheduleDependentIfReadyLocked(depJob)
 	}
 }
 
@@ -407,30 +401,24 @@ func (s *Scheduler) resumeJobLocked(j *job) {
 	}
 }
 
-// allDependenciesMetLocked checks if all dependencies for a job have completed successfully.
-// Must be called with s.mu held.
-func (s *Scheduler) allDependenciesMetLocked(j *job) bool {
-	for _, requiredDepID := range j.options.Dependencies {
-		if status, ok := s.dependencyStatus[requiredDepID]; !ok || !status {
-			return false
-		}
+// resolveDependencyLocked records that this job no longer waits on id.
+// It leaves the shared success or failure status of the dependency intact.
+func (j *job) resolveDependencyLocked(id JobID) {
+	if j.resolvedDependencies == nil {
+		j.resolvedDependencies = make(map[JobID]struct{})
 	}
-	return true
+	j.resolvedDependencies[id] = struct{}{}
 }
 
-// allDependenciesMetExceptLocked is like allDependenciesMetLocked but skips
-// the dependency identified by exceptID. Used for DependencyFailureContinue:
-// the failed dependency is ignored so the dependent job can still proceed if
-// all other dependencies are satisfied.
-// Must be called with s.mu held.
-func (s *Scheduler) allDependenciesMetExceptLocked(j *job, exceptID JobID) bool {
-	for _, requiredDepID := range j.options.Dependencies {
-		if requiredDepID == exceptID {
-			continue // intentionally ignore this dependency's outcome
-		}
-		if status, ok := s.dependencyStatus[requiredDepID]; !ok || !status {
+func (s *Scheduler) scheduleDependentIfReadyLocked(j *job) bool {
+	if j.paused.Load() || (j.kind == jobKindDelay && j.state != JobStateQueued) {
+		return false
+	}
+	for _, dependency := range j.options.Dependencies {
+		if _, resolved := j.resolvedDependencies[dependency]; !resolved && !s.dependencyStatus[dependency] {
 			return false
 		}
 	}
+	s.pushScheduleLocked(j, j.runAt)
 	return true
 }

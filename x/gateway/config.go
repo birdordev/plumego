@@ -56,11 +56,11 @@ type Config struct {
 	// Default: 3
 	FailureThreshold uint32
 
-	// Timeout is the proxy request timeout
+	// Timeout is the proxy request timeout. Negative values are invalid.
 	// Default: 30 seconds
 	Timeout time.Duration
 
-	// RetryCount is the number of retries on failure
+	// RetryCount is the number of retries on failure. Negative values are invalid.
 	// Default: 2
 	RetryCount int
 
@@ -99,6 +99,10 @@ type Config struct {
 
 // Validate validates the proxy configuration
 func (c *Config) Validate() error {
+	if c.RetryCount < 0 || c.Timeout < 0 {
+		return ErrInvalidConfig
+	}
+
 	// Must have either static targets or service discovery
 	if len(c.Targets) == 0 && c.Discovery == nil {
 		return ErrInvalidConfig

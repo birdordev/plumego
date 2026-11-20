@@ -316,3 +316,38 @@ func TestGenerateSkipsMethodsWithoutOperations(t *testing.T) {
 		t.Fatalf("paths: %+v", doc.Paths)
 	}
 }
+
+func TestGenerateKeepsDistinctOperationsOnSharedPath(t *testing.T) {
+	const path = "/items/:id"
+	methods := map[string]string{
+		http.MethodPut: "put", http.MethodPatch: "patch", http.MethodHead: "head", http.MethodOptions: "options",
+	}
+	r := router.NewRouter()
+	hints := make(map[string]Op)
+	for method, name := range methods {
+		if err := r.AddRoute(method, path, http.HandlerFunc(func(http.ResponseWriter, *http.Request) {})); err != nil {
+			t.Fatal(err)
+		}
+		hints[method+" "+path] = Op{Summary: name}
+	}
+	encoded, err := MarshalJSON(New().Generate(r.Routes(), hints))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc struct {
+		Paths map[string]map[string]Operation
+	}
+	if err := json.Unmarshal(encoded, &doc); err != nil {
+		t.Fatal(err)
+	}
+	ops := doc.Paths["/items/{id}"]
+	if len(ops) != len(methods) || len(doc.Paths) != 1 {
+		t.Fatalf("paths = %+v", doc.Paths)
+	}
+	for _, name := range methods {
+		op, ok := ops[name]
+		if !ok || op.Summary != name || len(op.Parameters) != 1 || op.Parameters[0].Name != "id" || !op.Parameters[0].Required {
+			t.Errorf("%s operation = %+v", name, op)
+		}
+	}
+}

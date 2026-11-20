@@ -302,3 +302,30 @@ func TestBindPointerTargetsAndNull(t *testing.T) {
 		t.Fatalf("validator received %v (%T), want a nil *createItemRequest", pointer, validator.inputs[0])
 	}
 }
+
+type customJSONError string
+
+func (e customJSONError) Error() string { return string(e) }
+
+const decoderRejected customJSONError = "custom decoder rejected fixture"
+
+type customJSONRequest struct{}
+
+func (*customJSONRequest) UnmarshalJSON([]byte) error {
+	return decoderRejected
+}
+
+func TestBindPreservesCustomUnmarshalError(t *testing.T) {
+	validator := &requestValidator{}
+	_, jsonErr := BindJSON[customJSONRequest](newJSONRequest(`{}`))
+	_, bindErr := Bind[customJSONRequest](newJSONRequest(`{}`), validator)
+	for _, err := range []error{jsonErr, bindErr} {
+		var validationErr ValidationError
+		if !errors.Is(err, decoderRejected) || errors.As(err, &validationErr) {
+			t.Fatalf("decode error = %v (%T)", err, err)
+		}
+	}
+	if validator.called {
+		t.Fatal("validator ran after decoder failure")
+	}
+}

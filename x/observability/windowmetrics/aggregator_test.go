@@ -1,6 +1,8 @@
 package windowmetrics
 
 import (
+	"encoding/json"
+	"math"
 	"strconv"
 	"sync"
 	"testing"
@@ -254,5 +256,26 @@ func TestAggregatorReclaimsIdleMetricNames(t *testing.T) {
 	stats := agg.GetAllStats()
 	if got := stats["active"]; len(stats) != 1 || got.Count != 12 || got.Mean != 50 || got.P50 != 50 {
 		t.Fatalf("snapshot = %+v", stats)
+	}
+}
+
+func TestAggregatorSkipsNonFiniteSamples(t *testing.T) {
+	a := NewAggregator(time.Minute)
+	a.Record("metric", 2)
+	a.Record("metric", 4)
+	for _, sample := range []float64{math.NaN(), math.Inf(1), math.Inf(-1)} {
+		a.Record("metric", sample)
+		a.Record("invalid-only", sample)
+	}
+	if len(a.buckets) != 1 {
+		t.Fatalf("buckets = %d", len(a.buckets))
+	}
+	got := a.GetStats("metric")
+	want := AggregatorStats{Count: 2, Sum: 6, Mean: 3, Min: 2, Max: 4, P50: 2, P95: 2, P99: 2}
+	if got != want {
+		t.Fatalf("stats = %+v, want %+v", got, want)
+	}
+	if _, err := json.Marshal(got); err != nil {
+		t.Fatal(err)
 	}
 }
