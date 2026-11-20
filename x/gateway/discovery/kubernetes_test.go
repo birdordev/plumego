@@ -1,12 +1,17 @@
 package discovery
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"slices"
+	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 )
 
@@ -226,4 +231,189 @@ func TestDiscoveryFormatsIPv6Backend(t *testing.T) {
 			t.Errorf("Resolve = %v, %v; want %v", got, err, want)
 		}
 	})
+}
+
+func newPollingWatchFixture(t *testing.T, adapter string, serve func(*http.Request) (string, error)) Discovery {
+	t.Helper()
+	var client *http.Client
+	var discovery Discovery
+	switch adapter {
+	case "kubernetes":
+		k, err := NewKubernetes(KubernetesConfig{APIServerURL: "http://discovery.test", Namespace: "test", PollInterval: time.Second})
+		if err != nil {
+			t.Fatal(err)
+		}
+		client, discovery = k.client, k
+	case "etcd":
+		e, err := NewEtcd([]string{"http://discovery.test"}, EtcdConfig{PollInterval: time.Second})
+		if err != nil {
+			t.Fatal(err)
+		}
+		client, discovery = e.client, e
+	default:
+		t.Fatalf("unknown adapter %q", adapter)
+	}
+	client.Transport = consulTestRoundTripper(func(req *http.Request) (*http.Response, error) {
+		host, err := serve(req)
+		if err != nil {
+			return nil, err
+		}
+		var body []byte
+		if adapter == "kubernetes" {
+			body = k8sEndpointFixture([]string{host}, 8080, "")
+		} else {
+			body = etcdRangeBody([]Instance{{ID: "first", Name: "service", Address: host, Port: 8080, Healthy: true}})
+		}
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(body))}, nil
+	})
+	t.Cleanup(func() { _ = discovery.Close() })
+	return discovery
+}
+
+func TestKubernetesCloseStopsActiveWatch(t *testing.T) {
+	testPollingCloseStopsActiveWatch(t, "kubernetes")
+}
+
+func testPollingCloseStopsActiveWatch(t *testing.T, adapter string) {
+	t.Helper()
+	t.Run("active poll and independent subscriber", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			poll := make(chan context.Context, 1)
+			calls := 0
+			discovery := newPollingWatchFixture(t, adapter, func(req *http.Request) (string, error) {
+				calls++
+				if calls <= 2 {
+					return "127.0.0.1", nil
+				}
+				poll <- req.Context()
+				<-req.Context().Done()
+				return "", req.Context().Err()
+			})
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			first, err := discovery.Watch(ctx, "service")
+			if err != nil {
+				t.Fatal(err)
+			}
+			<-first
+			second, err := discovery.Watch(t.Context(), "service")
+			if err != nil {
+				t.Fatal(err)
+			}
+			<-second
+			cancel()
+			if _, ok := <-first; ok {
+				t.Fatal("canceled subscription stayed open")
+			}
+			reqCtx := <-poll
+			var closeCalls sync.WaitGroup
+			for range 2 {
+				closeCalls.Go(func() {
+					if err := discovery.Close(); err != nil {
+						t.Error(err)
+					}
+				})
+			}
+			closeCalls.Wait()
+			if _, ok := <-second; ok {
+				t.Fatal("closed discovery still sent an update")
+			}
+			if !errors.Is(reqCtx.Err(), context.Canceled) {
+				t.Errorf("request context error = %v", reqCtx.Err())
+			}
+			afterClose, err := discovery.Watch(t.Context(), "service")
+			if !errors.Is(err, context.Canceled) {
+				t.Fatalf("Watch after Close = %v", err)
+			}
+			if _, ok := <-afterClose; ok {
+				t.Fatal("Watch after Close returned an open channel")
+			}
+		})
+	})
+	t.Run("initial resolution", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			started := make(chan struct{})
+			discovery := newPollingWatchFixture(t, adapter, func(req *http.Request) (string, error) {
+				close(started)
+				<-req.Context().Done()
+				return "", req.Context().Err()
+			})
+			result := make(chan error, 1)
+			go func() {
+				_, err := discovery.Watch(t.Context(), "service")
+				result <- err
+			}()
+			<-started
+			if err := discovery.Close(); err != nil {
+				t.Fatal(err)
+			}
+			if err := <-result; !errors.Is(err, context.Canceled) {
+				t.Errorf("initial resolution = %v", err)
+			}
+		})
+	})
+}
+
+func TestPollingWatchesDeliverLatestBackendList(t *testing.T) {
+	for _, adapter := range []string{"kubernetes", "etcd"} {
+		t.Run(adapter, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				resolved := make(chan struct{}, 1)
+				calls := 0
+				discovery := newPollingWatchFixture(t, adapter, func(*http.Request) (string, error) {
+					calls++
+					resolved <- struct{}{}
+					if calls <= 2 {
+						return "127.0.0.1", nil
+					}
+					return "127.0.0.2", nil
+				})
+				updates, err := discovery.Watch(t.Context(), "service")
+				if err != nil {
+					t.Fatal(err)
+				}
+				<-resolved // Initial list remains buffered.
+				<-resolved // Identical first poll.
+				<-resolved // Updated poll.
+				synctest.Wait()
+				if got := <-updates; !slices.Equal(got, []string{"http://127.0.0.2:8080"}) {
+					t.Fatalf("pending update = %v, want latest backend", got)
+				} else {
+					got[0] = "caller change"
+				}
+				<-resolved // Unchanged latest poll.
+				synctest.Wait()
+				select {
+				case unexpected := <-updates:
+					t.Errorf("duplicate update = %v", unexpected)
+				default:
+				}
+			})
+		})
+	}
+}
+
+func TestPollingDiscoveryRejectsNegativeInterval(t *testing.T) {
+	for _, interval := range []time.Duration{-time.Second, 0, time.Second} {
+		want := interval
+		if want == 0 {
+			want = 15 * time.Second
+		}
+		k, kErr := NewKubernetes(KubernetesConfig{PollInterval: interval})
+		e, eErr := NewEtcd([]string{"http://discovery.test"}, EtcdConfig{PollInterval: interval})
+		if interval < 0 {
+			if !errors.Is(kErr, ErrInvalidConfig) || !errors.Is(eErr, ErrInvalidConfig) {
+				t.Errorf("negative interval: Kubernetes = %v, etcd = %v", kErr, eErr)
+			}
+			continue
+		}
+		if kErr != nil || eErr != nil {
+			t.Fatalf("interval %v: Kubernetes = %v, etcd = %v", interval, kErr, eErr)
+		}
+		defer k.Close()
+		defer e.Close()
+		if k.config.PollInterval != want || e.config.PollInterval != want {
+			t.Errorf("interval %v: got %v and %v; want %v", interval, k.config.PollInterval, e.config.PollInterval, want)
+		}
+	}
 }

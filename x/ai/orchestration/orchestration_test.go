@@ -622,3 +622,54 @@ func TestRetryStepStopsBeforeCanceledAttempt(t *testing.T) {
 		})
 	}
 }
+
+func TestStepCallbacksRunOutsideWorkflowLock(t *testing.T) {
+	agent := &Agent{Provider: &mockProvider{response: "output"}}
+	for _, kind := range []string{"sequential", "parallel", "conditional"} {
+		t.Run(kind, func(t *testing.T) {
+			wf := NewWorkflow("wf", "workflow", "")
+			wf.SetState("input", "original")
+			callback := func(state map[string]any) {
+				state["input"] = "changed locally"
+				wf.SetState("reentered", true)
+			}
+			var step Step
+			switch kind {
+			case "sequential":
+				step = &SequentialStep{Agent: agent, OutputKey: "result", InputFn: func(state map[string]any) string {
+					callback(state)
+					return "input"
+				}}
+			case "parallel":
+				step = &ParallelStep{Agents: []*Agent{agent}, OutputKeys: []string{"result"}, InputFn: func(state map[string]any) []string {
+					callback(state)
+					return []string{"input"}
+				}}
+			case "conditional":
+				step = &ConditionalStep{Condition: func(state map[string]any) bool {
+					callback(state)
+					return true
+				}, TrueStep: workflowTestStep(func(_ context.Context, wf *Workflow) (*AgentResult, error) {
+					wf.SetState("result", "output")
+					return &AgentResult{Output: "output"}, nil
+				})}
+			}
+			done := make(chan error, 1)
+			go func() { _, err := step.Execute(t.Context(), wf); done <- err }()
+			select {
+			case err := <-done:
+				if err != nil {
+					t.Fatal(err)
+				}
+			case <-time.After(time.Second):
+				t.Fatal("workflow callback could not reenter SetState")
+			}
+			input, _ := wf.GetState("input")
+			reentered, _ := wf.GetState("reentered")
+			result, _ := wf.GetState("result")
+			if input != "original" || reentered != true || result != "output" {
+				t.Errorf("workflow state input = %v, reentered = %v, result = %v", input, reentered, result)
+			}
+		})
+	}
+}

@@ -388,6 +388,7 @@ type snapshotConnector struct {
 	metadata    string
 	deleted     bool
 	writeErr    error
+	writeResult driver.Result
 	firstRead   chan struct{}
 	releaseRead chan struct{}
 	nextErr     error
@@ -438,6 +439,9 @@ func (c *snapshotConn) ExecContext(_ context.Context, query string, args []drive
 		state.deleted = true
 	} else {
 		state.metadata = args[6].Value.(string)
+	}
+	if state.writeResult != nil {
+		return state.writeResult, nil
 	}
 	return driver.RowsAffected(1), nil
 }
@@ -582,5 +586,49 @@ func TestListTenantsPreservesPartialRowsAndError(t *testing.T) {
 	defer connector.mu.Unlock()
 	if connector.rowsClosed != 1 {
 		t.Fatalf("rows closed %d times", connector.rowsClosed)
+	}
+}
+
+type failedTenantRowsAffected struct {
+	driver.Result
+	err error
+}
+
+func (r failedTenantRowsAffected) RowsAffected() (int64, error) { return 0, r.err }
+
+func TestTenantConfigDeleteReportsDriverFailures(t *testing.T) {
+	writeErr := errors.New("delete failed")
+	rowsErr := errors.New("rows affected failed")
+	for _, tc := range []struct {
+		name   string
+		err    error
+		result driver.Result
+		want   error
+	}{
+		{"execution failure", writeErr, nil, writeErr},
+		{"rows affected failure", nil, failedTenantRowsAffected{err: rowsErr}, rowsErr},
+		{"missing tenant", nil, driver.RowsAffected(0), tenant.ErrTenantNotFound},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			connector := &snapshotConnector{metadata: `{"region":"old"}`, writeErr: tc.err, writeResult: tc.result}
+			db := sql.OpenDB(connector)
+			t.Cleanup(func() { _ = db.Close() })
+			manager := NewDBTenantConfigManager(db)
+			if tc.err != nil {
+				manager = NewDBTenantConfigManager(db, WithTenantCache(2, time.Minute))
+				if _, err := manager.GetTenantConfig(t.Context(), "sample"); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := manager.DeleteTenantConfig(t.Context(), "sample"); !errors.Is(err, tc.want) {
+				t.Errorf("DeleteTenantConfig = %v, want %v", err, tc.want)
+			}
+			if tc.err != nil {
+				cfg, err := manager.GetTenantConfig(t.Context(), "sample")
+				if err != nil || cfg.Metadata["region"] != "old" || connector.queries != 1 {
+					t.Errorf("cached lookup = %+v, %v, queries = %d", cfg, err, connector.queries)
+				}
+			}
+		})
 	}
 }

@@ -38,9 +38,10 @@ import (
 //	    Namespace:    "production",
 //	})
 type Kubernetes struct {
-	config KubernetesConfig
-	client *http.Client
-	stopCh chan struct{}
+	config      KubernetesConfig
+	client      *http.Client
+	watchCtx    context.Context
+	stopWatches context.CancelFunc
 }
 
 // KubernetesConfig holds Kubernetes-specific configuration.
@@ -70,7 +71,7 @@ type KubernetesConfig struct {
 	// Timeout for API requests (default: 10s).
 	Timeout time.Duration
 
-	// PollInterval controls how often Watch polls for endpoint changes (default: 15s).
+	// PollInterval controls how often Watch polls for endpoint changes (default: 15s). Negative values are invalid.
 	PollInterval time.Duration
 }
 
@@ -94,6 +95,8 @@ func NewKubernetes(config KubernetesConfig) (*Kubernetes, error) {
 	}
 	if config.PollInterval == 0 {
 		config.PollInterval = 15 * time.Second
+	} else if config.PollInterval < 0 {
+		return nil, fmt.Errorf("%w: poll interval must be positive", ErrInvalidConfig)
 	}
 
 	if config.BearerToken == "" {
@@ -131,10 +134,12 @@ func NewKubernetes(config KubernetesConfig) (*Kubernetes, error) {
 		Transport: transport,
 	}
 
+	watchCtx, stopWatches := context.WithCancel(context.Background())
 	return &Kubernetes{
-		config: config,
-		client: client,
-		stopCh: make(chan struct{}),
+		config:      config,
+		client:      client,
+		watchCtx:    watchCtx,
+		stopWatches: stopWatches,
 	}, nil
 }
 
@@ -214,49 +219,11 @@ func (k *Kubernetes) selectPort(ports []k8sEndpointPort) int {
 	return 0
 }
 
-// Watch polls the Kubernetes Endpoints API at PollInterval and delivers
-// backend-list updates on the returned channel until ctx is cancelled.
+// Watch polls for backend updates until ctx is canceled or Close is called.
+// If updates arrive faster than they are read, the pending update is replaced
+// with the latest snapshot. A Watch started after Close returns context.Canceled.
 func (k *Kubernetes) Watch(ctx context.Context, serviceName string) (<-chan []string, error) {
-	ch := make(chan []string, 1)
-
-	// Send initial state immediately.
-	backends, err := k.Resolve(ctx, serviceName)
-	if err != nil && err != ErrNoInstances {
-		close(ch)
-		return ch, err
-	}
-	if len(backends) > 0 {
-		ch <- backends
-	}
-
-	go func() {
-		defer close(ch)
-		ticker := time.NewTicker(k.config.PollInterval)
-		defer ticker.Stop()
-		var last []string
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				pollCtx, cancel := context.WithTimeout(ctx, k.config.Timeout)
-				current, err := k.Resolve(pollCtx, serviceName)
-				cancel()
-				if err != nil {
-					continue
-				}
-				if !stringSlicesEqual(current, last) {
-					last = current
-					select {
-					case ch <- current:
-					default:
-					}
-				}
-			}
-		}
-	}()
-
-	return ch, nil
+	return watchBackendLists(ctx, k.watchCtx, serviceName, k.Resolve, k.config.PollInterval, k.config.Timeout)
 }
 
 // Register is not supported; Kubernetes manages endpoints automatically.
@@ -274,12 +241,11 @@ func (k *Kubernetes) Health(_ context.Context, _ string, _ bool) error {
 	return ErrNotSupported
 }
 
-// Close stops any background goroutines.
+// Close cancels watch requests and stops polling. It is safe to call repeatedly.
 func (k *Kubernetes) Close() error {
-	select {
-	case <-k.stopCh:
-	default:
-		close(k.stopCh)
+	if k.stopWatches != nil {
+		k.stopWatches()
+		k.client.CloseIdleConnections()
 	}
 	return nil
 }

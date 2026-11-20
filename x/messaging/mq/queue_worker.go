@@ -20,12 +20,13 @@ type WorkerConfig struct {
 	MaxInflight         int
 	RetryPolicy         RetryPolicy
 	LeaseExtendInterval time.Duration
-	ShutdownTimeout     time.Duration
-	MetricsObserver     MetricsObserver
-	Deduper             TaskDeduper
-	DedupeKeyFunc       func(Task) string
-	DedupeTTL           time.Duration
-	DedupeErrorHook     func(ctx context.Context, task Task, err error)
+	// ShutdownTimeout bounds Stop and individual task finalization calls.
+	ShutdownTimeout time.Duration
+	MetricsObserver MetricsObserver
+	Deduper         TaskDeduper
+	DedupeKeyFunc   func(Task) string
+	DedupeTTL       time.Duration
+	DedupeErrorHook func(ctx context.Context, task Task, err error)
 }
 
 type Worker struct {
@@ -238,10 +239,18 @@ func (w *Worker) workerLoop() {
 
 func (w *Worker) handleTask(task Task) {
 	defer w.inflight.Add(-1)
-	defer w.untrackInflight(task.ID)
+	defer func() {
+		// Leave shutdown cleanup ownership intact when the operation was
+		// canceled by the worker lifecycle.
+		if w.runCtx.Err() == nil {
+			w.untrackInflight(task.ID)
+		}
+	}()
 
 	if task.MaxAttempts > 0 && task.Attempts > task.MaxAttempts {
-		_ = w.queue.MoveToDLQ(context.Background(), task.ID, w.config.ConsumerID, "max attempts exceeded", time.Now())
+		ctx, cancel := context.WithTimeout(w.runCtx, w.config.ShutdownTimeout)
+		defer cancel()
+		_ = w.queue.MoveToDLQ(ctx, task.ID, w.config.ConsumerID, "max attempts exceeded", time.Now())
 		w.observeLatency(task)
 		return
 	}
@@ -249,14 +258,15 @@ func (w *Worker) handleTask(task Task) {
 	if w.config.Deduper != nil {
 		key := w.dedupeKey(task)
 		if key != "" {
-			completed, err := w.config.Deduper.IsCompleted(context.Background(), key)
+			ctx, cancel := context.WithTimeout(w.runCtx, w.config.ShutdownTimeout)
+			completed, err := w.config.Deduper.IsCompleted(ctx, key)
+			cancel()
 			if err != nil {
 				if w.config.DedupeErrorHook != nil {
 					w.config.DedupeErrorHook(context.Background(), task, err)
 				}
 			} else if completed {
-				_ = w.queue.Ack(context.Background(), task.ID, w.config.ConsumerID, time.Now())
-				w.observeLatency(task)
+				w.ackTask(task, false)
 				return
 			}
 		}
@@ -288,30 +298,40 @@ func (w *Worker) handleTask(task Task) {
 	}
 
 	if err == nil {
-		w.markDeduped(task)
-		_ = w.queue.Ack(context.Background(), task.ID, w.config.ConsumerID, time.Now())
-		w.observeLatency(task)
+		w.ackTask(task, true)
 		return
 	}
 
 	w.failTask(task, err)
 }
 
+func (w *Worker) ackTask(task Task, markCompleted bool) {
+	ctx, cancel := context.WithTimeout(w.runCtx, w.config.ShutdownTimeout)
+	defer cancel()
+	if markCompleted {
+		w.markDeduped(ctx, task)
+	}
+	_ = w.queue.Ack(ctx, task.ID, w.config.ConsumerID, time.Now())
+	w.observeLatency(task)
+}
+
 func (w *Worker) failTask(task Task, err error) {
+	ctx, cancel := context.WithTimeout(w.runCtx, w.config.ShutdownTimeout)
+	defer cancel()
 	maxAttempts := task.MaxAttempts
 	if maxAttempts <= 0 {
 		maxAttempts = DefaultTaskMaxAttempts
 	}
 
 	if task.Attempts >= maxAttempts {
-		_ = w.queue.MoveToDLQ(context.Background(), task.ID, w.config.ConsumerID, err.Error(), time.Now())
+		_ = w.queue.MoveToDLQ(ctx, task.ID, w.config.ConsumerID, err.Error(), time.Now())
 		w.observeLatency(task)
 		return
 	}
 
 	retryDelay := w.config.RetryPolicy.NextDelay(task, err)
 	retryAt := time.Now().Add(retryDelay)
-	releaseErr := w.queue.Release(context.Background(), task.ID, w.config.ConsumerID, ReleaseOptions{
+	releaseErr := w.queue.Release(ctx, task.ID, w.config.ConsumerID, ReleaseOptions{
 		RetryAt: retryAt,
 		Reason:  err.Error(),
 		Now:     time.Now(),
@@ -471,7 +491,7 @@ func (w *Worker) forceStop(ctx context.Context) error {
 	return errors.Join(waitForPoll(ctx, w.pollDone), w.releaseInflight(ctx))
 }
 
-func (w *Worker) markDeduped(task Task) {
+func (w *Worker) markDeduped(ctx context.Context, task Task) {
 	if w.config.Deduper == nil {
 		return
 	}
@@ -479,9 +499,9 @@ func (w *Worker) markDeduped(task Task) {
 	if key == "" {
 		return
 	}
-	if err := w.config.Deduper.MarkCompleted(context.Background(), key, w.config.DedupeTTL); err != nil {
+	if err := w.config.Deduper.MarkCompleted(ctx, key, w.config.DedupeTTL); err != nil {
 		if w.config.DedupeErrorHook != nil {
-			w.config.DedupeErrorHook(context.Background(), task, err)
+			w.config.DedupeErrorHook(ctx, task, err)
 		}
 	}
 }

@@ -18,57 +18,40 @@ Distributed workflow execution system for AI agent orchestration across multiple
 
 ## Quick Start
 
+Supply application-owned implementations of `TaskQueue` and
+`WorkflowPersistence`, and start a worker that can execute the workflow's
+steps before dispatching. The caller owns the returned engine and should close
+it when finished. Use `GetExecutionStatus(ctx, executionID)` to read progress.
+
 ```go
 import (
+    "context"
+    "errors"
+
     "github.com/birdordev/plumego/x/ai/distributed"
     "github.com/birdordev/plumego/x/ai/orchestration"
-    "github.com/birdordev/plumego/x/messaging/mq"
-    "github.com/birdordev/plumego/x/messaging/pubsub"
-    kv "github.com/birdordev/plumego/store/kv"
 )
 
-// Setup infrastructure
-store, _ := kv.NewKVStore(kv.Options{DataDir: "/data/workflows"})
-persistence := distributed.NewKVPersistence(store)
+func startWorkflow(
+    ctx context.Context,
+    queue distributed.TaskQueue,
+    persistence distributed.WorkflowPersistence,
+    workflow *orchestration.Workflow,
+    initialState map[string]any,
+) (*distributed.DistributedEngine, string, error) {
+    local := orchestration.NewEngine()
+    local.RegisterWorkflow(workflow)
+    engine := distributed.NewDistributedEngine(local, queue, persistence, distributed.DefaultEngineConfig())
 
-broker := mq.NewInProcBroker(pubsub.New())
-queue := distributed.NewMQTaskQueue(broker, persistence, distributed.DefaultMQTaskQueueConfig())
-
-// Create distributed engine
-localEngine := orchestration.NewEngine()
-engine := distributed.NewDistributedEngine(
-    localEngine,
-    queue,
-    persistence,
-    distributed.DefaultEngineConfig(),
-)
-defer engine.Close()
-
-// Register workflow
-workflow := orchestration.NewWorkflow("data-pipeline", "Data Processing Pipeline", "")
-workflow.AddStep(&orchestration.SequentialStep{
-    StepName: "extract",
-    Agent:    extractorAgent,
-    InputFn:  func(state map[string]any) string { return state["source"].(string) },
-    OutputKey: "data",
-})
-localEngine.RegisterWorkflow(workflow)
-
-// Execute asynchronously
-executionID, err := engine.ExecuteAsync(ctx, "data-pipeline", map[string]any{
-    "source": "s3://bucket/data.csv",
-}, distributed.ExecutionOptions{
-    Distributed: true,
-    Timeout:     10 * time.Minute,
-    Checkpoints: true,
-})
-
-// Monitor status
-snapshot, _ := engine.GetExecutionStatus(ctx, executionID)
-fmt.Printf("Status: %s, Progress: %d/%d\\n",
-    snapshot.Status,
-    len(snapshot.CompletedSteps),
-    len(workflow.Steps))
+    options := distributed.DefaultExecutionOptions()
+    options.Distributed = true
+    options.Checkpoints = true
+    id, err := engine.ExecuteAsync(ctx, workflow.ID, initialState, options)
+    if err != nil {
+        return nil, "", errors.Join(err, engine.Close())
+    }
+    return engine, id, nil
+}
 ```
 
 ## Execution and recovery

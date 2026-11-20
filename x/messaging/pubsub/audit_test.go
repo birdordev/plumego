@@ -789,3 +789,79 @@ func TestNewAuditLoggerRejectsNegativeAsyncBuffer(t *testing.T) {
 		}
 	}
 }
+
+type gatedAuditError struct {
+	started chan struct{}
+	resume  chan struct{}
+}
+
+func (e gatedAuditError) Error() string {
+	close(e.started)
+	<-e.resume
+	return "operation failed"
+}
+
+func TestAuditCloseLinearizesLogAdmission(t *testing.T) {
+	for _, async := range []bool{true, false} {
+		name := "sync"
+		if async {
+			name = "async"
+		}
+		t.Run(name, func(t *testing.T) {
+			cfg := DefaultAuditConfig()
+			cfg.AsyncMode = async
+			cfg.LogFile = filepath.Join(t.TempDir(), "audit.jsonl")
+			al, err := NewAuditLogger(cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = al.Close() })
+			if err := al.Log(OpPublish, "accepted", "test", "", nil, true, nil); err != nil {
+				t.Fatal(err)
+			}
+
+			blocked := gatedAuditError{started: make(chan struct{}), resume: make(chan struct{})}
+			late := make(chan error, 1)
+			go func() { late <- al.Log(OpPublish, "late", "test", "", nil, false, blocked) }()
+			<-blocked.started
+			closeErr := al.Close()
+			close(blocked.resume)
+			if err := <-late; !errors.Is(err, ErrAuditClosed) {
+				t.Errorf("late Log = %v", err)
+			}
+			if closeErr != nil {
+				t.Fatal(closeErr)
+			}
+			data, err := os.ReadFile(cfg.LogFile)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var entry AuditEntry
+			if err := json.Unmarshal(data, &entry); err != nil || entry.Topic != "accepted" {
+				t.Fatalf("file entry = %s, decode error = %v", data, err)
+			}
+			if len(al.asyncQueue) != 0 || al.Stats().TotalEntries.Load() != 1 {
+				t.Error("late entry affected the logger after shutdown")
+			}
+		})
+	}
+}
+
+func TestAuditVerifyAfterRetentionEviction(t *testing.T) {
+	cfg := DefaultAuditConfig()
+	cfg.AsyncMode = false
+	al, err := NewAuditLogger(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer al.Close()
+	al.maxInMemory = 2
+	for i := range 6 {
+		if err := al.Log(OpPublish, "sample", "actor", "", nil, true, nil); err != nil {
+			t.Fatal(err)
+		}
+		if err := al.Verify(); err != nil {
+			t.Fatalf("Verify after %d writes = %v", i+1, err)
+		}
+	}
+}

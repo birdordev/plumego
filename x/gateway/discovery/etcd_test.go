@@ -284,3 +284,7 @@ func TestEtcdOwnsEndpointOrder(t *testing.T) {
 	primary.Close()
 	assertResolution(second.URL())
 }
+
+func TestEtcdCloseStopsActiveWatch(t *testing.T) {
+	testPollingCloseStopsActiveWatch(t, "etcd")
+}

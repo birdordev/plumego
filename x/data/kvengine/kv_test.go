@@ -18,27 +18,9 @@ import (
 	"github.com/birdordev/plumego/metrics"
 )
 
-// TestMain handles test setup and cleanup
-func TestMain(m *testing.M) {
-	// Run tests
-	code := m.Run()
-
-	// Cleanup test directories
-	cleanupTestDirs()
-
-	os.Exit(code)
-}
-
-func cleanupTestDirs() {
-	testDirs, _ := filepath.Glob("testdata_*")
-	for _, dir := range testDirs {
-		os.RemoveAll(dir)
-	}
-}
-
 // Test utilities
-func createTestStore(t *testing.T) (*KVStore, func()) {
-	dataDir := fmt.Sprintf("testdata_%d", time.Now().UnixNano())
+func createTestStore(t testing.TB) (*KVStore, func()) {
+	dataDir := t.TempDir()
 
 	opts := Options{
 		DataDir:       dataDir,
@@ -57,7 +39,6 @@ func createTestStore(t *testing.T) (*KVStore, func()) {
 
 	cleanup := func() {
 		kv.Close()
-		os.RemoveAll(dataDir)
 	}
 
 	return kv, cleanup
@@ -74,7 +55,6 @@ func TestNewKVStore(t *testing.T) {
 		{
 			name: "valid options",
 			opts: Options{
-				DataDir:     "testdata",
 				MaxEntries:  1000,
 				MaxMemoryMB: 10,
 				ShardCount:  4,
@@ -84,7 +64,6 @@ func TestNewKVStore(t *testing.T) {
 		{
 			name: "invalid shard count",
 			opts: Options{
-				DataDir:     "testdata",
 				MaxEntries:  1000,
 				MaxMemoryMB: 10,
 				ShardCount:  3, // Not power of 2
@@ -94,7 +73,6 @@ func TestNewKVStore(t *testing.T) {
 		{
 			name: "zero max entries",
 			opts: Options{
-				DataDir:     "testdata",
 				MaxEntries:  0,
 				MaxMemoryMB: 10,
 				ShardCount:  4,
@@ -105,14 +83,14 @@ func TestNewKVStore(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			tt.opts.DataDir = t.TempDir()
 			kv, err := NewKVStore(tt.opts)
+			if kv != nil {
+				t.Cleanup(func() { _ = kv.Close() })
+			}
 			if (err != nil) != tt.wantErr {
 				t.Errorf("NewKVStore() error = %v, wantErr %v", err, tt.wantErr)
 				return
-			}
-			if kv != nil {
-				kv.Close()
-				os.RemoveAll(tt.opts.DataDir)
 			}
 		})
 	}
@@ -260,8 +238,7 @@ func TestConcurrentOperations(t *testing.T) {
 
 func TestLRUEviction(t *testing.T) {
 	// Create store with very small limits
-	dataDir := fmt.Sprintf("testdata_%d", time.Now().UnixNano())
-	defer os.RemoveAll(dataDir)
+	dataDir := t.TempDir()
 
 	opts := Options{
 		DataDir:     dataDir,
@@ -498,7 +475,7 @@ func TestPersistence(t *testing.T) {
 }
 
 func TestSnapshotLoadUsesDistinctEntries(t *testing.T) {
-	dataDir := fmt.Sprintf("testdata_%d", time.Now().UnixNano())
+	dataDir := t.TempDir()
 
 	opts := Options{
 		DataDir:       dataDir,
@@ -513,10 +490,7 @@ func TestSnapshotLoadUsesDistinctEntries(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
 	}
-	defer func() {
-		kv.Close()
-		os.RemoveAll(dataDir)
-	}()
+	t.Cleanup(func() { _ = kv.Close() })
 
 	entries := map[string][]byte{
 		"alpha": []byte("one"),
@@ -670,8 +644,7 @@ func TestSnapshotPreservesConcurrentAcknowledgedWrites(t *testing.T) {
 }
 
 func TestCleanup(t *testing.T) {
-	dataDir := fmt.Sprintf("testdata_%d", time.Now().UnixNano())
-	defer os.RemoveAll(dataDir)
+	dataDir := t.TempDir()
 
 	opts := Options{
 		DataDir:       dataDir,
@@ -713,8 +686,7 @@ func TestCleanup(t *testing.T) {
 }
 
 func TestGetExpiredIncrementsMisses(t *testing.T) {
-	dataDir := fmt.Sprintf("testdata_%d", time.Now().UnixNano())
-	defer os.RemoveAll(dataDir)
+	dataDir := t.TempDir()
 
 	opts := Options{
 		DataDir:       dataDir,
@@ -787,7 +759,7 @@ func TestErrorConditions(t *testing.T) {
 // Benchmark tests
 
 func BenchmarkSet(b *testing.B) {
-	kv, cleanup := createTestStore(&testing.T{})
+	kv, cleanup := createTestStore(b)
 	defer cleanup()
 
 	value := []byte("benchmark_value")
@@ -804,7 +776,7 @@ func BenchmarkSet(b *testing.B) {
 }
 
 func BenchmarkGet(b *testing.B) {
-	kv, cleanup := createTestStore(&testing.T{})
+	kv, cleanup := createTestStore(b)
 	defer cleanup()
 
 	// Pre-populate with data
@@ -827,7 +799,7 @@ func BenchmarkGet(b *testing.B) {
 }
 
 func BenchmarkMixed(b *testing.B) {
-	kv, cleanup := createTestStore(&testing.T{})
+	kv, cleanup := createTestStore(b)
 	defer cleanup()
 
 	// Pre-populate
@@ -1188,8 +1160,7 @@ func TestValidateOptionsExtended(t *testing.T) {
 
 // Test ReadOnly mode
 func TestReadOnlyMode(t *testing.T) {
-	dataDir := fmt.Sprintf("testdata_%d", time.Now().UnixNano())
-	defer os.RemoveAll(dataDir)
+	dataDir := t.TempDir()
 
 	// First create a store and add some data
 	opts := Options{
@@ -1259,8 +1230,7 @@ func TestReadOnlyMode(t *testing.T) {
 
 // Test snapshot with compression
 func TestSnapshotWithCompression(t *testing.T) {
-	dataDir := fmt.Sprintf("testdata_%d", time.Now().UnixNano())
-	defer os.RemoveAll(dataDir)
+	dataDir := t.TempDir()
 
 	opts := Options{
 		DataDir:           dataDir,
@@ -1389,8 +1359,7 @@ func TestKeysOnClosedStore(t *testing.T) {
 
 // Test close timeout
 func TestCloseTimeout(t *testing.T) {
-	dataDir := fmt.Sprintf("testdata_%d", time.Now().UnixNano())
-	defer os.RemoveAll(dataDir)
+	dataDir := t.TempDir()
 
 	opts := Options{
 		DataDir:      dataDir,
@@ -1414,8 +1383,7 @@ func TestCloseTimeout(t *testing.T) {
 }
 
 func TestCloseTimeoutStillClosesWAL(t *testing.T) {
-	dataDir := fmt.Sprintf("testdata_%d", time.Now().UnixNano())
-	defer os.RemoveAll(dataDir)
+	dataDir := t.TempDir()
 
 	opts := Options{
 		DataDir:       dataDir,
@@ -1508,8 +1476,7 @@ func TestMetricsCollectorConcurrentAccess(t *testing.T) {
 
 // Test WAL replay with delete operations
 func TestWALReplayWithDeletes(t *testing.T) {
-	dataDir := fmt.Sprintf("testdata_%d", time.Now().UnixNano())
-	defer os.RemoveAll(dataDir)
+	dataDir := t.TempDir()
 
 	opts := Options{
 		DataDir:     dataDir,
@@ -1691,8 +1658,7 @@ func TestUpdateExistingKey(t *testing.T) {
 
 // Test snapshot with expired entries
 func TestSnapshotWithExpiredEntries(t *testing.T) {
-	dataDir := fmt.Sprintf("testdata_%d", time.Now().UnixNano())
-	defer os.RemoveAll(dataDir)
+	dataDir := t.TempDir()
 
 	opts := Options{
 		DataDir:     dataDir,
@@ -1763,8 +1729,7 @@ func TestGetWithConcurrentExpiration(t *testing.T) {
 
 // Test WAL replay with corrupted entries
 func TestWALReplayWithCorruptedEntries(t *testing.T) {
-	dataDir := fmt.Sprintf("testdata_%d", time.Now().UnixNano())
-	defer os.RemoveAll(dataDir)
+	dataDir := t.TempDir()
 
 	opts := Options{
 		DataDir:     dataDir,
@@ -1802,8 +1767,7 @@ func TestWALReplayWithCorruptedEntries(t *testing.T) {
 }
 
 func TestWALAutoDetectModeCanBeDisabled(t *testing.T) {
-	dataDir := fmt.Sprintf("testdata_%d", time.Now().UnixNano())
-	defer os.RemoveAll(dataDir)
+	dataDir := t.TempDir()
 
 	opts := Options{
 		DataDir:          dataDir,
@@ -1841,8 +1805,7 @@ func TestWALAutoDetectModeCanBeDisabled(t *testing.T) {
 }
 
 func TestInvalidAutoDetectModeRejected(t *testing.T) {
-	dataDir := fmt.Sprintf("testdata_%d", time.Now().UnixNano())
-	defer os.RemoveAll(dataDir)
+	dataDir := t.TempDir()
 
 	opts := Options{
 		DataDir:        dataDir,
@@ -1876,8 +1839,7 @@ func TestSnapshotEmptyStore(t *testing.T) {
 }
 
 func TestCompressedSnapshotInvalidGzipFailsClosed(t *testing.T) {
-	dataDir := fmt.Sprintf("testdata_%d", time.Now().UnixNano())
-	defer os.RemoveAll(dataDir)
+	dataDir := t.TempDir()
 
 	if err := os.MkdirAll(dataDir, 0755); err != nil {
 		t.Fatalf("mkdir data dir: %v", err)
@@ -1902,8 +1864,7 @@ func TestCompressedSnapshotInvalidGzipFailsClosed(t *testing.T) {
 }
 
 func TestCompressedJSONSnapshotAutoDetectsAfterDecompression(t *testing.T) {
-	dataDir := fmt.Sprintf("testdata_%d", time.Now().UnixNano())
-	defer os.RemoveAll(dataDir)
+	dataDir := t.TempDir()
 
 	writeOpts := Options{
 		DataDir:           dataDir,
@@ -1946,8 +1907,7 @@ func TestCompressedJSONSnapshotAutoDetectsAfterDecompression(t *testing.T) {
 }
 
 func TestUnknownSnapshotFormatFailsClosed(t *testing.T) {
-	dataDir := fmt.Sprintf("testdata_%d", time.Now().UnixNano())
-	defer os.RemoveAll(dataDir)
+	dataDir := t.TempDir()
 
 	if err := os.MkdirAll(dataDir, 0755); err != nil {
 		t.Fatalf("mkdir data dir: %v", err)
@@ -1972,8 +1932,7 @@ func TestUnknownSnapshotFormatFailsClosed(t *testing.T) {
 
 // Test resetWAL error handling
 func TestResetWALErrorHandling(t *testing.T) {
-	dataDir := fmt.Sprintf("testdata_%d", time.Now().UnixNano())
-	defer os.RemoveAll(dataDir)
+	dataDir := t.TempDir()
 
 	opts := Options{
 		DataDir:     dataDir,
@@ -2004,8 +1963,7 @@ func TestResetWALErrorHandling(t *testing.T) {
 
 // Test evictLRU with nil tail
 func TestEvictLRUWithNilTail(t *testing.T) {
-	dataDir := fmt.Sprintf("testdata_%d", time.Now().UnixNano())
-	defer os.RemoveAll(dataDir)
+	dataDir := t.TempDir()
 
 	opts := Options{
 		DataDir:     dataDir,
@@ -2058,8 +2016,7 @@ func TestGetWithRetryPath(t *testing.T) {
 
 // Test cleanExpired with various scenarios
 func TestCleanExpiredComprehensive(t *testing.T) {
-	dataDir := fmt.Sprintf("testdata_%d", time.Now().UnixNano())
-	defer os.RemoveAll(dataDir)
+	dataDir := t.TempDir()
 
 	opts := Options{
 		DataDir:       dataDir,
@@ -2108,8 +2065,7 @@ func TestCleanExpiredComprehensive(t *testing.T) {
 
 // Test loadSnapshot with non-existent file
 func TestLoadSnapshotNonExistent(t *testing.T) {
-	dataDir := fmt.Sprintf("testdata_%d", time.Now().UnixNano())
-	defer os.RemoveAll(dataDir)
+	dataDir := t.TempDir()
 
 	opts := Options{
 		DataDir:     dataDir,
@@ -2133,8 +2089,7 @@ func TestLoadSnapshotNonExistent(t *testing.T) {
 
 // Test replayWAL with non-existent file
 func TestReplayWALNonExistent(t *testing.T) {
-	dataDir := fmt.Sprintf("testdata_%d", time.Now().UnixNano())
-	defer os.RemoveAll(dataDir)
+	dataDir := t.TempDir()
 
 	opts := Options{
 		DataDir:     dataDir,
@@ -2247,8 +2202,7 @@ func TestDeleteNonExistent(t *testing.T) {
 
 // Test memory-based eviction
 func TestMemoryBasedEviction(t *testing.T) {
-	dataDir := fmt.Sprintf("testdata_%d", time.Now().UnixNano())
-	defer os.RemoveAll(dataDir)
+	dataDir := t.TempDir()
 
 	opts := Options{
 		DataDir:     dataDir,
@@ -2327,8 +2281,7 @@ func TestCRCCalculation(t *testing.T) {
 
 // Test replay WAL with Set operations
 func TestReplayWALSetOperations(t *testing.T) {
-	dataDir := fmt.Sprintf("testdata_%d", time.Now().UnixNano())
-	defer os.RemoveAll(dataDir)
+	dataDir := t.TempDir()
 
 	opts := Options{
 		DataDir:     dataDir,
@@ -2475,8 +2428,7 @@ func TestSizeMethod(t *testing.T) {
 
 // Test load snapshot and WAL together
 func TestLoadSnapshotAndWALCombined(t *testing.T) {
-	dataDir := fmt.Sprintf("testdata_%d", time.Now().UnixNano())
-	defer os.RemoveAll(dataDir)
+	dataDir := t.TempDir()
 
 	opts := Options{
 		DataDir:     dataDir,
@@ -2698,8 +2650,7 @@ func TestSetWithTTLUpdate(t *testing.T) {
 
 // Test cleanExpired with low percentage
 func TestCleanExpiredLowPercentage(t *testing.T) {
-	dataDir := fmt.Sprintf("testdata_%d", time.Now().UnixNano())
-	defer os.RemoveAll(dataDir)
+	dataDir := t.TempDir()
 
 	opts := Options{
 		DataDir:       dataDir,

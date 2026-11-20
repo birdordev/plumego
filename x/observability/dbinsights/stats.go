@@ -200,7 +200,11 @@ func (a *Aggregator) GetAllTableStats() map[string]QueryStats {
 }
 
 // GetTopSlowTables returns the top N tables by slow query count.
+// A nonpositive n returns an empty slice.
 func (a *Aggregator) GetTopSlowTables(n int) []TableStat {
+	if n <= 0 {
+		return []TableStat{}
+	}
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 

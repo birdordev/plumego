@@ -747,3 +747,32 @@ func TestHubShutdownReportsConnectionErrors(t *testing.T) {
 		})
 	}
 }
+
+func TestHubRangeConnsCallbackCanLeave(t *testing.T) {
+	hub := mustNewHubConfig(t, HubConfig{WorkerCount: 1, JobQueueSize: 4})
+	first, second := newMockConn(), newMockConn()
+	defer first.Close()
+	defer second.Close()
+	mustTryJoin(t, hub, "room", first)
+	mustTryJoin(t, hub, "room", second)
+
+	done := make(chan map[*Conn]int, 1)
+	go func() {
+		visited := make(map[*Conn]int)
+		hub.RangeConns("room", func(c *Conn) bool {
+			visited[c]++
+			hub.Leave("room", c)
+			return true
+		})
+		done <- visited
+	}()
+	select {
+	case visited := <-done:
+		defer hub.Stop()
+		if visited[first] != 1 || visited[second] != 1 || hub.GetRoomCount("room") != 0 {
+			t.Errorf("visited = %v, remaining count = %d", visited, hub.GetRoomCount("room"))
+		}
+	case <-time.After(time.Second):
+		t.Fatal("RangeConns callback could not leave the room")
+	}
+}

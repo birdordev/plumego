@@ -21,6 +21,7 @@ package ratelimit
 
 import (
 	"context"
+	"math"
 	"sync"
 	"time"
 )
@@ -37,9 +38,10 @@ type TokenBucket struct {
 
 // New returns a TokenBucket that replenishes at rate tokens/second with a
 // maximum capacity (burst) of burst tokens. The bucket starts full.
+// A non-finite rate disables replenishment.
 func New(rate float64, burst int64) *TokenBucket {
 	return &TokenBucket{
-		rate:      rate,
+		rate:      finiteRate(rate),
 		burst:     burst,
 		tokens:    float64(burst),
 		lastCheck: time.Now(),
@@ -122,7 +124,8 @@ func (b *TokenBucket) WaitN(ctx context.Context, n int64) error {
 }
 
 // UpdateRate updates the replenishment rate and maximum burst capacity.
-// A nonpositive burst preserves the current capacity.
+// A nonpositive burst preserves the current capacity. A non-finite rate
+// disables replenishment.
 func (b *TokenBucket) UpdateRate(rate float64, burst int64) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -132,13 +135,20 @@ func (b *TokenBucket) UpdateRate(rate float64, burst int64) {
 // updateRate settles the old rate before applying the new one. Hold b.mu.
 func (b *TokenBucket) updateRate(rate float64, burst int64, now time.Time) {
 	b.replenish(now)
-	b.rate = rate
+	b.rate = finiteRate(rate)
 	if burst > 0 {
 		b.burst = burst
 		if b.tokens > float64(burst) {
 			b.tokens = float64(burst)
 		}
 	}
+}
+
+func finiteRate(rate float64) float64 {
+	if math.IsNaN(rate) || math.IsInf(rate, 0) {
+		return 0
+	}
+	return rate
 }
 
 // replenish adds tokens for elapsed time. Must be called with b.mu held.
@@ -171,7 +181,7 @@ type KeyedBuckets struct {
 }
 
 // NewKeyed returns a KeyedBuckets where each distinct key gets its own
-// TokenBucket with the given rate and burst.
+// TokenBucket with the given rate and burst. A non-finite rate disables replenishment.
 func NewKeyed(rate float64, burst int64) *KeyedBuckets {
 	return &KeyedBuckets{
 		rate:    rate,
@@ -201,7 +211,8 @@ func (k *KeyedBuckets) Wait(ctx context.Context, key string) error {
 }
 
 // UpdateRate updates the rate and burst for all existing and new buckets.
-// A nonpositive burst preserves the current capacity.
+// A nonpositive burst preserves the current capacity. A non-finite rate
+// disables replenishment.
 func (k *KeyedBuckets) UpdateRate(rate float64, burst int64) {
 	k.mu.Lock()
 	defer k.mu.Unlock()

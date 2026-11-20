@@ -3,6 +3,7 @@ package ratelimit_test
 import (
 	"context"
 	"errors"
+	"math"
 	"sync"
 	"testing"
 	"testing/synctest"
@@ -201,6 +202,44 @@ func TestWaitNObservesLiveRateUpdate(t *testing.T) {
 				}
 				if bucket.Remaining() != 0 {
 					t.Fatal("wait did not consume exactly two tokens")
+				}
+			})
+		})
+	}
+}
+
+func TestNonFiniteRateDoesNotReplenishTokens(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		rate float64
+	}{
+		{"NaN", math.NaN()},
+		{"positive infinity", math.Inf(1)},
+		{"negative infinity", math.Inf(-1)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				constructed := ratelimit.New(tc.rate, 1)
+				updated := ratelimit.New(1, 1)
+				updated.UpdateRate(tc.rate, 0)
+				keyed := ratelimit.NewKeyed(tc.rate, 1)
+				if !constructed.Allow() || !updated.Allow() || !keyed.Allow("existing") {
+					t.Fatal("initial tokens were unavailable")
+				}
+				keyed.UpdateRate(tc.rate, 0)
+				if !keyed.Allow("new") {
+					t.Fatal("new key lost initial capacity")
+				}
+				time.Sleep(time.Second)
+				if constructed.Allow() || updated.Allow() || keyed.Allow("existing") || keyed.Allow("new") {
+					t.Fatal("a non-finite rate replenished an exhausted bucket")
+				}
+				constructed.UpdateRate(1, 0)
+				updated.UpdateRate(1, 0)
+				keyed.UpdateRate(1, 0)
+				time.Sleep(time.Second)
+				if !constructed.Allow() || !updated.Allow() || !keyed.Allow("existing") || !keyed.Allow("new") {
+					t.Fatal("finite rate did not resume replenishment")
 				}
 			})
 		})

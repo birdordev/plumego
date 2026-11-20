@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -462,5 +463,32 @@ func TestPoolCloseJoinsCachedConnectionErrors(t *testing.T) {
 	}
 	if _, err := pool.Dial(t.Context(), "first"); !errors.Is(err, ErrPoolClosed) {
 		t.Fatalf("Dial after Close = %v", err)
+	}
+}
+
+func TestPoolOwnsDialOptionSlices(t *testing.T) {
+	defaults := []DialOption{"default one", "default two"}
+	var observed [][]DialOption
+	pool := New(func(_ context.Context, _ string, opts ...DialOption) (Conn, error) {
+		observed = append(observed, slices.Clone(opts))
+		for i := range opts {
+			opts[i] = "dialer mutation"
+		}
+		return &fakeConn{}, nil
+	}, defaults...)
+	defer pool.Close()
+	defaults[0] = "caller mutation"
+	firstOpts := []DialOption{"per first"}
+	if _, err := pool.Dial(t.Context(), "first", firstOpts...); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Dial(t.Context(), "second", "per second"); err != nil {
+		t.Fatal(err)
+	}
+	if len(observed) != 2 ||
+		!slices.Equal(observed[0], []DialOption{"default one", "default two", "per first"}) ||
+		!slices.Equal(observed[1], []DialOption{"default one", "default two", "per second"}) ||
+		firstOpts[0] != "per first" {
+		t.Errorf("dial options = %v, caller per-dial options = %v", observed, firstOpts)
 	}
 }

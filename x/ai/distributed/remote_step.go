@@ -35,7 +35,8 @@ func NewRemoteStep(
 	}
 }
 
-// Execute executes the step remotely.
+// Execute subscribes before dispatch and waits for the result matching the task ID.
+// The subscription is canceled when Execute returns.
 func (r *RemoteStep) Execute(ctx context.Context, wf *orchestration.Workflow) (*orchestration.AgentResult, error) {
 	// Create task
 	task := &WorkflowTask{
@@ -49,15 +50,15 @@ func (r *RemoteStep) Execute(ctx context.Context, wf *orchestration.Workflow) (*
 		Timeout:       r.Timeout,
 	}
 
-	// Enqueue task
-	if err := r.Queue.Enqueue(ctx, task); err != nil {
-		return nil, fmt.Errorf("failed to enqueue remote task: %w", err)
-	}
-
-	// Subscribe to results
-	resultChan, err := r.Queue.SubscribeResults(ctx, r.ExecutionID)
+	subscriptionCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	resultChan, err := r.Queue.SubscribeResults(subscriptionCtx, r.ExecutionID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to subscribe to results: %w", err)
+	}
+
+	if err := r.Queue.Enqueue(ctx, task); err != nil {
+		return nil, fmt.Errorf("failed to enqueue remote task: %w", err)
 	}
 
 	// Wait for result with timeout
@@ -68,27 +69,27 @@ func (r *RemoteStep) Execute(ctx context.Context, wf *orchestration.Workflow) (*
 
 	timer := time.NewTimer(timeout)
 	defer timer.Stop()
-	select {
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	case result := <-resultChan:
-		if result == nil {
-			return nil, fmt.Errorf("received nil result")
-		}
-		if result.Error != "" {
-			return result.AgentResult, fmt.Errorf("remote execution failed: %s", result.Error)
-		}
-
-		// Update workflow state with result state
-		if result.UpdatedState != nil {
-			for k, v := range result.UpdatedState {
-				wf.State[k] = v
+	for {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case result, ok := <-resultChan:
+			if !ok {
+				return nil, fmt.Errorf("task result subscription closed")
 			}
+			if result == nil || result.TaskID != task.ID {
+				continue
+			}
+			if result.Error != "" {
+				return result.AgentResult, fmt.Errorf("remote execution failed: %s", result.Error)
+			}
+			for key, value := range result.UpdatedState {
+				wf.SetState(key, value)
+			}
+			return result.AgentResult, nil
+		case <-timer.C:
+			return nil, fmt.Errorf("remote execution timeout after %v", timeout)
 		}
-
-		return result.AgentResult, nil
-	case <-timer.C:
-		return nil, fmt.Errorf("remote execution timeout after %v", timeout)
 	}
 }
 
@@ -133,20 +134,31 @@ func NewDistributedParallelStep(
 	}
 }
 
-// Execute executes agents in parallel across distributed workers.
+// Execute subscribes before dispatch and collects one result per task. It fails
+// if the subscription closes before all results arrive or a successful task
+// has no agent result. Outputs are stored in agent order on success, and the
+// first agent's result is returned. The subscription ends when Execute returns.
 func (d *DistributedParallelStep) Execute(ctx context.Context, wf *orchestration.Workflow) (*orchestration.AgentResult, error) {
-	// Get inputs
+	if len(d.Agents) == 0 {
+		return nil, fmt.Errorf("distributed parallel step requires at least one agent")
+	}
 	inputs := d.InputFn(wf.State)
 
 	if len(inputs) != len(d.Agents) {
 		return nil, fmt.Errorf("input count (%d) does not match agent count (%d)", len(inputs), len(d.Agents))
 	}
 
-	// Create tasks for each agent
-	taskIDs := make([]string, len(d.Agents))
+	subscriptionCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	resultChan, err := d.Queue.SubscribeResults(subscriptionCtx, d.ExecutionID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to subscribe to results: %w", err)
+	}
+
+	pending := make(map[string]int, len(d.Agents))
 	for i, agent := range d.Agents {
 		taskID := fmt.Sprintf("%s-%s-%d-%d", d.ExecutionID, d.StepName, i, time.Now().UnixNano())
-		taskIDs[i] = taskID
+		pending[taskID] = i
 
 		task := &WorkflowTask{
 			ID:            taskID,
@@ -165,15 +177,7 @@ func (d *DistributedParallelStep) Execute(ctx context.Context, wf *orchestration
 		}
 	}
 
-	// Subscribe to results
-	resultChan, err := d.Queue.SubscribeResults(ctx, d.ExecutionID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to subscribe to results: %w", err)
-	}
-
-	// Collect results
 	results := make([]*orchestration.AgentResult, len(d.Agents))
-	completedCount := 0
 
 	timeout := d.Timeout
 	if timeout == 0 {
@@ -182,26 +186,29 @@ func (d *DistributedParallelStep) Execute(ctx context.Context, wf *orchestration
 
 	timer := time.NewTimer(timeout)
 	defer timer.Stop()
-	for completedCount < len(d.Agents) {
+	for len(pending) > 0 {
 		select {
 		case <-ctx.Done():
 			return nil, ctx.Err()
-		case result := <-resultChan:
+		case result, ok := <-resultChan:
+			if !ok {
+				return nil, fmt.Errorf("task result subscription closed")
+			}
 			if result == nil {
 				continue
 			}
-
-			// Find matching task
-			for i, taskID := range taskIDs {
-				if result.TaskID == taskID {
-					if result.Error != "" {
-						return nil, fmt.Errorf("agent %d failed: %s", i, result.Error)
-					}
-					results[i] = result.AgentResult
-					completedCount++
-					break
-				}
+			i, waiting := pending[result.TaskID]
+			if !waiting {
+				continue
 			}
+			if result.Error != "" {
+				return nil, fmt.Errorf("agent %d failed: %s", i, result.Error)
+			}
+			if result.AgentResult == nil {
+				return nil, fmt.Errorf("agent %d returned no result", i)
+			}
+			results[i] = result.AgentResult
+			delete(pending, result.TaskID)
 		case <-timer.C:
 			return nil, fmt.Errorf("distributed parallel execution timeout after %v", timeout)
 		}
@@ -210,7 +217,7 @@ func (d *DistributedParallelStep) Execute(ctx context.Context, wf *orchestration
 	// Update workflow state with all outputs
 	for i, result := range results {
 		if i < len(d.OutputKeys) {
-			wf.State[d.OutputKeys[i]] = result.Output
+			wf.SetState(d.OutputKeys[i], result.Output)
 		}
 	}
 

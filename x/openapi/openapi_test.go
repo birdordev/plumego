@@ -282,3 +282,26 @@ func TestGeneratePrefersNamedRouteHint(t *testing.T) {
 		}
 	}
 }
+
+func TestGenerateIsolatesOperationsUsingSameHint(t *testing.T) {
+	routes := []router.RouteInfo{
+		{Method: http.MethodPost, Path: "/first", Meta: router.RouteMeta{Name: "shared"}},
+		{Method: http.MethodPost, Path: "/second", Meta: router.RouteMeta{Name: "shared"}},
+	}
+	properties := map[string]Schema{"name": {Type: "string"}}
+	body := &RequestBody{Description: "original", Content: JSONContent(Schema{Type: "object", Properties: properties})}
+	hints := map[string]Op{"shared": {Body: body}}
+	doc := New().Generate(routes, hints)
+	first, second := doc.Paths["/first"].Post, doc.Paths["/second"].Post
+	if first == nil || second == nil || first.RequestBody == nil || second.RequestBody == nil {
+		t.Fatalf("generated operations missing request bodies: %+v, %+v", first, second)
+	}
+	first.RequestBody.Description = "changed"
+	first.RequestBody.Content["application/json"].Schema.Properties["name"] = Schema{Type: "integer"}
+	delete(first.RequestBody.Content, "application/json")
+	if body.Description != "original" || properties["name"].Type != "string" ||
+		second.RequestBody.Description != "original" ||
+		second.RequestBody.Content["application/json"].Schema.Properties["name"].Type != "string" {
+		t.Fatal("changing an operation affected the source hint or another generated operation")
+	}
+}

@@ -3,6 +3,7 @@ package distributed
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/birdordev/plumego/x/ai/orchestration"
@@ -55,23 +56,6 @@ func TestRemoteStep_Execute_EnqueueError(t *testing.T) {
 	_, err := rs.Execute(t.Context(), wf)
 	if err == nil {
 		t.Error("expected error when queue is unavailable")
-	}
-}
-
-func TestRemoteStep_Execute_ContextCancel(t *testing.T) {
-	// Use a queue that succeeds on Enqueue but returns a closed channel on SubscribeResults,
-	// and a pre-cancelled context to exercise the ctx.Done() branch.
-	step := &noopStep{name: "ctx-step"}
-	rs := NewRemoteStep(step, &failQueue{}, "exec-2", "wf-2")
-
-	ctx, cancel := context.WithCancel(t.Context())
-	cancel()
-
-	wf := &orchestration.Workflow{State: map[string]any{}}
-	// Will fail at Enqueue (failQueue), not at ctx.Done(), but error must still be non-nil.
-	_, err := rs.Execute(ctx, wf)
-	if err == nil {
-		t.Error("expected error for cancelled context / queue failure")
 	}
 }
 
@@ -146,5 +130,179 @@ func TestWorkerStartupFailureCanRetryButStopIsFinal(t *testing.T) {
 	}
 	if err := worker.Start(t.Context()); err == nil {
 		t.Fatal("Start succeeded after Stop")
+	}
+}
+
+type remoteStepTestQueue struct {
+	failQueue
+	ctx          context.Context
+	results      chan *TaskResult
+	subscribeErr error
+	enqueue      func(*WorkflowTask) error
+}
+
+func (q *remoteStepTestQueue) SubscribeResults(ctx context.Context, _ string) (<-chan *TaskResult, error) {
+	q.ctx = ctx
+	return q.results, q.subscribeErr
+}
+
+func (q *remoteStepTestQueue) Enqueue(_ context.Context, task *WorkflowTask) error {
+	return q.enqueue(task)
+}
+
+func testDistributedParallelStep(queue TaskQueue, agents ...*orchestration.Agent) *DistributedParallelStep {
+	return NewDistributedParallelStep("parallel", agents, func(map[string]any) []string {
+		return make([]string, len(agents))
+	}, []string{"first", "second"}, queue, "exec", "wf")
+}
+
+func TestRemoteStepsSubscribeBeforeEnqueue(t *testing.T) {
+	sentinel := errors.New("queue operation failed")
+	for _, step := range []struct {
+		name    string
+		newStep func(TaskQueue) orchestration.Step
+	}{
+		{"single", func(q TaskQueue) orchestration.Step { return NewRemoteStep(&noopStep{name: "remote"}, q, "exec", "wf") }},
+		{"parallel", func(q TaskQueue) orchestration.Step { return testDistributedParallelStep(q, &orchestration.Agent{}) }},
+	} {
+		for _, mode := range []string{"success", "subscribe failure", "enqueue failure", "cancel wait"} {
+			t.Run(step.name+"/"+mode, func(t *testing.T) {
+				ctx, cancel := context.WithCancel(t.Context())
+				defer cancel()
+				queue := &remoteStepTestQueue{results: make(chan *TaskResult, 1)}
+				var wantErr error
+				switch mode {
+				case "subscribe failure":
+					queue.subscribeErr = sentinel
+					wantErr = sentinel
+				case "enqueue failure":
+					wantErr = sentinel
+				case "cancel wait":
+					wantErr = context.Canceled
+				}
+				calls := 0
+				queue.enqueue = func(task *WorkflowTask) error {
+					calls++
+					if queue.ctx == nil || queue.ctx.Err() != nil {
+						t.Fatal("task dispatched without a live result subscription")
+					}
+					switch mode {
+					case "success":
+						queue.results <- &TaskResult{TaskID: task.ID, AgentResult: &orchestration.AgentResult{Output: "immediate"}}
+					case "enqueue failure":
+						return sentinel
+					case "cancel wait":
+						cancel()
+					}
+					return nil
+				}
+				got, err := step.newStep(queue).Execute(ctx, orchestration.NewWorkflow("wf", "workflow", ""))
+				if !errors.Is(err, wantErr) {
+					t.Fatalf("Execute error = %v, want %v", err, wantErr)
+				}
+				if mode == "success" && (got == nil || got.Output != "immediate") {
+					t.Fatalf("immediate result = %+v", got)
+				}
+				wantCalls := 1
+				if mode == "subscribe failure" {
+					wantCalls = 0
+				}
+				if calls != wantCalls || queue.ctx == nil || !errors.Is(queue.ctx.Err(), context.Canceled) {
+					t.Errorf("enqueue calls = %d, want %d; subscription ctx = %v", calls, wantCalls, queue.ctx)
+				}
+			})
+		}
+	}
+}
+
+func TestRemoteStepMatchesTaskResult(t *testing.T) {
+	for _, mode := range []string{"success", "task failure", "closed"} {
+		t.Run(mode, func(t *testing.T) {
+			queue := &remoteStepTestQueue{results: make(chan *TaskResult, 3)}
+			expected := &orchestration.AgentResult{Output: "matching"}
+			queue.enqueue = func(task *WorkflowTask) error {
+				queue.results <- nil
+				queue.results <- &TaskResult{TaskID: "unrelated", UpdatedState: map[string]any{"wrong": true}}
+				if mode == "closed" {
+					close(queue.results)
+					return nil
+				}
+				reply := &TaskResult{TaskID: task.ID, AgentResult: expected, UpdatedState: map[string]any{"correct": true}}
+				if mode == "task failure" {
+					reply.Error = "task failed"
+				}
+				queue.results <- reply
+				return nil
+			}
+			wf := orchestration.NewWorkflow("wf", "workflow", "")
+			got, err := NewRemoteStep(&noopStep{name: "remote"}, queue, "exec", "wf").Execute(t.Context(), wf)
+			switch mode {
+			case "closed":
+				if got != nil || err == nil || !strings.Contains(err.Error(), "subscription closed") {
+					t.Fatalf("Execute = %v, %v", got, err)
+				}
+			case "task failure":
+				if got != expected || err == nil || !strings.Contains(err.Error(), "task failed") {
+					t.Fatalf("Execute = %v, %v", got, err)
+				}
+			case "success":
+				if got != expected || err != nil {
+					t.Fatalf("Execute = %v, %v", got, err)
+				}
+			}
+			if _, ok := wf.GetState("wrong"); ok {
+				t.Error("applied unrelated state")
+			}
+			if _, ok := wf.GetState("correct"); ok != (mode == "success") {
+				t.Errorf("applied matching state = %t", ok)
+			}
+		})
+	}
+}
+
+func TestDistributedParallelStepCollectsDistinctResults(t *testing.T) {
+	for _, mode := range []string{"success", "closed", "missing payload", "empty"} {
+		t.Run(mode, func(t *testing.T) {
+			queue := &remoteStepTestQueue{results: make(chan *TaskResult, 5)}
+			var agents []*orchestration.Agent
+			if mode != "empty" {
+				agents = []*orchestration.Agent{{Name: "first"}, {Name: "second"}}
+			}
+			var firstID string
+			queue.enqueue = func(task *WorkflowTask) error {
+				if task.StepIndex == 0 {
+					firstID = task.ID
+					return nil
+				}
+				switch mode {
+				case "closed":
+					close(queue.results)
+				case "missing payload":
+					queue.results <- &TaskResult{TaskID: task.ID}
+				case "success":
+					second := &TaskResult{TaskID: task.ID, AgentResult: &orchestration.AgentResult{Output: "two"}}
+					queue.results <- second
+					queue.results <- &TaskResult{TaskID: "unrelated", Error: "ignore"}
+					queue.results <- second
+					queue.results <- &TaskResult{TaskID: firstID, AgentResult: &orchestration.AgentResult{Output: "one"}}
+				}
+				return nil
+			}
+			wf := orchestration.NewWorkflow("wf", "workflow", "")
+			got, err := testDistributedParallelStep(queue, agents...).Execute(t.Context(), wf)
+			if mode == "success" {
+				if err != nil || got == nil || got.Output != "one" || wf.State["first"] != "one" || wf.State["second"] != "two" {
+					t.Fatalf("Execute = %+v, %v, state = %v", got, err, wf.State)
+				}
+				return
+			}
+			want := map[string]string{"closed": "subscription closed", "missing payload": "returned no result", "empty": "at least one agent"}[mode]
+			if err == nil || !strings.Contains(err.Error(), want) || got != nil || len(wf.State) != 0 {
+				t.Fatalf("Execute = %+v, %v, state = %v", got, err, wf.State)
+			}
+			if mode == "empty" && queue.ctx != nil {
+				t.Error("empty step subscribed for results")
+			}
+		})
 	}
 }

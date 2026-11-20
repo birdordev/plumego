@@ -1177,3 +1177,31 @@ func TestFileListPropagatesRequestCancellation(t *testing.T) {
 		}
 	})
 }
+
+type failingDownloadWriter struct {
+	downloadStatusRecorder
+	writes int
+}
+
+func (w *failingDownloadWriter) Write([]byte) (int, error) {
+	w.writes++
+	return 0, io.ErrClosedPipe
+}
+
+func TestDownloadClosesReaderAfterCommittedWriteFailure(t *testing.T) {
+	reader := &downloadTestReader{Reader: strings.NewReader("file contents")}
+	storage := &mockStorage{getFunc: func(context.Context, string) (io.ReadCloser, error) { return reader, nil }}
+	metadata := &mockMetadataManager{getFunc: func(_ context.Context, tenantID, id string) (*datafile.File, error) {
+		return &datafile.File{
+			File:     storefile.File{ID: id, Path: "item.txt", Name: "item.txt", Size: 13, MimeType: "text/plain"},
+			TenantID: tenantID,
+		}, nil
+	}}
+	req := withRouteParam(httptest.NewRequest(http.MethodGet, "/files/item", nil), "id", "item")
+	req = req.WithContext(tenantcore.WithTenantID(req.Context(), "test-tenant"))
+	recorder := &failingDownloadWriter{downloadStatusRecorder: downloadStatusRecorder{ResponseRecorder: httptest.NewRecorder()}}
+	NewHandler(storage, metadata).Download(recorder, req)
+	if len(recorder.statuses) != 1 || recorder.statuses[0] != http.StatusOK || recorder.writes != 1 || reader.closeCalls != 1 {
+		t.Errorf("status commits = %v, writes = %d, reader closes = %d", recorder.statuses, recorder.writes, reader.closeCalls)
+	}
+}

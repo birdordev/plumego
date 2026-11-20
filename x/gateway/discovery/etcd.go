@@ -30,9 +30,11 @@ import (
 //
 //	backends, err := sd.Resolve(ctx, "my-service")
 type Etcd struct {
-	endpoints []string
-	config    EtcdConfig
-	client    *http.Client
+	endpoints   []string
+	config      EtcdConfig
+	client      *http.Client
+	watchCtx    context.Context
+	stopWatches context.CancelFunc
 }
 
 // EtcdConfig holds etcd-specific configuration.
@@ -48,7 +50,7 @@ type EtcdConfig struct {
 	// Timeout for HTTP requests (default: 10s).
 	Timeout time.Duration
 
-	// PollInterval controls how often Watch polls for changes (default: 15s).
+	// PollInterval controls how often Watch polls for changes (default: 15s). Negative values are invalid.
 	PollInterval time.Duration
 }
 
@@ -69,12 +71,17 @@ func NewEtcd(endpoints []string, config EtcdConfig) (*Etcd, error) {
 	}
 	if config.PollInterval == 0 {
 		config.PollInterval = 15 * time.Second
+	} else if config.PollInterval < 0 {
+		return nil, fmt.Errorf("%w: poll interval must be positive", ErrInvalidConfig)
 	}
 
+	watchCtx, stopWatches := context.WithCancel(context.Background())
 	return &Etcd{
-		endpoints: slices.Clone(endpoints),
-		config:    config,
-		client:    &http.Client{Timeout: config.Timeout},
+		endpoints:   slices.Clone(endpoints),
+		config:      config,
+		client:      &http.Client{Timeout: config.Timeout},
+		watchCtx:    watchCtx,
+		stopWatches: stopWatches,
 	}, nil
 }
 
@@ -298,52 +305,18 @@ func (e *Etcd) Health(ctx context.Context, serviceID string, healthy bool) error
 	return lastErr
 }
 
-// Watch polls etcd at PollInterval and sends backend-list updates on the
-// returned channel until ctx is cancelled.
+// Watch polls for backend updates until ctx is canceled or Close is called.
+// If updates arrive faster than they are read, the pending update is replaced
+// with the latest snapshot. A Watch started after Close returns context.Canceled.
 func (e *Etcd) Watch(ctx context.Context, serviceName string) (<-chan []string, error) {
-	ch := make(chan []string, 1)
-
-	backends, err := e.Resolve(ctx, serviceName)
-	if err != nil && err != ErrNoInstances {
-		close(ch)
-		return ch, err
-	}
-	if len(backends) > 0 {
-		ch <- backends
-	}
-
-	go func() {
-		defer close(ch)
-		ticker := time.NewTicker(e.config.PollInterval)
-		defer ticker.Stop()
-		var last []string
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				pollCtx, cancel := context.WithTimeout(ctx, e.config.Timeout)
-				current, err := e.Resolve(pollCtx, serviceName)
-				cancel()
-				if err != nil {
-					continue
-				}
-				if !stringSlicesEqual(current, last) {
-					last = current
-					select {
-					case ch <- current:
-					default:
-					}
-				}
-			}
-		}
-	}()
-
-	return ch, nil
+	return watchBackendLists(ctx, e.watchCtx, serviceName, e.Resolve, e.config.PollInterval, e.config.Timeout)
 }
 
-// Close is a no-op; the etcd client holds no persistent connections.
+// Close cancels watch requests and stops polling. It is safe to call repeatedly.
 func (e *Etcd) Close() error {
+	if e.stopWatches != nil {
+		e.stopWatches()
+	}
 	return nil
 }
 

@@ -34,6 +34,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
+	"time"
 )
 
 var (
@@ -154,4 +156,62 @@ type ServiceUpdate struct {
 
 	// Error is set if there was an error fetching instances
 	Error error
+}
+
+func watchBackendLists(
+	ctx, lifetime context.Context,
+	serviceName string,
+	resolve func(context.Context, string) ([]string, error),
+	interval, timeout time.Duration,
+) (<-chan []string, error) {
+	updates := make(chan []string, 1)
+	if err := lifetime.Err(); err != nil {
+		close(updates)
+		return updates, err
+	}
+
+	watchCtx, cancel := context.WithCancel(ctx)
+	stop := context.AfterFunc(lifetime, cancel)
+	initial, err := resolve(watchCtx, serviceName)
+	if err != nil && !errors.Is(err, ErrNoInstances) {
+		stop()
+		cancel()
+		close(updates)
+		return updates, err
+	}
+	if len(initial) > 0 {
+		updates <- slices.Clone(initial)
+	}
+
+	go func() {
+		defer close(updates)
+		defer cancel()
+		defer stop()
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+
+		last := initial
+		for {
+			select {
+			case <-watchCtx.Done():
+				return
+			case <-ticker.C:
+				pollCtx, cancelPoll := context.WithTimeout(watchCtx, timeout)
+				current, err := resolve(pollCtx, serviceName)
+				cancelPoll()
+				if err != nil || stringSlicesEqual(current, last) {
+					continue
+				}
+				// This goroutine is the only sender. Dropping the pending
+				// snapshot guarantees space even if a receiver reads it first.
+				select {
+				case <-updates:
+				default:
+				}
+				updates <- slices.Clone(current)
+				last = current
+			}
+		}
+	}()
+	return updates, nil
 }

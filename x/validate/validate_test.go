@@ -233,3 +233,25 @@ func TestBindPreservesPartialValueOnTypeError(t *testing.T) {
 		t.Fatalf("Bind = %+v, %v; validator called = %t", value, err, validator.called)
 	}
 }
+
+type capturingRequestValidator struct{ inputs []any }
+
+func (v *capturingRequestValidator) Validate(input any) error {
+	v.inputs = append(v.inputs, input)
+	return nil
+}
+
+func TestBindReadsOnlyFirstJSONValue(t *testing.T) {
+	const body = `{"name":"first"} {"name":"second"}`
+	first := createItemRequest{Name: "first"}
+	if got, err := BindJSON[createItemRequest](newJSONRequest(body)); err != nil || got != first {
+		t.Errorf("BindJSON = %+v, %v; want %+v", got, err, first)
+	}
+	validator := &capturingRequestValidator{}
+	if got, err := Bind[createItemRequest](newJSONRequest(body), validator); err != nil || got != first {
+		t.Errorf("Bind = %+v, %v; want %+v", got, err, first)
+	}
+	if len(validator.inputs) != 1 || validator.inputs[0] != first {
+		t.Errorf("validator inputs = %v", validator.inputs)
+	}
+}

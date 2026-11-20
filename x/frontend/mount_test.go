@@ -1,6 +1,7 @@
 package frontend
 
 import (
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -520,5 +521,43 @@ func TestPrefixNormalization(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+type failingRouteRegistrar struct {
+	attempts   []routeSpec
+	registered []routeSpec
+	failAt     int
+	err        error
+}
+
+func (r *failingRouteRegistrar) AddRoute(method, path string, _ http.Handler, _ ...router.RouteOption) error {
+	route := routeSpec{method: method, path: path}
+	r.attempts = append(r.attempts, route)
+	if len(r.attempts) == r.failAt {
+		return r.err
+	}
+	r.registered = append(r.registered, route)
+	return nil
+}
+
+func TestMountRegisterPreservesSequentialFailure(t *testing.T) {
+	mount, err := NewMountFS(http.FS(fstest.MapFS{"index.html": {Data: []byte("index")}}), WithPrefix("/app"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	sentinel := errors.New("registration failed")
+	for _, failAt := range []int{1, 2} {
+		registrar := &failingRouteRegistrar{failAt: failAt, err: sentinel}
+		if err := mount.Register(registrar); !errors.Is(err, sentinel) {
+			t.Errorf("failure %d returned %v", failAt, err)
+		}
+		if len(registrar.attempts) != failAt || len(registrar.registered) != failAt-1 {
+			t.Fatalf("failure %d: attempts = %v, registered = %v", failAt, registrar.attempts, registrar.registered)
+		}
+		if failAt == 2 && (registrar.registered[0] != (routeSpec{method: methodAny, path: "/app/*filepath"}) ||
+			registrar.attempts[1] != (routeSpec{method: methodAny, path: "/app"})) {
+			t.Errorf("unexpected route sequence: %v", registrar.attempts)
+		}
 	}
 }

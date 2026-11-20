@@ -1210,3 +1210,74 @@ func TestConsulCloseCancelsInFlightPoll(t *testing.T) {
 		}
 	})
 }
+
+func TestConsulStopsWatcherAfterLastSubscriber(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		c, err := NewConsul("consul.test", ConsulConfig{WaitTime: time.Millisecond, Timeout: time.Second})
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer c.Close()
+		requests := make(chan context.Context)
+		c.client.Transport = consulTestRoundTripper(func(r *http.Request) (*http.Response, error) {
+			select {
+			case requests <- r.Context():
+			case <-r.Context().Done():
+			}
+			<-r.Context().Done()
+			return nil, r.Context().Err()
+		})
+		firstCtx, cancelFirst := context.WithCancel(t.Context())
+		defer cancelFirst()
+		first, err := c.Watch(firstCtx, "service")
+		if err != nil {
+			t.Fatal(err)
+		}
+		secondCtx, cancelSecond := context.WithCancel(t.Context())
+		defer cancelSecond()
+		second, err := c.Watch(secondCtx, "service")
+		if err != nil {
+			t.Fatal(err)
+		}
+		firstRequest := <-requests
+		c.mu.Lock()
+		watcher := c.watchers["service"]
+		c.mu.Unlock()
+		cancelFirst()
+		if _, ok := <-first; ok {
+			t.Fatal("first subscription stayed open")
+		}
+		if firstRequest.Err() != nil {
+			t.Fatal("first cancellation stopped the shared request")
+		}
+		watcher.notify([]string{"remaining"})
+		if got := <-second; len(got) != 1 || got[0] != "remaining" {
+			t.Errorf("second subscription got %v", got)
+		}
+
+		cancelSecond()
+		if _, ok := <-second; ok {
+			t.Fatal("last subscription stayed open")
+		}
+		<-firstRequest.Done()
+		if !errors.Is(firstRequest.Err(), context.Canceled) {
+			t.Errorf("poll ended with %v", firstRequest.Err())
+		}
+
+		third, err := c.Watch(t.Context(), "service")
+		if err != nil {
+			t.Fatal(err)
+		}
+		<-requests
+		c.mu.Lock()
+		replacement := c.watchers["service"]
+		c.mu.Unlock()
+		if replacement == nil || replacement == watcher {
+			t.Fatal("new subscription did not create a new watcher")
+		}
+		replacement.notify([]string{"replacement"})
+		if got := <-third; len(got) != 1 || got[0] != "replacement" {
+			t.Errorf("new subscription got %v", got)
+		}
+	})
+}

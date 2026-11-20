@@ -172,10 +172,11 @@ type AuditLogger struct {
 	config AuditConfig
 
 	// In-memory log (circular buffer)
-	entries      []*AuditEntry
-	entriesMu    sync.RWMutex
-	maxInMemory  int
-	nextSequence atomic.Uint64
+	entries        []*AuditEntry
+	entriesMu      sync.RWMutex
+	retainedAnchor string // Predecessor hash of the first retained entry.
+	maxInMemory    int
+	nextSequence   atomic.Uint64
 
 	// Last entry hash for chaining
 	lastHash   string
@@ -193,10 +194,12 @@ type AuditLogger struct {
 	stats AuditStats
 
 	// Control
-	ctx    context.Context
-	cancel context.CancelFunc
-	wg     sync.WaitGroup
-	closed atomic.Bool
+	ctx         context.Context
+	cancel      context.CancelFunc
+	wg          sync.WaitGroup
+	closed      atomic.Bool
+	admissionMu sync.Mutex
+	activeLogs  sync.WaitGroup
 }
 
 // NewAuditLogger creates a new audit logger
@@ -264,7 +267,8 @@ func (al *AuditLogger) openLogFile() error {
 
 // Log records an audit entry and copies ordinary containers in data within
 // the clone depth limit.
-// With asynchronous writing, success can mean an entry was queued. Close reports background write failures.
+// With asynchronous writing, success can mean an entry was queued. Close
+// waits for accepted calls and reports background write failures.
 func (al *AuditLogger) Log(operation AuditOperation, topic, actor, source string, data map[string]any, success bool, err error) error {
 	if al.closed.Load() {
 		return ErrAuditClosed
@@ -277,7 +281,6 @@ func (al *AuditLogger) Log(operation AuditOperation, topic, actor, source string
 
 	// Create entry
 	entry := &AuditEntry{
-		Sequence:  al.nextSequence.Add(1),
 		Timestamp: time.Now().UTC(),
 		Operation: operation,
 		Topic:     topic,
@@ -290,6 +293,17 @@ func (al *AuditLogger) Log(operation AuditOperation, topic, actor, source string
 	if err != nil {
 		entry.Error = err.Error()
 	}
+
+	al.admissionMu.Lock()
+	if al.closed.Load() {
+		al.admissionMu.Unlock()
+		return ErrAuditClosed
+	}
+	al.activeLogs.Add(1)
+	al.admissionMu.Unlock()
+	defer al.activeLogs.Done()
+
+	entry.Sequence = al.nextSequence.Add(1)
 
 	// Add integrity hash if enabled
 	if al.config.VerifyIntegrity {
@@ -319,17 +333,13 @@ func (al *AuditLogger) Log(operation AuditOperation, topic, actor, source string
 	if al.config.AsyncMode {
 		select {
 		case al.asyncQueue <- entry:
-		case <-al.ctx.Done():
-			return ErrAuditClosed
 		default:
 			// Queue full, write synchronously
 			return al.writeToFile(entry)
 		}
-	} else if al.logFile != nil {
-		return al.writeToFile(entry)
+		return nil
 	}
-
-	return nil
+	return al.writeToFile(entry)
 }
 
 // shouldAudit checks if an operation should be audited
@@ -394,18 +404,20 @@ func (al *AuditLogger) storeInMemory(entry *AuditEntry) {
 
 	// Keep only last N entries
 	if len(al.entries) > al.maxInMemory {
-		al.entries = al.entries[len(al.entries)-al.maxInMemory:]
+		drop := len(al.entries) - al.maxInMemory
+		al.retainedAnchor = al.entries[drop-1].Hash
+		clear(al.entries[:drop])
+		al.entries = al.entries[drop:]
 	}
 }
 
 // writeToFile writes entry to log file
 func (al *AuditLogger) writeToFile(entry *AuditEntry) error {
+	al.logFileMu.Lock()
+	defer al.logFileMu.Unlock()
 	if al.logFile == nil {
 		return nil
 	}
-
-	al.logFileMu.Lock()
-	defer al.logFileMu.Unlock()
 
 	// Check if rotation is needed
 	if al.stats.CurrentLogSize >= al.config.MaxLogSize {
@@ -629,7 +641,7 @@ func (al *AuditLogger) matchesQuery(entry *AuditEntry, query AuditQuery) bool {
 	return true
 }
 
-// Verify checks the integrity of the audit log chain
+// Verify checks the audit chain within the retained in-memory window.
 func (al *AuditLogger) Verify() error {
 	if !al.config.VerifyIntegrity {
 		return nil
@@ -638,7 +650,7 @@ func (al *AuditLogger) Verify() error {
 	al.entriesMu.RLock()
 	defer al.entriesMu.RUnlock()
 
-	prevHash := ""
+	prevHash := al.retainedAnchor
 	for _, entry := range al.entries {
 		// Verify previous hash
 		if entry.PreviousHash != prevHash {
@@ -676,12 +688,18 @@ func (al *AuditLogger) Stats() *AuditStats {
 	return stats
 }
 
-// Close drains queued writes and closes the log file. It returns the first\n// background write error and any file close error.
+// Close stops admitting records, waits for accepted calls, and drains pending
+// writes before closing the log file. It joins the first background write
+// error with any file close error.
 func (al *AuditLogger) Close() error {
-	if !al.closed.CompareAndSwap(false, true) {
+	al.admissionMu.Lock()
+	wasClosed := al.closed.Swap(true)
+	al.admissionMu.Unlock()
+	if wasClosed {
 		return ErrAuditClosed
 	}
 
+	al.activeLogs.Wait()
 	al.cancel()
 	al.wg.Wait()
 

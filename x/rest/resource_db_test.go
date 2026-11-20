@@ -409,30 +409,31 @@ func TestSQLBuilderNilQueryParams(t *testing.T) {
 	}
 }
 
-type repositoryUpdateConnector struct {
+type repositoryExecConnector struct {
 	driver.Connector
 	result driver.Result
+	err    error
 }
 
-func (c repositoryUpdateConnector) Connect(context.Context) (driver.Conn, error) {
-	return repositoryUpdateConn(c), nil
+func (c repositoryExecConnector) Connect(context.Context) (driver.Conn, error) {
+	return repositoryExecConn(c), nil
 }
 
-type repositoryUpdateConn repositoryUpdateConnector
+type repositoryExecConn repositoryExecConnector
 
-func (repositoryUpdateConn) Prepare(string) (driver.Stmt, error) { return nil, driver.ErrSkip }
-func (repositoryUpdateConn) Begin() (driver.Tx, error)           { return nil, driver.ErrSkip }
-func (repositoryUpdateConn) Close() error                        { return nil }
-func (c repositoryUpdateConn) ExecContext(context.Context, string, []driver.NamedValue) (driver.Result, error) {
-	return c.result, nil
+func (repositoryExecConn) Prepare(string) (driver.Stmt, error) { return nil, driver.ErrSkip }
+func (repositoryExecConn) Begin() (driver.Tx, error)           { return nil, driver.ErrSkip }
+func (repositoryExecConn) Close() error                        { return nil }
+func (c repositoryExecConn) ExecContext(context.Context, string, []driver.NamedValue) (driver.Result, error) {
+	return c.result, c.err
 }
 
-type repositoryUpdateResult struct {
+type repositoryRowsAffectedError struct {
 	driver.Result
 	err error
 }
 
-func (r repositoryUpdateResult) RowsAffected() (int64, error) { return 0, r.err }
+func (r repositoryRowsAffectedError) RowsAffected() (int64, error) { return 0, r.err }
 
 func TestRepositoryUpdateClassifiesRowsAffected(t *testing.T) {
 	sentinel := errors.New("test rows affected failure")
@@ -443,10 +444,10 @@ func TestRepositoryUpdateClassifiesRowsAffected(t *testing.T) {
 	}{
 		{"one row", driver.RowsAffected(1), nil},
 		{"zero rows", driver.RowsAffected(0), sql.ErrNoRows},
-		{"driver error", repositoryUpdateResult{err: sentinel}, sentinel},
+		{"driver error", repositoryRowsAffectedError{err: sentinel}, sentinel},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			db := sql.OpenDB(repositoryUpdateConnector{result: tt.result})
+			db := sql.OpenDB(repositoryExecConnector{result: tt.result})
 			t.Cleanup(func() { _ = db.Close() })
 			b := NewSQLBuilder("items", "id").WithColumns("id", "name").
 				WithUpdateFunc(func(data any) ([]any, error) { return []any{data.(*dbResourceTestItem).Name}, nil })
@@ -480,5 +481,30 @@ func TestSQLBuilderUsesStableFilterOrdering(t *testing.T) {
 		if countSQL != "SELECT COUNT(*) FROM items"+where || !slices.Equal(countArgs, []any{"%Go%", "yes", "books"}) {
 			t.Fatalf("count = %s, args=%v", countSQL, countArgs)
 		}
+	}
+}
+
+func TestRepositoryDeleteClassifiesRowsAffected(t *testing.T) {
+	execErr := errors.New("test delete failed")
+	rowsErr := errors.New("test rows affected failure")
+	for _, tc := range []struct {
+		name    string
+		result  driver.Result
+		execErr error
+		want    error
+	}{
+		{"exec failure", nil, execErr, execErr},
+		{"rows affected failure", repositoryRowsAffectedError{err: rowsErr}, nil, rowsErr},
+		{"zero rows", driver.RowsAffected(0), nil, sql.ErrNoRows},
+		{"one row", driver.RowsAffected(1), nil, nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			db := sql.OpenDB(repositoryExecConnector{result: tc.result, err: tc.execErr})
+			t.Cleanup(func() { _ = db.Close() })
+			repo := NewBaseRepository[dbResourceTestItem](db, NewSQLBuilder("items", "id"))
+			if err := repo.Delete(t.Context(), "item"); !errors.Is(err, tc.want) {
+				t.Errorf("Delete = %v, want %v", err, tc.want)
+			}
+		})
 	}
 }

@@ -157,6 +157,7 @@ func (c *Consul) Resolve(ctx context.Context, serviceName string) ([]string, err
 }
 
 // Watch returns a channel of backend updates. Each subscription owns its slices.
+// Polling stops when the last subscription for the service is canceled.
 func (c *Consul) Watch(ctx context.Context, serviceName string) (<-chan []string, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -304,18 +305,32 @@ func (w *consulWatcher) subscribe(ctx context.Context) <-chan []string {
 			return
 		case <-ctx.Done():
 		}
-		w.mu.Lock()
-		defer w.mu.Unlock()
-		for i, sub := range w.subscribers {
-			if sub == ch {
-				w.subscribers = slices.Delete(w.subscribers, i, i+1)
-				close(ch)
-				break
-			}
-		}
+		w.unsubscribe(ch)
 	}()
 
 	return ch
+}
+
+func (w *consulWatcher) unsubscribe(ch chan []string) {
+	c := w.consul
+	// Match the lock order used by Consul.Watch and Consul.Close.
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	for i, sub := range w.subscribers {
+		if sub != ch {
+			continue
+		}
+		w.subscribers = slices.Delete(w.subscribers, i, i+1)
+		if len(w.subscribers) == 0 && c.watchers[w.serviceName] == w {
+			delete(c.watchers, w.serviceName)
+			w.cancel()
+		}
+		close(ch)
+		return
+	}
 }
 
 // watch polls Consul at WaitTime intervals and notifies all subscribers on change

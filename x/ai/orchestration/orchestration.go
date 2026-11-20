@@ -58,6 +58,8 @@ type Step interface {
 }
 
 // SequentialStep executes an agent and waits for completion.
+// InputFn receives a shallow copy of workflow state outside the workflow lock.
+// Nested mutable values retain their original ownership.
 type SequentialStep struct {
 	StepName  string
 	Agent     *Agent
@@ -67,9 +69,7 @@ type SequentialStep struct {
 
 // Execute implements Step.
 func (s *SequentialStep) Execute(ctx context.Context, wf *Workflow) (*AgentResult, error) {
-	wf.mu.RLock()
-	input := s.InputFn(wf.State)
-	wf.mu.RUnlock()
+	input := s.InputFn(wf.snapshotState())
 
 	result, err := executeAgent(ctx, s.Agent, input)
 	if err != nil {
@@ -91,6 +91,8 @@ func (s *SequentialStep) Name() string {
 
 // ParallelStep executes one or more agents concurrently. It returns the first
 // agent result on success and stores each configured output under its OutputKey.
+// InputFn receives a shallow copy of workflow state outside the workflow lock.
+// Nested mutable values retain their original ownership.
 type ParallelStep struct {
 	StepName   string
 	Agents     []*Agent
@@ -103,9 +105,7 @@ func (p *ParallelStep) Execute(ctx context.Context, wf *Workflow) (*AgentResult,
 	if len(p.Agents) == 0 {
 		return nil, fmt.Errorf("parallel step requires at least one agent")
 	}
-	wf.mu.RLock()
-	inputs := p.InputFn(wf.State)
-	wf.mu.RUnlock()
+	inputs := p.InputFn(wf.snapshotState())
 
 	if len(inputs) != len(p.Agents) {
 		return nil, fmt.Errorf("input count (%d) does not match agent count (%d)", len(inputs), len(p.Agents))
@@ -152,6 +152,8 @@ func (p *ParallelStep) Name() string {
 }
 
 // ConditionalStep executes one of two branches based on a condition.
+// Condition receives a shallow copy of workflow state outside the workflow lock.
+// Nested mutable values retain their original ownership.
 type ConditionalStep struct {
 	StepName  string
 	Condition func(state map[string]any) bool
@@ -161,9 +163,7 @@ type ConditionalStep struct {
 
 // Execute implements Step.
 func (c *ConditionalStep) Execute(ctx context.Context, wf *Workflow) (*AgentResult, error) {
-	wf.mu.RLock()
-	condition := c.Condition(wf.State)
-	wf.mu.RUnlock()
+	condition := c.Condition(wf.snapshotState())
 
 	if condition {
 		return c.TrueStep.Execute(ctx, wf)
@@ -345,6 +345,12 @@ func NewWorkflow(id, name, description string) *Workflow {
 func (wf *Workflow) AddStep(step Step) *Workflow {
 	wf.Steps = append(wf.Steps, step)
 	return wf
+}
+
+func (wf *Workflow) snapshotState() map[string]any {
+	wf.mu.RLock()
+	defer wf.mu.RUnlock()
+	return maps.Clone(wf.State)
 }
 
 // GetState retrieves a value from workflow state.

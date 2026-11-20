@@ -248,3 +248,20 @@ func TestAggregatorPreservesZeroMinimumDuration(t *testing.T) {
 	aggregator.RecordQuery("query", query, time.Millisecond, nil)
 	assertMin(time.Millisecond)
 }
+
+func TestAggregatorTopSlowTablesNonPositiveLimit(t *testing.T) {
+	a := NewAggregator(time.Millisecond)
+	a.RecordQuery("query", "SELECT * FROM slow_table", time.Second, nil)
+	a.RecordQuery("query", "SELECT * FROM fast_table", 0, nil)
+	for _, n := range []int{-1, 0} {
+		if got := a.GetTopSlowTables(n); got == nil || len(got) != 0 {
+			t.Errorf("GetTopSlowTables(%d) = %#v, want non-nil empty slice", n, got)
+		}
+	}
+	if got := a.GetTopSlowTables(1); len(got) != 1 || got[0].Table != "slow_table" {
+		t.Errorf("top table = %v", got)
+	}
+	if got := a.GetTopSlowTables(99); len(got) != 2 || got[0].Table != "slow_table" {
+		t.Errorf("all tables = %v", got)
+	}
+}
