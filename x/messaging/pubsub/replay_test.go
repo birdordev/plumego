@@ -1,6 +1,7 @@
 package pubsub
 
 import (
+	"bytes"
 	"errors"
 	"os"
 	"path/filepath"
@@ -870,6 +871,69 @@ func TestReplayArchivePublishesDistinctCompleteBatches(t *testing.T) {
 					t.Errorf("loaded archive IDs = %v", ids)
 				}
 			})
+		})
+	}
+}
+
+func TestLoadArchiveCommitsOnlyCompleteBatch(t *testing.T) {
+	for _, format := range []string{"json", "gzip"} {
+		t.Run(format, func(t *testing.T) {
+			dir := t.TempDir()
+			store := &ReplayStore{config: ReplayConfig{ArchiveEnabled: true, ArchiveDir: dir}}
+			write := func(name string, data []byte) {
+				t.Helper()
+				if err := os.WriteFile(filepath.Join(dir, name), data, 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			const legacy = "archive-2020-01-01-000000.json"
+			write(legacy, []byte("{\"id\":\"existing\",\"topic\":\"sample\"}\n"))
+			if err := store.LoadArchive(legacy); err != nil {
+				t.Fatal(err)
+			}
+			check := func(want ...string) {
+				t.Helper()
+				rows, err := store.Query(ReplayQuery{IncludeArchived: true})
+				if err != nil {
+					t.Fatal(err)
+				}
+				var ids []string
+				for _, row := range rows {
+					if !row.IsArchived {
+						t.Errorf("expected archived record: %+v", row)
+					}
+					ids = append(ids, row.ID)
+				}
+				slices.Sort(ids)
+				if !slices.Equal(ids, want) {
+					t.Errorf("queried IDs = %v, want %v", ids, want)
+				}
+			}
+
+			name := "archive-import.json"
+			var encoded bytes.Buffer
+			compress := format == "gzip"
+			if err := writeArchiveRecords(&encoded, []*ReplayMessage{{ID: "fresh", Topic: "sample"}}, compress); err != nil {
+				t.Fatal(err)
+			}
+			valid := encoded.Bytes()
+			damaged := append(bytes.Clone(valid), '{')
+			if compress {
+				name += ".gz"
+				damaged = valid[:len(valid)-4]
+			}
+			write(name, damaged)
+			if err := store.LoadArchive(name); err == nil {
+				t.Fatal("damaged archive returned no error")
+			}
+			check("existing")
+
+			write(name, valid)
+			if err := store.LoadArchive(name); err != nil {
+				t.Fatal(err)
+			}
+			check("existing", "fresh")
 		})
 	}
 }

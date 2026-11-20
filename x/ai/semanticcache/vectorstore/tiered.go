@@ -2,7 +2,9 @@ package vectorstore
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"sync"
 )
 
 // TieredBackend implements a multi-tier caching strategy.
@@ -17,7 +19,8 @@ type TieredBackend struct {
 	l1MaxSize  int
 	l2MaxSize  int
 	dimensions int
-	stats      *TieredStats
+	statsMu    sync.Mutex
+	stats      TieredStats
 }
 
 // TieredConfig holds tiered backend configuration.
@@ -63,7 +66,6 @@ func NewTieredBackend(config TieredConfig) (*TieredBackend, error) {
 		l1MaxSize:  config.L1MaxSize,
 		l2MaxSize:  config.L2MaxSize,
 		dimensions: config.Dimensions,
-		stats:      &TieredStats{},
 	}, nil
 }
 
@@ -116,14 +118,16 @@ func (t *TieredBackend) AddBatch(ctx context.Context, entries []*Entry) error {
 	return nil
 }
 
-// Search searches across tiers with automatic promotion.
+// Search searches across tiers with automatic promotion. Each
+// completed search updates its counters together.
 func (t *TieredBackend) Search(ctx context.Context, query []float64, topK int, threshold float64) ([]*SearchResult, error) {
-	t.stats.TotalQueries++
+	var outcome TieredStats
 
 	// Try L1 first (fastest)
 	results, err := t.l1.Search(ctx, query, topK, threshold)
 	if err == nil && len(results) > 0 {
-		t.stats.L1Hits++
+		outcome.L1Hits++
+		t.recordSearch(outcome)
 		return results, nil
 	}
 
@@ -131,15 +135,16 @@ func (t *TieredBackend) Search(ctx context.Context, query []float64, topK int, t
 	if t.l2 != nil {
 		results, err = t.l2.Search(ctx, query, topK, threshold)
 		if err == nil && len(results) > 0 {
-			t.stats.L2Hits++
+			outcome.L2Hits++
 
 			// Promote to L1
 			for _, result := range results {
 				if err := t.l1.Add(ctx, result.Entry); err == nil {
-					t.stats.Promotions++
+					outcome.Promotions++
 				}
 			}
 
+			t.recordSearch(outcome)
 			return results, nil
 		}
 	}
@@ -148,7 +153,7 @@ func (t *TieredBackend) Search(ctx context.Context, query []float64, topK int, t
 	if t.l3 != nil {
 		results, err = t.l3.Search(ctx, query, topK, threshold)
 		if err == nil && len(results) > 0 {
-			t.stats.L3Hits++
+			outcome.L3Hits++
 
 			// Promote to L2 and L1
 			for _, result := range results {
@@ -156,17 +161,30 @@ func (t *TieredBackend) Search(ctx context.Context, query []float64, topK int, t
 					_ = t.l2.Add(ctx, result.Entry)
 				}
 				if err := t.l1.Add(ctx, result.Entry); err == nil {
-					t.stats.Promotions++
+					outcome.Promotions++
 				}
 			}
 
+			t.recordSearch(outcome)
 			return results, nil
 		}
 	}
 
 	// Cache miss
-	t.stats.Misses++
+	outcome.Misses++
+	t.recordSearch(outcome)
 	return []*SearchResult{}, nil
+}
+
+func (t *TieredBackend) recordSearch(outcome TieredStats) {
+	t.statsMu.Lock()
+	defer t.statsMu.Unlock()
+	t.stats.TotalQueries++
+	t.stats.L1Hits += outcome.L1Hits
+	t.stats.L2Hits += outcome.L2Hits
+	t.stats.L3Hits += outcome.L3Hits
+	t.stats.Misses += outcome.Misses
+	t.stats.Promotions += outcome.Promotions
 }
 
 // Get retrieves an entry by ID from any tier.
@@ -203,31 +221,32 @@ func (t *TieredBackend) Get(ctx context.Context, id string) (*Entry, error) {
 	return nil, fmt.Errorf("entry not found: %s", id)
 }
 
-// Delete removes an entry from all tiers.
+// Delete attempts removal in every configured tier. The returned error
+// identifies failed tiers. Successful deletions remain applied on failure.
 func (t *TieredBackend) Delete(ctx context.Context, id string) error {
-	// Delete from all tiers
-	_ = t.l1.Delete(ctx, id)
-	if t.l2 != nil {
-		_ = t.l2.Delete(ctx, id)
-	}
-	if t.l3 != nil {
-		_ = t.l3.Delete(ctx, id)
-	}
-
-	return nil
+	return t.deleteFromTiers("delete", func(backend Backend) error {
+		return backend.Delete(ctx, id)
+	})
 }
 
-// DeleteBatch removes multiple entries from all tiers.
+// DeleteBatch attempts removal in every configured tier. Like Delete, it
+// reports partial failure so callers can identify the cause and retry.
 func (t *TieredBackend) DeleteBatch(ctx context.Context, ids []string) error {
-	_ = t.l1.DeleteBatch(ctx, ids)
-	if t.l2 != nil {
-		_ = t.l2.DeleteBatch(ctx, ids)
-	}
-	if t.l3 != nil {
-		_ = t.l3.DeleteBatch(ctx, ids)
-	}
+	return t.deleteFromTiers("delete batch", func(backend Backend) error {
+		return backend.DeleteBatch(ctx, ids)
+	})
+}
 
-	return nil
+func (t *TieredBackend) deleteFromTiers(operation string, remove func(Backend) error) error {
+	var failures []error
+	for i, backend := range [...]Backend{t.l1, t.l2, t.l3} {
+		if backend != nil {
+			if err := remove(backend); err != nil {
+				failures = append(failures, fmt.Errorf("%s on L%d: %w", operation, i+1, err))
+			}
+		}
+	}
+	return errors.Join(failures...)
 }
 
 // Update updates an entry in all tiers.
@@ -267,7 +286,7 @@ func (t *TieredBackend) Clear(ctx context.Context) error {
 		_ = t.l3.Clear(ctx)
 	}
 
-	t.stats = &TieredStats{}
+	t.ResetStats()
 	return nil
 }
 
@@ -288,47 +307,47 @@ func (t *TieredBackend) Close() error {
 func (t *TieredBackend) Stats(ctx context.Context) (*BackendStats, error) {
 	l1Stats, _ := t.l1.Stats(ctx)
 
-	stats := &BackendStats{
+	return &BackendStats{
 		Name:         "tiered",
 		TotalEntries: l1Stats.TotalEntries,
 		Dimensions:   t.dimensions,
-	}
-
-	// Calculate hit rate
-	totalHits := t.stats.L1Hits + t.stats.L2Hits + t.stats.L3Hits
-	if t.stats.TotalQueries > 0 {
-		stats.HitRate = float64(totalHits) / float64(t.stats.TotalQueries)
-	}
-
-	return stats, nil
+		HitRate:      t.HitRate(),
+	}, nil
 }
 
-// TieredStats returns the tiered-specific statistics.
+// TieredStats returns an independent snapshot of completed searches.
 func (t *TieredBackend) TieredStats() *TieredStats {
-	return t.stats
+	t.statsMu.Lock()
+	defer t.statsMu.Unlock()
+	snapshot := t.stats
+	return &snapshot
 }
 
 // HitRate returns the overall cache hit rate.
 func (t *TieredBackend) HitRate() float64 {
-	if t.stats.TotalQueries == 0 {
+	stats := t.TieredStats()
+	if stats.TotalQueries == 0 {
 		return 0
 	}
-
-	totalHits := t.stats.L1Hits + t.stats.L2Hits + t.stats.L3Hits
-	return float64(totalHits) / float64(t.stats.TotalQueries)
+	totalHits := stats.L1Hits + stats.L2Hits + stats.L3Hits
+	return float64(totalHits) / float64(stats.TotalQueries)
 }
 
 // L1HitRate returns the L1 cache hit rate.
 func (t *TieredBackend) L1HitRate() float64 {
-	if t.stats.TotalQueries == 0 {
+	stats := t.TieredStats()
+	if stats.TotalQueries == 0 {
 		return 0
 	}
-	return float64(t.stats.L1Hits) / float64(t.stats.TotalQueries)
+	return float64(stats.L1Hits) / float64(stats.TotalQueries)
 }
 
-// ResetStats resets all statistics.
+// ResetStats resets all statistics. A search that records its outcome after
+// the reset contributes to the new counters, including when Clear resets them.
 func (t *TieredBackend) ResetStats() {
-	t.stats = &TieredStats{}
+	t.statsMu.Lock()
+	defer t.statsMu.Unlock()
+	t.stats = TieredStats{}
 }
 
 func (t *TieredBackend) reportBackgroundError(tier, operation string, err error) {

@@ -3,6 +3,8 @@ package cache
 import (
 	"net/http"
 	"net/http/httptest"
+	"reflect"
+	"slices"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -314,5 +316,60 @@ func TestCacheControl_NoStore(t *testing.T) {
 
 	if callCount != 2 {
 		t.Errorf("Expected backend to be called twice with no-store, got %d", callCount)
+	}
+}
+
+func TestMemoryStoreOwnsResponseSnapshots(t *testing.T) {
+	for _, implicit := range []bool{false, true} {
+		store := NewMemoryStore(2)
+		input := &CachedResponse{
+			StatusCode: 200,
+			Header:     http.Header{"X-Sample": {"first", "second"}},
+			Body:       []byte("original"),
+			Size:       8,
+		}
+		explicit := time.Now().Add(2 * time.Hour)
+		if !implicit {
+			input.ExpiresAt = explicit
+		}
+		store.Set("sample", input, time.Hour)
+		if implicit && !input.ExpiresAt.IsZero() {
+			t.Fatal("Set changed the caller's expiry")
+		}
+		input.StatusCode, input.Size = 201, 1
+		input.Header["X-Sample"][1] = "changed"
+		input.Body[0] = 'x'
+
+		got, ok := store.Get("sample")
+		if !ok || got.StatusCode != 200 || !slices.Equal(got.Header.Values("X-Sample"), []string{"first", "second"}) ||
+			string(got.Body) != "original" || store.Size() != 8 {
+			t.Fatalf("Set retained caller data: %+v", got)
+		}
+		if (!implicit && !got.ExpiresAt.Equal(explicit)) ||
+			(implicit && (got.ExpiresAt.IsZero() || !got.ExpiresAt.Before(explicit))) {
+			t.Errorf("incorrect expiry: %v", got.ExpiresAt)
+		}
+		got.Header["X-Sample"][0] = "changed"
+		got.Body[0] = 'y'
+		again, ok := store.Get("sample")
+		if !ok || !slices.Equal(again.Header.Values("X-Sample"), []string{"first", "second"}) || string(again.Body) != "original" {
+			t.Errorf("Get leaked cache data: %+v", again)
+		}
+	}
+}
+
+func TestMemoryStorePreservesNilAndEmptyResponseData(t *testing.T) {
+	store := NewMemoryStore(2)
+	inputs := map[string]*CachedResponse{
+		"nil":   {},
+		"empty": {Header: http.Header{"X-Sample": {}}, Body: []byte{}},
+	}
+	for key, input := range inputs {
+		store.Set(key, input, time.Hour)
+		got, ok := store.Get(key)
+		if !ok || (got.Header == nil) != (input.Header == nil) || (got.Body == nil) != (input.Body == nil) ||
+			!reflect.DeepEqual(got.Header, input.Header) || !slices.Equal(got.Body, input.Body) {
+			t.Fatalf("response %s = %+v, want %+v", key, got, input)
+		}
 	}
 }

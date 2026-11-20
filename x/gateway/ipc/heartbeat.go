@@ -1,7 +1,6 @@
 package ipc
 
 import (
-	"context"
 	"fmt"
 	"net"
 	"sync"
@@ -12,7 +11,7 @@ import (
 type HeartbeatConfig struct {
 	Enabled  bool          // Enable heartbeat mechanism
 	Interval time.Duration // Interval between heartbeat checks
-	Timeout  time.Duration // Timeout for heartbeat response
+	Timeout  time.Duration // Timeout applied separately to the ping write and pong read
 	// OnDead is called once on heartbeat failure, outside the client lock.
 	// Close suppresses a notification that has not been selected yet.
 	OnDead func()
@@ -95,12 +94,6 @@ func (hb *heartbeatClient) ping() error {
 
 	// Simple ping: write a special byte sequence
 	pingMsg := []byte{0xFF, 0xFF, 0x00, 0x00} // Magic ping bytes
-	deadline := time.Now().Add(hb.config.Timeout)
-
-	// Set deadline for ping
-	ctx, cancel := context.WithDeadline(context.Background(), deadline)
-	defer cancel()
-
 	// Write ping
 	n, err := hb.client.WriteWithTimeout(pingMsg, hb.config.Timeout)
 	if err != nil || n != len(pingMsg) {
@@ -118,8 +111,6 @@ func (hb *heartbeatClient) ping() error {
 	hb.mu.Lock()
 	hb.lastSeen = time.Now()
 	hb.mu.Unlock()
-
-	_ = ctx // Use ctx to satisfy linter
 
 	return nil
 }

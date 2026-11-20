@@ -1298,3 +1298,33 @@ func TestPoolWaitersAcquireInOrderAfterCancellation(t *testing.T) {
 		}
 	})
 }
+
+type heartbeatTimeoutClient struct {
+	Client
+	ping                      []byte
+	writeTimeout, readTimeout time.Duration
+}
+
+func (c *heartbeatTimeoutClient) WriteWithTimeout(data []byte, timeout time.Duration) (int, error) {
+	c.ping = bytes.Clone(data)
+	c.writeTimeout = timeout
+	return len(data), nil
+}
+
+func (c *heartbeatTimeoutClient) ReadWithTimeout(data []byte, timeout time.Duration) (int, error) {
+	c.readTimeout = timeout
+	return copy(data, c.ping), nil
+}
+
+func TestHeartbeatAppliesTimeoutToEachOperation(t *testing.T) {
+	const timeout = 250 * time.Millisecond
+	client := &heartbeatTimeoutClient{}
+	hb := &heartbeatClient{client: client, config: &HeartbeatConfig{Timeout: timeout}}
+
+	if err := hb.ping(); err != nil {
+		t.Fatal(err)
+	}
+	if client.writeTimeout != timeout || client.readTimeout != timeout || hb.LastSeen().IsZero() {
+		t.Errorf("write=%v, read=%v, last seen=%v", client.writeTimeout, client.readTimeout, hb.LastSeen())
+	}
+}

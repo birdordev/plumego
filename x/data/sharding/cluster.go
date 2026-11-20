@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"maps"
+	"slices"
 	"time"
 
 	"github.com/birdordev/plumego/x/data/rw"
@@ -163,14 +165,16 @@ func (c ClusterConfig) Validate() error {
 	return nil
 }
 
-// New creates a sharded cluster database. If construction fails after
-// creating shards, New closes those shards in reverse order and includes
-// cleanup failures in the returned error.
+// New creates a sharded cluster database and copies configuration containers.
+// If construction fails after creating shards, New closes those shards in
+// reverse order and includes cleanup failures in the returned error.
 func New(config ClusterConfig) (_ *ClusterDB, err error) {
 	// Validate configuration
 	if err := config.Validate(); err != nil {
 		return nil, fmt.Errorf("invalid cluster config: %w", err)
 	}
+
+	config = cloneClusterConfig(config)
 
 	// Create shards
 	shards := make([]*rw.Cluster, 0, len(config.Shards))
@@ -358,9 +362,27 @@ func (c *ClusterDB) Metrics() RouterMetrics {
 	return c.router.Metrics()
 }
 
-// GetConfig returns the cluster configuration
+// GetConfig returns an independent copy of the configuration containers.
+// Database handles retain their identity and remain owned by the cluster.
 func (c *ClusterDB) GetConfig() ClusterConfig {
-	return c.config
+	return cloneClusterConfig(c.config)
+}
+
+func cloneClusterConfig(config ClusterConfig) ClusterConfig {
+	config.Shards = slices.Clone(config.Shards)
+	for i := range config.Shards {
+		shard := &config.Shards[i]
+		shard.Replicas = slices.Clone(shard.Replicas)
+		shard.ReplicaWeights = slices.Clone(shard.ReplicaWeights)
+	}
+	config.ShardingRules = slices.Clone(config.ShardingRules)
+	for i := range config.ShardingRules {
+		rule := &config.ShardingRules[i]
+		rule.ActualTableNames = maps.Clone(rule.ActualTableNames)
+		rule.StrategyConfig.Ranges = slices.Clone(rule.StrategyConfig.Ranges)
+		rule.StrategyConfig.Mapping = maps.Clone(rule.StrategyConfig.Mapping)
+	}
+	return config
 }
 
 // HealthCheck performs a health check on all shards

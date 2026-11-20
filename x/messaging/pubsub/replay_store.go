@@ -176,16 +176,16 @@ func encodeArchiveRecords(w io.Writer, messages []*ReplayMessage) error {
 }
 
 // LoadArchive loads JSON Lines from an archive file, optionally compressed
-// with gzip. New batches receive unique names and are published after closing
-// the fully written file. Files created by older versions remain readable.
+// with gzip. It appends the batch only after decoding to the end of the file.
+// Files created by older versions remain readable.
 func (rs *ReplayStore) LoadArchive(filename string) error {
 	if !rs.config.ArchiveEnabled {
 		return ErrArchiveNotEnabled
 	}
 
-	filepath := filepath.Join(rs.config.ArchiveDir, filename)
+	path := filepath.Join(rs.config.ArchiveDir, filename)
 
-	file, err := os.Open(filepath)
+	file, err := os.Open(path)
 	if err != nil {
 		return err
 	}
@@ -194,7 +194,7 @@ func (rs *ReplayStore) LoadArchive(filename string) error {
 	var reader io.Reader = file
 
 	// Detect gzip compression
-	if strings.HasSuffix(filepath, ".gz") {
+	if strings.HasSuffix(path, ".gz") {
 		gzReader, err := gzip.NewReader(file)
 		if err != nil {
 			return err
@@ -205,10 +205,7 @@ func (rs *ReplayStore) LoadArchive(filename string) error {
 
 	// Read messages
 	decoder := json.NewDecoder(reader)
-	loaded := 0
-
-	rs.archivedMu.Lock()
-	defer rs.archivedMu.Unlock()
+	var loaded []*ReplayMessage
 
 	for {
 		var msg ReplayMessage
@@ -219,9 +216,11 @@ func (rs *ReplayStore) LoadArchive(filename string) error {
 		}
 
 		msg.IsArchived = true
-		rs.archived = append(rs.archived, &msg)
-		loaded++
+		loaded = append(loaded, &msg)
 	}
 
+	rs.archivedMu.Lock()
+	rs.archived = append(rs.archived, loaded...)
+	rs.archivedMu.Unlock()
 	return nil
 }

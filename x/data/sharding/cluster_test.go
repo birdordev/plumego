@@ -710,3 +710,62 @@ func TestNewRollsBackCreatedShardsInReverseOrder(t *testing.T) {
 		t.Errorf("failed shard's unacquired connection was closed: %v", err)
 	}
 }
+
+func TestClusterConfigContainersAreIndependent(t *testing.T) {
+	primary, replica, second := testSQLDB(t), testSQLDB(t), testSQLDB(t)
+	config := ClusterConfig{
+		Shards: []ShardConfig{
+			{Primary: primary, Replicas: []*sql.DB{replica}, ReplicaWeights: []int{1}},
+			{Primary: second, Replicas: []*sql.DB{}},
+		},
+		ShardingRules: []ShardingRuleConfig{
+			{
+				TableName: "items", ShardKeyColumn: "id", Strategy: "range",
+				ActualTableNames: map[int]string{0: "items_0"},
+				StrategyConfig: StrategyConfig{
+					Ranges:  []RangeDefinition{{Start: 0, End: 10, Shard: 0}},
+					Mapping: map[string]int{"sample": 0},
+				},
+			},
+			{
+				TableName: "other", ShardKeyColumn: "id", Strategy: "mod",
+				StrategyConfig: StrategyConfig{Ranges: []RangeDefinition{}, Mapping: map[string]int{}},
+			},
+		},
+	}
+	cluster, err := New(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cluster.Close()
+
+	mutate := func(c ClusterConfig) {
+		c.Shards[0].Primary = second
+		c.Shards[0].Replicas[0] = second
+		c.Shards[0].ReplicaWeights[0] = 2
+		rule := &c.ShardingRules[0]
+		rule.TableName = "changed"
+		rule.ActualTableNames[0] = "changed_0"
+		rule.StrategyConfig.Ranges[0].Shard = 1
+		rule.StrategyConfig.Mapping["sample"] = 1
+	}
+	check := func() {
+		t.Helper()
+		got := cluster.GetConfig()
+		first, rule := got.Shards[0], got.ShardingRules[0]
+		if first.Primary != primary || first.Replicas[0] != replica || first.ReplicaWeights[0] != 1 ||
+			rule.TableName != "items" || rule.ActualTableNames[0] != "items_0" ||
+			rule.StrategyConfig.Ranges[0].Shard != 0 || rule.StrategyConfig.Mapping["sample"] != 0 {
+			t.Fatalf("cluster configuration changed: %+v, %+v", first, rule)
+		}
+		if got.Shards[1].Replicas == nil || got.Shards[1].ReplicaWeights != nil ||
+			got.ShardingRules[1].ActualTableNames != nil || got.ShardingRules[1].StrategyConfig.Ranges == nil ||
+			got.ShardingRules[1].StrategyConfig.Mapping == nil {
+			t.Fatal("snapshot changed nil or empty containers")
+		}
+	}
+	mutate(config)
+	check()
+	mutate(cluster.GetConfig())
+	check()
+}

@@ -2,6 +2,7 @@ package cache
 
 import (
 	"container/list"
+	"slices"
 	"sync"
 	"time"
 )
@@ -40,14 +41,14 @@ func NewMemoryStore(capacity int) *MemoryStore {
 	}
 }
 
-// Get retrieves a cached response
+// Get retrieves an independent copy of a cached response.
 func (s *MemoryStore) Get(key string) (*CachedResponse, bool) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 
 	elem, found := s.items[key]
 	if !found {
 		s.misses++
+		s.mu.Unlock()
 		return nil, false
 	}
 
@@ -59,6 +60,7 @@ func (s *MemoryStore) Get(key string) (*CachedResponse, bool) {
 		// Remove expired entry
 		s.removeElement(elem)
 		s.misses++
+		s.mu.Unlock()
 		return nil, false
 	}
 
@@ -66,19 +68,22 @@ func (s *MemoryStore) Get(key string) (*CachedResponse, bool) {
 	s.lruList.MoveToFront(elem)
 
 	s.hits++
-	return ent.response, true
+	response := ent.response
+	s.mu.Unlock()
+
+	// Stored responses are immutable; replacement installs a new pointer.
+	return cloneCachedResponse(response), true
 }
 
-// Set stores a response in cache. A positive TTL sets the expiry when
-// resp.ExpiresAt is zero, without modifying the supplied response.
+// Set stores an independent copy of the response. A positive TTL sets the
+// expiry when resp.ExpiresAt is zero.
 func (s *MemoryStore) Set(key string, resp *CachedResponse, ttl time.Duration) {
+	resp = cloneCachedResponse(resp)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	if resp.ExpiresAt.IsZero() && ttl > 0 {
-		owned := *resp
-		owned.ExpiresAt = time.Now().Add(ttl)
-		resp = &owned
+		resp.ExpiresAt = time.Now().Add(ttl)
 	}
 
 	// Check if key already exists
@@ -107,6 +112,13 @@ func (s *MemoryStore) Set(key string, resp *CachedResponse, ttl time.Duration) {
 	if s.lruList.Len() > s.capacity {
 		s.evictOldest()
 	}
+}
+
+func cloneCachedResponse(resp *CachedResponse) *CachedResponse {
+	copy := *resp
+	copy.Header = resp.Header.Clone()
+	copy.Body = slices.Clone(resp.Body)
+	return &copy
 }
 
 // Delete removes a cached response
