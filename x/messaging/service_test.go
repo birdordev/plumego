@@ -1,15 +1,20 @@
 package messaging
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/birdordev/plumego/log"
+	"github.com/birdordev/plumego/x/messaging/mq"
 	"github.com/birdordev/plumego/x/messaging/mq/store"
 	"github.com/birdordev/plumego/x/messaging/pubsub"
 	"github.com/birdordev/plumego/x/messaging/scheduler"
@@ -645,5 +650,84 @@ func TestDeliverTask_ProviderFailurePublishesFailedEvent(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("timed out waiting for failed event")
+	}
+}
+
+type receiptSaveFailureStore struct {
+	*MemReceiptStore
+	failStatus string
+}
+
+func (s receiptSaveFailureStore) Save(receipt Receipt) error {
+	if receipt.Status == s.failStatus {
+		return fmt.Errorf("rejected receipt for %s: %s", receipt.To, receipt.ID)
+	}
+	return s.MemReceiptStore.Save(receipt)
+}
+
+func TestReceiptSaveFailurePreservesDeliveryOutcome(t *testing.T) {
+	for _, tt := range []struct {
+		name, failStatus, operation string
+	}{
+		{name: "success"},
+		{name: "initial save failure", failStatus: messageStatusQueued, operation: "create"},
+		{name: "terminal save failure", failStatus: messageStatusSent, operation: "update"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			var output bytes.Buffer
+			logger := log.NewLogger(log.LoggerConfig{Format: log.LoggerFormatJSON, Output: &output, ErrorOutput: &output})
+			receipts := receiptSaveFailureStore{MemReceiptStore: NewMemReceiptStore(10), failStatus: tt.failStatus}
+			sms := &mockSMS{}
+			svc := New(Config{TaskStore: store.NewMemory(store.DefaultMemConfig()), SMS: sms, Receipts: receipts, Logger: logger})
+			req := SendRequest{
+				ID: "private-request-id", Channel: ChannelSMS,
+				To: "+1234567890", Body: "private body", MaxRetries: 2,
+			}
+			if err := svc.Send(t.Context(), req); err != nil {
+				t.Fatalf("Send = %v", err)
+			}
+			data, err := json.Marshal(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			task := mq.Task{ID: req.ID, Payload: data, Attempts: 1}
+			if err := svc.handleSMS(t.Context(), task); err != nil {
+				t.Fatalf("delivery returned a retryable outcome: %v", err)
+			}
+			if len(sms.calls) != 1 || svc.totalSent.Load() != 1 || svc.totalFailed.Load() != 0 {
+				t.Fatal("receipt persistence changed the delivery outcome")
+			}
+
+			r, ok := receipts.Get(req.ID)
+			switch tt.failStatus {
+			case messageStatusQueued:
+				if ok {
+					t.Errorf("unexpected saved receipt: %+v", r)
+				}
+			case messageStatusSent:
+				if !ok || r.Status != messageStatusQueued {
+					t.Errorf("terminal save changed receipt: %+v, found=%t", r, ok)
+				}
+			default:
+				if !ok || r.Status != messageStatusSent || output.Len() != 0 {
+					t.Errorf("successful receipt = %+v, found=%t, logs=%q", r, ok, output.String())
+				}
+				return
+			}
+
+			var fields map[string]any
+			if err := json.Unmarshal(output.Bytes(), &fields); err != nil {
+				t.Fatalf("decode diagnostic: %v", err)
+			}
+			if fields["operation"] != tt.operation || fields["channel"] != string(ChannelSMS) ||
+				fields["receipt_id_hash"] != fmt.Sprintf("%x", sha256.Sum256([]byte(req.ID))) {
+				t.Errorf("unexpected diagnostic: %v", fields)
+			}
+			for _, value := range []string{req.ID, req.To, req.Body, "rejected receipt"} {
+				if strings.Contains(output.String(), value) {
+					t.Errorf("diagnostic exposed %q", value)
+				}
+			}
+		})
 	}
 }

@@ -122,11 +122,16 @@ func NewDBResource[T any](spec ResourceSpec, repository Repository[T]) *DBResour
 	return controller
 }
 
-// RegisterDBResource builds and registers a repository-backed controller with canonical routes.
+// RegisterDBResource builds and registers a repository-backed controller with
+// canonical routes. It returns nil if registration fails. The router may have
+// received some routes and should be discarded after a failure. For the
+// registration error, use NewDBResource followed by RegisterResourceRoutes.
 func RegisterDBResource[T any](r *router.Router, spec ResourceSpec, repository Repository[T]) *DBResourceController[T] {
 	spec = spec.Normalized()
 
 	controller := NewDBResource[T](spec, repository)
-	_ = RegisterResourceRoutes(r, spec.Prefix, controller, spec.Routes)
+	if err := RegisterResourceRoutes(r, spec.Prefix, controller, spec.Routes); err != nil {
+		return nil
+	}
 	return controller
 }

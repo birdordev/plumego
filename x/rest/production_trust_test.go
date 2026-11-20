@@ -388,3 +388,31 @@ func TestDBResourceController_BeforeDelete_RejectionUsesClientError(t *testing.T
 	}
 	assertBodyOmits(t, rec.Body.String(), "hook says no")
 }
+
+func TestRegisterDBResourceReportsRegistrationFailure(t *testing.T) {
+	spec := DefaultResourceSpec("items")
+	repo := dbResourceTestRepo{}
+	if got := RegisterDBResource[dbResourceTestItem](nil, spec, repo); got != nil {
+		t.Fatal("expected nil controller for a nil router")
+	}
+	controller := NewDBResource[dbResourceTestItem](spec, repo)
+	if err := RegisterResourceRoutes(nil, spec.Prefix, controller, spec.Routes); !errors.Is(err, errRegisterNilRouter) {
+		t.Fatalf("explicit registration returned %v", err)
+	}
+
+	newConflictingRouter := func() *router.Router {
+		t.Helper()
+		r := router.NewRouter()
+		handler := http.HandlerFunc(func(http.ResponseWriter, *http.Request) {})
+		if err := r.AddRoute(http.MethodGet, "/items/:other", handler); err != nil {
+			t.Fatal(err)
+		}
+		return r
+	}
+	if got := RegisterDBResource[dbResourceTestItem](newConflictingRouter(), spec, repo); got != nil {
+		t.Fatal("expected nil controller for a parameter name conflict")
+	}
+	if err := RegisterResourceRoutes(newConflictingRouter(), spec.Prefix, controller, spec.Routes); err == nil {
+		t.Fatal("explicit registration hid the route conflict")
+	}
+}

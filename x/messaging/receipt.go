@@ -5,7 +5,9 @@ import (
 	"time"
 )
 
-// ReceiptStore persists delivery receipts for status queries.
+// ReceiptStore persists delivery receipts for status queries. Service writes
+// receipts on a best-effort basis. A failed Save is reported through the
+// configured logger and does not change message acceptance or retry decisions.
 type ReceiptStore interface {
 	Save(receipt Receipt) error
 	Get(id string) (Receipt, bool)

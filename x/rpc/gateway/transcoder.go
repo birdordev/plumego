@@ -43,8 +43,9 @@ func New(target string, opts ...Option) *HTTPTranscoder {
 
 // Register adds a handler for a method and path. Patterns without a method
 // use GET. Each registered method, including HEAD, is matched explicitly.
-func (t *HTTPTranscoder) Register(ctx context.Context, handler HandlerFunc, pattern string) error {
-	_ = ctx
+// Registration is local and ignores its context argument. At dispatch, the
+// handler receives the HTTP request and its request context.
+func (t *HTTPTranscoder) Register(_ context.Context, handler HandlerFunc, pattern string) error {
 	if handler == nil {
 		return contract.ErrHandlerNil
 	}

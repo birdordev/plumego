@@ -30,8 +30,9 @@ so the envelope matches the rest of the service.
 ```go
 spec := rest.DefaultResourceSpec("users").WithPrefix("/api/users")
 users := rest.NewDBResource[user.User](spec, user.NewRepository())
-// or register routes directly on a *router.Router:
-//   rest.RegisterDBResource[user.User](r, spec, user.NewRepository())
+if err := rest.RegisterResourceRoutes(r, spec.Prefix, users, spec.Routes); err != nil {
+    return err
+}
 ```
 
 `user.Repository` only has to satisfy `rest.Repository[T]` (`FindAll`, `Count`,

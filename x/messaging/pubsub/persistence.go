@@ -11,6 +11,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -49,7 +50,8 @@ type PersistenceConfig struct {
 	// SnapshotInterval for automatic snapshots (default: 1h)
 	SnapshotInterval time.Duration
 
-	// RetentionPeriod for old WAL segments (default: 24h)
+	// RetentionPeriod for old snapshot markers (default: 24h). WAL segments
+	// remain available for replay while snapshots do not capture messages.
 	RetentionPeriod time.Duration
 
 	// MaxWALSegments before forcing snapshot (default: 10)
@@ -187,18 +189,18 @@ func NewPersistent(config PersistenceConfig, opts ...Option) (*PersistentPubSub,
 		lastSnap:     time.Now(),
 	}
 
+	// Restore before opening the WAL so new records follow existing segments.
+	if err := pps.restore(); err != nil {
+		cancel()
+		_ = ps.Close()
+		return nil, fmt.Errorf("failed to restore: %w", err)
+	}
+
 	// Initialize WAL
 	if err := pps.initWAL(); err != nil {
 		cancel()
 		_ = ps.Close()
 		return nil, fmt.Errorf("failed to initialize WAL: %w", err)
-	}
-
-	// Restore from WAL and snapshots
-	if err := pps.restore(); err != nil {
-		cancel()
-		_ = ps.Close()
-		return nil, fmt.Errorf("failed to restore: %w", err)
 	}
 
 	// Start background workers
@@ -262,7 +264,7 @@ func (pps *PersistentPubSub) restore() error {
 	return nil
 }
 
-// findLatestSnapshot finds the most recent snapshot file
+// findLatestSnapshot finds the most recent snapshot that contains messages.
 func (pps *PersistentPubSub) findLatestSnapshot() (*snapshotData, error) {
 	files, err := filepath.Glob(filepath.Join(pps.config.DataDir, "snapshot-*.json"))
 	if err != nil {
@@ -273,36 +275,40 @@ func (pps *PersistentPubSub) findLatestSnapshot() (*snapshotData, error) {
 		return nil, os.ErrNotExist
 	}
 
-	// Find newest snapshot
-	var newest string
-	var newestTime time.Time
-
-	for _, f := range files {
-		stat, err := os.Stat(f)
+	type candidate struct {
+		path string
+		mod  time.Time
+	}
+	snapshots := make([]candidate, 0, len(files))
+	for _, path := range files {
+		if stat, err := os.Stat(path); err == nil {
+			snapshots = append(snapshots, candidate{path, stat.ModTime()})
+		}
+	}
+	sort.SliceStable(snapshots, func(i, j int) bool {
+		return snapshots[i].mod.After(snapshots[j].mod)
+	})
+	for _, candidate := range snapshots {
+		snap, err := readSnapshot(candidate.path)
 		if err != nil {
-			continue
+			return nil, err
 		}
-		if stat.ModTime().After(newestTime) {
-			newest = f
-			newestTime = stat.ModTime()
+		if len(snap.Messages) > 0 {
+			return snap, nil
 		}
 	}
+	return nil, os.ErrNotExist
+}
 
-	if newest == "" {
-		return nil, os.ErrNotExist
-	}
-
-	// Load snapshot
-	data, err := os.ReadFile(newest)
+func readSnapshot(path string) (*snapshotData, error) {
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
-
 	var snap snapshotData
 	if err := json.Unmarshal(data, &snap); err != nil {
 		return nil, err
 	}
-
 	return &snap, nil
 }
 
@@ -468,6 +474,9 @@ func (pps *PersistentPubSub) writeWAL(topic string, msg Message, durability Dura
 
 	pps.walMu.Lock()
 	defer pps.walMu.Unlock()
+	if pps.closed.Load() {
+		return ErrPersistenceClosed
+	}
 
 	// Create entry
 	seq := pps.walSequence.Add(1)
@@ -544,7 +553,10 @@ func (pps *PersistentPubSub) writeWAL(topic string, msg Message, durability Dura
 // rotateWAL rotates to a new WAL file
 func (pps *PersistentPubSub) rotateWAL() {
 	pps.walMu.Lock()
-	defer pps.walMu.Unlock()
+	if pps.closed.Load() {
+		pps.walMu.Unlock()
+		return
+	}
 
 	// Flush current WAL
 	if pps.walWriter != nil {
@@ -558,35 +570,36 @@ func (pps *PersistentPubSub) rotateWAL() {
 	// Create new WAL
 	pps.walSequence.Add(1)
 	_ = pps.initWAL()
+	pps.walMu.Unlock()
 
-	// Trigger snapshot if too many segments
-	go pps.maybeSnapshot()
+	pps.maybeSnapshot()
 }
 
-// Snapshot creates a point-in-time snapshot
+// Snapshot records a checkpoint marker. It does not compact the WAL.
+// Recovery replays the retained WAL unless a historical snapshot contains
+// messages. Records already deleted from disk cannot be restored.
 func (pps *PersistentPubSub) Snapshot() error {
+	pps.snapshotMu.Lock()
+	defer pps.snapshotMu.Unlock()
+	return pps.snapshotLocked()
+}
+
+func (pps *PersistentPubSub) snapshotLocked() error {
 	if pps.closed.Load() {
 		return ErrPersistenceClosed
 	}
 
-	pps.snapshotMu.Lock()
-	defer pps.snapshotMu.Unlock()
-
 	// Create snapshot data
 	snap := snapshotData{
-		Version:     1,
-		Timestamp:   time.Now(),
-		WALSequence: pps.walSequence.Load(),
-		Messages:    []persistedMessage{},
+		Version:   1,
+		Timestamp: time.Now(),
+		Messages:  []persistedMessage{},
 	}
-
-	// Capture current state (limited to history buffer)
-	// Note: Full message capture would require adding to config
 
 	// Write snapshot
 	snapPath := filepath.Join(
 		pps.config.DataDir,
-		fmt.Sprintf("snapshot-%d.json", snap.Timestamp.Unix()),
+		fmt.Sprintf("snapshot-%d.json", snap.Timestamp.UnixNano()),
 	)
 
 	data, err := json.MarshalIndent(snap, "", "  ")
@@ -601,44 +614,33 @@ func (pps *PersistentPubSub) Snapshot() error {
 	pps.snapshots.Add(1)
 	pps.lastSnap = time.Now()
 
-	// Cleanup old snapshots and WAL
-	go pps.cleanup()
+	pps.cleanup()
 
 	return nil
 }
 
 // maybeSnapshot checks if snapshot is needed
 func (pps *PersistentPubSub) maybeSnapshot() {
+	pps.snapshotMu.Lock()
+	defer pps.snapshotMu.Unlock()
 	if time.Since(pps.lastSnap) < pps.config.SnapshotInterval {
 		return
 	}
 
-	_ = pps.Snapshot()
+	_ = pps.snapshotLocked()
 }
 
-// cleanup removes old snapshots and WAL segments
+// cleanup expires old markers and retains snapshots with recovery data.
 func (pps *PersistentPubSub) cleanup() {
 	cutoff := time.Now().Add(-pps.config.RetentionPeriod)
-
-	// Cleanup old snapshots (keep at least 1)
 	snaps, _ := filepath.Glob(filepath.Join(pps.config.DataDir, "snapshot-*.json"))
-	if len(snaps) > 1 {
-		for _, snap := range snaps[:len(snaps)-1] {
-			if stat, err := os.Stat(snap); err == nil {
-				if stat.ModTime().Before(cutoff) {
-					_ = os.Remove(snap)
-				}
-			}
+	for _, path := range snaps[:max(0, len(snaps)-1)] {
+		stat, err := os.Stat(path)
+		if err != nil || !stat.ModTime().Before(cutoff) {
+			continue
 		}
-	}
-
-	// Cleanup old WAL segments
-	wals, _ := filepath.Glob(filepath.Join(pps.config.DataDir, "wal-*.log"))
-	for _, wal := range wals {
-		if stat, err := os.Stat(wal); err == nil {
-			if stat.ModTime().Before(cutoff) {
-				_ = os.Remove(wal)
-			}
+		if snap, err := readSnapshot(path); err == nil && len(snap.Messages) == 0 {
+			_ = os.Remove(path)
 		}
 	}
 }
@@ -687,30 +689,39 @@ func (pps *PersistentPubSub) startBackgroundWorkers() {
 	}()
 }
 
-// Close closes the persistent pubsub
+// Close stops the workers, flushes and syncs the WAL, and closes the broker.
+// It reports finalization errors without creating a snapshot. Once shutdown
+// has started, subsequent calls return nil without repeating cleanup.
 func (pps *PersistentPubSub) Close() error {
 	if pps.closed.Swap(true) {
 		return nil
 	}
 
-	// Stop background workers
 	stopBackground(pps.cancel, &pps.wg)
 
-	// Final flush and snapshot
+	var errs []error
+	// Finish any in-progress snapshot before finalizing the WAL.
+	pps.snapshotMu.Lock()
 	pps.walMu.Lock()
 	if pps.walWriter != nil {
-		_ = pps.walWriter.Flush()
+		if err := pps.walWriter.Flush(); err != nil {
+			errs = append(errs, fmt.Errorf("flush WAL: %w", err))
+		}
+		pps.walWriter = nil
 	}
 	if pps.walFile != nil {
-		_ = pps.walFile.Sync()
-		_ = pps.walFile.Close()
+		if err := pps.walFile.Sync(); err != nil {
+			errs = append(errs, fmt.Errorf("sync WAL: %w", err))
+		}
+		if err := pps.walFile.Close(); err != nil {
+			errs = append(errs, fmt.Errorf("close WAL: %w", err))
+		}
+		pps.walFile = nil
 	}
 	pps.walMu.Unlock()
+	pps.snapshotMu.Unlock()
 
-	_ = pps.Snapshot()
-
-	// Close base pubsub
-	return pps.InProcBroker.Close()
+	return errors.Join(append(errs, pps.InProcBroker.Close())...)
 }
 
 // Stats returns persistence statistics

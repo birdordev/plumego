@@ -2,8 +2,11 @@ package pubsub
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 )
@@ -492,5 +495,139 @@ func BenchmarkPersistentPubSub_Async(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_ = pps.Publish("bench.topic", msg)
+	}
+}
+
+func TestPersistentPubSubRestoresAcrossSnapshotMarkers(t *testing.T) {
+	for _, legacy := range []bool{false, true} {
+		name := "empty markers"
+		if legacy {
+			name = "legacy snapshot followed by empty markers"
+		}
+		t.Run(name, func(t *testing.T) {
+			cfg := DefaultPersistenceConfig()
+			cfg.Enabled = true
+			cfg.DataDir = t.TempDir()
+			cfg.SnapshotInterval = time.Hour
+			var restored []string
+			cfg.OnRestore = func(msg Message, _ time.Time) { restored = append(restored, msg.ID) }
+
+			open := func() *PersistentPubSub {
+				t.Helper()
+				b, err := NewPersistent(cfg)
+				if err != nil {
+					t.Fatal(err)
+				}
+				return b
+			}
+			publish := func(b *PersistentPubSub, id string) {
+				t.Helper()
+				if err := b.PublishPersistent("sample", Message{ID: id}, DurabilitySync); err != nil {
+					t.Fatal(err)
+				}
+			}
+			closeBroker := func(b *PersistentPubSub) {
+				t.Helper()
+				if err := b.Close(); err != nil {
+					t.Fatal(err)
+				}
+			}
+			writeSnapshot := func(name string, snapshot snapshotData, modified time.Time) {
+				t.Helper()
+				data, err := json.Marshal(snapshot)
+				if err != nil {
+					t.Fatal(err)
+				}
+				path := filepath.Join(cfg.DataDir, name)
+				if err := os.WriteFile(path, data, 0600); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Chtimes(path, modified, modified); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			b := open()
+			publish(b, "first")
+			old := time.Now().Add(-48 * time.Hour)
+			if legacy {
+				writeSnapshot("snapshot-1.json", snapshotData{
+					Version: 1, WALSequence: 1,
+					Messages: []persistedMessage{{Topic: "sample", Message: Message{ID: "first"}}},
+				}, old)
+			}
+			writeSnapshot("snapshot-2.json", snapshotData{Version: 1, WALSequence: 1}, time.Now())
+			if err := b.Snapshot(); err != nil {
+				t.Fatal(err)
+			}
+			publish(b, "second")
+			// Age the active segment, then run the same cleanup as Snapshot.
+			wal := b.walFile.Name()
+			if err := os.Chtimes(wal, old, old); err != nil {
+				t.Fatal(err)
+			}
+			if err := b.Snapshot(); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := os.Stat(wal); err != nil {
+				t.Fatalf("cleanup removed the active WAL: %v", err)
+			}
+			b.rotateWAL()
+			publish(b, "third")
+			if err := b.Snapshot(); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := os.Stat(wal); err != nil {
+				t.Fatalf("cleanup removed an uncovered WAL: %v", err)
+			}
+			closeBroker(b)
+
+			b = open()
+			if !slices.Equal(restored, []string{"first", "second", "third"}) {
+				t.Fatalf("restored = %v", restored)
+			}
+			publish(b, "fourth")
+			closeBroker(b)
+
+			restored = nil
+			closeBroker(open())
+			if !slices.Equal(restored, []string{"first", "second", "third", "fourth"}) {
+				t.Fatalf("restored after second reopen = %v", restored)
+			}
+		})
+	}
+}
+
+func TestPersistentPubSubCloseReportsWALFailureAndClosesBroker(t *testing.T) {
+	cfg := DefaultPersistenceConfig()
+	cfg.Enabled = true
+	cfg.DataDir = t.TempDir()
+	cfg.FlushInterval = time.Hour
+	b, err := NewPersistent(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = b.Close() }()
+	if err := b.PublishPersistent("sample", Message{ID: "pending"}, DurabilityAsync); err != nil {
+		t.Fatal(err)
+	}
+	b.walMu.Lock()
+	err = b.walFile.Close()
+	b.walMu.Unlock()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := b.Close(); !errors.Is(err, os.ErrClosed) {
+		t.Fatalf("Close = %v, want closed-file error", err)
+	}
+	if err := b.InProcBroker.Publish("sample", Message{}); err == nil {
+		t.Error("base broker is still open")
+	}
+	if err := b.Snapshot(); !errors.Is(err, ErrPersistenceClosed) {
+		t.Errorf("Snapshot after close = %v", err)
+	}
+	if err := b.Close(); err != nil {
+		t.Errorf("repeated Close = %v", err)
 	}
 }

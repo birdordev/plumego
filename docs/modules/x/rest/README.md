@@ -37,7 +37,12 @@
 - `ResourceSpec`
 - `RegisterResourceRoutes`
 - `NewDBResource`
-- `RegisterDBResource`
+- `RegisterDBResource` returns the controller on success and `nil` when route
+  registration fails.
+
+To report registration errors during startup, build the controller with
+`NewDBResource` and call `RegisterResourceRoutes`. Stop assembly and discard
+the router on failure because some routes may have been installed.
 
 ## Main risks when changing this module
 

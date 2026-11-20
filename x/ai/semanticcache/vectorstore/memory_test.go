@@ -2,6 +2,7 @@ package vectorstore
 
 import (
 	"fmt"
+	"sync"
 	"testing"
 	"time"
 )
@@ -329,5 +330,105 @@ func TestMemoryBackendReplacementKeepsOtherEntries(t *testing.T) {
 				t.Fatalf("count after insertion = %d", n)
 			}
 		})
+	}
+}
+
+func TestMemoryBackendOwnsEntrySnapshots(t *testing.T) {
+	ctx := t.Context()
+	backend := NewMemoryBackend(MemoryConfig{})
+	read := func(id string) *Entry {
+		t.Helper()
+		entry, err := backend.Get(ctx, id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return entry
+	}
+
+	for _, entry := range []*Entry{
+		{ID: "nil"},
+		{ID: "empty", Vector: []float64{}, Metadata: map[string]any{}},
+	} {
+		if err := backend.Add(ctx, entry); err != nil {
+			t.Fatal(err)
+		}
+		got := read(entry.ID)
+		if (got.Vector == nil) != (entry.Vector == nil) || (got.Metadata == nil) != (entry.Metadata == nil) ||
+			len(got.Vector) != 0 || len(got.Metadata) != 0 {
+			t.Errorf("container shape changed: %+v", got)
+		}
+	}
+
+	input := &Entry{ID: "sample", Text: "original", Vector: []float64{1, 2}, Metadata: map[string]any{"label": "original"}}
+	if err := backend.Add(ctx, input); err != nil {
+		t.Fatal(err)
+	}
+	input.Text = "after add"
+	input.Vector[0] = 7
+	input.Metadata["label"] = "after add"
+	first := read("sample")
+	if first.Text != "original" || first.Vector[0] != 1 || first.Metadata["label"] != "original" ||
+		first.AccessCount != 1 || first.CreatedAt.IsZero() || first.UpdatedAt.IsZero() || first.AccessedAt.IsZero() ||
+		!input.CreatedAt.IsZero() || !input.UpdatedAt.IsZero() {
+		t.Fatalf("stored snapshot = %+v, input = %+v", first, input)
+	}
+
+	first.Vector[0] = 8
+	first.Metadata["label"] = "after get"
+	results, err := backend.Search(ctx, []float64{1, 2}, 1, 0.9)
+	if err != nil || len(results) != 1 {
+		t.Fatalf("Search = %v, %v", results, err)
+	}
+	match := results[0].Entry
+	if match.Vector[0] != 1 || match.Metadata["label"] != "original" {
+		t.Fatalf("Search exposed mutated Get result: %+v", match)
+	}
+	match.Vector[0] = 9
+	match.Metadata["label"] = "after search"
+	got := read("sample")
+	if got.Vector[0] != 1 || got.Metadata["label"] != "original" || got.AccessCount != 2 {
+		t.Fatalf("Get exposed mutated Search result: %+v", got)
+	}
+
+	input.UpdatedAt = time.Time{}
+	if err := backend.Update(ctx, input); err != nil {
+		t.Fatal(err)
+	}
+	input.Vector[0] = 10
+	input.Metadata["label"] = "after update"
+	got = read("sample")
+	if got.Vector[0] != 7 || got.Metadata["label"] != "after add" || got.UpdatedAt.IsZero() || !input.UpdatedAt.IsZero() {
+		t.Fatalf("Update snapshot = %+v, input = %+v", got, input)
+	}
+}
+
+func TestMemoryBackendConcurrentGetOwnsAccessCounts(t *testing.T) {
+	ctx := t.Context()
+	backend := NewMemoryBackend(MemoryConfig{})
+	if err := backend.Add(ctx, &Entry{ID: "sample", Vector: []float64{1}}); err != nil {
+		t.Fatal(err)
+	}
+
+	const readers = 12
+	var wg sync.WaitGroup
+	for range readers {
+		wg.Go(func() {
+			snapshot, err := backend.Get(ctx, "sample")
+			if err != nil {
+				t.Error(err)
+				return
+			}
+			snapshot.Vector[0] = 42
+			snapshot.AccessCount = -1
+		})
+	}
+	wg.Wait()
+
+	got, err := backend.Get(ctx, "sample")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.AccessCount != readers+1 || got.Vector[0] != 1 {
+		t.Errorf("Get after concurrent reads = %+v", got)
 	}
 }

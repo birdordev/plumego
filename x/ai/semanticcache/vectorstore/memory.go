@@ -3,13 +3,18 @@ package vectorstore
 import (
 	"context"
 	"fmt"
+	"maps"
 	"math"
+	"slices"
 	"sort"
 	"sync"
 	"time"
 )
 
-// MemoryBackend implements an in-memory vector store.
+// MemoryBackend implements an in-memory vector store. It copies entries,
+// vectors and top-level metadata maps on writes and reads. Values nested
+// inside metadata are shared and callers must treat them as immutable.
+// Write timestamps are applied to the stored copy.
 type MemoryBackend struct {
 	entries    map[string]*Entry
 	mu         sync.RWMutex
@@ -41,6 +46,13 @@ func (m *MemoryBackend) Name() string {
 	return "memory"
 }
 
+func cloneMemoryEntry(entry *Entry) *Entry {
+	copy := *entry
+	copy.Vector = slices.Clone(entry.Vector)
+	copy.Metadata = maps.Clone(entry.Metadata)
+	return &copy
+}
+
 // Add adds or replaces a vector entry. Replacing an ID uses its existing slot.
 func (m *MemoryBackend) Add(ctx context.Context, entry *Entry) error {
 	m.mu.Lock()
@@ -59,11 +71,13 @@ func (m *MemoryBackend) Add(ctx context.Context, entry *Entry) error {
 		}
 	}
 
-	// Set timestamps
+	// Set timestamps on the stored copy.
+	entry = cloneMemoryEntry(entry)
+	now := time.Now()
 	if entry.CreatedAt.IsZero() {
-		entry.CreatedAt = time.Now()
+		entry.CreatedAt = now
 	}
-	entry.UpdatedAt = time.Now()
+	entry.UpdatedAt = now
 
 	m.entries[entry.ID] = entry
 	m.stats.TotalEntries = int64(len(m.entries))
@@ -119,29 +133,26 @@ func (m *MemoryBackend) Search(ctx context.Context, query []float64, topK int, t
 	if topK > 0 && topK < len(results) {
 		results = results[:topK]
 	}
+	for _, result := range results {
+		result.Entry = cloneMemoryEntry(result.Entry)
+	}
 
 	return results, nil
 }
 
 // Get retrieves an entry by ID.
 func (m *MemoryBackend) Get(ctx context.Context, id string) (*Entry, error) {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
+	m.mu.Lock()
+	defer m.mu.Unlock()
 
 	entry, exists := m.entries[id]
 	if !exists {
 		return nil, fmt.Errorf("entry not found: %s", id)
 	}
 
-	// Update access stats
-	m.mu.RUnlock()
-	m.mu.Lock()
 	entry.AccessedAt = time.Now()
 	entry.AccessCount++
-	m.mu.Unlock()
-	m.mu.RLock()
-
-	return entry, nil
+	return cloneMemoryEntry(entry), nil
 }
 
 // Delete removes an entry by ID.
@@ -178,6 +189,7 @@ func (m *MemoryBackend) Update(ctx context.Context, entry *Entry) error {
 		return fmt.Errorf("entry not found: %s", entry.ID)
 	}
 
+	entry = cloneMemoryEntry(entry)
 	entry.UpdatedAt = time.Now()
 	m.entries[entry.ID] = entry
 

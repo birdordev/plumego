@@ -2,6 +2,7 @@ package messaging
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -397,7 +398,7 @@ func (s *Service) saveReceipt(req SendRequest, status, providerID, errMsg string
 	if s.receipts == nil {
 		return
 	}
-	_ = s.receipts.Save(Receipt{
+	s.persistReceipt("create", Receipt{
 		ID:         req.ID,
 		Channel:    req.Channel,
 		To:         req.To,
@@ -430,7 +431,23 @@ func (s *Service) updateReceipt(id, status, providerID, provider, errMsg string,
 	if status == messageStatusSent {
 		r.SentAt = time.Now()
 	}
-	_ = s.receipts.Save(r)
+	s.persistReceipt("update", r)
+}
+
+func (s *Service) persistReceipt(operation string, receipt Receipt) {
+	if err := s.receipts.Save(receipt); err != nil && s.logger != nil {
+		channel := "unknown"
+		switch receipt.Channel {
+		case ChannelSMS, ChannelEmail:
+			channel = string(receipt.Channel)
+		}
+		// Store errors and caller-supplied identifiers may contain sensitive data.
+		s.logger.Warn("delivery receipt save failed", log.Fields{
+			"operation":       operation,
+			"channel":         channel,
+			"receipt_id_hash": fmt.Sprintf("%x", sha256.Sum256([]byte(receipt.ID))),
+		})
+	}
 }
 
 func (s *Service) recordTaskFailure(

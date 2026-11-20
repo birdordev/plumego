@@ -123,3 +123,31 @@ func TestRegisterMethodsOnSamePath(t *testing.T) {
 		t.Fatalf("registered HEAD: status=%d", rec.Code)
 	}
 }
+
+func TestRegisterUsesRequestContextOnlyAtDispatch(t *testing.T) {
+	transcoder := New("")
+	registrationCtx, cancel := context.WithCancel(t.Context())
+	cancel()
+	request := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/context", nil)
+
+	handler := func(w http.ResponseWriter, r *http.Request, _ map[string]string) {
+		if r.Context() != request.Context() {
+			t.Error("dispatch did not preserve the HTTP request context")
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}
+	if err := transcoder.Register(registrationCtx, handler, "GET /context"); err != nil {
+		t.Fatalf("Register with canceled context: %v", err)
+	}
+	for _, pattern := range []string{"GET /context", "GET /{"} {
+		if err := transcoder.Register(t.Context(), handler, pattern); err == nil {
+			t.Errorf("Register(%q) unexpectedly succeeded", pattern)
+		}
+	}
+
+	rec := httptest.NewRecorder()
+	transcoder.Handler().ServeHTTP(rec, request)
+	if rec.Code != http.StatusNoContent {
+		t.Errorf("dispatch returned %d, want %d", rec.Code, http.StatusNoContent)
+	}
+}
