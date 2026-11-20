@@ -2,6 +2,7 @@ package mq
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"runtime"
 	"time"
@@ -67,8 +68,9 @@ func (b *InProcBroker) checkMemoryLimit() error {
 	return nil
 }
 
-// CloseWithContext shuts down the broker, respecting the provided context for
-// any persistence operations performed during shutdown.
+// CloseWithContext shuts down the broker and passes ctx to shutdown observers.
+// It reports errors from both persistence and the underlying broker. Persistence
+// is closed at most once, even if its Close returns an error.
 func (b *InProcBroker) CloseWithContext(ctx context.Context) error {
 	return b.executeWithObservability(ctx, OpClose, "", func() error {
 		// Validate broker initialization
@@ -105,10 +107,11 @@ func (b *InProcBroker) CloseWithContext(ctx context.Context) error {
 			b.deadLetterManager.close()
 		}
 
-		// Close persistence manager if it exists
 		if b.persistenceManager != nil {
 			if err := b.persistenceManager.close(); err != nil {
-				b.lastError = fmt.Errorf("failed to close persistence: %w", err)
+				persistenceErr := fmt.Errorf("failed to close persistence: %w", err)
+				b.lastError = persistenceErr
+				return errors.Join(persistenceErr, b.ps.Close())
 			}
 		}
 
@@ -116,8 +119,8 @@ func (b *InProcBroker) CloseWithContext(ctx context.Context) error {
 	})
 }
 
-// Close shuts down the broker using a background context.
-// Use CloseWithContext to propagate a deadline or cancellation to shutdown operations.
+// Close shuts down the broker using a background context and reports errors
+// from persistence and the underlying broker.
 func (b *InProcBroker) Close() error {
 	return b.CloseWithContext(context.Background())
 }

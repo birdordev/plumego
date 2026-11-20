@@ -3,6 +3,7 @@ package vectorstore
 import (
 	"context"
 	"errors"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -384,5 +385,113 @@ func TestTieredSearchCountsSuccessfulEmptyTierAsMiss(t *testing.T) {
 	}
 	if stats := store.TieredStats(); *stats != (TieredStats{Misses: 1, TotalQueries: 1}) {
 		t.Errorf("miss counters = %+v", stats)
+	}
+}
+
+type controlledClearBackend struct {
+	*MemoryBackend
+	err error
+}
+
+func (b *controlledClearBackend) Clear(ctx context.Context) error {
+	if b.err != nil {
+		return b.err
+	}
+	return b.MemoryBackend.Clear(ctx)
+}
+
+func TestAudit19ClearDoesNotReportSuccessWithRemainingEntries(t *testing.T) {
+	hotErr := errors.New("test hot clear failure")
+	coldErr := errors.New("test cold clear failure")
+	hot := &controlledClearBackend{MemoryBackend: NewMemoryBackend(MemoryConfig{}), err: hotErr}
+	warm := NewMemoryBackend(MemoryConfig{})
+	cold := &controlledClearBackend{MemoryBackend: NewMemoryBackend(MemoryConfig{}), err: coldErr}
+	store, err := NewTieredBackend(TieredConfig{L1: hot, L2: warm, L3: cold})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := t.Context()
+	entry := &Entry{ID: "sample", Vector: []float64{1}}
+	if err := store.Add(ctx, entry); err != nil {
+		t.Fatal(err)
+	}
+	if hits, err := store.Search(ctx, entry.Vector, 1, 0.9); err != nil || len(hits) != 1 {
+		t.Fatalf("Search before clear = %v, %v", hits, err)
+	}
+	before := *store.TieredStats()
+
+	err = store.Clear(ctx)
+	if !errors.Is(err, hotErr) || !errors.Is(err, coldErr) ||
+		!strings.Contains(err.Error(), "clear on L1") || !strings.Contains(err.Error(), "clear on L3") {
+		t.Fatalf("Clear = %v, want both tier errors", err)
+	}
+	if stats := *store.TieredStats(); stats != before {
+		t.Errorf("Clear changed statistics on failure: %+v, want %+v", stats, before)
+	}
+	if count, err := warm.Count(ctx); err != nil || count != 0 {
+		t.Errorf("successful tier Count = %d, %v, want 0, nil", count, err)
+	}
+
+	hot.err = nil
+	if err := store.Clear(ctx); !errors.Is(err, coldErr) {
+		t.Fatalf("Clear with only cold tier down = %v, want %v", err, coldErr)
+	}
+	if hits, err := store.Search(ctx, entry.Vector, 1, 0.9); err != nil || len(hits) != 1 {
+		t.Fatalf("Search after partial clear = %v, %v, want remaining cold hit", hits, err)
+	}
+
+	cold.err = nil
+	if err := store.Clear(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if stats := *store.TieredStats(); stats != (TieredStats{}) {
+		t.Errorf("successful Clear did not reset statistics: %+v", stats)
+	}
+	if hits, err := store.Search(ctx, entry.Vector, 1, 0.9); err != nil || len(hits) != 0 {
+		t.Fatalf("Search after successful retry = %v, %v, want no hits", hits, err)
+	}
+}
+
+type controlledCloseBackend struct {
+	*MemoryBackend
+	close func() error
+}
+
+func (b *controlledCloseBackend) Close() error { return b.close() }
+
+func TestAudit19CloseReportsTierFailures(t *testing.T) {
+	hotErr := errors.New("test hot close failure")
+	coldErr := errors.New("test cold close failure")
+	var calls []string
+	backend := func(tier string, err error) Backend {
+		return &controlledCloseBackend{close: func() error {
+			calls = append(calls, tier)
+			return err
+		}}
+	}
+
+	store, err := NewTieredBackend(TieredConfig{
+		L1: backend("L1", hotErr),
+		L2: backend("L2", nil),
+		L3: backend("L3", coldErr),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Close(); !errors.Is(err, hotErr) || !errors.Is(err, coldErr) ||
+		!strings.Contains(err.Error(), "close on L1") || !strings.Contains(err.Error(), "close on L3") {
+		t.Fatalf("Close = %v, want both tier errors", err)
+	}
+	if want := []string{"L1", "L2", "L3"}; !slices.Equal(calls, want) {
+		t.Fatalf("Close calls = %v, want %v", calls, want)
+	}
+
+	calls = nil
+	store, err = NewTieredBackend(TieredConfig{L1: backend("L1", nil)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Close(); err != nil || !slices.Equal(calls, []string{"L1"}) {
+		t.Fatalf("Close with only L1 = %v, calls %v", err, calls)
 	}
 }

@@ -238,7 +238,7 @@ func (t *TieredBackend) Get(ctx context.Context, id string) (*Entry, error) {
 // Delete attempts removal in every configured tier. The returned error
 // identifies failed tiers. Successful deletions remain applied on failure.
 func (t *TieredBackend) Delete(ctx context.Context, id string) error {
-	return t.deleteFromTiers("delete", func(backend Backend) error {
+	return t.applyToTiers("delete", func(backend Backend) error {
 		return backend.Delete(ctx, id)
 	})
 }
@@ -246,16 +246,16 @@ func (t *TieredBackend) Delete(ctx context.Context, id string) error {
 // DeleteBatch attempts removal in every configured tier. Like Delete, it
 // reports partial failure so callers can identify the cause and retry.
 func (t *TieredBackend) DeleteBatch(ctx context.Context, ids []string) error {
-	return t.deleteFromTiers("delete batch", func(backend Backend) error {
+	return t.applyToTiers("delete batch", func(backend Backend) error {
 		return backend.DeleteBatch(ctx, ids)
 	})
 }
 
-func (t *TieredBackend) deleteFromTiers(operation string, remove func(Backend) error) error {
+func (t *TieredBackend) applyToTiers(operation string, apply func(Backend) error) error {
 	var failures []error
 	for i, backend := range [...]Backend{t.l1, t.l2, t.l3} {
 		if backend != nil {
-			if err := remove(backend); err != nil {
+			if err := apply(backend); err != nil {
 				failures = append(failures, fmt.Errorf("%s on L%d: %w", operation, i+1, err))
 			}
 		}
@@ -290,31 +290,24 @@ func (t *TieredBackend) Count(ctx context.Context) (int64, error) {
 	return t.l1.Count(ctx)
 }
 
-// Clear removes all entries from all tiers.
+// Clear attempts to remove all entries from every configured tier. Successful
+// clears remain applied on failure. Retrying attempts all tiers again.
+// Statistics are reset only after every tier reports success.
 func (t *TieredBackend) Clear(ctx context.Context) error {
-	_ = t.l1.Clear(ctx)
-	if t.l2 != nil {
-		_ = t.l2.Clear(ctx)
-	}
-	if t.l3 != nil {
-		_ = t.l3.Clear(ctx)
+	if err := t.applyToTiers("clear", func(backend Backend) error {
+		return backend.Clear(ctx)
+	}); err != nil {
+		return err
 	}
 
 	t.ResetStats()
 	return nil
 }
 
-// Close closes all backends.
+// Close attempts to close every configured tier in order. The returned error
+// identifies each tier that failed to close.
 func (t *TieredBackend) Close() error {
-	_ = t.l1.Close()
-	if t.l2 != nil {
-		_ = t.l2.Close()
-	}
-	if t.l3 != nil {
-		_ = t.l3.Close()
-	}
-
-	return nil
+	return t.applyToTiers("close", Backend.Close)
 }
 
 // Stats combines L1 entry counts and the tiered hit rate. It reports L1

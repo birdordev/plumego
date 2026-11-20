@@ -1,6 +1,7 @@
 package mq
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -387,5 +388,73 @@ func TestPersistenceClose(t *testing.T) {
 	_, err = broker.RecoverMessages(ctx, "test-topic", 10)
 	if err == nil {
 		t.Fatal("expected error after broker close")
+	}
+}
+
+type controlledPersistenceClose struct {
+	PersistenceBackend
+	err   error
+	calls int
+}
+
+func (p *controlledPersistenceClose) Close() error {
+	p.calls++
+	return p.err
+}
+
+type controlledBrokerClose struct {
+	*pubsub.InProcBroker
+	err   error
+	calls int
+}
+
+func (b *controlledBrokerClose) Close() error {
+	b.calls++
+	closeErr := b.InProcBroker.Close()
+	if b.calls == 1 && b.err != nil {
+		return b.err
+	}
+	return closeErr
+}
+
+func TestAudit19BrokerCloseReturnsPersistenceFailure(t *testing.T) {
+	persistenceErr := errors.New("test persistence close failure")
+	brokerErr := errors.New("test underlying broker close failure")
+	for _, tt := range []struct {
+		name        string
+		persistence error
+		broker      error
+	}{
+		{name: "success"},
+		{name: "persistence error", persistence: persistenceErr},
+		{name: "broker error", broker: brokerErr},
+		{name: "both errors", persistence: persistenceErr, broker: brokerErr},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			ps := &controlledBrokerClose{InProcBroker: pubsub.New(), err: tt.broker}
+			t.Cleanup(func() { _ = ps.InProcBroker.Close() })
+			broker, err := NewInProcBroker(ps)
+			if err != nil {
+				t.Fatal(err)
+			}
+			persistence := &controlledPersistenceClose{err: tt.persistence}
+			broker.persistenceManager = newPersistenceManager(broker, persistence)
+
+			err = broker.CloseWithContext(t.Context())
+			if (err == nil) != (tt.persistence == nil && tt.broker == nil) ||
+				errors.Is(err, persistenceErr) != (tt.persistence != nil) ||
+				errors.Is(err, brokerErr) != (tt.broker != nil) {
+				t.Fatalf("CloseWithContext = %v, want persistence error %v and broker error %v", err, tt.persistence, tt.broker)
+			}
+			if persistence.calls != 1 || ps.calls != 1 {
+				t.Fatalf("close calls = %d persistence and %d broker, want one each", persistence.calls, ps.calls)
+			}
+			if err := ps.Publish("sample", pubsub.Message{}); !errors.Is(err, &pubsub.Error{Code: pubsub.ErrCodeClosed}) {
+				t.Errorf("Publish after close = %v, want broker closed", err)
+			}
+			if err := broker.Close(); err != nil || persistence.calls != 1 || ps.calls != 2 {
+				t.Errorf("repeated Close = %v, calls = %d persistence and %d broker", err, persistence.calls, ps.calls)
+			}
+		})
 	}
 }

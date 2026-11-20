@@ -52,6 +52,8 @@ func (s *SQLStore) Insert(ctx context.Context, task mq.Task) error {
 	return nil
 }
 
+// Reserve expires queued tasks and leases eligible tasks in one transaction.
+// A failure updating expired tasks aborts the reservation.
 func (s *SQLStore) Reserve(ctx context.Context, opts mq.ReserveOptions) ([]mq.Task, error) {
 	if s == nil || s.db == nil {
 		return nil, mq.ErrNotInitialized
@@ -75,7 +77,9 @@ func (s *SQLStore) Reserve(ctx context.Context, opts mq.ReserveOptions) ([]mq.Ta
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	_ = s.expireQueued(ctx, tx, now)
+	if err := s.expireQueued(ctx, tx, now); err != nil {
+		return nil, fmt.Errorf("expire queued tasks: %w", err)
+	}
 
 	selectQuery, selectArgs := s.buildReserveSelect(opts, now)
 	rows, err := tx.QueryContext(ctx, selectQuery, selectArgs...)

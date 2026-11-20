@@ -20,7 +20,7 @@ import (
 //
 // Example:
 //
-//	sd, err := discovery.NewEtcd("http://localhost:2379", discovery.EtcdConfig{
+//	sd, err := discovery.NewEtcd([]string{"http://localhost:2379"}, discovery.EtcdConfig{
 //	    Prefix: "/services",
 //	})
 //	if err != nil {

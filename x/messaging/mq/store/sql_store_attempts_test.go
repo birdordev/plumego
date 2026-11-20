@@ -176,13 +176,23 @@ func (c reserveConnector) Connect(context.Context) (driver.Conn, error) { return
 
 type reserveConn struct {
 	attemptConn
-	invalidID bool
-	tx        *reserveTx
+	invalidID  bool
+	tx         *reserveTx
+	expireErr  error
+	queryCalls int
 }
 
 func (c *reserveConn) BeginTx(context.Context, driver.TxOptions) (driver.Tx, error) { return c.tx, nil }
 
+func (c *reserveConn) ExecContext(ctx context.Context, query string, args []driver.NamedValue) (driver.Result, error) {
+	if c.expireErr != nil && strings.Contains(query, "expires_at IS NOT NULL") {
+		return nil, c.expireErr
+	}
+	return c.attemptConn.ExecContext(ctx, query, args)
+}
+
 func (c *reserveConn) QueryContext(_ context.Context, query string, _ []driver.NamedValue) (driver.Rows, error) {
+	c.queryCalls++
 	if strings.HasPrefix(query, "SELECT id FROM") {
 		var id driver.Value = "task"
 		if c.invalidID {
@@ -194,9 +204,11 @@ func (c *reserveConn) QueryContext(_ context.Context, query string, _ []driver.N
 }
 
 type reserveTx struct {
-	attemptTx
+	committed  bool
 	rolledBack bool
 }
+
+func (t *reserveTx) Commit() error { t.committed = true; return nil }
 
 func (t *reserveTx) Rollback() error { t.rolledBack = true; return nil }
 
@@ -215,5 +227,22 @@ func TestReserveRollsBackOnScanFailure(t *testing.T) {
 				t.Fatalf("err = %v, rollback = %v, DB stats = %+v", err, tx.rolledBack, db.Stats())
 			}
 		})
+	}
+}
+
+func TestAudit19ReserveReturnsExpiryUpdateFailure(t *testing.T) {
+	cause := errors.New("test expiry update failure")
+	tx := new(reserveTx)
+	conn := &reserveConn{tx: tx, expireErr: cause}
+	db := sql.OpenDB(reserveConnector{conn: conn})
+	defer db.Close()
+
+	tasks, err := NewSQL(db, DefaultSQLConfig()).Reserve(t.Context(), mq.ReserveOptions{Limit: 1, ConsumerID: "worker"})
+	if !errors.Is(err, cause) || len(tasks) != 0 {
+		t.Fatalf("Reserve = %v, %v, want no tasks and the expiry update error", tasks, err)
+	}
+	if conn.queryCalls != 0 || tx.committed || !tx.rolledBack || db.Stats().InUse != 0 {
+		t.Fatalf("queries = %d, committed = %t, rolled back = %t, DB stats = %+v",
+			conn.queryCalls, tx.committed, tx.rolledBack, db.Stats())
 	}
 }
