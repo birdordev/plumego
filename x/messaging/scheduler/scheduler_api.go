@@ -1,6 +1,7 @@
 package scheduler
 
 import (
+	"crypto/sha256"
 	"fmt"
 	"time"
 
@@ -113,16 +114,38 @@ func (s *Scheduler) UpdateCron(id JobID, spec string) error {
 	return nil
 }
 
-// Cancel removes a job from the scheduler.
+// Cancel stops the job locally and returns true when any persisted entry was
+// also removed. It returns false for a missing job or a failed store deletion.
+// Retry a failed deletion by calling Cancel again. Restarting before it
+// succeeds may restore the still-persisted job.
 func (s *Scheduler) Cancel(id JobID) bool {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	j, ok := s.jobs[id]
 	if !ok {
+		s.mu.Unlock()
 		return false
 	}
-	s.cancelJobLocked(id, j)
-	return true
+	first := j.state != JobStateCanceled
+	if first {
+		s.setJobCanceledLocked(j)
+	}
+
+	var err error
+	if s.store != nil {
+		err = s.store.Delete(id)
+	}
+	if first {
+		s.finishJobCancellationLocked(id, j)
+	}
+	s.mu.Unlock()
+
+	if err != nil && s.logger != nil {
+		s.logger.Error("scheduler delete canceled job failed", log.Fields{
+			"job_id_hash": fmt.Sprintf("%x", sha256.Sum256([]byte(id))),
+			"error_type":  fmt.Sprintf("%T", err),
+		})
+	}
+	return err == nil
 }
 
 // Pause marks a job as paused.

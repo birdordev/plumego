@@ -57,36 +57,20 @@ func (h *handler) serveNotFound(w http.ResponseWriter, r *http.Request) {
 	http.NotFound(w, r)
 }
 
-// serveError serves a custom 5xx error page or falls back to a JSON error response.
-// When a custom page is configured it is served with the given error status code
-// (not 200) via statusCodeWriter. Errors from loading the error page itself are
-// ignored to avoid recursion; the JSON fallback is used instead.
-func (h *handler) serveError(w http.ResponseWriter, r *http.Request, message string, code int) {
-	if h.cfg.ErrorPage != "" && code >= 500 {
-		sw := &statusCodeWriter{ResponseWriter: w, code: code}
+// serveInternalError serves a custom 500 page or falls back to JSON when
+// that page cannot be loaded.
+func (h *handler) serveInternalError(w http.ResponseWriter, r *http.Request) {
+	if h.cfg.ErrorPage != "" {
+		sw := &statusCodeWriter{ResponseWriter: w, code: http.StatusInternalServerError}
 		if served, _ := h.serveFileWithPolicy(sw, r, h.cfg.ErrorPage, false); served {
 			return
 		}
 	}
 	_ = contract.WriteError(w, r, contract.NewErrorBuilder().
-		Type(frontendErrorType(code)).
+		Type(contract.TypeInternal).
 		Code(contract.CodeInternalError).
-		Message(message).
+		Message("internal server error").
 		Build())
-}
-
-func frontendErrorType(code int) contract.ErrorType {
-	switch code {
-	case http.StatusNotFound:
-		return contract.TypeNotFound
-	case http.StatusNotAcceptable:
-		return contract.TypeNotAcceptable
-	default:
-		if code >= http.StatusInternalServerError {
-			return contract.TypeInternal
-		}
-		return contract.TypeBadRequest
-	}
 }
 
 func (h *handler) serveNotAcceptable(w http.ResponseWriter, r *http.Request) {

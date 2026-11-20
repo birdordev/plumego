@@ -2766,3 +2766,65 @@ func TestScheduleReportsBestEffortSaveFailure(t *testing.T) {
 		})
 	}
 }
+
+type cancelRetryStore struct {
+	*MemoryStore
+	deleteCalls map[JobID]int
+}
+
+func (s cancelRetryStore) Delete(id JobID) error {
+	s.deleteCalls[id]++
+	if id == "saved-job" && s.deleteCalls[id] == 1 {
+		return errors.New("injected deletion failure")
+	}
+	return s.MemoryStore.Delete(id)
+}
+
+func TestCancelRetriesPersistenceWithoutRepeatingDependents(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		const id, dependent = JobID("saved-job"), JobID("dependent")
+		store := cancelRetryStore{NewMemoryStore(), make(map[JobID]int)}
+		var output bytes.Buffer
+		base := log.NewLogger(log.LoggerConfig{Format: log.LoggerFormatJSON, Output: &output, ErrorOutput: &output})
+		var s *Scheduler
+		diagnostics := 0
+		logger := saveDiagnosticLogger{StructuredLogger: base, onError: func() {
+			diagnostics++
+			if status, ok := s.Status(id); !ok || status.State != JobStateCanceled {
+				t.Errorf("local status at diagnosis = %+v, found=%v", status, ok)
+			}
+		}}
+		s = New(WithStore(store), WithLogger(logger))
+		defer func() { _ = s.Stop(t.Context()) }()
+		task := func(context.Context) error { return nil }
+		runAt := time.Now().Add(time.Hour)
+		if _, err := s.Schedule(id, runAt, task, WithTaskName("sample")); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := s.Schedule(dependent, runAt, task, WithDependsOn(DependencyFailureCancel, id)); err != nil {
+			t.Fatal(err)
+		}
+		if s.Cancel(id) {
+			t.Fatal("failed delete was reported as successful")
+		}
+		if status, ok := s.Status(dependent); !ok || status.State != JobStateCanceled {
+			t.Errorf("dependent state = %+v, found=%v", status, ok)
+		}
+		if diagnostics != 1 || !strings.Contains(output.String(), "scheduler delete canceled job failed") {
+			t.Fatalf("missing deletion diagnostic: %s", output.String())
+		}
+		if !s.Cancel(id) || store.deleteCalls[id] != 2 || store.deleteCalls[dependent] != 1 || diagnostics != 1 {
+			t.Fatalf("retry repeated local cancellation or failed: calls=%v diagnostics=%d", store.deleteCalls, diagnostics)
+		}
+
+		reopened := New(WithStore(store))
+		defer func() { _ = reopened.Stop(t.Context()) }()
+		if err := reopened.RegisterTask("sample", task); err != nil {
+			t.Fatal(err)
+		}
+		reopened.Start()
+		if _, ok := reopened.Status(id); ok {
+			t.Fatal("canceled job was restored after successful retry")
+		}
+	})
+}

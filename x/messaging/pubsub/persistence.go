@@ -93,6 +93,8 @@ type PersistentPubSub struct {
 	walMu       sync.Mutex
 	walSequence atomic.Uint64
 	walSize     atomic.Int64
+	rotationErr error // protected by walMu
+	walUnusable bool  // protected by walMu
 
 	// Snapshot
 	snapshotMu sync.Mutex
@@ -209,34 +211,34 @@ func NewPersistent(config PersistenceConfig, opts ...Option) (*PersistentPubSub,
 	return pps, nil
 }
 
-// initWAL initializes the Write-Ahead Log
+// initWAL initializes the Write-Ahead Log.
 func (pps *PersistentPubSub) initWAL() error {
-	walPath := pps.currentWALPath()
-
-	// Open or create WAL file
-	f, err := os.OpenFile(walPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	file, size, err := pps.openWAL(pps.walSequence.Load())
 	if err != nil {
-		return fmt.Errorf("failed to open WAL: %w", err)
+		return err
 	}
-
-	// Get current size
-	stat, err := f.Stat()
-	if err != nil {
-		_ = f.Close()
-		return fmt.Errorf("failed to stat WAL: %w", err)
-	}
-
-	pps.walFile = f
-	pps.walWriter = bufio.NewWriterSize(f, 256*1024) // 256KB buffer
-	pps.walSize.Store(stat.Size())
-
+	pps.setWAL(file, size)
 	return nil
 }
 
-// currentWALPath returns the current WAL file path
-func (pps *PersistentPubSub) currentWALPath() string {
-	seq := pps.walSequence.Load()
-	return filepath.Join(pps.config.DataDir, fmt.Sprintf("wal-%016d.log", seq))
+func (pps *PersistentPubSub) openWAL(seq uint64) (*os.File, int64, error) {
+	path := filepath.Join(pps.config.DataDir, fmt.Sprintf("wal-%016d.log", seq))
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	if err != nil {
+		return nil, 0, fmt.Errorf("open WAL segment: %w", err)
+	}
+	stat, err := file.Stat()
+	if err != nil {
+		return nil, 0, errors.Join(fmt.Errorf("stat WAL segment: %w", err), file.Close())
+	}
+	return file, stat.Size(), nil
+}
+
+// setWAL installs a prepared segment during initialization or under walMu.
+func (pps *PersistentPubSub) setWAL(file *os.File, size int64) {
+	pps.walFile = file
+	pps.walWriter = bufio.NewWriterSize(file, 256*1024)
+	pps.walSize.Store(size)
 }
 
 // restore restores state from snapshots and WAL
@@ -445,7 +447,10 @@ func (pps *PersistentPubSub) verifyWALEntry(entry *walEntry) bool {
 	return computed == entry.CRC
 }
 
-// PublishPersistent publishes a message with specific durability
+// PublishPersistent publishes a message with specific durability.
+// If WAL rotation cannot finalize the old segment, subsequent persistent
+// writes fail with that error. If only the new segment cannot be opened,
+// writes can continue in the old segment and retry rotation.
 func (pps *PersistentPubSub) PublishPersistent(topic string, msg Message, durability DurabilityLevel) error {
 	if pps.closed.Load() {
 		return ErrPersistenceClosed
@@ -476,6 +481,10 @@ func (pps *PersistentPubSub) writeWAL(topic string, msg Message, durability Dura
 	defer pps.walMu.Unlock()
 	if pps.closed.Load() {
 		return ErrPersistenceClosed
+	}
+
+	if pps.walUnusable {
+		return pps.rotationErr
 	}
 
 	// Create entry
@@ -550,29 +559,45 @@ func (pps *PersistentPubSub) writeWAL(topic string, msg Message, durability Dura
 	return nil
 }
 
-// rotateWAL rotates to a new WAL file
+// rotateWAL publishes a new segment only after the old one is finalized.
 func (pps *PersistentPubSub) rotateWAL() {
 	pps.walMu.Lock()
-	if pps.closed.Load() {
+	if pps.closed.Load() || pps.walUnusable {
 		pps.walMu.Unlock()
 		return
 	}
-
-	// Flush current WAL
-	if pps.walWriter != nil {
-		_ = pps.walWriter.Flush()
-	}
-
-	if pps.walFile != nil {
-		_ = pps.walFile.Close()
-	}
-
-	// Create new WAL
-	pps.walSequence.Add(1)
-	_ = pps.initWAL()
+	pps.rotationErr = pps.rotateWALLocked()
+	err := pps.rotationErr
 	pps.walMu.Unlock()
-
+	if err != nil {
+		pps.persistErrors.Add(1)
+		return
+	}
 	pps.maybeSnapshot()
+}
+
+func (pps *PersistentPubSub) rotateWALLocked() error {
+	if err := pps.walWriter.Flush(); err != nil {
+		pps.walUnusable = true
+		return fmt.Errorf("rotate WAL: flush old segment: %w", err)
+	}
+	if err := pps.walFile.Sync(); err != nil {
+		pps.walUnusable = true
+		return fmt.Errorf("rotate WAL: sync old segment: %w", err)
+	}
+
+	next := pps.walSequence.Load() + 1
+	file, size, err := pps.openWAL(next)
+	if err != nil {
+		return fmt.Errorf("rotate WAL: %w", err)
+	}
+	if err := pps.walFile.Close(); err != nil {
+		pps.walUnusable = true
+		return errors.Join(fmt.Errorf("rotate WAL: close old segment: %w", err), file.Close())
+	}
+	pps.walSequence.Store(next)
+	pps.setWAL(file, size)
+	return nil
 }
 
 // Snapshot records a checkpoint marker. It does not compact the WAL.
@@ -690,7 +715,7 @@ func (pps *PersistentPubSub) startBackgroundWorkers() {
 }
 
 // Close stops the workers, flushes and syncs the WAL, and closes the broker.
-// It reports finalization errors without creating a snapshot. Once shutdown
+// It reports unresolved rotation and finalization errors without creating a snapshot. Once shutdown
 // has started, subsequent calls return nil without repeating cleanup.
 func (pps *PersistentPubSub) Close() error {
 	if pps.closed.Swap(true) {
@@ -703,6 +728,9 @@ func (pps *PersistentPubSub) Close() error {
 	// Finish any in-progress snapshot before finalizing the WAL.
 	pps.snapshotMu.Lock()
 	pps.walMu.Lock()
+	if pps.rotationErr != nil {
+		errs = append(errs, pps.rotationErr)
+	}
 	if pps.walWriter != nil {
 		if err := pps.walWriter.Flush(); err != nil {
 			errs = append(errs, fmt.Errorf("flush WAL: %w", err))

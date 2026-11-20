@@ -3,11 +3,14 @@ package pubsub
 import (
 	"compress/gzip"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
+	"strings"
 	"time"
 )
 
@@ -17,89 +20,50 @@ func (rs *ReplayStore) storeMessage(msg Message) {
 		return
 	}
 
-	// Generate ID if missing
-	msgID := msg.ID
-	if msgID == "" {
-		msgID = fmt.Sprintf("%s-%d-%d", msg.Topic, msg.Time.UnixNano(), rs.stats.TotalMessages.Load())
-	}
-
-	// Check size limit
-	rs.messagesMu.Lock()
-	if len(rs.messages) >= rs.config.MaxMessages {
-		// Remove oldest message
-		rs.removeOldest()
-	}
-
-	// Create replay message
 	replayMsg := &ReplayMessage{
-		ID:        msgID,
+		ID:        msg.ID,
 		Topic:     msg.Topic,
 		Timestamp: msg.Time,
 		Metadata:  make(map[string]string),
 	}
-
 	if rs.config.IncludeData {
 		replayMsg.Data = msg.Data
 	}
-
-	// Estimate size
 	if data, err := json.Marshal(msg.Data); err == nil {
 		replayMsg.Size = len(data)
 	}
 
-	// Store message
-	rs.messages[msgID] = replayMsg
-	rs.messagesMu.Unlock()
+	rs.messagesMu.Lock()
+	defer rs.messagesMu.Unlock()
+	if replayMsg.ID == "" {
+		replayMsg.ID = fmt.Sprintf("%s-%d-%d", msg.Topic, msg.Time.UnixNano(), rs.stats.TotalMessages.Load())
+	}
+	if previous := rs.messages[replayMsg.ID]; previous != nil {
+		rs.removeMessageLocked(previous)
+		rs.timeIndex = slices.DeleteFunc(rs.timeIndex, func(msg *ReplayMessage) bool { return msg == previous })
+	} else if len(rs.messages) >= rs.config.MaxMessages && len(rs.timeIndex) > 0 {
+		rs.removeMessageLocked(rs.timeIndex[0])
+		rs.timeIndex = slices.Delete(rs.timeIndex, 0, 1)
+	}
 
-	// Update topic index
-	rs.topicIndexMu.Lock()
-	rs.topicIndex[msg.Topic] = append(rs.topicIndex[msg.Topic], msgID)
-	rs.topicIndexMu.Unlock()
-
-	// Update time index: binary search insertion maintains sorted order in O(log n)
-	// rather than re-sorting the whole slice O(n log n) on every message.
-	rs.timeIndexMu.Lock()
+	rs.messages[replayMsg.ID] = replayMsg
+	rs.topicIndex[msg.Topic] = append(rs.topicIndex[msg.Topic], replayMsg.ID)
 	pos := sort.Search(len(rs.timeIndex), func(i int) bool {
 		return !rs.timeIndex[i].Timestamp.Before(replayMsg.Timestamp)
 	})
-	rs.timeIndex = append(rs.timeIndex, nil)
-	copy(rs.timeIndex[pos+1:], rs.timeIndex[pos:])
-	rs.timeIndex[pos] = replayMsg
-	rs.timeIndexMu.Unlock()
+	rs.timeIndex = slices.Insert(rs.timeIndex, pos, replayMsg)
 
-	// Update stats
 	rs.stats.TotalMessages.Add(1)
 	rs.stats.TotalSize.Add(uint64(replayMsg.Size))
 }
 
-// removeOldest removes the oldest message from storage.
-func (rs *ReplayStore) removeOldest() {
-	if len(rs.timeIndex) == 0 {
-		return
+// removeMessageLocked removes a message from the map and topic index.
+func (rs *ReplayStore) removeMessageLocked(msg *ReplayMessage) {
+	delete(rs.messages, msg.ID)
+	ids := rs.topicIndex[msg.Topic]
+	if i := slices.Index(ids, msg.ID); i >= 0 {
+		rs.topicIndex[msg.Topic] = slices.Delete(ids, i, i+1)
 	}
-
-	// Get oldest from time index
-	oldest := rs.timeIndex[0]
-
-	// Remove from messages map
-	delete(rs.messages, oldest.ID)
-
-	// Remove from topic index
-	rs.topicIndexMu.Lock()
-	if ids, ok := rs.topicIndex[oldest.Topic]; ok {
-		for i, id := range ids {
-			if id == oldest.ID {
-				rs.topicIndex[oldest.Topic] = append(ids[:i], ids[i+1:]...)
-				break
-			}
-		}
-	}
-	rs.topicIndexMu.Unlock()
-
-	// Remove from time index
-	rs.timeIndexMu.Lock()
-	rs.timeIndex = rs.timeIndex[1:]
-	rs.timeIndexMu.Unlock()
 }
 
 // archiveWorker periodically archives old messages.
@@ -123,64 +87,47 @@ func (rs *ReplayStore) archiveWorker() {
 	}
 }
 
-// archiveOldMessages moves old messages to archive.
-// Locks are acquired sequentially (never two at once) to avoid deadlock with
-// storeMessage->removeOldest which acquires messagesMu->topicIndexMu->timeIndexMu
-// in the same sequential fashion.
+// archiveOldMessages moves old messages to archive after the file is complete.
 func (rs *ReplayStore) archiveOldMessages() {
+	rs.archiveMessages(rs.writeArchive)
+}
+
+func (rs *ReplayStore) archiveMessages(write func([]*ReplayMessage) error) {
 	cutoff := time.Now().Add(-rs.config.RetentionPeriod)
-
-	// Phase 1: identify and remove expired entries from the time index.
-	// timeIndex is sorted ascending, so all expired entries form a prefix.
-	rs.timeIndexMu.Lock()
-	cutoffIdx := 0
-	for cutoffIdx < len(rs.timeIndex) && rs.timeIndex[cutoffIdx].Timestamp.Before(cutoff) {
-		cutoffIdx++
+	rs.messagesMu.RLock()
+	limit := sort.Search(len(rs.timeIndex), func(i int) bool {
+		return !rs.timeIndex[i].Timestamp.Before(cutoff)
+	})
+	sources := slices.Clone(rs.timeIndex[:limit])
+	batch := make([]*ReplayMessage, 0, limit)
+	for _, source := range sources {
+		snapshot := *source
+		batch = append(batch, &snapshot)
 	}
-	toArchive := make([]*ReplayMessage, cutoffIdx)
-	copy(toArchive, rs.timeIndex[:cutoffIdx])
-	rs.timeIndex = rs.timeIndex[cutoffIdx:]
-	rs.timeIndexMu.Unlock()
+	rs.messagesMu.RUnlock()
 
-	if len(toArchive) == 0 {
+	if len(batch) == 0 || write(batch) != nil {
 		return
 	}
 
-	// Phase 2: remove from messages map.
 	rs.messagesMu.Lock()
-	for _, msg := range toArchive {
-		delete(rs.messages, msg.ID)
-	}
-	rs.messagesMu.Unlock()
-
-	// Phase 3: remove from topic index.
-	rs.topicIndexMu.Lock()
-	for _, msg := range toArchive {
-		if ids, ok := rs.topicIndex[msg.Topic]; ok {
-			for j, id := range ids {
-				if id == msg.ID {
-					rs.topicIndex[msg.Topic] = append(ids[:j], ids[j+1:]...)
-					break
-				}
-			}
-		}
-	}
-	rs.topicIndexMu.Unlock()
-
-	// Write to archive file
-	if err := rs.writeArchive(toArchive); err != nil {
-		// Log error but continue
-		return
-	}
-
-	// Move to archived list
+	defer rs.messagesMu.Unlock()
 	rs.archivedMu.Lock()
-	for _, msg := range toArchive {
-		msg.IsArchived = true
-		rs.archived = append(rs.archived, msg)
-		rs.stats.ArchivedMessages.Add(1)
+	defer rs.archivedMu.Unlock()
+	moved := make(map[*ReplayMessage]struct{}, len(sources))
+	for i, source := range sources {
+		if rs.messages[source.ID] == source {
+			rs.removeMessageLocked(source)
+			moved[source] = struct{}{}
+		}
+		batch[i].IsArchived = true
 	}
-	rs.archivedMu.Unlock()
+	rs.timeIndex = slices.DeleteFunc(rs.timeIndex, func(msg *ReplayMessage) bool {
+		_, ok := moved[msg]
+		return ok
+	})
+	rs.archived = append(rs.archived, batch...)
+	rs.stats.ArchivedMessages.Add(uint64(len(batch)))
 }
 
 // writeArchive writes messages to archive file.
@@ -189,41 +136,48 @@ func (rs *ReplayStore) writeArchive(messages []*ReplayMessage) error {
 		return nil
 	}
 
-	// Create filename with timestamp
-	filename := fmt.Sprintf("archive-%s.json", time.Now().Format("2006-01-02-150405"))
-	if rs.config.ArchiveCompression {
-		filename += ".gz"
-	}
-
-	filepath := filepath.Join(rs.config.ArchiveDir, filename)
-
-	file, err := os.Create(filepath)
+	prefix := ".archive-" + time.Now().UTC().Format("20060102-150405") + "-"
+	file, err := os.CreateTemp(rs.config.ArchiveDir, prefix)
 	if err != nil {
 		return err
 	}
-	defer func() { _ = file.Close() }()
+	defer func() { _ = os.Remove(file.Name()) }()
 
-	var writer io.Writer = file
-
-	// Add gzip compression if enabled
-	if rs.config.ArchiveCompression {
-		gzWriter := gzip.NewWriter(file)
-		defer func() { _ = gzWriter.Close() }()
-		writer = gzWriter
+	err = writeArchiveRecords(file, messages, rs.config.ArchiveCompression)
+	if err := errors.Join(err, file.Close()); err != nil {
+		return err
 	}
 
-	// Write messages as JSON lines
-	encoder := json.NewEncoder(writer)
+	name := strings.TrimPrefix(filepath.Base(file.Name()), ".") + ".json"
+	if rs.config.ArchiveCompression {
+		name += ".gz"
+	}
+	// Publish the complete file without replacing an existing archive.
+	return os.Link(file.Name(), filepath.Join(rs.config.ArchiveDir, name))
+}
+
+func writeArchiveRecords(w io.Writer, messages []*ReplayMessage, compress bool) error {
+	if !compress {
+		return encodeArchiveRecords(w, messages)
+	}
+	gz := gzip.NewWriter(w)
+	err := encodeArchiveRecords(gz, messages)
+	return errors.Join(err, gz.Close())
+}
+
+func encodeArchiveRecords(w io.Writer, messages []*ReplayMessage) error {
+	encoder := json.NewEncoder(w)
 	for _, msg := range messages {
 		if err := encoder.Encode(msg); err != nil {
 			return err
 		}
 	}
-
 	return nil
 }
 
-// LoadArchive loads messages from an archive file.
+// LoadArchive loads JSON Lines from an archive file, optionally compressed
+// with gzip. New batches receive unique names and are published after closing
+// the fully written file. Files created by older versions remain readable.
 func (rs *ReplayStore) LoadArchive(filename string) error {
 	if !rs.config.ArchiveEnabled {
 		return ErrArchiveNotEnabled
@@ -240,7 +194,7 @@ func (rs *ReplayStore) LoadArchive(filename string) error {
 	var reader io.Reader = file
 
 	// Detect gzip compression
-	if filepath[len(filepath)-3:] == ".gz" {
+	if strings.HasSuffix(filepath, ".gz") {
 		gzReader, err := gzip.NewReader(file)
 		if err != nil {
 			return err

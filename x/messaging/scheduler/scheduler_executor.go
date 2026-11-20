@@ -184,11 +184,19 @@ func (s *Scheduler) wakeScheduler() {
 
 // cancelJobLocked cancels a single job. Must be called with s.mu held.
 func (s *Scheduler) cancelJobLocked(id JobID, j *job) {
-	j.canceled.Store(true)
-	s.setJobStateLocked(j, JobStateCanceled)
+	s.setJobCanceledLocked(j)
 	if s.store != nil {
 		_ = s.store.Delete(id)
 	}
+	s.finishJobCancellationLocked(id, j)
+}
+
+func (s *Scheduler) setJobCanceledLocked(j *job) {
+	j.canceled.Store(true)
+	s.setJobStateLocked(j, JobStateCanceled)
+}
+
+func (s *Scheduler) finishJobCancellationLocked(id JobID, j *job) {
 	// Notify dependent jobs that were waiting for this job before cleaning
 	// up the dependents map entry, so we still have the list of waiters.
 	if deps := s.dependents[id]; len(deps) > 0 {

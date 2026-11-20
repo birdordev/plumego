@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
 	"sync"
 )
 
@@ -46,9 +47,10 @@ func WithRouter(router Router) ManagerOption {
 	}
 }
 
-// Register registers a provider and reports invalid registration input.
+// Register registers a provider by name. A nil provider, including a nil
+// dynamic value in a non-nil interface, returns ErrProviderRequired.
 func (m *Manager) Register(provider Provider) error {
-	if provider == nil {
+	if providerIsNil(provider) {
 		return ErrProviderRequired
 	}
 	name := provider.Name()
@@ -60,6 +62,19 @@ func (m *Manager) Register(provider Provider) error {
 	defer m.mu.Unlock()
 	m.providers[name] = provider
 	return nil
+}
+
+func providerIsNil(provider Provider) bool {
+	if provider == nil {
+		return true
+	}
+	value := reflect.ValueOf(provider)
+	switch value.Kind() {
+	case reflect.Chan, reflect.Func, reflect.Map, reflect.Pointer, reflect.Slice:
+		return value.IsNil()
+	default:
+		return false
+	}
 }
 
 // Get returns a provider by name.

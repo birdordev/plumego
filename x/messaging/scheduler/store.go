@@ -7,6 +7,7 @@ import "time"
 // The job may be unavailable for restoration after a restart.
 type Store interface {
 	Save(job StoredJob) error
+	// Delete removes a persisted job. Cancel may retry deletion after an error.
 	Delete(id JobID) error
 	// List may return readable jobs together with an error for other records.
 	List() ([]StoredJob, error)

@@ -26,7 +26,8 @@ type ReplayConfig struct {
 	// ArchiveEnabled enables archiving old messages to disk
 	ArchiveEnabled bool
 
-	// ArchiveDir is the directory for archived messages
+	// ArchiveDir stores archived messages. Its filesystem must support hard links
+	// so a complete batch can be published without replacing another archive.
 	ArchiveDir string
 
 	// ArchiveCompression enables gzip compression for archives
@@ -107,22 +108,22 @@ type ReplayStats struct {
 	TopicCount       int
 }
 
-// ReplayStore manages message storage and replay
+// ReplayStore manages message storage and replay.
+// Expired messages remain queryable until their archive is written successfully.
+// The next archive pass retries failures while those messages remain retained.
 type ReplayStore struct {
 	ps     *InProcBroker
 	config ReplayConfig
 
-	// In-memory storage
+	// messagesMu protects messages and both indexes.
 	messages   map[string]*ReplayMessage
 	messagesMu sync.RWMutex
 
 	// Topic index
-	topicIndex   map[string][]string // topic -> message IDs
-	topicIndexMu sync.RWMutex
+	topicIndex map[string][]string // topic -> message IDs
 
 	// Time index (sorted by timestamp)
-	timeIndex   []*ReplayMessage
-	timeIndexMu sync.RWMutex
+	timeIndex []*ReplayMessage
 
 	// Archived messages
 	archived   []*ReplayMessage
@@ -273,17 +274,15 @@ func (rs *ReplayStore) Stats() *ReplayStats {
 	stats.TotalSize.Store(rs.stats.TotalSize.Load())
 
 	// Calculate oldest and newest
-	rs.timeIndexMu.RLock()
+	rs.messagesMu.RLock()
 	if len(rs.timeIndex) > 0 {
 		stats.OldestMessage = rs.timeIndex[0].Timestamp
 		stats.NewestMessage = rs.timeIndex[len(rs.timeIndex)-1].Timestamp
 	}
-	rs.timeIndexMu.RUnlock()
 
 	// Count topics
-	rs.topicIndexMu.RLock()
 	stats.TopicCount = len(rs.topicIndex)
-	rs.topicIndexMu.RUnlock()
+	rs.messagesMu.RUnlock()
 
 	return stats
 }

@@ -46,7 +46,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	served, err := h.serveFile(w, r, filePath)
 	if err != nil {
-		h.serveError(w, r, "internal server error", http.StatusInternalServerError)
+		h.serveInternalError(w, r)
 		return
 	}
 	if served {
@@ -85,7 +85,7 @@ func (h *handler) stripPrefix(requestPath string) (string, bool) {
 func (h *handler) serveIndex(w http.ResponseWriter, r *http.Request) {
 	served, err := h.serveFile(w, r, h.cfg.IndexFile)
 	if err != nil {
-		h.serveError(w, r, "internal server error", http.StatusInternalServerError)
+		h.serveInternalError(w, r)
 	} else if !served {
 		h.serveNotFound(w, r)
 	}
@@ -94,7 +94,7 @@ func (h *handler) serveIndex(w http.ResponseWriter, r *http.Request) {
 // serveFile attempts to serve the specified file. Return values:
 //   - (true, nil):  file was served, response written
 //   - (false, nil): file not found, no response written; caller should fall back or serve 404
-//   - (false, err): server-side IO error, no response written; caller should call serveError
+//   - (false, err): server-side IO error, no response written; caller should call serveInternalError
 func (h *handler) serveFile(w http.ResponseWriter, r *http.Request, filePath string) (bool, error) {
 	return h.serveFileWithPolicy(w, r, filePath, true)
 }

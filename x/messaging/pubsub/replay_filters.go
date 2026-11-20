@@ -25,7 +25,6 @@ func (rs *ReplayStore) Query(query ReplayQuery) ([]*ReplayMessage, error) {
 			results = append(results, &msgCopy)
 		}
 	}
-	rs.messagesMu.RUnlock()
 
 	// Include archived if requested
 	if query.IncludeArchived {
@@ -38,6 +37,8 @@ func (rs *ReplayStore) Query(query ReplayQuery) ([]*ReplayMessage, error) {
 		}
 		rs.archivedMu.RUnlock()
 	}
+
+	rs.messagesMu.RUnlock()
 
 	// Sort results
 	rs.sortMessages(results, query.SortBy, query.Ascending)
@@ -132,8 +133,8 @@ func (rs *ReplayStore) GetByID(messageID string) (*ReplayMessage, error) {
 	}
 
 	rs.messagesMu.RLock()
+	defer rs.messagesMu.RUnlock()
 	msg, exists := rs.messages[messageID]
-	rs.messagesMu.RUnlock()
 
 	if !exists {
 		return nil, ErrMessageNotFound

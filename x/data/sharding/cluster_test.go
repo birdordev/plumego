@@ -1,8 +1,12 @@
 package sharding
 
 import (
+	"context"
 	"database/sql"
+	"database/sql/driver"
 	"errors"
+	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -638,5 +642,71 @@ func BenchmarkClusterDB_QueryContext(b *testing.B) {
 		if rows != nil {
 			rows.Close()
 		}
+	}
+}
+
+type shardRollbackConnector struct {
+	conn driver.Conn
+}
+
+func (c shardRollbackConnector) Connect(context.Context) (driver.Conn, error) {
+	return c.conn, nil
+}
+
+func (shardRollbackConnector) Driver() driver.Driver {
+	return stubDriver{}
+}
+
+type shardRollbackConn struct {
+	stubConn
+	onClose func() error
+}
+
+func (c *shardRollbackConn) Close() error {
+	return c.onClose()
+}
+
+func TestNewRollsBackCreatedShardsInReverseOrder(t *testing.T) {
+	firstErr := errors.New("first shard cleanup failed")
+	secondErr := errors.New("second shard cleanup failed")
+	var closed []int
+	newDB := func(index int, closeErr error) *sql.DB {
+		t.Helper()
+		conn := &shardRollbackConn{onClose: func() error {
+			closed = append(closed, index)
+			return closeErr
+		}}
+		db := sql.OpenDB(shardRollbackConnector{conn})
+		t.Cleanup(func() { _ = db.Close() })
+		if err := db.PingContext(t.Context()); err != nil {
+			t.Fatal(err)
+		}
+		return db
+	}
+
+	first, second, notAcquired := newDB(0, firstErr), newDB(1, secondErr), newDB(2, nil)
+	cfg := ClusterConfig{
+		Shards: []ShardConfig{
+			{Primary: first},
+			{Primary: second},
+			{Primary: notAcquired, Replicas: []*sql.DB{testSQLDB(t)}, ReplicaWeights: []int{-1}},
+		},
+		ShardingRules: []ShardingRuleConfig{{TableName: "items", ShardKeyColumn: "id", Strategy: "mod"}},
+	}
+	cluster, err := New(cfg)
+	if cluster != nil || !errors.Is(err, rw.ErrInvalidReplicaWeight) ||
+		!errors.Is(err, firstErr) || !errors.Is(err, secondErr) {
+		t.Fatalf("New = %v, %v", cluster, err)
+	}
+	if !slices.Equal(closed, []int{1, 0}) {
+		t.Errorf("rolled back shards in order %v, want [1 0]", closed)
+	}
+	for _, label := range []string{"close shard 0", "close shard 1", "create shard 2"} {
+		if !strings.Contains(err.Error(), label) {
+			t.Errorf("missing %q in %v", label, err)
+		}
+	}
+	if err := notAcquired.PingContext(t.Context()); err != nil {
+		t.Errorf("failed shard's unacquired connection was closed: %v", err)
 	}
 }

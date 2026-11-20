@@ -3,6 +3,7 @@ package sharding
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"time"
 
@@ -162,25 +163,28 @@ func (c ClusterConfig) Validate() error {
 	return nil
 }
 
-// New creates a new sharded cluster database
-func New(config ClusterConfig) (*ClusterDB, error) {
+// New creates a sharded cluster database. If construction fails after
+// creating shards, New closes those shards in reverse order and includes
+// cleanup failures in the returned error.
+func New(config ClusterConfig) (_ *ClusterDB, err error) {
 	// Validate configuration
 	if err := config.Validate(); err != nil {
 		return nil, fmt.Errorf("invalid cluster config: %w", err)
 	}
 
 	// Create shards
-	shards := make([]*rw.Cluster, len(config.Shards))
+	shards := make([]*rw.Cluster, 0, len(config.Shards))
+	defer func() {
+		if err != nil {
+			err = rollbackShards(shards, err)
+		}
+	}()
 	for i, shardConfig := range config.Shards {
 		shard, err := createShard(shardConfig)
 		if err != nil {
-			// Close previously created shards on error
-			for j := 0; j < i; j++ {
-				_ = shards[j].Close()
-			}
 			return nil, fmt.Errorf("failed to create shard %d: %w", i, err)
 		}
-		shards[i] = shard
+		shards = append(shards, shard)
 	}
 
 	// Create sharding rule registry
@@ -188,19 +192,11 @@ func New(config ClusterConfig) (*ClusterDB, error) {
 	for _, ruleConfig := range config.ShardingRules {
 		strategy, err := createStrategy(ruleConfig.Strategy, ruleConfig.StrategyConfig)
 		if err != nil {
-			// Close shards on error
-			for _, shard := range shards {
-				_ = shard.Close()
-			}
 			return nil, fmt.Errorf("failed to create strategy for table %s: %w", ruleConfig.TableName, err)
 		}
 
 		rule, err := NewShardingRule(ruleConfig.TableName, ruleConfig.ShardKeyColumn, strategy, len(shards))
 		if err != nil {
-			// Close shards on error
-			for _, shard := range shards {
-				_ = shard.Close()
-			}
 			return nil, fmt.Errorf("failed to create sharding rule for table %s: %w", ruleConfig.TableName, err)
 		}
 
@@ -214,19 +210,11 @@ func New(config ClusterConfig) (*ClusterDB, error) {
 		// Set default shard if provided
 		if ruleConfig.DefaultShard >= 0 {
 			if err := rule.SetDefaultShard(ruleConfig.DefaultShard); err != nil {
-				// Close shards on error
-				for _, shard := range shards {
-					_ = shard.Close()
-				}
 				return nil, fmt.Errorf("failed to set default shard for table %s: %w", ruleConfig.TableName, err)
 			}
 		}
 
 		if err := registry.Register(rule); err != nil {
-			// Close shards on error
-			for _, shard := range shards {
-				_ = shard.Close()
-			}
 			return nil, fmt.Errorf("failed to register sharding rule for table %s: %w", ruleConfig.TableName, err)
 		}
 	}
@@ -242,10 +230,6 @@ func New(config ClusterConfig) (*ClusterDB, error) {
 
 	router, err := NewRouter(shards, registry, routerOpts...)
 	if err != nil {
-		// Close shards on error
-		for _, shard := range shards {
-			_ = shard.Close()
-		}
 		return nil, fmt.Errorf("failed to create router: %w", err)
 	}
 
@@ -253,6 +237,19 @@ func New(config ClusterConfig) (*ClusterDB, error) {
 		router: router,
 		config: config,
 	}, nil
+}
+
+func rollbackShards(shards []*rw.Cluster, cause error) error {
+	errs := []error{cause}
+	for i := len(shards) - 1; i >= 0; i-- {
+		if err := shards[i].Close(); err != nil {
+			errs = append(errs, fmt.Errorf("close shard %d: %w", i, err))
+		}
+	}
+	if len(errs) == 1 {
+		return cause
+	}
+	return errors.Join(errs...)
 }
 
 // createShard creates a read-write cluster shard from configuration

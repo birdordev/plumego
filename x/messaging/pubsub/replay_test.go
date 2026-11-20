@@ -1,8 +1,12 @@
 package pubsub
 
 import (
+	"errors"
 	"os"
+	"path/filepath"
+	"slices"
 	"testing"
+	"testing/synctest"
 	"time"
 )
 
@@ -768,6 +772,104 @@ func BenchmarkReplayStore_Query(b *testing.B) {
 		_, _ = rs.Query(ReplayQuery{
 			Topics: []string{"bench.query"},
 			Limit:  100,
+		})
+	}
+}
+
+func TestReplayArchiveFailureRetainsIndexesAndCanRetry(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "archive")
+	rs := &ReplayStore{
+		config:     ReplayConfig{ArchiveEnabled: true, ArchiveDir: dir, RetentionPeriod: time.Hour, MaxMessages: 10},
+		messages:   make(map[string]*ReplayMessage),
+		topicIndex: make(map[string][]string),
+	}
+	rs.storeMessage(Message{ID: "sample", Topic: "old", Time: time.Now().Add(-2 * time.Hour)})
+	rs.archiveOldMessages()
+	if _, err := rs.GetByID("sample"); err != nil {
+		t.Fatal(err)
+	}
+	if len(rs.topicIndex["old"]) != 1 || len(rs.timeIndex) != 1 || len(rs.archived) != 0 {
+		t.Fatal("failed archive changed the replay indexes")
+	}
+	rs.archiveMessages(func([]*ReplayMessage) error { return errors.New("finalizing archive failed") })
+	if _, err := rs.GetByID("sample"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(dir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	rs.archiveOldMessages()
+	rs.archiveOldMessages()
+	messages, err := rs.Query(ReplayQuery{IncludeArchived: true})
+	if err != nil || len(messages) != 1 || !messages[0].IsArchived ||
+		len(rs.messages) != 0 || len(rs.timeIndex) != 0 || len(rs.topicIndex["old"]) != 0 {
+		t.Fatalf("archive retry: messages=%v, err=%v", messages, err)
+	}
+}
+
+func TestReplayArchiveRetainsReplacementDuringWrite(t *testing.T) {
+	rs := &ReplayStore{
+		config:     ReplayConfig{RetentionPeriod: time.Hour, MaxMessages: 10},
+		messages:   make(map[string]*ReplayMessage),
+		topicIndex: make(map[string][]string),
+	}
+	rs.storeMessage(Message{ID: "sample", Topic: "old", Time: time.Now().Add(-2 * time.Hour)})
+	rs.archiveMessages(func(batch []*ReplayMessage) error {
+		done := make(chan struct{})
+		go func() {
+			rs.storeMessage(Message{ID: "sample", Topic: "new", Time: time.Now()})
+			close(done)
+		}()
+		<-done
+		if len(batch) != 1 || batch[0].Topic != "old" {
+			t.Fatalf("archive batch = %v", batch)
+		}
+		return nil
+	})
+	got, err := rs.GetByID("sample")
+	if err != nil || got.Topic != "new" || len(rs.timeIndex) != 1 ||
+		len(rs.topicIndex["old"]) != 0 || len(rs.topicIndex["new"]) != 1 || len(rs.archived) != 1 {
+		t.Fatalf("replacement after archive commit = %+v, %v", got, err)
+	}
+}
+
+func TestReplayArchivePublishesDistinctCompleteBatches(t *testing.T) {
+	for _, compress := range []bool{false, true} {
+		name := "plain"
+		if compress {
+			name = "gzip"
+		}
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			synctest.Test(t, func(t *testing.T) {
+				rs := &ReplayStore{config: ReplayConfig{ArchiveEnabled: true, ArchiveDir: dir, ArchiveCompression: compress}}
+				for _, id := range []string{"first", "second"} {
+					if err := rs.writeArchive([]*ReplayMessage{{ID: id, Topic: "sample"}}); err != nil {
+						t.Fatal(err)
+					}
+				}
+				if err := rs.writeArchive([]*ReplayMessage{{ID: "bad", Data: make(chan int)}}); err == nil {
+					t.Fatal("archive of an unsupported payload succeeded")
+				}
+
+				files, err := os.ReadDir(dir)
+				if err != nil || len(files) != 2 {
+					t.Fatalf("archive directory = %v, %v", files, err)
+				}
+				for _, file := range files {
+					if err := rs.LoadArchive(file.Name()); err != nil {
+						t.Fatal(err)
+					}
+				}
+				var ids []string
+				for _, msg := range rs.archived {
+					ids = append(ids, msg.ID)
+				}
+				slices.Sort(ids)
+				if !slices.Equal(ids, []string{"first", "second"}) {
+					t.Errorf("loaded archive IDs = %v", ids)
+				}
+			})
 		})
 	}
 }

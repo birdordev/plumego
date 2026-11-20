@@ -255,6 +255,28 @@ func TestManager_Register(t *testing.T) {
 		}
 	})
 
+	t.Run("typed nil leaves registry unchanged", func(t *testing.T) {
+		manager := NewManager()
+		existing := &mockProvider{name: "mock"}
+		if err := manager.Register(existing); err != nil {
+			t.Fatal(err)
+		}
+		var missing *mockProvider
+		if err := manager.Register(missing); !errors.Is(err, ErrProviderRequired) {
+			t.Fatalf("Register(typed nil) = %v, want ErrProviderRequired", err)
+		}
+		if got, err := manager.Get("mock"); err != nil || got != existing || len(manager.providers) != 1 {
+			t.Fatalf("registry after invalid registration: provider=%v, error=%v, size=%d", got, err, len(manager.providers))
+		}
+		replacement := &mockProvider{name: "mock"}
+		if err := manager.Register(replacement); err != nil {
+			t.Fatal(err)
+		}
+		if got, err := manager.Get("mock"); err != nil || got != replacement {
+			t.Fatalf("duplicate registration: provider=%v, error=%v", got, err)
+		}
+	})
+
 	t.Run("empty provider name", func(t *testing.T) {
 		manager := NewManager()
 		err := manager.Register(&mockProvider{})

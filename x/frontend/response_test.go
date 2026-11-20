@@ -492,7 +492,7 @@ func TestIndexServeOpenErrorServesErrorPage(t *testing.T) {
 }
 
 // TestCustomErrorPageFallback verifies that when the custom error page itself
-// is missing, serveError falls back to a JSON error response.
+// is missing, serveInternalError falls back to a JSON error response.
 func TestCustomErrorPageFallback(t *testing.T) {
 	dir := t.TempDir()
 	writeTestFile(t, dir, "index.html", "<html>home</html>")

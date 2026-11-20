@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -629,5 +630,89 @@ func TestPersistentPubSubCloseReportsWALFailureAndClosesBroker(t *testing.T) {
 	}
 	if err := b.Close(); err != nil {
 		t.Errorf("repeated Close = %v", err)
+	}
+}
+
+func TestPersistentPubSubRotationKeepsFatalFlushError(t *testing.T) {
+	cfg := DefaultPersistenceConfig()
+	cfg.Enabled = true
+	cfg.DataDir = t.TempDir()
+	cfg.FlushInterval = time.Hour
+	b, err := NewPersistent(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer b.Close()
+
+	if err := b.PublishPersistent("sample", Message{ID: "unflushed"}, DurabilityAsync); err != nil {
+		t.Fatal(err)
+	}
+	file, writer, sequence := b.walFile, b.walWriter, b.walSequence.Load()
+	if err := file.Close(); err != nil {
+		t.Fatal(err)
+	}
+	b.rotateWAL()
+	if b.walFile != file || b.walWriter != writer || b.walSequence.Load() != sequence || b.PersistenceStats().PersistErrors != 1 {
+		t.Fatal("failed rotation changed the active segment or error count")
+	}
+	if err := b.PublishPersistent("sample", Message{ID: "rejected"}, DurabilityAsync); !errors.Is(err, os.ErrClosed) {
+		t.Errorf("persistent write after failure = %v", err)
+	}
+	if err := b.Close(); !errors.Is(err, os.ErrClosed) {
+		t.Errorf("Close did not retain the rotation failure: %v", err)
+	}
+}
+
+func TestPersistentPubSubRotationCanRetryOpeningSegment(t *testing.T) {
+	cfg := DefaultPersistenceConfig()
+	cfg.Enabled = true
+	cfg.DataDir = t.TempDir()
+	cfg.FlushInterval = time.Hour
+	var restored []string
+	cfg.OnRestore = func(msg Message, _ time.Time) { restored = append(restored, msg.ID) }
+	b, err := NewPersistent(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer b.Close()
+
+	publish := func(id string) {
+		t.Helper()
+		if err := b.PublishPersistent("sample", Message{ID: id}, DurabilityAsync); err != nil {
+			t.Fatal(err)
+		}
+	}
+	publish("first")
+	file, sequence := b.walFile, b.walSequence.Load()
+	path := filepath.Join(cfg.DataDir, fmt.Sprintf("wal-%016d.log", sequence+1))
+	if err := os.Mkdir(path, 0700); err != nil {
+		t.Fatal(err)
+	}
+	b.rotateWAL()
+	if b.rotationErr == nil || b.walFile != file || b.walSequence.Load() != sequence {
+		t.Fatal("opening failure changed the active segment or was not reported")
+	}
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	b.rotateWAL()
+	if b.rotationErr != nil || b.walSequence.Load() != sequence+1 || b.walFile == file {
+		t.Fatal("rotation retry did not publish a new segment")
+	}
+	if _, err := file.Stat(); !errors.Is(err, os.ErrClosed) {
+		t.Errorf("previous segment is still open: %v", err)
+	}
+	publish("second")
+	if err := b.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	reopened, err := NewPersistent(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopened.Close()
+	if !slices.Equal(restored, []string{"first", "second"}) {
+		t.Errorf("restored = %v", restored)
 	}
 }
