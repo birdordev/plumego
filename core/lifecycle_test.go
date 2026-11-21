@@ -1005,3 +1005,32 @@ func TestPrepareAndShutdownDoNotDriveLoggerLifecycle(t *testing.T) {
 		t.Error("server did not complete")
 	}
 }
+
+func TestConnectionTrackerReleasesHijackedConnections(t *testing.T) {
+	tracker := newConnectionTracker(nil, time.Hour)
+	tracker.track(nil, http.StateNew)
+	tracker.track(nil, http.StateNew)
+	stop := tracker.startDrain(t.Context())
+	if stop == nil {
+		t.Fatal("drain not started")
+	}
+	t.Cleanup(stop)
+	tracker.track(nil, http.StateHijacked)
+	if tracker.open.Load() != 1 || tracker.activeDrain.Load() == nil {
+		t.Fatal("hijacked connection was retained or canceled the drain prematurely")
+	}
+	tracker.track(nil, http.StateClosed)
+	if tracker.open.Load() != 0 || tracker.activeDrain.Load() != nil {
+		t.Fatal("last managed connection did not clear the drain")
+	}
+}
+
+func TestConnectionTrackerDrainIntervalDefaults(t *testing.T) {
+	for _, tc := range []struct{ in, want time.Duration }{
+		{-1, defaultDrainInterval}, {0, defaultDrainInterval}, {time.Second, time.Second},
+	} {
+		if got := newConnectionTracker(nil, tc.in).interval; got != tc.want {
+			t.Errorf("interval %v => %v, want %v", tc.in, got, tc.want)
+		}
+	}
+}

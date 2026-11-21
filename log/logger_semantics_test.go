@@ -2,7 +2,6 @@ package log
 
 import (
 	"bytes"
-	"io"
 	"os"
 	"os/exec"
 	"strconv"
@@ -205,8 +204,8 @@ func TestLoggerFatalExits(t *testing.T) {
 		}
 		logger := NewLogger(LoggerConfig{
 			Format:      format,
-			Output:      io.Discard,
-			ErrorOutput: io.Discard,
+			Output:      os.Stdout,
+			ErrorOutput: os.Stderr,
 			Level:       Level(level),
 		})
 		if os.Getenv("PLUMEGO_FATAL_CONTEXT") == "true" {
@@ -229,12 +228,32 @@ func TestLoggerFatalExits(t *testing.T) {
 						"PLUMEGO_FATAL_LEVEL="+strconv.Itoa(int(level)),
 						"PLUMEGO_FATAL_CONTEXT="+strconv.FormatBool(withContext),
 					)
-					err := cmd.Run()
+					output, err := cmd.CombinedOutput()
 					if exitErr, ok := err.(*exec.ExitError); !ok || exitErr.ExitCode() != 1 {
 						t.Fatalf("level=%d withContext=%t: expected exit code 1, got %v", level, withContext, err)
+					}
+					if got, want := bytes.Contains(output, []byte("fatal-exit")), level <= FATAL && format != LoggerFormatDiscard; got != want {
+						t.Fatalf("format=%s level=%d context=%t output=%q", format, level, withContext, output)
 					}
 				}
 			}
 		})
+	}
+}
+
+func TestDerivedLoggerFieldsCopyOnlyTheTopLevel(t *testing.T) {
+	for _, format := range []LoggerFormat{LoggerFormatText, LoggerFormatJSON} {
+		var output bytes.Buffer
+		base := NewLogger(LoggerConfig{Format: format, Output: &output})
+		nested := map[string]string{"nested": "first-value"}
+		input := Fields{"model": nested, "label": "original-label"}
+		child := base.WithFields(input)
+		input["label"] = "changed-label"
+		nested["nested"] = "second-value"
+		child.Info("entry")
+		if got := output.String(); !strings.Contains(got, "original-label") ||
+			!strings.Contains(got, "second-value") || strings.Contains(got, "changed-label") {
+			t.Fatalf("format=%s output=%q", format, got)
+		}
 	}
 }

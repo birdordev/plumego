@@ -10,7 +10,8 @@ import "github.com/birdordev/plumego/middleware/requestid"
 
 ## Overview
 
-`requestid.Middleware` selects a correlation ID from the request context first, then from a valid incoming `X-Request-ID` header, and generates one if neither supplies a valid ID. It stores the selected ID in the request context and writes it to the response header. By default it also writes that ID to the request header seen by the next handler.
+`requestid.Middleware` selects a correlation ID from the request context first, then from a valid incoming `X-Request-ID` header, and generates one if neither supplies a valid ID. It stores the selected ID in the request context and writes it to the response header. By default it also writes that ID to the downstream request header. It copies the
+header map before writing so the incoming request headers remain intact.
 
 ## Exports
 

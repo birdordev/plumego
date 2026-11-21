@@ -823,3 +823,37 @@ func BenchmarkJSONRecordFieldBudget(b *testing.B) {
 		})
 	}
 }
+
+type diagnosticOutputFunc func([]byte) (int, error)
+
+func (fn diagnosticOutputFunc) Write(p []byte) (int, error) {
+	return fn(p)
+}
+
+func TestJSONWriterDiagnosticsUseSeparateOutput(t *testing.T) {
+	var main, diagnostics bytes.Buffer
+	sinkLogger := NewLogger(LoggerConfig{Format: LoggerFormatJSON, Output: &diagnostics})
+	l := NewLogger(LoggerConfig{Format: LoggerFormatJSON, Output: diagnosticOutputFunc(func(p []byte) (int, error) {
+		sinkLogger.Info("write diagnostic")
+		return main.Write(p)
+	})})
+	l.WithFields(Fields{"scope": "child"}).Info("application")
+	if got := decodeTestJSONLogEntry(t, main.Bytes()); got.Msg != "application" || got.Scope != "child" {
+		t.Fatalf("application entry = %+v", got)
+	}
+	if got := decodeTestJSONLogEntry(t, diagnostics.Bytes()); got.Msg != "write diagnostic" {
+		t.Fatalf("diagnostic entry = %+v", got)
+	}
+}
+
+func TestNewLoggerUsesFirstConfig(t *testing.T) {
+	var first, later bytes.Buffer
+	l := NewLogger(
+		LoggerConfig{Format: LoggerFormatJSON, Output: &first},
+		LoggerConfig{Format: LoggerFormatText, Output: &later},
+	)
+	l.Info("first config")
+	if got := decodeTestJSONLogEntry(t, first.Bytes()); got.Msg != "first config" || later.Len() != 0 {
+		t.Fatalf("first = %+v, later = %q", got, later.String())
+	}
+}

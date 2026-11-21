@@ -2,6 +2,7 @@ package cache
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 )
@@ -87,5 +88,43 @@ func BenchmarkMemoryCacheDeleteHit(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		_ = c.Delete(ctx, "key")
 		_ = c.Set(ctx, "key", val, 1*time.Hour)
+	}
+}
+
+func BenchmarkMemoryCacheEmptyEntries(b *testing.B) {
+	for _, count := range []int{1, 1000} {
+		b.Run(fmt.Sprint(count), func(b *testing.B) {
+			keys := make([]string, count)
+			for i := range count {
+				keys[i] = fmt.Sprint(i)
+			}
+			b.ReportAllocs()
+			for b.Loop() {
+				c, err := NewMemoryCacheWithConfig(Config{MaxMemoryUsage: 1})
+				if err != nil {
+					b.Fatal(err)
+				}
+				for _, key := range keys {
+					if err := c.Set(b.Context(), key, nil, 0); err != nil {
+						b.Fatal(err)
+					}
+				}
+				if err := c.Set(b.Context(), keys[0], []byte{1}, 0); err != nil {
+					b.Fatal(err)
+				}
+				if stats := c.Stats(); stats.Entries != count || stats.MemoryUsage != 1 {
+					b.Fatal(stats)
+				}
+				if err := c.Clear(b.Context()); err != nil {
+					b.Fatal(err)
+				}
+				if stats := c.Stats(); stats.Entries != 0 || stats.MemoryUsage != 0 {
+					b.Fatal(stats)
+				}
+				if err := c.Close(); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
 	}
 }

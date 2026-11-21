@@ -68,6 +68,9 @@
 - Expired reads in `store/cache.MemoryCache` return a miss and remove the
   expired entry only if the cache write lock is immediately available.
   Background cleanup scans the whole in-process map on each pass.
+- The cache memory limit counts value bytes only. Keys, entry bookkeeping,
+  and empty values can consume memory without using this limit. Choose
+  input and lifetime bounds at the call site.
 - `store/cache.MemoryCache` and `store/kv.KVStore` are constructor-only objects; zero-value or nil receiver operations fail closed with the package closed-store sentinel where practical.
 - `store/cache.MemoryCache.Close` closes the cache lifecycle; it waits for the cache write boundary before returning, and later operations return `cache.ErrCacheClosed`.
 - keep DB analytics, summaries, instrumentation wrappers, pool-stat polling, and slow-query inspection out of `store/db`; route them to `x/observability/dbinsights`
@@ -155,9 +158,10 @@
   cancellation must be observed before the filesystem write boundary.
 - Import `github.com/birdordev/plumego/store/kv` and use its declared package
   name `kvstore`, or choose an explicit alias such as `kv`.
-- `store/kv.DefaultOptions(dataDir)` is the public helper for the current
+- `store/kv.DefaultConfig(dataDir)` is the preferred helper for the current
   embedded defaults while keeping `DataDir` explicit; callers can start from it
-  and then override limits as needed.
+  and then override limits as needed. `DefaultOptions` remains available for
+  existing callers.
 - `NewKVStore` requires an explicit `Options.DataDir` and returns a validation
   error for invalid options; it must not silently write to the process working
   directory.
@@ -176,7 +180,8 @@
   `ErrKeyExpired`; read-only helpers such as `ExistsContext`, `KeysContext`,
   `SizeContext`, and `GetStatsContext` ignore expired keys without mutating
   persisted state.
-- `Delete` returns `ErrKeyNotFound` for missing keys. `Close` is idempotent
+- `Delete` can remove an expired key still present in this handle. It returns
+  `ErrKeyNotFound` when no stored entry exists. `Close` is idempotent
   and discards the handle's in-memory snapshot. After close, value reads,
   mutations, and read-only inspection return `ErrStoreClosed`.
 
@@ -194,6 +199,11 @@
 
 ## DB Boundary
 
+- `store/db.OpenWith` uses a fixed message for driver open failures. The error
+  chain preserves driver and cleanup errors for classification. Treat messages
+  from underlying driver errors as private diagnostics.
+- `store/file.Error` retains its path and underlying error for callers. Use
+  error classification and a safe message when mapping it to a transport error.
 - `store/db` helpers execute with the exact `context.Context` supplied by the caller.
 - `store/db.WithTransaction` commits successful callbacks and rolls back failed callbacks. Panic and `runtime.Goexit` paths also release the transaction; panics propagate unchanged. Callback and explicit rollback errors remain inspectable with `errors.Is`.
 - If an injected database returns a transaction alongside a begin error,

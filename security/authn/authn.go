@@ -23,7 +23,8 @@ type Authenticator interface {
 }
 
 // RequestAuthenticator authenticates requests that may be enriched before
-// reaching downstream handlers.
+// reaching downstream handlers. An enriched request should derive its context
+// from the input request to preserve cancellation and request metadata.
 type RequestAuthenticator interface {
 	Authenticator
 	AuthenticateRequest(r *http.Request) (*Principal, *http.Request, error)

@@ -481,3 +481,27 @@ func TestBuildInfoHandlerEnvelope(t *testing.T) {
 		}
 	}
 }
+
+func TestHealthEncodingFailureKeepsUnhealthyStatusAndSafeBody(t *testing.T) {
+	m := readinessManager{status: health.HealthStatus{
+		Status: health.StatusUnhealthy, Details: map[string]any{"fixture": make(chan int)},
+	}}
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req = req.WithContext(contract.WithRequestID(req.Context(), "request-id"))
+	w := httptest.NewRecorder()
+	SummaryHandler(m).ServeHTTP(w, req)
+	var payload struct {
+		RequestID string `json:"request_id"`
+		Error     struct{ Code string }
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &payload); err != nil ||
+		w.Code != http.StatusServiceUnavailable || payload.Error.Code != contract.CodeUnavailable ||
+		payload.RequestID != "request-id" {
+		t.Fatalf("status=%d body=%q error=%v", w.Code, w.Body.String(), err)
+	}
+	w = httptest.NewRecorder()
+	ReadinessHandlerWithManager(m).ServeHTTP(w, req)
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("readiness status=%d", w.Code)
+	}
+}

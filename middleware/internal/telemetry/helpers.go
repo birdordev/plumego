@@ -100,20 +100,17 @@ func BeginTrace(w http.ResponseWriter, prepared PreparedRequest, start TraceStar
 		// normal best-effort finalizer still ends it exactly once.
 		return r, span
 	}
-	spanContext := contract.TraceContext{TraceID: traceID, SpanID: spanID}
-	if tc, ok := contract.TraceContextFromContext(ctx); ok {
-		if spanID == "" && tc.Valid() {
-			spanID = tc.SpanID
+	trace, _ := contract.TraceContextFromContext(ctx)
+	if !trace.Valid() {
+		candidate := contract.TraceContext{TraceID: traceID, SpanID: spanID}
+		if candidate.Valid() {
+			trace.TraceID, trace.SpanID = candidate.TraceID, candidate.SpanID
+			ctx = contract.WithTraceContext(ctx, trace)
 		}
-		if !tc.Valid() && spanContext.Valid() {
-			ctx = contract.WithTraceContext(ctx, spanContext)
-		}
-	} else if traceID != "" || spanID != "" {
-		ctx = contract.WithTraceContext(ctx, spanContext)
 	}
 	r = r.WithContext(ctx)
-	if spanID != "" && w != nil {
-		w.Header().Set(SpanIDHeader, spanID)
+	if trace.Valid() && w != nil {
+		w.Header().Set(SpanIDHeader, trace.SpanID)
 	}
 	return r, span
 }

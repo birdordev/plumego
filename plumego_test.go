@@ -154,3 +154,21 @@ func TestNewUsesDefaultAddr(t *testing.T) {
 		t.Errorf("default server Addr = %q, want :8080", srv.Addr)
 	}
 }
+
+func TestParamFromRootFacade(t *testing.T) {
+	app := plumego.New()
+	if err := app.Get("/users/:id", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		w.Header().Set("X-Fixture-Param", plumego.Param(req, "id"))
+		if got := plumego.Param(req, "missing"); got != "" {
+			t.Errorf("missing param=%q", got)
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})); err != nil {
+		t.Fatal(err)
+	}
+	rec := httptest.NewRecorder()
+	app.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/users/42", nil))
+	if rec.Code != http.StatusNoContent || rec.Header().Get("X-Fixture-Param") != "42" {
+		t.Fatalf("status=%d headers=%v", rec.Code, rec.Header())
+	}
+}

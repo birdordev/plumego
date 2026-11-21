@@ -257,3 +257,30 @@ func TestMiddlewarePreservesHijacker(t *testing.T) {
 		t.Fatalf("expected hijack to be forwarded to underlying writer")
 	}
 }
+
+func TestLoggerPanicLeavesNormalResponsesIntact(t *testing.T) {
+	for _, tc := range []struct {
+		method   string
+		explicit bool
+	}{
+		{http.MethodGet, true}, {http.MethodGet, false}, {http.MethodHead, false},
+	} {
+		logger := newStubLogger()
+		logger.panicOnRecord = true
+		handler := mustAccesslog(t, logger)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("X-Application", "original")
+			if tc.explicit {
+				w.WriteHeader(http.StatusAccepted)
+			}
+		}))
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, httptest.NewRequest(tc.method, "/", nil))
+		want := http.StatusOK
+		if tc.explicit {
+			want = http.StatusAccepted
+		}
+		if rec.Code != want || rec.Header().Get("X-Application") != "original" || rec.Body.Len() != 0 {
+			t.Fatalf("method=%s status=%d headers=%v body=%q", tc.method, rec.Code, rec.Header(), rec.Body.String())
+		}
+	}
+}

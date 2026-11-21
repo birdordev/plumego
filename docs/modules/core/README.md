@@ -159,6 +159,7 @@ These behaviors are part of the current stable-root freeze baseline:
 | Construction | `New` copies `AppConfig` by value and resolves missing dependencies to safe defaults |
 | Preparation state | `PreparationState` names the stable mutation, handler-prepared, and server-prepared phases exposed by core; `(*App).PreparationState()` returns the current phase as a read-only snapshot and returns the empty value for zero-value apps |
 | Config validation | `Prepare` checks server settings before freezing route/middleware mutation. Listener address resolution and binding happen when `Run` starts listening or when the caller creates a listener |
+| Concurrent TLS preparation | Overlapping calls may load the certificate separately before one server is published. Calls made after publication reuse that server. |
 | Route wiring | `AddRoute` and method helpers delegate to the owned router with explicit method/path handlers |
 | Route groups | `App.Group("")` adds no path prefix. A nested `RouteGroup.Group("")` inherits the parent prefix. A non-empty prefix without a leading `/` panics |
 | Middleware wiring | `Use` preserves registration order, treats an empty middleware list as a no-op, and rejects nil middleware without partial registration |

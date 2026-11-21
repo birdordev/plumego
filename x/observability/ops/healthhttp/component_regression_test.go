@@ -105,7 +105,18 @@ func TestComponentHealthCanceledProbeFailsClosed(t *testing.T) {
 	cancel()
 	rec := httptest.NewRecorder()
 	ComponentHealthHandler(manager, "db").ServeHTTP(rec, httptest.NewRequest("GET", "/", nil).WithContext(ctx))
-	if rec.Code != 503 {
+	if rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("canceled check status=%d", rec.Code)
+	}
+	if got, ok := manager.GetComponentHealth("db"); !ok || got.Status != "unhealthy" || got.Details["check_attempts"] != 0 {
+		t.Fatalf("canceled probe status: %+v", got)
+	}
+	rec = httptest.NewRecorder()
+	ComponentHealthHandler(manager, "db").ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("successful follow-up status=%d", rec.Code)
+	}
+	if got, ok := manager.GetComponentHealth("db"); !ok || got.Status != "healthy" {
+		t.Fatalf("fresh successful status: %+v", got)
 	}
 }

@@ -28,7 +28,7 @@ const defaultMaxBodyBytes = 64 << 10
 //	config := debug.Config{
 //		IncludeRequest: true,  // Include request method and path
 //		IncludeQuery:   true,  // Report whether a query was provided
-//		IncludeBody:    false, // Don't include response body (security)
+//		IncludeBody:    false, // Omit captured body size
 //		NotFoundHint:   "Try /api/v1/users", // Hint for 404 errors
 //	}
 //	handler := debug.Middleware(config)(myHandler)
@@ -43,8 +43,8 @@ type Config struct {
 	// The response never includes parameter names or values.
 	IncludeQuery bool
 
-	// IncludeBody controls whether to include response body in error details
-	// Note: This may expose sensitive information, use with caution
+	// IncludeBody reports the original captured body size in error details. The
+	// replacement excludes the original response body text.
 	IncludeBody bool
 
 	// MaxBodyBytes is the maximum response body captured for debug replacement.
@@ -366,7 +366,11 @@ func debugErrorPayload(errorType contract.ErrorType, status int, r *http.Request
 	details := map[string]any{}
 	if cfg.IncludeRequest {
 		details["method"] = r.Method
-		details["path"] = r.URL.Path
+		path := contract.RequestContextFromContext(r.Context()).RoutePattern
+		if path == "" && r.URL != nil {
+			path = r.URL.Path
+		}
+		details["path"] = path
 	}
 	if cfg.IncludeQuery && r.URL.RawQuery != "" {
 		details["query_present"] = true
@@ -375,7 +379,7 @@ func debugErrorPayload(errorType contract.ErrorType, status int, r *http.Request
 		details["hint"] = cfg.NotFoundHint
 	}
 	if cfg.IncludeBody && len(body) > 0 {
-		details["response_preview"] = truncateBody(body, 1024)
+		details["response_body_bytes"] = len(body)
 	}
 	if len(details) == 0 {
 		details = nil
@@ -427,11 +431,4 @@ func debugErrorType(status int) contract.ErrorType {
 	default:
 		return ""
 	}
-}
-
-func truncateBody(body []byte, limit int) string {
-	if limit <= 0 || len(body) <= limit {
-		return string(body)
-	}
-	return string(body[:limit]) + "..."
 }

@@ -461,3 +461,71 @@ func TestSnapshotWritePreservesCleanupErrors(t *testing.T) {
 		t.Fatalf("snapshot = %q, error = %v", raw, err)
 	}
 }
+
+type testDirectoryHandle struct {
+	syncErr, closeErr error
+	calls             []string
+}
+
+func (f *testDirectoryHandle) Sync() error {
+	f.calls = append(f.calls, "sync")
+	return f.syncErr
+}
+
+func (f *testDirectoryHandle) Close() error {
+	f.calls = append(f.calls, "close")
+	return f.closeErr
+}
+
+func TestDirectorySyncRetainsCloseErrors(t *testing.T) {
+	failedSync := errors.New("sync failure")
+	failedClose := errors.New("close failure")
+	for _, tc := range []struct{ raw, want error }{
+		{failedSync, failedSync}, {os.ErrInvalid, nil}, {nil, nil},
+	} {
+		handle := &testDirectoryHandle{syncErr: tc.raw, closeErr: failedClose}
+		err := syncAndCloseDirectory(handle)
+		if !errors.Is(err, failedClose) || (tc.want != nil && !errors.Is(err, tc.want)) ||
+			errors.Is(err, os.ErrInvalid) || !slices.Equal(handle.calls, []string{"sync", "close"}) {
+			t.Fatalf("sync=%v error=%v calls=%v", tc.raw, err, handle.calls)
+		}
+	}
+}
+
+func TestDeleteCanRemoveExpiredStoredKey(t *testing.T) {
+	opts := DefaultConfig(t.TempDir())
+	kv, err := NewKVStore(opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer kv.Close()
+	if err := kv.Set("key", []byte("value"), 0); err != nil {
+		t.Fatal(err)
+	}
+	kv.mu.Lock()
+	kv.data["key"].ExpireAt = time.Now().Add(-time.Second)
+	kv.mu.Unlock()
+	if _, err := kv.Get("key"); !errors.Is(err, ErrKeyExpired) {
+		t.Fatalf("Get expired: %v", err)
+	}
+	if exists, err := kv.ExistsContext(t.Context(), "key"); exists || err != nil {
+		t.Fatalf("Exists=%t err=%v", exists, err)
+	}
+	if err := kv.Delete("key"); err != nil {
+		t.Fatal(err)
+	}
+	if err := kv.Delete("key"); !errors.Is(err, ErrKeyNotFound) {
+		t.Fatalf("Delete absent: %v", err)
+	}
+	if err := kv.Close(); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := NewKVStore(opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopened.Close()
+	if _, err := reopened.Get("key"); !errors.Is(err, ErrKeyNotFound) {
+		t.Fatalf("reopened: %v", err)
+	}
+}

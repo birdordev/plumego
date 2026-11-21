@@ -55,7 +55,8 @@ func TestNotBeforeWithClockSkew(t *testing.T) {
 	authz := AuthorizationClaims{}
 
 	jti, _ := randomID()
-	now := time.Now().UTC()
+	now := time.Unix(1800000000, 0)
+	mgr.now = func() time.Time { return now }
 	claims := TokenClaims{
 		TokenID:       jti,
 		TokenType:     TokenTypeAccess,
@@ -77,10 +78,9 @@ func TestNotBeforeWithClockSkew(t *testing.T) {
 		t.Errorf("expected ErrTokenNotYetValid, got %v", err)
 	}
 
-	// wait for token to become valid (nbf=3s, elapsed=1.5s, skew=2s, 1.5 < 3-2)
-	time.Sleep(1500 * time.Millisecond)
+	// At this time the skew-adjusted clock reaches not-before exactly.
+	mgr.now = func() time.Time { return now.Add(time.Second) }
 
-	// token should be valid now (nbf=3s, elapsed=1.5s, skew=2s, 1.5 < 3-2)
 	_, err = mgr.VerifyToken(t.Context(), token, TokenTypeAccess)
 	if err != nil {
 		t.Errorf("token should be valid within clock skew: %v", err)

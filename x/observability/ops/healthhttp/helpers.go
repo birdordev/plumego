@@ -1,8 +1,11 @@
 package healthhttp
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"io"
 	"net/http"
 	"runtime"
 	"time"
@@ -89,9 +92,23 @@ func writeHealthResponse(w http.ResponseWriter, r *http.Request, status int, dat
 		resp.RequestID = contract.RequestIDFromContext(r.Context())
 	}
 
+	var body bytes.Buffer
+	if err := json.NewEncoder(&body).Encode(resp); err != nil {
+		typ := contract.TypeInternal
+		if status == http.StatusServiceUnavailable {
+			typ = contract.TypeUnavailable
+		}
+		return errors.Join(err, contract.WriteError(w, r, contract.NewErrorBuilder().
+			Type(typ).Message("health response could not be encoded").Build()))
+	}
+
 	w.Header().Set(contract.HeaderContentType, contract.ContentTypeJSON)
 	w.WriteHeader(status)
-	return json.NewEncoder(w).Encode(resp)
+	n, err := w.Write(body.Bytes())
+	if err == nil && n != body.Len() {
+		return io.ErrShortWrite
+	}
+	return err
 }
 
 // RuntimeInfo contains runtime diagnostics for development and debug endpoints.

@@ -1703,3 +1703,32 @@ func TestGzipWriteFailureCommitsAtMostOnce(t *testing.T) {
 		t.Fatalf("commits=%d status=%d", dst.finals, dst.Code)
 	}
 }
+
+func TestSSERequestOptOutAndVaryAcrossAcceptValues(t *testing.T) {
+	h := Middleware(DefaultConfig())(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/plain")
+		_, _ = io.WriteString(w, "fixture")
+	}))
+	for _, tc := range []struct {
+		name     string
+		accept   []string
+		encoding string
+	}{
+		{"first field opts out", []string{"text/event-stream", "text/plain"}, ""},
+		{"later field", []string{"text/plain", "text/event-stream"}, "gzip"},
+		{"case differs", []string{"TEXT/EVENT-STREAM"}, "gzip"},
+		{"explicit weight", []string{"text/event-stream;q=0"}, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "/", nil)
+			req.Header["Accept"] = tc.accept
+			req.Header.Set("Accept-Encoding", "gzip")
+			rec := httptest.NewRecorder()
+			h.ServeHTTP(rec, req)
+			if rec.Header().Get("Content-Encoding") != tc.encoding ||
+				countHeaderToken(rec.Header().Values("Vary"), "Accept") != 1 {
+				t.Fatalf("headers=%v", rec.Header())
+			}
+		})
+	}
+}

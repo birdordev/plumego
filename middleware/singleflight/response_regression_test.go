@@ -344,9 +344,15 @@ func TestCoalescedResponsesApplyHeaderChangesToEachWaiter(t *testing.T) {
 		waiter.Header().Set("Vary", "Accept-Language")
 		waiter.Header().Set("X-Waiter-Only", "kept")
 
+		second := httptest.NewRecorder()
+		second.Header().Set("X-Request-ID", "second-id")
+		second.Header().Set("Vary", "X-Fixture")
+
 		go handler.ServeHTTP(leader, httptest.NewRequest(http.MethodGet, "/", nil))
 		synctest.Wait()
 		go handler.ServeHTTP(waiter, httptest.NewRequest(http.MethodGet, "/", nil))
+		synctest.Wait()
+		go handler.ServeHTTP(second, httptest.NewRequest(http.MethodGet, "/", nil))
 		synctest.Wait()
 		close(release)
 		synctest.Wait()
@@ -357,6 +363,7 @@ func TestCoalescedResponsesApplyHeaderChangesToEachWaiter(t *testing.T) {
 		}{
 			{leader, "leader-id", "Origin,Accept-Encoding"},
 			{waiter, "waiter-id", "Accept-Language,Accept-Encoding"},
+			{second, "second-id", "X-Fixture,Accept-Encoding"},
 		} {
 			header := tc.w.Result().Header
 			if header.Get("X-Request-ID") != tc.id || strings.Join(header.Values("Vary"), ",") != tc.vary ||

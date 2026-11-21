@@ -160,11 +160,11 @@ func Middleware(cfg Config) mw.Middleware {
 				panic(result.panicValue)
 			}
 			if !result.returned {
-				internaltransport.WriteTransportError(w, r, http.StatusInternalServerError, contract.CodeInternalError, "handler exited before completing the response", nil)
+				writeTimeoutError(w, r, http.StatusInternalServerError, contract.CodeInternalError, "handler exited before completing the response")
 				return
 			}
 			if tw.Overflowed() {
-				internaltransport.WriteTransportError(w, r, http.StatusInternalServerError, contract.CodeInternalError, "response exceeded buffer limit", nil)
+				writeTimeoutError(w, r, http.StatusInternalServerError, contract.CodeInternalError, "response exceeded buffer limit")
 				return
 			}
 			tw.writeTo(w, r)
@@ -174,8 +174,19 @@ func Middleware(cfg Config) mw.Middleware {
 
 func writeContextError(w http.ResponseWriter, r *http.Request, ctx context.Context) {
 	if ctx.Err() == context.DeadlineExceeded {
-		internaltransport.WriteTransportError(w, r, http.StatusGatewayTimeout, contract.CodeTimeout, "request timed out", nil)
+		writeTimeoutError(w, r, http.StatusGatewayTimeout, contract.CodeTimeout, "request timed out")
 	}
+}
+
+func writeTimeoutError(w http.ResponseWriter, r *http.Request, status int, code, message string) {
+	internaltransport.RemoveResponseFields(w.Header(), func(name string) bool {
+		switch name {
+		case "Content-Length", "Content-Encoding", "Content-Range", "Transfer-Encoding", "Etag", "Last-Modified":
+			return true
+		}
+		return internaltransport.IsRepresentationDigestField(name)
+	})
+	internaltransport.WriteTransportError(w, r, status, code, message, nil)
 }
 
 func (cfg Config) deliverTimeoutResult(ctx context.Context, done chan<- timeoutHandlerResult, responseDone <-chan struct{}, r *http.Request, result timeoutHandlerResult) {
@@ -267,7 +278,7 @@ func (w *timeoutResponseWriter) Write(p []byte) (int, error) {
 
 func (w *timeoutResponseWriter) writeTo(dst http.ResponseWriter, r *http.Request) {
 	if w.replayLimitExceeded {
-		internaltransport.WriteTransportError(dst, r, http.StatusInternalServerError, contract.CodeInternalError, "response too large for timeout buffering", nil)
+		writeTimeoutError(dst, r, http.StatusInternalServerError, contract.CodeInternalError, "response too large for timeout buffering")
 		return
 	}
 

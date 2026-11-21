@@ -163,10 +163,15 @@ func TestAuthenticateMiddlewareUsesEnrichedRequestContext(t *testing.T) {
 		if got, _ := r.Context().Value(contextMarkerKey{}).(string); got != "enriched" {
 			t.Fatalf("expected enriched request context")
 		}
+		if r.Context().Err() != context.Canceled || contract.RequestIDFromContext(r.Context()) != "original-id" {
+			t.Error("enriched context dropped caller cancellation or request ID")
+		}
 		w.WriteHeader(http.StatusOK)
 	}))
 
-	req := httptest.NewRequest(http.MethodGet, "/secure", nil)
+	ctx, cancel := context.WithCancel(contract.WithRequestID(t.Context(), "original-id"))
+	cancel()
+	req := httptest.NewRequest(http.MethodGet, "/secure", nil).WithContext(ctx)
 	rec := httptest.NewRecorder()
 
 	handler.ServeHTTP(rec, req)

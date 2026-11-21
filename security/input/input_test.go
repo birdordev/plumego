@@ -477,3 +477,48 @@ func TestHasStrictDecimalURLPortDoubleColonHost(t *testing.T) {
 		t.Fatal("expected false for bare IPv6 without brackets")
 	}
 }
+
+func TestValidatePhoneDigitCountBounds(t *testing.T) {
+	for _, tc := range []struct {
+		value string
+		want  bool
+	}{
+		{"123-456", false}, {"+1 (234) 567", true},
+		{"123 456 789 012 345", true}, {"123 456 789 012 3456", false},
+		{"123+4567", false}, {"１２３４５６７", false},
+	} {
+		if got := ValidatePhone(tc.value); got != tc.want {
+			t.Errorf("ValidatePhone(%q) = %t, want %t", tc.value, got, tc.want)
+		}
+	}
+}
+
+func BenchmarkValidatePhoneDigitCount(b *testing.B) {
+	for _, value := range []string{"1234567", "1234567 (1234567)"} {
+		b.Run(value, func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				if !ValidatePhone(value) {
+					b.Fatal("valid number rejected")
+				}
+			}
+		})
+	}
+}
+
+func TestValidateEmailLocalAndDomainLabelByteLimits(t *testing.T) {
+	for _, tc := range []struct {
+		local, label int
+		want         bool
+	}{
+		{1, 1, true}, {64, 63, true}, {65, 63, false}, {64, 64, false},
+	} {
+		value := strings.Repeat("a", tc.local) + "@" + strings.Repeat("b", tc.label) + ".test"
+		if got := ValidateEmail(value); got != tc.want {
+			t.Errorf("local=%d label=%d valid=%t want=%t", tc.local, tc.label, got, tc.want)
+		}
+	}
+	if ValidateEmail("person@éxample.test") {
+		t.Error("non-ASCII domain accepted")
+	}
+}

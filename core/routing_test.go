@@ -579,3 +579,40 @@ func TestRouteOptionsCanInspectAndPrepareApp(t *testing.T) {
 		}
 	}
 }
+
+func TestRouteOptionCannotPublishAfterFailedBuildFreezesRouter(t *testing.T) {
+	app := New(DefaultConfig(), AppDependencies{})
+	builds := 0
+	if err := app.Use(func(h http.Handler) http.Handler {
+		builds++
+		if builds == 1 {
+			return nil
+		}
+		return h
+	}); err != nil {
+		t.Fatal(err)
+	}
+	entered, release := make(chan struct{}), make(chan struct{})
+	result := make(chan error, 1)
+	go func() {
+		result <- app.AddRoute(http.MethodGet, "/late", http.NotFoundHandler(), func(meta *router.RouteMeta) {
+			close(entered)
+			<-release
+			router.WithRouteName("late")(meta)
+		})
+	}()
+	<-entered
+	if err := app.Prepare(); err == nil {
+		t.Error("first Prepare succeeded")
+	}
+	close(release)
+	if err := <-result; err == nil {
+		t.Fatal("frozen router accepted a late route")
+	}
+	if err := app.Prepare(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := app.URL("late"); err == nil || len(app.Routes()) != 0 {
+		t.Fatalf("late route published: %v", app.Routes())
+	}
+}

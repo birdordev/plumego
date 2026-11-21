@@ -2,6 +2,7 @@ package contract
 
 import (
 	"context"
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
@@ -238,5 +239,29 @@ func TestTraceContextReadPatternRequiresValid(t *testing.T) {
 	})
 	if got, ok := TraceContextFromContext(valid); !ok || !got.Valid() {
 		t.Fatalf("expected valid trace context after caller-provided valid ids, got %+v", got)
+	}
+}
+
+func BenchmarkTraceBaggageCopies(b *testing.B) {
+	for _, size := range []int{2, 64} {
+		b.Run(fmt.Sprint(size), func(b *testing.B) {
+			baggage := make(map[string]string, size)
+			for i := range size {
+				baggage[fmt.Sprint(i)] = "fixture"
+			}
+			trace := TraceContext{Baggage: baggage}
+			b.ReportAllocs()
+			for b.Loop() {
+				ctx := WithTraceContext(b.Context(), trace)
+				copied, _ := TraceContextFromContext(ctx)
+				if len(copied.Baggage) != size {
+					b.Fatal("incomplete copy")
+				}
+				copied.Baggage["0"] = "new"
+				if baggage["0"] != "fixture" {
+					b.Fatal("copy shared input baggage")
+				}
+			}
+		})
 	}
 }

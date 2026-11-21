@@ -1,6 +1,7 @@
 package contract
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -93,5 +94,25 @@ func TestOversizedRequestIDIsNotEchoed(t *testing.T) {
 	}
 	if strings.Contains(rec.Body.String(), strings.Repeat("b", maxRequestIDLength+1)) {
 		t.Fatalf("expected oversized error request id not to be echoed, got %s", rec.Body.String())
+	}
+}
+
+func TestRequestIDMultibyteBoundaryIsUsedByResponse(t *testing.T) {
+	base := WithRequestID(t.Context(), "previous")
+	for _, size := range []int{63, 64, 65} {
+		id := strings.Repeat("é", size)
+		want := id
+		if size == 65 {
+			want = "previous"
+		}
+		req := httptest.NewRequest(http.MethodGet, "/", nil).WithContext(WithRequestID(base, id))
+		w := httptest.NewRecorder()
+		if err := WriteResponse(w, req, http.StatusOK, nil, nil); err != nil {
+			t.Fatal(err)
+		}
+		var decoded response
+		if err := json.Unmarshal(w.Body.Bytes(), &decoded); err != nil || decoded.RequestID != want {
+			t.Fatalf("length=%d request ID=%q error=%v", len(id), decoded.RequestID, err)
+		}
 	}
 }

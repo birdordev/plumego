@@ -334,12 +334,18 @@ func (p Policy) Validate() error {
 	if p.StrictTransportSecurity != nil && p.StrictTransportSecurity.MaxAge < 0 {
 		errs = append(errs, fmt.Errorf("%w: Strict-Transport-Security max age cannot be negative", ErrInvalidPolicy))
 	}
+	seen := make(map[string]struct{}, len(p.Additional))
 	for name, value := range p.Additional {
 		if !input.IsHeaderName(name) {
 			errs = append(errs, fmt.Errorf("%w: additional header %q has unsafe name", ErrInvalidPolicy, name))
 			continue
 		}
-		checkValue(http.CanonicalHeaderKey(name), value)
+		canonical := http.CanonicalHeaderKey(name)
+		if _, exists := seen[canonical]; exists {
+			errs = append(errs, fmt.Errorf("%w: additional header %q is configured more than once", ErrInvalidPolicy, canonical))
+		}
+		seen[canonical] = struct{}{}
+		checkValue(canonical, value)
 	}
 
 	return errors.Join(errs...)

@@ -26,7 +26,7 @@ func WithGenerator(fn func() string) Option {
 }
 
 // WithRequestHeader controls whether the selected canonical request ID is
-// written to the request header before calling the next handler. It is enabled
+// written to a copy of the request header before calling the next handler. It is enabled
 // by default. Disabling it leaves the incoming request header as received;
 // the request context and response header still receive the selected ID.
 func WithRequestHeader(enabled bool) Option {

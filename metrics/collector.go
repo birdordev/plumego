@@ -101,6 +101,8 @@ type Resetter interface {
 
 // CollectorStats provides a contract for collector statistics payloads.
 //
+// Counts supplied by collectors must be nonnegative.
+//
 // Mandatory fields for all collectors:
 //   - TotalRecords: total number of records processed by the collector.
 //   - ErrorRecords: number of records classified as errors.

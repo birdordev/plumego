@@ -595,3 +595,34 @@ func TestStaticFSSequentialConditionalRequestContract(t *testing.T) {
 		})
 	}
 }
+
+type interruptedStaticRead struct {
+	*closeCountingStaticFile
+	prefix string
+}
+
+func (f *interruptedStaticRead) Seek(int64, int) (int64, error) {
+	return 0, errors.New("not seekable")
+}
+
+func (f *interruptedStaticRead) Read(dst []byte) (int, error) {
+	return copy(dst, f.prefix), errors.New("interrupted read")
+}
+
+func TestStaticSequentialReadErrorDoesNotAppendAnotherResponse(t *testing.T) {
+	for _, prefix := range []string{"", "par"} {
+		file, err := http.FS(fstest.MapFS{"file.txt": {Data: []byte("partial")}}).Open("file.txt")
+		if err != nil {
+			t.Fatal(err)
+		}
+		fixture := &interruptedStaticRead{closeCountingStaticFile: &closeCountingStaticFile{File: file}, prefix: prefix}
+		r := NewRouter()
+		if err := r.StaticFS("/files", staticOpenResult{file: fixture}); err != nil {
+			t.Fatal(err)
+		}
+		w := serveRouter(r, http.MethodGet, "/files/file.txt")
+		if w.Code != http.StatusOK || w.Body.String() != prefix || fixture.closes != 1 {
+			t.Fatalf("status=%d body=%q closes=%d", w.Code, w.Body.String(), fixture.closes)
+		}
+	}
+}

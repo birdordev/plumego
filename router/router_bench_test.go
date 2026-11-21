@@ -381,3 +381,37 @@ func BenchmarkRouteCachePathLength(b *testing.B) {
 		}
 	}
 }
+
+func BenchmarkFrozenAllowLookup(b *testing.B) {
+	for _, methods := range []int{2, 16, 64} {
+		b.Run(fmt.Sprint(methods), func(b *testing.B) {
+			r := NewRouter(WithMethodNotAllowed(true))
+			for i := range methods {
+				name := fmt.Sprintf("CUSTOM%02d", i)
+				if err := r.AddRoute(name, "/docs/fixed/dead", http.NotFoundHandler()); err != nil {
+					b.Fatal(err)
+				}
+				if err := r.AddRoute(name, "/docs/:id/live", http.NotFoundHandler()); err != nil {
+					b.Fatal(err)
+				}
+			}
+			r.Freeze()
+			miss := httptest.NewRecorder()
+			r.ServeHTTP(miss, httptest.NewRequest(http.MethodGet, "/other", nil))
+			if miss.Code != http.StatusNotFound {
+				b.Fatal(miss.Code)
+			}
+			req := httptest.NewRequest(http.MethodGet, "/docs/fixed/live", nil)
+			b.ReportAllocs()
+			for b.Loop() {
+				w := httptest.NewRecorder()
+				r.ServeHTTP(w, req)
+				allow := w.Header().Get("Allow")
+				if w.Code != http.StatusMethodNotAllowed || strings.Count(allow, ",")+1 != methods ||
+					!strings.HasPrefix(allow, "CUSTOM00, CUSTOM01") {
+					b.Fatalf("status=%d allow=%q", w.Code, allow)
+				}
+			}
+		})
+	}
+}

@@ -720,3 +720,23 @@ func TestWriteResponseBodylessFramingBeforeTransport(t *testing.T) {
 		}
 	}
 }
+
+func TestBodylessResponseKeepsUnrelatedHeaders(t *testing.T) {
+	for _, status := range []int{http.StatusNoContent, http.StatusResetContent} {
+		w := &countingResponseWriter{ResponseRecorder: httptest.NewRecorder()}
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		w.Header().Set("Content-Length", "10")
+		w.Header().Set("Transfer-Encoding", "chunked")
+		w.Header().Set(RequestIDHeader, "request-123")
+		w.Header().Set("Cache-Control", "no-store")
+		w.Header().Set("X-App", "example")
+		if err := WriteResponse(w, req, status, nil, nil); err != nil {
+			t.Fatal(err)
+		}
+		h := w.Result().Header
+		if h.Get(RequestIDHeader) != "request-123" || h.Get("Cache-Control") != "no-store" ||
+			h.Get("X-App") != "example" || h.Get("Transfer-Encoding") != "" || w.headerWrites != 1 || w.bodyWrites != 0 {
+			t.Fatalf("status=%d headers=%v writes=%d/%d", status, h, w.headerWrites, w.bodyWrites)
+		}
+	}
+}

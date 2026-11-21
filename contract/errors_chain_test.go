@@ -211,3 +211,15 @@ func TestAsAPIErrorFindsPointerErrors(t *testing.T) {
 		t.Fatalf("joined error = %v, %v, want pointer match", got, ok)
 	}
 }
+
+func TestAsAPIErrorSkipsTypedNilBranch(t *testing.T) {
+	var absent *APIError
+	want := NewErrorBuilder().Type(TypeNotFound).Build()
+	if _, ok := AsAPIError(fmt.Errorf("wrapped: %w", absent)); ok {
+		t.Fatal("typed nil matched")
+	}
+	got, ok := AsAPIError(errors.Join(absent, want))
+	if !ok || got.Code() != want.Code() {
+		t.Fatalf("error=%v ok=%t", got, ok)
+	}
+}

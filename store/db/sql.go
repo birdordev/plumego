@@ -163,7 +163,7 @@ func OpenWith(config Config, open OpenFunc) (*sql.DB, error) {
 				err = errors.Join(err, fmt.Errorf("close partially opened database: %w", closeErr))
 			}
 		}
-		return nil, fmt.Errorf("%w: %w", ErrConnectionFailed, err)
+		return nil, connectionOpenError{cause: err}
 	}
 	if db == nil {
 		return nil, fmt.Errorf("%w: open function returned nil database", ErrConnectionFailed)
@@ -173,6 +173,14 @@ func OpenWith(config Config, open OpenFunc) (*sql.DB, error) {
 
 	return db, nil
 }
+
+// connectionOpenError keeps default diagnostics independent of driver-specific
+// error text while preserving classification for callers using the error chain.
+type connectionOpenError struct{ cause error }
+
+func (e connectionOpenError) Error() string { return ErrConnectionFailed.Error() }
+
+func (e connectionOpenError) Unwrap() []error { return []error{ErrConnectionFailed, e.cause} }
 
 // ApplyConfig updates pooling and lifetime settings on an existing sql.DB.
 // Zero values are applied because database/sql treats them as explicit reset or

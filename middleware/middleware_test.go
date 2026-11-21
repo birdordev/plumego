@@ -190,3 +190,15 @@ func benchName(n int) string {
 		return "Nmw"
 	}
 }
+
+func TestChainBuildRejectsNilMiddlewareBeforeCallingBuilders(t *testing.T) {
+	builder := func(h http.Handler) http.Handler {
+		t.Error("builder called for invalid chain")
+		return h
+	}
+	for _, chain := range []*Chain{NewChain(builder, nil, builder), NewChain(builder).Use(nil)} {
+		if got := chain.Build(http.NotFoundHandler()); got != nil {
+			t.Fatal("invalid chain returned a handler")
+		}
+	}
+}

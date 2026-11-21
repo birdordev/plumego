@@ -1858,3 +1858,37 @@ func TestSnapshotReadBudget(t *testing.T) {
 		t.Fatalf("read above limit = %q, %v", data, err)
 	}
 }
+
+func TestStatsDuringConcurrentReadsAndAfterCompletion(t *testing.T) {
+	kv, err := NewKVStore(DefaultConfig(t.TempDir()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer kv.Close()
+	if err := kv.Set("found", []byte("value"), 0); err != nil {
+		t.Fatal(err)
+	}
+	const total = 128
+	start := make(chan struct{})
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		<-start
+		for range total {
+			_, _ = kv.Get("found")
+			_, _ = kv.Get("missing")
+		}
+	}()
+	close(start)
+	for range total {
+		stats, err := kv.GetStatsContext(t.Context())
+		if err != nil || stats.Hits > total || stats.Misses > total {
+			t.Errorf("stats=%+v error=%v", stats, err)
+		}
+	}
+	<-done
+	stats, err := kv.GetStatsContext(t.Context())
+	if err != nil || stats.Hits != total || stats.Misses != total {
+		t.Fatalf("final stats=%+v error=%v", stats, err)
+	}
+}

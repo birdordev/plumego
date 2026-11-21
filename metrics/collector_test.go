@@ -229,3 +229,12 @@ func TestBaseMetricsCollectorNilReceiverNoops(t *testing.T) {
 		t.Fatalf("expected nil receiver stats to include initialized name breakdown")
 	}
 }
+
+func TestNewHTTPRecordOwnsLabelsForEachObservation(t *testing.T) {
+	first := NewHTTPRecord("GET", "/first", 200, time.Second)
+	second := NewHTTPRecord("POST", "/second", 500, 250*time.Millisecond)
+	first.Labels[labelStatus] = "modified"
+	if second.Labels[labelStatus] != "500" || second.Value != 0.25 || second.Timestamp.IsZero() {
+		t.Fatalf("second record = %+v", second)
+	}
+}

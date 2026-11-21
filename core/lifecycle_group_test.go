@@ -647,3 +647,28 @@ func TestLifecycleGroupRetainsPendingStopAfterGoexit(t *testing.T) {
 		t.Fatalf("cleanup order = %v", calls)
 	}
 }
+
+func TestReadyPanicRestoresGroupBeforeStop(t *testing.T) {
+	var order []string
+	g := NewLifecycleGroup().
+		Add("first", Component{OnStop: func(context.Context) error { order = append(order, "first"); return nil }}).
+		Add("second", Component{OnReady: func(context.Context) error { panic("probe") },
+			OnStop: func(context.Context) error { order = append(order, "second"); return nil }})
+	if err := g.Start(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	func() {
+		defer func() {
+			if got := recover(); got != "probe" {
+				t.Errorf("panic=%v", got)
+			}
+		}()
+		_ = g.Ready(t.Context())
+	}()
+	if err := g.Stop(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(order, []string{"second", "first"}) || g.Ready(t.Context()) == nil {
+		t.Fatalf("cleanup=%v phase=%v", order, g.phase)
+	}
+}

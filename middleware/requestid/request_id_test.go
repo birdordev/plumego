@@ -174,3 +174,31 @@ func TestAttachRequestIDSkipsBlankID(t *testing.T) {
 		t.Fatal("expected blank request id not to be written")
 	}
 }
+
+func TestAttachRequestIDDetachesHeadersWhenWriting(t *testing.T) {
+	for _, withHeaders := range []bool{false, true} {
+		for _, enabled := range []bool{false, true} {
+			req := httptest.NewRequest(http.MethodGet, "/", nil)
+			req.Header = nil
+			if withHeaders {
+				req.Header = http.Header{"X-Fixture": {"original"}}
+			}
+			out := AttachRequestID(nil, req, "test-id", enabled)
+			if req.Header.Get(contract.RequestIDHeader) != "" ||
+				(!withHeaders && req.Header != nil) || contract.RequestIDFromContext(out.Context()) != "test-id" {
+				t.Fatalf("original=%v downstream=%v", req.Header, out.Header)
+			}
+			if enabled {
+				if out.Header.Get(contract.RequestIDHeader) != "test-id" {
+					t.Fatalf("downstream headers: %v", out.Header)
+				}
+				out.Header.Set("X-Fixture", "changed")
+				if req.Header.Get("X-Fixture") == "changed" {
+					t.Fatal("downstream header mutated original")
+				}
+			} else if out.Header.Get(contract.RequestIDHeader) != "" {
+				t.Fatal("disabled downstream header was written")
+			}
+		}
+	}
+}

@@ -199,3 +199,14 @@ func TestReadinessEmptyComponentsWireAndClone(t *testing.T) {
 		t.Fatal("clone changed original status")
 	}
 }
+
+func TestHealthDurationUsesSignedNanoseconds(t *testing.T) {
+	for _, duration := range []time.Duration{0, time.Millisecond, -time.Millisecond} {
+		fields := marshalObject(t, HealthStatus{Duration: duration})
+		if duration == 0 {
+			assertFieldAbsent(t, fields, "duration")
+		} else {
+			assertNumberField(t, fields, "duration", float64(duration.Nanoseconds()))
+		}
+	}
+}

@@ -3,6 +3,7 @@ package headers
 import (
 	"crypto/tls"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -676,5 +677,40 @@ func TestCompiledPolicyDetachesAdditionalHeaders(t *testing.T) {
 	}
 	if rec.Header().Get("X-Custom") != "original" || rec.Header().Get("X-Frame-Options") != policy.FrameOptions {
 		t.Fatalf("unexpected compiled policy headers: %v", rec.Header())
+	}
+}
+
+func TestAdditionalHeaderNamesMustBeUniqueAfterCanonicalization(t *testing.T) {
+	p := DefaultPolicy()
+	p.Additional = map[string]string{"X-Fixture": "first", "x-fixture": "second"}
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	w := httptest.NewRecorder()
+	if err := p.Compile().ApplyChecked(w, req); !errors.Is(err, ErrInvalidPolicy) || len(w.Header()) != 0 {
+		t.Fatalf("error=%v headers=%v", err, w.Header())
+	}
+	delete(p.Additional, "X-Fixture")
+	if err := p.Compile().ApplyChecked(w, req); err != nil || w.Header().Get("X-Fixture") != "second" {
+		t.Fatalf("error=%v headers=%v", err, w.Header())
+	}
+}
+
+func BenchmarkCompiledHeaderValidation(b *testing.B) {
+	for _, count := range []int{0, 32} {
+		b.Run(fmt.Sprint(count), func(b *testing.B) {
+			policy := DefaultPolicy()
+			policy.Additional = make(map[string]string, count)
+			for i := range count {
+				policy.Additional[fmt.Sprintf("X-Fixture-%d", i)] = "value"
+			}
+			compiled := policy.Compile()
+			req := httptest.NewRequest(http.MethodGet, "https://example.test/", nil)
+			w := httptest.NewRecorder()
+			b.ReportAllocs()
+			for b.Loop() {
+				if err := compiled.ApplyChecked(w, req); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
 	}
 }

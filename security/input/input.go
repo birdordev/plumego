@@ -414,11 +414,14 @@ func ValidatePhone(phone string) bool {
 		return false
 	}
 
-	digits := make([]rune, 0, len(phone))
+	digits := 0
 	for i, r := range phone {
 		switch {
 		case r >= '0' && r <= '9':
-			digits = append(digits, r)
+			digits++
+			if digits > 15 {
+				return false
+			}
 		case r == '+':
 			if i != 0 {
 				return false
@@ -429,7 +432,7 @@ func ValidatePhone(phone string) bool {
 		}
 	}
 
-	return len(digits) >= 7 && len(digits) <= 15
+	return digits >= 7
 }
 
 // BestEffortSanitizeHTML applies a lossy, best-effort HTML cleanup pass.

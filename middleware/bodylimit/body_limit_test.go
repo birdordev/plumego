@@ -3,6 +3,7 @@ package bodylimit
 import (
 	"bufio"
 	"context"
+	"errors"
 	"io"
 	"net"
 	"net/http"
@@ -683,5 +684,36 @@ func TestBodyLimitEnforcesBytesReadIndependentlyOfDeclaredLength(t *testing.T) {
 				t.Fatalf("status=%d calls=%d, want %d and one call", dst.Code, calls, tc.status)
 			}
 		})
+	}
+}
+
+type failingBody struct {
+	err, closeErr error
+	closeCalls    int
+}
+
+func (b *failingBody) Read([]byte) (int, error) { return 0, b.err }
+
+func (b *failingBody) Close() error {
+	b.closeCalls++
+	return b.closeErr
+}
+
+func TestBodyLimitPreservesUnderlyingErrorsAndClose(t *testing.T) {
+	body := &failingBody{err: io.ErrUnexpectedEOF, closeErr: io.ErrClosedPipe}
+	handler := Middleware(Config{MaxBytes: 8})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if _, err := io.ReadAll(r.Body); !errors.Is(err, body.err) {
+			t.Errorf("read error = %v", err)
+		}
+		if err := r.Body.Close(); !errors.Is(err, body.closeErr) {
+			t.Errorf("close error = %v", err)
+		}
+		w.WriteHeader(http.StatusAccepted)
+	}))
+	req := httptest.NewRequest(http.MethodPost, "/", body)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusAccepted || body.closeCalls != 1 {
+		t.Fatalf("status=%d closes=%d", rec.Code, body.closeCalls)
 	}
 }

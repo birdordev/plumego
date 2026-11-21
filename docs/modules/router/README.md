@@ -229,9 +229,12 @@ When the handler leaves the content type unspecified, detection can use up to
 Final headers are snapshotted at commitment; later header edits do not replace
 them. `ReadFrom` counts and discards body bytes through the same path; explicit
 flush commits the selected status without inferring a buffered content length.
-Before a final status is selected, an unsupported flush leaves the HEAD response
-open for the handler's fallback, including through a writer that reports the
-capability result using `FlushError`.
+When a writer has no flush capability, HEAD leaves its response open for
+fallback. A writer that implements `FlushError` can still decline the operation.
+Before HEAD selects a final status, this leaves the response open. After a
+status is selected, HEAD must send it before asking that writer to flush.
+A runtime refusal at that point cannot restore automatic content length or
+content type detection.
 Declared trailers and `http.TrailerPrefix` entries skip automatic length
 inference. An explicit `Content-Length` takes precedence.
 

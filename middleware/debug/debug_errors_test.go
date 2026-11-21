@@ -335,7 +335,7 @@ func TestDebugErrorsCaptureLimitPassesThroughOriginalResponse(t *testing.T) {
 	}
 }
 
-func TestDebugErrorsIncludeBodyPreviewStillTruncates(t *testing.T) {
+func TestDebugErrorsIncludeBodyReportsSizeWithoutText(t *testing.T) {
 	mw := Middleware(Config{
 		IncludeBody:  true,
 		MaxBodyBytes: 4096,
@@ -363,15 +363,8 @@ func TestDebugErrorsIncludeBodyPreviewStillTruncates(t *testing.T) {
 	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
-	preview, ok := payload.Error.Details["response_preview"].(string)
-	if !ok {
-		t.Fatalf("expected response preview detail, got %+v", payload.Error.Details)
-	}
-	if len(preview) != 1027 {
-		t.Fatalf("preview length = %d, want 1027", len(preview))
-	}
-	if !strings.HasSuffix(preview, "...") {
-		t.Fatalf("expected truncated preview suffix, got %q", preview[len(preview)-8:])
+	if payload.Error.Details["response_body_bytes"] != float64(2048) || strings.Contains(resp.Body.String(), strings.Repeat("x", 16)) {
+		t.Fatalf("unexpected body metadata: %+v", payload.Error.Details)
 	}
 }
 
@@ -916,24 +909,6 @@ func TestDebugInitialFlushCommitsHeadersAndPassesThrough(t *testing.T) {
 	}
 }
 
-// TestTruncateBody_NoTruncation covers the len(body) <= limit branch in truncateBody.
-func TestTruncateBody_NoTruncation(t *testing.T) {
-	got := truncateBody([]byte("hello"), 10)
-	if got != "hello" {
-		t.Fatalf("truncateBody = %q, want hello", got)
-	}
-}
-
-// TestTruncateBody_ZeroLimit covers the limit <= 0 branch in truncateBody.
-func TestTruncateBody_ZeroLimit(t *testing.T) {
-	got := truncateBody([]byte("hello"), 0)
-	if got != "hello" {
-		t.Fatalf("truncateBody with zero limit = %q, want hello", got)
-	}
-}
-
-// TestDebugErrorsHijackWithBodyCommitsPassthrough covers the Hijack path where
-// body.Len() > 0 → commitPassthrough is called first.
 func TestDebugErrorsHijackWithBodyCommitsPassthrough(t *testing.T) {
 	mw := Middleware(DefaultConfig())
 	h := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1193,6 +1168,28 @@ func TestDebugErrorCodesMatchContract(t *testing.T) {
 		}
 		if rec.Code != meta.Status || payload.Error.Type != typ || payload.Error.Code != meta.Code {
 			t.Fatalf("type %s: status = %d, error = %+v", typ, rec.Code, payload.Error)
+		}
+	}
+}
+
+func TestDebugRequestDetailsUseAvailableRoutePattern(t *testing.T) {
+	for _, pattern := range []string{"", "/items/:id"} {
+		req := httptest.NewRequest(http.MethodGet, "/items/fixture", nil)
+		ctx := contract.WithRequestID(req.Context(), "request-id")
+		ctx = contract.WithRequestContext(ctx, contract.RequestContext{RoutePattern: pattern})
+		w := httptest.NewRecorder()
+		Middleware(DefaultConfig())(http.NotFoundHandler()).ServeHTTP(w, req.WithContext(ctx))
+		var payload struct {
+			RequestID string `json:"request_id"`
+			Error     struct{ Details map[string]any }
+		}
+		want := pattern
+		if want == "" {
+			want = "/items/fixture"
+		}
+		if err := json.Unmarshal(w.Body.Bytes(), &payload); err != nil ||
+			payload.RequestID != "request-id" || payload.Error.Details["path"] != want {
+			t.Fatalf("pattern=%q response=%q error=%v", pattern, w.Body.String(), err)
 		}
 	}
 }

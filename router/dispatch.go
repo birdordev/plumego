@@ -126,6 +126,8 @@ func (w *noBodyWriter) FlushError() error {
 				}
 				return err
 			}
+			// A nonempty status must reach the destination before it flushes.
+			// FlushError provides no separate probe or rollback for that commit.
 			w.commit(false)
 			return writer.FlushError()
 		case http.Flusher:

@@ -405,3 +405,27 @@ func TestTimeoutReplayWriteFailureDoesNotCommitAgain(t *testing.T) {
 		t.Fatalf("status=%d writes=%d body=%q", rec.Code, dst.writes, rec.Body.String())
 	}
 }
+
+func TestTimeoutErrorPreservesMetadataAndDropsStaleRepresentation(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		w := httptest.NewRecorder()
+		w.Header().Set("Content-Length", "1")
+		w.Header().Set("Content-Encoding", "gzip")
+		w.Header().Set("ETag", `"original"`)
+		w.Header().Set("X-Trace", "request-fixture")
+		w.Header().Set("Cache-Control", "no-store")
+		done := make(chan struct{})
+		h := Middleware(Config{Timeout: time.Millisecond})(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+			defer close(done)
+			<-r.Context().Done()
+		}))
+		h.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/", nil))
+		<-done
+		hdr := w.Result().Header
+		if w.Code != http.StatusGatewayTimeout || hdr.Get("Content-Type") != contract.ContentTypeJSON ||
+			hdr.Get("Content-Length") != "" || hdr.Get("Content-Encoding") != "" || hdr.Get("ETag") != "" ||
+			hdr.Get("X-Trace") != "request-fixture" || hdr.Get("Cache-Control") != "no-store" {
+			t.Fatalf("status=%d header=%v", w.Code, hdr)
+		}
+	})
+}

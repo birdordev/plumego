@@ -232,3 +232,61 @@ func TestCloseTracksFinalPendingWriteInStats(t *testing.T) {
 		t.Fatalf("before=%+v after=%+v", before, after)
 	}
 }
+
+func TestExpiredAppendFailureDropsExpiredItemAndAllowsRetry(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		c, err := NewMemoryCacheWithConfig(Config{MaxMemoryUsage: 2, CleanupInterval: time.Hour})
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer c.Close()
+		if err := c.Set(t.Context(), "key", []byte("ab"), time.Second); err != nil {
+			t.Fatal(err)
+		}
+		time.Sleep(2 * time.Second)
+		if err := c.Append(t.Context(), "key", []byte("too long")); !errors.Is(err, ErrCacheFull) {
+			t.Fatalf("Append=%v", err)
+		}
+		if stats := c.Stats(); stats.Entries != 0 || stats.MemoryUsage != 0 {
+			t.Fatalf("expired value still tracked: %+v", stats)
+		}
+		if err := c.Append(t.Context(), "key", []byte("x")); err != nil {
+			t.Fatal(err)
+		}
+		if got, err := c.Get(t.Context(), "key"); err != nil || string(got) != "x" {
+			t.Fatalf("Get=%q, %v", got, err)
+		}
+	})
+}
+
+func TestClearDoesNotInvalidateReaderCopy(t *testing.T) {
+	c := NewMemoryCache()
+	defer c.Close()
+	if err := c.Set(t.Context(), "key", []byte("value"), 0); err != nil {
+		t.Fatal(err)
+	}
+	copied := make(chan []byte, 1)
+	resume := make(chan struct{})
+	finished := make(chan struct{})
+	go func() {
+		defer close(finished)
+		got, err := c.Get(t.Context(), "key")
+		if err != nil {
+			t.Error(err)
+		}
+		copied <- got
+		<-resume
+	}()
+	got := <-copied
+	if err := c.Clear(t.Context()); err != nil {
+		t.Error(err)
+	}
+	close(resume)
+	<-finished
+	if string(got) != "value" || c.Stats().Entries != 0 {
+		t.Fatalf("copy=%q stats=%+v", got, c.Stats())
+	}
+	if _, err := c.Get(t.Context(), "key"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("after Clear: %v", err)
+	}
+}

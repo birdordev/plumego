@@ -31,7 +31,13 @@
 ## Stable behavior
 
 - `NewLogger` is the canonical constructor for text, JSON, and discard logging.
-- `LoggerConfig.Fields` are copied into each logger at construction.
+- A configured output writer is called synchronously and shares a serialization
+  lock with derived loggers. Send diagnostics from that writer to a separate
+  sink. Calling the owning logger or a derived logger during `Write` blocks
+  on the same lock.
+- Logger configuration uses the first argument. `LoggerConfig.Fields` and
+  `WithFields` copy the top-level map; callers own nested objects and must
+  keep them stable while a log entry is being formatted.
 - Per-entry fields override logger fields.
 - When a log call receives multiple `Fields` arguments, they are merged in
   order and later maps override earlier maps.

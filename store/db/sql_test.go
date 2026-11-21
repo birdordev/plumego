@@ -1437,3 +1437,14 @@ func TestScanRowsClosesWithoutAdvancingResultSets(t *testing.T) {
 		t.Fatalf("rows=%v remaining=%d closes=%d error=%v", got, len(rows.remaining), rows.closes, err)
 	}
 }
+
+func TestOpenFailureUsesSafeDefaultDiagnostic(t *testing.T) {
+	openerError := errors.New("driver diagnostic placeholder")
+	db, err := OpenWith(DefaultConfig("fixture", "fixture"), func(string, string) (*sql.DB, error) {
+		return nil, openerError
+	})
+	if db != nil || !errors.Is(err, openerError) || !errors.Is(err, ErrConnectionFailed) ||
+		err.Error() != ErrConnectionFailed.Error() {
+		t.Fatalf("database present=%t error type=%T", db != nil, err)
+	}
+}

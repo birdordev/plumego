@@ -1500,3 +1500,31 @@ func TestCloseCoordinatesWithConcurrentLogging(t *testing.T) {
 		t.Fatalf("expected Close to clear size bookkeeping, got %d", trackedSizes)
 	}
 }
+
+func TestFileLoggerFlushCloseAndWritesComplete(t *testing.T) {
+	l := newGLogger()
+	l.logDir, l.program, l.toStderr = t.TempDir(), "flush-test", false
+	l.SetOutput(io.Discard)
+	if err := l.initLogFiles(); err != nil {
+		t.Fatal(err)
+	}
+	path := l.logFiles[INFO].Name()
+	l.Info("before-concurrent-close")
+	start := make(chan struct{})
+	var workers sync.WaitGroup
+	for _, task := range []func(){l.Flush, l.Close, func() { l.Info("concurrent-write") }} {
+		workers.Go(func() {
+			<-start
+			task()
+		})
+	}
+	close(start)
+	workers.Wait()
+	if len(l.logFiles) != 0 {
+		t.Fatal("close retained open file handles")
+	}
+	data, err := os.ReadFile(path)
+	if err != nil || !bytes.Contains(data, []byte("before-concurrent-close")) {
+		t.Fatalf("file content=%q error=%v", data, err)
+	}
+}

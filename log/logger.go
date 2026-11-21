@@ -32,7 +32,10 @@ const (
 
 // LoggerConfig configures the canonical NewLogger constructor.
 type LoggerConfig struct {
-	Format           LoggerFormat
+	Format LoggerFormat
+	// Output and ErrorOutput receive synchronous, serialized writes. A writer
+	// must send its own diagnostics through a separate sink rather than calling
+	// the logger that owns the writer or one of its derived loggers.
 	Output           io.Writer
 	ErrorOutput      io.Writer
 	Level            Level
@@ -85,7 +88,8 @@ type defaultLogger struct {
 
 // NewLogger creates the canonical structured logger.
 //
-// With no config it returns the default text logger. Alternate formats such as
+// With no config it returns the default text logger. When configs are supplied,
+// only the first config is used. Alternate formats such as
 // JSON or discard mode are selected through LoggerConfig.Format. Invalid format
 // values are treated as a programming error and panic, matching the MustXxx
 // convention used elsewhere in the library.

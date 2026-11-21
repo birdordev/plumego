@@ -473,3 +473,31 @@ func TestMultiCollectorClearPublishesEachResetIndependently(t *testing.T) {
 		t.Errorf("after both resets: %+v", stats)
 	}
 }
+
+type observingAggregate struct {
+	*NoopCollector
+	observe func(context.Context, string, string, int, int, time.Duration)
+}
+
+func (o observingAggregate) ObserveHTTP(ctx context.Context, method, path string, status, bytes int, duration time.Duration) {
+	o.observe(ctx, method, path, status, bytes, duration)
+}
+
+func TestMultiObserveHTTPPropagatesContextAndObservationInOrder(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	var order []int
+	build := func(index int) observingAggregate {
+		return observingAggregate{NewNoopCollector(), func(received context.Context, method, path string, status, bytes int, duration time.Duration) {
+			order = append(order, index)
+			if received != ctx || received.Err() != context.Canceled || method != "GET" ||
+				path != "/fixture" || status != 201 || bytes != 8 || duration != 17*time.Millisecond {
+				t.Fatalf("observation=%s %s %d %d %s context=%v", method, path, status, bytes, duration, received.Err())
+			}
+		}}
+	}
+	NewMultiCollector(build(1), build(2)).ObserveHTTP(ctx, "GET", "/fixture", 201, 8, 17*time.Millisecond)
+	if !reflect.DeepEqual(order, []int{1, 2}) {
+		t.Fatalf("ordering=%v", order)
+	}
+}

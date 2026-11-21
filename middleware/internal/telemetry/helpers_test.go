@@ -217,3 +217,31 @@ func TestWithObserverSharesRouteBetweenMetricsAndRequest(t *testing.T) {
 		})
 	}
 }
+
+func TestBeginTracePublishesOnlyValidTraceIdentity(t *testing.T) {
+	for _, useContext := range []bool{false, true} {
+		w := httptest.NewRecorder()
+		request := PrepareRequest(w, httptest.NewRequest(http.MethodGet, "/", nil))
+		span := &stubSpan{traceID: "placeholder", spanID: "placeholder"}
+		req, got := BeginTrace(w, request, func(ctx context.Context, _ *http.Request) (context.Context, TraceSpan) {
+			if useContext {
+				ctx = contract.WithTraceContext(ctx, contract.TraceContext{
+					TraceID: "1234567890abcdef1234567890abcdef", SpanID: "1234567890abcdef",
+				})
+			}
+			return ctx, span
+		})
+		want := ""
+		if useContext {
+			want = "1234567890abcdef"
+		}
+		trace, _ := contract.TraceContextFromContext(req.Context())
+		if w.Header().Get(SpanIDHeader) != want || trace.Valid() != useContext {
+			t.Fatalf("header=%q trace=%+v", w.Header().Get(SpanIDHeader), trace)
+		}
+		EndTrace(got, RequestMetrics{Status: http.StatusCreated})
+		if !span.ended || span.status != http.StatusCreated {
+			t.Fatal("span did not finish")
+		}
+	}
+}

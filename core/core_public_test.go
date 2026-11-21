@@ -3,10 +3,12 @@ package core_test
 import (
 	"crypto/tls"
 	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -535,4 +537,98 @@ func TestPublicPrepareRetriesAfterTLSFilesAppear(t *testing.T) {
 	if err := app.Shutdown(t.Context()); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func TestPublicPrepareRetriesAfterBuilderGoexit(t *testing.T) {
+	app := core.New(core.DefaultConfig(), core.AppDependencies{})
+	if err := app.Get("/", http.NotFoundHandler()); err != nil {
+		t.Fatal(err)
+	}
+	builds := 0
+	if err := app.Use(func(next http.Handler) http.Handler {
+		builds++
+		if builds == 1 {
+			runtime.Goexit()
+		}
+		return next
+	}); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		_ = app.Prepare()
+		t.Error("Prepare returned after builder ended the goroutine")
+	}()
+	<-done
+	if app.PreparationState() != core.PreparationStateMutable {
+		t.Fatalf("published partial state %q", app.PreparationState())
+	}
+	if err := app.Get("/late", http.NotFoundHandler()); err == nil {
+		t.Fatal("registration reopened")
+	}
+	if err := app.Prepare(); err != nil {
+		t.Fatal(err)
+	}
+	if builds != 2 || app.PreparationState() != core.PreparationStateServerPrepared {
+		t.Fatalf("builds=%d state=%q", builds, app.PreparationState())
+	}
+}
+
+func TestConcurrentTLSPreparationPublishesOneServer(t *testing.T) {
+	cert, key := nettest.WriteSelfSignedTLSCertFiles(t, "test-cert-*.pem", "test-key-*.pem")
+	cfg := core.DefaultConfig()
+	cfg.TLS = core.TLSConfig{Enabled: true, CertFile: cert, KeyFile: key}
+	app := core.New(cfg, core.AppDependencies{})
+	first := prepareConcurrentTLS(t, app, 4)
+	if len(first.TLSConfig.Certificates) != 1 {
+		t.Fatal("expected one loaded certificate")
+	}
+}
+
+func BenchmarkConcurrentTLSPrepare(b *testing.B) {
+	cert, key := nettest.WriteSelfSignedTLSCertFiles(b, "bench-cert-*.pem", "bench-key-*.pem")
+	cfg := core.DefaultConfig()
+	cfg.TLS = core.TLSConfig{Enabled: true, CertFile: cert, KeyFile: key}
+	for _, workers := range []int{1, 4} {
+		b.Run(fmt.Sprint(workers), func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				app := core.New(cfg, core.AppDependencies{})
+				prepareConcurrentTLS(b, app, workers)
+			}
+		})
+	}
+}
+
+func prepareConcurrentTLS(t testing.TB, app *core.App, workers int) *http.Server {
+	t.Helper()
+	start := make(chan struct{})
+	type outcome struct {
+		server *http.Server
+		err    error
+	}
+	results := make(chan outcome, workers)
+	for range workers {
+		go func() {
+			<-start
+			if err := app.Prepare(); err != nil {
+				results <- outcome{err: err}
+				return
+			}
+			server, err := app.Server()
+			results <- outcome{server: server, err: err}
+		}()
+	}
+	close(start)
+	first := <-results
+	if first.err != nil || first.server == nil {
+		t.Fatalf("first Prepare error=%v", first.err)
+	}
+	for range workers - 1 {
+		if got := <-results; got.err != nil || got.server != first.server {
+			t.Fatalf("published=%p first=%p error=%v", got.server, first.server, got.err)
+		}
+	}
+	return first.server
 }

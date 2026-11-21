@@ -344,3 +344,85 @@ func TestHeadControllerThroughWrappedServer(t *testing.T) {
 		t.Fatalf("status=%d headers=%v body=%q err=%v", resp.StatusCode, resp.Header, body, err)
 	}
 }
+
+type headFlushResult struct {
+	http.ResponseWriter
+	err error
+}
+
+func (w headFlushResult) FlushError() error { return w.err }
+
+func TestHeadSelectedStatusFlushCommitBoundary(t *testing.T) {
+	transportFailure := errors.New("flush failed")
+	for _, tc := range []struct {
+		name       string
+		err        error
+		wantLength string
+	}{
+		{"no capability", nil, "3"},
+		{"runtime refusal", http.ErrNotSupported, ""},
+		{"transport failure", transportFailure, ""},
+		{"success", nil, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := NewRouter()
+			if err := r.AddRoute(http.MethodGet, "/", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "text/plain")
+				w.WriteHeader(http.StatusAccepted)
+				want := tc.err
+				if tc.name == "no capability" {
+					want = http.ErrNotSupported
+				}
+				if err := http.NewResponseController(w).Flush(); !errors.Is(err, want) {
+					t.Errorf("Flush() = %v, want %v", err, want)
+				}
+				_, _ = io.WriteString(w, "abc")
+			})); err != nil {
+				t.Fatal(err)
+			}
+			rec := httptest.NewRecorder()
+			var dst http.ResponseWriter = headFlushResult{ResponseWriter: rec, err: tc.err}
+			if tc.name == "no capability" {
+				dst = headBasicWriter{rec}
+			}
+			r.ServeHTTP(dst, httptest.NewRequest(http.MethodHead, "/", nil))
+			if rec.Code != http.StatusAccepted || rec.Body.Len() != 0 || rec.Result().Header.Get("Content-Length") != tc.wantLength {
+				t.Fatalf("status=%d body=%q headers=%v", rec.Code, rec.Body.String(), rec.Result().Header)
+			}
+		})
+	}
+}
+
+func TestHeadDeclaredTrailersDoNotBecomeResponseFields(t *testing.T) {
+	r := NewRouter()
+	if err := r.AddRoute(http.MethodGet, "/", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Trailer", "X-Checksum")
+		_, _ = io.WriteString(w, "data")
+		w.Header().Set("X-Checksum", "checksum")
+		w.Header().Set(http.TrailerPrefix+"X-Late", "late")
+	})); err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(r)
+	defer server.Close()
+	get, err := server.Client().Get(server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := io.ReadAll(get.Body)
+	_ = get.Body.Close()
+	if err != nil || string(body) != "data" || get.Trailer.Get("X-Checksum") != "checksum" {
+		t.Fatalf("GET body=%q trailers=%v error=%v", body, get.Trailer, err)
+	}
+	head, err := server.Client().Head(server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer head.Body.Close()
+	body, err = io.ReadAll(head.Body)
+	if err != nil || len(body) != 0 || head.StatusCode != get.StatusCode ||
+		head.Header.Get("X-Checksum") != "" || head.Header.Get("X-Late") != "" ||
+		head.Header.Get("Content-Length") != "" {
+		t.Fatalf("HEAD body=%q status=%d header=%v error=%v", body, head.StatusCode, head.Header, err)
+	}
+}

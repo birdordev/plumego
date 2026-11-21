@@ -19,7 +19,7 @@ func RequestIDFromRequest(r *http.Request) string {
 }
 
 // AttachRequestID stores an accepted request id in context and headers.
-// When writing the request header, it initializes a nil map on the returned request.
+// If requested, it writes the header on a copy of the incoming header map.
 func AttachRequestID(w http.ResponseWriter, r *http.Request, id string, includeInRequest bool) *http.Request {
 	if r == nil {
 		return r
@@ -31,6 +31,7 @@ func AttachRequestID(w http.ResponseWriter, r *http.Request, id string, includeI
 	ctx := contract.WithRequestID(r.Context(), id)
 	r = r.WithContext(ctx)
 	if includeInRequest {
+		r.Header = r.Header.Clone()
 		if r.Header == nil {
 			r.Header = make(http.Header)
 		}

@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -444,5 +445,25 @@ func TestLayeredObserversSeeSameCommittedRoute(t *testing.T) {
 	if len(outer) != 1 || len(inner) != 1 || outer[0] != want || inner[0] != want ||
 		rec.Code != want.status || rec.Body.String() != "ok" {
 		t.Fatalf("outer=%+v inner=%+v status=%d body=%q", outer, inner, rec.Code, rec.Body.String())
+	}
+}
+
+type unsupportedVaryFlushDestination struct{ http.ResponseWriter }
+
+func (unsupportedVaryFlushDestination) FlushError() error { return http.ErrNotSupported }
+
+func TestVaryFallbackAfterUnsupportedFlush(t *testing.T) {
+	h := compression.Middleware(compression.DefaultConfig())(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if err := http.NewResponseController(w).Flush(); !errors.Is(err, http.ErrNotSupported) {
+			t.Errorf("Flush() = %v", err)
+		}
+		w.Header().Set("Vary", "Origin")
+		w.WriteHeader(http.StatusAccepted)
+	}))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(unsupportedVaryFlushDestination{rec}, httptest.NewRequest(http.MethodGet, "/", nil))
+	got := strings.Join(rec.Result().Header.Values("Vary"), ", ")
+	if rec.Code != http.StatusAccepted || got != "Origin, Accept-Encoding, Accept" {
+		t.Fatalf("status=%d Vary=%q", rec.Code, got)
 	}
 }

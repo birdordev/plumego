@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 	"database/sql"
+	"database/sql/driver"
 	"errors"
 	"runtime"
 	"sync/atomic"
@@ -127,4 +128,41 @@ func TestCancellationAtTransactionCommitBoundary(t *testing.T) {
 			t.Fatalf("error=%v commits=%d rollbacks=%d", err, tracked.commits.Load(), tracked.rollbacks.Load())
 		}
 	})
+}
+
+func TestRowsCallbacksCloseOnPanicAndGoexit(t *testing.T) {
+	for _, strict := range []bool{false, true} {
+		for _, panicExit := range []bool{false, true} {
+			rows := &fixedRows{cols: []string{"n"}, values: [][]driver.Value{{int64(1)}}}
+			database := sql.OpenDB(&rowsConnector{rows: rows})
+			t.Cleanup(func() { _ = database.Close() })
+			callback := func(*sql.Rows) error {
+				if panicExit {
+					panic("scan")
+				}
+				runtime.Goexit()
+				return nil
+			}
+			done := make(chan any, 1)
+			go func() {
+				defer func() { done <- recover() }()
+				if strict {
+					_ = QueryRowStrict(t.Context(), database, "SELECT n", callback)
+				} else {
+					result, err := QueryContext(t.Context(), database, "SELECT n")
+					if err != nil {
+						t.Error(err)
+						return
+					}
+					_, _ = ScanRows(result, func(rows *sql.Rows) (int, error) { return 0, callback(rows) })
+				}
+				t.Error("callback returned")
+			}()
+			got := <-done
+			if (panicExit && got != "scan") || (!panicExit && got != nil) ||
+				rows.closes != 1 || database.Stats().InUse != 0 {
+				t.Fatalf("strict=%t panic=%t recovered=%v closes=%d inUse=%d", strict, panicExit, got, rows.closes, database.Stats().InUse)
+			}
+		}
+	}
 }

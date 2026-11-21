@@ -33,6 +33,9 @@
 
 ## Canonical change shape
 
+`Chain.Build` returns nil for a chain containing a nil builder or a builder
+that produces a nil handler. Check the result before serving the chain.
+
 - implement `func(http.Handler) http.Handler`
 - keep one constructor path per middleware package; delete parallel wrapper families
 - keep stable middleware packages single-purpose; split unrelated transport behaviors into separate packages instead of umbrella buckets
@@ -185,7 +188,8 @@ execution do not invoke the downstream handler.
 
 Cancellation observed at the response commitment check takes priority over a
 completed result or panic. Once that check accepts a downstream result, later
-cancellation does not undo response commitment. Timeout does not forcibly stop
+cancellation does not undo response commitment. Generated timeout errors remove stale
+representation headers while retaining unrelated application headers. Timeout does not forcibly stop
 or wait for downstream work. Handlers and services must observe
 `r.Context().Done()` to stop side effects promptly; body writes after cancellation
 return the context error.
@@ -236,6 +240,8 @@ use the HTTP decimal syntax from 0 to 1 with up to three fractional digits.
 An invalid weight makes its coding unavailable for gzip negotiation.
 Gzip and identity responses vary on both `Accept` and `Accept-Encoding`,
 including when the request opts out of compression with an SSE media type.
+The SSE bypass checks the first `Accept` field for the literal
+`text/event-stream` marker.
 Other `Vary` values are preserved.
 When gzip starts, digest headers and their trailer declarations and values
 are removed along with strong ETags tied to the original bytes. Weak ETags
@@ -262,6 +268,12 @@ production baseline unless the application owner explicitly accepts the risk of
 debug metadata exposure. Query metadata is disabled by default. When enabled,
 it reports only whether the request carried a query string. Debug replacements
 use the canonical machine code for the corresponding contract error type.
+
+When `IncludeBody` is enabled and an error with a nonempty body is replaced,
+debug reports the captured body size in `response_body_bytes`. Errors that exceed the capture
+limit retain the existing pass-through behavior. Request metadata uses the
+route pattern if already present in the request context and the URL path
+otherwise.
 
 Debug capture is bounded by `Config.MaxBodyBytes`. If a response
 exceeds the capture limit, the middleware stops debug replacement and passes the
@@ -455,3 +467,7 @@ Outer access logging, HTTP metrics, and tracing receive the matched route templa
 HTTP observation middleware preserves informational responses, implicit header-only responses, Flush commitment, and declared/dynamic trailers through the underlying net/http writer. Final status is recorded independently of informational status codes. Ordinary header changes after commitment do not rewrite the transmitted snapshot. Observation records status and byte counts without retaining response bodies; internal capture users such as gateway caching keep their explicit capture recorder.
 
 Observation and recovery wrappers forward `http.ResponseController.Flush` through the underlying writer chain. An unsupported flush leaves an uncommitted response available for the handler to write. Transport flush errors are returned to the caller.
+
+Request ID middleware clones incoming request headers when it writes the
+selected ID into downstream headers. The original header map remains intact.
+Tracing publishes a span header only for a valid trace identity.

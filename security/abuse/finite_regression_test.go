@@ -4,6 +4,7 @@ import (
 	"errors"
 	"math"
 	"testing"
+	"time"
 )
 
 func TestFiniteRate(t *testing.T) {
@@ -28,6 +29,33 @@ func TestFiniteRate(t *testing.T) {
 	for _, rate := range []float64{0, 1, math.SmallestNonzeroFloat64, math.MaxFloat64} {
 		if err := (Config{Rate: rate}).Validate(); err != nil {
 			t.Errorf("finite rate=%v err=%v", rate, err)
+		}
+	}
+}
+
+func TestFiniteRateDecisionTimestampsStayOrdered(t *testing.T) {
+	for _, rate := range []float64{math.SmallestNonzeroFloat64, 1, math.MaxFloat64} {
+		now := time.Unix(1800000000, 0)
+		cfg := DefaultConfig()
+		cfg.Rate = rate
+		cfg.Capacity = 1
+		cfg.Now = func() time.Time { return now }
+		limiter, err := NewLimiterWithConfig(cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		initial := limiter.Allow("fixture")
+		exhausted := limiter.Allow("fixture")
+		now = now.Add(time.Second)
+		later := limiter.Allow("fixture")
+		limiter.Stop()
+		if !initial.Allowed || exhausted.Allowed || exhausted.Remaining != 0 ||
+			exhausted.RetryAfter < 0 || exhausted.Reset.Before(initial.Reset) ||
+			later.RetryAfter < 0 || later.Reset.Before(now) {
+			t.Fatalf("rate=%g initial=%+v exhausted=%+v later=%+v", rate, initial, exhausted, later)
+		}
+		if later.Allowed != (rate >= 1) {
+			t.Fatalf("rate=%g recovery=%+v", rate, later)
 		}
 	}
 }

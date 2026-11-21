@@ -267,14 +267,21 @@ func syncDir(dir string) error {
 	if err != nil {
 		return err
 	}
-	defer func() { _ = f.Close() }()
-	if err := f.Sync(); err != nil {
-		if isUnsupportedDirSync(err) {
-			return nil
-		}
-		return err
+	return syncAndCloseDirectory(f)
+}
+
+func syncAndCloseDirectory(f interface {
+	Sync() error
+	Close() error
+}) error {
+	syncErr := f.Sync()
+	if isUnsupportedDirSync(syncErr) {
+		syncErr = nil
 	}
-	return nil
+	if closeErr := f.Close(); closeErr != nil {
+		return errors.Join(syncErr, fmt.Errorf("close state dir: %w", closeErr))
+	}
+	return syncErr
 }
 
 func isUnsupportedDirSync(err error) bool {

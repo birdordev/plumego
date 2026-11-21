@@ -18,7 +18,7 @@ import "github.com/birdordev/plumego/middleware/debug"
 |--------|-------------|
 | `Middleware(config Config)` | Constructor |
 | `DefaultConfig()` | Sensible defaults |
-| `Config{MaxBytes, IncludeBody}` | Capture limits |
+| `Config{MaxBodyBytes, IncludeBody}` | Capture limit and optional body size metadata |
 
 ## Usage
 

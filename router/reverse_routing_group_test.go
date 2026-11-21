@@ -161,6 +161,12 @@ func TestNamedRouteCollisionAcrossGroupsReturnsError(t *testing.T) {
 	}
 
 	named := r.NamedRoutes()
+	if len(named) != 1 || len(r.Routes()) != 1 {
+		t.Fatalf("failed registration published routes: %v", r.Routes())
+	}
+	if rec := serveRouter(r, http.MethodGet, "/api/v2/users/42"); rec.Code != http.StatusNotFound {
+		t.Fatalf("rejected route status=%d", rec.Code)
+	}
 	route, ok := named["users.show"]
 	if !ok {
 		t.Fatalf("expected users.show route to exist")
@@ -430,5 +436,35 @@ func TestWildcardURLRejectsUnrepresentableBoundaries(t *testing.T) {
 				t.Fatalf("URL(%q) = %q: status %d, body %q", value, generated, rec.Code, rec.Body.String())
 			}
 		}
+	}
+}
+
+func TestWildcardURLRoundTripsEscapedSuffixFromNestedGroup(t *testing.T) {
+	r := NewRouter()
+	group := r.Group("/api").Group("/v1")
+	if err := group.AddRoute(http.MethodGet, "/files/index", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	})); err != nil {
+		t.Fatal(err)
+	}
+	if err := group.AddRoute(http.MethodGet, "/files/*name", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		_, _ = w.Write([]byte(Param(req, "name")))
+	}), WithRouteName("file")); err != nil {
+		t.Fatal(err)
+	}
+	const value = "café/20% off"
+	path, err := group.URL("file", "name", value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.Freeze()
+	for range 2 {
+		w := serveRouter(r, http.MethodGet, path)
+		if w.Code != http.StatusOK || w.Body.String() != value {
+			t.Fatalf("status=%d body=%q", w.Code, w.Body.String())
+		}
+	}
+	if w := serveRouter(r, http.MethodGet, "/api/v1/files/index"); w.Code != http.StatusNoContent {
+		t.Fatalf("static route priority: %d", w.Code)
 	}
 }
