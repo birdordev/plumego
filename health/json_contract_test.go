@@ -254,3 +254,19 @@ func TestDetailsWireShapeDistinguishesMissingMapAndNullMembers(t *testing.T) {
 	}
 	assertNumberField(t, result, "zero", 0)
 }
+
+func TestReadinessZeroValueHasExplicitTimeAndState(t *testing.T) {
+	for _, status := range []ReadinessStatus{{}, {Ready: false, Reason: "waiting"}} {
+		fields := marshalObject(t, status)
+		if fields["timestamp"] != "0001-01-01T00:00:00Z" ||
+			fields["ready"] != false || fields["components"] != nil {
+			t.Fatalf("zero timestamp fields=%v", fields)
+		}
+		if status.Reason == "" && fields["reason"] != nil {
+			t.Fatalf("empty reason=%v", fields["reason"])
+		}
+		if status.Reason != "" && fields["reason"] != "waiting" {
+			t.Fatalf("explicit reason=%v", fields["reason"])
+		}
+	}
+}

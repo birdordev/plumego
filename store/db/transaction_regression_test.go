@@ -166,3 +166,38 @@ func TestRowsCallbacksCloseOnPanicAndGoexit(t *testing.T) {
 		}
 	}
 }
+
+type failFirstCommit struct {
+	trackedTransaction
+	cause error
+}
+
+func (tx *failFirstCommit) Commit() error {
+	if tx.commits.Add(1) == 1 {
+		return tx.cause
+	}
+	return nil
+}
+
+func TestCommitFailureReturnsConnectionWithoutDriverRollback(t *testing.T) {
+	failure := errors.New("commit fixture")
+	tx := &failFirstCommit{cause: failure}
+	database := sql.OpenDB(&stubConnector{conn: &stubConn{tx: tx}})
+	defer database.Close()
+	database.SetMaxOpenConns(1)
+	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+	defer cancel()
+	callback := func(*sql.Tx) error { return nil }
+	if err := WithTransaction(ctx, database, nil, callback); !errors.Is(err, ErrTransactionFailed) || !errors.Is(err, failure) {
+		t.Fatalf("commit error=%v", err)
+	}
+	if inUse := database.Stats().InUse; inUse != 0 {
+		t.Fatalf("pooled connections in use=%d", inUse)
+	}
+	if err := WithTransaction(ctx, database, nil, callback); err != nil {
+		t.Fatal(err)
+	}
+	if tx.commits.Load() != 2 || tx.rollbacks.Load() != 0 {
+		t.Fatalf("commits=%d rollbacks=%d", tx.commits.Load(), tx.rollbacks.Load())
+	}
+}

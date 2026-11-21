@@ -3,6 +3,7 @@ package healthhttp
 import (
 	"context"
 	"errors"
+	"math"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -160,5 +161,92 @@ func TestManagerSetConfigPreservesStateOnRejection(t *testing.T) {
 	}
 	if err := m.SetConfig(Config{}); !errors.Is(err, errManagerClosed) || m.GetConfig() != config || m.Readiness().Ready {
 		t.Errorf("closed update: config=%+v readiness=%+v error=%v", m.GetConfig(), m.Readiness(), err)
+	}
+}
+
+type namingChecker struct {
+	name func() string
+}
+
+func (c namingChecker) Name() string              { return c.name() }
+func (namingChecker) Check(context.Context) error { return nil }
+
+func TestAcceptanceRegisterNameRunsOutsideManagerLock(t *testing.T) {
+	for _, closeDuringName := range []bool{false, true} {
+		manager, err := NewManager(Config{RetryCount: 1})
+		if err != nil {
+			t.Fatal(err)
+		}
+		result := make(chan error, 1)
+		go func() {
+			result <- manager.RegisterComponent(namingChecker{name: func() string {
+				if config := manager.GetConfig(); config.RetryCount != 1 {
+					t.Errorf("config=%+v", config)
+				}
+				if closeDuringName {
+					if err := manager.Close(); err != nil {
+						t.Error(err)
+					}
+				}
+				return "fixture"
+			}})
+		}()
+		select {
+		case err := <-result:
+			_, registered := manager.GetComponentHealth("fixture")
+			if closeDuringName {
+				if !errors.Is(err, errManagerClosed) || registered {
+					t.Fatalf("closed registration=%t err=%v", registered, err)
+				}
+			} else if err != nil || !registered {
+				t.Fatalf("registration=%t err=%v", registered, err)
+			}
+		case <-time.After(time.Second):
+			t.Fatal("component name callback did not finish")
+		}
+	}
+}
+
+func TestAcceptanceRetryCountRejectsUnrepresentableAttempts(t *testing.T) {
+	for _, retry := range []int{-1, math.MaxInt} {
+		if manager, err := NewManager(Config{RetryCount: retry}); err == nil || manager != nil {
+			t.Fatalf("NewManager retries=%d: manager=%v err=%v", retry, manager, err)
+		}
+	}
+	for _, retry := range []int{0, 1} {
+		manager, err := NewManager(Config{RetryCount: retry})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := manager.SetConfig(Config{RetryCount: math.MaxInt}); err == nil || manager.GetConfig().RetryCount != retry {
+			t.Fatalf("SetConfig error=%v config=%+v", err, manager.GetConfig())
+		}
+		checker := &flakyChecker{name: "fixture", failCount: 1}
+		if err := manager.RegisterComponent(checker); err != nil {
+			t.Fatal(err)
+		}
+		err = manager.CheckComponent(t.Context(), "fixture")
+		if (err == nil) != (retry == 1) || checker.attempts != int32(retry+1) {
+			t.Fatalf("retries=%d attempts=%d error=%v", retry, checker.attempts, err)
+		}
+	}
+}
+
+func TestManagerPreservesSchedulingIntervalForCaller(t *testing.T) {
+	manager, err := NewManager(Config{HealthCheckInterval: time.Minute})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer manager.Close()
+	config := manager.GetConfig()
+	if config.HealthCheckInterval != time.Minute {
+		t.Fatalf("configured interval=%v", config.HealthCheckInterval)
+	}
+	config.HealthCheckInterval = time.Second
+	if err := manager.SetConfig(config); err != nil {
+		t.Fatal(err)
+	}
+	if got := manager.GetConfig().HealthCheckInterval; got != time.Second {
+		t.Fatalf("updated interval=%v", got)
 	}
 }

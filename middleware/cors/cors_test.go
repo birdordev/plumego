@@ -666,3 +666,29 @@ func TestCORSAddsRequiredVaryAfterDownstreamReplacement(t *testing.T) {
 		t.Fatalf("preflight status=%d calls=%d", w.Code, calls)
 	}
 }
+
+func TestCORSAllowedOriginStillWorksAfterAnotherOrigin(t *testing.T) {
+	const approved = "https://approved.example"
+	calls := 0
+	handler := Middleware(CORSOptions{AllowedOrigins: []string{approved}, AllowedMethods: []string{http.MethodGet}})(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls++
+		w.WriteHeader(http.StatusAccepted)
+	}))
+	for _, origin := range []string{"https://other.example", approved, approved} {
+		r := httptest.NewRequest(http.MethodOptions, "/", nil)
+		r.Header.Set("Origin", origin)
+		r.Header.Set("Access-Control-Request-Method", http.MethodGet)
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, r)
+		if origin == approved {
+			if w.Code != http.StatusNoContent || w.Header().Get("Access-Control-Allow-Origin") != approved {
+				t.Fatalf("approved status=%d headers=%v", w.Code, w.Header())
+			}
+		} else if w.Code != http.StatusAccepted || w.Header().Get("Access-Control-Allow-Origin") != "" {
+			t.Fatalf("unapproved status=%d headers=%v", w.Code, w.Header())
+		}
+	}
+	if calls != 1 {
+		t.Fatalf("downstream calls=%d", calls)
+	}
+}

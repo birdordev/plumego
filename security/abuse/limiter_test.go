@@ -10,6 +10,8 @@ import (
 	"testing"
 	"testing/synctest"
 	"time"
+
+	"github.com/birdordev/plumego/internal/testutil/wait"
 )
 
 func TestConfigValidation(t *testing.T) {
@@ -961,5 +963,51 @@ func BenchmarkLimiterRequestCleanupCost(b *testing.B) {
 				}
 			}
 		})
+	}
+}
+
+func TestCustomLimiterStopWaitsForAnActiveCleanup(t *testing.T) {
+	base := time.Now()
+	limiter := NewLimiter(Config{Shards: 1, CleanupInterval: time.Second, MaxIdle: time.Second, Now: func() time.Time { return base }})
+	limiter.Allow("expired")
+	shard := &limiter.shards[0]
+	shard.mu.Lock()
+	unlock := sync.OnceFunc(shard.mu.Unlock)
+	defer unlock()
+	finished := make(chan struct{})
+	go func() {
+		defer close(finished)
+		limiter.cleanupOnRequest(base.Add(2 * time.Second))
+	}()
+	wait.ForCondition(t, time.Second, "cleanup owns scan", func() bool {
+		if limiter.customCleanup.mu.TryLock() {
+			limiter.customCleanup.mu.Unlock()
+			return false
+		}
+		return true
+	})
+	stopped := make(chan struct{}, 2)
+	for range 2 {
+		go func() { limiter.Stop(); stopped <- struct{}{} }()
+	}
+	<-limiter.stopCh
+	select {
+	case <-stopped:
+		t.Fatal("Stop returned before cleanup finished")
+	default:
+	}
+	unlock()
+	<-stopped
+	<-stopped
+	<-finished
+	if stats := limiter.Metrics(); stats.Buckets != 0 || stats.Evictions != 1 {
+		t.Fatalf("stats=%+v", stats)
+	}
+	if !limiter.Allow("after").Allowed {
+		t.Fatal("Stop disabled admission")
+	}
+	limiter.cleanupOnRequest(base.Add(3 * time.Second))
+	if stats := limiter.Metrics(); stats.Buckets != 1 || stats.Evictions != 1 {
+		t.Fatalf("cleanup ran after Stop: %+v", stats)
 	}
 }

@@ -4,9 +4,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"maps"
 	"math"
+	"os"
+	"os/exec"
 	"strconv"
 	"strings"
 	"sync"
@@ -914,5 +917,55 @@ func TestTypedNilMarshalerKeepsValidSiblingFields(t *testing.T) {
 		string(parsed["json_value"]) != "null" || string(parsed["text_value"]) != "null" ||
 		string(parsed["ordinary"]) != "123" {
 		t.Fatalf("record=%s err=%v", &out, err)
+	}
+}
+
+func TestJSONScopedFieldsStayIndependentAfterWriteFailure(t *testing.T) {
+	const child = "PLUMEGO_JSON_SCOPE_CHILD"
+	if os.Getenv(child) != "1" {
+		executable, err := os.Executable()
+		if err != nil {
+			t.Fatal(err)
+		}
+		var diagnostics bytes.Buffer
+		command := exec.Command(executable, "-test.run=^TestJSONScopedFieldsStayIndependentAfterWriteFailure$")
+		command.Env = append(os.Environ(), child+"=1")
+		command.Stderr = &diagnostics
+		if output, err := command.Output(); err != nil {
+			t.Fatalf("child failed: %v, stdout=%s stderr=%s", err, output, diagnostics.String())
+		}
+		if got := diagnostics.String(); got != "json logger: failed to write log output\n" {
+			t.Fatalf("diagnostics=%q", got)
+		}
+		return
+	}
+
+	var output bytes.Buffer
+	writes := 0
+	base := NewLogger(LoggerConfig{Format: LoggerFormatJSON, Output: diagnosticOutputFunc(func(p []byte) (int, error) {
+		writes++
+		if writes <= 2 {
+			return 0, errors.New("write fixture")
+		}
+		return output.Write(p)
+	})}).WithFields(Fields{"app": "service", "scope": "base"})
+	left := base.WithFields(Fields{"scope": "left"})
+	right := base.WithFields(Fields{"scope": "right"})
+	left.Info("failed left")
+	right.Info("failed right")
+	left.Info("accepted left")
+	right.Info("accepted right")
+	base.Info("accepted base")
+	decoder := json.NewDecoder(&output)
+	for _, scope := range []string{"left", "right", "base"} {
+		var entry testJSONLogEntry
+		if err := decoder.Decode(&entry); err != nil || entry.Scope != scope ||
+			entry.App != "service" || entry.Msg != "accepted "+scope {
+			t.Fatalf("entry=%+v err=%v", entry, err)
+		}
+	}
+	var extra any
+	if err := decoder.Decode(&extra); err != io.EOF {
+		t.Fatalf("extra=%v err=%v", extra, err)
 	}
 }

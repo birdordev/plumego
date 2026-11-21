@@ -360,3 +360,62 @@ func TestVerifyContinuesWhileRotationWaitsForStore(t *testing.T) {
 		})
 	}
 }
+
+type cancelAtPublicationStore struct {
+	*InMemoryKeyStore
+	cancel context.CancelFunc
+	after  bool
+}
+
+func (s *cancelAtPublicationStore) SetContext(ctx context.Context, key string, data []byte, ttl time.Duration) error {
+	if s.cancel == nil || key != activeKeyKey {
+		return s.InMemoryKeyStore.SetContext(ctx, key, data, ttl)
+	}
+	if !s.after {
+		s.cancel()
+	}
+	err := s.InMemoryKeyStore.SetContext(ctx, key, data, ttl)
+	if s.after {
+		s.cancel()
+	}
+	return err
+}
+
+func TestKeyRotationCancellationFollowsPublicationBoundary(t *testing.T) {
+	for _, after := range []bool{true, false} {
+		store := &cancelAtPublicationStore{InMemoryKeyStore: NewInMemoryKeyStore(), after: after}
+		cfg := DefaultJWTConfig()
+		manager, err := NewJWTManager(store, cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		before, err := store.GetContext(t.Context(), activeKeyKey)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ctx, cancel := context.WithCancel(t.Context())
+		store.cancel = cancel
+		metadata, err := manager.RotateKeyContext(ctx)
+		cancel()
+		store.cancel = nil
+		want := string(before)
+		if after {
+			if err != nil || metadata.ID == "" || metadata.ID == want {
+				t.Fatalf("active key publication failed: %v", err)
+			}
+			want = metadata.ID
+		} else if !errors.Is(err, context.Canceled) {
+			t.Fatalf("not committed rotation=%v", err)
+		}
+		restarted, err := NewJWTManager(store, cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, m := range []*JWTManager{manager, restarted} {
+			key, ok := m.activeSigningKey()
+			if !ok || key.ID != want {
+				t.Fatal("active key identity disagrees with publication outcome")
+			}
+		}
+	}
+}

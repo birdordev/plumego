@@ -136,6 +136,7 @@ func TestMetadataClonesPreserveSliceShapeAndOwnership(t *testing.T) {
 	metadata := map[string]any{
 		"nil bytes": []byte(nil), "empty bytes": []byte{}, "bytes": []byte("data"),
 		"nil strings": []string(nil), "empty strings": []string{}, "strings": []string{"item"},
+		"nested": map[string]any{"nil map": map[string]any(nil), "empty map": map[string]any{}},
 	}
 	want, err := json.Marshal(metadata)
 	if err != nil {

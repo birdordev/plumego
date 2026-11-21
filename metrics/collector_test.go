@@ -274,3 +274,20 @@ func TestResetAtBoundedCardinalityKeepsPriorSnapshotIndependent(t *testing.T) {
 		t.Fatalf("sizes: before=%d/%d after=%d/%d", before.ActiveSeries, before.TotalRecords, after.ActiveSeries, after.TotalRecords)
 	}
 }
+
+func TestHTTPRecordCombinesStatusAndExplicitErrorOnce(t *testing.T) {
+	collector := NewBaseMetricsCollector()
+	cause := errors.New("fixture")
+	for _, record := range []MetricRecord{
+		{Name: MetricHTTPRequest, Labels: MetricLabels{labelStatus: "200"}, Error: cause},
+		{Name: MetricHTTPRequest, Labels: MetricLabels{labelStatus: "400"}, Error: cause},
+		{Name: MetricHTTPRequest, Labels: MetricLabels{labelStatus: "404"}},
+		{Name: MetricHTTPRequest, Labels: MetricLabels{labelStatus: "204"}},
+		{Name: "other", Labels: MetricLabels{labelStatus: "400"}},
+	} {
+		collector.Record(t.Context(), record)
+	}
+	if stats := collector.GetStats(); stats.TotalRecords != 5 || stats.ErrorRecords != 3 {
+		t.Fatalf("record counts=%+v", stats)
+	}
+}

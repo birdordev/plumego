@@ -1473,3 +1473,17 @@ func TestQueryRowContextClassifiesDeferredCancellationAtScan(t *testing.T) {
 		t.Fatalf("scan error=%v", err)
 	}
 }
+
+func TestCanceledPingLeavesCallerPoolUsable(t *testing.T) {
+	conn := &stubConn{}
+	database := sql.OpenDB(&stubConnector{conn: conn})
+	defer database.Close()
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	if err := Ping(ctx, database); !errors.Is(err, ErrPingFailed) || !errors.Is(err, context.Canceled) {
+		t.Fatalf("canceled Ping=%v", err)
+	}
+	if err := Ping(t.Context(), database); err != nil || conn.pingCount != 1 || database.Stats().InUse != 0 {
+		t.Fatalf("recovered Ping=%v calls=%d stats=%+v", err, conn.pingCount, database.Stats())
+	}
+}

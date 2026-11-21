@@ -112,3 +112,8 @@ Custom backends receive original, unescaped values. Encode messages and field ke
 Text field traversal consumes its node budget even when visiting a value at the depth limit. Wide containers at that boundary remain bounded before temporary entries are collected or sorted. Custom formatters still own their execution.
 For wide text maps, the budget is applied to each key and value together. The
 retained entries are sorted, and their selection follows Go map iteration order.
+
+Use a dedicated file-log directory for each concurrently active instance of
+the same program. Retention considers archives belonging to the program in
+that directory, including archives from earlier runs. It excludes the current
+writers and files still referenced by the program's published active links.

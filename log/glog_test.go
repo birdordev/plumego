@@ -1267,7 +1267,9 @@ func TestLogRetentionGroupsBackupsByFilenameLevel(t *testing.T) {
 	currentInfo := logFilename(program, host, levelName(INFO), stamp.Add(3*time.Hour), 1)
 	unknown := logFilename(program, host, "UNKNOWN", stamp.Add(4*time.Hour), 1)
 
-	for i, name := range []string{oldInfo, legacyInfo, warn, currentInfo, unknown} {
+	otherProgram := logFilename("another-service", host, levelName(INFO), stamp, 2)
+
+	for i, name := range []string{oldInfo, legacyInfo, warn, currentInfo, unknown, otherProgram} {
 		path := filepath.Join(dir, name)
 		if err := os.WriteFile(path, []byte("record"), 0600); err != nil {
 			t.Fatal(err)
@@ -1282,7 +1284,7 @@ func TestLogRetentionGroupsBackupsByFilenameLevel(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(dir, oldInfo)); !os.IsNotExist(err) {
 		t.Errorf("oldest INFO backup should be removed, stat error = %v", err)
 	}
-	for _, name := range []string{legacyInfo, warn, currentInfo, unknown} {
+	for _, name := range []string{legacyInfo, warn, currentInfo, unknown, otherProgram} {
 		if _, err := os.Stat(filepath.Join(dir, name)); err != nil {
 			t.Errorf("expected %s to be retained: %v", name, err)
 		}
@@ -1697,5 +1699,45 @@ func TestFileFlushCompletesWhileMirrorIsStillWriting(t *testing.T) {
 	filename := logger.logFiles[INFO].Name()
 	if body, err := os.ReadFile(filename); err != nil || !bytes.Contains(body, []byte("fixture before mirror")) {
 		t.Fatalf("saved output=%q error=%v", body, err)
+	}
+}
+
+func TestRetentionKeepsPublishedLinkTargetUntilReplacement(t *testing.T) {
+	dir := t.TempDir()
+	now := time.Now()
+	const program = "fixture"
+	old, previous, current := logFilename(program, "host", levelName(INFO), now.Add(-time.Hour), 1),
+		logFilename(program, "host", levelName(INFO), now.Add(-2*time.Hour), 1),
+		logFilename(program, "host", levelName(INFO), now, 1)
+	for _, name := range []string{old, previous, current} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(name), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	link := filepath.Join(dir, program+"."+levelName(INFO))
+	if err := os.Symlink(previous, link); err != nil {
+		if runtime.GOOS == "windows" || runtime.GOOS == "plan9" {
+			t.Skipf("symlinks unavailable: %v", err)
+		}
+		t.Fatal(err)
+	}
+	if err := replaceLogSymlink("bad\x00target", link); err == nil {
+		t.Fatal("expected fixture publication failure")
+	}
+	config := rotationConfig{MaxBackups: 1}
+	active := map[string]struct{}{current: {}}
+	cleanupOldLogs(dir, program, config, active)
+	if data, err := os.ReadFile(link); err != nil || string(data) != previous {
+		t.Fatalf("after failed publication: %q %v", data, err)
+	}
+	if err := replaceLogSymlink(current, link); err != nil {
+		t.Fatal(err)
+	}
+	cleanupOldLogs(dir, program, config, active)
+	if data, err := os.ReadFile(link); err != nil || string(data) != current {
+		t.Fatalf("after retry: %q %v", data, err)
+	}
+	if leftovers, err := filepath.Glob(filepath.Join(dir, ".log-link-*")); err != nil || len(leftovers) != 0 {
+		t.Fatalf("staging=%v err=%v", leftovers, err)
 	}
 }

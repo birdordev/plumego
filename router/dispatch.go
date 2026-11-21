@@ -157,21 +157,25 @@ func (w *noBodyWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
 
 // ServeHTTP implements http.Handler and handles incoming HTTP requests.
 func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
-	if req != nil && req.Method == http.MethodHead {
-		head := &noBodyWriter{ResponseWriter: w}
-		w = head
-		defer func() {
-			if recovered := recover(); recovered != nil {
-				// Preserve logical commitment for outer recovery middleware.
-				if head.status != 0 {
-					head.commit(true)
-				}
-				panic(recovered)
-			}
-			head.commit(true)
-		}()
+	if req == nil || req.Method != http.MethodHead {
+		r.serveHTTP(w, req)
+		return
 	}
 
+	head := &noBodyWriter{ResponseWriter: w}
+	returned := false
+	defer func() {
+		// 异常退出时保留已选定的状态。
+		// 只有正常返回才会提交隐式成功。
+		if returned || head.status != 0 {
+			head.commit(true)
+		}
+	}()
+	r.serveHTTP(head, req)
+	returned = true
+}
+
+func (r *Router) serveHTTP(w http.ResponseWriter, req *http.Request) {
 	if !r.ready() || req == nil {
 		http.Error(w, "router not initialized", http.StatusServiceUnavailable)
 		return

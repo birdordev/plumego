@@ -209,6 +209,16 @@ func TestEvictionPrefersWriteAtSameTimestamp(t *testing.T) {
 		}
 		defer reopened.Close()
 		checkKeys(reopened)
+		if err := reopened.Set("d", []byte("d"), time.Second); err != nil {
+			t.Fatal(err)
+		}
+		if got := mustKeys(t, reopened); !slices.Equal(got, []string{"c", "d"}) {
+			t.Fatalf("keys after reopened eviction = %v; want [c d]", got)
+		}
+		time.Sleep(2 * time.Second)
+		if got := mustKeys(t, reopened); !slices.Equal(got, []string{"c"}) {
+			t.Fatalf("keys after expiry = %v; want [c]", got)
+		}
 	})
 }
 
@@ -696,5 +706,40 @@ func TestSnapshotBudgetWideningAllowsReadWithoutWriting(t *testing.T) {
 	after, err := os.ReadFile(path)
 	if err != nil || !bytes.Equal(after, original) {
 		t.Fatalf("snapshot changed: %s err=%v", after, err)
+	}
+}
+
+func TestClosedKVReleasesPayloadAndReopensIndependentStats(t *testing.T) {
+	config := DefaultConfig(t.TempDir())
+	kv, err := NewKVStore(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer kv.Close()
+	if err := kv.Set("fixture", []byte("value"), 0); err != nil {
+		t.Fatal(err)
+	}
+	retained, err := kv.Get("fixture")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := kv.Close(); err != nil || kv.data != nil {
+		t.Fatalf("Close err=%v data cleared=%t", err, kv.data == nil)
+	}
+	if _, err := kv.GetStatsContext(t.Context()); !errors.Is(err, ErrStoreClosed) {
+		t.Fatalf("closed stats err=%v", err)
+	}
+	retained[0] = 'X'
+	next, err := NewKVStore(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer next.Close()
+	stats, err := next.GetStatsContext(t.Context())
+	if err != nil || stats.Entries != 1 || stats.Hits != 0 || stats.Misses != 0 {
+		t.Fatalf("reopened stats=%+v err=%v", stats, err)
+	}
+	if value, err := next.Get("fixture"); string(value) != "value" || err != nil {
+		t.Fatalf("reopened value=%q err=%v", value, err)
 	}
 }

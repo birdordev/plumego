@@ -176,3 +176,20 @@ func TestHealthStatusCloneKeepsTimestampAndSeparatesDependencies(t *testing.T) {
 		t.Fatalf("original=%+v clone=%+v", original, cloned)
 	}
 }
+
+func TestHealthClonesKeepIndependentTopLevelAndSharedNestedValues(t *testing.T) {
+	nested := map[string]string{"value": "before"}
+	status := HealthStatus{Details: map[string]any{"plain": "before", "nested": nested}}
+	before := status.Clone()
+	status.Details["plain"] = "after"
+	nested["value"] = "after"
+	after := status.Clone()
+	before.Details["local"] = true
+	if before.Details["plain"] != "before" || after.Details["plain"] != "after" || after.Details["local"] != nil {
+		t.Fatalf("before=%v after=%v", before.Details, after.Details)
+	}
+	if before.Details["nested"].(map[string]string)["value"] != "after" ||
+		after.Details["nested"].(map[string]string)["value"] != "after" {
+		t.Fatal("cloning changed nested ownership")
+	}
+}

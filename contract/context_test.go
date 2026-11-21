@@ -202,3 +202,22 @@ func TestNestedRequestMetadataKeepsIndependentCarriers(t *testing.T) {
 		t.Fatal("parent carriers changed")
 	}
 }
+
+func TestNilRouteStateFallsBackToLegacyMetadata(t *testing.T) {
+	base := WithRequestID(WithRequestContext(t.Context(), RequestContext{RouteName: "legacy", Params: map[string]string{"id": "legacy"}}), "fixture")
+	state := new(RouteState)
+	state.SetName("active")
+	state.AddParam("id", "active")
+	active := WithRouteState(base, state)
+	for _, tc := range []struct {
+		ctx  context.Context
+		want string
+	}{
+		{active, "active"}, {WithRouteState(active, nil), "legacy"},
+	} {
+		if got := RequestContextFromContext(tc.ctx); got.RouteName != tc.want ||
+			RequestParamFromContext(tc.ctx, "id") != tc.want || RequestIDFromContext(tc.ctx) != "fixture" {
+			t.Fatalf("context metadata=%+v", got)
+		}
+	}
+}

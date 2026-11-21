@@ -313,3 +313,28 @@ func TestTextLoggerSkipsFormattingFilteredFields(t *testing.T) {
 		t.Fatalf("written calls = %d, output = %q", calls, got)
 	}
 }
+
+func TestTextErrorFieldEscapesControlsAndKeepsSiblingInteger(t *testing.T) {
+	var output bytes.Buffer
+	logger := NewLogger(LoggerConfig{Format: LoggerFormatText, Output: &output})
+	logger.Info("fixture", Fields{
+		"cause": fmt.Errorf("left\r\nright\xff"),
+		"count": int64(9007199254740993),
+	})
+	got := output.String()
+	if strings.Count(got, "\n") != 1 || strings.Contains(got, "\r") || strings.Contains(got, "\xff") ||
+		!strings.Contains(got, "count=9007199254740993") {
+		t.Fatalf("invalid record=%q", got)
+	}
+	fields := strings.Fields(got)
+	for _, field := range fields {
+		if encoded, ok := strings.CutPrefix(field, "cause="); ok {
+			value, err := strconv.Unquote(encoded)
+			if value != "left\r\nright\xff" || err != nil {
+				t.Fatalf("error field=%q err=%v", value, err)
+			}
+			return
+		}
+	}
+	t.Fatalf("missing error field in %q", got)
+}

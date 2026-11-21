@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"reflect"
 	"runtime/debug"
+	"strings"
 	"testing"
 )
 
@@ -1230,5 +1231,26 @@ func TestErrorDetailOverlappingSliceViewsRemainIndependent(t *testing.T) {
 	views[0][0] = "short only"
 	if views[1][0] != "first" || apiErr.Details()["views"].([][]string)[0][0] != "first" {
 		t.Fatal("short view shares the long view or stored snapshot")
+	}
+}
+
+func TestErrorBuilderReuseKeepsPreviousDetailsAndWireShape(t *testing.T) {
+	values := []string{"first"}
+	builder := NewErrorBuilder().Type(TypeValidation).Detail("values", values)
+	first := builder.Build()
+	values[0] = "second"
+	second := builder.Detail("stage", "later").Build()
+	for _, tc := range []struct {
+		err   APIError
+		value string
+		stage bool
+	}{{first, "first", false}, {second, "second", true}} {
+		w := httptest.NewRecorder()
+		if err := WriteError(w, nil, tc.err); err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(w.Body.String(), tc.value) || strings.Contains(w.Body.String(), "later") != tc.stage {
+			t.Fatalf("response=%s", w.Body)
+		}
 	}
 }

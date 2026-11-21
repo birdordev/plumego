@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/birdordev/plumego"
+	"github.com/birdordev/plumego/contract"
 	"github.com/birdordev/plumego/core"
 )
 
@@ -169,7 +170,11 @@ func TestParamFromRootFacade(t *testing.T) {
 		t.Fatal(err)
 	}
 	rec := httptest.NewRecorder()
-	app.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/users/42", nil))
+	req := httptest.NewRequest(http.MethodGet, "/users/42", nil)
+	req = req.WithContext(contract.WithRequestContext(req.Context(), contract.RequestContext{
+		Params: map[string]string{"id": "parent"},
+	}))
+	app.ServeHTTP(rec, req)
 	if rec.Code != http.StatusNoContent || rec.Header().Get("X-Fixture-Param") != "42" {
 		t.Fatalf("status=%d headers=%v", rec.Code, rec.Header())
 	}

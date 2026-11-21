@@ -100,3 +100,17 @@ snapshot. Component names in the list response are sorted lexically.
 Overlapping aggregate health checks publish readiness only from the newest batch. Superseded batches return an unhealthy check result without replacing newer readiness; component-level version checks remain independent.
 
 Manual `MarkReady` and `MarkNotReady` decisions invalidate aggregate checks that started before the decision. Those older aggregates cannot replace the manual state or timestamp. A new aggregate started afterward may publish a new decision; manual state is not a permanent override. Both manual operations are ignored after manager closure.
+
+A manager checks components on demand. Callers own periodic scheduling and can
+retain `HealthCheckInterval` in their configuration. `RetryCount` counts
+retries after the first attempt. Configuration must leave room for that first
+attempt in the attempt counter. Canceling a retry delay returns the context
+error.
+
+Aggregate checks bound worker concurrency per batch. An aborted or missing
+component result leaves the batch unready, even if an older component snapshot
+was healthy. Registration invokes the component-name callback outside the
+manager lock and rechecks closure before publishing.
+
+History exports accept RFC3339 `start_time` and `end_time` filters. Invalid
+timestamps and reversed ranges return the standard invalid-query response.

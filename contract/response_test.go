@@ -824,3 +824,17 @@ func TestErrorRequestIDFallbackAndCauseIsolation(t *testing.T) {
 		}
 	}
 }
+
+func TestSuccessEncodingFailureLeavesHeadersForReplacementResponse(t *testing.T) {
+	w := &responseWriteProbe{ResponseRecorder: httptest.NewRecorder()}
+	w.Header().Set("Content-Type", "application/fixture")
+	w.Header().Set("Cache-Control", "private")
+	if err := WriteResponse(w, nil, http.StatusOK, make(chan int), nil); err == nil || w.headerCalls != 0 ||
+		w.Header().Get("Content-Type") != "application/fixture" || w.Header().Get("Cache-Control") != "private" {
+		t.Fatalf("encoding err=%v commits=%d headers=%v", err, w.headerCalls, w.Header())
+	}
+	if err := WriteResponse(w, nil, http.StatusAccepted, "fixture", nil); err != nil || w.headerCalls != 1 ||
+		w.Header().Get("Content-Type") != ContentTypeJSON || w.Header().Get("Cache-Control") != "private" {
+		t.Fatalf("replacement err=%v commits=%d headers=%v", err, w.headerCalls, w.Header())
+	}
+}

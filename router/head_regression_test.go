@@ -7,6 +7,8 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"runtime"
+	"slices"
 	"strings"
 	"testing"
 
@@ -426,5 +428,84 @@ func TestHeadDeclaredTrailersDoNotBecomeResponseFields(t *testing.T) {
 		head.Header.Get("X-Checksum") != "" || head.Header.Get("X-Late") != "" ||
 		head.Header.Get("Content-Length") != "" {
 		t.Fatalf("HEAD body=%q status=%d header=%v error=%v", body, head.StatusCode, head.Header, err)
+	}
+}
+
+type headCommitRecorder struct {
+	*httptest.ResponseRecorder
+	headers int
+}
+
+func (w *headCommitRecorder) WriteHeader(status int) {
+	w.headers++
+	w.ResponseRecorder.WriteHeader(status)
+}
+
+func TestAcceptanceHeadGoexitDoesNotCommitImplicitSuccess(t *testing.T) {
+	for _, tc := range []struct {
+		method   string
+		exit     bool
+		selected int
+		want     int
+	}{
+		{http.MethodGet, true, 0, 0},
+		{http.MethodHead, true, 0, 0},
+		{http.MethodHead, false, 0, 1},
+		{http.MethodHead, true, http.StatusAccepted, 1},
+	} {
+		r := NewRouter()
+		if err := r.AddRoute(http.MethodGet, "/", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			if tc.selected != 0 {
+				w.WriteHeader(tc.selected)
+			}
+			if tc.exit {
+				runtime.Goexit()
+			}
+		})); err != nil {
+			t.Fatal(err)
+		}
+		w := &headCommitRecorder{ResponseRecorder: httptest.NewRecorder()}
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			r.ServeHTTP(w, httptest.NewRequest(tc.method, "/", nil))
+		}()
+		<-done
+		if w.headers != tc.want || tc.selected != 0 && w.Code != tc.selected || w.Body.Len() != 0 {
+			t.Fatalf("method=%s exit=%t selected=%d commits=%d status=%d", tc.method, tc.exit, tc.selected, w.headers, w.Code)
+		}
+	}
+}
+
+type headStatusSequence struct {
+	*httptest.ResponseRecorder
+	statuses []int
+}
+
+func (w *headStatusSequence) WriteHeader(code int) {
+	w.statuses = append(w.statuses, code)
+	if code >= 200 {
+		w.ResponseRecorder.WriteHeader(code)
+	}
+}
+
+func TestHeadInformationAndFinalHeaderSnapshotAreSeparate(t *testing.T) {
+	r := NewRouter()
+	if err := r.AddRoute(http.MethodGet, "/", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusEarlyHints)
+		w.Header().Set("X-Selected", "first")
+		w.Header().Set("Trailer", "X-Checksum")
+		w.WriteHeader(http.StatusAccepted)
+		w.Header().Set("X-Selected", "late")
+		w.Header().Set("X-Checksum", "fixture")
+		_, _ = io.WriteString(w, "fixture")
+	})); err != nil {
+		t.Fatal(err)
+	}
+	w := &headStatusSequence{ResponseRecorder: httptest.NewRecorder()}
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodHead, "/", nil))
+	if !slices.Equal(w.statuses, []int{103, 202}) || w.Header().Get("X-Selected") != "first" ||
+		w.Header().Get("X-Checksum") != "" || w.Header().Get("Content-Length") != "" || w.Body.Len() != 0 {
+		t.Fatalf("statuses=%v header=%v body=%q", w.statuses, w.Header(), w.Body)
 	}
 }

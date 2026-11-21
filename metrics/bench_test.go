@@ -120,3 +120,22 @@ func BenchmarkMultiConstructionNilMix(b *testing.B) {
 		}
 	}
 }
+
+func BenchmarkCollectorStatsSnapshot(b *testing.B) {
+	for _, series := range []int{0, 32, 1024} {
+		b.Run(fmt.Sprintf("series=%d", series), func(b *testing.B) {
+			c := NewBaseMetricsCollector()
+			ctx := b.Context()
+			for i := range series {
+				c.Record(ctx, MetricRecord{Name: fmt.Sprint(i)})
+			}
+			if stats := c.GetStats(); stats.ActiveSeries != series || len(stats.NameBreakdown) != series {
+				b.Fatalf("unexpected number of series: %d", stats.ActiveSeries)
+			}
+			b.ReportAllocs()
+			for b.Loop() {
+				c.GetStats()
+			}
+		})
+	}
+}

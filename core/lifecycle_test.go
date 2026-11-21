@@ -1102,6 +1102,11 @@ func TestAcceptanceShutdownPreservesErrorWhenLoggerPanics(t *testing.T) {
 		t.Fatal("handler did not enter")
 	}
 
+	canceled, stopCanceled := context.WithCancel(t.Context())
+	stopCanceled()
+	if err := app.Shutdown(canceled); !errors.Is(err, context.Canceled) {
+		t.Fatalf("Shutdown = %v, want Canceled", err)
+	}
 	ctx, cancel := context.WithDeadline(t.Context(), time.Now().Add(-time.Second))
 	defer cancel()
 	if err := app.Shutdown(ctx); !errors.Is(err, context.DeadlineExceeded) {

@@ -118,6 +118,7 @@ func TestDebugKeepsEncodedErrorRepresentation(t *testing.T) {
 			encoded := tc.name != "identity"
 			h := Middleware(Config{})(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				w.Header().Set("Content-Type", "text/plain")
+				w.Header().Set("Content-Digest", "fixture-digest")
 				for _, coding := range tc.encodings {
 					w.Header().Add("Content-Encoding", coding)
 				}
@@ -138,12 +139,12 @@ func TestDebugKeepsEncodedErrorRepresentation(t *testing.T) {
 				t.Fatalf("status=%d, encodings=%q", res.StatusCode, got)
 			}
 			if !encoded {
-				if !json.Valid(rec.Body.Bytes()) {
+				if !json.Valid(rec.Body.Bytes()) || res.Header.Get("Content-Digest") != "" {
 					t.Fatalf("identity body is not JSON: %q", rec.Body)
 				}
 				return
 			}
-			if !bytes.Equal(rec.Body.Bytes(), compressed.Bytes()) {
+			if !bytes.Equal(rec.Body.Bytes(), compressed.Bytes()) || res.Header.Get("Content-Digest") != "fixture-digest" {
 				t.Fatal("encoded response bytes changed")
 			}
 			zr, err := gzip.NewReader(rec.Body)

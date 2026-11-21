@@ -4,21 +4,28 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"sort"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/birdordev/plumego/health"
 )
 
-var errManagerClosed = errors.New("manager is closed")
+var (
+	errManagerClosed            = errors.New("manager is closed")
+	errComponentCheckIncomplete = errors.New("component check did not complete")
+)
 
 // Config holds ops-owned health check execution policy.
 type Config struct {
-	Enabled             bool          `json:"enabled"`
-	Timeout             time.Duration `json:"timeout"`
-	RetryCount          int           `json:"retry_count"`
-	RetryDelay          time.Duration `json:"retry_delay"`
+	Enabled    bool          `json:"enabled"`
+	Timeout    time.Duration `json:"timeout"`
+	RetryCount int           `json:"retry_count"`
+	RetryDelay time.Duration `json:"retry_delay"`
+	// HealthCheckInterval 保留给调用方配置周期调度。
+	// Manager 在调用时执行检查。
 	HealthCheckInterval time.Duration `json:"health_check_interval"`
 }
 
@@ -90,6 +97,9 @@ func validateConfig(config Config) error {
 	if config.RetryCount < 0 {
 		return errors.New("retry count cannot be negative")
 	}
+	if config.RetryCount == math.MaxInt {
+		return errors.New("retry count exceeds maximum supported attempts")
+	}
 	if config.RetryDelay < 0 {
 		return errors.New("retry delay cannot be negative")
 	}
@@ -138,14 +148,20 @@ func (m *manager) RegisterComponent(checker health.ComponentChecker) error {
 		return errors.New("checker cannot be nil")
 	}
 
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	if m.closed {
+	m.mu.RLock()
+	closed := m.closed
+	m.mu.RUnlock()
+	if closed {
 		return errManagerClosed
 	}
 
 	name := checker.Name()
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.closed {
+		return errManagerClosed
+	}
 	if name == "" {
 		return errors.New("component name cannot be empty")
 	}
@@ -299,36 +315,13 @@ func (m *manager) CheckAllComponents(ctx context.Context) health.HealthStatus {
 	sort.Strings(components)
 
 	start := time.Now()
-	maxConcurrency := optimalConcurrency(len(components))
-	sem := make(chan struct{}, maxConcurrency)
-	results := make(chan componentCheckResult, len(components))
-
-	var wg sync.WaitGroup
-	for _, name := range components {
-		wg.Add(1)
-		go func(componentName string) {
-			defer wg.Done()
-			sem <- struct{}{}
-			defer func() { <-sem }()
-			results <- componentCheckResult{
-				Name:  componentName,
-				Error: m.CheckComponent(ctx, componentName),
-			}
-		}(name)
-	}
-
-	wg.Wait()
-	close(results)
-
+	results := m.checkAggregateComponents(ctx, components)
 	var failedComponents []string
-	allHealthy := true
-	for result := range results {
-		if result.Error != nil {
-			allHealthy = false
-			failedComponents = append(failedComponents, result.Name)
+	for i, result := range results {
+		if !result.complete || result.err != nil {
+			failedComponents = append(failedComponents, components[i])
 		}
 	}
-
 	duration := time.Since(start)
 
 	m.mu.Lock()
@@ -344,13 +337,16 @@ func (m *manager) CheckAllComponents(ctx context.Context) health.HealthStatus {
 	if len(components) == 0 && len(m.health) == 0 {
 		message = "no components registered"
 	}
-	if !allHealthy || ctx.Err() != nil {
+	if len(failedComponents) != 0 {
+		if status.IsReady() {
+			message = "component checks did not all succeed"
+		}
 		status = health.StatusUnhealthy
 	}
 	if err := ctx.Err(); err != nil {
+		status = health.StatusUnhealthy
 		message = err.Error()
 	}
-	sort.Strings(failedComponents)
 	timestamp := time.Now()
 	readiness := health.ReadinessStatus{
 		Timestamp:  timestamp,
@@ -364,6 +360,13 @@ func (m *manager) CheckAllComponents(ctx context.Context) health.HealthStatus {
 	}
 	for name, component := range m.health {
 		readiness.Components[name] = component.Status.IsReady()
+	}
+	for i, result := range results {
+		if !result.complete || result.err == errComponentCheckIncomplete {
+			if name := components[i]; m.health[name] != nil {
+				readiness.Components[name] = false
+			}
+		}
 	}
 
 	m.readinessMu.Lock()
@@ -459,9 +462,6 @@ func runCheckWithRetry(ctx context.Context, checker health.ComponentChecker, con
 	}
 
 	maxAttempts := config.RetryCount + 1
-	if maxAttempts < 1 {
-		maxAttempts = 1
-	}
 
 	var err error
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
@@ -478,11 +478,11 @@ func runCheckWithRetry(ctx context.Context, checker health.ComponentChecker, con
 		if attempt >= maxAttempts {
 			return attempt, err
 		}
-		if ctx.Err() != nil {
-			return attempt, err
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return attempt, ctxErr
 		}
 		if !sleepWithContext(ctx, config.RetryDelay) {
-			return attempt, err
+			return attempt, ctx.Err()
 		}
 	}
 	return maxAttempts, err
@@ -509,8 +509,47 @@ func sleepWithContext(ctx context.Context, delay time.Duration) bool {
 }
 
 type componentCheckResult struct {
-	Name  string
-	Error error
+	complete bool
+	err      error
+}
+
+func (m *manager) checkAggregateComponents(ctx context.Context, names []string) []componentCheckResult {
+	results := make([]componentCheckResult, len(names))
+	var next atomic.Int64
+	var wg sync.WaitGroup
+
+	var worker func()
+	worker = func() {
+		current := -1
+		defer func() {
+			_ = recover()
+			if current >= 0 {
+				// panic 和 Goexit 都会执行此 defer。
+				// 仅在还有未领取的检查时补充 worker。
+				results[current] = componentCheckResult{complete: true, err: errComponentCheckIncomplete}
+				if next.Load() < int64(len(names)) {
+					wg.Go(worker)
+				}
+			}
+		}()
+		for ctx.Err() == nil {
+			index := next.Add(1) - 1
+			if index >= int64(len(names)) {
+				return
+			}
+			current = int(index)
+			results[current] = componentCheckResult{
+				complete: true,
+				err:      m.CheckComponent(ctx, names[current]),
+			}
+			current = -1
+		}
+	}
+	for range optimalConcurrency(len(names)) {
+		wg.Go(worker)
+	}
+	wg.Wait()
+	return results
 }
 
 func copyComponentHealth(src *health.ComponentHealth) *health.ComponentHealth {

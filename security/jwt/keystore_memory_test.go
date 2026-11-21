@@ -468,3 +468,60 @@ func TestExpiredKeySnapshotAndOverwriteUseNewValue(t *testing.T) {
 		}
 	})
 }
+
+func TestKeyStoreEnumerationAcrossSmallBufferBoundary(t *testing.T) {
+	for _, live := range []int{31, 32, 33} {
+		store := NewInMemoryKeyStore()
+		expired := time.Now().Add(-time.Hour)
+		for i := range 64 {
+			entry := memEntry{}
+			if i >= live {
+				entry.expiry = expired
+			}
+			store.entries[fmt.Sprint(i)] = entry
+		}
+		ctx, cancel := context.WithCancel(t.Context())
+		initial, err := store.KeysContext(ctx)
+		if err != nil || len(initial) != live {
+			t.Fatalf("count=%d want=%d err=%v", len(initial), live, err)
+		}
+		initial[0] = "modified"
+		expected := make([]string, live)
+		for i := range expected {
+			expected[i] = fmt.Sprint(i)
+		}
+		slices.Sort(expected)
+		next, err := store.KeysContext(ctx)
+		slices.Sort(next)
+		if err != nil || !slices.Equal(next, expected) {
+			t.Fatalf("keys=%v want=%v err=%v", next, expected, err)
+		}
+		cancel()
+		if keys, err := store.KeysContext(ctx); keys != nil || !errors.Is(err, context.Canceled) {
+			t.Fatalf("canceled keys=%d err=%v", len(keys), err)
+		}
+	}
+}
+
+func BenchmarkKeyStoreEnumerationThreshold(b *testing.B) {
+	for _, live := range []int{31, 32, 33} {
+		b.Run(fmt.Sprintf("live=%d", live), func(b *testing.B) {
+			store := NewInMemoryKeyStore()
+			expired := time.Now().Add(-time.Hour)
+			for i := range 64 {
+				entry := memEntry{}
+				if i >= live {
+					entry.expiry = expired
+				}
+				store.entries[fmt.Sprint(i)] = entry
+			}
+			ctx := b.Context()
+			b.ReportAllocs()
+			for b.Loop() {
+				if keys, err := store.KeysContext(ctx); err != nil || len(keys) != live {
+					b.Fatalf("keys=%d err=%v", len(keys), err)
+				}
+			}
+		})
+	}
+}

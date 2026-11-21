@@ -636,3 +636,28 @@ func TestAddRouteErrorOwnershipAndFrozenPrecedence(t *testing.T) {
 		t.Fatalf("frozen app registration = %v", err)
 	}
 }
+
+func TestOldRouteGroupChecksFreezeBeforeNilHandler(t *testing.T) {
+	app := newTestApp()
+	group := app.Group("/fixture")
+	handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) })
+	if err := group.Get("/nil", nil); !errors.Is(err, contract.ErrHandlerNil) {
+		t.Fatalf("mutable group rejected with %v", err)
+	}
+	if err := group.Get("/available", handler); err != nil {
+		t.Fatal(err)
+	}
+	if err := app.Prepare(); err != nil {
+		t.Fatal(err)
+	}
+	for _, next := range []http.Handler{nil, handler} {
+		if err := group.Get("/late", next); err == nil || errors.Is(err, contract.ErrHandlerNil) {
+			t.Fatalf("frozen group returned %v", err)
+		}
+	}
+	w := httptest.NewRecorder()
+	app.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/fixture/available", nil))
+	if w.Code != http.StatusNoContent || len(app.Routes()) != 1 {
+		t.Fatalf("status=%d routes=%v", w.Code, app.Routes())
+	}
+}

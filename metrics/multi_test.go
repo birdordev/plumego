@@ -536,3 +536,27 @@ func TestAggregateStopsPropagationAtPanickingRecordCollector(t *testing.T) {
 	}()
 	m.Record(t.Context(), MetricRecord{})
 }
+
+func TestEmptyAndLiveFanoutOwnStatsAcrossClear(t *testing.T) {
+	var absent *BaseMetricsCollector
+	empty := NewMultiCollector(nil, absent)
+	live := NewMultiCollector(absent, NewBaseMetricsCollector(), NewBaseMetricsCollector())
+	empty.Record(t.Context(), MetricRecord{Name: "sample"})
+	live.Record(t.Context(), MetricRecord{Name: "sample"})
+	emptyCopy := empty.GetStats()
+	liveCopy := live.GetStats()
+	emptyCopy.NameBreakdown["empty fixture"] = 1
+	liveCopy.NameBreakdown["live fixture"] = 2
+	if got := empty.GetStats(); got.TotalRecords != 0 || len(got.NameBreakdown) != 0 {
+		t.Fatalf("fresh empty snapshot=%+v", got)
+	}
+	if got := live.GetStats(); got.TotalRecords != 2 || len(got.NameBreakdown) != 1 {
+		t.Fatalf("fresh live snapshot=%+v", got)
+	}
+	live.Clear()
+	empty.Clear()
+	if after := live.GetStats(); after.TotalRecords != 0 || len(after.NameBreakdown) != 0 ||
+		liveCopy.NameBreakdown["sample"] != 2 || emptyCopy.NameBreakdown["empty fixture"] != 1 {
+		t.Fatalf("after clear=%+v previous live=%+v empty=%+v", after, liveCopy, emptyCopy)
+	}
+}

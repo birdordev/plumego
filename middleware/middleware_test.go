@@ -202,3 +202,25 @@ func TestChainBuildRejectsNilMiddlewareBeforeCallingBuilders(t *testing.T) {
 		}
 	}
 }
+
+func TestChainEmptyAndShortCircuitBuildersWithNilTerminal(t *testing.T) {
+	var nilFunc http.HandlerFunc
+	empty := NewChain()
+	if returned := empty.Build(nil); returned != nil {
+		t.Fatalf("empty chain changed nil: %T", returned)
+	}
+	if returned, ok := empty.Build(nilFunc).(http.HandlerFunc); !ok || returned != nil {
+		t.Fatal("empty chain did not pass its terminal through")
+	}
+	shortCircuit := NewChain(func(next http.Handler) http.Handler {
+		if next != nil {
+			t.Errorf("terminal=%T", next)
+		}
+		return http.NotFoundHandler()
+	})
+	w := httptest.NewRecorder()
+	shortCircuit.Build(nil).ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/", nil))
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("status=%d", w.Code)
+	}
+}

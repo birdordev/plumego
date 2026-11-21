@@ -418,3 +418,37 @@ func TestDeleteCanceledWhileCloseWaitsRetainsFinalCounts(t *testing.T) {
 		t.Fatalf("close snapshot = %+v", got)
 	}
 }
+
+func TestExpiredReadNearClosePreservesFinalAccounting(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		c, err := NewMemoryCacheWithConfig(Config{CleanupInterval: time.Hour})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := c.Set(t.Context(), "expired", []byte("value"), time.Second); err != nil {
+			t.Fatal(err)
+		}
+		time.Sleep(2 * time.Second)
+		c.writeMu.Lock()
+		_, expiredErr := c.Get(t.Context(), "expired")
+		done := make(chan error, 1)
+		go func() { done <- c.Close() }()
+		<-c.stopChan
+		_, closedErr := c.Get(t.Context(), "expired")
+		exists, existsErr := c.Exists(t.Context(), "expired")
+		c.writeMu.Unlock()
+		if err := <-done; err != nil {
+			t.Fatal(err)
+		}
+		if !errors.Is(expiredErr, ErrNotFound) || !errors.Is(closedErr, ErrCacheClosed) ||
+			exists || !errors.Is(existsErr, ErrCacheClosed) {
+			t.Fatalf("expired=%v closed=%v exists=%t err=%v", expiredErr, closedErr, exists, existsErr)
+		}
+		if stats := c.Stats(); !stats.Closed || stats.Entries != 1 || stats.MemoryUsage != 5 {
+			t.Fatalf("final stats=%+v", stats)
+		}
+		if _, ok := c.store.Load("expired"); ok {
+			t.Fatal("closed cache retained the expired payload")
+		}
+	})
+}

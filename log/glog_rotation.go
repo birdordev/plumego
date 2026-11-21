@@ -218,6 +218,15 @@ func cleanupOldLogs(logDir, program string, config rotationConfig, current map[s
 			maxAge = time.Duration(config.MaxAge) * day
 		}
 	}
+	// 活动链接发布失败时可能仍指向上一文件，
+	// 即使 writer 已经切换。
+	linked := make(map[string]struct{})
+	for level := INFO; level <= ERROR; level++ {
+		target, err := os.Readlink(filepath.Join(logDir, program+"."+levelName(level)))
+		if err == nil && filepath.Base(target) == target {
+			linked[target] = struct{}{}
+		}
+	}
 	perLevel := make(map[Level][]logFileInfo)
 
 	for _, entry := range entries {
@@ -230,6 +239,9 @@ func cleanupOldLogs(logDir, program string, config rotationConfig, current map[s
 
 		name := entry.Name()
 		if _, ok := current[name]; ok {
+			continue
+		}
+		if _, ok := linked[name]; ok {
 			continue
 		}
 		if !strings.HasSuffix(name, ".log") {

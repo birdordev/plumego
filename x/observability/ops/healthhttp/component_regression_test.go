@@ -8,6 +8,8 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
+	"time"
 )
 
 func TestComponentHealthAfterCloseFailsClosed(t *testing.T) {
@@ -119,4 +121,37 @@ func TestComponentHealthCanceledProbeFailsClosed(t *testing.T) {
 	if got, ok := manager.GetComponentHealth("db"); !ok || got.Status != "healthy" {
 		t.Fatalf("fresh successful status: %+v", got)
 	}
+}
+
+func TestAcceptanceRetryDelayReturnsContextCauseAndCountsAttempts(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		manager, err := NewManager(Config{RetryCount: 1, RetryDelay: time.Hour})
+		if err != nil {
+			t.Fatal(err)
+		}
+		var calls atomic.Int32
+		if err := manager.RegisterComponent(functionChecker{name: "fixture", check: func(context.Context) error {
+			if calls.Add(1) == 1 {
+				return errors.New("backend fixture")
+			}
+			return nil
+		}}); err != nil {
+			t.Fatal(err)
+		}
+		ctx, cancel := context.WithCancel(t.Context())
+		result := make(chan error, 1)
+		go func() { result <- manager.CheckComponent(ctx, "fixture") }()
+		synctest.Wait()
+		cancel()
+		if err := <-result; !errors.Is(err, context.Canceled) || calls.Load() != 1 {
+			t.Fatalf("checks=%d err=%v", calls.Load(), err)
+		}
+		component, _ := manager.GetComponentHealth("fixture")
+		if attempts := component.Details["check_attempts"]; attempts != 1 {
+			t.Fatalf("attempts=%v", attempts)
+		}
+		if err := manager.CheckComponent(t.Context(), "fixture"); err != nil {
+			t.Fatalf("subsequent check: %v", err)
+		}
+	})
 }

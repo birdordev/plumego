@@ -670,3 +670,33 @@ func TestTLSPrepareRetriesAfterDirectHandlerPublication(t *testing.T) {
 		t.Fatalf("retry=%p, want %p: %v", again, first, err)
 	}
 }
+
+func TestShutdownDuringHandlerConstructionAllowsPreparation(t *testing.T) {
+	app := core.New(core.DefaultConfig(), core.AppDependencies{})
+	if err := app.Get("/", http.NotFoundHandler()); err != nil {
+		t.Fatal(err)
+	}
+	entered, resume := make(chan struct{}), make(chan struct{})
+	if err := app.Use(func(next http.Handler) http.Handler {
+		close(entered)
+		<-resume
+		return next
+	}); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() { done <- app.Prepare() }()
+	<-entered
+	err := app.Shutdown(t.Context())
+	close(resume)
+	buildErr := <-done
+	if err == nil || !strings.Contains(err.Error(), "server not prepared") || buildErr != nil {
+		t.Fatalf("Shutdown=%v Prepare=%v", err, buildErr)
+	}
+	if srv, err := app.Server(); err != nil || srv == nil {
+		t.Fatalf("Server=%v err=%v", srv, err)
+	}
+	if err := app.Shutdown(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+}

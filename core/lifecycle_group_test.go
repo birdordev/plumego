@@ -724,3 +724,39 @@ func TestReadyGoexitRestoresRunningPhase(t *testing.T) {
 		t.Fatalf("Stop=%v checked=%d stopped=%d", err, probes, stopped)
 	}
 }
+
+type observableCanceledContext struct {
+	context.Context
+	inspect func()
+}
+
+func (c observableCanceledContext) Err() error {
+	c.inspect()
+	return c.Context.Err()
+}
+
+func TestCanceledStartCheckLeavesLifecycleRegistrationOpen(t *testing.T) {
+	g := NewLifecycleGroup()
+	parent, cancel := context.WithCancel(t.Context())
+	cancel()
+	var inspected, phaseLocked bool
+	ctx := observableCanceledContext{Context: parent, inspect: func() {
+		inspected = true
+		if g.mu.TryLock() {
+			g.mu.Unlock()
+		} else {
+			phaseLocked = true
+		}
+	}}
+	if err := g.Start(ctx); !errors.Is(err, context.Canceled) || !inspected || !phaseLocked {
+		t.Fatalf("Start=%v inspected=%t phaseLocked=%t", err, inspected, phaseLocked)
+	}
+	var started bool
+	g.Add("fixture", Component{OnStart: func(context.Context) error { started = true; return nil }})
+	if err := g.Start(t.Context()); err != nil || !started {
+		t.Fatalf("next Start=%v ran=%t", err, started)
+	}
+	if err := g.Stop(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+}

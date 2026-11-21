@@ -1543,3 +1543,29 @@ func TestRoutingMatrixBeforeAndAfterFreeze(t *testing.T) {
 		}
 	}
 }
+
+func TestAnyFallbackDoesNotPolluteAllowForUnrelatedBranches(t *testing.T) {
+	for _, freeze := range []bool{false, true} {
+		r := NewRouter(WithMethodNotAllowed(true))
+		labeled := func(value string) http.Handler {
+			return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("X-Handler", value)
+			})
+		}
+		mustAddRoute(r, MethodAny, "/other/:id", labeled("any"))
+		mustAddRoute(r, http.MethodGet, "/items/fixed", labeled("get"))
+		mustAddRoute(r, http.MethodPost, "/items/:id/detail", labeled("post"))
+		if freeze {
+			r.Freeze()
+		}
+		if w := serveRouter(r, http.MethodHead, "/items/fixed"); w.Code != 200 || w.Header().Get("X-Handler") != "get" {
+			t.Fatalf("HEAD matched %d: %v", w.Code, w.Header())
+		}
+		if w := serveRouter(r, http.MethodDelete, "/items/fixed"); w.Code != 405 || w.Header().Get("Allow") != "GET, HEAD" {
+			t.Fatalf("Allow status=%d headers=%v", w.Code, w.Header())
+		}
+		if w := serveRouter(r, http.MethodPatch, "/other/1"); w.Code != 200 || w.Header().Get("X-Handler") != "any" {
+			t.Fatalf("Any fallback=%d: %v", w.Code, w.Header())
+		}
+	}
+}

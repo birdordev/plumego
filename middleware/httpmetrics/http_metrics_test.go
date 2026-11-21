@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/birdordev/plumego/contract"
+	"github.com/birdordev/plumego/router"
 )
 
 type stubMetrics struct {
@@ -129,5 +130,33 @@ func TestMiddlewareNilCollectorPassthrough(t *testing.T) {
 	}
 	if rec.Code != http.StatusNoContent {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusNoContent)
+	}
+}
+
+func TestObservesBodylessRequestsOnceWithMatchedRoute(t *testing.T) {
+	for _, tc := range []struct {
+		method string
+		status int
+	}{
+		{http.MethodGet, http.StatusNoContent},
+		{http.MethodGet, http.StatusNotModified},
+		{http.MethodHead, http.StatusOK},
+	} {
+		r := router.NewRouter()
+		if err := r.AddRoute(http.MethodGet, "/items/:id", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(tc.status)
+			if tc.method == http.MethodHead {
+				_, _ = w.Write([]byte("fixture"))
+			}
+		})); err != nil {
+			t.Fatal(err)
+		}
+		collector := new(stubMetrics)
+		w := httptest.NewRecorder()
+		Middleware(collector)(r).ServeHTTP(w, httptest.NewRequest(tc.method, "/items/1", nil))
+		if collector.count != 1 || collector.path != "/items/:id" || collector.status != tc.status || collector.bytes != 0 ||
+			w.Code != tc.status || w.Body.Len() != 0 {
+			t.Fatalf("status=%d observed=%+v body=%q", w.Code, collector, w.Body)
+		}
 	}
 }

@@ -127,3 +127,30 @@ func TestMatcherCacheEvictsFIFO(t *testing.T) {
 		t.Fatal("key1 should have been evicted (FIFO: oldest inserted)")
 	}
 }
+
+func TestReplacingCacheEntryDoesNotPromoteItsFIFOPosition(t *testing.T) {
+	cache := newMatchCache(2)
+	first, replacement := new(matchResult), new(matchResult)
+	cache.Set("a", first)
+	cache.Set("b", new(matchResult))
+	claimed, ok := cache.Get("a")
+	if !ok || claimed != first {
+		t.Fatal("unexpected initial match")
+	}
+	cache.Set("a", replacement)
+	if cached, ok := cache.Get("a"); !ok || cached != replacement {
+		t.Fatal("cache did not publish replacement")
+	}
+	cache.Set("c", new(matchResult))
+	if _, ok := cache.Get("a"); ok || claimed != first {
+		t.Fatal("replacement changed FIFO position or the previously acquired value")
+	}
+	cache.Clear()
+	cache.Set("fresh", first)
+	if _, ok := cache.Get("b"); ok {
+		t.Fatal("Clear retained a stale match")
+	}
+	if got, ok := cache.Get("fresh"); !ok || got != first {
+		t.Fatal("first Set after Clear failed")
+	}
+}

@@ -72,19 +72,18 @@ func parseHistoryQuery(r *http.Request) (HealthHistoryQuery, error) {
 	q := HealthHistoryQuery{}
 	params := r.URL.Query()
 
-	if s := params.Get("start_time"); s != "" {
-		t, err := time.Parse(time.RFC3339, s)
-		if err == nil {
-			q.StartTime = &t
-		}
+	start, err := parseHistoryTime("start_time", params.Get("start_time"))
+	if err != nil {
+		return q, err
 	}
-
-	if s := params.Get("end_time"); s != "" {
-		t, err := time.Parse(time.RFC3339, s)
-		if err == nil {
-			q.EndTime = &t
-		}
+	end, err := parseHistoryTime("end_time", params.Get("end_time"))
+	if err != nil {
+		return q, err
 	}
+	if start != nil && end != nil && end.Before(*start) {
+		return q, &invalidParamError{param: "end_time", msg: "must be at or after start_time"}
+	}
+	q.StartTime, q.EndTime = start, end
 
 	if s := params.Get("state"); s != "" {
 		state := health.HealthState(s)
@@ -111,6 +110,17 @@ func parseHistoryQuery(r *http.Request) (HealthHistoryQuery, error) {
 	}
 
 	return q, nil
+}
+
+func parseHistoryTime(param, value string) (*time.Time, error) {
+	if value == "" {
+		return nil, nil
+	}
+	parsed, err := time.Parse(time.RFC3339, value)
+	if err != nil {
+		return nil, &invalidParamError{param: param, msg: "must be an RFC3339 timestamp"}
+	}
+	return &parsed, nil
 }
 
 type invalidParamError struct {

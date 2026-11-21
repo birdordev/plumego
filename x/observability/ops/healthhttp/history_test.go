@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/birdordev/plumego/contract"
+	"github.com/birdordev/plumego/health"
 )
 
 func TestHealthHistoryExportHandler(t *testing.T) {
@@ -244,5 +245,57 @@ func TestHistoryCSVExportStopsAfterFailedWrite(t *testing.T) {
 	HealthHistoryExportHandler(tracker).ServeHTTP(w, httptest.NewRequest("GET", "/?format=csv", nil))
 	if w.Code != 200 || w.headers != 1 || w.writes != 1 || w.Header().Get("Content-Type") != "text/csv" {
 		t.Fatalf("status=%d commits=%d writes=%d headers=%v", w.Code, w.headers, w.writes, w.Header())
+	}
+}
+
+func TestAcceptanceHistoryTimestampFiltersRejectInvalidWindows(t *testing.T) {
+	tracker, _ := newHistoryManager(t)
+	handler := HealthHistoryExportHandler(tracker)
+	for _, tc := range []struct {
+		query  string
+		status int
+	}{
+		{"", 200},
+		{"?start_time=2026-01-01T00:00:00Z&end_time=2026-01-01T00:00:00Z", 200},
+		{"?start_time=fixture-date", 400},
+		{"?end_time=fixture-date", 400},
+		{"?start_time=2026-02-01T00:00:00Z&end_time=2026-01-01T00:00:00Z", 400},
+	} {
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, httptest.NewRequest("GET", "/"+tc.query, nil))
+		if w.Code != tc.status || strings.Contains(w.Body.String(), "fixture-date") ||
+			tc.status == 400 && !strings.Contains(w.Body.String(), contract.CodeInvalidQuery) {
+			t.Fatalf("status=%d want=%d body=%q", w.Code, tc.status, w.Body)
+		}
+	}
+}
+
+func TestTrackerRecordsCompletionOrderWithoutReplacingNewerReadiness(t *testing.T) {
+	manager, err := NewManager(Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer manager.Close()
+	checker := &aggregateChecker{entered: make(chan struct{}), release: make(chan struct{})}
+	if err := manager.RegisterComponent(checker); err != nil {
+		t.Fatal(err)
+	}
+	tracker := NewTracker(manager)
+	first := make(chan health.HealthStatus, 1)
+	go func() { first <- tracker.CheckAllComponents(t.Context()) }()
+	<-checker.entered
+	newer := tracker.CheckAllComponents(t.Context())
+	before := manager.Readiness()
+	close(checker.release)
+	older := <-first
+	after := manager.Readiness()
+	if newer.Status != health.StatusHealthy || older.Status != health.StatusUnhealthy ||
+		!before.Ready || !after.Ready || !before.Timestamp.Equal(after.Timestamp) {
+		t.Fatalf("new=%+v old=%+v readiness before=%+v after=%+v", newer, older, before, after)
+	}
+	history := tracker.GetHealthHistory()
+	if len(history) != 2 || history[0].State != newer.Status || history[1].State != older.Status ||
+		!history[0].Timestamp.Equal(newer.Timestamp) || !history[1].Timestamp.Equal(older.Timestamp) {
+		t.Fatalf("history=%+v", history)
 	}
 }

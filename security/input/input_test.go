@@ -539,3 +539,20 @@ func TestHeaderValueUTF8AndControlBoundary(t *testing.T) {
 		}
 	}
 }
+
+func TestValidatePublicURLRejectsMalformedConfigurationWithoutResolution(t *testing.T) {
+	for _, tc := range []struct {
+		raw   string
+		valid bool
+	}{
+		{"https://example.test:443/path?view=plain", true},
+		{"https:///missing-host", false},
+		{"https://example.test:65536/path", false},
+		{"https://example.test/%", false},
+		{"relative/path", false},
+	} {
+		if got := ValidatePublicURL(tc.raw); got != tc.valid {
+			t.Errorf("ValidatePublicURL=%t want=%t", got, tc.valid)
+		}
+	}
+}

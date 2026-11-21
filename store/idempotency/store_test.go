@@ -349,3 +349,16 @@ func TestValidateCompletionAtChecksMismatchThenExpiryThenStatus(t *testing.T) {
 		}
 	}
 }
+
+func TestValidateKeyKeepsLegalUnicodeAndBoundarySpaces(t *testing.T) {
+	for _, key := range []string{" 订单-é ", "\u3000fixture\u00a0", "e\u0301"} {
+		if err := ValidateKey(key); err != nil {
+			t.Errorf("valid key %q: %v", key, err)
+		}
+	}
+	for _, key := range []string{"\u3000\u00a0", "fixture\u0085suffix", "\tfixture"} {
+		if err := ValidateKey(key); !errors.Is(err, ErrInvalidKey) {
+			t.Errorf("invalid key %q: %v", key, err)
+		}
+	}
+}

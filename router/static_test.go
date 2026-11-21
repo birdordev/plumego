@@ -1,6 +1,7 @@
 package router
 
 import (
+	"context"
 	"errors"
 	"io"
 	"io/fs"
@@ -693,5 +694,44 @@ func TestStaticRewindFailureStopsBeforeServingContent(t *testing.T) {
 	w := serveRouter(r, http.MethodGet, "/files/file.txt")
 	if w.Code != http.StatusInternalServerError || w.Body.String() != "cannot rewind static file\n" || fixture.closes != 1 {
 		t.Fatalf("status=%d body=%q closes=%d", w.Code, w.Body, fixture.closes)
+	}
+}
+
+type waitingFixtureFS struct {
+	http.FileSystem
+	entered, release chan struct{}
+	file             *closeCountingStaticFile
+}
+
+func (f waitingFixtureFS) Open(string) (http.File, error) {
+	close(f.entered)
+	<-f.release
+	return f.file, nil
+}
+
+func TestStaticFileSystemOwnsAnOpenThatOutlivesCancellation(t *testing.T) {
+	file, err := http.FS(fstest.MapFS{"file.txt": {Data: []byte("fixture")}}).Open("file.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := waitingFixtureFS{entered: make(chan struct{}), release: make(chan struct{}), file: &closeCountingStaticFile{File: file}}
+	r := NewRouter()
+	if err := r.StaticFS("/fs", f); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	w := httptest.NewRecorder()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/fs/file.txt", nil).WithContext(ctx))
+	}()
+	<-f.entered
+	cancel()
+	close(f.release)
+	<-done
+	if f.file.closes != 1 || w.Body.String() != "fixture" {
+		t.Fatalf("closes=%d status=%d body=%q", f.file.closes, w.Code, w.Body)
 	}
 }

@@ -828,3 +828,23 @@ func TestCancellationAfterReadOverrunSkipsPendingError(t *testing.T) {
 		}
 	}
 }
+
+func TestOverrunAfterSuccessPreservesPrefixAndBlocksFlush(t *testing.T) {
+	rec := httptest.NewRecorder()
+	h := Middleware(Config{MaxBytes: 1})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusCreated)
+		if _, err := io.WriteString(w, "prefix"); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := io.ReadAll(r.Body); !errors.Is(err, errRequestTooLarge) {
+			t.Fatalf("read=%v", err)
+		}
+		if err := http.NewResponseController(w).Flush(); !errors.Is(err, errRequestTooLarge) {
+			t.Fatalf("flush=%v", err)
+		}
+	}))
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/", strings.NewReader("ab")))
+	if rec.Code != http.StatusCreated || rec.Body.String() != "prefix" || rec.Flushed {
+		t.Fatalf("status=%d body=%q flushed=%t", rec.Code, rec.Body, rec.Flushed)
+	}
+}

@@ -234,3 +234,26 @@ func TestAsAPIErrorSharedBranchesChooseFirstValue(t *testing.T) {
 		t.Fatalf("first value = %v, %t", got, ok)
 	}
 }
+
+type delegatePointerAPIError struct{ value *APIError }
+
+func (e delegatePointerAPIError) Error() string { return "fixture" }
+func (e delegatePointerAPIError) As(target any) bool {
+	if ptr, ok := target.(**APIError); ok {
+		*ptr = e.value
+		return true
+	}
+	return false
+}
+
+func TestAsDelegatedPointerIsFallbackToLaterValue(t *testing.T) {
+	pointer := NewErrorBuilder().Type(TypeUnavailable).Build()
+	value := NewErrorBuilder().Type(TypeNotFound).Build()
+	delegated := delegatePointerAPIError{value: &pointer}
+	if got, ok := AsAPIError(delegated); !ok || got.Code() != pointer.Code() {
+		t.Fatalf("fallback=%v", got)
+	}
+	if got, ok := AsAPIError(errors.Join(delegated, value)); !ok || got.Code() != value.Code() {
+		t.Fatalf("preferred=%v", got)
+	}
+}
