@@ -84,6 +84,8 @@
 - The glog-style file backend, flag initialization, and rotation helpers are
   internal backend behavior. They are not application bootstrap APIs.
 - Size-based rotation counts the bytes actually written to each file.
+  It creates a distinct file when a timestamp candidate already exists, using
+  the same filename format for retention.
 - If the replacement log file cannot be opened during rotation, the backend
   emits one fixed diagnostic to stderr per instance, keeps writing to the
   original file, and retries rotation on later writes.

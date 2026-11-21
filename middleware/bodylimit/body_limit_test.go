@@ -190,24 +190,26 @@ func TestMiddlewareDownstreamWriteAfterOverrunReportsRejection(t *testing.T) {
 }
 
 func TestMiddlewareDisabledPassesThrough(t *testing.T) {
-	mw := Middleware(Config{MaxBytes: 0})
-	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		body, err := io.ReadAll(r.Body)
-		if err != nil {
-			t.Fatalf("read body: %v", err)
+	for _, limit := range []int64{0, -1} {
+		req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader("unlimited"))
+		rec := httptest.NewRecorder()
+		originalBody := req.Body
+		calls := 0
+		handler := Middleware(Config{MaxBytes: limit})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			calls++
+			if w != rec || r != req || r.Body != originalBody {
+				t.Errorf("limit %d wrapped a disabled request", limit)
+			}
+			body, err := io.ReadAll(r.Body)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, _ = w.Write(body)
+		}))
+		handler.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK || rec.Body.String() != "unlimited" || calls != 1 {
+			t.Fatalf("limit=%d status=%d calls=%d body=%q", limit, rec.Code, calls, rec.Body)
 		}
-		_, _ = w.Write(body)
-	}))
-
-	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader("unlimited"))
-	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d", rec.Code)
-	}
-	if got := rec.Body.String(); got != "unlimited" {
-		t.Fatalf("expected disabled limit to pass body through, got %q", got)
 	}
 }
 

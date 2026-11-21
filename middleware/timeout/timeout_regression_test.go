@@ -538,3 +538,37 @@ func TestReplayLimitDiscardsBufferedTrailerAndBody(t *testing.T) {
 		t.Fatalf("status=%d headers=%v trailer=%v writes=%d body=%q", result.StatusCode, result.Header, result.Trailer, dst.writes, rec.Body.String())
 	}
 }
+
+func TestTimeoutBufferAndReplayLimitsAtExactBoundary(t *testing.T) {
+	for _, tc := range []struct {
+		name           string
+		buffer, replay int
+		final, message string
+	}{
+		{"both exact", 4, 4, "cd", ""},
+		{"buffer first", 4, 8, "cde", "response exceeded buffer limit"},
+		{"replay first", 8, 4, "cde", "response too large for timeout buffering"},
+		{"both crossed", 4, 4, "cde", "response too large for timeout buffering"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := Middleware(Config{Timeout: time.Second, MaxBufferBytes: tc.buffer, MaxReplayBytes: tc.replay})(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Etag", "original")
+				w.WriteHeader(http.StatusAccepted)
+				_, _ = io.WriteString(w, "ab")
+				_, _ = io.WriteString(w, tc.final)
+			}))
+			rec := httptest.NewRecorder()
+			h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
+			if tc.message == "" {
+				if rec.Code != http.StatusAccepted || rec.Header().Get("Etag") != "original" || rec.Body.String() != "abcd" {
+					t.Fatalf("success=%d headers=%v body=%q", rec.Code, rec.Header(), rec.Body)
+				}
+				return
+			}
+			if rec.Code != http.StatusInternalServerError || rec.Header().Get("Etag") != "" ||
+				!strings.Contains(rec.Body.String(), tc.message) || strings.Contains(rec.Body.String(), "abc") {
+				t.Fatalf("failure=%d headers=%v body=%q", rec.Code, rec.Header(), rec.Body)
+			}
+		})
+	}
+}

@@ -127,3 +127,38 @@ func TestPanicReturnsAdmissionSlots(t *testing.T) {
 		t.Fatalf("calls=%d status=%d, slots were not returned", calls, rec.Code)
 	}
 }
+
+func TestQueuedRequestDeadlineExpiresBeforeQueueTimeout(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		entered, release, done := make(chan struct{}), make(chan struct{}), make(chan struct{})
+		h := Middleware(Config{MaxConcurrent: 1, QueueDepth: 1, QueueTimeout: time.Hour})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch r.URL.Path {
+			case "/active":
+				close(entered)
+				<-release
+			case "/queued":
+				t.Error("expired request entered the handler")
+			}
+			w.WriteHeader(http.StatusNoContent)
+		}))
+		go func() {
+			defer close(done)
+			h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/active", nil))
+		}()
+		<-entered
+		ctx, cancel := context.WithTimeout(t.Context(), time.Millisecond)
+		defer cancel()
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, httptest.NewRequestWithContext(ctx, http.MethodGet, "/queued", nil))
+		if ctx.Err() != context.DeadlineExceeded || w.Body.Len() != 0 {
+			t.Errorf("deadline=%v status=%d body=%q", ctx.Err(), w.Code, w.Body)
+		}
+		close(release)
+		<-done
+		next := httptest.NewRecorder()
+		h.ServeHTTP(next, httptest.NewRequest(http.MethodGet, "/next", nil))
+		if next.Code != http.StatusNoContent {
+			t.Errorf("next status=%d", next.Code)
+		}
+	})
+}

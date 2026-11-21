@@ -99,18 +99,23 @@ func TestPasswordHashAcceptsMaxLengthPassword(t *testing.T) {
 // TestHashPasswordWithCostInvalidCostTooLow exercises the ErrInvalidCost path
 // when cost is below MinimumCost.
 func TestHashPasswordWithCostInvalidCostTooLow(t *testing.T) {
-	_, err := HashPasswordWithCost("password", MinimumCost-1)
-	if !errors.Is(err, ErrInvalidCost) {
-		t.Fatalf("error = %v, want ErrInvalidCost", err)
+	if hash, err := HashPasswordWithCost("password", MinimumCost-1); hash != "" || !errors.Is(err, ErrInvalidCost) {
+		t.Fatalf("cost below minimum: hash present=%t, error=%v", hash != "", err)
+	}
+	hash, err := HashPasswordWithCost("password", MinimumCost)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := CheckPassword(hash, "password"); err != nil {
+		t.Fatal(err)
 	}
 }
 
 // TestHashPasswordWithCostInvalidCostTooHigh exercises the ErrInvalidCost path
 // when cost is above MaximumCost.
 func TestHashPasswordWithCostInvalidCostTooHigh(t *testing.T) {
-	_, err := HashPasswordWithCost("password", MaximumCost+1)
-	if !errors.Is(err, ErrInvalidCost) {
-		t.Fatalf("error = %v, want ErrInvalidCost", err)
+	if hash, err := HashPasswordWithCost("password", MaximumCost+1); hash != "" || !errors.Is(err, ErrInvalidCost) {
+		t.Fatalf("cost above maximum: hash present=%t, error=%v", hash != "", err)
 	}
 }
 

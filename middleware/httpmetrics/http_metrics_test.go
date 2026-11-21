@@ -2,6 +2,8 @@ package httpmetrics
 
 import (
 	"context"
+	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"sync"
@@ -173,5 +175,27 @@ func TestNilObserverPreservesUnderlyingFlush(t *testing.T) {
 	})).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
 	if !rec.Flushed {
 		t.Fatal("flush did not reach the underlying writer")
+	}
+}
+
+type shortObservationWriter struct{ *httptest.ResponseRecorder }
+
+func (w shortObservationWriter) Write(p []byte) (int, error) {
+	n, _ := w.ResponseRecorder.Write(p[:2])
+	return n, io.ErrClosedPipe
+}
+
+func TestHTTPMetricsCountsOnlyBytesAcceptedByWriter(t *testing.T) {
+	observer := new(stubMetrics)
+	dst := shortObservationWriter{httptest.NewRecorder()}
+	h := Middleware(observer)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusAccepted)
+		if n, err := w.Write([]byte("fixture")); n != 2 || !errors.Is(err, io.ErrClosedPipe) {
+			t.Fatalf("write=%d err=%v", n, err)
+		}
+	}))
+	h.ServeHTTP(dst, httptest.NewRequest(http.MethodGet, "/", nil))
+	if observer.count != 1 || observer.bytes != 2 || observer.status != http.StatusAccepted || dst.Body.String() != "fi" {
+		t.Fatalf("calls=%d bytes=%d status=%d body=%q", observer.count, observer.bytes, observer.status, dst.Body)
 	}
 }

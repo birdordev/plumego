@@ -60,17 +60,20 @@ type HealthMetrics struct {
 
 // ComponentMetrics tracks metrics for individual components.
 type ComponentMetrics struct {
-	Name           string              `json:"name"`
-	CheckCount     int64               `json:"check_count"`
-	SuccessCount   int64               `json:"success_count"`
-	FailureCount   int64               `json:"failure_count"`
-	AverageLatency time.Duration       `json:"average_latency"`
-	MinLatency     time.Duration       `json:"min_latency"`
-	MaxLatency     time.Duration       `json:"max_latency"`
-	LastCheckTime  time.Time           `json:"last_check_time"`
-	LastStatus     health.HealthState  `json:"last_status"`
-	RecentHistory  []HealthCheckRecord `json:"recent_history,omitempty"`
-	HealthTrend    HealthTrend         `json:"health_trend,omitempty"`
+	Name           string        `json:"name"`
+	CheckCount     int64         `json:"check_count"`
+	SuccessCount   int64         `json:"success_count"`
+	FailureCount   int64         `json:"failure_count"`
+	AverageLatency time.Duration `json:"average_latency"`
+	MinLatency     time.Duration `json:"min_latency"`
+	MaxLatency     time.Duration `json:"max_latency"`
+	LastCheckTime  time.Time     `json:"last_check_time"`
+	// LastStatus is the most recent component outcome recorded by the Tracker.
+	// With the built-in Manager, a completed attempt can be recorded after its
+	// publication was superseded. External managers supply snapshot outcomes.
+	LastStatus    health.HealthState  `json:"last_status"`
+	RecentHistory []HealthCheckRecord `json:"recent_history,omitempty"`
+	HealthTrend   HealthTrend         `json:"health_trend,omitempty"`
 }
 
 // HealthCheckRecord represents a single health check execution record.
@@ -536,7 +539,7 @@ func (t *Tracker) Reset() {
 	t.elapsedTotals = make(map[string]latencyTotal)
 }
 
-// GenerateReport generates a comprehensive health report from tracker state.
+// GenerateReport generates a health report with component names in lexical order.
 func (t *Tracker) GenerateReport() HealthReport {
 	if t.manager == nil {
 		return HealthReport{
@@ -555,6 +558,7 @@ func (t *Tracker) GenerateReport() HealthReport {
 	for name := range allHealth {
 		components = append(components, name)
 	}
+	slices.Sort(components)
 
 	return HealthReport{
 		HealthStatus: t.manager.GetOverallHealth(),

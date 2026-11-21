@@ -671,12 +671,18 @@ func TestCompiledPolicyDetachesAdditionalHeaders(t *testing.T) {
 	policy.Additional = map[string]string{"X-Custom": "original"}
 	compiled := policy.Compile()
 	policy.Additional["X-Custom"] = "changed"
-	rec := httptest.NewRecorder()
-	if err := compiled.ApplyChecked(rec, httptest.NewRequest(http.MethodGet, "https://example.test/", nil)); err != nil {
-		t.Fatal(err)
-	}
-	if rec.Header().Get("X-Custom") != "original" || rec.Header().Get("X-Frame-Options") != policy.FrameOptions {
-		t.Fatalf("unexpected compiled policy headers: %v", rec.Header())
+	policy.FrameOptions = "DENY"
+	for _, tc := range []struct {
+		active         Policy
+		custom, frames string
+	}{{compiled, "original", "SAMEORIGIN"}, {policy.Compile(), "changed", "DENY"}} {
+		rec := httptest.NewRecorder()
+		if err := tc.active.ApplyChecked(rec, httptest.NewRequest(http.MethodGet, "https://example.test/", nil)); err != nil {
+			t.Fatal(err)
+		}
+		if rec.Header().Get("X-Custom") != tc.custom || rec.Header().Get("X-Frame-Options") != tc.frames {
+			t.Fatalf("unexpected compiled policy headers: %v", rec.Header())
+		}
 	}
 }
 

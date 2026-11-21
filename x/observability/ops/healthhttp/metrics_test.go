@@ -8,6 +8,7 @@ import (
 	"math"
 	"net/http/httptest"
 	"runtime"
+	"slices"
 	"sync/atomic"
 	"testing"
 	"testing/synctest"
@@ -475,7 +476,8 @@ func TestTrackerDirectMetricsUseOwnAttempt(t *testing.T) {
 			component, _ := tracker.GetComponentHealth("fixture")
 			stats, ok := tracker.GetComponentMetrics("fixture")
 			if !ok || stats.SuccessCount != 1 || stats.FailureCount != 1 || len(stats.RecentHistory) != 2 ||
-				stats.RecentHistory[1].Success == olderFails || component.Status != want {
+				stats.RecentHistory[1].Success == olderFails || stats.LastStatus != stats.RecentHistory[1].Status ||
+				stats.LastStatus == want || component.Status != want {
 				t.Fatalf("stats=%+v component=%+v", stats, component)
 			}
 		})
@@ -533,6 +535,37 @@ func TestTrackerExternalManagerDirectSnapshotFallback(t *testing.T) {
 		got, ok := tracker.GetComponentMetrics("fixture")
 		if ok != tc.exists || (ok && (got.CheckCount != 1 || len(got.RecentHistory) != 1 || got.RecentHistory[0].Success != tc.success || got.LastStatus != tc.state)) {
 			t.Fatalf("fixture=%+v metrics=%+v exists=%t", tc, got, ok)
+		}
+	}
+}
+
+func TestGenerateReportSortsComponentNames(t *testing.T) {
+	manager, err := NewManager(Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = manager.Close() })
+	tracker := NewTracker(manager)
+	empty, err := json.Marshal(tracker.GenerateReport())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(empty, &fields); err != nil {
+		t.Fatal(err)
+	}
+	if string(fields["components"]) != "[]" {
+		t.Fatalf("empty components=%s", fields["components"])
+	}
+	for _, name := range []string{"zeta", "gamma", "alpha", "beta", "delta", "epsilon"} {
+		if err := tracker.RegisterComponent(functionChecker{name: name}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for range 20 {
+		got := tracker.GenerateReport().Components
+		if want := []string{"alpha", "beta", "delta", "epsilon", "gamma", "zeta"}; !slices.Equal(got, want) {
+			t.Fatalf("report components=%v, want %v", got, want)
 		}
 	}
 }

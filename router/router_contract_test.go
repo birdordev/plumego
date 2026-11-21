@@ -1757,3 +1757,40 @@ func TestAllowHeaderDetachedAfterPositiveCacheWarms(t *testing.T) {
 		t.Fatalf("after=%d headers=%v", after.Code, after.Header())
 	}
 }
+
+func TestCompleteAnyRouteWinsWhenExplicitMethodDeadEnds(t *testing.T) {
+	r := NewRouter(WithMethodNotAllowed(true))
+	g := r.Group("/catalog")
+	for _, entry := range []struct {
+		method, path, marker string
+	}{
+		{http.MethodGet, "/item/details", "detail"},
+		{MethodAny, "/item", "fallback"},
+		{http.MethodPut, "/standalone", "standalone"},
+	} {
+		if err := g.AddRoute(entry.method, entry.path, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("X-Route", entry.marker)
+			_, _ = io.WriteString(w, entry.marker)
+		})); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for range 2 {
+		for _, tc := range []struct {
+			method, path, marker, allow string
+			status                      int
+		}{
+			{http.MethodGet, "/item", "fallback", "", 200},
+			{http.MethodHead, "/item", "fallback", "", 200},
+			{http.MethodGet, "/item/details", "detail", "", 200},
+			{http.MethodGet, "/standalone", "", "PUT", 405},
+			{http.MethodGet, "/missing", "", "", 404},
+		} {
+			w := serveRouter(r, tc.method, "/catalog"+tc.path)
+			if w.Code != tc.status || w.Header().Get("X-Route") != tc.marker || w.Header().Get("Allow") != tc.allow ||
+				(tc.method == http.MethodHead && w.Body.Len() != 0) {
+				t.Fatalf("%s %s: status=%d headers=%v body=%q", tc.method, tc.path, w.Code, w.Header(), w.Body)
+			}
+		}
+	}
+}

@@ -328,6 +328,8 @@ func TestCoalescedResponsesApplyHeaderChangesToEachWaiter(t *testing.T) {
 			w.Header().Del("X-Delete")
 			w.Header().Set("X-Replace", "shared")
 			w.Header().Add("Vary", "Accept-Encoding")
+			w.Header().Add("Link", "</a>")
+			w.Header().Add("Link", "</b>")
 			w.Header().Set("Content-Type", "text/plain")
 			w.WriteHeader(http.StatusAccepted)
 			w.Header().Set("X-Late", "uncommitted")
@@ -369,6 +371,7 @@ func TestCoalescedResponsesApplyHeaderChangesToEachWaiter(t *testing.T) {
 			header := tc.w.Result().Header
 			if header.Get("X-Request-ID") != tc.id || strings.Join(header.Values("Vary"), ",") != tc.vary ||
 				header.Get("X-Delete") != "" || header.Get("X-Replace") != "shared" ||
+				strings.Join(header.Values("Link"), ",") != "</a>,</b>" ||
 				header.Get("Content-Type") != "text/plain" || header.Get("X-Late") != "" ||
 				tc.w.Code != http.StatusAccepted || tc.w.Body.String() != "body" {
 				t.Errorf("%s: status=%d headers=%v body=%q", tc.id, tc.w.Code, header, tc.w.Body)

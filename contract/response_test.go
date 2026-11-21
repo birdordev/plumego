@@ -919,10 +919,10 @@ func TestEncodedResponseKeepsOriginalErrorOverShortWrite(t *testing.T) {
 func TestErrorDetailFallbackJoinsEncodingAndWriterFailures(t *testing.T) {
 	w := &fixtureShortJSONWriter{ResponseRecorder: httptest.NewRecorder(), err: io.ErrClosedPipe}
 	w.Header().Set("X-Existing", "fixture")
-	e := NewErrorBuilder().Type(TypeNotFound).RequestID("fixture-id").Detail("unsupported", make(chan int)).Build()
+	encodeErr := errors.New("fixture encode error")
+	e := NewErrorBuilder().Type(TypeNotFound).RequestID("fixture-id").Detail("fixture", failingResponseMarshaler{encodeErr}).Build()
 	err := WriteError(w, nil, e)
-	var unsupported *json.UnsupportedTypeError
-	if !errors.Is(err, io.ErrClosedPipe) || !errors.As(err, &unsupported) || w.headers != 1 || w.Code != 404 ||
+	if !errors.Is(err, io.ErrClosedPipe) || !errors.Is(err, encodeErr) || w.headers != 1 || w.Code != 404 ||
 		w.Header().Get("X-Existing") != "fixture" || !strings.Contains(w.Body.String(), "fixture-id") || strings.Contains(w.Body.String(), "details") {
 		t.Fatalf("result=%d %v %q err=%v", w.Code, w.Header(), w.Body.String(), err)
 	}
@@ -950,3 +950,21 @@ func TestResetContentDoesNotCallUserMarshaler(t *testing.T) {
 		t.Fatalf("calls=%d error=%v", calls, err)
 	}
 }
+
+func TestWriteResponseMetaFailureLeavesResponseOpen(t *testing.T) {
+	w := &countingResponseWriter{ResponseRecorder: httptest.NewRecorder()}
+	w.Header().Set("X-Existing", "original")
+	err := WriteResponse(w, nil, http.StatusAccepted, "ignored", map[string]any{"fixture": make(chan int)})
+	var unsupported *json.UnsupportedTypeError
+	if !errors.As(err, &unsupported) || w.headerWrites != 0 || w.bodyWrites != 0 || w.Header().Get("X-Existing") != "original" {
+		t.Fatalf("err=%v final=%d body=%d headers=%v", err, w.headerWrites, w.bodyWrites, w.Header())
+	}
+	if err := WriteResponse(w, nil, http.StatusCreated, "saved", nil); err != nil || w.headerWrites != 1 ||
+		w.bodyWrites != 1 || w.Code != http.StatusCreated || !strings.Contains(w.Body.String(), "saved") {
+		t.Fatalf("retry err=%v status=%d final=%d body=%q", err, w.Code, w.headerWrites, w.Body)
+	}
+}
+
+type failingResponseMarshaler struct{ cause error }
+
+func (m failingResponseMarshaler) MarshalJSON() ([]byte, error) { return nil, m.cause }

@@ -88,7 +88,7 @@ func (w *noBodyWriter) commit(inferLength bool) {
 		w.header.Set("Content-Type", http.DetectContentType(w.sniff))
 	}
 	_, hasContentLength := w.header["Content-Length"]
-	if inferLength && w.bodyAllowed() && w.bytes <= 2048 && !hasContentLength &&
+	if inferLength && w.bodyAllowed() && w.bytes > 0 && w.bytes <= 2048 && !hasContentLength &&
 		w.header.Get("Transfer-Encoding") == "" && !hasResponseTrailers(w.header) {
 		w.header.Set("Content-Length", strconv.FormatInt(w.bytes, 10))
 	}

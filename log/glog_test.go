@@ -14,6 +14,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 )
 
@@ -1820,4 +1821,83 @@ func TestFileRotationTracksBytesWhileDisabled(t *testing.T) {
 	if len(outputOnly.currentSize) != 0 {
 		t.Fatalf("unexpected file counters: %v", outputOnly.currentSize)
 	}
+}
+
+func TestRotationWithFixedClockCreatesSeparateArchives(t *testing.T) {
+	dir := t.TempDir()
+	synctest.Test(t, func(t *testing.T) {
+		logger := newGLogger()
+		logger.logDir = dir
+		logger.toStderr = false
+		logger.SetRotationConfig(rotationConfig{MaxSize: 1})
+		if err := logger.initLogFiles(); err != nil {
+			t.Fatal(err)
+		}
+		defer logger.Close()
+		archive := logger.logFiles[INFO].Name()
+		for _, fill := range []string{"a", "b"} {
+			message := strings.Repeat(fill, 1<<20)
+			logger.Info(message)
+			active := logger.logFiles[INFO].Name()
+			if active == archive || logger.currentSize[INFO] != 0 {
+				t.Fatalf("archive=%q active=%q tracked=%d", archive, active, logger.currentSize[INFO])
+			}
+			data, err := os.ReadFile(archive)
+			if err != nil || !bytes.HasSuffix(data, []byte(message+"\n")) || bytes.Count(data, []byte("\n")) != 1 {
+				t.Fatalf("archive=%q bytes=%d err=%v", archive, len(data), err)
+			}
+			info, err := os.Stat(active)
+			if err != nil || info.Size() != 0 {
+				t.Fatalf("new file: info=%v err=%v", info, err)
+			}
+			archive = active
+		}
+	})
+}
+
+func TestRotationRetentionRecognizesCollisionArchiveAndLegacyFile(t *testing.T) {
+	dir := t.TempDir()
+	synctest.Test(t, func(t *testing.T) {
+		logger := newGLogger()
+		logger.logDir, logger.program, logger.toStderr = dir, "rotation-retention", false
+		logger.SetRotationConfig(rotationConfig{MaxSize: 1, MaxBackups: 1})
+		if err := logger.initLogFiles(); err != nil {
+			t.Fatal(err)
+		}
+		defer logger.Close()
+		legacy := filepath.Join(dir, "rotation-retention.host.INFO.20000101-000000.1.log")
+		if err := os.WriteFile(legacy, nil, 0600); err != nil {
+			t.Fatal(err)
+		}
+		old := time.Unix(1, 0)
+		if err := os.Chtimes(legacy, old, old); err != nil {
+			t.Fatal(err)
+		}
+		original := logger.logFiles[INFO].Name()
+		msg := strings.Repeat("x", 1<<20)
+		logger.Info(msg)
+		if err := os.Chtimes(original, old.Add(time.Hour), old.Add(time.Hour)); err != nil {
+			t.Fatal(err)
+		}
+		retired := logger.logFiles[INFO].Name()
+		previous, err := os.Readlink(filepath.Join(dir, "rotation-retention.INFO"))
+		if err != nil || previous != filepath.Base(retired) {
+			t.Fatalf("first link=%q active=%q err=%v", previous, retired, err)
+		}
+		logger.Info(msg)
+		active := logger.logFiles[INFO].Name()
+		if active == retired {
+			t.Fatal("second rotation reused the active file")
+		}
+		if _, err := os.Stat(legacy); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("legacy archive: %v", err)
+		}
+		if _, err := os.Stat(retired); err != nil {
+			t.Fatalf("latest archive: %v", err)
+		}
+		link, err := os.Readlink(filepath.Join(dir, "rotation-retention.INFO"))
+		if err != nil || link != filepath.Base(active) {
+			t.Fatalf("link=%q active=%q err=%v", link, active, err)
+		}
+	})
 }

@@ -613,3 +613,49 @@ func TestCanceledCacheClearPreservesEntriesAndBytes(t *testing.T) {
 		t.Fatalf("cleared=%+v", got)
 	}
 }
+
+func TestAppendKeepsIndependentInputAndReadSnapshots(t *testing.T) {
+	c := NewMemoryCache()
+	defer c.Close()
+	if err := c.Set(t.Context(), "key", []byte("a"), 0); err != nil {
+		t.Fatal(err)
+	}
+	part := []byte("bc")
+	if err := c.Append(t.Context(), "key", part); err != nil {
+		t.Fatal(err)
+	}
+	part[0] = 'x'
+	first, err := c.Get(t.Context(), "key")
+	if err != nil || string(first) != "abc" {
+		t.Fatalf("first=%q err=%v", first, err)
+	}
+	first[0] = 'y'
+	next, err := c.Get(t.Context(), "key")
+	if err != nil || string(next) != "abc" || c.Stats().MemoryUsage != 3 {
+		t.Fatalf("next=%q stats=%+v err=%v", next, c.Stats(), err)
+	}
+}
+
+func TestDecrBelowMinimumRetainsValueAndDeadline(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		c := NewMemoryCache()
+		defer c.Close()
+		const key = "integer"
+		value := strconv.FormatInt(minInt64, 10)
+		if err := c.Set(t.Context(), key, []byte(value), 2*time.Second); err != nil {
+			t.Fatal(err)
+		}
+		time.Sleep(time.Second)
+		if _, err := c.Decr(t.Context(), key, 1); !errors.Is(err, ErrNotInteger) {
+			t.Fatalf("Decr=%v", err)
+		}
+		got, err := c.Get(t.Context(), key)
+		if err != nil || string(got) != value {
+			t.Fatalf("value=%q err=%v", got, err)
+		}
+		time.Sleep(time.Second)
+		if _, err := c.Get(t.Context(), key); !errors.Is(err, ErrNotFound) {
+			t.Fatalf("at the original deadline: %v", err)
+		}
+	})
+}

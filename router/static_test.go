@@ -804,3 +804,24 @@ func TestStaticIfRangeDateParity(t *testing.T) {
 		}
 	}
 }
+
+func TestStaticFSStatErrorClosesEachHeadAndGetFile(t *testing.T) {
+	source := new(staticOpenResult)
+	r := NewRouter()
+	if err := r.StaticFS("/files", source); err != nil {
+		t.Fatal(err)
+	}
+	files := http.FS(fstest.MapFS{"sample.txt": {Data: []byte("sample")}})
+	for _, method := range []string{http.MethodGet, http.MethodHead} {
+		f, err := files.Open("sample.txt")
+		if err != nil {
+			t.Fatal(err)
+		}
+		tracked := &closeCountingStaticFile{File: f, statErr: errors.New("stat failed")}
+		source.file = tracked
+		w := serveRouter(r, method, "/files/sample.txt")
+		if w.Code != http.StatusNotFound || tracked.closes != 1 || (method == http.MethodHead && w.Body.Len() != 0) {
+			t.Fatalf("%s: status=%d closes=%d body=%q", method, w.Code, tracked.closes, w.Body)
+		}
+	}
+}

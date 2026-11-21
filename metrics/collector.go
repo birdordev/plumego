@@ -3,6 +3,7 @@ package metrics
 import (
 	"context"
 	"maps"
+	"math"
 	"net/http"
 	"strconv"
 	"sync"
@@ -125,7 +126,8 @@ type BaseMetricsCollector struct {
 	stats CollectorStats
 }
 
-// NewBaseMetricsCollector creates a new base metrics collector.
+// NewBaseMetricsCollector creates a base metrics collector with counters that
+// saturate at their maximum representable value.
 func NewBaseMetricsCollector() *BaseMetricsCollector {
 	return &BaseMetricsCollector{
 		stats: newCollectorStats(time.Now()),
@@ -145,13 +147,13 @@ func (b *BaseMetricsCollector) record(name string, isError bool) {
 	defer b.mu.Unlock()
 	b.ensureInitializedLocked()
 
-	b.stats.TotalRecords++
+	b.stats.TotalRecords = addCounterSaturated(b.stats.TotalRecords, 1, math.MaxInt64)
 	if name != "" {
-		b.stats.NameBreakdown[name]++
+		b.stats.NameBreakdown[name] = addCounterSaturated(b.stats.NameBreakdown[name], 1, math.MaxInt64)
 	}
 
 	if isError {
-		b.stats.ErrorRecords++
+		b.stats.ErrorRecords = addCounterSaturated(b.stats.ErrorRecords, 1, math.MaxInt64)
 	}
 }
 

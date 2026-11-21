@@ -185,7 +185,9 @@ func TestPrincipalSnapshotDistinguishesNilAndEmptyAttributes(t *testing.T) {
 		t.Fatalf("empty snapshot=%+v", empty)
 	}
 	empty.Claims["fixture"] = "changed"
-	if len(PrincipalFromContext(ctx).Claims) != 0 {
-		t.Fatal("caller mutation changed the stored claims")
+	empty.Roles = append(empty.Roles, "reader")
+	empty.Subject = "changed"
+	if again := PrincipalFromContext(ctx); again.Subject != "fixture" || len(again.Claims) != 0 || len(again.Roles) != 0 || again.Roles == nil {
+		t.Fatal("caller mutation changed the stored principal")
 	}
 }

@@ -222,3 +222,22 @@ func TestInvalidGeneratedIDFallbackWithoutRequestHeaderWriteback(t *testing.T) {
 		t.Fatalf("calls=%d context=%q response=%v request=%v", calls, seen, w.Header(), req.Header)
 	}
 }
+
+func TestRequestHeaderOptOutStillPropagatesGeneratedID(t *testing.T) {
+	const id = "fixture-opt-out"
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	calls := 0
+	h := Middleware(WithRequestHeader(false), WithGenerator(func() string {
+		calls++
+		return id
+	}))(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		if r.Header.Get(contract.RequestIDHeader) != "" || contract.RequestIDFromContext(r.Context()) != id {
+			t.Fatalf("headers=%v context=%q", r.Header, contract.RequestIDFromContext(r.Context()))
+		}
+	}))
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if calls != 1 || req.Header.Get(contract.RequestIDHeader) != "" || w.Header().Get(contract.RequestIDHeader) != id {
+		t.Fatalf("calls=%d request=%v response=%v", calls, req.Header, w.Header())
+	}
+}

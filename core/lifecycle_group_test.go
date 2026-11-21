@@ -886,3 +886,27 @@ func TestNestedReadyPreservesErrorAndProbeOrder(t *testing.T) {
 		t.Fatalf("error=%v sequence=%v", err, sequence)
 	}
 }
+
+func TestReadyGoexitReleasesLifecyclePhase(t *testing.T) {
+	group := NewLifecycleGroup()
+	stops := 0
+	group.Add("worker", Component{
+		OnReady: func(context.Context) error { runtime.Goexit(); return nil },
+		OnStop:  func(context.Context) error { stops++; return nil },
+	})
+	if err := group.Start(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	finished := make(chan struct{})
+	go func() {
+		defer close(finished)
+		_ = group.Ready(t.Context())
+	}()
+	<-finished
+	if err := group.Stop(t.Context()); err != nil || stops != 1 {
+		t.Fatalf("Stop=%v calls=%d", err, stops)
+	}
+	if err := group.Ready(t.Context()); err == nil {
+		t.Fatal("stopped group still probes")
+	}
+}

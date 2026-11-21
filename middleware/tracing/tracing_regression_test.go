@@ -121,6 +121,9 @@ func TestTracingPreservesParentDeadlineOnCanceledRequest(t *testing.T) {
 	calls := 0
 	h := Middleware(deadlineFixtureTracer{span})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls++
+		if span.ends != 0 {
+			t.Error("span ended before next")
+		}
 		got, ok := r.Context().Deadline()
 		if !ok || !got.Equal(deadline) || !errors.Is(r.Context().Err(), context.Canceled) ||
 			r.Context().Value(deadlineFixtureKey{}) != "tracer" || contract.RequestIDFromContext(r.Context()) != "fixture" {

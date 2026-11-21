@@ -987,3 +987,70 @@ func TestMissingDeletePreservesSnapshotFileAndReopen(t *testing.T) {
 		t.Fatalf("value=%q error=%v", got, err)
 	}
 }
+
+func TestPreCanceledReplacementLeavesSameRecordAfterReopen(t *testing.T) {
+	opts := Options{DataDir: t.TempDir()}
+	kv, err := NewKVStore(opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer kv.Close()
+	if err := kv.Set("fixture", []byte("before"), 0); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	if err := kv.SetContext(ctx, "fixture", []byte("after"), 0); !errors.Is(err, context.Canceled) {
+		t.Fatalf("canceled set=%v", err)
+	}
+	check := func(kv *KVStore) {
+		t.Helper()
+		got, err := kv.Get("fixture")
+		size, sizeErr := kv.SizeContext(t.Context())
+		if err != nil || string(got) != "before" || sizeErr != nil || size != 1 {
+			t.Fatalf("value=%q size=%d errors=%v %v", got, size, err, sizeErr)
+		}
+	}
+	check(kv)
+	if err := kv.Close(); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := NewKVStore(opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopened.Close()
+	check(reopened)
+}
+
+func TestKeyListSnapshotSurvivesInsertDeleteAndCallerMutation(t *testing.T) {
+	kv, err := NewKVStore(Options{DataDir: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer kv.Close()
+	for _, key := range []string{"zeta", "alpha"} {
+		if err := kv.Set(key, []byte(key), 0); err != nil {
+			t.Fatal(err)
+		}
+	}
+	first, err := kv.KeysContext(t.Context())
+	if err != nil || !slices.Equal(first, []string{"alpha", "zeta"}) {
+		t.Fatalf("first=%v err=%v", first, err)
+	}
+	done := make(chan error, 1)
+	go func() {
+		done <- errors.Join(kv.Delete("zeta"), kv.Set("beta", []byte("beta"), 0))
+	}()
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(first, []string{"alpha", "zeta"}) {
+		t.Fatalf("old snapshot=%v", first)
+	}
+	first[0] = "changed"
+	next, err := kv.KeysContext(t.Context())
+	if err != nil || !slices.Equal(next, []string{"alpha", "beta"}) {
+		t.Fatalf("next=%v err=%v", next, err)
+	}
+}

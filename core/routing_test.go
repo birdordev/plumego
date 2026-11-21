@@ -399,6 +399,11 @@ func TestAddRouteWithRouteNameRegistersURLAndReturnsErrors(t *testing.T) {
 		t.Fatalf("named route URL = %q, err = %v, want /users/42", got, err)
 	}
 
+	for _, args := range [][]string{{"id", "42/a"}, {"other", "42"}} {
+		if got, err := app.URL("users.show", args...); got != "" || err == nil {
+			t.Fatalf("URL(%v)=%q, err=%v", args, got, err)
+		}
+	}
 	if err := app.AddRoute(http.MethodGet, "/users/:id", handler, router.WithRouteName("users.show")); err == nil {
 		t.Fatalf("expected duplicate named route error")
 	}
@@ -707,5 +712,27 @@ func TestGroupEmptyRelativePathNamedRoute(t *testing.T) {
 	app.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
 	if rec.Code != http.StatusNoContent {
 		t.Fatalf("status=%d", rec.Code)
+	}
+}
+
+func TestGroupRouteSnapshotsRemainIndependentAcrossPrepare(t *testing.T) {
+	app := newTestApp()
+	g := app.Group("/api").Group("/v1")
+	if err := g.AddRoute(http.MethodGet, "/item", http.NotFoundHandler(), router.WithRouteName("item"), router.WithTags("original")); err != nil {
+		t.Fatal(err)
+	}
+	first := app.Routes()
+	if len(first) != 1 || len(first[0].Meta.Tags) != 1 {
+		t.Fatalf("initial routes=%+v", first)
+	}
+	first[0].Meta.Tags[0] = "mutated"
+	first[0] = router.RouteInfo{}
+	if err := app.Prepare(); err != nil {
+		t.Fatal(err)
+	}
+	got := app.Routes()
+	if len(got) != 1 || got[0].Path != "/api/v1/item" || got[0].Method != http.MethodGet ||
+		got[0].Meta.Name != "item" || len(got[0].Meta.Tags) != 1 || got[0].Meta.Tags[0] != "original" {
+		t.Fatalf("prepared routes=%+v", got)
 	}
 }

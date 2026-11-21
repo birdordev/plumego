@@ -518,6 +518,9 @@ func TestValidateEmailLocalAndDomainLabelByteLimits(t *testing.T) {
 			t.Errorf("local=%d label=%d valid=%t want=%t", tc.local, tc.label, got, tc.want)
 		}
 	}
+	if !ValidateEmail("  person@" + strings.Repeat("b", 63) + ".test  ") {
+		t.Error("a valid boundary label with surrounding spaces was rejected")
+	}
 	if ValidateEmail("person@éxample.test") {
 		t.Error("non-ASCII domain accepted")
 	}

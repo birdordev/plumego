@@ -320,3 +320,23 @@ func TestHTTPRecordOwnsLabelsAndRetainsSubsecondDuration(t *testing.T) {
 		t.Fatalf("first=%+v second=%+v", a, b)
 	}
 }
+
+func TestBaseHTTPStatusCountersAtSaturation(t *testing.T) {
+	c := NewBaseMetricsCollector()
+	c.stats.TotalRecords = 1<<63 - 1
+	c.stats.NameBreakdown[MetricHTTPRequest] = 1<<63 - 1
+	c.ObserveHTTP(t.Context(), "GET", "/", 399, 0, 0)
+	if got := c.GetStats().ErrorRecords; got != 0 {
+		t.Fatalf("399 errors=%d", got)
+	}
+	c.ObserveHTTP(t.Context(), "GET", "/", 400, 0, 0)
+	s := c.GetStats()
+	if s.TotalRecords != 1<<63-1 || s.NameBreakdown[MetricHTTPRequest] != 1<<63-1 || s.ErrorRecords != 1 {
+		t.Fatalf("400 stats=%+v", s)
+	}
+	c.Clear()
+	c.ObserveHTTP(t.Context(), "GET", "/", 200, 0, 0)
+	if s := c.GetStats(); s.TotalRecords != 1 || s.NameBreakdown[MetricHTTPRequest] != 1 || s.ErrorRecords != 0 {
+		t.Fatalf("after clear: %+v", s)
+	}
+}

@@ -603,3 +603,31 @@ func TestMultiCollectorCountsExplicitSeriesWithoutBreakdown(t *testing.T) {
 		}
 	}
 }
+
+func TestBaseCountersSaturateDirectlyAndInMulti(t *testing.T) {
+	c := NewBaseMetricsCollector()
+	c.stats.TotalRecords = math.MaxInt64 - 1
+	c.stats.ErrorRecords = math.MaxInt64 - 1
+	c.stats.NameBreakdown["fixture"] = math.MaxInt64 - 1
+	record := MetricRecord{Name: "fixture", Error: errors.New("fixture error")}
+	combined := NewMultiCollector(c, NewBaseMetricsCollector())
+	for range 2 {
+		c.Record(t.Context(), record)
+		for _, source := range []StatsReader{c, combined} {
+			s := source.GetStats()
+			if s.TotalRecords != math.MaxInt64 || s.ErrorRecords != math.MaxInt64 || s.NameBreakdown["fixture"] != math.MaxInt64 {
+				t.Fatalf("stats=%+v", s)
+			}
+		}
+	}
+	c.Record(t.Context(), MetricRecord{Name: "other"})
+	if got := c.GetStats().NameBreakdown["other"]; got != 1 {
+		t.Fatalf("other=%d, want 1", got)
+	}
+	c.Clear()
+	c.Record(t.Context(), record)
+	s := c.GetStats()
+	if s.TotalRecords != 1 || s.ErrorRecords != 1 || s.NameBreakdown["fixture"] != 1 || len(s.NameBreakdown) != 1 {
+		t.Fatalf("after clear: %+v", s)
+	}
+}

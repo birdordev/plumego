@@ -690,9 +690,14 @@ func TestShutdownDuringHandlerConstructionAllowsPreparation(t *testing.T) {
 	done := make(chan error, 1)
 	go func() { done <- app.Prepare() }()
 	<-entered
+	pendingServer, pendingServerErr := app.Server()
+	pendingPrepareErr := app.Prepare()
 	err := app.Shutdown(t.Context())
 	close(resume)
 	buildErr := <-done
+	if pendingServer != nil || pendingServerErr == nil || pendingPrepareErr == nil {
+		t.Fatalf("pending Server=%v err=%v Prepare=%v", pendingServer, pendingServerErr, pendingPrepareErr)
+	}
 	if err == nil || !strings.Contains(err.Error(), "server not prepared") || buildErr != nil {
 		t.Fatalf("Shutdown=%v Prepare=%v", err, buildErr)
 	}

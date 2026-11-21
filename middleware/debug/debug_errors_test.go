@@ -21,14 +21,19 @@ import (
 
 type debugDrainFailureWriter struct {
 	*httptest.ResponseRecorder
-	err             error
-	writes, flushes int
+	err                      error
+	writes, flushes, headers int
 }
 
 func (w *debugDrainFailureWriter) Write(p []byte) (int, error) {
 	w.writes++
 	n, _ := w.ResponseRecorder.Write(p[:1])
 	return n, w.err
+}
+
+func (w *debugDrainFailureWriter) WriteHeader(status int) {
+	w.headers++
+	w.ResponseRecorder.WriteHeader(status)
 }
 
 func (w *debugDrainFailureWriter) FlushError() error {
@@ -1259,5 +1264,28 @@ func TestDebugRecoveredStreamPreservesTrailers(t *testing.T) {
 				t.Fatalf("uncommitted response=%d trailer=%v", resp.StatusCode, resp.Trailer)
 			}
 		})
+	}
+}
+
+func TestDebugCommittedTrailerSurvivesOrdinaryWriteFailure(t *testing.T) {
+	writeErr := errors.New("fixture write failure")
+	dst := &debugDrainFailureWriter{ResponseRecorder: httptest.NewRecorder(), err: writeErr}
+	h := Middleware(Config{})(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Trailer", "X-Fixture-Trailer")
+		w.WriteHeader(http.StatusAccepted)
+		if err := http.NewResponseController(w).Flush(); err != nil {
+			t.Fatal(err)
+		}
+		if n, err := io.WriteString(w, "fixture"); n != 1 || !errors.Is(err, writeErr) {
+			t.Fatalf("Write=%d %v", n, err)
+		}
+		w.Header().Set("X-Fixture-Trailer", "finished")
+	}))
+	h.ServeHTTP(dst, httptest.NewRequest(http.MethodGet, "/", nil))
+	resp := dst.Result()
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusAccepted || dst.headers != 1 || dst.writes != 1 ||
+		resp.Trailer.Get("X-Fixture-Trailer") != "finished" || dst.Body.String() != "f" {
+		t.Fatalf("status=%d headers=%d writes=%d trailers=%v body=%q", resp.StatusCode, dst.headers, dst.writes, resp.Trailer, dst.Body)
 	}
 }

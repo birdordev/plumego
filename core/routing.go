@@ -40,8 +40,8 @@ func (a *App) AddRoute(method, path string, handler http.Handler, opts ...router
 }
 
 // URL resolves a named route against the owned app router.
-// It returns an error when the route is unknown, a required parameter is
-// missing or empty, or the app has no router configured.
+// It uses the name and parameter validation of [router.Router.URL] and also
+// returns an error when the app has no router configured.
 func (a *App) URL(name string, params ...string) (string, error) {
 	r := a.ensureRouter()
 	if r == nil {

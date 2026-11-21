@@ -488,3 +488,22 @@ func TestNamedGroupURLRejectsUnpairedParameterThenRecovers(t *testing.T) {
 		t.Fatalf("valid result=%q error=%v", url, err)
 	}
 }
+
+func TestReverseStaticPathPreservesLiteralURLDelimiters(t *testing.T) {
+	r := NewRouter()
+	if err := r.AddRoute(http.MethodGet, "/notes/chapter?#one", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		if req.URL.RawQuery != "" || req.URL.Fragment != "" || req.URL.Path != "/notes/chapter?#one" {
+			t.Errorf("unexpected parsed URL: %v", req.URL)
+		}
+		w.WriteHeader(http.StatusAccepted)
+	}), WithRouteName("notes")); err != nil {
+		t.Fatal(err)
+	}
+	href, err := r.URL("notes")
+	if err != nil || href != "/notes/chapter%3F%23one" {
+		t.Fatalf("URL=%q err=%v", href, err)
+	}
+	if w := serveRouter(r, http.MethodGet, href); w.Code != http.StatusAccepted {
+		t.Fatalf("status=%d body=%q", w.Code, w.Body)
+	}
+}

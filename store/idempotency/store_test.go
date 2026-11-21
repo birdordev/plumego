@@ -381,6 +381,9 @@ func TestCompletionExpirationAndStatusUseSuppliedClock(t *testing.T) {
 		if err := ValidateCompletionAt(record, "different", expires); !errors.Is(err, ErrRequestMismatch) {
 			t.Fatalf("mismatch=%v", err)
 		}
+		if record.Status != status || record.ExpiresAt != expires {
+			t.Fatalf("record changed: %+v", record)
+		}
 	}
 }
 

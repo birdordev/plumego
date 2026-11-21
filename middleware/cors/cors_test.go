@@ -733,3 +733,33 @@ func TestPreflightKeepsRequestedHeaderCaseAndOrder(t *testing.T) {
 		t.Fatalf("status=%d headers=%v calls=%d", rec.Code, rec.Header(), calls)
 	}
 }
+
+func TestAllowedOriginMergesExistingVaryFields(t *testing.T) {
+	const origin = "https://example.test"
+	calls := 0
+	h := Middleware(CORSOptions{AllowedOrigins: []string{origin}})(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls++
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	r := httptest.NewRequest(http.MethodGet, "/", nil)
+	r.Header.Set("Origin", origin)
+	for _, prior := range []string{"Accept", "Accept, origin"} {
+		w := httptest.NewRecorder()
+		w.Header().Add("Vary", prior)
+		w.Header().Add("Vary", "Accept-Language")
+		h.ServeHTTP(w, r)
+		tokens := map[string]int{}
+		for _, value := range w.Result().Header.Values("Vary") {
+			for _, token := range strings.Split(value, ",") {
+				tokens[strings.ToLower(strings.TrimSpace(token))]++
+			}
+		}
+		if tokens["origin"] != 1 || tokens["accept"] != 1 || tokens["accept-language"] != 1 ||
+			w.Code != http.StatusNoContent || w.Header().Get("Access-Control-Allow-Origin") != origin {
+			t.Fatalf("prior=%q vary=%v response=%v", prior, tokens, w.Result())
+		}
+	}
+	if calls != 2 {
+		t.Fatalf("next calls=%d", calls)
+	}
+}

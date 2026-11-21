@@ -238,3 +238,14 @@ func TestReadinessEmptyReasonOmittedRegardlessOfReady(t *testing.T) {
 		}
 	}
 }
+
+func TestHealthCloneDependenciesDoNotReuseSpareCapacity(t *testing.T) {
+	storage := []string{"primary", "spare"}
+	original := HealthStatus{Dependencies: storage[:1]}
+	detached := original.Clone()
+	detached.Dependencies[0] = "updated"
+	detached.Dependencies = append(detached.Dependencies, "new")
+	if storage[0] != "primary" || storage[1] != "spare" || len(original.Dependencies) != 1 {
+		t.Fatalf("storage=%v original=%+v", storage, original)
+	}
+}

@@ -1979,3 +1979,28 @@ func TestGzipPreservesExplicitEncodingAcrossFlush(t *testing.T) {
 		t.Fatalf("status=%d headers=%v body=%q flushed=%t", rec.Code, rec.Header(), rec.Body.String(), rec.Flushed)
 	}
 }
+
+func TestGzipRangePreservesFramingOnLoopback(t *testing.T) {
+	srv := httptest.NewServer(Middleware(DefaultConfig())(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain")
+		http.ServeContent(w, r, "fixture.txt", time.Time{}, strings.NewReader("abcdef"))
+	})))
+	defer srv.Close()
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, srv.URL, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Accept-Encoding", "gzip")
+	req.Header.Set("Range", "bytes=1-3")
+	resp, err := srv.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil || resp.StatusCode != http.StatusPartialContent || string(body) != "bcd" ||
+		resp.Header.Get("Content-Range") != "bytes 1-3/6" || resp.ContentLength != 3 ||
+		resp.Header.Get("Content-Encoding") != "" || resp.Header.Get("Vary") != "Accept-Encoding" {
+		t.Fatalf("status=%d headers=%v length=%d body=%q err=%v", resp.StatusCode, resp.Header, resp.ContentLength, body, err)
+	}
+}

@@ -224,6 +224,8 @@ mutate the registered route table.
 
 HEAD suppresses body bytes while preserving implicit 200 commitment, final
 status, content-type detection, and small-response content-length inference.
+When the handler writes no body bytes, automatic inference leaves the length
+unspecified. An explicit Content-Length, including zero, is preserved.
 When the handler leaves the content type unspecified, detection can use up to
 512 bytes across body writes before a flush or handler completion.
 Final headers are snapshotted at commitment; later header edits do not replace

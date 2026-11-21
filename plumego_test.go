@@ -266,3 +266,20 @@ func TestFacadeParamAfterPreparingNestedGroup(t *testing.T) {
 		t.Fatalf("status=%d", rec.Code)
 	}
 }
+
+func TestSeparateFacadeDefaultConfigsRemainIndependent(t *testing.T) {
+	custom, baseline := plumego.DefaultConfig(), plumego.DefaultConfig()
+	custom.Addr = ":9311"
+	app := plumego.NewWithConfig(custom)
+	if err := app.Prepare(); err != nil {
+		t.Fatal(err)
+	}
+	srv, err := app.Server()
+	if err != nil || srv.Addr != custom.Addr {
+		t.Fatalf("server=%v err=%v", srv, err)
+	}
+	want := core.DefaultConfig()
+	if baseline.Addr != want.Addr || plumego.DefaultConfig().Addr != want.Addr {
+		t.Fatal("custom app changed the default address")
+	}
+}

@@ -333,3 +333,36 @@ func TestComponentDurationCloneJSONRoundTrip(t *testing.T) {
 		}
 	}
 }
+
+func TestHealthTimestampWithOffsetRoundTrips(t *testing.T) {
+	at := time.Date(2026, time.November, 21, 13, 5, 4, 123, time.FixedZone("fixture", 5*60*60+30*60))
+	original := HealthStatus{Status: StatusHealthy, Timestamp: at}
+	assertStringField(t, marshalObject(t, original), "timestamp", "2026-11-21T13:05:04.000000123+05:30")
+	raw, err := json.Marshal(original)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded HealthStatus
+	if err := json.Unmarshal(raw, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	_, offset := decoded.Timestamp.Zone()
+	if !decoded.Timestamp.Equal(at) || offset != 19800 || decoded.Status != original.Status {
+		t.Fatalf("decoded=%+v offset=%d", decoded, offset)
+	}
+}
+
+func TestFalseReadinessComponentSurvivesJSONRoundTrip(t *testing.T) {
+	original := ReadinessStatus{Ready: true, Components: map[string]bool{"available": true, "warming": false}}
+	raw, err := json.Marshal(original)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded ReadinessStatus
+	if err := json.Unmarshal(raw, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if warming, exists := decoded.Components["warming"]; !exists || warming || !decoded.Ready || !decoded.Components["available"] {
+		t.Fatalf("decoded=%+v", decoded)
+	}
+}

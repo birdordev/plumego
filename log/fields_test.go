@@ -1,6 +1,10 @@
 package log
 
-import "testing"
+import (
+	"bytes"
+	"strings"
+	"testing"
+)
 
 func TestSafeMapCapacity(t *testing.T) {
 	tests := []struct {
@@ -79,6 +83,25 @@ func TestMergeFieldsKeepsLaterPrecedence(t *testing.T) {
 	}) {
 		if got[key] != want {
 			t.Fatalf("mergeFields()[%s] = %v, want %v in %#v", key, got[key], want, got)
+		}
+	}
+}
+
+func TestTextLoggerFieldPrecedenceAcrossParentChildAndCall(t *testing.T) {
+	var output bytes.Buffer
+	parent := NewLogger(LoggerConfig{Output: &output, Fields: Fields{"scope": "parent"}})
+	child := parent.WithFields(Fields{"scope": "child"})
+	child.Info("call", Fields{"scope": "call"})
+	child.Info("next")
+	parent.Info("original")
+	lines := strings.Split(strings.TrimSpace(output.String()), "\n")
+	want := []string{"call", "child", "parent"}
+	if len(lines) != len(want) {
+		t.Fatalf("lines=%q", lines)
+	}
+	for i, scope := range want {
+		if strings.Count(lines[i], "scope=") != 1 || !strings.Contains(lines[i], "scope="+scope) {
+			t.Errorf("line=%q want scope=%q", lines[i], scope)
 		}
 	}
 }

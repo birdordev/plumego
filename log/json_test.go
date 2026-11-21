@@ -974,8 +974,9 @@ func TestJSONDerivedScopeStaysWithSelectedOutput(t *testing.T) {
 	var normal, failures bytes.Buffer
 	logger := NewLogger(LoggerConfig{Format: LoggerFormatJSON, Output: &normal, ErrorOutput: &failures, Fields: Fields{"scope": "parent"}})
 	child := logger.WithFields(Fields{"scope": "child"})
+	grandchild := child.WithFields(Fields{"scope": "grandchild"})
 	child.Warn("warning")
-	child.Error("error")
+	grandchild.Error("error")
 	logger.Info("info")
 	normalLines := strings.Split(strings.TrimSuffix(normal.String(), "\n"), "\n")
 	if len(normalLines) != 2 {
@@ -984,7 +985,7 @@ func TestJSONDerivedScopeStaysWithSelectedOutput(t *testing.T) {
 	warning := decodeTestJSONLogEntry(t, []byte(normalLines[0]))
 	info := decodeTestJSONLogEntry(t, []byte(normalLines[1]))
 	failure := decodeTestJSONLogEntry(t, failures.Bytes())
-	if warning.Msg != "warning" || warning.Scope != "child" || info.Msg != "info" || info.Scope != "parent" || failure.Msg != "error" || failure.Scope != "child" {
+	if warning.Msg != "warning" || warning.Scope != "child" || info.Msg != "info" || info.Scope != "parent" || failure.Msg != "error" || failure.Scope != "grandchild" {
 		t.Fatalf("warning=%+v info=%+v error=%+v", warning, info, failure)
 	}
 }

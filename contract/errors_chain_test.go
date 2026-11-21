@@ -231,9 +231,16 @@ func TestAsAPIErrorSharedBranchesChooseFirstValue(t *testing.T) {
 	first := NewErrorBuilder().Type(TypeNotFound).Build()
 	last := NewErrorBuilder().Type(TypeUnavailable).Build()
 	shared := errors.Join(&pointed, errors.New("ordinary error"))
-	tree := errors.Join(shared, errors.Join(shared, first), last)
-	if got, ok := AsAPIError(tree); !ok || got.Code() != first.Code() {
-		t.Fatalf("first value = %v, %t", got, ok)
+	for _, parts := range [][]error{{shared, errors.Join(shared, first), last}, {first, shared, last}} {
+		tree := errors.Join(parts...)
+		for range 2 {
+			if got, ok := AsAPIError(tree); !ok || got.Code() != first.Code() {
+				t.Fatalf("first value = %v, %t", got, ok)
+			}
+		}
+	}
+	if pointed.Status() != http.StatusInternalServerError || first.Status() != http.StatusNotFound || last.Status() != http.StatusServiceUnavailable {
+		t.Fatal("traversal changed the source errors")
 	}
 }
 

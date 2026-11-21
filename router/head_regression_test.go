@@ -169,8 +169,12 @@ func TestHeadPreservesImplicitCommit(t *testing.T) {
 					t.Fatalf("GET=%d HEAD=%d body=%q", get.StatusCode, head.StatusCode, body)
 				}
 				for _, key := range []string{"Content-Type", "Content-Length", "X-Test"} {
-					if got, want := head.Header.Get(key), get.Header.Get(key); got != want {
-						t.Errorf("%s: HEAD=%q GET=%q", key, got, want)
+					want := get.Header.Get(key)
+					if tc.name == "empty" && key == "Content-Length" {
+						want = ""
+					}
+					if got := head.Header.Get(key); got != want {
+						t.Errorf("%s: HEAD=%q want=%q", key, got, want)
 					}
 				}
 			}
@@ -562,5 +566,75 @@ func TestHeadReadFromFailureKeepsConsumedLengthAndContentType(t *testing.T) {
 	r.ServeHTTP(rec, httptest.NewRequest("HEAD", "/sample", nil))
 	if rec.Code != 200 || rec.Body.Len() != 0 || rec.Header().Get("Content-Length") != "11" || !strings.HasPrefix(rec.Header().Get("Content-Type"), "text/plain") {
 		t.Fatalf("HEAD=%d %v %q", rec.Code, rec.Header(), rec.Body.String())
+	}
+}
+
+func TestHeadEmptyHandlerKeepsLengthUnspecified(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		status int
+	}{
+		{"implicit", 0},
+		{"explicit", http.StatusAccepted},
+		{"positive writes", http.StatusCreated},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				if tc.status != 0 {
+					w.WriteHeader(tc.status)
+				}
+				if tc.status == http.StatusCreated {
+					_, _ = io.WriteString(w, "payload")
+				}
+			})
+			r := NewRouter()
+			if err := r.AddRoute(http.MethodHead, "/item", handler); err != nil {
+				t.Fatal(err)
+			}
+			wantStatus, wantLength := tc.status, ""
+			if wantStatus == 0 {
+				wantStatus = http.StatusOK
+			}
+			if tc.status == http.StatusCreated {
+				wantLength = "7"
+			}
+			for _, mount := range []struct {
+				name    string
+				handler http.Handler
+			}{{"native", handler}, {"router", r}} {
+				srv := httptest.NewServer(mount.handler)
+				t.Cleanup(srv.Close)
+				resp, err := srv.Client().Head(srv.URL + "/item")
+				if err != nil {
+					t.Fatal(err)
+				}
+				body, err := io.ReadAll(resp.Body)
+				_ = resp.Body.Close()
+				if err != nil || len(body) != 0 || resp.StatusCode != wantStatus || resp.Header.Get("Content-Length") != wantLength {
+					t.Errorf("%s HEAD: status=%d headers=%v body=%q err=%v", mount.name, resp.StatusCode, resp.Header, body, err)
+				}
+			}
+		})
+	}
+}
+
+func TestHeadHandlerKeepsExplicitZeroLength(t *testing.T) {
+	r := NewRouter()
+	if err := r.AddRoute(http.MethodHead, "/empty", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Length", "0")
+		w.WriteHeader(http.StatusAccepted)
+	})); err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewServer(r)
+	defer srv.Close()
+	resp, err := srv.Client().Head(srv.URL + "/empty")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil || len(body) != 0 || resp.StatusCode != http.StatusAccepted || resp.Header.Get("Content-Length") != "0" {
+		t.Fatalf("HEAD: status=%d headers=%v body=%q err=%v", resp.StatusCode, resp.Header, body, err)
 	}
 }

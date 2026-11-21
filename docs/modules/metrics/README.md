@@ -78,7 +78,8 @@ other modules can depend on safely.
   child mutation cannot affect the caller or a sibling collector. Callers must
   keep input labels stable until dispatch returns; retained error values remain
   caller-owned. Single-target construction still returns the target unchanged.
-- Base collector updates, resets, and snapshots share one lock boundary. Stats
+- Base collector updates, resets, and snapshots share one lock boundary. Total,
+  error, and per-name counters saturate independently at the int64 maximum. Stats
   maps are caller-owned. Multi-collector stats add counters and breakdowns
   from individual child snapshots. A record counted by two children contributes
   twice. Sums saturate at each field's maximum representable value. The

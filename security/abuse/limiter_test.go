@@ -1048,3 +1048,25 @@ func TestEmptyKeyDoesNotConsumeBucketCapacity(t *testing.T) {
 		t.Fatalf("after=%+v decision=%+v error=%v", afterAllow, allowed, err)
 	}
 }
+
+func TestLimiterCountsFixedAdmitAndRejectDecisionsThroughStop(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Now = func() time.Time { return time.Unix(100, 0) }
+	cfg.Capacity = 2
+	limiter, err := NewLimiterWithConfig(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer limiter.Stop()
+	for i, want := range []bool{true, true, false, false} {
+		if i == 3 {
+			limiter.Stop()
+		}
+		if got := limiter.Allow("fixture").Allowed; got != want {
+			t.Fatalf("decision %d=%t want=%t", i, got, want)
+		}
+	}
+	if stats := limiter.Metrics(); stats.Allowed != 2 || stats.Rejected != 2 || stats.Buckets != 1 {
+		t.Fatalf("stats=%+v", stats)
+	}
+}

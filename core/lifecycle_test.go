@@ -1530,3 +1530,35 @@ func TestPreparedRunPreservesBindErrorOnShutdown(t *testing.T) {
 		t.Fatalf("server before=%p after=%p error=%v", before, after, err)
 	}
 }
+
+func TestShutdownBeforeServePreventsStartAndKeepsDirectHandler(t *testing.T) {
+	app := newTestApp()
+	mustRegisterRoute(t, app.Get("/kept", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	})))
+	if err := app.Prepare(); err != nil {
+		t.Fatal(err)
+	}
+	srv, err := app.Server()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range 2 {
+		if err := app.Shutdown(t.Context()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	listener, err := net.Listen("tcp", requireNetwork(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	if err := srv.Serve(listener); !errors.Is(err, http.ErrServerClosed) {
+		t.Fatalf("Serve=%v", err)
+	}
+	dst := httptest.NewRecorder()
+	app.ServeHTTP(dst, httptest.NewRequest(http.MethodGet, "/kept", nil))
+	if dst.Code != http.StatusNoContent {
+		t.Fatalf("direct status=%d", dst.Code)
+	}
+}

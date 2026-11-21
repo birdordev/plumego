@@ -1,6 +1,7 @@
 package log
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"os"
@@ -118,16 +119,22 @@ func (l *gLogger) rotateLogFile(level Level) error {
 		hostname = "unknown"
 	}
 
-	currentPID := pid
-	now := time.Now()
-
 	lname := levelName(level)
-	filename := logFilename(l.program, hostname, lname, now, currentPID)
-
-	logPath := filepath.Join(l.logDir, filename)
-	file, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
-	if err != nil {
-		return err
+	var filename string
+	var file *os.File
+	// Reuse the fractional timestamp format for collision candidates so
+	// retention recognizes new files and archives written by older versions.
+	for stamp := time.Now(); ; stamp = stamp.Add(time.Nanosecond) {
+		filename = logFilename(l.program, hostname, lname, stamp, pid)
+		var err error
+		file, err = os.OpenFile(filepath.Join(l.logDir, filename), os.O_CREATE|os.O_EXCL|os.O_WRONLY|os.O_APPEND, 0644)
+		if errors.Is(err, os.ErrExist) {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		break
 	}
 
 	// Keep the current writer usable until its replacement opens successfully.

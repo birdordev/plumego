@@ -321,6 +321,11 @@ func TestFileClonesOwnTimePointersAndMetadataAcrossViews(t *testing.T) {
 	if empty := (File{}).Clone(); empty.DeletedAt != nil || empty.LastAccessAt != nil || empty.Metadata != nil {
 		t.Fatalf("empty=%+v", empty)
 	}
+	zero := new(time.Time)
+	clone := (File{DeletedAt: zero}).Clone()
+	if clone.DeletedAt == nil || clone.DeletedAt == zero || !clone.DeletedAt.IsZero() {
+		t.Fatalf("explicit zero time=%v", clone.DeletedAt)
+	}
 }
 
 type fileFixtureCause struct{}
