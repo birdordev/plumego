@@ -2,6 +2,7 @@ package contract
 
 import (
 	"context"
+	"fmt"
 	"reflect"
 	"testing"
 )
@@ -219,5 +220,27 @@ func TestNilRouteStateFallsBackToLegacyMetadata(t *testing.T) {
 			RequestParamFromContext(tc.ctx, "id") != tc.want || RequestIDFromContext(tc.ctx) != "fixture" {
 			t.Fatalf("context metadata=%+v", got)
 		}
+	}
+}
+
+func TestRouteStateDuplicatesUseLastValueAcrossOverflow(t *testing.T) {
+	var state RouteState
+	state.AddParam("shared", "first")
+	state.AddParam("shared", "second")
+	for i := 2; i < maxInlineParams; i++ {
+		state.AddParam(fmt.Sprint(i), "value")
+	}
+	state.AddParam("shared", "overflow")
+	state.AddParam("extra", "value")
+	ctx := WithRouteState(t.Context(), &state)
+	copy := RequestContextFromContext(ctx)
+	for key, value := range copy.Params {
+		if got := RequestParamFromContext(ctx, key); got != value {
+			t.Fatalf("%q lookup=%q snapshot=%q", key, got, value)
+		}
+	}
+	copy.Params["shared"] = "caller"
+	if got := RequestParamFromContext(ctx, "shared"); got != "overflow" || RequestParamFromContext(ctx, "extra") != "value" {
+		t.Fatalf("last=%q", got)
 	}
 }

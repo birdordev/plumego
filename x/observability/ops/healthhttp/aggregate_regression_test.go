@@ -9,6 +9,7 @@ import (
 	"sync/atomic"
 	"testing"
 	"testing/synctest"
+	"time"
 
 	"github.com/birdordev/plumego/health"
 )
@@ -158,5 +159,115 @@ func BenchmarkAggregateWorkerBound(b *testing.B) {
 				}
 			}
 		})
+	}
+}
+
+func TestAbortedComponentCannotReplaceNewerRegistrationOrCheck(t *testing.T) {
+	for _, mode := range []string{"replace", "remove", "newer", "manual"} {
+		t.Run(mode, func(t *testing.T) {
+			m, err := NewManager(Config{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer m.Close()
+			entered, release := make(chan struct{}), make(chan struct{})
+			var count atomic.Int32
+			if err := m.RegisterComponent(functionChecker{name: "sample", check: func(context.Context) error {
+				if count.Add(1) == 1 {
+					close(entered)
+					<-release
+					panic("fixture")
+				}
+				return nil
+			}}); err != nil {
+				t.Fatal(err)
+			}
+			finished := make(chan health.HealthStatus, 1)
+			go func() { finished <- m.CheckAllComponents(t.Context()) }()
+			<-entered
+			var changeErr error
+			switch mode {
+			case "replace":
+				changeErr = m.RegisterComponent(functionChecker{name: "sample", check: func(context.Context) error { return nil }})
+				if changeErr == nil {
+					changeErr = m.CheckComponent(t.Context(), "sample")
+				}
+			case "remove":
+				changeErr = m.UnregisterComponent("sample")
+			case "newer":
+				changeErr = m.CheckComponent(t.Context(), "sample")
+			case "manual":
+				m.MarkReady()
+			}
+			close(release)
+			<-finished
+			if changeErr != nil {
+				t.Fatal(changeErr)
+			}
+			got, ok := m.GetComponentHealth("sample")
+			switch mode {
+			case "remove":
+				if ok {
+					t.Fatalf("removed component=%+v", got)
+				}
+			case "manual":
+				if !m.Readiness().Ready || got.Status != health.StatusUnhealthy {
+					t.Fatalf("manual readiness=%+v health=%+v", m.Readiness(), got)
+				}
+			default:
+				if !ok || got.Status != health.StatusHealthy || !m.Readiness().Components["sample"] {
+					t.Fatalf("health=%+v readiness=%+v", got, m.Readiness())
+				}
+			}
+		})
+	}
+}
+
+func TestBatchReadinessUsesCancellationReasonWithoutNewSample(t *testing.T) {
+	m, err := NewManager(Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	if got := m.CheckAllComponents(t.Context()); !got.Status.IsReady() || !m.Readiness().Ready {
+		t.Fatal("empty batch is not ready")
+	}
+	for _, reason := range []error{context.Canceled, context.DeadlineExceeded} {
+		var ctx context.Context
+		var cancel context.CancelFunc
+		if reason == context.Canceled {
+			ctx, cancel = context.WithCancel(t.Context())
+			cancel()
+		} else {
+			ctx, cancel = context.WithDeadline(t.Context(), time.Now().Add(-time.Second))
+			defer cancel()
+		}
+		got := m.CheckAllComponents(ctx)
+		if ready := m.Readiness(); got.Message != reason.Error() || ready.Ready || ready.Reason != reason.Error() {
+			t.Fatalf("reason=%v result=%+v readiness=%+v", reason, got, ready)
+		}
+	}
+	fail := true
+	if err := m.RegisterComponent(functionChecker{name: "sample", check: func(context.Context) error {
+		if fail {
+			return errors.New("fixture")
+		}
+		return nil
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	m.CheckAllComponents(t.Context())
+	if ready := m.Readiness(); ready.Reason != "components failed: [sample]" {
+		t.Fatalf("failure readiness=%+v", ready)
+	}
+	fail = false
+	m.CheckAllComponents(t.Context())
+	before, _ := m.GetComponentHealth("sample")
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	m.CheckAllComponents(ctx)
+	after, _ := m.GetComponentHealth("sample")
+	if !after.Timestamp.Equal(before.Timestamp) || after.Status != health.StatusHealthy || m.Readiness().Components["sample"] {
+		t.Fatalf("before=%+v after=%+v readiness=%+v", before, after, m.Readiness())
 	}
 }

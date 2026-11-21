@@ -988,3 +988,34 @@ func TestJSONDerivedScopeStaysWithSelectedOutput(t *testing.T) {
 		t.Fatalf("warning=%+v info=%+v error=%+v", warning, info, failure)
 	}
 }
+
+type countedFixtureField struct {
+	calls  *int
+	failed bool
+}
+
+func (f countedFixtureField) MarshalJSON() ([]byte, error) {
+	*f.calls++
+	if f.failed {
+		return nil, errors.New("fixture encoding")
+	}
+	return []byte(`{"value":9007199254740993}`), nil
+}
+
+func TestJSONFieldEncoderRunsOnceAndIsolatesFailedSibling(t *testing.T) {
+	var output bytes.Buffer
+	good, bad := 0, 0
+	logger := NewLogger(LoggerConfig{Format: LoggerFormatJSON, Output: &output, Fields: Fields{"fixture": countedFixtureField{&good, false}}})
+	logger.WithFields(Fields{"broken": countedFixtureField{&bad, true}}).Info("child")
+	logger.Info("parent")
+	lines := strings.Split(strings.TrimSpace(output.String()), "\n")
+	if len(lines) != 2 || good != 2 || bad != 1 || !strings.Contains(lines[0], `"broken":"[unsupported]"`) ||
+		strings.Contains(lines[1], `"broken"`) {
+		t.Fatalf("good=%d bad=%d output=%s", good, bad, output.String())
+	}
+	for _, line := range lines {
+		if !json.Valid([]byte(line)) || !strings.Contains(line, `"value":9007199254740993`) {
+			t.Fatalf("record=%s", line)
+		}
+	}
+}

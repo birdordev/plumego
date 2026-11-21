@@ -250,3 +250,19 @@ func TestPasswordStrengthUsesUnicodeCharacterCounts(t *testing.T) {
 		}
 	}
 }
+
+func TestPasswordStoredFieldRejectionKeepsFixedClassification(t *testing.T) {
+	validSalt := base64.StdEncoding.EncodeToString(make([]byte, saltSize))
+	validSize := base64.StdEncoding.EncodeToString(make([]byte, hashSize))
+	for _, data := range [][2]string{
+		{"fixture!", validSize},
+		{base64.StdEncoding.EncodeToString(make([]byte, saltSize-1)), validSize},
+		{validSalt, "fixture!"},
+		{validSalt, base64.StdEncoding.EncodeToString(make([]byte, hashSize+1))},
+	} {
+		err := CheckPassword(fmt.Sprintf("%d$%s$%s", MinimumCost, data[0], data[1]), "ordinary fixture")
+		if !errors.Is(err, ErrInvalidHash) || strings.Contains(err.Error(), "fixture!") {
+			t.Fatalf("validation=%v", err)
+		}
+	}
+}

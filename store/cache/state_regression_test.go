@@ -494,3 +494,67 @@ func TestCanceledSetWaitingForWriteLockPreservesCache(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestExpiredUncollectedKeyCountsUntilReadCleanup(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		c, err := NewMemoryCacheWithConfig(Config{MaxMemoryUsage: 5, CleanupInterval: time.Hour})
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer c.Close()
+		if err := c.Set(t.Context(), "expire", []byte("old"), time.Second); err != nil {
+			t.Fatal(err)
+		}
+		if err := c.Set(t.Context(), "keep", []byte("ok"), 0); err != nil {
+			t.Fatal(err)
+		}
+		time.Sleep(2 * time.Second)
+		if err := c.Set(t.Context(), "next", []byte("new"), 0); !errors.Is(err, ErrCacheFull) {
+			t.Fatalf("before read=%v", err)
+		}
+		if stats := c.Stats(); stats.Entries != 2 || stats.MemoryUsage != 5 {
+			t.Fatalf("before=%+v", stats)
+		}
+		if _, err := c.Get(t.Context(), "expire"); !errors.Is(err, ErrNotFound) {
+			t.Fatalf("expired=%v", err)
+		}
+		if err := c.Set(t.Context(), "next", []byte("new"), 0); err != nil {
+			t.Fatal(err)
+		}
+		if got, err := c.Get(t.Context(), "keep"); string(got) != "ok" || err != nil {
+			t.Fatalf("retained=%q err=%v", got, err)
+		}
+		if stats := c.Stats(); stats.Entries != 2 || stats.MemoryUsage != 5 {
+			t.Fatalf("after=%+v", stats)
+		}
+	})
+}
+
+func TestCacheAppliesByteKeyLimitAcrossOperations(t *testing.T) {
+	c, err := NewMemoryCacheWithConfig(Config{MaxKeyLength: 4})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	if err := c.Set(t.Context(), "éé", []byte("sample"), 0); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := c.Get(t.Context(), "éé"); string(got) != "sample" || err != nil {
+		t.Fatalf("read=%q err=%v", got, err)
+	}
+	before := c.Stats()
+	for _, key := range []string{"ééa", "éé\t"} {
+		if err := c.Set(t.Context(), key, []byte("sample"), 0); !errors.Is(err, ErrKeyTooLong) {
+			t.Errorf("set=%v", err)
+		}
+		if _, err := c.Get(t.Context(), key); !errors.Is(err, ErrKeyTooLong) {
+			t.Errorf("get=%v", err)
+		}
+		if ok, err := c.Exists(t.Context(), key); ok || !errors.Is(err, ErrKeyTooLong) {
+			t.Errorf("exists=%t err=%v", ok, err)
+		}
+	}
+	if after := c.Stats(); after != before {
+		t.Fatalf("before=%+v after=%+v", before, after)
+	}
+}

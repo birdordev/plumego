@@ -257,3 +257,20 @@ func TestDerivedLoggerFieldsCopyOnlyTheTopLevel(t *testing.T) {
 		}
 	}
 }
+
+func TestTextLoggerOutputSplitPreservesParentAndChildFields(t *testing.T) {
+	var out, errors bytes.Buffer
+	parent := NewLogger(LoggerConfig{Format: LoggerFormatText, Output: &out, ErrorOutput: &errors, Fields: Fields{"scope": "parent", "count": 1}})
+	child := parent.WithFields(Fields{"scope": "child", "count": 2})
+	child.Warn("warning fixture")
+	child.Error("failure fixture")
+	parent.Info("normal fixture")
+	normal := strings.Split(strings.TrimSuffix(out.String(), "\n"), "\n")
+	if len(normal) != 2 || !strings.Contains(normal[0], "warning fixture") ||
+		!strings.Contains(normal[0], "scope=child") || !strings.Contains(normal[0], "count=2") ||
+		!strings.Contains(normal[1], "normal fixture") || !strings.Contains(normal[1], "scope=parent") ||
+		!strings.Contains(normal[1], "count=1") || !strings.Contains(errors.String(), "failure fixture") ||
+		!strings.Contains(errors.String(), "scope=child") || strings.Count(errors.String(), "\n") != 1 {
+		t.Fatalf("normal=%q errors=%q", out.String(), errors.String())
+	}
+}

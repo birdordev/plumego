@@ -283,3 +283,15 @@ func TestComponentHealthJSONEmbedsStateAndExplicitEnabled(t *testing.T) {
 		}
 	}
 }
+
+func TestStatusModelPreservesUnknownAndDetailsWhileRejectingReadiness(t *testing.T) {
+	for _, state := range []HealthState{"fixture-unknown", "", StatusDegraded} {
+		value := HealthStatus{Status: state, Details: map[string]any{"fixture": "value"}}
+		clone := value.Clone()
+		fields := marshalObject(t, clone)
+		if fields["status"] != string(state) || clone.Status.IsKnown() != (state == StatusDegraded) ||
+			clone.Status.IsReady() != (state == StatusDegraded) || fields["details"] == nil {
+			t.Fatalf("state=%s fields=%v", state, fields)
+		}
+	}
+}

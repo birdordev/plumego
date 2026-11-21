@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/birdordev/plumego/contract"
 )
@@ -101,5 +102,34 @@ func TestTracingRecordsPartialWriteOnErrorExactlyOnce(t *testing.T) {
 	handler.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/", nil))
 	if span.ends != 1 || span.status != http.StatusAccepted || span.bytes != 2 || w.Body.String() != "fi" {
 		t.Fatalf("span=%+v body=%q", span, w.Body)
+	}
+}
+
+type deadlineFixtureTracer struct{ span *measuredSpan }
+type deadlineFixtureKey struct{}
+
+func (tr deadlineFixtureTracer) Start(ctx context.Context, _ *http.Request) (context.Context, TraceSpan) {
+	return context.WithValue(ctx, deadlineFixtureKey{}, "tracer"), tr.span
+}
+
+func TestTracingPreservesParentDeadlineOnCanceledRequest(t *testing.T) {
+	span := new(measuredSpan)
+	deadline := time.Now().Add(time.Minute)
+	root, cancel := context.WithDeadline(t.Context(), deadline)
+	cancel()
+	ctx := contract.WithRequestID(root, "fixture")
+	calls := 0
+	h := Middleware(deadlineFixtureTracer{span})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		got, ok := r.Context().Deadline()
+		if !ok || !got.Equal(deadline) || !errors.Is(r.Context().Err(), context.Canceled) ||
+			r.Context().Value(deadlineFixtureKey{}) != "tracer" || contract.RequestIDFromContext(r.Context()) != "fixture" {
+			t.Errorf("context=%v deadline=%v", r.Context().Err(), got)
+		}
+		w.WriteHeader(204)
+	}))
+	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequestWithContext(ctx, "GET", "/", nil))
+	if calls != 1 || span.ends != 1 || span.status != 204 {
+		t.Fatalf("calls=%d span=%+v", calls, span)
 	}
 }

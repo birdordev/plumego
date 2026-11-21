@@ -308,3 +308,15 @@ func TestNamelessRecordsCountWithoutCreatingSeries(t *testing.T) {
 		t.Fatalf("before=%+v after=%+v", before, after)
 	}
 }
+
+func TestHTTPRecordOwnsLabelsAndRetainsSubsecondDuration(t *testing.T) {
+	d := 734567 * time.Nanosecond
+	a := NewHTTPRecord("GET", "/sample", 202, d)
+	b := NewHTTPRecord("HEAD", "/sample", 204, 0)
+	a.Labels[labelPath] = "changed"
+	if a.Duration != d || a.Value != d.Seconds() || b.Duration != 0 || b.Value != 0 || len(a.Labels) != 3 || len(b.Labels) != 3 ||
+		b.Labels[labelPath] != "/sample" || b.Labels[labelMethod] != "HEAD" || a.Labels[labelStatus] != "202" || b.Labels[labelStatus] != "204" ||
+		a.Name != MetricHTTPRequest || b.Name != MetricHTTPRequest || a.Timestamp.IsZero() || b.Timestamp.IsZero() {
+		t.Fatalf("first=%+v second=%+v", a, b)
+	}
+}

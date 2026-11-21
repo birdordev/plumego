@@ -116,3 +116,24 @@ func TestRequestIDMultibyteBoundaryIsUsedByResponse(t *testing.T) {
 		}
 	}
 }
+
+func TestRequestIDByteLimitTrimsBeforeChoosingInheritedValue(t *testing.T) {
+	parent := WithRequestID(t.Context(), "parent")
+	for _, size := range []int{127, 128, 129} {
+		value := strings.Repeat("é", size/2) + strings.Repeat("a", size%2)
+		want := value
+		if size > 128 {
+			want = "parent"
+		}
+		req := httptest.NewRequest("GET", "/", nil)
+		req = req.WithContext(WithRequestID(parent, " "+value+" "))
+		w := httptest.NewRecorder()
+		if err := WriteResponse(w, req, 200, nil, nil); err != nil {
+			t.Fatal(err)
+		}
+		var body response
+		if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil || body.RequestID != want {
+			t.Fatalf("size=%d id=%q err=%v", size, body.RequestID, err)
+		}
+	}
+}

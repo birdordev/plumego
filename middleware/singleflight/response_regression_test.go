@@ -793,3 +793,44 @@ func TestCoalescerMethodsDetachFromCallerConfiguration(t *testing.T) {
 		t.Fatalf("leaders=%v", leaders)
 	}
 }
+
+func TestOverflowingLeaderRetainsHeadersButWaiterGetsOwnError(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		entered, release := make(chan struct{}), make(chan struct{})
+		calls, onError := 0, 0
+		h := New(Config{MaxResponseBytes: 4, OnError: func(_ string, e error) {
+			if !errors.Is(e, errResponseTooLarge) {
+				t.Errorf("waiter err=%v", e)
+			}
+			onError++
+		}}).Middleware()(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			calls++
+			if calls == 1 {
+				close(entered)
+				<-release
+			}
+			w.Header().Set("X-Leader", "only")
+			w.Header().Set("Etag", `"fixture"`)
+			w.WriteHeader(202)
+			_, _ = io.WriteString(w, "left")
+			_, _ = io.WriteString(w, "right")
+		}))
+		lead, waiter := httptest.NewRecorder(), httptest.NewRecorder()
+		waiter.Header().Set("X-Own", "preserved")
+		go h.ServeHTTP(lead, httptest.NewRequest("GET", "/sample", nil))
+		<-entered
+		go h.ServeHTTP(waiter, httptest.NewRequest("GET", "/sample", nil))
+		synctest.Wait()
+		close(release)
+		synctest.Wait()
+		if lead.Code != 202 || lead.Body.String() != "leftright" || lead.Header().Get("X-Leader") != "only" ||
+			waiter.Code != 502 || waiter.Header().Get("X-Own") != "preserved" || waiter.Header().Get("X-Leader") != "" ||
+			waiter.Header().Get("Etag") != "" || strings.Contains(waiter.Body.String(), "leftright") || onError != 1 {
+			t.Fatalf("leader=%d %v %q waiter=%d %v %q errors=%d", lead.Code, lead.Header(), lead.Body.String(), waiter.Code, waiter.Header(), waiter.Body.String(), onError)
+		}
+		h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", "/sample", nil))
+		if calls != 2 {
+			t.Fatalf("leader calls=%d", calls)
+		}
+	})
+}

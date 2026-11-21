@@ -556,3 +556,16 @@ func TestValidatePublicURLRejectsMalformedConfigurationWithoutResolution(t *test
 		}
 	}
 }
+
+func TestHeaderNameAndValueHaveSeparateByteContracts(t *testing.T) {
+	for _, tc := range []struct {
+		value         string
+		name, content bool
+	}{
+		{"", false, true}, {"X-Fixture", true, true}, {"sample text", false, true}, {"é", false, true}, {"\t", false, true},
+	} {
+		if IsHeaderName(tc.value) != tc.name || IsHeaderValue(tc.value) != tc.content {
+			t.Errorf("value=%q name=%t content=%t", tc.value, IsHeaderName(tc.value), IsHeaderValue(tc.value))
+		}
+	}
+}

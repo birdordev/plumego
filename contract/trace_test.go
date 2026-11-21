@@ -298,3 +298,21 @@ func TestSampledTraceCarrierRetainsPartialAndKnownStates(t *testing.T) {
 		}
 	}
 }
+
+func TestTraceParentPointerOwnedIndependentlyOfBaggage(t *testing.T) {
+	for _, baggage := range []map[string]string{nil, {"fixture": "value"}} {
+		parent := "fixture-parent"
+		first := WithTraceContext(t.Context(), TraceContext{ParentSpanID: &parent, Baggage: baggage})
+		second := WithTraceContext(t.Context(), TraceContext{ParentSpanID: &parent})
+		parent = "changed"
+		initial, _ := TraceContextFromContext(first)
+		*initial.ParentSpanID = "caller"
+		a, _ := TraceContextFromContext(first)
+		b, _ := TraceContextFromContext(second)
+		empty, _ := TraceContextFromContext(WithTraceContext(t.Context(), TraceContext{}))
+		if *a.ParentSpanID != "fixture-parent" || *b.ParentSpanID != "fixture-parent" || empty.ParentSpanID != nil ||
+			(a.Baggage == nil) != (baggage == nil) {
+			t.Fatalf("first=%+v second=%+v empty=%+v", a, b, empty)
+		}
+	}
+}

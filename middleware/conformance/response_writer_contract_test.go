@@ -14,14 +14,17 @@ import (
 	"testing"
 	"time"
 
+	"github.com/birdordev/plumego/contract"
 	"github.com/birdordev/plumego/log"
 	"github.com/birdordev/plumego/middleware"
+	"github.com/birdordev/plumego/middleware/accesslog"
 	"github.com/birdordev/plumego/middleware/bodylimit"
 	"github.com/birdordev/plumego/middleware/compression"
 	"github.com/birdordev/plumego/middleware/cors"
 	"github.com/birdordev/plumego/middleware/debug"
 	"github.com/birdordev/plumego/middleware/httpmetrics"
 	"github.com/birdordev/plumego/middleware/recovery"
+	"github.com/birdordev/plumego/middleware/requestid"
 	"github.com/birdordev/plumego/middleware/singleflight"
 	"github.com/birdordev/plumego/middleware/timeout"
 	"github.com/birdordev/plumego/middleware/tracing"
@@ -537,6 +540,52 @@ func TestObservedFinalStatusAfterEarlyHintsAndRecovery(t *testing.T) {
 		}
 		if len(observed) != 1 || observed[0] != want {
 			t.Fatalf("abort=%t observed=%v", abort, observed)
+		}
+	}
+}
+
+type idCaptureObserver struct{ ids []string }
+
+func (o *idCaptureObserver) ObserveHTTP(ctx context.Context, _, _ string, _, _ int, _ time.Duration) {
+	o.ids = append(o.ids, contract.RequestIDFromContext(ctx))
+}
+
+func TestLayeredObserversShareSelectedRequestIDAcrossOrder(t *testing.T) {
+	for _, outer := range []bool{false, true} {
+		for _, header := range []string{"", "existing"} {
+			var output bytes.Buffer
+			seen := ""
+			calls := 0
+			id := requestid.Middleware(requestid.WithGenerator(func() string { calls++; return "explicit" }))
+			observer := new(idCaptureObserver)
+			access, err := accesslog.Middleware(accesslog.Config{Logger: log.NewLogger(log.LoggerConfig{Format: log.LoggerFormatJSON, Output: &output})})
+			if err != nil {
+				t.Fatal(err)
+			}
+			var handler http.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				seen = contract.RequestIDFromContext(r.Context())
+				w.WriteHeader(204)
+			})
+			if !outer {
+				handler = id(handler)
+			}
+			handler = access(httpmetrics.Middleware(observer)(handler))
+			if outer {
+				handler = id(handler)
+			}
+			req := httptest.NewRequest("GET", "/", nil)
+			req.Header.Set(contract.RequestIDHeader, header)
+			w := httptest.NewRecorder()
+			handler.ServeHTTP(w, req)
+			wantCalls := 0
+			if outer && header == "" {
+				wantCalls = 1
+			}
+			if seen == "" || w.Header().Get(contract.RequestIDHeader) != seen || len(observer.ids) != 1 ||
+				observer.ids[0] != seen || !strings.Contains(output.String(), `"request_id":"`+seen+`"`) || calls != wantCalls ||
+				(header != "" && seen != header) || (wantCalls == 1 && seen != "explicit") {
+				t.Fatalf("outer=%t header=%q got=%q observed=%v calls=%d output=%q", outer, header, seen, observer.ids, calls, output.String())
+			}
 		}
 	}
 }

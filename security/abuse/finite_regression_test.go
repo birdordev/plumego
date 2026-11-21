@@ -59,3 +59,21 @@ func TestFiniteRateDecisionTimestampsStayOrdered(t *testing.T) {
 		}
 	}
 }
+
+func TestLimiterRetryAfterSaturatesWithSameResetBase(t *testing.T) {
+	now := time.Unix(1800000000, 0)
+	for _, tc := range []struct {
+		rate float64
+		wait time.Duration
+	}{{math.SmallestNonzeroFloat64, time.Duration(math.MaxInt64)}, {0.25, 4 * time.Second}} {
+		l, err := NewLimiterWithConfig(Config{Rate: tc.rate, Capacity: 1, Now: func() time.Time { return now }})
+		if err != nil {
+			t.Fatal(err)
+		}
+		initial, next := l.Allow("fixture"), l.Allow("fixture")
+		l.Stop()
+		if !initial.Allowed || next.Allowed || next.RetryAfter != tc.wait || !next.Reset.Equal(now.Add(tc.wait)) {
+			t.Fatalf("rate=%g initial=%+v next=%+v", tc.rate, initial, next)
+		}
+	}
+}

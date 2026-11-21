@@ -160,3 +160,28 @@ func TestConcurrentHTTPRecordAndObserveClassification(t *testing.T) {
 		t.Fatalf("unexpected mixed collector stats: %+v", stats)
 	}
 }
+
+func TestCollectorClearAndNewSeriesDoNotTearSnapshots(t *testing.T) {
+	c := NewBaseMetricsCollector()
+	for range 20 {
+		c.Clear()
+		c.Record(t.Context(), MetricRecord{Name: "old"})
+		before := c.GetStats()
+		start := make(chan struct{})
+		var workers sync.WaitGroup
+		workers.Go(func() { <-start; c.Clear() })
+		workers.Go(func() { <-start; c.Record(t.Context(), MetricRecord{Name: "new"}) })
+		close(start)
+		for range 20 {
+			snapshot := c.GetStats()
+			if total := snapshot.NameBreakdown["new"] + snapshot.NameBreakdown["old"]; snapshot.TotalRecords != total ||
+				snapshot.ActiveSeries != len(snapshot.NameBreakdown) || total > 2 || snapshot.StartTime.Before(before.StartTime) {
+				t.Errorf("incoherent snapshot=%+v", snapshot)
+			}
+		}
+		workers.Wait()
+		if before.TotalRecords != 1 || before.NameBreakdown["old"] != 1 || len(before.NameBreakdown) != 1 {
+			t.Fatalf("old snapshot=%+v", before)
+		}
+	}
+}

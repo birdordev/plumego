@@ -5,9 +5,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 
@@ -681,5 +683,45 @@ func BenchmarkRecoveryMiddleware_WithPanic(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		w := httptest.NewRecorder()
 		recoveryHandler.ServeHTTP(w, req)
+	}
+}
+
+type partialRecoveryWriter struct {
+	*httptest.ResponseRecorder
+	headers, writes int
+}
+
+func (w *partialRecoveryWriter) WriteHeader(status int) {
+	w.headers++
+	w.ResponseRecorder.WriteHeader(status)
+}
+func (w *partialRecoveryWriter) Write(p []byte) (int, error) {
+	w.writes++
+	n, _ := w.ResponseRecorder.Write(p[:min(2, len(p))])
+	return n, io.ErrClosedPipe
+}
+
+func TestRecoveryDoesNotRewriteAfterCommittedShortWrite(t *testing.T) {
+	for _, writeFirst := range []bool{false, true} {
+		logger := new(recordingLogger)
+		h := mustRecovery(t, logger)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			if writeFirst {
+				w.WriteHeader(202)
+				if n, err := w.Write([]byte("fixture")); n != 2 || !errors.Is(err, io.ErrClosedPipe) {
+					t.Errorf("write=%d %v", n, err)
+				}
+			}
+			panic("fixture panic")
+		}))
+		dst := &partialRecoveryWriter{ResponseRecorder: httptest.NewRecorder()}
+		h.ServeHTTP(dst, httptest.NewRequest("GET", "/", nil))
+		want := 500
+		if writeFirst {
+			want = 202
+		}
+		if dst.Code != want || dst.headers != 1 || dst.writes != 1 || logger.errCount != 1 ||
+			(writeFirst && dst.Body.String() != "fi") || strings.Contains(dst.Body.String(), "fixture panic") {
+			t.Fatalf("code=%d headers=%d writes=%d log=%v body=%q", dst.Code, dst.headers, dst.writes, logger.last, dst.Body.String())
+		}
 	}
 }

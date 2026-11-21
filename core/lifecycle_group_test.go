@@ -787,3 +787,64 @@ func TestLifecycleReadyOwnsPhaseUntilCallbackReturns(t *testing.T) {
 		t.Fatalf("final stop=%v calls=%d", err, calls)
 	}
 }
+
+func TestStopRetriesOrderedFailedComponentsOnly(t *testing.T) {
+	g := NewLifecycleGroup()
+	aErr, cErr := errors.New("fixture a"), errors.New("fixture c")
+	var stops []string
+	for _, tc := range []struct {
+		name    string
+		failure error
+	}{{"a", aErr}, {"b", nil}, {"c", cErr}} {
+		failure := tc.failure
+		g.Add(tc.name, Component{OnStop: func(context.Context) error { stops = append(stops, tc.name); e := failure; failure = nil; return e }})
+	}
+	if err := g.Start(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	err := g.Stop(t.Context())
+	joined, ok := err.(interface{ Unwrap() []error })
+	if !ok || !errors.Is(err, aErr) || !errors.Is(err, cErr) || len(joined.Unwrap()) != 2 ||
+		!errors.Is(joined.Unwrap()[0], cErr) || !errors.Is(joined.Unwrap()[1], aErr) {
+		t.Fatalf("stop error=%v", err)
+	}
+	if err := g.Stop(t.Context()); err != nil || !slices.Equal(stops, []string{"c", "b", "a", "c", "a"}) {
+		t.Fatalf("retry=%v stops=%v", err, stops)
+	}
+}
+
+func TestCancellationInLastStartRollsBackAllAcquiredComponents(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	g := NewLifecycleGroup()
+	var stops []string
+	failure := errors.New("fixture release")
+	failed := false
+	for _, name := range []string{"a", "b", "c"} {
+		g.Add(name, Component{
+			OnStart: func(context.Context) error {
+				if name == "c" {
+					cancel()
+				}
+				return nil
+			},
+			OnStop: func(ctx context.Context) error {
+				stops = append(stops, name)
+				if name == "b" && !failed {
+					failed = true
+					if !errors.Is(ctx.Err(), context.Canceled) {
+						t.Errorf("rollback ctx=%v", ctx.Err())
+					}
+					return failure
+				}
+				return nil
+			},
+		})
+	}
+	if err := g.Start(ctx); !errors.Is(err, context.Canceled) || !errors.Is(err, failure) {
+		t.Fatalf("startup=%v", err)
+	}
+	if err := g.Stop(t.Context()); err != nil || !slices.Equal(stops, []string{"c", "b", "a", "b"}) {
+		t.Fatalf("retry=%v stops=%v", err, stops)
+	}
+}

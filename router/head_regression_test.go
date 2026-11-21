@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"testing/iotest"
 
 	plumelog "github.com/birdordev/plumego/log"
 	"github.com/birdordev/plumego/middleware/recovery"
@@ -545,5 +546,21 @@ func TestHeadLengthOverrunDoesNotReplaceFinalHeader(t *testing.T) {
 		if readErr != nil || string(body) != want || resp.ContentLength != 2 || resp.StatusCode != 202 {
 			t.Fatalf("%s status=%d len=%d body=%q read=%v", method, resp.StatusCode, resp.ContentLength, body, readErr)
 		}
+	}
+}
+
+func TestHeadReadFromFailureKeepsConsumedLengthAndContentType(t *testing.T) {
+	cause := errors.New("fixture read")
+	r := NewRouter()
+	mustAddRoute(r, "GET", "/sample", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		data := io.MultiReader(strings.NewReader("sample text"), iotest.ErrReader(cause))
+		if n, err := io.Copy(w, data); n != 11 || !errors.Is(err, cause) {
+			t.Errorf("copy=%d err=%v", n, err)
+		}
+	}))
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, httptest.NewRequest("HEAD", "/sample", nil))
+	if rec.Code != 200 || rec.Body.Len() != 0 || rec.Header().Get("Content-Length") != "11" || !strings.HasPrefix(rec.Header().Get("Content-Type"), "text/plain") {
+		t.Fatalf("HEAD=%d %v %q", rec.Code, rec.Header(), rec.Body.String())
 	}
 }

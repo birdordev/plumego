@@ -1897,3 +1897,66 @@ func TestGzipHeaderOnlyCompletionPreservesTrailer(t *testing.T) {
 		}
 	}
 }
+
+type basicCompressionWriter struct{ http.ResponseWriter }
+type unwrappingCompressionWriter struct{ http.ResponseWriter }
+
+func (w unwrappingCompressionWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
+
+func TestUnsupportedExplicitFlushAllowsNormalCompressionFallback(t *testing.T) {
+	for _, wrap := range []bool{false, true} {
+		dst := &gzipCommitRecorder{ResponseRecorder: httptest.NewRecorder()}
+		var writer http.ResponseWriter = basicCompressionWriter{dst}
+		if wrap {
+			writer = unwrappingCompressionWriter{writer}
+		}
+		handler := Middleware(Config{})(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "text/plain")
+			w.WriteHeader(http.StatusAccepted)
+			if err := http.NewResponseController(w).Flush(); !errors.Is(err, http.ErrNotSupported) || len(dst.commits) != 0 {
+				t.Errorf("flush=%v commits=%v", err, dst.commits)
+			}
+			if _, err := io.WriteString(w, "fixture"); err != nil {
+				t.Error(err)
+			}
+		}))
+		req := httptest.NewRequest("GET", "/fixture", nil)
+		req.Header.Set("Accept-Encoding", "gzip")
+		handler.ServeHTTP(writer, req)
+		if dst.Code != 202 || len(dst.commits) != 1 || dst.Header().Get("Content-Encoding") != "gzip" {
+			t.Fatalf("wrapped=%t commits=%v header=%v", wrap, dst.commits, dst.Header())
+		}
+		reader, err := gzip.NewReader(dst.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer reader.Close()
+		value, err := io.ReadAll(reader)
+		if string(value) != "fixture" || err != nil {
+			t.Fatalf("body=%q err=%v", value, err)
+		}
+	}
+}
+
+type refusingCompressionFlush struct{ http.ResponseWriter }
+
+func (refusingCompressionFlush) FlushError() error { return http.ErrNotSupported }
+
+func TestDynamicFlushRefusalPreservesSelectedStatusCommit(t *testing.T) {
+	dst := &gzipCommitRecorder{ResponseRecorder: httptest.NewRecorder()}
+	h := Middleware(Config{})(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/plain")
+		w.WriteHeader(http.StatusAccepted)
+		if err := http.NewResponseController(w).Flush(); !errors.Is(err, http.ErrNotSupported) ||
+			len(dst.commits) != 1 || dst.Code != http.StatusAccepted {
+			t.Errorf("flush=%v commits=%v", err, dst.commits)
+		}
+		_, _ = io.WriteString(w, "fixture")
+	}))
+	req := httptest.NewRequest("GET", "/", nil)
+	req.Header.Set("Accept-Encoding", "gzip")
+	h.ServeHTTP(refusingCompressionFlush{dst}, req)
+	if len(dst.commits) != 1 || dst.Body.String() != "fixture" || dst.Header().Get("Content-Encoding") != "" {
+		t.Fatalf("commits=%v body=%q header=%v", dst.commits, dst.Body.String(), dst.Header())
+	}
+}

@@ -43,3 +43,5 @@ app.Use(compression.Middleware(compression.DefaultConfig()))
 - The wrapped `ResponseWriter` supports `Unwrap()` for access to the underlying writer.
 - Abnormal handler exit leaves an uncommitted response open for outer
   handling. A gzip stream that already started is finalized.
+- If the underlying writer has no flush capability, an uncommitted
+  response stays eligible for compression after Flush returns unsupported.

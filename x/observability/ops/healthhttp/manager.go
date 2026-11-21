@@ -219,10 +219,10 @@ func (m *manager) GetAllHealth() map[string]*health.ComponentHealth {
 
 func (m *manager) CheckComponent(ctx context.Context, name string) error {
 	var result componentCheckResult
-	return m.checkComponent(ctx, name, &result)
+	return m.checkComponent(ctx, name, &result, false)
 }
 
-func (m *manager) checkComponent(ctx context.Context, name string, result *componentCheckResult) error {
+func (m *manager) checkComponent(ctx context.Context, name string, result *componentCheckResult, publishAborted bool) error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -253,16 +253,41 @@ func (m *manager) checkComponent(ctx context.Context, name string, result *compo
 	defer cancel()
 
 	start := time.Now()
-	attempts, err := runCheckWithRetry(checkCtx, checker, config)
-	duration := time.Since(start)
+	attempts := 0
+	if publishAborted {
+		defer func() {
+			if result.complete || attempts == 0 {
+				return
+			}
+			// 异常退出只发布给仍拥有该组件、且没有被更新检查接管的调用。
+			result.attempted = true
+			result.failed = true
+			result.duration = time.Since(start)
+			result.err = errComponentCheckIncomplete
+			if publishErr := m.publishComponentCheck(name, expectedHealth, checkVersion, attempts, result); publishErr != nil {
+				result.err = errors.Join(result.err, publishErr)
+			}
+		}()
+	}
+	err := runCheckWithRetry(checkCtx, checker, config, &attempts)
+	result.complete = true
 	result.attempted = attempts > 0
-	result.duration = duration
+	result.duration = time.Since(start)
 	result.failed = err != nil
+	if publishAborted && !result.attempted {
+		return err
+	}
+	if publishErr := m.publishComponentCheck(name, expectedHealth, checkVersion, attempts, result); publishErr != nil {
+		return publishErr
+	}
+	return err
+}
 
+func (m *manager) publishComponentCheck(name string, expectedHealth *health.ComponentHealth, checkVersion uint64, attempts int, result *componentCheckResult) error {
 	timestamp := time.Now()
 	status := health.StatusHealthy
 	message := "component is healthy"
-	if err != nil {
+	if result.failed {
 		status = health.StatusUnhealthy
 		message = "component check failed"
 	}
@@ -285,17 +310,17 @@ func (m *manager) checkComponent(ctx context.Context, name string, result *compo
 	component.Status = status
 	component.Message = message
 	component.Timestamp = timestamp
-	component.Duration = duration
+	component.Duration = result.duration
 	if component.Details == nil {
 		component.Details = make(map[string]any)
 	}
 	component.Details["last_check"] = timestamp
-	component.Details["check_duration"] = duration.String()
+	component.Details["check_duration"] = result.duration.String()
 	component.Details["check_attempts"] = attempts
-	m.lastCheckDuration = duration
+	m.lastCheckDuration = result.duration
 	m.mu.Unlock()
 
-	return err
+	return nil
 }
 
 func (m *manager) CheckAllComponents(ctx context.Context) health.HealthStatus {
@@ -356,26 +381,36 @@ func (m *manager) checkBatch(ctx context.Context) (health.HealthStatus, []string
 		}
 		status = health.StatusUnhealthy
 	}
+	contextReason := ""
 	if err := ctx.Err(); err != nil {
 		status = health.StatusUnhealthy
-		message = err.Error()
+		contextReason = context.Canceled.Error()
+		if err == context.DeadlineExceeded {
+			contextReason = context.DeadlineExceeded.Error()
+		}
+		message = contextReason
 	}
 	timestamp := time.Now()
 	readiness := health.ReadinessStatus{
 		Timestamp:  timestamp,
 		Components: make(map[string]bool, len(m.health)),
 	}
-	if status.IsReady() {
-		readiness.Ready = true
-	} else {
-		readiness.Ready = false
-		readiness.Reason = fmt.Sprintf("components failed: %v", failedComponents)
+	readiness.Ready = status.IsReady()
+	if !readiness.Ready {
+		switch {
+		case contextReason != "":
+			readiness.Reason = contextReason
+		case len(failedComponents) > 0:
+			readiness.Reason = fmt.Sprintf("components failed: %v", failedComponents)
+		default:
+			readiness.Reason = "components are not ready"
+		}
 	}
 	for name, component := range m.health {
 		readiness.Components[name] = component.Status.IsReady()
 	}
 	for i, result := range results {
-		if !result.complete || result.err == errComponentCheckIncomplete {
+		if !result.attempted && (!result.complete || result.err != nil) {
 			if name := components[i]; m.health[name] != nil {
 				readiness.Components[name] = false
 			}
@@ -469,7 +504,7 @@ func (m *manager) Close() error {
 	return nil
 }
 
-func runCheckWithRetry(ctx context.Context, checker health.ComponentChecker, config Config) (int, error) {
+func runCheckWithRetry(ctx context.Context, checker health.ComponentChecker, config Config, attempts *int) error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -479,26 +514,27 @@ func runCheckWithRetry(ctx context.Context, checker health.ComponentChecker, con
 	var err error
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
 		if err := ctx.Err(); err != nil {
-			return attempt - 1, err
+			return err
 		}
+		*attempts = attempt
 		err = checker.Check(ctx)
 		if ctxErr := ctx.Err(); ctxErr != nil {
-			return attempt, ctxErr
+			return ctxErr
 		}
 		if err == nil {
-			return attempt, nil
+			return nil
 		}
 		if attempt >= maxAttempts {
-			return attempt, err
+			return err
 		}
 		if ctxErr := ctx.Err(); ctxErr != nil {
-			return attempt, ctxErr
+			return ctxErr
 		}
 		if !sleepWithContext(ctx, config.RetryDelay) {
-			return attempt, ctx.Err()
+			return ctx.Err()
 		}
 	}
-	return maxAttempts, err
+	return err
 }
 
 func sleepWithContext(ctx context.Context, delay time.Duration) bool {
@@ -537,15 +573,16 @@ func (m *manager) checkAggregateComponents(ctx context.Context, names []string) 
 	var worker func()
 	worker = func() {
 		current := -1
-		var started time.Time
 		defer func() {
 			_ = recover()
 			if current >= 0 {
 				// panic 和 Goexit 都会执行此 defer。
 				// 仅在还有未领取的检查时补充 worker。
-				results[current] = componentCheckResult{
-					complete: true, attempted: true, duration: time.Since(started),
-					failed: true, err: errComponentCheckIncomplete,
+				result := &results[current]
+				result.complete = true
+				result.failed = true
+				if result.err == nil {
+					result.err = errComponentCheckIncomplete
 				}
 				if next.Load() < int64(len(names)) {
 					wg.Go(worker)
@@ -558,9 +595,8 @@ func (m *manager) checkAggregateComponents(ctx context.Context, names []string) 
 				return
 			}
 			current = int(index)
-			started = time.Now()
 			result := &results[current]
-			result.err = m.checkComponent(ctx, names[current], result)
+			result.err = m.checkComponent(ctx, names[current], result, true)
 			result.complete = true
 			current = -1
 		}

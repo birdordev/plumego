@@ -322,3 +322,28 @@ func TestFileClonesOwnTimePointersAndMetadataAcrossViews(t *testing.T) {
 		t.Fatalf("empty=%+v", empty)
 	}
 }
+
+type fileFixtureCause struct{}
+
+func (*fileFixtureCause) Error() string { return "fixture cause" }
+func (*fileFixtureCause) Unwrap() error { return ErrNotFound }
+
+func TestFileErrorKeepsOptionalPathAndTypedClassification(t *testing.T) {
+	var absent *Error
+	if absent.Unwrap() != nil || absent.Error() != "file: <nil>" {
+		t.Fatalf("nil text=%q", absent.Error())
+	}
+	cause := new(fileFixtureCause)
+	for _, path := range []string{"", "sample.txt"} {
+		wrapped := &Error{Op: "read", Path: path, Err: cause}
+		var found *fileFixtureCause
+		want := "file: read"
+		if path != "" {
+			want += " " + path
+		}
+		want += ": fixture cause"
+		if wrapped.Error() != want || !errors.Is(wrapped, ErrNotFound) || !errors.As(wrapped, &found) || found != cause {
+			t.Fatalf("result=%v cause=%v", wrapped, found)
+		}
+	}
+}

@@ -7,6 +7,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -827,4 +828,98 @@ func TestKVCapacityEvictionAtOpenPersistsOnlyWithMutation(t *testing.T) {
 	if keys := mustKeys(t, open(wide)); !slices.Equal(keys, []string{"c"}) {
 		t.Fatalf("reopened after commit=%v", keys)
 	}
+}
+
+func TestKVDirectoryAliasSharesSingleLockAndReopens(t *testing.T) {
+	dir := t.TempDir()
+	alias := filepath.Join(t.TempDir(), "alias")
+	if err := os.Symlink(dir, alias); err != nil {
+		if runtime.GOOS == "windows" || runtime.GOOS == "plan9" {
+			t.Skipf("directory symlink unavailable: %v", err)
+		}
+		t.Fatal(err)
+	}
+	first, err := NewKVStore(DefaultConfig(dir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer first.Close()
+	if err := first.Set("fixture", []byte("value"), 0); err != nil {
+		t.Fatal(err)
+	}
+	other, err := NewKVStore(DefaultConfig(alias))
+	if other != nil {
+		other.Close()
+		t.Fatal("alias acquired a second lock")
+	}
+	if err == nil || !strings.Contains(err.Error(), "lock data dir") {
+		t.Fatalf("second open=%v", err)
+	}
+	if err := first.Close(); err != nil {
+		t.Fatal(err)
+	}
+	last, err := NewKVStore(DefaultConfig(alias))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer last.Close()
+	if got, err := last.Get("fixture"); string(got) != "value" || err != nil {
+		t.Fatalf("reopen=%q err=%v", got, err)
+	}
+}
+
+func TestKVFailedSnapshotReplacementDoesNotExtendPreviousTTL(t *testing.T) {
+	dir := t.TempDir()
+	synctest.Test(t, func(t *testing.T) {
+		cfg := DefaultConfig(dir)
+		kv, err := NewKVStore(cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer kv.Close()
+		if err := kv.Set("fixture", []byte("first"), 3*time.Second); err != nil {
+			t.Fatal(err)
+		}
+		path := filepath.Join(dir, stateFileName)
+		snapshot, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		time.Sleep(time.Second)
+		blockStatePath(t, dir)
+		if err := kv.Set("fixture", []byte("failed"), time.Hour); err == nil {
+			t.Fatal("replacement succeeded")
+		}
+		if got, err := kv.Get("fixture"); string(got) != "first" || err != nil {
+			t.Fatalf("restored=%q err=%v", got, err)
+		}
+		time.Sleep(2 * time.Second)
+		if _, err := kv.Get("fixture"); !errors.Is(err, ErrKeyExpired) {
+			t.Fatalf("expiry=%v", err)
+		}
+		if err := os.Remove(path); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, snapshot, 0600); err != nil {
+			t.Fatal(err)
+		}
+		if err := kv.Set("fixture", []byte("retried"), 4*time.Second); err != nil {
+			t.Fatal(err)
+		}
+		if err := kv.Close(); err != nil {
+			t.Fatal(err)
+		}
+		reopened, err := NewKVStore(cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer reopened.Close()
+		if got, err := reopened.Get("fixture"); string(got) != "retried" || err != nil {
+			t.Fatalf("reopen=%q err=%v", got, err)
+		}
+		time.Sleep(4 * time.Second)
+		if _, err := reopened.Get("fixture"); !errors.Is(err, ErrKeyExpired) {
+			t.Fatalf("retried expiry=%v", err)
+		}
+	})
 }

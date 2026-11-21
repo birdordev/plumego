@@ -124,6 +124,19 @@ failure message while direct component calls retain their error causes.
 Latency statistics use nonnegative durations and round the mean down to
 a whole nanosecond.
 
-History exports validate explicit integer `limit` and `offset` values.
-Absent values keep their defaults. A page at or beyond the end of the
-filtered history has no next page.
+History exports require nonempty `limit` and `offset` values to be integers.
+A limit from 1 through 100 is used as supplied. A missing or empty limit, or
+an integer outside that range, uses 50. A missing, empty, or negative offset
+uses 0.
+A page at or beyond the end of the filtered history has no next page.
+
+
+An interrupted component attempt updates cached health only while it still
+owns the registered component and its check version. A skipped attempt leaves
+the cached component unchanged. Batch readiness distinguishes cancellation and
+deadline expiry from component failures.
+
+The history list and exports preserve append order. The statistics endpoint
+uses the earliest and latest check timestamps, breaking ties by first and last
+append position respectively. Trend scores compare the actual success rates of
+the older and newer parts of the sample window.

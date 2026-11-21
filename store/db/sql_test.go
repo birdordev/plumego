@@ -1551,3 +1551,32 @@ func TestStrictRowCancellationClosesRowsAndKeepsPoolUsable(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestScanRowsDiscardsPartialResultsAndRetainsCloseCause(t *testing.T) {
+	scanErr, closeErr := errors.New("fixture scan"), errors.New("fixture close")
+	driverRows := &fixedRows{cols: []string{"n"}, values: [][]driver.Value{{int64(1)}, {int64(2)}}, closeErr: closeErr}
+	database := sql.OpenDB(&rowsConnector{rows: driverRows})
+	defer database.Close()
+	database.SetMaxOpenConns(1)
+	rows, err := QueryContext(t.Context(), database, "SELECT n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	count := 0
+	got, err := ScanRows(rows, func(r *sql.Rows) (int64, error) {
+		count++
+		if count == 2 {
+			return 0, scanErr
+		}
+		var n int64
+		err := r.Scan(&n)
+		return n, err
+	})
+	if got != nil || !errors.Is(err, scanErr) || !errors.Is(err, closeErr) || !errors.Is(err, ErrQueryFailed) ||
+		count != 2 || driverRows.closes != 1 || database.Stats().InUse != 0 {
+		t.Fatalf("rows=%v err=%v count=%d closes=%d stats=%+v", got, err, count, driverRows.closes, database.Stats())
+	}
+	if err := database.PingContext(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+}

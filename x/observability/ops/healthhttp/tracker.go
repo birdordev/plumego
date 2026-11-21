@@ -396,8 +396,8 @@ func (t *Tracker) updateHealthTrend(comp *ComponentMetrics) {
 		}
 	}
 
-	recentRate := float64(recentGood) / float64(halfPoint)
-	olderRate := float64(olderGood) / float64(recentCount-halfPoint)
+	recentRate := float64(recentGood) / float64(recentCount-halfPoint)
+	olderRate := float64(olderGood) / float64(halfPoint)
 	trendScore := recentRate - olderRate
 
 	direction := TrendStable
@@ -576,7 +576,14 @@ func (t *Tracker) QueryHealthHistory(query HealthHistoryQuery) HealthHistoryQuer
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 
-	var filtered []HealthHistoryEntry
+	limit := query.Limit
+	if limit <= 0 || limit > 100 {
+		limit = 50
+	}
+	offset := max(query.Offset, 0)
+
+	total := 0
+	entries := make([]HealthHistoryEntry, 0)
 	for _, entry := range t.history {
 		if query.StartTime != nil && entry.Timestamp.Before(*query.StartTime) {
 			continue
@@ -587,53 +594,26 @@ func (t *Tracker) QueryHealthHistory(query HealthHistoryQuery) HealthHistoryQuer
 		if query.State != nil && entry.State != *query.State {
 			continue
 		}
-		if query.Component != "" {
-			found := false
-			for _, comp := range entry.Components {
-				if comp == query.Component {
-					found = true
-					break
-				}
-			}
-			if !found {
-				continue
-			}
+		if query.Component != "" && !slices.Contains(entry.Components, query.Component) {
+			continue
 		}
-		filtered = append(filtered, entry)
-	}
-
-	total := len(filtered)
-	limit := query.Limit
-	if limit <= 0 || limit > 100 {
-		limit = 50
-	}
-	offset := query.Offset
-	if offset < 0 {
-		offset = 0
-	}
-
-	end := total
-	entries := make([]HealthHistoryEntry, 0)
-	if offset < total {
-		end = offset + min(limit, total-offset)
-		// Keep entries outside the page inaccessible to the caller.
-		entries = filtered[offset:end:end]
-		for i, entry := range entries {
-			entries[i] = cloneHealthHistoryEntry(entry)
+		if total >= offset && len(entries) < limit {
+			entries = append(entries, cloneHealthHistoryEntry(entry))
 		}
+		total++
 	}
 
 	return HealthHistoryQueryResult{
-		Entries: entries,
+		Entries: slices.Clip(entries),
 		Total:   total,
 		Limit:   limit,
 		Offset:  offset,
-		HasMore: end < len(filtered),
+		HasMore: total-offset > len(entries),
 	}
 }
 
 // GetHealthHistoryStats returns statistics with independent snapshots of the
-// first and last tracked entries.
+// earliest and latest timestamps. Ties use the first and last tracked entries.
 func (t *Tracker) GetHealthHistoryStats() HistoryStats {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
@@ -645,12 +625,18 @@ func (t *Tracker) GetHealthHistoryStats() HistoryStats {
 		}
 	}
 
+	oldestEntry, newestEntry := t.history[0], t.history[0]
 	for _, entry := range t.history {
 		stateCounts[string(entry.State)]++
+		if entry.Timestamp.Before(oldestEntry.Timestamp) {
+			oldestEntry = entry
+		}
+		if !entry.Timestamp.Before(newestEntry.Timestamp) {
+			newestEntry = entry
+		}
 	}
-
-	oldest := cloneHealthHistoryEntry(t.history[0])
-	newest := cloneHealthHistoryEntry(t.history[len(t.history)-1])
+	oldest := cloneHealthHistoryEntry(oldestEntry)
+	newest := cloneHealthHistoryEntry(newestEntry)
 
 	return HistoryStats{
 		TotalEntries:   len(t.history),

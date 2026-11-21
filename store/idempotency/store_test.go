@@ -383,3 +383,20 @@ func TestCompletionExpirationAndStatusUseSuppliedClock(t *testing.T) {
 		}
 	}
 }
+
+func TestRecordResponseClonePreservesEmptyAndNilAndCopiesPayload(t *testing.T) {
+	stamp := time.Now()
+	for _, source := range [][]byte{nil, {}, []byte("sample")} {
+		record := Record{Key: "fixture", CreatedAt: stamp, UpdatedAt: stamp, ExpiresAt: stamp.Add(time.Hour), Response: source}
+		a, b := record.Clone(), record.Clone()
+		if (a.Response == nil) != (source == nil) || !a.CreatedAt.Equal(stamp) || !a.UpdatedAt.Equal(stamp) || !a.ExpiresAt.Equal(record.ExpiresAt) {
+			t.Fatalf("clone=%+v", a)
+		}
+		if len(a.Response) > 0 {
+			a.Response[0] = 'X'
+			if string(source) != "sample" || string(b.Response) != "sample" {
+				t.Fatal("response ownership changed")
+			}
+		}
+	}
+}

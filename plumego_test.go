@@ -218,3 +218,30 @@ func TestFacadeParamAcceptsNilAndLegacyMetadata(t *testing.T) {
 		}
 	}
 }
+
+func TestFacadeForwardsRouterMethodNotAllowedPolicy(t *testing.T) {
+	cfg := plumego.DefaultConfig()
+	cfg.Router.MethodNotAllowed = true
+	for _, app := range []struct {
+		handler  *core.App
+		mismatch int
+	}{{plumego.New(), 404}, {plumego.NewWithConfig(cfg), 405}} {
+		if err := app.handler.Get("/sample", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(204) })); err != nil {
+			t.Fatal(err)
+		}
+		for _, method := range []string{"GET", "POST"} {
+			rec := httptest.NewRecorder()
+			app.handler.ServeHTTP(rec, httptest.NewRequest(method, "/sample", nil))
+			want, allow := 204, ""
+			if method == "POST" {
+				want = app.mismatch
+				if want == 405 {
+					allow = "GET, HEAD"
+				}
+			}
+			if rec.Code != want || rec.Header().Get("Allow") != allow {
+				t.Fatalf("method=%s response=%d %v", method, rec.Code, rec.Header())
+			}
+		}
+	}
+}

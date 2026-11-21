@@ -475,11 +475,29 @@ func (w *gzipResponseWriter) FlushError() error {
 		return w.flushImplicitResponse()
 	}
 	if w.gz == nil {
+		if !w.headersFlushed && !hasFlushCapability(w.ResponseWriter) {
+			return http.ErrNotSupported
+		}
 		w.commitPassThrough()
 	} else if err := w.gz.Flush(); err != nil {
 		return err
 	}
 	return http.NewResponseController(w.ResponseWriter).Flush()
+}
+
+func hasFlushCapability(dst http.ResponseWriter) bool {
+	for {
+		switch writer := dst.(type) {
+		case *internaltransport.VaryWriter:
+			dst = writer.Unwrap()
+		case interface{ FlushError() error }, http.Flusher:
+			return true
+		case interface{ Unwrap() http.ResponseWriter }:
+			dst = writer.Unwrap()
+		default:
+			return false
+		}
+	}
 }
 
 func (w *gzipResponseWriter) flushImplicitResponse() error {

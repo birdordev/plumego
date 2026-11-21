@@ -213,3 +213,17 @@ func TestReadinessClonesKeepNilDistinctFromWritableEmptyMap(t *testing.T) {
 		}
 	}
 }
+
+func TestComponentCloneKeepsDependencyAppendAndEnabledIndependent(t *testing.T) {
+	deps := make([]string, 1, 3)
+	deps[0] = "fixture"
+	source := ComponentHealth{HealthStatus: HealthStatus{Status: StatusHealthy, Dependencies: deps}, Enabled: true}
+	a, b := source.Clone(), source.Clone()
+	a.Dependencies = append(a.Dependencies, "local")
+	a.Dependencies[0] = "changed"
+	a.Enabled = false
+	if len(source.Dependencies) != 1 || source.Dependencies[0] != "fixture" || deps[:2][1] != "" ||
+		len(b.Dependencies) != 1 || b.Dependencies[0] != "fixture" || !b.Enabled || b.Status != StatusHealthy {
+		t.Fatalf("source=%+v first=%+v second=%+v", source, a, b)
+	}
+}

@@ -661,3 +661,27 @@ func TestOldRouteGroupChecksFreezeBeforeNilHandler(t *testing.T) {
 		t.Fatalf("status=%d routes=%v", w.Code, app.Routes())
 	}
 }
+
+func TestNestedRouteOptionCanRegisterAnotherAppRoute(t *testing.T) {
+	a := newTestApp()
+	h := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(204) })
+	var other error
+	group := a.Group("/api").Group("/v1")
+	if err := group.AddRoute("GET", "/main", h, func(meta *router.RouteMeta) {
+		other = a.AddRoute("GET", "/other", h, router.WithRouteName("other"))
+		meta.Name = "main"
+	}); err != nil || other != nil {
+		t.Fatalf("main=%v other=%v", err, other)
+	}
+	if err := group.AddRoute("GET", "/duplicate", h, router.WithRouteName("other")); err == nil {
+		t.Fatal("duplicate name accepted")
+	}
+	for name, want := range map[string]string{"main": "/api/v1/main", "other": "/other"} {
+		if path, err := a.URL(name); path != want || err != nil {
+			t.Fatalf("name=%s path=%q err=%v", name, path, err)
+		}
+	}
+	if len(a.Routes()) != 2 {
+		t.Fatalf("routes=%v", a.Routes())
+	}
+}

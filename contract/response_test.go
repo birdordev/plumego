@@ -877,3 +877,53 @@ func TestExplicitErrorIDOrValidatedRequestFallback(t *testing.T) {
 		}
 	}
 }
+
+type fixtureShortJSONWriter struct {
+	*httptest.ResponseRecorder
+	err     error
+	headers int
+}
+
+func (w *fixtureShortJSONWriter) Write(p []byte) (int, error) {
+	n, _ := w.ResponseRecorder.Write(p[:len(p)-1])
+	return n, w.err
+}
+func (w *fixtureShortJSONWriter) WriteHeader(code int) {
+	w.headers++
+	w.ResponseRecorder.WriteHeader(code)
+}
+
+func TestEncodedResponseKeepsOriginalErrorOverShortWrite(t *testing.T) {
+	cause := errors.New("fixture write")
+	for _, status := range []int{200, 404} {
+		for _, withCause := range []bool{false, true} {
+			w := &fixtureShortJSONWriter{ResponseRecorder: httptest.NewRecorder()}
+			want := io.ErrShortWrite
+			if withCause {
+				w.err = cause
+				want = cause
+			}
+			var err error
+			if status == 200 {
+				err = WriteResponse(w, nil, status, "sample", nil)
+			} else {
+				err = WriteError(w, nil, NewErrorBuilder().Type(TypeNotFound).Build())
+			}
+			if !errors.Is(err, want) || w.headers != 1 || w.Code != status || w.Header().Get(HeaderContentType) != ContentTypeJSON {
+				t.Fatalf("status=%d headers=%d err=%v", w.Code, w.headers, err)
+			}
+		}
+	}
+}
+
+func TestErrorDetailFallbackJoinsEncodingAndWriterFailures(t *testing.T) {
+	w := &fixtureShortJSONWriter{ResponseRecorder: httptest.NewRecorder(), err: io.ErrClosedPipe}
+	w.Header().Set("X-Existing", "fixture")
+	e := NewErrorBuilder().Type(TypeNotFound).RequestID("fixture-id").Detail("unsupported", make(chan int)).Build()
+	err := WriteError(w, nil, e)
+	var unsupported *json.UnsupportedTypeError
+	if !errors.Is(err, io.ErrClosedPipe) || !errors.As(err, &unsupported) || w.headers != 1 || w.Code != 404 ||
+		w.Header().Get("X-Existing") != "fixture" || !strings.Contains(w.Body.String(), "fixture-id") || strings.Contains(w.Body.String(), "details") {
+		t.Fatalf("result=%d %v %q err=%v", w.Code, w.Header(), w.Body.String(), err)
+	}
+}

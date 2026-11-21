@@ -519,3 +519,22 @@ func TestCanceledParentOwnsResponseBeforeLatePanicHook(t *testing.T) {
 		}
 	})
 }
+
+func TestReplayLimitDiscardsBufferedTrailerAndBody(t *testing.T) {
+	h := Middleware(Config{Timeout: time.Second, MaxBufferBytes: 64, MaxReplayBytes: 4})(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Trailer", "X-Old-Trailer")
+		w.WriteHeader(202)
+		_, _ = io.WriteString(w, "fixture payload")
+		w.Header().Set("X-Old-Trailer", "fixture trailer")
+	}))
+	rec := httptest.NewRecorder()
+	rec.Header().Set("X-Existing", "outer")
+	dst := &responseWriteCounter{ResponseWriter: rec}
+	h.ServeHTTP(dst, httptest.NewRequest("GET", "/", nil))
+	result := rec.Result()
+	defer result.Body.Close()
+	if result.StatusCode != 500 || dst.writes != 2 || result.Header.Get("Trailer") != "" || result.Trailer.Get("X-Old-Trailer") != "" ||
+		rec.Header().Get("X-Old-Trailer") != "" || result.Header.Get("X-Existing") != "outer" || strings.Contains(rec.Body.String(), "fixture payload") {
+		t.Fatalf("status=%d headers=%v trailer=%v writes=%d body=%q", result.StatusCode, result.Header, result.Trailer, dst.writes, rec.Body.String())
+	}
+}

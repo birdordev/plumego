@@ -319,3 +319,108 @@ func TestAcceptanceTrackerMetricsUsesFixedPublicDiagnostic(t *testing.T) {
 		}
 	}
 }
+
+func TestAbortedBatchPublishesFailureForHealthReport(t *testing.T) {
+	manager, err := NewManager(Config{RetryCount: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer manager.Close()
+	tracker := NewTracker(manager)
+	abort := false
+	calls := 0
+	if err := tracker.RegisterComponent(functionChecker{name: "sample", check: func(context.Context) error {
+		if abort {
+			calls++
+			if calls == 1 {
+				return errors.New("retry fixture")
+			}
+			runtime.Goexit()
+		}
+		return nil
+	}}); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, target := range []int{200, 503, 200} {
+		abort = target == 503
+		batch := tracker.CheckAllComponents(t.Context())
+		dst := httptest.NewRecorder()
+		HealthReportHandler(tracker).ServeHTTP(dst, httptest.NewRequest("GET", "/fixture", nil))
+		var output struct{ Data HealthReport }
+		if err := json.Unmarshal(dst.Body.Bytes(), &output); err != nil || dst.Code != target ||
+			output.Data.HealthStatus.Status != batch.Status || output.Data.Readiness.Ready != (target == 200) {
+			t.Fatalf("want=%d got=%d batch=%+v report=%+v decode=%v", target, dst.Code, batch, output.Data, err)
+		}
+		c, _ := manager.GetComponentHealth("sample")
+		wantAttempts := 1
+		if abort {
+			wantAttempts = 2
+		}
+		if c == nil || c.Details["check_attempts"] != wantAttempts || c.Status != batch.Status {
+			t.Fatalf("component=%+v attempts=%d", c, wantAttempts)
+		}
+	}
+}
+
+func TestTrackerTrendUsesEachHalfLength(t *testing.T) {
+	for _, size := range []int{3, 4, 9, 10} {
+		for _, scenario := range []struct {
+			direction TrendDirection
+			score     float64
+			good      func(int) bool
+		}{
+			{TrendStable, 0, func(int) bool { return true }},
+			{TrendStable, 0, func(int) bool { return false }},
+			{TrendImproving, 1, func(i int) bool { return i >= size/2 }},
+			{TrendDeclining, -1, func(i int) bool { return i < size/2 }},
+		} {
+			tracker := NewTracker(nil)
+			for i := range size {
+				state := health.StatusUnhealthy
+				if scenario.good(i) {
+					state = health.StatusHealthy
+				}
+				tracker.recordComponentCheck("sample", state, time.Second, false)
+			}
+			comp, _ := tracker.GetComponentMetrics("sample")
+			if trend := comp.HealthTrend; trend.Direction != scenario.direction || trend.TrendScore != scenario.score {
+				t.Fatalf("window=%d want=%s/%g got=%+v", size, scenario.direction, scenario.score, trend)
+			}
+		}
+	}
+}
+
+func TestManualReadinessAndObservedComponentHealthStayIndependent(t *testing.T) {
+	m, err := NewManager(Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	fail := true
+	if err := m.RegisterComponent(functionChecker{name: "sample", check: func(context.Context) error {
+		if fail {
+			return errors.New("fixture")
+		}
+		return nil
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	tracker := NewTracker(m)
+	tracker.CheckAllComponents(t.Context())
+	m.MarkReady()
+	report := tracker.GenerateReport()
+	if !report.Readiness.Ready || report.HealthStatus.Status != health.StatusUnhealthy {
+		t.Fatalf("manual ready=%+v", report)
+	}
+	fail = false
+	tracker.CheckAllComponents(t.Context())
+	m.MarkNotReady("maintenance")
+	report = tracker.GenerateReport()
+	if report.Readiness.Ready || report.Readiness.Reason != "maintenance" || report.HealthStatus.Status != health.StatusHealthy {
+		t.Fatalf("manual unavailable=%+v", report)
+	}
+	if batch := tracker.CheckAllComponents(t.Context()); !batch.Status.IsReady() || !m.Readiness().Ready {
+		t.Fatal("next check did not own readiness")
+	}
+}

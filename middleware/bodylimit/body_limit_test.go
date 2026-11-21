@@ -848,3 +848,27 @@ func TestOverrunAfterSuccessPreservesPrefixAndBlocksFlush(t *testing.T) {
 		t.Fatalf("status=%d body=%q flushed=%t", rec.Code, rec.Body, rec.Flushed)
 	}
 }
+
+func TestBodyLimitAfterExplicitErrorKeepsBothBodyWrites(t *testing.T) {
+	for _, chooseFirst := range []bool{false, true} {
+		h := Middleware(Config{MaxBytes: 2})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if chooseFirst {
+				w.WriteHeader(422)
+				_, _ = io.WriteString(w, "left")
+			}
+			if _, err := io.ReadAll(r.Body); !errors.Is(err, errRequestTooLarge) {
+				t.Errorf("read err=%v", err)
+			}
+			if !chooseFirst {
+				w.WriteHeader(422)
+			}
+			_, _ = io.WriteString(w, "right")
+		}))
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, httptest.NewRequest("POST", "/", strings.NewReader("fixture")))
+		if chooseFirst && (w.Code != 422 || w.Body.String() != "leftright") ||
+			!chooseFirst && (w.Code != 413 || strings.Contains(w.Body.String(), "right")) {
+			t.Fatalf("business first=%t response=%d %q", chooseFirst, w.Code, w.Body.String())
+		}
+	}
+}

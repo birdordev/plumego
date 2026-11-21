@@ -692,3 +692,27 @@ func TestCORSAllowedOriginStillWorksAfterAnotherOrigin(t *testing.T) {
 		t.Fatalf("downstream calls=%d", calls)
 	}
 }
+
+func TestCORSConstructionDetachesMethodsAndExposedHeaders(t *testing.T) {
+	methods, headers, exposed := []string{"PUT"}, []string{"X-Fixture"}, []string{"X-Result"}
+	origins := []string{"https://example.test"}
+	calls := 0
+	handler := Middleware(CORSOptions{AllowedOrigins: origins, AllowedMethods: methods, AllowedHeaders: headers, ExposeHeaders: exposed})(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { calls++; w.WriteHeader(202) }))
+	methods[0], headers[0], exposed[0], origins[0] = "GET", "X-Changed", "X-Changed", "https://other.test"
+	preflight := httptest.NewRequest("OPTIONS", "/", nil)
+	preflight.Header.Set("Origin", "https://example.test")
+	preflight.Header.Set("Access-Control-Request-Method", "PUT")
+	preflight.Header.Set("Access-Control-Request-Headers", "x-fixture")
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, preflight)
+	if w.Code != 204 || w.Header().Get("Access-Control-Allow-Methods") != "PUT" || w.Header().Get("Access-Control-Allow-Headers") != "x-fixture" || calls != 0 {
+		t.Fatalf("preflight=%d headers=%v calls=%d", w.Code, w.Header(), calls)
+	}
+	request := httptest.NewRequest("GET", "/", nil)
+	request.Header.Set("Origin", "https://example.test")
+	w = httptest.NewRecorder()
+	handler.ServeHTTP(w, request)
+	if w.Code != 202 || calls != 1 || w.Header().Get("Access-Control-Expose-Headers") != "X-Result" {
+		t.Fatalf("simple=%d %v calls=%d", w.Code, w.Header(), calls)
+	}
+}

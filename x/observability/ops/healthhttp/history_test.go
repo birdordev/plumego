@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/birdordev/plumego/contract"
 	"github.com/birdordev/plumego/health"
@@ -372,6 +373,96 @@ func BenchmarkHistoryUnsupportedFormat(b *testing.B) {
 				handler.ServeHTTP(w, req)
 				if w.Code != 400 {
 					b.Fatalf("status=%d", w.Code)
+				}
+			}
+		})
+	}
+}
+
+func TestHistoryStatsUsesTimestampExtremaAndPreservesInsertionOrder(t *testing.T) {
+	tracker := NewTracker(nil)
+	start := time.Now()
+	if got := tracker.GetHealthHistoryStats(); got.TotalEntries != 0 || got.OldestEntry != nil || got.NewestEntry != nil {
+		t.Fatalf("empty stats=%+v", got)
+	}
+	for _, fixture := range []struct {
+		offset int
+		name   string
+	}{{2, "early insert latest"}, {1, "middle"}, {0, "first oldest"}, {0, "second oldest"}, {2, "last latest"}} {
+		tracker.history = append(tracker.history, HealthHistoryEntry{
+			Timestamp: start.Add(time.Duration(fixture.offset) * time.Second), State: health.StatusHealthy, Message: fixture.name, Components: []string{"sample"},
+		})
+	}
+	stats := tracker.GetHealthHistoryStats()
+	if stats.TimeSpan != 2*time.Second || stats.OldestEntry.Message != "first oldest" || stats.NewestEntry.Message != "last latest" ||
+		stats.EntriesByState[string(health.StatusHealthy)] != 5 {
+		t.Fatalf("stats=%+v", stats)
+	}
+	stats.OldestEntry.Components[0] = "caller"
+	page := tracker.QueryHealthHistory(HealthHistoryQuery{Limit: 1})
+	if page.Entries[0].Message != "early insert latest" || page.Entries[0].Components[0] != "sample" || tracker.history[2].Components[0] != "sample" {
+		t.Fatalf("page or tracked entry changed: %+v", page)
+	}
+}
+
+func TestHistorySmallPagePreservesCombinedFiltersAndOwnership(t *testing.T) {
+	tracker := NewTracker(nil)
+	now := time.Now()
+	for i := range 20 {
+		state := health.StatusHealthy
+		if i%3 == 0 {
+			state = health.StatusUnhealthy
+		}
+		component := "sample"
+		if i%2 == 0 {
+			component = "other"
+		}
+		tracker.history = append(tracker.history, HealthHistoryEntry{Timestamp: now.Add(time.Duration(i) * time.Second), State: state, Message: fmt.Sprint(i), Components: []string{component}})
+	}
+	start, end := now.Add(2*time.Second), now.Add(17*time.Second)
+	state := health.StatusHealthy
+	query := HealthHistoryQuery{StartTime: &start, EndTime: &end, State: &state, Component: "sample", Limit: 2, Offset: 1}
+	got := tracker.QueryHealthHistory(query)
+	if got.Total != 5 || !got.HasMore || len(got.Entries) != 2 || cap(got.Entries) != 2 || got.Entries[0].Message != "7" || got.Entries[1].Message != "11" {
+		t.Fatalf("page=%+v", got)
+	}
+	got.Entries[0].Components[0] = "changed"
+	if tracker.QueryHealthHistory(query).Entries[0].Components[0] != "sample" {
+		t.Fatal("page mutated stored entry")
+	}
+	query.Offset = 5
+	if last := tracker.QueryHealthHistory(query); last.Entries == nil || len(last.Entries) != 0 || last.HasMore || last.Total != 5 {
+		t.Fatalf("last=%+v", last)
+	}
+}
+
+func TestHistoryExportReportsDocumentedPaginationLimits(t *testing.T) {
+	handler := HealthHistoryExportHandler(NewTracker(nil))
+	for _, tc := range []struct {
+		query         string
+		limit, offset int
+	}{
+		{"", 50, 0}, {"?limit=0&offset=-2", 50, 0}, {"?limit=-1", 50, 0}, {"?limit=100&offset=7", 100, 7}, {"?limit=101", 50, 0},
+	} {
+		dst := httptest.NewRecorder()
+		handler.ServeHTTP(dst, httptest.NewRequest("GET", "/export"+tc.query, nil))
+		var output struct{ Data HealthHistoryQueryResult }
+		if err := json.Unmarshal(dst.Body.Bytes(), &output); err != nil || dst.Code != 200 || output.Data.Limit != tc.limit || output.Data.Offset != tc.offset {
+			t.Fatalf("query=%q status=%d data=%+v err=%v", tc.query, dst.Code, output.Data, err)
+		}
+	}
+}
+
+func BenchmarkHistoryFirstSmallPage(b *testing.B) {
+	for _, size := range []int{100, 10000} {
+		b.Run(fmt.Sprint(size), func(b *testing.B) {
+			tracker := NewTracker(nil)
+			tracker.history = make([]HealthHistoryEntry, size)
+			b.ReportAllocs()
+			for b.Loop() {
+				page := tracker.QueryHealthHistory(HealthHistoryQuery{Limit: 1})
+				if page.Total != size || len(page.Entries) != 1 || !page.HasMore {
+					b.Fatalf("page=%+v", page)
 				}
 			}
 		})

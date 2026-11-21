@@ -556,3 +556,39 @@ func TestExpiredMemoryEntryReplacementOwnsNewTTLAndValue(t *testing.T) {
 		}
 	})
 }
+
+type observedReadContext struct {
+	context.Context
+	entered chan struct{}
+	once    sync.Once
+}
+
+func (c *observedReadContext) Done() <-chan struct{} {
+	c.once.Do(func() { close(c.entered) })
+	return c.Context.Done()
+}
+func TestKeyStoreReadCanceledAtWaitReturnsNoCopy(t *testing.T) {
+	store := NewInMemoryKeyStore()
+	if err := store.SetContext(t.Context(), "fixture", []byte("value"), 0); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	c := &observedReadContext{Context: ctx, entered: make(chan struct{})}
+	type result struct {
+		data []byte
+		err  error
+	}
+	done := make(chan result, 1)
+	store.mu.Lock()
+	go func() { data, err := store.GetContext(c, "fixture"); done <- result{data, err} }()
+	<-c.entered
+	cancel()
+	store.mu.Unlock()
+	if got := <-done; got.data != nil || !errors.Is(got.err, context.Canceled) {
+		t.Fatalf("canceled value=%q err=%v", got.data, got.err)
+	}
+	if got, err := store.GetContext(t.Context(), "fixture"); string(got) != "value" || err != nil {
+		t.Fatalf("read=%q err=%v", got, err)
+	}
+}

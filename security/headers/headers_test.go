@@ -745,3 +745,20 @@ func TestCompiledPolicyKeepsPrepopulatedWriterOnValidationFailure(t *testing.T) 
 		t.Fatalf("compile err=%v header=%v", err, dst.Header())
 	}
 }
+
+func TestCSPBuildKeepsDirectiveOrderAndSourceSnapshot(t *testing.T) {
+	sources := []string{"'self'", "https://example.test"}
+	b := NewCSPBuilder().ImgSrc("data:").ScriptSrc(sources...).DefaultSrc("'none'")
+	first, err := b.BuildChecked()
+	if err != nil || first != "default-src 'none'; script-src 'self' https://example.test; img-src data:" {
+		t.Fatalf("first=%q err=%v", first, err)
+	}
+	sources[1] = "https://different.test"
+	if next := b.Build(); next != first {
+		t.Fatalf("source changed output=%q", next)
+	}
+	b.ScriptSrc("'none'")
+	if next := b.Build(); next != "default-src 'none'; script-src 'none'; img-src data:" || !strings.Contains(first, "https://example.test") {
+		t.Fatalf("new=%q first=%q", next, first)
+	}
+}

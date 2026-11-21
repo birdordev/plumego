@@ -1643,3 +1643,66 @@ func TestFrozenRouterKeepsPrewarmedAllowPolicy(t *testing.T) {
 		}
 	}
 }
+
+func TestDuplicateRouteNameLeavesHotDynamicMatchAndMetadata(t *testing.T) {
+	r := NewRouter()
+	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = io.WriteString(w, Param(r, "id")) })
+	mustAddRoute(r, "GET", "/sample/:id", h, WithRouteName("sample"))
+	if got := serveRouter(r, "GET", "/sample/fixed"); got.Body.String() != "fixed" {
+		t.Fatalf("initial=%q", got.Body.String())
+	}
+	if err := r.AddRoute("GET", "/sample/fixed", http.NotFoundHandler(), WithRouteName("sample")); err == nil {
+		t.Fatal("duplicate name accepted")
+	}
+	r.Freeze()
+	for _, value := range []string{"fixed", "cold", "fixed"} {
+		if got := serveRouter(r, "GET", "/sample/"+value); got.Code != 200 || got.Body.String() != value {
+			t.Fatalf("route=%v", got)
+		}
+	}
+	if path, err := r.URL("sample", "id", "value"); path != "/sample/value" || err != nil || len(r.Routes()) != 1 {
+		t.Fatalf("URL=%q err=%v routes=%v", path, err, r.Routes())
+	}
+}
+
+func TestNamedRouteSnapshotsStayOwnedAcrossZeroAndGroups(t *testing.T) {
+	var zero Router
+	zero.NamedRoutes()["local"] = new(NamedRoute)
+	if len(zero.NamedRoutes()) != 0 {
+		t.Fatal("zero router retained caller map")
+	}
+	r := NewRouter()
+	group := r.Group("/sample")
+	mustAddRoute(group, "GET", "/:id", http.NotFoundHandler(), WithRouteName("sample"))
+	names := group.NamedRoutes()
+	names["sample"].ParamPos["id"] = 300
+	delete(names, "sample")
+	if path, err := r.URL("sample", "id", "value"); path != "/sample/value" || err != nil || r.NamedRoutes()["sample"].ParamPos["id"] != 0 {
+		t.Fatalf("path=%q err=%v", path, err)
+	}
+}
+
+func TestNestedWildcardWinsAfterBothMoreSpecificDeadEnds(t *testing.T) {
+	r := NewRouter(WithMethodNotAllowed(true))
+	group := r.Group("/prefix")
+	mustAddRoute(group, "GET", "/fixed/other", http.NotFoundHandler())
+	mustAddRoute(group, "GET", "/:id/shared/other", http.NotFoundHandler())
+	mustAddRoute(group, "GET", "/*tail", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		meta := contract.RequestContextFromContext(r.Context())
+		if len(meta.Params) != 1 || meta.RouteName != "wild" || meta.RoutePattern != "/prefix/*tail" {
+			t.Errorf("metadata=%+v", meta)
+		}
+		_, _ = io.WriteString(w, Param(r, "tail"))
+	}), WithRouteName("wild"))
+	mustAddRoute(group, "POST", "/:id/shared/other", http.NotFoundHandler())
+	for range 2 {
+		rec := serveRouter(r, "GET", "/prefix/fixed/shared/end")
+		if rec.Code != 200 || rec.Body.String() != "fixed/shared/end" {
+			t.Fatalf("route=%d body=%q", rec.Code, rec.Body.String())
+		}
+		rejected := serveRouter(r, "PATCH", "/prefix/fixed/shared/end")
+		if rejected.Code != 405 || rejected.Header().Get("Allow") != "GET, HEAD" {
+			t.Fatalf("allow=%d %v", rejected.Code, rejected.Header())
+		}
+	}
+}

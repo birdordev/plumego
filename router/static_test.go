@@ -735,3 +735,37 @@ func TestStaticFileSystemOwnsAnOpenThatOutlivesCancellation(t *testing.T) {
 		t.Fatalf("closes=%d status=%d body=%q", f.file.closes, w.Code, w.Body)
 	}
 }
+
+func TestEmptyRegularStaticFileMatchesServeContentRangesAndConditions(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "empty.txt")
+	if err := os.WriteFile(path, nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	stamp := time.Unix(1700000000, 0)
+	if err := os.Chtimes(path, stamp, stamp); err != nil {
+		t.Fatal(err)
+	}
+	router := NewRouter()
+	if err := router.Static("/files", dir); err != nil {
+		t.Fatal(err)
+	}
+	for _, method := range []string{"GET", "HEAD"} {
+		for _, variant := range []string{"plain", "range", "modified"} {
+			req := httptest.NewRequest(method, "/files/empty.txt", nil)
+			switch variant {
+			case "range":
+				req.Header.Set("Range", "bytes=0-0")
+			case "modified":
+				req.Header.Set("If-Modified-Since", stamp.UTC().Format(http.TimeFormat))
+			}
+			dst, reference := httptest.NewRecorder(), httptest.NewRecorder()
+			router.ServeHTTP(dst, req)
+			http.ServeContent(reference, req, "empty.txt", stamp, strings.NewReader(""))
+			if dst.Code != reference.Code || dst.Body.String() != reference.Body.String() ||
+				dst.Header().Get("Content-Length") != reference.Header().Get("Content-Length") {
+				t.Fatalf("%s %s got=%d %v %q want=%d %v %q", method, variant, dst.Code, dst.Header(), dst.Body.String(), reference.Code, reference.Header(), reference.Body.String())
+			}
+		}
+	}
+}

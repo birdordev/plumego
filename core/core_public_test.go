@@ -759,3 +759,66 @@ func TestDefaultConfigAndExplicitLoggersStayInstanceLocal(t *testing.T) {
 		t.Fatal("logger output crossed instances")
 	}
 }
+
+type warningBarrierLogger struct {
+	log.StructuredLogger
+	entered, release chan struct{}
+	calls            atomic.Int32
+}
+
+func (l *warningBarrierLogger) Warn(string, ...log.Fields) {
+	if l.calls.Add(1) == 1 {
+		close(l.entered)
+		<-l.release
+	}
+}
+func TestEmptyAppWarningBelongsToFirstPublisher(t *testing.T) {
+	logger := &warningBarrierLogger{StructuredLogger: log.NewLogger(log.LoggerConfig{Format: log.LoggerFormatDiscard}), entered: make(chan struct{}), release: make(chan struct{})}
+	finish := sync.OnceFunc(func() { close(logger.release) })
+	defer finish()
+	a := core.New(core.DefaultConfig(), core.AppDependencies{Logger: logger})
+	first := make(chan error, 1)
+	go func() { first <- a.Prepare() }()
+	select {
+	case <-logger.entered:
+	case <-time.After(3 * time.Second):
+		t.Fatal("warning did not start")
+	}
+	rec := httptest.NewRecorder()
+	done := make(chan error, 1)
+	go func() { a.ServeHTTP(rec, httptest.NewRequest("GET", "/", nil)); done <- a.Prepare() }()
+	select {
+	case err := <-done:
+		if err != nil || rec.Code != 404 || a.PreparationState() != core.PreparationStateServerPrepared {
+			t.Fatalf("status=%d state=%v err=%v", rec.Code, a.PreparationState(), err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("first warning blocked independent caller")
+	}
+	finish()
+	if err := <-first; err != nil || logger.calls.Load() != 1 {
+		t.Fatalf("prepare=%v warnings=%d", err, logger.calls.Load())
+	}
+}
+
+func TestPreparedServerPreservesMixedExplicitTimeoutFields(t *testing.T) {
+	cfg := core.DefaultConfig()
+	cfg.ReadTimeout = 0
+	cfg.ReadHeaderTimeout = 0
+	cfg.IdleTimeout = 0
+	cfg.WriteTimeout = 3 * time.Second
+	for _, config := range []core.AppConfig{cfg, core.DefaultConfig()} {
+		app := core.New(config, core.AppDependencies{})
+		if err := app.Prepare(); err != nil {
+			t.Fatal(err)
+		}
+		server, err := app.Server()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if server.ReadTimeout != config.ReadTimeout || server.ReadHeaderTimeout != config.ReadHeaderTimeout ||
+			server.IdleTimeout != config.IdleTimeout || server.WriteTimeout != config.WriteTimeout {
+			t.Fatalf("prepared timeouts=%v/%v/%v/%v", server.ReadTimeout, server.ReadHeaderTimeout, server.IdleTimeout, server.WriteTimeout)
+		}
+	}
+}
