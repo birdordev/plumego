@@ -50,7 +50,8 @@ Use `security/*` for reviewable primitives and policies:
 - `security/authn.StaticToken` compares fixed credentials through fixed-length digest comparison.
 - `security/headers` owns header policies consumed by `middleware/securityheaders`.
 - `Policy.Compile` snapshots HSTS options and additional headers before
-  precomputing the HSTS header. Additional header names must be unique
+  precomputing the HSTS header. A zero HSTS MaxAge leaves the generated header
+  unset, including on HTTPS requests. Additional header names must be unique
   after HTTP canonicalization.
   Compile the returned policy again after changing its HSTS options.
   The security headers middleware uses this snapshot for its lifetime.

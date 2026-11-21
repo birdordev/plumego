@@ -763,3 +763,27 @@ func TestAllowedOriginMergesExistingVaryFields(t *testing.T) {
 		t.Fatalf("next calls=%d", calls)
 	}
 }
+
+func TestOptionsNeedsRequestedMethodToHandlePreflight(t *testing.T) {
+	const origin = "https://example.test"
+	calls := 0
+	h := Middleware(CORSOptions{AllowedOrigins: []string{origin}})(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls++
+		w.WriteHeader(http.StatusAccepted)
+	}))
+	for _, want := range []int{http.StatusAccepted, http.StatusNoContent} {
+		r := httptest.NewRequest(http.MethodOptions, "/", nil)
+		r.Header.Set("Origin", origin)
+		if want == http.StatusNoContent {
+			r.Header.Set("Access-Control-Request-Method", "GET")
+		}
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		if w.Code != want || w.Header().Get("Access-Control-Allow-Origin") != origin {
+			t.Fatalf("status=%d headers=%v want=%d", w.Code, w.Header(), want)
+		}
+	}
+	if calls != 1 {
+		t.Fatalf("next=%d", calls)
+	}
+}

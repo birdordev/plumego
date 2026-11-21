@@ -613,3 +613,29 @@ func TestKeystoreZeroTTLReplacementOutlivesPreviousDeadline(t *testing.T) {
 		}
 	})
 }
+
+func TestKeyListSnapshotSurvivesExpiryAndCanceledRead(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		s := NewInMemoryKeyStore()
+		for key, ttl := range map[string]time.Duration{"fixture-live": 2 * time.Second, "fixture-short": time.Second} {
+			if err := s.SetContext(t.Context(), key, []byte("sample"), ttl); err != nil {
+				t.Fatal(err)
+			}
+		}
+		first, err := s.KeysContext(t.Context())
+		if err != nil || len(first) != 2 {
+			t.Fatalf("keys=%v err=%v", first, err)
+		}
+		time.Sleep(time.Second)
+		ctx, cancel := context.WithCancel(t.Context())
+		cancel()
+		if keys, err := s.KeysContext(ctx); keys != nil || !errors.Is(err, context.Canceled) {
+			t.Fatalf("canceled keys=%v err=%v", keys, err)
+		}
+		first[0] = "caller edit"
+		next, err := s.KeysContext(t.Context())
+		if err != nil || len(next) != 1 || next[0] != "fixture-live" {
+			t.Fatalf("keys=%v err=%v", next, err)
+		}
+	})
+}

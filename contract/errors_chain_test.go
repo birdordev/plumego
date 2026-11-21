@@ -299,3 +299,20 @@ func TestKnownTypeNormalizesStatusAndPreservesExplicitCode(t *testing.T) {
 		}
 	}
 }
+
+func TestErrorDetailsOwnNamedByteSlices(t *testing.T) {
+	type fixtureBytes []byte
+	b := fixtureBytes{1, 2, 3}
+	cause := errors.New("fixture cause")
+	e := NewErrorBuilder().Type(TypeBadRequest).Wrap(cause).Detail("fixture", b).Build()
+	b[0] = 9
+	first, ok := e.Details()["fixture"].(fixtureBytes)
+	if !ok || len(first) != 3 || first[0] != 1 {
+		t.Fatalf("details=%v", e.Details())
+	}
+	first[1] = 8
+	w := httptest.NewRecorder()
+	if err := WriteError(w, nil, e); err != nil || !errors.Is(e, cause) || !strings.Contains(w.Body.String(), `"fixture":"AQID"`) {
+		t.Fatalf("err=%v details=%v body=%q", err, e.Details(), w.Body)
+	}
+}

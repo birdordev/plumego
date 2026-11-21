@@ -346,3 +346,22 @@ func TestDeriveKey(t *testing.T) {
 		t.Error("deriveKey must be deterministic for identical inputs")
 	}
 }
+
+func TestStrengthZeroValueAndExplicitSingleRequirement(t *testing.T) {
+	for _, tc := range []struct {
+		value string
+		cfg   PasswordStrengthConfig
+		want  bool
+	}{
+		{"", PasswordStrengthConfig{}, true},
+		{"a", PasswordStrengthConfig{}, true},
+		{"é", PasswordStrengthConfig{MinLength: 2}, false},
+		{"é", PasswordStrengthConfig{MinLength: 1, MaxLength: 1}, true},
+		{"A", PasswordStrengthConfig{RequireDigit: true}, false},
+		{"1", PasswordStrengthConfig{RequireDigit: true}, true},
+	} {
+		if got := ValidatePasswordStrength(tc.value, tc.cfg); got != tc.want {
+			t.Fatalf("value=%q config=%+v valid=%t want=%t", tc.value, tc.cfg, got, tc.want)
+		}
+	}
+}

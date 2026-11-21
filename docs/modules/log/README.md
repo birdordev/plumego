@@ -90,7 +90,10 @@
   emits one fixed diagnostic to stderr per instance, keeps writing to the
   original file, and retries rotation on later writes.
 - When backup retention is enabled, the file backend applies its backup limit
-  per log level. Dotted program and host names do not affect that grouping.
+  per log level. It keeps newer modification times first. Equal modification
+  times are ordered by the timestamp in the archive name, then by filename in
+  descending order. Both current and legacy timestamp formats participate.
+  Dotted program and host names do not affect the grouping.
 
 ## Canonical change shape
 

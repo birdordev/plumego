@@ -295,6 +295,9 @@ func TestFileStat_ModifiedTime(t *testing.T) {
 }
 
 func TestUploadAndFileMetadataCopiesFromSameSourceDetach(t *testing.T) {
+	if (PutOptions{}).CloneMetadata() != nil || (PutOptions{Metadata: map[string]any{}}).CloneMetadata() == nil {
+		t.Fatal("metadata clone changed empty map shape")
+	}
 	shared := map[string]any{"labels": []string{"original"}}
 	options := PutOptions{Metadata: shared}
 	file := File{Metadata: shared}
@@ -304,6 +307,10 @@ func TestUploadAndFileMetadataCopiesFromSameSourceDetach(t *testing.T) {
 	if got := result.Metadata["labels"].([]string)[0]; got != "original" || shared["labels"].([]string)[0] != "original" ||
 		a["labels"].([]string)[0] != "first" {
 		t.Fatalf("metadata aliases: first=%v second=%v result=%v original=%v", a, b, result.Metadata, shared)
+	}
+	shared["labels"].([]string)[0] = "changed input"
+	if result.Metadata["labels"].([]string)[0] != "original" {
+		t.Fatal("source mutation changed existing file snapshot")
 	}
 }
 

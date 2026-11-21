@@ -134,7 +134,15 @@ Latency statistics use nonnegative durations and round the mean down to
 a whole nanosecond. Component metrics record `last_status` in the order Tracker
 receives outcomes. With the built-in manager, a superseded attempt can be the
 most recently recorded outcome while the manager continues to publish a newer
-check. Health reports list component names in lexical order.
+check. Health reports list component names in lexical order. The built-in manager
+reads names, overall health, and published readiness together. Published
+readiness can still reflect a prior batch or a manual decision. Reports obtained
+from an injected manager use separate reads, and tracker metrics have their own
+snapshot.
+
+Once a tracker has a manager, its history records every batch result, including
+a call that finds the manager closed. A batch that did not try a component leaves that
+component's attempt counters unchanged.
 
 History exports require nonempty `limit` and `offset` values to be integers.
 A limit from 1 through 100 is used as supplied. A missing or empty limit, or

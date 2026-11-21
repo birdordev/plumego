@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"slices"
 	"sort"
 	"sync"
 	"sync/atomic"
@@ -374,7 +375,20 @@ func (m *manager) checkBatch(ctx context.Context) (health.HealthStatus, []string
 	}
 	duration := time.Since(start)
 
+	done := ctx.Done()
+	contextErr := ctx.Err()
 	m.mu.Lock()
+	if contextErr == nil && !m.closed && version == m.aggregateVersion {
+		select {
+		case <-done:
+			// Cancellation became observable after the first error sample.
+			// Read its reason outside the lock, then recheck publication rights.
+			m.mu.Unlock()
+			contextErr = ctx.Err()
+			m.mu.Lock()
+		default:
+		}
+	}
 	defer m.mu.Unlock()
 
 	if m.closed {
@@ -394,10 +408,10 @@ func (m *manager) checkBatch(ctx context.Context) (health.HealthStatus, []string
 		status = health.StatusUnhealthy
 	}
 	contextReason := ""
-	if err := ctx.Err(); err != nil {
+	if contextErr != nil {
 		status = health.StatusUnhealthy
 		contextReason = context.Canceled.Error()
-		if err == context.DeadlineExceeded {
+		if contextErr == context.DeadlineExceeded {
 			contextReason = context.DeadlineExceeded.Error()
 		}
 		message = contextReason
@@ -459,10 +473,25 @@ func optimalConcurrency(componentCount int) int {
 func (m *manager) GetOverallHealth() health.HealthStatus {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
+	return m.overallHealthLocked(nil)
+}
+
+func (m *manager) reportHealthSnapshot() (health.HealthStatus, health.ReadinessStatus, []string) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	names := m.componentNames()
+	// Keep the manager-then-readiness lock order used by publication.
+	return m.overallHealthLocked(slices.Clone(names)), m.Readiness(), names
+}
+
+func (m *manager) overallHealthLocked(names []string) health.HealthStatus {
 	if m.closed {
 		return health.HealthStatus{Status: health.StatusUnhealthy, Message: errManagerClosed.Error(), Timestamp: time.Now()}
 	}
 
+	if names == nil {
+		names = m.componentNames()
+	}
 	status, message := calculateOverallStatus(m.health)
 	return health.HealthStatus{
 		Status:       status,
@@ -470,7 +499,7 @@ func (m *manager) GetOverallHealth() health.HealthStatus {
 		Timestamp:    time.Now(),
 		Details:      map[string]any{},
 		Duration:     m.lastCheckDuration,
-		Dependencies: m.componentNames(),
+		Dependencies: names,
 	}
 }
 

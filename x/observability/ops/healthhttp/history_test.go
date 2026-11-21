@@ -523,3 +523,48 @@ func BenchmarkHistoryCSVFilterDensity(b *testing.B) {
 		})
 	}
 }
+
+func TestClosedTrackerRecordsBatchResultWithoutAnotherAttempt(t *testing.T) {
+	manager, err := NewManager(Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tracker := NewTracker(manager)
+	calls := 0
+	if err := tracker.RegisterComponent(functionChecker{name: "sample", check: func(context.Context) error { calls++; return nil }}); err != nil {
+		t.Fatal(err)
+	}
+	tracker.CheckAllComponents(t.Context())
+	before := tracker.GetMetrics()
+	if err := tracker.Close(); err != nil {
+		t.Fatal(err)
+	}
+	status := tracker.CheckAllComponents(t.Context())
+	after := tracker.GetMetrics()
+	history := tracker.GetHealthHistory()
+	if calls != 1 || before.CheckCount != 1 || after.CheckCount != 1 || len(history) != 2 || history[1].State != health.StatusUnhealthy ||
+		status.Status != health.StatusUnhealthy || tracker.Readiness().Ready || after.LastCheckTime.Before(status.Timestamp) ||
+		after.LastCheckTime.Before(before.LastCheckTime) {
+		t.Fatalf("calls=%d status=%+v history=%+v metrics=%+v", calls, status, history, after)
+	}
+}
+
+func TestHistoryExportPastEndKeepsTotalAndCSVHeader(t *testing.T) {
+	tracker, _ := newHistoryManager(t)
+	tracker.CheckAllComponents(t.Context())
+	h := HealthHistoryExportHandler(tracker)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, httptest.NewRequest("GET", "/export?format=json&offset=20", nil))
+	result := decodeHealthHTTPData[HealthHistoryQueryResult](t, w)
+	if w.Code != 200 || w.Header().Get("Content-Type") != "application/json" || result.Total != 1 ||
+		result.Entries == nil || len(result.Entries) != 0 || result.HasMore || result.Offset != 20 {
+		t.Fatalf("status=%d headers=%v result=%+v", w.Code, w.Header(), result)
+	}
+	csvRecorder := httptest.NewRecorder()
+	h.ServeHTTP(csvRecorder, httptest.NewRequest("GET", "/export?format=csv&offset=20", nil))
+	rows, err := csv.NewReader(csvRecorder.Body).ReadAll()
+	if err != nil || csvRecorder.Code != 200 || csvRecorder.Header().Get("Content-Type") != "text/csv" ||
+		len(rows) != 1 || len(rows[0]) != 5 || rows[0][0] != "Timestamp" {
+		t.Fatalf("status=%d headers=%v rows=%v err=%v", csvRecorder.Code, csvRecorder.Header(), rows, err)
+	}
+}

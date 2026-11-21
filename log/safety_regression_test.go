@@ -44,7 +44,7 @@ func (logErrorWithString) String() string { return "string-text" }
 
 func TestTextLoggerContainsFormatPanics(t *testing.T) {
 	var output bytes.Buffer
-	logger := NewLogger(LoggerConfig{Format: LoggerFormatText, Output: &output})
+	logger := NewLogger(LoggerConfig{Format: LoggerFormatText, Output: &output}).WithFields(Fields{"scope": "persistent"})
 	var absent *panickingLogStringer
 	logger.Info("event", Fields{
 		"stringer": panickingLogStringer{},
@@ -69,6 +69,13 @@ func TestTextLoggerContainsFormatPanics(t *testing.T) {
 	}
 	if strings.Contains(line, "private") || strings.Contains(line, "partial formatter output") {
 		t.Fatalf("unexpected raw diagnostic or partial output: %q", line)
+	}
+	logger.Info("second")
+	lines := strings.Split(strings.TrimSuffix(output.String(), "\n"), "\n")
+	if len(lines) != 2 || !strings.Contains(lines[0], "scope=persistent") ||
+		!strings.Contains(lines[1], "second") || !strings.Contains(lines[1], "scope=persistent") ||
+		strings.Contains(lines[1], "[unsupported]") {
+		t.Fatalf("record boundaries: %q", lines)
 	}
 }
 

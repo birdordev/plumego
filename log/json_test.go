@@ -1038,3 +1038,23 @@ func TestJSONLoggerPreservesUnicodeFieldNames(t *testing.T) {
 		}
 	}
 }
+
+func TestJSONNamedUintAndTypedNilShareAValidRecord(t *testing.T) {
+	type sequence uint64
+	var absent *int
+	var output bytes.Buffer
+	logger := NewLogger(LoggerConfig{Format: LoggerFormatJSON, Output: &output})
+	logger.Info("fixture", Fields{"sequence": sequence(math.MaxUint64), "optional": absent})
+	decoder := json.NewDecoder(&output)
+	decoder.UseNumber()
+	var decoded map[string]any
+	if err := decoder.Decode(&decoded); err != nil {
+		t.Fatal(err)
+	}
+	if value, exists := decoded["optional"]; !exists || value != nil || decoded["sequence"] != json.Number("18446744073709551615") {
+		t.Fatalf("decoded=%v", decoded)
+	}
+	if err := decoder.Decode(&decoded); err != io.EOF {
+		t.Fatalf("expected one record, extra=%v", err)
+	}
+}

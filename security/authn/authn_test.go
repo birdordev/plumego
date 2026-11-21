@@ -131,18 +131,17 @@ func TestPrincipalFromContextWrongType(t *testing.T) {
 }
 
 func TestWithPrincipalOverwrite(t *testing.T) {
-	p1 := &Principal{Subject: "user-1"}
-	p2 := &Principal{Subject: "user-2"}
-
-	ctx := WithPrincipal(t.Context(), p1)
-	ctx = WithPrincipal(ctx, p2)
-
-	got := PrincipalFromContext(ctx)
-	if got == nil {
-		t.Fatal("expected non-nil principal")
+	parent := WithPrincipal(t.Context(), &Principal{Subject: "user-1", Roles: []string{"reader"}, Claims: map[string]string{"fixture": "root"}})
+	child := WithPrincipal(parent, &Principal{Subject: "user-2", Roles: []string{"editor"}, Claims: map[string]string{"fixture": "child"}})
+	for _, ctx := range []context.Context{parent, child} {
+		read := PrincipalFromContext(ctx)
+		read.Roles[0] = "changed"
+		read.Claims["fixture"] = "changed"
 	}
-	if got.Subject != "user-2" {
-		t.Errorf("expected latest principal (user-2), got %q", got.Subject)
+	p, c := PrincipalFromContext(parent), PrincipalFromContext(child)
+	if p.Subject != "user-1" || p.Roles[0] != "reader" || p.Claims["fixture"] != "root" ||
+		c.Subject != "user-2" || c.Roles[0] != "editor" || c.Claims["fixture"] != "child" {
+		t.Fatalf("parent=%+v child=%+v", p, c)
 	}
 }
 

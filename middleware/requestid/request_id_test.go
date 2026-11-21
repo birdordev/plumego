@@ -241,3 +241,21 @@ func TestRequestHeaderOptOutStillPropagatesGeneratedID(t *testing.T) {
 		t.Fatalf("calls=%d request=%v response=%v", calls, req.Header, w.Header())
 	}
 }
+
+func TestValidInboundRequestIDSkipsGeneratorWithWritebackDisabled(t *testing.T) {
+	const id = "fixture-inbound"
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.Header.Set(contract.RequestIDHeader, id)
+	calls := 0
+	w := httptest.NewRecorder()
+	h := Middleware(WithRequestHeader(false), WithGenerator(func() string { calls++; return "generated" }))(
+		http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+			if contract.RequestIDFromContext(r.Context()) != id || r.Header.Get(contract.RequestIDHeader) != id {
+				t.Fatalf("headers=%v", r.Header)
+			}
+		}))
+	h.ServeHTTP(w, req)
+	if calls != 0 || w.Header().Get(contract.RequestIDHeader) != id || contract.RequestIDFromContext(req.Context()) != "" {
+		t.Fatalf("generator=%d response=%v context=%v", calls, w.Header(), req.Context())
+	}
+}

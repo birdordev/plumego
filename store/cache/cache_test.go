@@ -1607,3 +1607,22 @@ func TestMemoryCacheAppend(t *testing.T) {
 		t.Fatalf("expected 'hello world', got %q", val)
 	}
 }
+
+func TestEmptyAppendKeepsActiveExplicitEmptyValue(t *testing.T) {
+	c := NewMemoryCache()
+	defer c.Close()
+	ctx := t.Context()
+	if err := c.Set(ctx, "fixture", []byte{}, time.Minute); err != nil {
+		t.Fatal(err)
+	}
+	before, expires := c.Stats(), cachedExpiration(t, c, "fixture")
+	for _, input := range [][]byte{nil, {}} {
+		if err := c.Append(ctx, "fixture", input); err != nil {
+			t.Fatal(err)
+		}
+		value, err := c.Get(ctx, "fixture")
+		if err != nil || value == nil || len(value) != 0 || !cachedExpiration(t, c, "fixture").Equal(expires) || c.Stats() != before {
+			t.Fatalf("value=%#v err=%v stats=%+v", value, err, c.Stats())
+		}
+	}
+}

@@ -179,7 +179,8 @@ func TestHealthStatusCloneKeepsTimestampAndSeparatesDependencies(t *testing.T) {
 }
 
 func TestHealthClonesKeepIndependentTopLevelAndSharedNestedValues(t *testing.T) {
-	nested := map[string]string{"value": "before"}
+	type nestedDetails map[string]string
+	nested := nestedDetails{"value": "before"}
 	status := HealthStatus{Details: map[string]any{"plain": "before", "nested": nested}}
 	before := status.Clone()
 	status.Details["plain"] = "after"
@@ -189,9 +190,13 @@ func TestHealthClonesKeepIndependentTopLevelAndSharedNestedValues(t *testing.T) 
 	if before.Details["plain"] != "before" || after.Details["plain"] != "after" || after.Details["local"] != nil {
 		t.Fatalf("before=%v after=%v", before.Details, after.Details)
 	}
-	if before.Details["nested"].(map[string]string)["value"] != "after" ||
-		after.Details["nested"].(map[string]string)["value"] != "after" {
+	if before.Details["nested"].(nestedDetails)["value"] != "after" ||
+		after.Details["nested"].(nestedDetails)["value"] != "after" {
 		t.Fatal("cloning changed nested ownership")
+	}
+	before.Details["nested"].(nestedDetails)["value"] = "changed through clone"
+	if status.Details["nested"].(nestedDetails)["value"] != "changed through clone" || marshalObject(t, before)["details"] == nil {
+		t.Fatalf("unexpected nested shape: %v", status.Details)
 	}
 }
 

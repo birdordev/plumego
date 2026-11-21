@@ -1794,3 +1794,34 @@ func TestCompleteAnyRouteWinsWhenExplicitMethodDeadEnds(t *testing.T) {
 		}
 	}
 }
+
+func TestRegistrationReplacesHotAnyAndRefreshesAllow(t *testing.T) {
+	r := NewRouter(WithMethodNotAllowed(true))
+	makeHandler := func(marker string) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("X-Route", contract.RequestContextFromContext(r.Context()).RouteName)
+			_, _ = w.Write([]byte(marker))
+		})
+	}
+	mustAddRoute(r, MethodAny, "/item", makeHandler("fallback"))
+	mustAddRoute(r, http.MethodPost, "/methods", makeHandler("post"))
+	for range 2 {
+		if got := serveRouter(r, http.MethodGet, "/item").Body.String(); got != "fallback" {
+			t.Fatalf("body=%q", got)
+		}
+		if got := serveRouter(r, http.MethodGet, "/methods").Header().Get("Allow"); got != "POST" {
+			t.Fatalf("allow=%q", got)
+		}
+	}
+	mustAddRoute(r, http.MethodGet, "/item", makeHandler("explicit"), WithRouteName("explicit"))
+	mustAddRoute(r, http.MethodPut, "/methods", makeHandler("put"))
+	for range 2 {
+		got := serveRouter(r, http.MethodGet, "/item")
+		if got.Body.String() != "explicit" || got.Header().Get("X-Route") != "explicit" {
+			t.Fatalf("response=%v %q", got.Header(), got.Body)
+		}
+		if got := serveRouter(r, http.MethodGet, "/methods"); got.Code != 405 || got.Header().Get("Allow") != "POST, PUT" {
+			t.Fatalf("response=%d %v", got.Code, got.Header())
+		}
+	}
+}

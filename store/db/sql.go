@@ -257,7 +257,8 @@ func QueryRowContext(ctx context.Context, db DB, query string, args ...any) (*sq
 
 // WithTransaction executes a function within a transaction.
 // If the function returns an error, the transaction is rolled back.
-// Otherwise, the transaction is committed.
+// Otherwise, the transaction is committed. The callback can execute operations
+// on the transaction and must leave Commit and Rollback to this helper.
 // Panics and goroutine exits also roll back the transaction.
 // If BeginTx returns both a transaction and an error, the transaction is
 // rolled back and both the begin and rollback errors are retained.

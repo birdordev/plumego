@@ -71,8 +71,16 @@ func TestRequestIDRejectedReplacementPreservesExistingID(t *testing.T) {
 }
 
 func TestRequestIDWithNilContext(t *testing.T) {
-	if got := RequestIDFromContext(WithRequestID(nil, "  req-123  ")); got != "req-123" {
+	root := WithRequestID(nil, "  req-123  ")
+	if got := RequestIDFromContext(root); got != "req-123" {
 		t.Fatalf("request id with nil parent = %q, want req-123", got)
+	}
+	if got := RequestIDFromContext(WithRequestID(root, " ")); got != "req-123" {
+		t.Fatalf("blank override = %q", got)
+	}
+	next := WithRequestID(root, "req-456")
+	if got, parent := RequestIDFromContext(next), RequestIDFromContext(root); got != "req-456" || parent != "req-123" {
+		t.Fatalf("updated id=%q parent=%q", got, parent)
 	}
 }
 

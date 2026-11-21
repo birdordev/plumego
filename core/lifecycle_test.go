@@ -1562,3 +1562,72 @@ func TestShutdownBeforeServePreventsStartAndKeepsDirectHandler(t *testing.T) {
 		t.Fatalf("direct status=%d", dst.Code)
 	}
 }
+
+func TestConnectionTrackerCountsKeepAliveConnectionAcrossRequests(t *testing.T) {
+	app := newTestApp()
+	mustRegisterRoute(t, app.Get("/", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) })))
+	if err := app.Prepare(); err != nil {
+		t.Fatal(err)
+	}
+	server, err := app.Server()
+	if err != nil {
+		t.Fatal(err)
+	}
+	type event struct {
+		conn  net.Conn
+		state http.ConnState
+		open  int64
+	}
+	events := make(chan event, 12)
+	original := server.ConnState
+	server.ConnState = func(c net.Conn, s http.ConnState) {
+		original(c, s)
+		events <- event{c, s, app.connTracker.open.Load()}
+	}
+	ln, err := net.Listen("tcp", requireNetwork(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer server.Close()
+	served := make(chan error, 1)
+	go func() { served <- server.Serve(ln) }()
+	transport := &http.Transport{}
+	defer transport.CloseIdleConnections()
+	client := &http.Client{Transport: transport, Timeout: 3 * time.Second}
+	wait := func() event {
+		t.Helper()
+		select {
+		case e := <-events:
+			return e
+		case <-time.After(3 * time.Second):
+			t.Fatal("missing connection state")
+			return event{}
+		}
+	}
+	var conn net.Conn
+	for _, states := range [][]http.ConnState{{http.StateNew, http.StateActive, http.StateIdle}, {http.StateActive, http.StateIdle}} {
+		resp, err := client.Get("http://" + ln.Addr().String() + "/")
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = resp.Body.Close()
+		for _, want := range states {
+			e := wait()
+			if conn == nil {
+				conn = e.conn
+			}
+			if e.conn != conn || e.state != want || e.open != 1 {
+				t.Fatalf("event=%+v want=%v", e, want)
+			}
+		}
+	}
+	if err := app.Shutdown(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if e := wait(); e.conn != conn || e.state != http.StateClosed || e.open != 0 {
+		t.Fatalf("end=%+v", e)
+	}
+	if err := <-served; !errors.Is(err, http.ErrServerClosed) || app.connTracker.activeDrain.Load() != nil {
+		t.Fatalf("Serve=%v drain=%v", err, app.connTracker.activeDrain.Load())
+	}
+}

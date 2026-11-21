@@ -572,3 +572,29 @@ func TestTimeoutBufferAndReplayLimitsAtExactBoundary(t *testing.T) {
 		})
 	}
 }
+
+func TestTimedOutHandlerCannotFlushOrWriteToOuterResponse(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		release := make(chan struct{})
+		type outcome struct {
+			flush, write error
+			n            int
+		}
+		done := make(chan outcome, 1)
+		h := Middleware(Config{Timeout: time.Millisecond})(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			<-release
+			flush := http.NewResponseController(w).Flush()
+			n, err := io.WriteString(w, "late fixture")
+			done <- outcome{flush, err, n}
+		}))
+		rec := httptest.NewRecorder()
+		dst := &responseWriteCounter{ResponseWriter: rec}
+		h.ServeHTTP(dst, httptest.NewRequest(http.MethodGet, "/", nil))
+		close(release)
+		late := <-done
+		if rec.Code != http.StatusGatewayTimeout || dst.writes != 2 || rec.Flushed || strings.Contains(rec.Body.String(), "late fixture") ||
+			!errors.Is(late.flush, http.ErrNotSupported) || !errors.Is(late.write, context.DeadlineExceeded) || late.n != 0 {
+			t.Fatalf("status=%d writes=%d flushed=%t body=%q late=%+v", rec.Code, dst.writes, rec.Flushed, rec.Body, late)
+		}
+	})
+}

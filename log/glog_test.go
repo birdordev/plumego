@@ -1901,3 +1901,48 @@ func TestRotationRetentionRecognizesCollisionArchiveAndLegacyFile(t *testing.T) 
 		}
 	})
 }
+
+func TestRetentionUsesGenerationToBreakModificationTies(t *testing.T) {
+	dir := t.TempDir()
+	base := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
+	for _, fixture := range []struct {
+		name string
+		disk time.Time
+	}{
+		{"fixture.local.INFO.20260101-000000.1.log", base},
+		{logFilename("fixture", "local", "INFO", base.Add(time.Nanosecond), 1), base},
+		{logFilename("fixture", "local", "INFO", base.Add(2*time.Nanosecond), 1), base},
+		{logFilename("fixture", "local", "INFO", base.Add(time.Second), 1), base.Add(-time.Second)},
+		{logFilename("fixture", "local", "WARN", base.Add(time.Nanosecond), 1), base},
+		{logFilename("fixture", "local", "WARN", base.Add(2*time.Nanosecond), 1), base},
+	} {
+		path := filepath.Join(dir, fixture.name)
+		if err := os.WriteFile(path, []byte("archive"), 0600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chtimes(path, fixture.disk, fixture.disk); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var retained []string
+	for _, level := range []string{"INFO", "WARN"} {
+		active := logFilename("fixture", "local", level, base.Add(-time.Second), 1)
+		if err := os.WriteFile(filepath.Join(dir, active), []byte("active"), 0600); err != nil {
+			t.Fatal(err)
+		}
+		if err := replaceLogSymlink(active, filepath.Join(dir, "fixture."+level)); err != nil {
+			t.Fatal(err)
+		}
+		retained = append(retained, active, logFilename("fixture", "local", level, base.Add(2*time.Nanosecond), 1))
+	}
+	cleanupOldLogs(dir, "fixture", rotationConfig{MaxBackups: 1}, nil)
+	for _, name := range retained {
+		if _, err := os.Stat(filepath.Join(dir, name)); err != nil {
+			t.Errorf("expected retained %s: %v", name, err)
+		}
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil || len(entries) != 6 {
+		t.Fatalf("entries=%v err=%v", entries, err)
+	}
+}

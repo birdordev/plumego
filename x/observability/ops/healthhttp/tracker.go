@@ -250,7 +250,9 @@ func (t *Tracker) CheckComponent(ctx context.Context, name string) error {
 	return err
 }
 
-// CheckAllComponents executes all checks and records aggregate history plus component metrics.
+// CheckAllComponents executes a batch. With a configured manager, it records
+// the batch result even when no component could run. With the built-in
+// manager, only actual attempts contribute to component check counters.
 func (t *Tracker) CheckAllComponents(ctx context.Context) health.HealthStatus {
 	if t.manager == nil {
 		return health.HealthStatus{
@@ -540,6 +542,9 @@ func (t *Tracker) Reset() {
 }
 
 // GenerateReport generates a health report with component names in lexical order.
+// The built-in manager supplies a joint snapshot of component names, overall
+// health, and published readiness. External managers supply these in separate
+// reads. Tracker metrics are sampled independently.
 func (t *Tracker) GenerateReport() HealthReport {
 	if t.manager == nil {
 		return HealthReport{
@@ -550,6 +555,17 @@ func (t *Tracker) GenerateReport() HealthReport {
 			},
 			Metrics:   t.GetMetrics(),
 			BuildInfo: GetBuildInfo(),
+		}
+	}
+
+	if manager, ok := t.manager.(*manager); ok {
+		status, readiness, components := manager.reportHealthSnapshot()
+		return HealthReport{
+			HealthStatus: status,
+			Readiness:    readiness,
+			Components:   components,
+			Metrics:      t.GetMetrics(),
+			BuildInfo:    GetBuildInfo(),
 		}
 	}
 

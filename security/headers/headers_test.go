@@ -798,3 +798,24 @@ func TestCompiledPolicyKeepsHSTSRequestLocal(t *testing.T) {
 		}
 	}
 }
+
+func TestCompiledHSTSRequiresPositiveAgeAndTLS(t *testing.T) {
+	for _, tc := range []struct {
+		tls  bool
+		age  time.Duration
+		want string
+	}{
+		{false, 0, ""}, {true, 0, ""},
+		{false, time.Minute, ""}, {true, time.Minute, "max-age=60"},
+	} {
+		p := Policy{StrictTransportSecurity: &HSTSOptions{MaxAge: tc.age}}.Compile()
+		req := httptest.NewRequest(http.MethodGet, "http://example.test/", nil)
+		if tc.tls {
+			req.TLS = &tls.ConnectionState{}
+		}
+		w := httptest.NewRecorder()
+		if err := p.ApplyChecked(w, req); err != nil || w.Header().Get("Strict-Transport-Security") != tc.want {
+			t.Fatalf("TLS=%t age=%v headers=%v err=%v", tc.tls, tc.age, w.Header(), err)
+		}
+	}
+}

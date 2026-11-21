@@ -8,6 +8,7 @@ import (
 	"reflect"
 	"slices"
 	"testing"
+	"testing/synctest"
 	"time"
 )
 
@@ -629,5 +630,39 @@ func TestBaseCountersSaturateDirectlyAndInMulti(t *testing.T) {
 	s := c.GetStats()
 	if s.TotalRecords != 1 || s.ErrorRecords != 1 || s.NameBreakdown["fixture"] != 1 || len(s.NameBreakdown) != 1 {
 		t.Fatalf("after clear: %+v", s)
+	}
+}
+
+func TestAggregateStartTimeMovesToEarliestRemainingChildAfterClear(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		first := NewBaseMetricsCollector()
+		time.Sleep(time.Nanosecond)
+		second := NewBaseMetricsCollector()
+		multi := NewMultiCollector(first, NewNoopCollector(), second)
+		before := multi.GetStats()
+		if !before.StartTime.Equal(first.GetStats().StartTime) {
+			t.Fatalf("before=%v", before.StartTime)
+		}
+		time.Sleep(time.Nanosecond)
+		first.Clear()
+		next := multi.GetStats()
+		if !next.StartTime.Equal(second.GetStats().StartTime) || !next.StartTime.After(before.StartTime) || !next.StartTime.Before(first.GetStats().StartTime) {
+			t.Fatalf("previous=%v next=%v first=%v second=%v", before.StartTime, next.StartTime, first.GetStats().StartTime, second.GetStats().StartTime)
+		}
+	})
+}
+
+func TestHTTPRecordFanoutKeepsCallerAndSiblingLabelsIsolated(t *testing.T) {
+	one := NewHTTPRecord("GET", "/fixture", 200, 250*time.Millisecond)
+	two := NewHTTPRecord("POST", "/other", 201, 500*time.Millisecond)
+	var captured MetricRecord
+	multi := NewMultiCollector(
+		&recordingCollector{onRecord: func(record MetricRecord) { record.Labels[labelPath] = "/mutated" }},
+		&recordingCollector{onRecord: func(record MetricRecord) { captured = record }},
+	)
+	multi.Record(t.Context(), one)
+	if captured.Labels[labelPath] != "/fixture" || one.Labels[labelPath] != "/fixture" || two.Labels[labelPath] != "/other" ||
+		captured.Value != 0.25 || two.Value != 0.5 || captured.Duration != 250*time.Millisecond {
+		t.Fatalf("first=%+v second=%+v captured=%+v", one, two, captured)
 	}
 }

@@ -736,3 +736,30 @@ func TestGroupRouteSnapshotsRemainIndependentAcrossPrepare(t *testing.T) {
 		t.Fatalf("prepared routes=%+v", got)
 	}
 }
+
+func TestAppAnyRoundTripsNamedMetadata(t *testing.T) {
+	app := newTestApp()
+	if err := app.Any("/items/:id", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Fixture-Param", router.Param(r, "id"))
+		w.WriteHeader(http.StatusAccepted)
+	}), router.WithRouteName("item"), nil, router.WithTags("original")); err != nil {
+		t.Fatal(err)
+	}
+	path, err := app.URL("item", "id", "fixture")
+	if err != nil || path != "/items/fixture" {
+		t.Fatalf("URL=%q err=%v", path, err)
+	}
+	dst := httptest.NewRecorder()
+	app.ServeHTTP(dst, httptest.NewRequest(http.MethodDelete, path, nil))
+	if dst.Code != http.StatusAccepted || dst.Header().Get("X-Fixture-Param") != "fixture" {
+		t.Fatalf("status=%d headers=%v", dst.Code, dst.Header())
+	}
+	routes := app.Routes()
+	if len(routes) != 1 || routes[0].Method != router.MethodAny || routes[0].Meta.Name != "item" || len(routes[0].Meta.Tags) != 1 {
+		t.Fatalf("routes=%+v", routes)
+	}
+	routes[0].Meta.Tags[0] = "changed"
+	if got := app.Routes()[0].Meta.Tags[0]; got != "original" {
+		t.Fatalf("tag=%q", got)
+	}
+}

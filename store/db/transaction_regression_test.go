@@ -163,6 +163,9 @@ func TestRowsCallbacksCloseOnPanicAndGoexit(t *testing.T) {
 				rows.closes != 1 || database.Stats().InUse != 0 {
 				t.Fatalf("strict=%t panic=%t recovered=%v closes=%d inUse=%d", strict, panicExit, got, rows.closes, database.Stats().InUse)
 			}
+			if err := database.PingContext(t.Context()); err != nil {
+				t.Fatalf("connection unavailable after scan exited: %v", err)
+			}
 		}
 	}
 }
@@ -199,5 +202,39 @@ func TestCommitFailureReturnsConnectionWithoutDriverRollback(t *testing.T) {
 	}
 	if tx.commits.Load() != 2 || tx.rollbacks.Load() != 0 {
 		t.Fatalf("commits=%d rollbacks=%d", tx.commits.Load(), tx.rollbacks.Load())
+	}
+}
+
+func TestWithTransactionOwnsCommitAndRollback(t *testing.T) {
+	for _, mode := range []string{"helper", "caller commit", "caller rollback"} {
+		t.Run(mode, func(t *testing.T) {
+			tracked := new(trackedTransaction)
+			db := sql.OpenDB(&stubConnector{conn: &stubConn{tx: tracked}})
+			defer db.Close()
+			err := WithTransaction(t.Context(), db, nil, func(tx *sql.Tx) error {
+				switch mode {
+				case "caller commit":
+					return tx.Commit()
+				case "caller rollback":
+					return tx.Rollback()
+				default:
+					return nil
+				}
+			})
+			if mode == "helper" {
+				if err != nil {
+					t.Fatal(err)
+				}
+			} else if !errors.Is(err, sql.ErrTxDone) || !errors.Is(err, ErrTransactionFailed) {
+				t.Fatalf("err=%v", err)
+			}
+			wantCommits, wantRollbacks := int32(1), int32(0)
+			if mode == "caller rollback" {
+				wantCommits, wantRollbacks = 0, 1
+			}
+			if tracked.commits.Load() != wantCommits || tracked.rollbacks.Load() != wantRollbacks || db.Stats().InUse != 0 {
+				t.Fatalf("commits=%d rollbacks=%d pool=%+v", tracked.commits.Load(), tracked.rollbacks.Load(), db.Stats())
+			}
+		})
 	}
 }

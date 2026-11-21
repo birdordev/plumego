@@ -417,3 +417,17 @@ func TestRecordStatusValidationMatchesExactEnumValues(t *testing.T) {
 		}
 	}
 }
+
+func TestClonedRecordExpiryAndResponseCanChangeIndependently(t *testing.T) {
+	now := time.Unix(60, 0)
+	original := Record{Key: "fixture", Status: StatusInProgress, RequestHash: "fixture", ExpiresAt: now.Add(time.Second), Response: []byte("body")}
+	clone := original.Clone()
+	clone.ExpiresAt = now
+	clone.Response[0] = 'X'
+	if err := ValidateCompletionAt(original, "fixture", now); err != nil || string(original.Response) != "body" || !original.ExpiresAt.After(now) {
+		t.Fatalf("original=%+v err=%v", original, err)
+	}
+	if err := ValidateCompletionAt(clone, "fixture", now); !errors.Is(err, ErrExpired) {
+		t.Fatalf("clone expiry=%v", err)
+	}
+}

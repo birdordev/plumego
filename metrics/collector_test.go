@@ -340,3 +340,14 @@ func TestBaseHTTPStatusCountersAtSaturation(t *testing.T) {
 		t.Fatalf("after clear: %+v", s)
 	}
 }
+
+func TestNamelessRecordsKeepIndependentErrorCountAtSaturation(t *testing.T) {
+	c := NewBaseMetricsCollector()
+	c.stats.TotalRecords = 1<<63 - 1
+	c.Record(t.Context(), MetricRecord{Error: errors.New("fixture error")})
+	c.Record(t.Context(), MetricRecord{})
+	got := c.GetStats()
+	if got.TotalRecords != 1<<63-1 || got.ErrorRecords != 1 || got.ActiveSeries != 0 || len(got.NameBreakdown) != 0 {
+		t.Fatalf("stats=%+v", got)
+	}
+}

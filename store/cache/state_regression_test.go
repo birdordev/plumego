@@ -659,3 +659,33 @@ func TestDecrBelowMinimumRetainsValueAndDeadline(t *testing.T) {
 		}
 	})
 }
+
+func TestNonIntegerIncrPreservesExpiryAndCapacity(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		c, err := NewMemoryCacheWithConfig(Config{MaxMemoryUsage: 3})
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer c.Close()
+		if err := c.Set(t.Context(), "old", []byte("bad"), time.Second); err != nil {
+			t.Fatal(err)
+		}
+		before := c.Stats()
+		if _, err := c.Incr(t.Context(), "old", 1); !errors.Is(err, ErrNotInteger) {
+			t.Fatalf("Incr=%v", err)
+		}
+		if value, err := c.Get(t.Context(), "old"); err != nil || string(value) != "bad" || before != c.Stats() {
+			t.Fatalf("value=%q stats=%+v err=%v", value, c.Stats(), err)
+		}
+		if err := c.Set(t.Context(), "new", []byte("abc"), 0); !errors.Is(err, ErrCacheFull) {
+			t.Fatalf("capacity=%v", err)
+		}
+		time.Sleep(time.Second)
+		if _, err := c.Get(t.Context(), "old"); !errors.Is(err, ErrNotFound) {
+			t.Fatalf("expiry=%v", err)
+		}
+		if err := c.Set(t.Context(), "new", []byte("abc"), 0); err != nil {
+			t.Fatal(err)
+		}
+	})
+}

@@ -568,7 +568,7 @@ func TestAddMapCapacityNegative(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// 12. levelFromFilename — unknown level returns false
+// 12. parseLogArchiveName — unknown level returns false
 // ---------------------------------------------------------------------------
 
 func TestLevelFromFilenameUnknown(t *testing.T) {
@@ -581,8 +581,8 @@ func TestLevelFromFilenameUnknown(t *testing.T) {
 		"app.host.INFO.20240101-000000.pid.log",
 		"app.host.INFO.20240101-000000.1234.txt",
 	} {
-		if _, ok := levelFromFilename(name); ok {
-			t.Errorf("levelFromFilename(%q) accepted an invalid archive name", name)
+		if _, _, ok := parseLogArchiveName(name); ok {
+			t.Errorf("parseLogArchiveName(%q) accepted an invalid archive name", name)
 		}
 	}
 }
@@ -600,9 +600,9 @@ func TestLevelFromFilenameKnownLevels(t *testing.T) {
 		{"app.host.ERROR.20240101-000000.0.1234.log", ERROR},
 	}
 	for _, tt := range tests {
-		got, ok := levelFromFilename(tt.name)
+		got, _, ok := parseLogArchiveName(tt.name)
 		if !ok {
-			t.Errorf("expected levelFromFilename to succeed for %q", tt.name)
+			t.Errorf("expected parseLogArchiveName to succeed for %q", tt.name)
 		}
 		if got != tt.level {
 			t.Errorf("expected level %d for %q, got %d", tt.level, tt.name, got)
@@ -967,7 +967,7 @@ func TestCleanupOldLogsSkipsSymlinksAndNonLogFiles(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "other.host.INFO.20240101-000000.1.log"), []byte("x"), 0644); err != nil {
 		t.Fatal(err)
 	}
-	// 3. levelFromFilename returns false (bad filename format)
+	// 3. parseLogArchiveName returns false (bad filename format)
 	if err := os.WriteFile(filepath.Join(dir, "app.host.BADLVL.20240101-000000.1.log"), []byte("x"), 0644); err != nil {
 		t.Fatal(err)
 	}

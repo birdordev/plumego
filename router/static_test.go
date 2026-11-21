@@ -825,3 +825,36 @@ func TestStaticFSStatErrorClosesEachHeadAndGetFile(t *testing.T) {
 		}
 	}
 }
+
+func TestExtensionlessStaticFileSniffsContentTypeForHeadAndGet(t *testing.T) {
+	dir := t.TempDir()
+	const data = "plain fixture\n"
+	if err := os.WriteFile(filepath.Join(dir, "sample"), []byte(data), 0600); err != nil {
+		t.Fatal(err)
+	}
+	r := NewRouter()
+	if err := r.Static("/assets", dir); err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewServer(r)
+	defer srv.Close()
+	for _, method := range []string{http.MethodGet, http.MethodHead, http.MethodHead} {
+		r, err := http.NewRequestWithContext(t.Context(), method, srv.URL+"/assets/sample", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp, err := srv.Client().Do(r)
+		if err != nil {
+			t.Fatal(err)
+		}
+		body, err := io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
+		want := data
+		if method == http.MethodHead {
+			want = ""
+		}
+		if err != nil || resp.StatusCode != http.StatusOK || resp.ContentLength != int64(len(data)) || resp.Header.Get("Content-Type") != "text/plain; charset=utf-8" || string(body) != want {
+			t.Fatalf("%s status=%d type=%q size=%d body=%q err=%v", method, resp.StatusCode, resp.Header.Get("Content-Type"), resp.ContentLength, body, err)
+		}
+	}
+}

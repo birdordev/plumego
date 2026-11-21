@@ -569,3 +569,114 @@ func TestGenerateReportSortsComponentNames(t *testing.T) {
 		}
 	}
 }
+
+func TestBuiltInReportKeepsRegistryAndDependenciesCoherent(t *testing.T) {
+	m, err := NewManager(Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	tracker := NewTracker(m)
+	checker := functionChecker{name: "sample", check: func(context.Context) error { return nil }}
+	started, stop, done := make(chan struct{}), make(chan struct{}), make(chan error, 1)
+	go func() {
+		close(started)
+		for {
+			select {
+			case <-stop:
+				done <- nil
+				return
+			default:
+			}
+			if err := m.RegisterComponent(checker); err != nil {
+				done <- err
+				return
+			}
+			if err := m.UnregisterComponent(checker.name); err != nil {
+				done <- err
+				return
+			}
+		}
+	}()
+	<-started
+	defer func() {
+		close(stop)
+		if err := <-done; err != nil {
+			t.Error(err)
+		}
+	}()
+	for range 500 {
+		report := tracker.GenerateReport()
+		if !slices.Equal(report.Components, report.HealthStatus.Dependencies) {
+			t.Fatalf("components=%v dependencies=%v", report.Components, report.HealthStatus.Dependencies)
+		}
+	}
+}
+
+func TestReportPreservesIndependentReadinessAndOwnedLists(t *testing.T) {
+	m, err := NewManager(Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	tracker := NewTracker(m)
+	if err := m.RegisterComponent(functionChecker{name: "fixture", check: func(context.Context) error { return nil }}); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.CheckComponent(t.Context(), "fixture"); err != nil {
+		t.Fatal(err)
+	}
+	m.MarkNotReady("maintenance")
+	before := m.Readiness()
+	report := tracker.GenerateReport()
+	if report.HealthStatus.Status != health.StatusHealthy || report.Readiness.Ready || report.Readiness.Reason != "maintenance" || !report.Readiness.Timestamp.Equal(before.Timestamp) {
+		t.Fatalf("status=%+v readiness=%+v", report.HealthStatus, report.Readiness)
+	}
+	report.Components[0] = "changed"
+	if report.HealthStatus.Dependencies[0] != "fixture" {
+		t.Fatal("components alias dependencies")
+	}
+	report.HealthStatus.Dependencies[0] = "changed dependency"
+	next := tracker.GenerateReport()
+	if !slices.Equal(next.Components, []string{"fixture"}) || !slices.Equal(next.HealthStatus.Dependencies, []string{"fixture"}) {
+		t.Fatalf("next report=%+v", next)
+	}
+	if err := m.Close(); err != nil {
+		t.Fatal(err)
+	}
+	closed := tracker.GenerateReport()
+	if closed.HealthStatus.Status != health.StatusUnhealthy || closed.HealthStatus.Dependencies != nil ||
+		!slices.Equal(closed.Components, []string{"fixture"}) || closed.Readiness.Ready {
+		t.Fatalf("closed report=%+v", closed)
+	}
+}
+
+type reportSnapshotFixture struct {
+	Manager
+	readOrder []string
+}
+
+func (m *reportSnapshotFixture) GetAllHealth() map[string]*health.ComponentHealth {
+	m.readOrder = append(m.readOrder, "components")
+	return map[string]*health.ComponentHealth{"z": nil, "a": nil}
+}
+
+func (m *reportSnapshotFixture) GetOverallHealth() health.HealthStatus {
+	m.readOrder = append(m.readOrder, "overall")
+	return health.HealthStatus{Status: health.StatusDegraded, Dependencies: []string{"external"}}
+}
+
+func (m *reportSnapshotFixture) Readiness() health.ReadinessStatus {
+	m.readOrder = append(m.readOrder, "readiness")
+	return health.ReadinessStatus{Ready: true}
+}
+
+func TestReportPreservesExternalManagerSnapshotReads(t *testing.T) {
+	manager := new(reportSnapshotFixture)
+	got := NewTracker(manager).GenerateReport()
+	if !slices.Equal(manager.readOrder, []string{"components", "overall", "readiness"}) ||
+		!slices.Equal(got.Components, []string{"a", "z"}) || !slices.Equal(got.HealthStatus.Dependencies, []string{"external"}) ||
+		got.HealthStatus.Status != health.StatusDegraded || !got.Readiness.Ready {
+		t.Fatalf("reads=%v report=%+v", manager.readOrder, got)
+	}
+}

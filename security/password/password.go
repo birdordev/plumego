@@ -133,6 +133,8 @@ func DefaultPasswordStrengthConfig() PasswordStrengthConfig {
 }
 
 // ValidatePasswordStrength checks if the password meets the required strength criteria.
+// A zero config imposes no length or character requirements. Use
+// DefaultPasswordStrengthConfig to opt in to the default strength policy.
 //
 // Example:
 //

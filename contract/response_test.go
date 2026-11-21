@@ -736,12 +736,13 @@ func TestBodylessResponseKeepsUnrelatedHeaders(t *testing.T) {
 		w.Header().Set(RequestIDHeader, "request-123")
 		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("X-App", "example")
-		if err := WriteResponse(w, req, status, nil, nil); err != nil {
+		calls := 0
+		if err := WriteResponse(w, req, status, countedResetContentMarshaler{&calls}, nil); err != nil {
 			t.Fatal(err)
 		}
 		h := w.Result().Header
 		if h.Get(RequestIDHeader) != "request-123" || h.Get("Cache-Control") != "no-store" ||
-			h.Get("X-App") != "example" || h.Get("Transfer-Encoding") != "" || w.headerWrites != 1 || w.bodyWrites != 0 {
+			h.Get("X-App") != "example" || h.Get("Transfer-Encoding") != "" || w.headerWrites != 1 || w.bodyWrites != 0 || calls != 0 {
 			t.Fatalf("status=%d headers=%v writes=%d/%d", status, h, w.headerWrites, w.bodyWrites)
 		}
 	}
@@ -968,3 +969,19 @@ func TestWriteResponseMetaFailureLeavesResponseOpen(t *testing.T) {
 type failingResponseMarshaler struct{ cause error }
 
 func (m failingResponseMarshaler) MarshalJSON() ([]byte, error) { return nil, m.cause }
+
+func TestRequestIDPreservedInErrorAfterUncommittedEncodingFailure(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req = req.WithContext(WithRequestID(req.Context(), "fixture-retry"))
+	w := &countingResponseWriter{ResponseRecorder: httptest.NewRecorder()}
+	if err := WriteResponse(w, req, http.StatusAccepted, nil, map[string]any{"bad": make(chan int)}); err == nil || w.headerWrites != 0 {
+		t.Fatalf("err=%v commits=%d", err, w.headerWrites)
+	}
+	if err := WriteError(w, req, NewErrorBuilder().Type(TypeInternal).Build()); err != nil {
+		t.Fatal(err)
+	}
+	var reply errorResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &reply); err != nil || w.headerWrites != 1 || w.bodyWrites != 1 || reply.RequestID != "fixture-retry" {
+		t.Fatalf("err=%v status=%d commits=%d body=%q", err, w.Code, w.headerWrites, w.Body)
+	}
+}

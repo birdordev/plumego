@@ -874,3 +874,38 @@ func TestHandlerPanicReleasesWaiterBeforeNextFlight(t *testing.T) {
 		}
 	})
 }
+
+func TestCoalescedNoContentDoesNotLeakIntoNextFlight(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		release := make(chan struct{})
+		calls := 0
+		h := New(Config{}).Middleware()(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			calls++
+			if calls == 1 {
+				<-release
+				w.Header().Set("X-Flight", "first")
+				w.WriteHeader(http.StatusNoContent)
+				return
+			}
+			w.Header().Set("X-Next", "new")
+			w.WriteHeader(http.StatusAccepted)
+		}))
+		leader, waiter := httptest.NewRecorder(), httptest.NewRecorder()
+		go h.ServeHTTP(leader, httptest.NewRequest(http.MethodGet, "/", nil))
+		synctest.Wait()
+		go h.ServeHTTP(waiter, httptest.NewRequest(http.MethodGet, "/", nil))
+		synctest.Wait()
+		close(release)
+		synctest.Wait()
+		for _, rec := range []*httptest.ResponseRecorder{leader, waiter} {
+			if rec.Code != http.StatusNoContent || rec.Header().Get("X-Flight") != "first" || rec.Body.Len() != 0 {
+				t.Fatalf("status=%d headers=%v body=%q", rec.Code, rec.Header(), rec.Body)
+			}
+		}
+		next := httptest.NewRecorder()
+		h.ServeHTTP(next, httptest.NewRequest(http.MethodGet, "/", nil))
+		if calls != 2 || next.Code != http.StatusAccepted || next.Header().Get("X-Flight") != "" || next.Header().Get("X-Next") != "new" {
+			t.Fatalf("calls=%d status=%d headers=%v", calls, next.Code, next.Header())
+		}
+	})
+}

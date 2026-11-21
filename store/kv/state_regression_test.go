@@ -1054,3 +1054,103 @@ func TestKeyListSnapshotSurvivesInsertDeleteAndCallerMutation(t *testing.T) {
 		t.Fatalf("next=%v err=%v", next, err)
 	}
 }
+
+func TestDownsizedOpenLeavesSnapshotUntilDelete(t *testing.T) {
+	dir := t.TempDir()
+	base := DefaultConfig(dir)
+	kv, err := NewKVStore(base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Identical timestamps are safe: equal update times use key order.
+	for _, key := range []string{"a", "b", "c"} {
+		if err := kv.Set(key, []byte(key), 0); err != nil {
+			_ = kv.Close()
+			t.Fatal(err)
+		}
+	}
+	if err := kv.Close(); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, stateFileName)
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	smaller := base
+	smaller.MaxEntries = 2
+	limited, err := NewKVStore(smaller)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer limited.Close()
+	keys := mustKeys(t, limited)
+	current, err := os.ReadFile(path)
+	if len(keys) != 2 || err != nil || !bytes.Equal(before, current) {
+		t.Fatalf("keys=%v disk changed=%t err=%v", keys, !bytes.Equal(before, current), err)
+	}
+	if err := limited.Delete(keys[0]); err != nil {
+		t.Fatal(err)
+	}
+	if err := limited.Close(); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := NewKVStore(base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopened.Close()
+	if got := mustKeys(t, reopened); !slices.Equal(got, keys[1:]) {
+		t.Fatalf("reopened keys=%v want=%v", got, keys[1:])
+	}
+}
+
+func TestExpiryReadCountersAreLocalAndDoNotPersist(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		dir := t.TempDir()
+		opts := DefaultConfig(dir)
+		kv, err := NewKVStore(opts)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer kv.Close()
+		for key, ttl := range map[string]time.Duration{"live": 0, "short": time.Second} {
+			if err := kv.Set(key, []byte("v"), ttl); err != nil {
+				t.Fatal(err)
+			}
+		}
+		path := filepath.Join(dir, stateFileName)
+		before, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		time.Sleep(time.Second)
+		if _, err := kv.Get("live"); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := kv.Get("short"); !errors.Is(err, ErrKeyExpired) {
+			t.Fatalf("expired=%v", err)
+		}
+		if _, err := kv.Get("absent"); !errors.Is(err, ErrKeyNotFound) {
+			t.Fatalf("missing=%v", err)
+		}
+		stats, err := kv.GetStatsContext(t.Context())
+		if err != nil || stats.Hits != 1 || stats.Misses != 2 || stats.HitRatio != 1.0/3 || stats.Entries != 1 ||
+			stats.MemoryUsage != entrySize("live", []byte("v")) {
+			t.Fatalf("stats=%+v err=%v", stats, err)
+		}
+		if err := kv.Close(); err != nil {
+			t.Fatal(err)
+		}
+		fresh, err := NewKVStore(opts)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer fresh.Close()
+		again, err := fresh.GetStatsContext(t.Context())
+		after, readErr := os.ReadFile(path)
+		if err != nil || readErr != nil || again.Hits != 0 || again.Misses != 0 || again.HitRatio != 0 || again.Entries != stats.Entries || !bytes.Equal(before, after) {
+			t.Fatalf("stats=%+v err=%v read=%v disk changed=%t", again, err, readErr, !bytes.Equal(before, after))
+		}
+	})
+}

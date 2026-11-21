@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"testing/iotest"
 	"time"
 
 	"github.com/birdordev/plumego/log"
@@ -900,5 +901,23 @@ func TestExactLimitDelegatesExplicitBodyClose(t *testing.T) {
 	})).ServeHTTP(rec, req)
 	if fixture.closes != 1 || rec.Code != 204 {
 		t.Fatalf("close count=%d status=%d", fixture.closes, rec.Code)
+	}
+}
+
+func TestBodyLimitRetainsFinalBytesReturnedWithEOF(t *testing.T) {
+	for _, limit := range []int64{3, 4} {
+		var output strings.Builder
+		h := Middleware(Config{MaxBytes: limit})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if _, err := io.Copy(&output, r.Body); err != nil {
+				t.Fatal(err)
+			}
+			w.WriteHeader(http.StatusNoContent)
+		}))
+		r := httptest.NewRequest(http.MethodPost, "/", iotest.DataErrReader(strings.NewReader("abc")))
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		if w.Code != http.StatusNoContent || output.String() != "abc" || w.Body.Len() != 0 {
+			t.Fatalf("limit=%d status=%d data=%q body=%q", limit, w.Code, output.String(), w.Body)
+		}
 	}
 }

@@ -10,7 +10,7 @@ func TestRouteTagsAreDetached(t *testing.T) {
 	rt := NewRouter()
 	handler := http.HandlerFunc(func(http.ResponseWriter, *http.Request) {})
 	input := []string{"public"}
-	if err := rt.AddRoute("GET", "/", handler, func(meta *RouteMeta) { meta.Tags = input }); err != nil {
+	if err := rt.AddRoute("GET", "/", handler, nil, WithRouteName("original"), func(meta *RouteMeta) { meta.Tags = input }); err != nil {
 		t.Fatal(err)
 	}
 	input[0] = "changed-input"
@@ -45,6 +45,12 @@ func TestRouteTagsAreDetached(t *testing.T) {
 	close(start)
 	wg.Wait()
 	rt.Freeze()
+	if err := rt.AddRoute("GET", "/rejected", handler, nil, WithRouteName("rejected"), WithTags("late")); err == nil {
+		t.Fatal("frozen route accepted registration")
+	}
+	if !rt.HasRoute("original") || rt.HasRoute("rejected") || serveRouter(rt, http.MethodGet, "/rejected").Code != http.StatusNotFound {
+		t.Fatalf("named routes=%v", rt.NamedRoutes())
+	}
 	if routes := rt.Routes(); len(routes) != 2 || routes[0].Path != "/" || routes[1].Path != "/later" {
 		t.Fatalf("unexpected routes after registration and freeze: %v", routes)
 	}

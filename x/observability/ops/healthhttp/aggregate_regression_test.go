@@ -343,3 +343,89 @@ func TestHealthReportDistinguishesEmptyAndUncheckedComponent(t *testing.T) {
 	}
 	assert(200, health.StatusHealthy, []string{"fixture"}, 1)
 }
+
+type batchErrorContext struct {
+	context.Context
+	err func() error
+}
+
+func (c batchErrorContext) Err() error { return c.err() }
+
+func TestBatchPublicationContextCanReadManagerConfig(t *testing.T) {
+	m, err := NewManager(Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	owner := m.(*manager)
+	reads := 0
+	ctx := batchErrorContext{Context: t.Context(), err: func() error {
+		if !owner.mu.TryRLock() {
+			t.Error("batch consulted the context with a manager lock held")
+			return nil
+		}
+		owner.mu.RUnlock()
+		_ = m.GetConfig()
+		reads++
+		return nil
+	}}
+	result := m.CheckAllComponents(ctx)
+	if reads == 0 || !result.Status.IsReady() || !m.Readiness().Ready {
+		t.Fatalf("reads=%d result=%+v readiness=%+v", reads, result, m.Readiness())
+	}
+}
+
+func TestBatchPublicationRevalidatesAfterRefreshingCancellation(t *testing.T) {
+	for _, transition := range []string{"none", "newer batch", "manual", "closed"} {
+		t.Run(transition, func(t *testing.T) {
+			m, err := NewManager(Config{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer m.Close()
+			base, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			calls := 0
+			ctx := batchErrorContext{Context: base, err: func() error {
+				calls++
+				if calls == 1 {
+					sampled := base.Err()
+					cancel()
+					return sampled
+				}
+				switch transition {
+				case "newer batch":
+					m.CheckAllComponents(t.Context())
+				case "manual":
+					m.MarkNotReady("manual fixture")
+				case "closed":
+					_ = m.Close()
+				}
+				return base.Err()
+			}}
+			got := m.CheckAllComponents(ctx)
+			ready := m.Readiness()
+			if calls != 2 || got.Status != health.StatusUnhealthy {
+				t.Fatalf("samples=%d status=%+v", calls, got)
+			}
+			switch transition {
+			case "none":
+				if got.Message != context.Canceled.Error() || ready.Reason != context.Canceled.Error() {
+					t.Fatalf("status=%+v ready=%+v", got, ready)
+				}
+			case "newer batch":
+				if got.Message != "aggregate check was superseded" || !ready.Ready {
+					t.Fatalf("status=%+v ready=%+v", got, ready)
+				}
+			case "manual":
+				if got.Message != "aggregate check was superseded" || ready.Ready || ready.Reason != "manual fixture" {
+					t.Fatalf("status=%+v ready=%+v", got, ready)
+				}
+			case "closed":
+				if got.Message != errManagerClosed.Error() || ready.Ready || ready.Reason != errManagerClosed.Error() {
+					t.Fatalf("status=%+v ready=%+v", got, ready)
+				}
+			}
+		})
+	}
+}

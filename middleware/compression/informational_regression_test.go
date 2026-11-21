@@ -458,3 +458,36 @@ func TestEmptyResponseCommitsFinalHeaders(t *testing.T) {
 		}
 	}
 }
+
+func TestGzipEarlyHintsThenNotModifiedOnLoopback(t *testing.T) {
+	srv := httptest.NewServer(Middleware(DefaultConfig())(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("X-Stage", "hint")
+		w.WriteHeader(http.StatusEarlyHints)
+		w.Header().Del("X-Stage")
+		w.Header().Set("ETag", `"fixture"`)
+		w.WriteHeader(http.StatusNotModified)
+	})))
+	defer srv.Close()
+	hints := 0
+	trace := &httptrace.ClientTrace{Got1xxResponse: func(code int, header textproto.MIMEHeader) error {
+		if code == http.StatusEarlyHints && header.Get("X-Stage") == "hint" {
+			hints++
+		}
+		return nil
+	}}
+	req, err := http.NewRequestWithContext(httptrace.WithClientTrace(t.Context(), trace), http.MethodGet, srv.URL, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Accept-Encoding", "gzip")
+	resp, err := srv.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil || hints != 1 || resp.StatusCode != 304 || len(body) != 0 || resp.Header.Get("ETag") != `"fixture"` ||
+		resp.Header.Get("Content-Encoding") != "" || resp.Header.Get("X-Stage") != "" {
+		t.Fatalf("status=%d hints=%d headers=%v body=%q err=%v", resp.StatusCode, hints, resp.Header, body, err)
+	}
+}

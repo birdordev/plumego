@@ -283,3 +283,23 @@ func TestSeparateFacadeDefaultConfigsRemainIndependent(t *testing.T) {
 		t.Fatal("custom app changed the default address")
 	}
 }
+
+func TestFacadeParamWorksAfterShutdownForDirectDispatch(t *testing.T) {
+	app := plumego.New()
+	if err := app.Get("/items/:id", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(plumego.Param(r, "id")))
+	})); err != nil {
+		t.Fatal(err)
+	}
+	if err := app.Prepare(); err != nil {
+		t.Fatal(err)
+	}
+	if err := app.Shutdown(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	w := httptest.NewRecorder()
+	app.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/items/fixture", nil))
+	if w.Code != http.StatusOK || w.Body.String() != "fixture" {
+		t.Fatalf("status=%d body=%q", w.Code, w.Body)
+	}
+}

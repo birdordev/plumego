@@ -895,7 +895,7 @@ func TestAcceptanceCustomClockCleanupAndStop(t *testing.T) {
 		}
 		now = base.Add(2 * time.Second)
 		limiter.Allow("second")
-		if got := limiter.Metrics(); got.Buckets != 1 || got.Evictions != 1 {
+		if got := limiter.Metrics(); got.Buckets != 1 || got.Evictions != 1 || got.Allowed != 2 || got.Rejected != 0 {
 			t.Fatalf("metrics after next admission: %+v", got)
 		}
 		now = base.Add(4 * time.Second)
@@ -903,7 +903,7 @@ func TestAcceptanceCustomClockCleanupAndStop(t *testing.T) {
 		if !limiter.Allow("third").Allowed {
 			t.Fatal("clock callback stopped admission")
 		}
-		if got := limiter.Metrics(); got.Buckets != 2 || got.Evictions != 1 {
+		if got := limiter.Metrics(); got.Buckets != 2 || got.Evictions != 1 || got.Allowed != 3 || got.Rejected != 0 {
 			t.Fatalf("cleanup after Stop: %+v", got)
 		}
 	})

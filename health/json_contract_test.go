@@ -366,3 +366,19 @@ func TestFalseReadinessComponentSurvivesJSONRoundTrip(t *testing.T) {
 		t.Fatalf("decoded=%+v", decoded)
 	}
 }
+
+func TestUnknownHealthStateAndDependenciesRoundTrip(t *testing.T) {
+	original := HealthStatus{Status: "fixture unknown", Dependencies: []string{"store", "queue"}}
+	raw, err := json.Marshal(original)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got HealthStatus
+	if err := json.Unmarshal(raw, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != original.Status || got.Status.IsReady() || got.Status.IsKnown() || len(got.Dependencies) != 2 ||
+		got.Dependencies[0] != "store" || got.Dependencies[1] != "queue" {
+		t.Fatalf("decoded=%+v", got)
+	}
+}

@@ -638,3 +638,25 @@ func TestHeadHandlerKeepsExplicitZeroLength(t *testing.T) {
 		t.Fatalf("HEAD: status=%d headers=%v body=%q err=%v", resp.StatusCode, resp.Header, body, err)
 	}
 }
+
+type headDecliningFlush struct{ *headStatusSequence }
+
+func (headDecliningFlush) FlushError() error { return http.ErrNotSupported }
+
+func TestHeadInformationalThenDeclinedFlushKeepsFinalResponseOpen(t *testing.T) {
+	r := NewRouter()
+	mustAddRoute(r, http.MethodGet, "/", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("X-Stage", "hint")
+		w.WriteHeader(http.StatusEarlyHints)
+		if err := http.NewResponseController(w).Flush(); !errors.Is(err, http.ErrNotSupported) {
+			t.Errorf("Flush=%v", err)
+		}
+		w.Header().Set("X-Stage", "final")
+		w.WriteHeader(http.StatusAccepted)
+	}))
+	dst := &headStatusSequence{ResponseRecorder: httptest.NewRecorder()}
+	r.ServeHTTP(headUnwrapWriter{headDecliningFlush{dst}}, httptest.NewRequest(http.MethodHead, "/", nil))
+	if !slices.Equal(dst.statuses, []int{103, 202}) || dst.Result().Header.Get("X-Stage") != "final" || dst.Body.Len() != 0 {
+		t.Fatalf("statuses=%v headers=%v body=%q", dst.statuses, dst.Result().Header, dst.Body)
+	}
+}

@@ -181,6 +181,7 @@ type logFileInfo struct {
 	name    string
 	path    string
 	modTime time.Time
+	stamp   time.Time
 }
 
 func logFilename(program, hostname, lname string, now time.Time, currentPID int) string {
@@ -258,7 +259,7 @@ func cleanupOldLogs(logDir, program string, config rotationConfig, current map[s
 			continue
 		}
 
-		level, ok := levelFromFilename(name)
+		level, stamp, ok := parseLogArchiveName(name)
 		if !ok {
 			continue
 		}
@@ -280,6 +281,7 @@ func cleanupOldLogs(logDir, program string, config rotationConfig, current map[s
 				name:    name,
 				path:    filepath.Join(logDir, name),
 				modTime: info.ModTime(),
+				stamp:   stamp,
 			})
 		}
 	}
@@ -290,7 +292,14 @@ func cleanupOldLogs(logDir, program string, config rotationConfig, current map[s
 
 	for _, files := range perLevel {
 		sort.Slice(files, func(i, j int) bool {
-			return files[i].modTime.After(files[j].modTime)
+			a, b := files[i], files[j]
+			if order := a.modTime.Compare(b.modTime); order != 0 {
+				return order > 0
+			}
+			if order := a.stamp.Compare(b.stamp); order != 0 {
+				return order > 0
+			}
+			return a.name > b.name
 		})
 		for i := config.MaxBackups; i < len(files); i++ {
 			if err := os.Remove(files[i].path); err != nil && !os.IsNotExist(err) {
@@ -300,41 +309,43 @@ func cleanupOldLogs(logDir, program string, config rotationConfig, current map[s
 	}
 }
 
-func levelFromFilename(name string) (Level, bool) {
+func parseLogArchiveName(name string) (Level, time.Time, bool) {
 	base, ok := strings.CutSuffix(name, ".log")
 	if !ok {
-		return INFO, false
+		return INFO, time.Time{}, false
 	}
 	prefix, pid, ok := cutLastDot(base)
 	if !ok || pid == "" || strings.Trim(pid, "0123456789") != "" {
-		return INFO, false
+		return INFO, time.Time{}, false
 	}
 	prefix, timestamp, ok := cutLastDot(prefix)
 	if !ok {
-		return INFO, false
+		return INFO, time.Time{}, false
 	}
 	// Current filenames include fractional seconds before the PID. Older
 	// archives put the PID immediately after the timestamp.
 	if fraction := timestamp; len(fraction) > 0 && len(fraction) <= 9 && strings.Trim(fraction, "0123456789") == "" {
 		prefix, timestamp, ok = cutLastDot(prefix)
 		if !ok {
-			return INFO, false
+			return INFO, time.Time{}, false
 		}
+		timestamp += "." + fraction
 	}
 	prefix, label, ok := cutLastDot(prefix)
 	// The prefix contains at least the program and host segments.
 	if !ok || !strings.Contains(prefix, ".") {
-		return INFO, false
+		return INFO, time.Time{}, false
 	}
-	if _, err := time.Parse("20060102-150405", timestamp); err != nil {
-		return INFO, false
+	stamp, err := time.Parse("20060102-150405", timestamp)
+	if err != nil {
+		return INFO, time.Time{}, false
 	}
 	for level := INFO; level <= ERROR; level++ {
 		if label == levelName(level) {
-			return level, true
+			return level, stamp, true
 		}
 	}
-	return INFO, false
+	return INFO, time.Time{}, false
 }
 
 func cutLastDot(s string) (string, string, bool) {
