@@ -308,7 +308,7 @@ func TestBuildKey(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := buildKey(tt.metric, tt.tags)
+			result := buildKey(tt.metric, tagsToMap(tt.tags))
 			if result != tt.expected {
 				t.Errorf("buildKey() = %v, want %v", result, tt.expected)
 			}
@@ -496,49 +496,6 @@ func TestPrometheusExporter_Handler(t *testing.T) {
 	}
 }
 
-func TestPrometheusExporter_ParseKey(t *testing.T) {
-	exporter := NewPrometheusExporter(NewMemoryCollector(), "")
-
-	tests := []struct {
-		key          string
-		expectedName string
-		expectedTags map[string]string
-	}{
-		{
-			key:          "metric",
-			expectedName: "metric",
-			expectedTags: nil,
-		},
-		{
-			key:          "metric{key=value}",
-			expectedName: "metric",
-			expectedTags: map[string]string{"key": "value"},
-		},
-		{
-			key:          "metric{k1=v1,k2=v2}",
-			expectedName: "metric",
-			expectedTags: map[string]string{"k1": "v1", "k2": "v2"},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.key, func(t *testing.T) {
-			name, tags := exporter.parseKey(tt.key)
-			if name != tt.expectedName {
-				t.Errorf("name = %v, want %v", name, tt.expectedName)
-			}
-			if len(tags) != len(tt.expectedTags) {
-				t.Errorf("tags length = %v, want %v", len(tags), len(tt.expectedTags))
-			}
-			for k, v := range tt.expectedTags {
-				if tags[k] != v {
-					t.Errorf("tags[%s] = %v, want %v", k, tags[k], v)
-				}
-			}
-		})
-	}
-}
-
 func TestPrometheusExporter_FormatLabels(t *testing.T) {
 	exporter := NewPrometheusExporter(NewMemoryCollector(), "")
 
@@ -712,4 +669,147 @@ func TestPrometheusHistogramExportsCumulativeBuckets(t *testing.T) {
 		!strings.Contains(out.Body.String(), "fixture_seconds_sum 0.040000\n") {
 		t.Errorf("unexpected histogram exposition:\n%s", out.Body.String())
 	}
+}
+
+func TestPrometheusMetricFamilyBlocks(t *testing.T) {
+	collector := NewMemoryCollector()
+	for _, stage := range []string{"read", "write"} {
+		label := Tag{Key: "stage", Value: stage}
+		collector.Counter("jobs", 2, label)
+		collector.Gauge("active", 3, label)
+		collector.Histogram("duration", 4, label)
+	}
+	collector.Counter("jobs", 1)
+	collector.Counter("jobs_other", 5)
+
+	w := httptest.NewRecorder()
+	NewPrometheusExporter(collector, "local").Handler().ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	body := w.Body.String()
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", w.Code)
+	}
+	for _, family := range []struct {
+		name, kind, sample string
+	}{
+		{"local_jobs", "counter", "local_jobs"},
+		{"local_active", "gauge", "local_active"},
+		{"local_duration", "histogram", "local_duration_count"},
+	} {
+		typeLine := "# TYPE " + family.name + " " + family.kind + "\n"
+		if strings.Count(body, typeLine) != 1 || strings.Count(body, "# HELP "+family.name+" ") != 1 {
+			t.Errorf("expected one HELP and TYPE for %s:\n%s", family.name, body)
+		}
+		_, group, found := strings.Cut(body, typeLine)
+		if !found {
+			continue
+		}
+		group, _, _ = strings.Cut(group, "\n\n")
+		for _, stage := range []string{"read", "write"} {
+			if sample := family.sample + `{stage="` + stage + `"} `; !strings.Contains(group, sample) {
+				t.Errorf("sample %q missing from %s family:\n%s", sample, family.name, group)
+			}
+		}
+	}
+	if !strings.Contains(body, "local_jobs 1.000000\n") || !strings.Contains(body, "local_jobs_other 5.000000\n") {
+		t.Fatalf("untagged samples missing:\n%s", body)
+	}
+}
+
+func TestMemoryCollectorTagOrder(t *testing.T) {
+	collector := NewMemoryCollector()
+	first := Tag{Key: "kind", Value: "local"}
+	second := Tag{Key: "stage", Value: "read"}
+	reversed := []Tag{second, first}
+	for _, sample := range []struct {
+		value float64
+		tags  []Tag
+	}{
+		{2, []Tag{first, second}},
+		{3, reversed},
+		{4, []Tag{{Key: "kind", Value: "ignored"}, first, second}},
+	} {
+		collector.Counter("jobs", sample.value, sample.tags...)
+		collector.Gauge("jobs", sample.value, sample.tags...)
+		collector.Histogram("jobs", sample.value, sample.tags...)
+	}
+	if reversed[0] != second || reversed[1] != first {
+		t.Fatalf("caller tags reordered: %v", reversed)
+	}
+
+	key := "jobs{kind=local,stage=read}"
+	snapshot := collector.Snapshot()
+	if got := snapshot.Counters[key]; len(snapshot.Counters) != 1 || got.Value != 9 {
+		t.Errorf("counter series = %+v, want one with value 9", snapshot.Counters)
+	}
+	if got := snapshot.Gauges[key]; len(snapshot.Gauges) != 1 || got.Value != 4 {
+		t.Errorf("gauge series = %+v, want one with value 4", snapshot.Gauges)
+	}
+	if got := snapshot.Histograms[key]; len(snapshot.Histograms) != 1 || got.Count != 3 || got.Sum != 9 {
+		t.Errorf("histogram series = %+v, want one with count 3 and sum 9", snapshot.Histograms)
+	}
+}
+
+func TestMemoryCollectorLabelDelimiters(t *testing.T) {
+	collector := NewMemoryCollector()
+	collector.Counter("jobs", 2, Tag{Key: "stage", Value: "read,kind=local"})
+	collector.Counter("jobs", 3, Tag{Key: "stage", Value: "read"}, Tag{Key: "kind", Value: "local"})
+	collector.Counter("jobs", 4, Tag{Key: "stage", Value: `path\{draft}`})
+	collector.Counter("jobs", 5, Tag{Key: "stage", Value: `path%5C%7Bdraft%7D`})
+
+	snapshot := collector.Snapshot()
+	if len(snapshot.Counters) != 4 || snapshot.Counters["jobs{kind=local,stage=read}"].Value != 3 {
+		t.Fatalf("counter series = %+v, want four with ordinary key preserved", snapshot.Counters)
+	}
+	w := httptest.NewRecorder()
+	NewPrometheusExporter(collector, "").Handler().ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	for _, want := range []string{
+		`jobs{stage="read,kind=local"} 2.000000`,
+		`jobs{kind="local",stage="read"} 3.000000`,
+		`jobs{stage="path\\{draft}"} 4.000000`,
+		`jobs{stage="path%5C%7Bdraft%7D"} 5.000000`,
+	} {
+		if !strings.Contains(w.Body.String(), want+"\n") {
+			t.Errorf("missing sample %q in %q", want, w.Body.String())
+		}
+	}
+
+	name := `jobs{k=v}%7B`
+	if got := metricNameFromKey(buildKey(name, map[string]string{"label": "value"})); got != name {
+		t.Errorf("metric name = %q, want %q", got, name)
+	}
+	if buildKey("jobs{k=v}", nil) == buildKey("jobs", map[string]string{"k": "v"}) {
+		t.Error("untagged name and tagged series share a key")
+	}
+	if buildKey("jobs", map[string]string{"k=v": "x"}) == buildKey("jobs", map[string]string{"k": "v=x"}) {
+		t.Error("equal signs at different positions share a key")
+	}
+}
+
+func TestMemoryCollectorHistogramRetainsLatestSamples(t *testing.T) {
+	collector := NewMemoryCollector()
+	var sum float64
+	record := func(value float64) {
+		collector.Histogram("latency", value)
+		sum += value
+	}
+	record(-1000)
+	record(10000)
+	for i := 1; i <= 998; i++ {
+		record(float64(i))
+	}
+	record(5000)
+
+	check := func(count int64, p50 float64) {
+		t.Helper()
+		got := collector.Snapshot().Histograms["latency"]
+		if got.P50 != p50 || got.Count != count || got.Sum != sum || got.Min != -1000 || got.Max != 10000 {
+			t.Errorf("histogram = %+v, want P50=%v count=%d sum=%v min=-1000 max=10000", got, p50, count, sum)
+		}
+	}
+	check(1001, 500.5)
+	for i := 1000; i <= 1998; i++ {
+		record(float64(i))
+	}
+	record(6000)
+	check(2001, 1499.5)
 }

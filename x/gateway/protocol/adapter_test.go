@@ -2,6 +2,7 @@ package protocol
 
 import (
 	"context"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -83,5 +84,42 @@ func TestGraphQLResponseErrorMetadataMatchesErrors(t *testing.T) {
 		if !ok || extensions["trace"] != "fixture" {
 			t.Errorf("extensions = %v", metadata["extensions"])
 		}
+	}
+}
+
+func TestGraphQLProtocolAccessors(t *testing.T) {
+	var request Request = &GraphQLRequest{}
+	var response Response = &GraphQLResponse{}
+	if headers := request.Headers(); request.Method() != "query" || headers == nil || len(headers) != 0 || request.Body() != nil {
+		t.Error("unexpected GraphQL request defaults")
+	}
+	if headers := response.Headers(); response.StatusCode() != 200 || headers == nil || len(headers) != 0 || response.Body() != nil {
+		t.Error("unexpected GraphQL response defaults")
+	}
+
+	reqBody := strings.NewReader("request")
+	req := &GraphQLRequest{
+		Query: "{ title }", OperationName: "Lookup",
+		Variables: map[string]any{"limit": 2}, Extensions: map[string]any{"local": true},
+		HeaderMap: map[string][]string{"Content-Type": {"application/json"}}, BodyReader: reqBody,
+	}
+	request = req
+	if request.Method() != "Lookup" || request.Body() != reqBody || !slices.Equal(request.Headers()["Content-Type"], []string{"application/json"}) {
+		t.Error("request did not expose its configured method, body, and headers")
+	}
+	metadata := request.Metadata()
+	variables, variablesOK := metadata["variables"].(map[string]any)
+	extensions, extensionsOK := metadata["extensions"].(map[string]any)
+	if metadata["query"] != req.Query || metadata["operation_name"] != req.OperationName ||
+		!variablesOK || variables["limit"] != 2 || !extensionsOK || extensions["local"] != true {
+		t.Errorf("request metadata = %v", metadata)
+	}
+
+	respBody := strings.NewReader("response")
+	response = &GraphQLResponse{
+		Status: 202, HeaderMap: map[string][]string{"Content-Type": {"application/json"}}, BodyReader: respBody,
+	}
+	if response.StatusCode() != 202 || response.Body() != respBody || !slices.Equal(response.Headers()["Content-Type"], []string{"application/json"}) {
+		t.Error("response did not expose its configured status, body, and headers")
 	}
 }

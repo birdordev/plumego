@@ -469,3 +469,24 @@ func TestTraceCloneDetachesLinkAttributes(t *testing.T) {
 		t.Error("Clone allocated attributes for nil maps")
 	}
 }
+
+func TestRecordErrorAppliesCustomAttributes(t *testing.T) {
+	config := DefaultTracerConfig()
+	config.SamplingRate = 1
+	tracer, err := NewTracer(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, span := tracer.StartTrace(t.Context(), "fixture")
+	defer tracer.EndSpan(span)
+	tracer.RecordError(span, errors.New("fixture operation failed"), WithErrorAttributes(map[string]any{"attempt": 2}))
+
+	trace, found := tracer.collector.GetTrace(span.TraceID)
+	if !found || len(trace.Spans) != 1 {
+		t.Fatalf("trace = %v, found=%v", trace, found)
+	}
+	got := trace.Spans[0]
+	if got.Status.Code != StatusCodeError || got.Attributes["error.message"] != "fixture operation failed" || got.Attributes["attempt"] != 2 {
+		t.Errorf("recorded span = %+v", got)
+	}
+}

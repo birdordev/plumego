@@ -716,3 +716,51 @@ func TestPriorityBufferEvictsAndPopsByPriority(t *testing.T) {
 		t.Error("closed buffer accepted a message")
 	}
 }
+
+func TestPriorityBufferDrainReleasesEvictionEntries(t *testing.T) {
+	buffer := NewPriorityBuffer(2)
+	buffer.Push(Message{Topic: "low"}, PriorityLow)
+	buffer.Push(Message{Topic: "high"}, PriorityHigh)
+	drained := buffer.Drain()
+	if len(drained) != 2 || drained[0].Topic != "high" || drained[1].Topic != "low" || buffer.Len() != 0 {
+		t.Fatalf("drained = %v, remaining = %d", drained, buffer.Len())
+	}
+	for i, entry := range buffer.eq[:cap(buffer.eq)] {
+		if entry != nil {
+			t.Errorf("eviction slot %d still retains a drained message", i)
+		}
+	}
+
+	buffer.Push(Message{Topic: "new-low"}, PriorityLow)
+	buffer.Push(Message{Topic: "new-high"}, PriorityHigh)
+	dropped, overflow := buffer.Push(Message{Topic: "new-normal"}, PriorityNormal)
+	if !overflow || dropped == nil || dropped.Topic != "new-low" {
+		t.Fatalf("dropped = %v, overflow = %v", dropped, overflow)
+	}
+	for _, want := range []string{"new-high", "new-normal"} {
+		got, _, ok := buffer.Pop()
+		if !ok || got.Topic != want {
+			t.Fatalf("pop = %v, %v, want %s", got, ok, want)
+		}
+	}
+}
+
+func TestDeduplicatorRemoveAndClear(t *testing.T) {
+	dedup := NewDeduplicator(DeduplicatorConfig{Window: time.Hour, MaxSize: 2})
+	t.Cleanup(dedup.Close)
+	if dedup.IsDuplicate("first") || !dedup.IsDuplicate("first") || dedup.IsDuplicate("second") {
+		t.Fatal("unexpected admission or duplicate classification")
+	}
+	dedup.Remove("first")
+	dedup.Remove("missing")
+	if dedup.Size() != 1 || !dedup.IsDuplicate("second") || dedup.IsDuplicate("first") {
+		t.Fatal("Remove did not release only the requested ID")
+	}
+	if dedup.IsDuplicate("third") || dedup.Size() != 2 || dedup.IsDuplicate("second") {
+		t.Fatal("new admission did not evict the oldest ID at capacity")
+	}
+	dedup.Clear()
+	if dedup.Size() != 0 || dedup.IsDuplicate("first") || dedup.IsDuplicate("third") {
+		t.Fatal("Clear did not reset duplicate tracking")
+	}
+}

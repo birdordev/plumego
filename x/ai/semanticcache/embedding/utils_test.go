@@ -288,3 +288,28 @@ func TestTopKHandlesNonpositiveCount(t *testing.T) {
 		t.Errorf("TopK with oversized k = %v", got)
 	}
 }
+
+func TestVectorProductsAndManhattanDistance(t *testing.T) {
+	a, b := []float64{-2, 3, 1}, []float64{4, -1, 2}
+	for _, test := range []struct {
+		name      string
+		calculate func([]float64, []float64) (float64, error)
+		want      float64
+	}{
+		{"dot", DotProduct, -9},
+		{"inner", InnerProduct, -9},
+		{"manhattan", ManhattanDistance, 11},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if got, err := test.calculate(a, b); got != test.want || err != nil {
+				t.Errorf("calculation = %v, %v, want %v", got, err, test.want)
+			}
+			if got, err := test.calculate(a, b[:2]); got != 0 || err == nil {
+				t.Errorf("unequal dimensions = %v, %v, want error", got, err)
+			}
+			if got, err := test.calculate(nil, nil); got != 0 || err != nil {
+				t.Errorf("empty vectors = %v, %v, want zero", got, err)
+			}
+		})
+	}
+}

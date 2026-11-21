@@ -91,8 +91,8 @@ func TestInstrumentedProvider_Complete(t *testing.T) {
 	// Check metrics
 	snapshot := collector.Snapshot()
 
-	// Check request counter (note: tags are ordered as provider,model in implementation)
-	requestKey := "ai_requests_total{provider=test-provider,model=test-model}"
+	// Snapshot keys order labels by name.
+	requestKey := "ai_requests_total{model=test-model,provider=test-provider}"
 	if counter, exists := snapshot.Counters[requestKey]; !exists {
 		t.Error("Request counter not found")
 	} else if counter.Value != 1.0 {
@@ -100,7 +100,7 @@ func TestInstrumentedProvider_Complete(t *testing.T) {
 	}
 
 	// Check token counters
-	inputTokenKey := "ai_request_tokens_total{provider=test-provider,model=test-model,type=input}"
+	inputTokenKey := "ai_request_tokens_total{model=test-model,provider=test-provider,type=input}"
 	if counter, exists := snapshot.Counters[inputTokenKey]; !exists {
 		t.Error("Input token counter not found")
 	} else if counter.Value != 10.0 {
@@ -131,7 +131,7 @@ func TestInstrumentedProvider_Complete_Error(t *testing.T) {
 
 	// Check error counter
 	snapshot := collector.Snapshot()
-	errorKey := "ai_request_errors_total{provider=test-provider,model=test-model,error_type=request_failed}"
+	errorKey := "ai_request_errors_total{error_type=request_failed,model=test-model,provider=test-provider}"
 	if counter, exists := snapshot.Counters[errorKey]; !exists {
 		t.Error("Error counter not found")
 	} else if counter.Value != 1.0 {
@@ -159,7 +159,7 @@ func TestInstrumentedProvider_CompleteStream(t *testing.T) {
 
 	// Check stream request counter
 	snapshot := collector.Snapshot()
-	streamKey := "ai_stream_requests_total{provider=test-provider,model=test-model}"
+	streamKey := "ai_stream_requests_total{model=test-model,provider=test-provider}"
 	if counter, exists := snapshot.Counters[streamKey]; !exists {
 		t.Error("Stream request counter not found")
 	} else if counter.Value != 1.0 {
@@ -404,7 +404,7 @@ func TestInstrumentedEngine_Execute(t *testing.T) {
 		t.Errorf("Executions = %v, want 1.0", counter.Value)
 	}
 
-	successKey := "ai_workflow_by_status_total{workflow_id=wf-1,status=success}"
+	successKey := "ai_workflow_by_status_total{status=success,workflow_id=wf-1}"
 	if counter, exists := snapshot.Counters[successKey]; !exists {
 		t.Error("Success counter not found")
 	} else if counter.Value != 1.0 {
@@ -446,7 +446,7 @@ func TestInstrumentedStep_Execute(t *testing.T) {
 	// Check metrics
 	snapshot := collector.Snapshot()
 
-	stepExecKey := "ai_workflow_step_executions_total{workflow_id=wf-1,step_name=test-step}"
+	stepExecKey := "ai_workflow_step_executions_total{step_name=test-step,workflow_id=wf-1}"
 	if counter, exists := snapshot.Counters[stepExecKey]; !exists {
 		t.Error("Step execution counter not found")
 	} else if counter.Value != 1.0 {
@@ -597,9 +597,9 @@ func TestInstrumentedProviderUsesDecimalToolCount(t *testing.T) {
 			}
 
 			counters := collector.Snapshot().Counters
-			const prefix = "ai_tool_uses_total{provider=fixture,model=fixture,count="
+			const prefix = "ai_tool_uses_total{"
 			if count == 0 {
-				if got := counters["ai_requests_total{provider=fixture,model=fixture}"].Value; got != 1 {
+				if got := counters["ai_requests_total{model=fixture,provider=fixture}"].Value; got != 1 {
 					t.Errorf("text completion request count = %v; want 1", got)
 				}
 				for key := range counters {
@@ -609,7 +609,7 @@ func TestInstrumentedProviderUsesDecimalToolCount(t *testing.T) {
 				}
 				return
 			}
-			key := fmt.Sprintf("%s%d}", prefix, count)
+			key := fmt.Sprintf("%scount=%d,model=fixture,provider=fixture}", prefix, count)
 			if got := counters[key]; got.Value != float64(count) || got.Tags["count"] != fmt.Sprint(count) {
 				t.Errorf("counter %q = %+v", key, got)
 			}
@@ -657,7 +657,7 @@ func TestInstrumentedProviderGetModelRecordsTiming(t *testing.T) {
 	}
 	timings := collector.Snapshot().Histograms
 	for _, id := range []string{model.ID, "missing"} {
-		key := "ai_get_model_duration_seconds{provider=fixture-provider,model=" + id + "}"
+		key := "ai_get_model_duration_seconds{model=" + id + ",provider=fixture-provider}"
 		if got := timings[key]; got.Count != 1 || got.Tags["model"] != id || got.Tags["provider"] != "fixture-provider" {
 			t.Errorf("%s timing = %+v", id, got)
 		}

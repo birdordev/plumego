@@ -347,3 +347,23 @@ func TestMockCollectorClearZerosCapturedSlots(t *testing.T) {
 		t.Errorf("records after Clear=%+v", got)
 	}
 }
+
+func TestMockCollectorStatsHookAndCount(t *testing.T) {
+	mock := NewMockCollector()
+	mock.Record(t.Context(), MetricRecord{Name: "fixture"})
+	stats := mock.GetStats()
+	if stats.TotalRecords != 1 || mock.RecordCallCount() != 1 || len(stats.NameBreakdown) != 0 {
+		t.Fatalf("default stats = %+v, calls=%d", stats, mock.RecordCallCount())
+	}
+	stats.NameBreakdown["caller"] = 5
+	if next := mock.GetStats(); len(next.NameBreakdown) != 0 {
+		t.Errorf("default stats leaked caller mutation: %+v", next)
+	}
+
+	mock.OnGetStats = func() CollectorStats {
+		return CollectorStats{TotalRecords: 2 * int64(mock.RecordCallCount())}
+	}
+	if got := mock.GetStats(); got.TotalRecords != 2 {
+		t.Errorf("hook stats = %+v, want TotalRecords=2", got)
+	}
+}

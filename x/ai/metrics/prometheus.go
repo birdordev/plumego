@@ -4,14 +4,17 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
-	"sort"
+	"slices"
 	"strings"
 )
 
 // PrometheusExporter exports metrics in Prometheus text format.
 // This is a zero-dependency implementation that produces
 // Prometheus-compatible metrics without requiring the Prometheus client library.
+// Each metric family places its HELP and TYPE lines before all its samples.
+// Use distinct metric names for different kinds of metrics.
 // Finite histogram buckets are estimated cumulative counts based on the observed range.
 type PrometheusExporter struct {
 	collector *MemoryCollector
@@ -43,43 +46,14 @@ func (pe *PrometheusExporter) Handler() http.HandlerFunc {
 
 // writePrometheusFormat writes metrics in Prometheus text exposition format
 func (pe *PrometheusExporter) writePrometheusFormat(w io.Writer, snapshot *Snapshot) error {
-	// Write counters
-	for name, counter := range snapshot.Counters {
-		metricName, labels := pe.parseKey(name)
-		fullName := pe.addNamespace(metricName)
-
-		// Write HELP
-		_, _ = fmt.Fprintf(w, "# HELP %s Counter metric\n", fullName)
-		// Write TYPE
-		_, _ = fmt.Fprintf(w, "# TYPE %s counter\n", fullName)
-		// Write value
-		_, _ = fmt.Fprintf(w, "%s%s %.6f\n", fullName, pe.formatLabels(labels), counter.Value)
-		_, _ = fmt.Fprintln(w)
-	}
-
-	// Write gauges
-	for name, gauge := range snapshot.Gauges {
-		metricName, labels := pe.parseKey(name)
-		fullName := pe.addNamespace(metricName)
-
-		// Write HELP
-		_, _ = fmt.Fprintf(w, "# HELP %s Gauge metric\n", fullName)
-		// Write TYPE
-		_, _ = fmt.Fprintf(w, "# TYPE %s gauge\n", fullName)
-		// Write value
-		_, _ = fmt.Fprintf(w, "%s%s %.6f\n", fullName, pe.formatLabels(labels), gauge.Value)
-		_, _ = fmt.Fprintln(w)
-	}
-
-	// Write histograms
-	for name, hist := range snapshot.Histograms {
-		metricName, labels := pe.parseKey(name)
-		fullName := pe.addNamespace(metricName)
-
-		// Write HELP
-		_, _ = fmt.Fprintf(w, "# HELP %s Histogram metric\n", fullName)
-		// Write TYPE
-		_, _ = fmt.Fprintf(w, "# TYPE %s histogram\n", fullName)
+	writeMetricFamilies(pe, w, "Counter", "counter", snapshot.Counters, func(name string, sample CounterSnapshot) {
+		_, _ = fmt.Fprintf(w, "%s%s %.6f\n", name, pe.formatLabels(sample.Tags), sample.Value)
+	})
+	writeMetricFamilies(pe, w, "Gauge", "gauge", snapshot.Gauges, func(name string, sample GaugeSnapshot) {
+		_, _ = fmt.Fprintf(w, "%s%s %.6f\n", name, pe.formatLabels(sample.Tags), sample.Value)
+	})
+	writeMetricFamilies(pe, w, "Histogram", "histogram", snapshot.Histograms, func(fullName string, hist HistogramSnapshot) {
+		labels := hist.Tags
 
 		// Write histogram buckets (simulated)
 		buckets := []float64{0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10}
@@ -96,39 +70,28 @@ func (pe *PrometheusExporter) writePrometheusFormat(w io.Writer, snapshot *Snaps
 		// Write sum and count
 		_, _ = fmt.Fprintf(w, "%s_sum%s %.6f\n", fullName, pe.formatLabels(labels), hist.Sum)
 		_, _ = fmt.Fprintf(w, "%s_count%s %d\n", fullName, pe.formatLabels(labels), hist.Count)
-		_, _ = fmt.Fprintln(w)
-	}
-
+	})
 	return nil
 }
 
-// parseKey parses a metric key into name and labels
-// Example: "requests_total{method=GET,status=200}" -> ("requests_total", {method:GET, status:200})
-func (pe *PrometheusExporter) parseKey(key string) (string, map[string]string) {
-	// Find the opening brace
-	idx := strings.Index(key, "{")
-	if idx == -1 {
-		return key, nil
+func writeMetricFamilies[T any](pe *PrometheusExporter, w io.Writer, help, kind string, samples map[string]T, writeSample func(string, T)) {
+	groups := make(map[string][]string)
+	for key := range samples {
+		name := metricNameFromKey(key)
+		groups[name] = append(groups[name], key)
 	}
 
-	name := key[:idx]
-	labelsStr := key[idx+1 : len(key)-1] // Remove { and }
-
-	labels := make(map[string]string)
-	if labelsStr == "" {
-		return name, labels
-	}
-
-	// Parse labels
-	pairs := strings.Split(labelsStr, ",")
-	for _, pair := range pairs {
-		kv := strings.SplitN(pair, "=", 2)
-		if len(kv) == 2 {
-			labels[kv[0]] = kv[1]
+	for _, name := range slices.Sorted(maps.Keys(groups)) {
+		fullName := pe.addNamespace(name)
+		_, _ = fmt.Fprintf(w, "# HELP %s %s metric\n", fullName, help)
+		_, _ = fmt.Fprintf(w, "# TYPE %s %s\n", fullName, kind)
+		keys := groups[name]
+		slices.Sort(keys)
+		for _, key := range keys {
+			writeSample(fullName, samples[key])
 		}
+		_, _ = fmt.Fprintln(w)
 	}
-
-	return name, labels
 }
 
 // formatLabels formats labels for Prometheus format
@@ -138,11 +101,7 @@ func (pe *PrometheusExporter) formatLabels(labels map[string]string) string {
 	}
 
 	// Sort labels for consistent output
-	keys := make([]string, 0, len(labels))
-	for k := range labels {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
+	keys := slices.Sorted(maps.Keys(labels))
 
 	parts := make([]string, 0, len(keys))
 	for _, k := range keys {

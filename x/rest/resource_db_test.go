@@ -305,23 +305,28 @@ func TestSQLBuilderOwnsColumns(t *testing.T) {
 
 type repositoryListConnector struct {
 	driver.Connector
-	rows    *repositoryListRows
-	observe func(string, []driver.NamedValue)
+	rows           *repositoryListRows
+	observe        func(string, []driver.NamedValue)
+	observeContext func(context.Context)
 }
 
 func (c repositoryListConnector) Connect(context.Context) (driver.Conn, error) {
-	return repositoryListConn{rows: c.rows, observe: c.observe}, nil
+	return repositoryListConn{rows: c.rows, observe: c.observe, observeContext: c.observeContext}, nil
 }
 
 type repositoryListConn struct {
 	driver.Conn
-	rows    *repositoryListRows
-	observe func(string, []driver.NamedValue)
+	rows           *repositoryListRows
+	observe        func(string, []driver.NamedValue)
+	observeContext func(context.Context)
 }
 
 func (repositoryListConn) Close() error { return nil }
 
-func (c repositoryListConn) QueryContext(_ context.Context, query string, args []driver.NamedValue) (driver.Rows, error) {
+func (c repositoryListConn) QueryContext(ctx context.Context, query string, args []driver.NamedValue) (driver.Rows, error) {
+	if c.observeContext != nil {
+		c.observeContext(ctx)
+	}
 	if c.observe != nil {
 		c.observe(query, args)
 	}
@@ -744,5 +749,36 @@ func TestRepositoryCountPreservesReadErrors(t *testing.T) {
 	}
 	if got, err := repo.Count(ctx, nil); got != 4 || err != nil {
 		t.Errorf("Count = %d, %v; want 4", got, err)
+	}
+}
+
+func TestBaseRepositoryExposesInjectedDB(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	const query = "SELECT id FROM items WHERE id = ?"
+	calls := 0
+	db := sql.OpenDB(repositoryListConnector{
+		rows: &repositoryListRows{columns: []string{"id"}, value: "requested"},
+		observe: func(got string, args []driver.NamedValue) {
+			calls++
+			if got != query || !slices.Equal(args, []driver.NamedValue{{Ordinal: 1, Value: "requested"}}) {
+				t.Errorf("query = %q, args = %v", got, args)
+			}
+		},
+		observeContext: func(got context.Context) {
+			if got != ctx {
+				t.Error("driver did not receive the caller context")
+			}
+		},
+	})
+	t.Cleanup(func() { _ = db.Close() })
+	repo := NewBaseRepository[string](db, NewSQLBuilder("items", "id"))
+	injected := repo.DB()
+	if injected != db {
+		t.Fatal("DB returned a different dependency")
+	}
+	var id string
+	if err := injected.QueryRowContext(ctx, query, "requested").Scan(&id); err != nil || id != "requested" || calls != 1 {
+		t.Errorf("custom query = %q, %v, calls=%d", id, err, calls)
 	}
 }

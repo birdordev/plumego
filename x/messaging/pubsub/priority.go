@@ -247,7 +247,8 @@ func (pb *PriorityBuffer) Drain() []Message {
 		pm := heap.Pop(&pb.pq).(*PriorityMessage)
 		msgs[i] = pm.Message
 	}
-	pb.eq = pb.eq[:0] // eviction heap is now stale; reset it
+	clear(pb.eq)
+	pb.eq = pb.eq[:0]
 	return msgs
 }
 

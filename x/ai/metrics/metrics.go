@@ -16,6 +16,9 @@ package metrics
 import (
 	"context"
 	"errors"
+	"maps"
+	"slices"
+	"strings"
 	"sync"
 	"time"
 )
@@ -109,14 +112,15 @@ func NewMemoryCollector() *MemoryCollector {
 
 // Counter implements Collector
 func (mc *MemoryCollector) Counter(name string, value float64, tags ...Tag) {
-	key := buildKey(name, tags)
+	labels := tagsToMap(tags)
+	key := buildKey(name, labels)
 
 	mc.mu.Lock()
 	counter, exists := mc.counters[key]
 	if !exists {
 		counter = &counterMetric{
 			value: 0,
-			tags:  tagsToMap(tags),
+			tags:  labels,
 		}
 		mc.counters[key] = counter
 	}
@@ -129,14 +133,15 @@ func (mc *MemoryCollector) Counter(name string, value float64, tags ...Tag) {
 
 // Gauge implements Collector
 func (mc *MemoryCollector) Gauge(name string, value float64, tags ...Tag) {
-	key := buildKey(name, tags)
+	labels := tagsToMap(tags)
+	key := buildKey(name, labels)
 
 	mc.mu.Lock()
 	gauge, exists := mc.gauges[key]
 	if !exists {
 		gauge = &gaugeMetric{
 			value: 0,
-			tags:  tagsToMap(tags),
+			tags:  labels,
 		}
 		mc.gauges[key] = gauge
 	}
@@ -149,7 +154,8 @@ func (mc *MemoryCollector) Gauge(name string, value float64, tags ...Tag) {
 
 // Histogram implements Collector
 func (mc *MemoryCollector) Histogram(name string, value float64, tags ...Tag) {
-	key := buildKey(name, tags)
+	labels := tagsToMap(tags)
+	key := buildKey(name, labels)
 
 	mc.mu.Lock()
 	hist, exists := mc.histograms[key]
@@ -160,7 +166,7 @@ func (mc *MemoryCollector) Histogram(name string, value float64, tags ...Tag) {
 			min:    value,
 			max:    value,
 			values: make([]float64, 0, 1000), // Keep last 1000 values
-			tags:   tagsToMap(tags),
+			tags:   labels,
 		}
 		mc.histograms[key] = hist
 	}
@@ -176,12 +182,12 @@ func (mc *MemoryCollector) Histogram(name string, value float64, tags ...Tag) {
 		hist.max = value
 	}
 
-	// Keep last N values for percentile calculations
+	// Percentiles use the latest samples; count, sum, and extrema are cumulative.
 	if len(hist.values) < 1000 {
 		hist.values = append(hist.values, value)
 	} else {
 		// Circular buffer: replace oldest
-		hist.values[hist.count%1000] = value
+		hist.values[(hist.count-1)%int64(len(hist.values))] = value
 	}
 	hist.mu.Unlock()
 }
@@ -191,7 +197,10 @@ func (mc *MemoryCollector) Timing(name string, duration time.Duration, tags ...T
 	mc.Histogram(name, duration.Seconds(), tags...)
 }
 
-// Snapshot returns a snapshot of all metrics for export
+// Snapshot holds a copy of collected metrics for export.
+// Series keys use name{key=value,...}, with labels sorted by key. Percent signs,
+// backslashes, braces, commas, and equal signs within components are percent
+// escaped. Ordinary untagged names are used directly as keys.
 type Snapshot struct {
 	Counters   map[string]CounterSnapshot
 	Gauges     map[string]GaugeSnapshot
@@ -290,21 +299,38 @@ func (mc *MemoryCollector) Reset() {
 
 // Helper functions
 
-func buildKey(name string, tags []Tag) string {
-	if len(tags) == 0 {
+var metricKeyEscape = strings.NewReplacer(
+	"%", "%25", "\\", "%5C", "{", "%7B", "}", "%7D", ",", "%2C", "=", "%3D",
+)
+
+var metricKeyUnescape = strings.NewReplacer(
+	"%25", "%", "%5C", "\\", "%7B", "{", "%7D", "}", "%2C", ",", "%3D", "=",
+)
+
+func buildKey(name string, labels map[string]string) string {
+	name = metricKeyEscape.Replace(name)
+	if len(labels) == 0 {
 		return name
 	}
 
-	// Build key as: metric_name{tag1=val1,tag2=val2}
-	key := name + "{"
-	for i, tag := range tags {
-		if i > 0 {
-			key += ","
+	var key strings.Builder
+	key.WriteString(name)
+	key.WriteByte('{')
+	for i, label := range slices.Sorted(maps.Keys(labels)) {
+		if i != 0 {
+			key.WriteByte(',')
 		}
-		key += tag.Key + "=" + tag.Value
+		key.WriteString(metricKeyEscape.Replace(label))
+		key.WriteByte('=')
+		key.WriteString(metricKeyEscape.Replace(labels[label]))
 	}
-	key += "}"
-	return key
+	key.WriteByte('}')
+	return key.String()
+}
+
+func metricNameFromKey(key string) string {
+	name, _, _ := strings.Cut(key, "{")
+	return metricKeyUnescape.Replace(name)
 }
 
 func tagsToMap(tags []Tag) map[string]string {

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"database/sql/driver"
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -902,5 +903,45 @@ func BenchmarkRouterQueryContext(b *testing.B) {
 		if rows != nil {
 			rows.Close()
 		}
+	}
+}
+
+func TestQueryRowContextResolvedCrossShardPolicies(t *testing.T) {
+	const query = "SELECT * FROM users WHERE user_id IN (?, ?)"
+	args := []any{1, 2}
+	for _, policy := range []CrossShardPolicy{CrossShardDeny, CrossShardFirst, CrossShardFirstSuccess} {
+		t.Run(policy.String(), func(t *testing.T) {
+			router, _ := createTestRouter(t, 4, policy)
+			defer router.Close()
+			plan, err := router.resolver.ResolveMultiple(query, args)
+			if err != nil || len(plan) != 2 || plan[0].ShardIndex == plan[1].ShardIndex {
+				t.Fatalf("expected two resolved shards, got %v, %v", plan, err)
+			}
+			var id int
+			var name string
+			err = router.QueryRowContext(t.Context(), query, args...).Scan(&id, &name)
+			counts := router.Metrics().ShardQueryCounts
+			wantCounts := make([]uint64, 4)
+			if policy == CrossShardFirst {
+				wantCounts[plan[0].ShardIndex] = 1
+			}
+			if !slices.Equal(counts, wantCounts) {
+				t.Errorf("shard counts = %v, want %v", counts, wantCounts)
+			}
+			switch policy {
+			case CrossShardDeny:
+				if !errors.Is(err, ErrCrossShardQuery) {
+					t.Errorf("Scan = %v, shard counts = %v, want ErrCrossShardQuery and no reads", err, counts)
+				}
+			case CrossShardFirst:
+				if errors.Is(err, ErrCrossShardQuery) {
+					t.Errorf("Scan = %v, shard counts = %v, want only shard %d", err, counts, plan[0].ShardIndex)
+				}
+			case CrossShardFirstSuccess:
+				if err == nil || !strings.Contains(err.Error(), "does not support CrossShardFirstSuccess") {
+					t.Errorf("Scan = %v, shard counts = %v, want unsupported policy and no reads", err, counts)
+				}
+			}
+		})
 	}
 }

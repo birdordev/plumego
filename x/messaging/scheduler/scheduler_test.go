@@ -3343,3 +3343,21 @@ func TestRetryPolicyConstructorsRespectBackoffLimits(t *testing.T) {
 		}
 	}
 }
+
+type fixedSchedulerClock struct{ now time.Time }
+
+func (c fixedSchedulerClock) Now() time.Time { return c.now }
+
+func TestDelayUsesInjectedClock(t *testing.T) {
+	now := time.Date(2035, time.March, 12, 10, 11, 12, 0, time.UTC)
+	s := New(WithClock(fixedSchedulerClock{now: now}))
+	const delay = 15 * time.Minute
+	id, err := s.Delay("fixture", delay, func(context.Context) error { return nil })
+	if err != nil {
+		t.Fatal(err)
+	}
+	status, ok := s.Status(id)
+	if !ok || !status.NextRun.Equal(now.Add(delay)) {
+		t.Errorf("status = %+v, found=%v, want NextRun=%v", status, ok, now.Add(delay))
+	}
+}

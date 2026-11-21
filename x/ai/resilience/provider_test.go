@@ -497,3 +497,49 @@ func TestNewResilientProvider_UsesSharedCircuitBreakerAsCanonicalInput(t *testin
 		t.Fatalf("CircuitBreakerStats().State = %v, want StateOpen", stats.State)
 	}
 }
+
+type modelLookupFixture struct {
+	mockProvider
+	lookup func(context.Context, string) (*provider.Model, error)
+}
+
+func (m *modelLookupFixture) GetModel(ctx context.Context, id string) (*provider.Model, error) {
+	return m.lookup(ctx, id)
+}
+
+func TestResilientProviderGetModelDelegation(t *testing.T) {
+	for _, name := range []string{"direct", "breaker"} {
+		t.Run(name, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			const modelID = "local-model"
+			sentinel := errors.New("fixture model lookup failed")
+			calls := 0
+			fixture := &modelLookupFixture{lookup: func(got context.Context, id string) (*provider.Model, error) {
+				t.Helper()
+				if got != ctx || id != modelID {
+					t.Errorf("lookup received different context or model ID %q", id)
+				}
+				calls++
+				if calls == 2 {
+					return nil, sentinel
+				}
+				return &provider.Model{ID: id}, nil
+			}}
+			config := Config{Provider: fixture}
+			if name == "breaker" {
+				config.CircuitBreaker = sharedcircuitbreaker.New(sharedcircuitbreaker.Config{Name: "model-lookup"})
+			}
+			p, err := NewResilientProvider(config)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if model, err := p.GetModel(ctx, modelID); err != nil || model == nil || model.ID != modelID {
+				t.Fatalf("GetModel = %v, %v", model, err)
+			}
+			if model, err := p.GetModel(ctx, modelID); model != nil || !errors.Is(err, sentinel) || calls != 2 {
+				t.Errorf("failed GetModel = %v, %v, calls=%d", model, err, calls)
+			}
+		})
+	}
+}

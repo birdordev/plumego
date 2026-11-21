@@ -1719,3 +1719,67 @@ func TestPoolClientDelegatesTimedRead(t *testing.T) {
 		t.Errorf("Close = %v, raw closes=%d", err, raw.calls)
 	}
 }
+
+func TestPoolClientDelegatesWriteWithTimeout(t *testing.T) {
+	const timeout = 100 * time.Millisecond
+	payload := []byte("fixture")
+	sentinel := errors.New("fixture write interrupted")
+	raw := &poolCloseTestClient{}
+	writes := 0
+	client := rawTimeoutFixture{Client: raw, write: func(data []byte, wait time.Duration) (int, error) {
+		writes++
+		if !bytes.Equal(data, payload) || wait != timeout {
+			t.Errorf("delegated write = %q, %v", data, wait)
+		}
+		return 3, sentinel
+	}}
+	pool := &Pool{poolCfg: &PoolConfig{MaxConns: 1, MaxIdleTime: time.Hour}, stopCh: make(chan struct{})}
+	pool.conns = []*poolConn{{client: client, pool: pool, lastUsed: time.Now()}}
+	t.Cleanup(func() { _ = pool.Close() })
+
+	lease, err := pool.GetWithContext(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n, err := lease.WriteWithTimeout(payload, timeout); n != 3 || !errors.Is(err, sentinel) || writes != 1 {
+		t.Errorf("leased write = %d, %v, writes=%d", n, err, writes)
+	}
+	if err := lease.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if stats := pool.Stats(); stats.Idle != 1 || raw.calls != 0 {
+		t.Errorf("returned lease: stats=%+v raw closes=%d", stats, raw.calls)
+	}
+}
+
+func TestStreamClientDelegatesRawTimeouts(t *testing.T) {
+	payload := []byte("fixture")
+	sentinel := errors.New("fixture transfer interrupted")
+	const writeTimeout = 100 * time.Millisecond
+	const readTimeout = 200 * time.Millisecond
+	writes, reads := 0, 0
+	raw := rawTimeoutFixture{
+		write: func(data []byte, timeout time.Duration) (int, error) {
+			writes++
+			if !bytes.Equal(data, payload) || timeout != writeTimeout {
+				t.Errorf("delegated write = %q, %v", data, timeout)
+			}
+			return 3, sentinel
+		},
+		read: func(data []byte, timeout time.Duration) (int, error) {
+			reads++
+			if timeout != readTimeout {
+				t.Errorf("delegated read timeout = %v", timeout)
+			}
+			return copy(data, payload[:3]), sentinel
+		},
+	}
+	client := NewStreamClient(raw, nil)
+	if n, err := client.WriteWithTimeout(payload, writeTimeout); n != 3 || !errors.Is(err, sentinel) || writes != 1 {
+		t.Errorf("WriteWithTimeout = %d, %v, writes=%d", n, err, writes)
+	}
+	buf := make([]byte, 3)
+	if n, err := client.ReadWithTimeout(buf, readTimeout); n != 3 || !bytes.Equal(buf, payload[:3]) || !errors.Is(err, sentinel) || reads != 1 {
+		t.Errorf("ReadWithTimeout = %d, %v, bytes=%q, reads=%d", n, err, buf, reads)
+	}
+}

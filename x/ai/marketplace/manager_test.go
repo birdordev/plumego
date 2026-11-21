@@ -354,3 +354,66 @@ func TestCreateAgentFromInstalledUsesMetadata(t *testing.T) {
 		t.Errorf("uninstalled version = %v, %v", agent, err)
 	}
 }
+
+func workflowVersionFixture(version string) *WorkflowTemplate {
+	return &WorkflowTemplate{
+		ID: "versioned-workflow", Name: "Fixture", Version: version, Author: "tester",
+		Description: "Workflow for marketplace regression tests", Category: WorkflowCategoryGeneral, License: "MIT",
+		Steps: []StepTemplate{{Name: "first", Type: "sequential", AgentID: "test-agent"}},
+	}
+}
+
+func TestManagerWorkflowVersionDeletion(t *testing.T) {
+	manager := newTestManager(t)
+	ctx := t.Context()
+	first, second := workflowVersionFixture("1.0.0"), workflowVersionFixture("2.0.0")
+	for _, workflow := range []*WorkflowTemplate{first, second} {
+		if err := manager.PublishWorkflow(ctx, workflow); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if versions, err := manager.ListWorkflowVersions(ctx, first.ID); err != nil || len(versions) != 2 {
+		t.Fatalf("published versions = %v, %v", versions, err)
+	}
+	if err := manager.DeleteWorkflow(ctx, first.ID, first.Version); err != nil {
+		t.Fatal(err)
+	}
+	if versions, err := manager.ListWorkflowVersions(ctx, first.ID); err != nil || len(versions) != 1 || versions[0] != second.Version {
+		t.Errorf("remaining versions = %v, %v, want [%s]", versions, err, second.Version)
+	}
+	if _, err := manager.GetWorkflow(ctx, first.ID, first.Version); !errors.Is(err, ErrWorkflowNotFound) {
+		t.Errorf("deleted version error = %v, want ErrWorkflowNotFound", err)
+	}
+	if workflow, err := manager.GetWorkflow(ctx, second.ID, second.Version); err != nil || workflow.Version != second.Version {
+		t.Errorf("remaining workflow = %v, %v, want version %s", workflow, err, second.Version)
+	}
+}
+
+func TestManagerWorkflowRatingValidation(t *testing.T) {
+	manager := newTestManager(t)
+	ctx := t.Context()
+	workflow := workflowVersionFixture("1.0.0")
+	if err := manager.PublishWorkflow(ctx, workflow); err != nil {
+		t.Fatal(err)
+	}
+	rating := Rating{TargetID: workflow.ID, UserID: "reviewer", Score: 6, Comment: "fixture"}
+	var validation *validationError
+	if err := manager.RateWorkflow(ctx, &rating); !errors.As(err, &validation) || validation.field != "score" {
+		t.Fatalf("invalid score error = %v, want score validation error", err)
+	}
+	if ratings, err := manager.GetWorkflowRatings(ctx, workflow.ID); err != nil || len(ratings) != 0 {
+		t.Fatalf("ratings after rejection = %v, %v", ratings, err)
+	}
+	rating.Score = 4.5
+	if err := manager.RateWorkflow(ctx, &rating); err != nil {
+		t.Fatal(err)
+	}
+	ratings, err := manager.GetWorkflowRatings(ctx, workflow.ID)
+	if err != nil || len(ratings) != 1 {
+		t.Fatalf("ratings after submission = %v, %v", ratings, err)
+	}
+	got := ratings[0]
+	if got.TargetID != workflow.ID || got.UserID != rating.UserID || got.Score != rating.Score || got.Comment != rating.Comment {
+		t.Errorf("rating = %+v, want %+v", got, rating)
+	}
+}

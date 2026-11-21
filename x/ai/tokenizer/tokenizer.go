@@ -39,7 +39,7 @@ func (t *TokenUsage) Add(other TokenUsage) {
 	t.TotalTokens += other.TotalTokens
 }
 
-// StreamCounter counts tokens in streaming responses.
+// StreamCounter estimates token usage from accumulated streaming response text.
 type StreamCounter struct {
 	tokenizer   Tokenizer
 	inputCount  atomic.Int64
@@ -52,7 +52,7 @@ type StreamCounter struct {
 func NewStreamCounter(tokenizer Tokenizer) *StreamCounter {
 	return &StreamCounter{
 		tokenizer: tokenizer,
-		chunkSize: 100, // Count every 100 chars
+		chunkSize: 100, // Minimum cumulative byte length for a streaming estimate.
 	}
 }
 
@@ -61,11 +61,11 @@ func (s *StreamCounter) SetInputTokens(count int) {
 	s.inputCount.Store(int64(count))
 }
 
-// OnChunk processes a streaming chunk.
+// OnChunk appends a chunk and recounts the complete text once it reaches the
+// byte threshold. Call OnChunk and OnComplete sequentially.
 func (s *StreamCounter) OnChunk(chunk string) {
 	s.chunkBuffer += chunk
 
-	// Count when buffer reaches threshold
 	if len(s.chunkBuffer) >= s.chunkSize {
 		if count, err := s.tokenizer.Count(s.chunkBuffer); err == nil {
 			s.outputCount.Store(int64(count))
@@ -73,9 +73,9 @@ func (s *StreamCounter) OnChunk(chunk string) {
 	}
 }
 
-// OnComplete finalizes the count.
+// OnComplete counts the complete accumulated text, including text below the
+// streaming threshold.
 func (s *StreamCounter) OnComplete() {
-	// Count any remaining buffer
 	if s.chunkBuffer != "" {
 		if count, err := s.tokenizer.Count(s.chunkBuffer); err == nil {
 			s.outputCount.Store(int64(count))

@@ -365,3 +365,32 @@ func TestMultimodalStreamClosePreservesUnderlyingError(t *testing.T) {
 		t.Errorf("close=%v, underlying calls=%d", err, body.calls)
 	}
 }
+
+func TestMessageMixedMediaBlocks(t *testing.T) {
+	message := Message{Role: RoleUser}
+	audio := &AudioContent{Data: []byte("audio")}
+	video := &VideoContent{Data: []byte("video")}
+	document := &DocumentContent{Text: "document"}
+
+	if message.HasVideo() || message.HasDocuments() {
+		t.Fatal("empty message reported media")
+	}
+	message.AddAudio(audio)
+	message.AddVideo(video)
+	if !message.HasVideo() || message.HasDocuments() {
+		t.Fatal("expected video only")
+	}
+	message.AddDocument(document)
+	if !message.HasVideo() || !message.HasDocuments() || len(message.Content) != 3 {
+		t.Fatalf("unexpected mixed content: %v", message.Content)
+	}
+	if got := message.Content[0]; got.Type != ContentTypeAudio || got.Audio != audio {
+		t.Errorf("audio block = %+v", got)
+	}
+	if got := message.Content[1]; got.Type != ContentTypeVideo || got.Video != video {
+		t.Errorf("video block = %+v", got)
+	}
+	if got := message.Content[2]; got.Type != ContentTypeDocument || got.Document != document {
+		t.Errorf("document block = %+v", got)
+	}
+}

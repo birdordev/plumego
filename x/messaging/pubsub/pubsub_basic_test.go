@@ -327,3 +327,24 @@ func TestPatternSubscriptionInspectionTracksCancellation(t *testing.T) {
 		t.Errorf("patterns after all cancel=%v", got)
 	}
 }
+
+type pubsubCauseFixture struct{ error }
+
+func (e *pubsubCauseFixture) Unwrap() error { return e.error }
+
+func TestPubSubErrorPreservesCause(t *testing.T) {
+	sentinel := errors.New("fixture operation failed")
+	cause := &pubsubCauseFixture{error: sentinel}
+	code := &Error{Code: ErrCodeInternal}
+	err := &Error{Code: code.Code, Op: "publish", Cause: cause}
+	if !errors.Is(err, code) || !errors.Is(err, sentinel) {
+		t.Errorf("errors.Is lost the pubsub code or cause: %v", err)
+	}
+	var typed *pubsubCauseFixture
+	if !errors.As(err, &typed) || typed != cause {
+		t.Errorf("errors.As = %v, want %v", typed, cause)
+	}
+	if unwrapped := errors.Unwrap(code); unwrapped != nil {
+		t.Errorf("missing cause unwrapped to %v", unwrapped)
+	}
+}

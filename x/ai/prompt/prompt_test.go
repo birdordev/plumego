@@ -510,3 +510,26 @@ func TestEngineWithFuncsSupportsRegistrationAndRendering(t *testing.T) {
 		t.Errorf("Get for invalid template = %v, %v", got, err)
 	}
 }
+
+func TestEngineCustomCacheCapacity(t *testing.T) {
+	engine := NewEngine(NewMemoryStorage(), WithCacheSize(1))
+	first := &Template{Name: "first", Content: "one"}
+	second := &Template{Name: "second", Content: "two"}
+	for _, fixture := range []struct {
+		template *Template
+		want     string
+	}{{first, "one"}, {second, "two"}} {
+		if err := engine.Register(t.Context(), fixture.template); err != nil {
+			t.Fatal(err)
+		}
+		if got, err := engine.Render(t.Context(), fixture.template.ID, nil); got != fixture.want || err != nil {
+			t.Fatalf("Render = %q, %v, want %q", got, err, fixture.want)
+		}
+	}
+	if engine.cache.get(first.ID) != nil || engine.cache.get(second.ID) == nil || len(engine.cache.templates) != 1 {
+		t.Fatalf("unexpected cache contents: %v", engine.cache.templates)
+	}
+	if got, err := engine.Render(t.Context(), first.ID, nil); got != "one" || err != nil {
+		t.Errorf("render after eviction = %q, %v", got, err)
+	}
+}
