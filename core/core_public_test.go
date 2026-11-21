@@ -1,6 +1,7 @@
 package core_test
 
 import (
+	"bytes"
 	"crypto/tls"
 	"errors"
 	"fmt"
@@ -18,6 +19,7 @@ import (
 	"github.com/birdordev/plumego/contract"
 	"github.com/birdordev/plumego/core"
 	"github.com/birdordev/plumego/internal/testutil/nettest"
+	"github.com/birdordev/plumego/log"
 	"github.com/birdordev/plumego/router"
 )
 
@@ -698,5 +700,62 @@ func TestShutdownDuringHandlerConstructionAllowsPreparation(t *testing.T) {
 	}
 	if err := app.Shutdown(t.Context()); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestInvalidTLSConfigKeepsDirectHandlerSeparateFromServer(t *testing.T) {
+	cfg := core.DefaultConfig()
+	cfg.TLS.Enabled = true
+	app := core.New(cfg, core.AppDependencies{})
+	if err := app.Prepare(); err == nil || app.PreparationState() != core.PreparationStateMutable {
+		t.Fatalf("prepare=%v state=%s", err, app.PreparationState())
+	}
+	if err := app.Get("/fixture", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) })); err != nil {
+		t.Fatal(err)
+	}
+	for range 2 {
+		rec := httptest.NewRecorder()
+		app.ServeHTTP(rec, httptest.NewRequest("GET", "/fixture", nil))
+		if rec.Code != http.StatusNoContent || app.PreparationState() != core.PreparationStateHandlerPrepared {
+			t.Fatalf("direct status=%d state=%s", rec.Code, app.PreparationState())
+		}
+		if err := app.Prepare(); err == nil || !strings.Contains(err.Error(), "certificate or key") {
+			t.Fatalf("prepare=%v", err)
+		}
+		if server, err := app.Server(); server != nil || err == nil {
+			t.Fatalf("server=%v err=%v", server, err)
+		}
+		if err := app.Shutdown(t.Context()); err == nil {
+			t.Fatal("shutdown succeeded without a server")
+		}
+	}
+}
+
+func TestDefaultConfigAndExplicitLoggersStayInstanceLocal(t *testing.T) {
+	var firstOutput, secondOutput bytes.Buffer
+	cfg, defaultCfg := core.DefaultConfig(), core.DefaultConfig()
+	cfg.ReadTimeout = time.Second
+	first := core.New(cfg, core.AppDependencies{Logger: log.NewLogger(log.LoggerConfig{Output: &firstOutput})})
+	second := core.New(defaultCfg, core.AppDependencies{Logger: log.NewLogger(log.LoggerConfig{Output: &secondOutput})})
+	for _, app := range []*core.App{first, second} {
+		if err := app.Prepare(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	firstServer, err := first.Server()
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondServer, err := second.Server()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if firstServer.ReadTimeout != time.Second || secondServer.ReadTimeout != core.DefaultConfig().ReadTimeout ||
+		firstOutput.Len() == 0 || secondOutput.Len() == 0 {
+		t.Fatalf("first=%s second=%s", firstServer.ReadTimeout, secondServer.ReadTimeout)
+	}
+	first.Logger().Info("first instance fixture")
+	if !strings.Contains(firstOutput.String(), "first instance fixture") || strings.Contains(secondOutput.String(), "first instance fixture") {
+		t.Fatal("logger output crossed instances")
 	}
 }

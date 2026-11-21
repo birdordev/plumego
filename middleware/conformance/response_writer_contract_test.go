@@ -513,3 +513,30 @@ func TestRecoveryAfterFlushFailureRespectsCommitOwnership(t *testing.T) {
 		}
 	}
 }
+
+func TestObservedFinalStatusAfterEarlyHintsAndRecovery(t *testing.T) {
+	wrap, err := recovery.Middleware(recovery.Config{Logger: log.NewLogger(log.LoggerConfig{Format: log.LoggerFormatDiscard})})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, abort := range []bool{false, true} {
+		var observed []int
+		observer := observingFunc(func(_ string, status, _ int) { observed = append(observed, status) })
+		h := httpmetrics.Middleware(observer)(wrap(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusEarlyHints)
+			if abort {
+				panic("fixture")
+			}
+			w.WriteHeader(http.StatusNoContent)
+		})))
+		dst := &recoveryFlushDestination{ResponseRecorder: httptest.NewRecorder()}
+		h.ServeHTTP(dst, httptest.NewRequest("GET", "/fixture", nil))
+		want := http.StatusNoContent
+		if abort {
+			want = http.StatusInternalServerError
+		}
+		if len(observed) != 1 || observed[0] != want {
+			t.Fatalf("abort=%t observed=%v", abort, observed)
+		}
+	}
+}

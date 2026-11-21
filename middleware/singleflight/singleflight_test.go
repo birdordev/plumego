@@ -12,6 +12,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 )
 
@@ -1613,4 +1614,43 @@ func TestWriteHeaderKeySkipsEmptyValue(t *testing.T) {
 		t.Error("expected different hashes: application/json contributes value bytes " +
 			"while the whitespace-only value contributes only the outer key bytes")
 	}
+}
+
+func TestSiblingWaiterCancelDoesNotInterruptLeaderAndReplay(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		entered, release := make(chan struct{}), make(chan struct{})
+		calls := 0
+		var errorsReported atomic.Int32
+		h := testMiddleware(Config{Timeout: time.Minute, OnError: func(string, error) { errorsReported.Add(1) }})(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			calls++
+			if calls == 1 {
+				close(entered)
+				<-release
+			}
+			_, _ = w.Write([]byte("fixture"))
+		}))
+		do := func(ctx context.Context) <-chan *httptest.ResponseRecorder {
+			done := make(chan *httptest.ResponseRecorder, 1)
+			go func() {
+				rec := httptest.NewRecorder()
+				h.ServeHTTP(rec, httptest.NewRequestWithContext(ctx, "GET", "/fixture", nil))
+				done <- rec
+			}()
+			return done
+		}
+		leader := do(t.Context())
+		<-entered
+		ctx, cancel := context.WithCancel(t.Context())
+		defer cancel()
+		leave, remain := do(ctx), do(t.Context())
+		synctest.Wait()
+		cancel()
+		if rec := <-leave; rec.Body.Len() != 0 {
+			t.Fatalf("canceled waiter body=%q", rec.Body.String())
+		}
+		close(release)
+		if first, last := <-leader, <-remain; first.Body.String() != "fixture" || last.Body.String() != "fixture" || calls != 1 || errorsReported.Load() != 0 {
+			t.Fatalf("leader=%q waiter=%q calls=%d", first.Body.String(), last.Body.String(), calls)
+		}
+	})
 }

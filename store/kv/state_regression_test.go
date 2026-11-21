@@ -743,3 +743,88 @@ func TestClosedKVReleasesPayloadAndReopensIndependentStats(t *testing.T) {
 		t.Fatalf("reopened value=%q err=%v", value, err)
 	}
 }
+
+func TestKVSnapshotAcceptsSingleUnknownFieldAndRejectsDuplicates(t *testing.T) {
+	cfg := DefaultConfig(t.TempDir())
+	snapshot := filepath.Join(cfg.DataDir, stateFileName)
+	for _, tc := range []struct {
+		payload string
+		invalid bool
+	}{
+		{`{"entries":{"fixture":{"value":"YQ==","future":{}}},"future":0}`, false},
+		{`{"entries":{"fixture":{"value":"YQ==","future":{},"future":{}}}}`, true},
+		{`{"entries":{"fixture":{"value":"YQ==","VALUE":"Yg=="}}}`, true},
+		{`{"entries":{"fixture":{"value":"YQ=="}}}`, false},
+	} {
+		if err := os.WriteFile(snapshot, []byte(tc.payload), 0600); err != nil {
+			t.Fatal(err)
+		}
+		kv, err := NewKVStore(cfg)
+		if tc.invalid {
+			if kv != nil || !errors.Is(err, ErrCorruptState) {
+				t.Fatalf("duplicate snapshot=%v err=%v", kv, err)
+			}
+			continue
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		value, readErr := kv.Get("fixture")
+		closeErr := kv.Close()
+		if readErr != nil || closeErr != nil || string(value) != "a" {
+			t.Fatalf("value=%q read=%v close=%v", value, readErr, closeErr)
+		}
+	}
+}
+
+func TestKVCapacityEvictionAtOpenPersistsOnlyWithMutation(t *testing.T) {
+	dir := t.TempDir()
+	wide := Options{DataDir: dir, MaxEntries: 3}
+	write := func(kv *KVStore, key string) {
+		t.Helper()
+		if err := kv.Set(key, []byte(key), 0); err != nil {
+			t.Fatal(err)
+		}
+	}
+	open := func(cfg Options) *KVStore {
+		t.Helper()
+		kv, err := NewKVStore(cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = kv.Close() })
+		return kv
+	}
+	stop := func(kv *KVStore) {
+		t.Helper()
+		if err := kv.Close(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	initial := open(wide)
+	write(initial, "a")
+	write(initial, "b")
+	stop(initial)
+	narrow := wide
+	narrow.MaxEntries = 1
+	path := filepath.Join(dir, stateFileName)
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	readOnly := open(narrow)
+	if keys := mustKeys(t, readOnly); !slices.Equal(keys, []string{"b"}) {
+		t.Fatalf("narrow keys=%v", keys)
+	}
+	stop(readOnly)
+	after, err := os.ReadFile(path)
+	if err != nil || !bytes.Equal(before, after) {
+		t.Fatalf("read-only open changed file: %v", err)
+	}
+	mutation := open(narrow)
+	write(mutation, "c")
+	stop(mutation)
+	if keys := mustKeys(t, open(wide)); !slices.Equal(keys, []string{"c"}) {
+		t.Fatalf("reopened after commit=%v", keys)
+	}
+}

@@ -509,3 +509,41 @@ func TestHeadInformationAndFinalHeaderSnapshotAreSeparate(t *testing.T) {
 		t.Fatalf("statuses=%v header=%v body=%q", w.statuses, w.Header(), w.Body)
 	}
 }
+
+func TestHeadLengthOverrunDoesNotReplaceFinalHeader(t *testing.T) {
+	r := NewRouter()
+	mustAddRoute(r, "GET", "/fixture", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Length", "2")
+		w.WriteHeader(http.StatusAccepted)
+		if n, err := io.WriteString(w, "ok"); n != 2 || err != nil {
+			t.Errorf("initial write=%d %v", n, err)
+		}
+		if n, err := io.Copy(w, strings.NewReader("x")); n != 0 || !errors.Is(err, http.ErrContentLength) {
+			t.Errorf("excess=%d %v", n, err)
+		}
+		if n, err := w.Write(nil); n != 0 || err != nil {
+			t.Errorf("empty write=%d %v", n, err)
+		}
+	}))
+	server := httptest.NewServer(r)
+	defer server.Close()
+	for _, method := range []string{"GET", "HEAD"} {
+		req, err := http.NewRequestWithContext(t.Context(), method, server.URL+"/fixture", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp, err := server.Client().Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		body, readErr := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		want := "ok"
+		if method == "HEAD" {
+			want = ""
+		}
+		if readErr != nil || string(body) != want || resp.ContentLength != 2 || resp.StatusCode != 202 {
+			t.Fatalf("%s status=%d len=%d body=%q read=%v", method, resp.StatusCode, resp.ContentLength, body, readErr)
+		}
+	}
+}

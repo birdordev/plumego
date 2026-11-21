@@ -1011,3 +1011,22 @@ func TestCustomLimiterStopWaitsForAnActiveCleanup(t *testing.T) {
 		t.Fatalf("cleanup ran after Stop: %+v", stats)
 	}
 }
+
+func TestLimiterResetDoesNotMoveBackwardOnClockRollback(t *testing.T) {
+	base := time.Now()
+	now := base
+	limiter, err := NewLimiterWithConfig(Config{Rate: 1, Capacity: 1, Now: func() time.Time { return now }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer limiter.Stop()
+	initial := limiter.Allow("fixture")
+	now = base.Add(-time.Second)
+	rollback := limiter.Allow("fixture")
+	now = base.Add(time.Second)
+	recovered := limiter.Allow("fixture")
+	if !initial.Allowed || rollback.Allowed || rollback.Remaining != 0 || rollback.RetryAfter != time.Second ||
+		!rollback.Reset.Equal(initial.Reset) || !recovered.Allowed || recovered.Remaining != 0 {
+		t.Fatalf("initial=%+v rollback=%+v recovered=%+v", initial, rollback, recovered)
+	}
+}

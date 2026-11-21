@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -1305,4 +1306,198 @@ func TestDrainLastCloseStopsBeforeNextDiagnostic(t *testing.T) {
 			t.Fatal("next drain did not acquire ownership")
 		}
 	})
+}
+
+func TestDrainOwnershipRequiresNewAttemptAfterOwnerCancellation(t *testing.T) {
+	tracker := newConnectionTracker(nil, time.Hour)
+	tracker.track(nil, http.StateNew)
+	first, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	release := tracker.startDrain(first)
+	if release == nil {
+		t.Fatal("initial drain was not acquired")
+	}
+	defer release()
+	if competitor := tracker.startDrain(t.Context()); competitor != nil {
+		competitor()
+		t.Fatal("second caller acquired an occupied drain")
+	}
+	cancel()
+	release()
+	if tracker.activeDrain.Load() != nil || tracker.open.Load() != 1 {
+		t.Fatal("canceling a drain also released a connection or kept ownership")
+	}
+	next := tracker.startDrain(t.Context())
+	if next == nil {
+		t.Fatal("new caller could not acquire the drained slot")
+	}
+	defer next()
+	release()
+	if tracker.activeDrain.Load() == nil {
+		t.Fatal("an older defer canceled the slot's new owner")
+	}
+	tracker.track(nil, http.StateClosed)
+	if tracker.activeDrain.Load() != nil || tracker.open.Load() != 0 {
+		t.Fatal("last connection did not release the slot")
+	}
+}
+
+func TestAppShutdownDoesNotOwnHijackedConnection(t *testing.T) {
+	app := newTestApp()
+	hijacked := make(chan net.Conn, 1)
+	if err := app.Get("/handoff", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		conn, _, err := http.NewResponseController(w).Hijack()
+		if err != nil {
+			t.Error(err)
+		}
+		hijacked <- conn
+	})); err != nil {
+		t.Fatal(err)
+	}
+	entered, release := make(chan struct{}), make(chan struct{})
+	finish := sync.OnceFunc(func() { close(release) })
+	defer finish()
+	if err := app.Get("/ordinary", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		close(entered)
+		<-release
+		w.WriteHeader(http.StatusNoContent)
+	})); err != nil {
+		t.Fatal(err)
+	}
+	if err := app.Prepare(); err != nil {
+		t.Fatal(err)
+	}
+	server, err := app.Server()
+	if err != nil {
+		t.Fatal(err)
+	}
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = server.Close() })
+	go func() { _ = server.Serve(listener) }()
+	dial := func(path string) net.Conn {
+		t.Helper()
+		conn, err := net.DialTimeout("tcp", listener.Addr().String(), time.Second)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = conn.Close() })
+		if err := conn.SetDeadline(time.Now().Add(5 * time.Second)); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := fmt.Fprintf(conn, "GET %s HTTP/1.1\r\nHost: fixture\r\n\r\n", path); err != nil {
+			t.Fatal(err)
+		}
+		return conn
+	}
+	ordinary := dial("/ordinary")
+	<-entered
+	client := dial("/handoff")
+	peer := <-hijacked
+	if peer == nil {
+		t.Fatal("no hijacked connection")
+	}
+	defer peer.Close()
+	if app.connTracker.open.Load() != 1 {
+		t.Fatalf("open=%d", app.connTracker.open.Load())
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	if err := app.Shutdown(ctx); !errors.Is(err, context.Canceled) {
+		t.Fatalf("ordinary connection did not block shutdown: %v", err)
+	}
+	finish()
+	_ = ordinary.Close()
+	settle, stop := context.WithTimeout(t.Context(), 3*time.Second)
+	defer stop()
+	if err := app.Shutdown(settle); err != nil || app.connTracker.open.Load() != 0 {
+		t.Fatalf("retry=%v open=%d", err, app.connTracker.open.Load())
+	}
+	if _, err := io.WriteString(peer, "fixture"); err != nil {
+		t.Fatal(err)
+	}
+	buffer := make([]byte, len("fixture"))
+	if _, err := io.ReadFull(client, buffer); err != nil || string(buffer) != "fixture" {
+		t.Fatalf("handoff=%q err=%v", buffer, err)
+	}
+}
+
+func TestConcurrentShutdownLeavesDrainVacantUntilNewCaller(t *testing.T) {
+	app := newTestApp()
+	entered, release := make(chan struct{}), make(chan struct{})
+	finish := sync.OnceFunc(func() { close(release) })
+	if err := app.Get("/hold", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		close(entered)
+		<-release
+		w.WriteHeader(http.StatusNoContent)
+	})); err != nil {
+		t.Fatal(err)
+	}
+	if err := app.Prepare(); err != nil {
+		t.Fatal(err)
+	}
+	server, err := app.Server()
+	if err != nil {
+		t.Fatal(err)
+	}
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer server.Close()
+	defer finish()
+	go func() { _ = server.Serve(listener) }()
+	arrived := make(chan struct{}, 3)
+	server.RegisterOnShutdown(func() { arrived <- struct{}{} })
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "http://"+listener.Addr().String()+"/hold", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clientDone := make(chan error, 1)
+	go func() {
+		resp, err := (&http.Client{Timeout: 5 * time.Second}).Do(req)
+		if err == nil {
+			err = resp.Body.Close()
+		}
+		clientDone <- err
+	}()
+	<-entered
+
+	first, cancelFirst := context.WithCancel(t.Context())
+	defer cancelFirst()
+	remaining, stop := context.WithTimeout(t.Context(), 5*time.Second)
+	defer stop()
+	begin := func(ctx context.Context) <-chan error {
+		done := make(chan error, 1)
+		go func() { done <- app.Shutdown(ctx) }()
+		select {
+		case <-arrived:
+		case <-remaining.Done():
+			t.Fatal("Shutdown did not start")
+		}
+		return done
+	}
+	one, two := begin(first), begin(remaining)
+	original := app.connTracker.activeDrain.Load()
+	cancelFirst()
+	if err := <-one; !errors.Is(err, context.Canceled) || original == nil {
+		t.Fatalf("original owner=%v first result=%v", original, err)
+	}
+	if app.connTracker.activeDrain.Load() != nil {
+		t.Fatal("waiting caller unexpectedly acquired diagnostic ownership")
+	}
+	three := begin(remaining)
+	if next := app.connTracker.activeDrain.Load(); next == nil || next == original {
+		t.Fatal("new Shutdown attempt did not acquire diagnostic ownership")
+	}
+	finish()
+	if err := <-clientDone; err != nil {
+		t.Fatal(err)
+	}
+	if secondErr, thirdErr := <-two, <-three; secondErr != nil || thirdErr != nil ||
+		app.connTracker.activeDrain.Load() != nil || app.connTracker.open.Load() != 0 {
+		t.Fatalf("shutdown errors=%v %v open=%d", secondErr, thirdErr, app.connTracker.open.Load())
+	}
 }

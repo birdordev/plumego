@@ -1,6 +1,7 @@
 package health
 
 import (
+	"maps"
 	"testing"
 	"time"
 )
@@ -191,5 +192,24 @@ func TestHealthClonesKeepIndependentTopLevelAndSharedNestedValues(t *testing.T) 
 	if before.Details["nested"].(map[string]string)["value"] != "after" ||
 		after.Details["nested"].(map[string]string)["value"] != "after" {
 		t.Fatal("cloning changed nested ownership")
+	}
+}
+
+func TestReadinessClonesKeepNilDistinctFromWritableEmptyMap(t *testing.T) {
+	for _, source := range []map[string]bool{nil, {}, {"fixture": false}} {
+		before := ReadinessStatus{Components: source}
+		one, two := before.Clone(), before.Clone()
+		if (one.Components == nil) != (source == nil) || !maps.Equal(two.Components, source) {
+			t.Fatalf("clones=%v %v", one.Components, two.Components)
+		}
+		if one.Components != nil {
+			one.Components["fixture"] = true
+			if two.Components["fixture"] || source["fixture"] {
+				t.Fatal("readiness maps shared")
+			}
+		}
+		if fields := marshalObject(t, two); (fields["components"] == nil) != (len(source) == 0) {
+			t.Fatalf("json=%v", fields)
+		}
 	}
 }

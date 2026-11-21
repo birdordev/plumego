@@ -338,3 +338,38 @@ func TestTextErrorFieldEscapesControlsAndKeepsSiblingInteger(t *testing.T) {
 	}
 	t.Fatalf("missing error field in %q", got)
 }
+
+func TestShortRecordReportsOnceAndLeavesSecondRecordWhole(t *testing.T) {
+	const fixture = "PLUMEGO_SHORT_RECORD_CHILD"
+	if os.Getenv(fixture) != "1" {
+		exe, err := os.Executable()
+		if err != nil {
+			t.Fatal(err)
+		}
+		cmd := exec.CommandContext(t.Context(), exe, "-test.run=^TestShortRecordReportsOnceAndLeavesSecondRecordWhole$")
+		cmd.Env = append(os.Environ(), fixture+"=1")
+		var diagnostics bytes.Buffer
+		cmd.Stderr = &diagnostics
+		if out, err := cmd.Output(); err != nil || strings.Count(diagnostics.String(), "failed to write log output") != 2 {
+			t.Fatalf("child=%v stdout=%s stderr=%s", err, out, diagnostics.String())
+		}
+		return
+	}
+	for _, format := range []LoggerFormat{LoggerFormatText, LoggerFormatJSON} {
+		var output bytes.Buffer
+		calls := 0
+		logger := NewLogger(LoggerConfig{Format: format, Output: diagnosticOutputFunc(func(data []byte) (int, error) {
+			calls++
+			if calls == 1 {
+				return 1, nil
+			}
+			return output.Write(data)
+		})})
+		logger.Info("short fixture")
+		logger.Info("complete fixture")
+		got := output.String()
+		if calls != 2 || strings.Count(got, "\n") != 1 || strings.Contains(got, "short fixture") || !strings.Contains(got, "complete fixture") {
+			t.Fatalf("format=%s calls=%d output=%q", format, calls, got)
+		}
+	}
+}

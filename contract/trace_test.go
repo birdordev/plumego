@@ -281,3 +281,20 @@ func TestSiblingTraceSnapshotsKeepSamplingAndBaggageSeparate(t *testing.T) {
 		t.Fatalf("first=%+v second=%+v", a, b)
 	}
 }
+
+func TestSampledTraceCarrierRetainsPartialAndKnownStates(t *testing.T) {
+	for _, span := range []string{"", "0000000000000000", "0123456789aBCdEF"} {
+		source := TraceContext{TraceID: "0123456789AbCdEf0123456789abCDEF", SpanID: span, Flags: 1, Baggage: map[string]string{"color": "blue"}}
+		ctx := WithTraceContext(t.Context(), source)
+		source.Baggage["color"] = "red"
+		one, ok := TraceContextFromContext(ctx)
+		if !ok || !one.IsSampled() || !one.HasTraceID() || one.Valid() != (span == "0123456789aBCdEF") || one.Baggage["color"] != "blue" {
+			t.Fatalf("carrier=%+v present=%t", one, ok)
+		}
+		one.Baggage["color"] = "green"
+		two, _ := TraceContextFromContext(ctx)
+		if two.Baggage["color"] != "blue" {
+			t.Fatalf("re-read=%+v", two)
+		}
+	}
+}

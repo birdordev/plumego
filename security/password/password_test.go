@@ -236,3 +236,17 @@ func TestInvalidWorkFactorsRejectedBeforeDecodingStoredFields(t *testing.T) {
 		}
 	}
 }
+
+func TestPasswordStrengthUsesUnicodeCharacterCounts(t *testing.T) {
+	cfg := PasswordStrengthConfig{MinLength: 4, MaxLength: 4, RequireUppercase: true, RequireLowercase: true, RequireDigit: true, RequireSpecial: true}
+	for _, tc := range []struct {
+		value string
+		want  bool
+	}{
+		{"Äé٣!", true}, {"Åé٣", false}, {"Äé٣!!", false}, {"äé٣!", false}, {"ÄÉ٣!", false}, {"Äé界!", false}, {"Äé٣界", false},
+	} {
+		if got := ValidatePasswordStrength(tc.value, cfg); got != tc.want {
+			t.Errorf("value=%q got=%t want=%t", tc.value, got, tc.want)
+		}
+	}
+}

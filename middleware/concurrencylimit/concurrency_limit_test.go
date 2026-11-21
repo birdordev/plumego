@@ -6,6 +6,7 @@ import (
 	"math"
 	"net/http"
 	"net/http/httptest"
+	"runtime"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -457,4 +458,40 @@ func TestReuseOfOneBuilderSharesAdmissionAcrossHandlers(t *testing.T) {
 		getStatus(shared) != http.StatusNoContent {
 		t.Fatalf("shared=%d independent=%d", sharedStatus, independentStatus)
 	}
+}
+
+func TestAbnormalWorkerExitReleasesBothAdmissionSlots(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		entered, release := make(chan struct{}), make(chan struct{})
+		h := Middleware(Config{MaxConcurrent: 1, QueueDepth: 1, QueueTimeout: time.Hour})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == "/first" {
+				close(entered)
+				<-release
+				runtime.Goexit()
+			}
+			w.WriteHeader(204)
+		}))
+		first, second := make(chan struct{}), make(chan int, 1)
+		go func() {
+			defer close(first)
+			h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", "/first", nil))
+		}()
+		<-entered
+		go func() {
+			w := httptest.NewRecorder()
+			h.ServeHTTP(w, httptest.NewRequest("GET", "/second", nil))
+			second <- w.Code
+		}()
+		synctest.Wait()
+		close(release)
+		<-first
+		if status := <-second; status != 204 {
+			t.Fatalf("queued status=%d", status)
+		}
+		next := httptest.NewRecorder()
+		h.ServeHTTP(next, httptest.NewRequest("GET", "/next", nil))
+		if next.Code != 204 {
+			t.Fatalf("next status=%d", next.Code)
+		}
+	})
 }

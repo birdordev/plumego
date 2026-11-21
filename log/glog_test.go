@@ -1741,3 +1741,45 @@ func TestRetentionKeepsPublishedLinkTargetUntilReplacement(t *testing.T) {
 		t.Fatalf("staging=%v err=%v", leftovers, err)
 	}
 }
+
+func TestRetentionUsesAgeAndBackupsAfterProtectingPublishedFiles(t *testing.T) {
+	dir := t.TempDir()
+	now := time.Now()
+	const program = "fixture"
+	names := make(map[string]string)
+	for _, tc := range []struct {
+		key string
+		age time.Duration
+	}{
+		{"linked", 72 * time.Hour}, {"writer", 60 * time.Hour}, {"aged", 48 * time.Hour}, {"excess", 4 * time.Hour}, {"backup", time.Hour},
+	} {
+		stamp := now.Add(-tc.age)
+		name := logFilename(program, "local", levelName(INFO), stamp, 1)
+		path := filepath.Join(dir, name)
+		if err := os.WriteFile(path, []byte(tc.key), 0600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chtimes(path, stamp, stamp); err != nil {
+			t.Fatal(err)
+		}
+		names[tc.key] = name
+	}
+	link := filepath.Join(dir, program+"."+levelName(INFO))
+	if err := os.Symlink(names["linked"], link); err != nil {
+		if runtime.GOOS == "windows" || runtime.GOOS == "plan9" {
+			t.Skipf("symlink unavailable: %v", err)
+		}
+		t.Fatal(err)
+	}
+	cleanupOldLogs(dir, program, rotationConfig{MaxAge: 1, MaxBackups: 1}, map[string]struct{}{names["writer"]: {}})
+	for key, name := range names {
+		data, err := os.ReadFile(filepath.Join(dir, name))
+		if key == "aged" || key == "excess" {
+			if !errors.Is(err, os.ErrNotExist) {
+				t.Errorf("archive %s cleanup err=%v", key, err)
+			}
+		} else if err != nil || string(data) != key {
+			t.Errorf("retained %s content=%q err=%v", key, data, err)
+		}
+	}
+}

@@ -5,6 +5,8 @@ import (
 	"encoding/csv"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"math"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -297,5 +299,81 @@ func TestTrackerRecordsCompletionOrderWithoutReplacingNewerReadiness(t *testing.
 	if len(history) != 2 || history[0].State != newer.Status || history[1].State != older.Status ||
 		!history[0].Timestamp.Equal(newer.Timestamp) || !history[1].Timestamp.Equal(older.Timestamp) {
 		t.Fatalf("history=%+v", history)
+	}
+}
+
+func TestAcceptanceHistoryOffsetsPastEndHaveNoMore(t *testing.T) {
+	for _, n := range []int{0, 3} {
+		tracker, _ := newHistoryManager(t)
+		for range n {
+			tracker.CheckAllComponents(t.Context())
+		}
+		for _, offset := range []int{0, 1, 2, 3, math.MaxInt} {
+			got := tracker.QueryHealthHistory(HealthHistoryQuery{Limit: 1, Offset: offset})
+			if got.Total != n || got.Offset != offset || got.Limit != 1 || got.Entries == nil ||
+				len(got.Entries) != min(1, max(0, n-offset)) || got.HasMore != (offset < n-1) {
+				t.Fatalf("history size=%d offset=%d page=%+v", n, offset, got)
+			}
+		}
+	}
+}
+
+func TestAcceptanceHistoryExportValidatesPaginationBeforeFormat(t *testing.T) {
+	tracker, _ := newHistoryManager(t)
+	tracker.CheckAllComponents(t.Context())
+	handler := HealthHistoryExportHandler(tracker)
+	for _, tc := range []struct {
+		query  string
+		status int
+		code   string
+		param  string
+	}{
+		{"", 200, "", ""},
+		{"?limit=1&offset=1", 200, "", ""},
+		{"?limit=-1&offset=-1", 200, "", ""},
+		{"?limit=101&offset=0", 200, "", ""},
+		{"?limit=marker", 400, contract.CodeInvalidQuery, "limit"},
+		{"?offset=marker", 400, contract.CodeInvalidQuery, "offset"},
+		{"?limit=9223372036854775808", 400, contract.CodeInvalidQuery, "limit"},
+		{"?offset=9223372036854775808", 400, contract.CodeInvalidQuery, "offset"},
+		{"?limit=marker&format=marker", 400, contract.CodeInvalidQuery, "limit"},
+		{"?format=marker", 400, contract.CodeInvalidFormat, ""},
+	} {
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, httptest.NewRequest("GET", "/history/export"+tc.query, nil))
+		var response struct {
+			Data  HealthHistoryQueryResult
+			Error struct {
+				Code    string
+				Details map[string]string
+			}
+		}
+		if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil || w.Code != tc.status ||
+			response.Error.Code != tc.code || response.Error.Details["param"] != tc.param ||
+			strings.Contains(w.Body.String(), "marker") {
+			t.Fatalf("query=%q status=%d body=%q err=%v", tc.query, w.Code, w.Body.String(), err)
+		}
+		if tc.status == 200 && (response.Data.Total != 1 || response.Data.HasMore || response.Data.Entries == nil) {
+			t.Fatalf("query=%q response=%+v", tc.query, response.Data)
+		}
+	}
+}
+
+func BenchmarkHistoryUnsupportedFormat(b *testing.B) {
+	for _, size := range []int{0, 10000} {
+		b.Run(fmt.Sprint(size), func(b *testing.B) {
+			tracker := NewTracker(nil)
+			tracker.history = make([]HealthHistoryEntry, size)
+			handler := HealthHistoryExportHandler(tracker)
+			req := httptest.NewRequest("GET", "/history/export?format=unsupported", nil)
+			b.ReportAllocs()
+			for b.Loop() {
+				w := httptest.NewRecorder()
+				handler.ServeHTTP(w, req)
+				if w.Code != 400 {
+					b.Fatalf("status=%d", w.Code)
+				}
+			}
+		})
 	}
 }

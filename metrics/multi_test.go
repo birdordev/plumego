@@ -3,6 +3,7 @@ package metrics
 import (
 	"context"
 	"errors"
+	"maps"
 	"math"
 	"reflect"
 	"slices"
@@ -558,5 +559,31 @@ func TestEmptyAndLiveFanoutOwnStatsAcrossClear(t *testing.T) {
 	if after := live.GetStats(); after.TotalRecords != 0 || len(after.NameBreakdown) != 0 ||
 		liveCopy.NameBreakdown["sample"] != 2 || emptyCopy.NameBreakdown["empty fixture"] != 1 {
 		t.Fatalf("after clear=%+v previous live=%+v empty=%+v", after, liveCopy, emptyCopy)
+	}
+}
+
+func TestThreeWayAggregationRetainsOtherNamesAfterSaturation(t *testing.T) {
+	large := newStubAggregateCollector(func() CollectorStats {
+		return CollectorStats{
+			TotalRecords: math.MaxInt64, NameBreakdown: map[string]int64{"shared": math.MaxInt64},
+		}
+	})
+	left := newStubAggregateCollector(func() CollectorStats {
+		return CollectorStats{
+			TotalRecords: 3, NameBreakdown: map[string]int64{"shared": 1, "left": 2},
+		}
+	})
+	right := newStubAggregateCollector(func() CollectorStats {
+		return CollectorStats{
+			TotalRecords: 4, NameBreakdown: map[string]int64{"shared": 1, "right": 3},
+		}
+	})
+	for _, order := range [][]AggregateCollector{{large, left, right}, {left, large, right}, {right, left, large}} {
+		out := NewMultiCollector(order...).GetStats()
+		if out.TotalRecords != math.MaxInt64 || out.ActiveSeries != 5 ||
+			!maps.Equal(out.NameBreakdown, map[string]int64{"shared": math.MaxInt64, "left": 2, "right": 3}) {
+			t.Fatalf("stats=%+v", out)
+		}
+		out.NameBreakdown["right"] = 0
 	}
 }

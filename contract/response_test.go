@@ -838,3 +838,42 @@ func TestSuccessEncodingFailureLeavesHeadersForReplacementResponse(t *testing.T)
 		t.Fatalf("replacement err=%v commits=%d headers=%v", err, w.headerCalls, w.Header())
 	}
 }
+
+func TestBodylessStatusesSkipEncodingWhileNormalizingErrors(t *testing.T) {
+	for _, status := range []int{204, 205} {
+		rec := httptest.NewRecorder()
+		rec.Header().Set("X-Existing", "preserved")
+		rec.Header().Set("Transfer-Encoding", "chunked")
+		rec.Header().Set("Content-Length", "4")
+		if err := WriteResponse(rec, nil, status, make(chan int), nil); err != nil || rec.Code != status ||
+			rec.Body.Len() != 0 || rec.Header().Get("Transfer-Encoding") != "" || rec.Header().Get("X-Existing") != "preserved" {
+			t.Fatalf("status=%d output=%d %v %q err=%v", status, rec.Code, rec.Header(), rec.Body.String(), err)
+		}
+		want := ""
+		if status == 205 {
+			want = "0"
+		}
+		if got := rec.Header().Get("Content-Length"); got != want {
+			t.Fatalf("status=%d length=%q", status, got)
+		}
+		rec = httptest.NewRecorder()
+		if err := WriteError(rec, nil, APIError{status: status}); err != nil || rec.Code != 500 || !strings.Contains(rec.Body.String(), `"error":`) {
+			t.Fatalf("failure status=%d body=%q err=%v", rec.Code, rec.Body.String(), err)
+		}
+	}
+}
+
+func TestExplicitErrorIDOrValidatedRequestFallback(t *testing.T) {
+	req := httptest.NewRequest("GET", "/", nil)
+	req = req.WithContext(WithRequestID(req.Context(), "parent-fixture"))
+	for _, tc := range []struct{ input, want string }{{"explicit", "explicit"}, {"bad\nvalue", "parent-fixture"}, {"", "parent-fixture"}} {
+		w := httptest.NewRecorder()
+		if err := WriteError(w, req, NewErrorBuilder().Type(TypeNotFound).RequestID(tc.input).Build()); err != nil {
+			t.Fatal(err)
+		}
+		var body errorResponse
+		if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil || body.RequestID != tc.want || w.Code != 404 {
+			t.Fatalf("status=%d id=%q err=%v", w.Code, body.RequestID, err)
+		}
+	}
+}

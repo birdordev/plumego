@@ -41,3 +41,5 @@ app.Use(compression.Middleware(compression.DefaultConfig()))
   header-only completion commits the final headers with an implicit 200, even
   after an informational response. Empty responses are not gzip-encoded.
 - The wrapped `ResponseWriter` supports `Unwrap()` for access to the underlying writer.
+- Abnormal handler exit leaves an uncommitted response open for outer
+  handling. A gzip stream that already started is finalized.

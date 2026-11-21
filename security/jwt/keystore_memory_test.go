@@ -525,3 +525,34 @@ func BenchmarkKeyStoreEnumerationThreshold(b *testing.B) {
 		})
 	}
 }
+
+func TestExpiredMemoryEntryReplacementOwnsNewTTLAndValue(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		s := NewInMemoryKeyStore()
+		if err := s.SetContext(t.Context(), "fixture", []byte("value"), time.Second); err != nil {
+			t.Fatal(err)
+		}
+		original, err := s.GetContext(t.Context(), "fixture")
+		if err != nil {
+			t.Fatal(err)
+		}
+		time.Sleep(2 * time.Second)
+		if keys, err := s.KeysContext(t.Context()); len(keys) != 0 || err != nil {
+			t.Fatalf("expired keys=%v err=%v", keys, err)
+		}
+		input := []byte("next")
+		if err := s.SetContext(t.Context(), "fixture", input, 5*time.Second); err != nil {
+			t.Fatal(err)
+		}
+		input[0], original[0] = 'X', 'X'
+		time.Sleep(2 * time.Second)
+		value, err := s.GetContext(t.Context(), "fixture")
+		if string(value) != "next" || err != nil {
+			t.Fatalf("replacement=%q err=%v", value, err)
+		}
+		time.Sleep(4 * time.Second)
+		if keys, err := s.KeysContext(t.Context()); len(keys) != 0 || err != nil {
+			t.Fatalf("replaced expiry keys=%v err=%v", keys, err)
+		}
+	})
+}

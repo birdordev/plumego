@@ -728,3 +728,20 @@ func TestMultipleInvalidPolicyFieldsPreserveClassificationAndHeaders(t *testing.
 		t.Fatalf("error=%v headers=%v", err, w.Header())
 	}
 }
+
+func TestCompiledPolicyKeepsPrepopulatedWriterOnValidationFailure(t *testing.T) {
+	policy := Policy{Additional: map[string]string{"X-Fixture": "compiled"}}
+	compiled := policy.Compile()
+	policy.Additional["X-Fixture"] = "source changed"
+	policy.FrameOptions = "unknown"
+	req := httptest.NewRequest("GET", "https://example.test/", nil)
+	dst := httptest.NewRecorder()
+	dst.Header().Set("X-Fixture", "existing")
+	dst.Header().Set("X-Preserved", "value")
+	if err := policy.ApplyChecked(dst, req); !errors.Is(err, ErrInvalidPolicy) || dst.Header().Get("X-Fixture") != "existing" {
+		t.Fatalf("source err=%v header=%v", err, dst.Header())
+	}
+	if err := compiled.ApplyChecked(dst, req); err != nil || dst.Header().Get("X-Fixture") != "compiled" || dst.Header().Get("X-Preserved") != "value" {
+		t.Fatalf("compile err=%v header=%v", err, dst.Header())
+	}
+}

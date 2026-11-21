@@ -2,8 +2,11 @@ package healthhttp
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"math"
 	"net/http/httptest"
+	"runtime"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -17,9 +20,7 @@ func TestMetricsHandler(t *testing.T) {
 		t.Fatalf("failed to create manager: %v", err)
 	}
 	tracker := NewTracker(manager)
-	tracker.recordComponentCheck("test", &health.ComponentHealth{
-		HealthStatus: health.HealthStatus{Status: health.StatusHealthy},
-	}, time.Millisecond, nil)
+	tracker.recordComponentCheck("test", health.StatusHealthy, time.Millisecond, false)
 
 	req := httptest.NewRequest("GET", "/metrics", nil)
 	rr := httptest.NewRecorder()
@@ -195,5 +196,126 @@ func TestTrackerForwardsManualReadinessAndOverallHealth(t *testing.T) {
 	}
 	if empty.Readiness().Ready {
 		t.Error("nil manager became ready")
+	}
+}
+
+func TestAcceptanceTrackerRecordsOnlyBatchAttempts(t *testing.T) {
+	manager, err := NewManager(Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer manager.Close()
+	tracker := NewTracker(manager)
+	abort := false
+	if err := manager.RegisterComponent(functionChecker{name: "fixture", check: func(context.Context) error {
+		if abort {
+			runtime.Goexit()
+		}
+		return nil
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	initial := tracker.CheckAllComponents(t.Context())
+	if !initial.Status.IsReady() || len(initial.Dependencies) != 1 {
+		t.Fatalf("initial batch=%+v", initial)
+	}
+	initial.Dependencies[0] = "caller change"
+	if history := tracker.GetHealthHistory(); len(history) != 1 ||
+		len(history[0].Components) != 1 || history[0].Components[0] != "fixture" {
+		t.Fatalf("batch result changed tracker history: %v", history)
+	}
+	abort = true
+	if status := tracker.CheckAllComponents(t.Context()); status.Status.IsReady() {
+		t.Fatalf("aborted batch=%+v", status)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	tracker.CheckAllComponents(ctx)
+	stats, ok := tracker.GetComponentMetrics("fixture")
+	if !ok || stats.CheckCount != 2 || stats.SuccessCount != 1 || stats.FailureCount != 1 ||
+		stats.RecentHistory[1].Status != health.StatusUnhealthy || stats.RecentHistory[1].Success {
+		t.Fatalf("component stats=%+v", stats)
+	}
+}
+
+func TestTrackerOverlappingBatchesRecordTheirOwnComponentOutcome(t *testing.T) {
+	manager, err := NewManager(Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer manager.Close()
+	tracker := NewTracker(manager)
+	checker := &aggregateChecker{entered: make(chan struct{}), release: make(chan struct{}), newerError: errors.New("fixture")}
+	if err := manager.RegisterComponent(checker); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		tracker.CheckAllComponents(t.Context())
+	}()
+	<-checker.entered
+	newer := tracker.CheckAllComponents(t.Context())
+	close(checker.release)
+	<-done
+	stats, _ := tracker.GetComponentMetrics("db")
+	if newer.Status.IsReady() || manager.Readiness().Ready || stats.SuccessCount != 1 || stats.FailureCount != 1 ||
+		!stats.RecentHistory[1].Success {
+		t.Fatalf("batch=%+v readiness=%+v stats=%+v", newer, manager.Readiness(), stats)
+	}
+}
+
+func TestAcceptanceTrackerAverageRetainsIntegerPrecision(t *testing.T) {
+	tracker := NewTracker(nil)
+	for _, suite := range []struct {
+		samples []time.Duration
+		want    time.Duration
+	}{
+		{[]time.Duration{math.MaxInt64, math.MaxInt64}, math.MaxInt64},
+		{[]time.Duration{math.MaxInt64, 0, math.MaxInt64}, 6148914691236517204},
+		{[]time.Duration{0, 3, 8, 9}, 5},
+	} {
+		for _, sample := range suite.samples {
+			tracker.recordComponentCheck("fixture", health.StatusHealthy, sample, false)
+		}
+		stats, _ := tracker.GetComponentMetrics("fixture")
+		if stats.AverageLatency != suite.want || stats.AverageLatency < stats.MinLatency ||
+			stats.AverageLatency > stats.MaxLatency || stats.CheckCount != int64(len(suite.samples)) {
+			t.Fatalf("samples=%v metrics=%+v", suite.samples, stats)
+		}
+		tracker.Reset()
+	}
+}
+
+func TestAcceptanceTrackerMetricsUsesFixedPublicDiagnostic(t *testing.T) {
+	manager, err := NewManager(Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer manager.Close()
+	tracker := NewTracker(manager)
+	cause := errors.New("fixture checker unavailable")
+	checker := functionChecker{name: "db", check: func(context.Context) error { return cause }}
+	if err := manager.RegisterComponent(checker); err != nil {
+		t.Fatal(err)
+	}
+	if err := tracker.CheckComponent(t.Context(), "db"); !errors.Is(err, cause) {
+		t.Fatalf("checker error=%v", err)
+	}
+	tracker.CheckAllComponents(t.Context())
+	w := httptest.NewRecorder()
+	MetricsHandler(tracker).ServeHTTP(w, httptest.NewRequest("GET", "/metrics", nil))
+	var response struct{ Data HealthMetrics }
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil || w.Code != 200 {
+		t.Fatalf("metrics status=%d decode=%v", w.Code, err)
+	}
+	stats := response.Data.ComponentMetrics["db"]
+	if stats == nil || stats.FailureCount != 2 || len(stats.RecentHistory) != 2 {
+		t.Fatalf("stats=%+v", stats)
+	}
+	for _, record := range stats.RecentHistory {
+		if record.ErrorMessage != "component check failed" || record.Success {
+			t.Fatalf("record=%+v", record)
+		}
 	}
 }

@@ -3,6 +3,7 @@ package healthhttp
 import (
 	"context"
 	"errors"
+	"math/bits"
 	"slices"
 	"sync"
 	"time"
@@ -111,15 +112,21 @@ type HealthReport struct {
 type Tracker struct {
 	manager Manager
 
-	mu      sync.RWMutex
-	metrics *HealthMetrics
-	history []HealthHistoryEntry
+	mu            sync.RWMutex
+	metrics       *HealthMetrics
+	history       []HealthHistoryEntry
+	elapsedTotals map[string]latencyTotal
+}
+
+type latencyTotal struct {
+	hi, lo uint64
 }
 
 // NewTracker creates an ops tracker around a healthhttp manager.
 func NewTracker(manager Manager) *Tracker {
 	return &Tracker{
-		manager: manager,
+		manager:       manager,
+		elapsedTotals: make(map[string]latencyTotal),
 		metrics: &HealthMetrics{
 			StartTime:        time.Now(),
 			ComponentMetrics: make(map[string]*ComponentMetrics),
@@ -227,8 +234,8 @@ func (t *Tracker) CheckComponent(ctx context.Context, name string) error {
 	err := t.manager.CheckComponent(ctx, name)
 	duration := time.Since(start)
 
-	if component, ok := t.manager.GetComponentHealth(name); ok {
-		t.recordComponentCheck(name, component, duration, err)
+	if component, ok := t.manager.GetComponentHealth(name); ok && component != nil {
+		t.recordComponentCheck(name, component.Status, duration, err != nil)
 	}
 	return err
 }
@@ -243,16 +250,7 @@ func (t *Tracker) CheckAllComponents(ctx context.Context) health.HealthStatus {
 		}
 	}
 
-	start := time.Now()
-	status := t.manager.CheckAllComponents(ctx)
-	allHealth := t.manager.GetAllHealth()
-	duration := time.Since(start)
-
-	components := make([]string, 0, len(allHealth))
-	for name, component := range allHealth {
-		components = append(components, name)
-		t.recordComponentCheck(name, component, component.Duration, componentError(component))
-	}
+	status, components, duration := t.trackBatch(ctx)
 
 	t.mu.Lock()
 	t.metrics.LastCheckTime = time.Now()
@@ -260,7 +258,7 @@ func (t *Tracker) CheckAllComponents(ctx context.Context) health.HealthStatus {
 		Timestamp:  status.Timestamp,
 		State:      status.Status,
 		Message:    status.Message,
-		Components: components,
+		Components: slices.Clone(components),
 		Duration:   duration,
 	})
 	t.mu.Unlock()
@@ -268,22 +266,42 @@ func (t *Tracker) CheckAllComponents(ctx context.Context) health.HealthStatus {
 	return status
 }
 
-func componentError(component *health.ComponentHealth) error {
-	if component == nil || component.Status == health.StatusHealthy {
-		return nil
+func (t *Tracker) trackBatch(ctx context.Context) (health.HealthStatus, []string, time.Duration) {
+	start := time.Now()
+	if manager, ok := t.manager.(*manager); ok {
+		status, names, results := manager.checkBatch(ctx)
+		duration := time.Since(start)
+		for i, result := range results {
+			if !result.attempted {
+				continue
+			}
+			state := health.StatusHealthy
+			if result.failed {
+				state = health.StatusUnhealthy
+			}
+			t.recordComponentCheck(names[i], state, result.duration, result.failed)
+		}
+		return status, names, duration
 	}
-	if component.Message == "" {
-		return errors.New(string(component.Status))
+
+	// 外部 Manager 只提供组件快照。
+	status := t.manager.CheckAllComponents(ctx)
+	allHealth := t.manager.GetAllHealth()
+	duration := time.Since(start)
+	names := make([]string, 0, len(allHealth))
+	for name, component := range allHealth {
+		names = append(names, name)
+		if component != nil {
+			t.recordComponentCheck(name, component.Status, component.Duration, false)
+		}
 	}
-	return errors.New(component.Message)
+	slices.Sort(names)
+	return status, names, duration
 }
 
-func (t *Tracker) recordComponentCheck(name string, component *health.ComponentHealth, duration time.Duration, err error) {
-	if component == nil {
-		return
-	}
-
-	success := err == nil && component.Status == health.StatusHealthy
+func (t *Tracker) recordComponentCheck(name string, state health.HealthState, duration time.Duration, failed bool) {
+	duration = max(0, duration)
+	success := !failed && state == health.StatusHealthy
 
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -302,7 +320,7 @@ func (t *Tracker) recordComponentCheck(name string, component *health.ComponentH
 			Name:          name,
 			MinLatency:    duration,
 			MaxLatency:    duration,
-			LastStatus:    component.Status,
+			LastStatus:    state,
 			LastCheckTime: time.Now(),
 			RecentHistory: make([]HealthCheckRecord, 0, 10),
 		}
@@ -311,7 +329,7 @@ func (t *Tracker) recordComponentCheck(name string, component *health.ComponentH
 
 	comp.CheckCount++
 	comp.LastCheckTime = time.Now()
-	comp.LastStatus = component.Status
+	comp.LastStatus = state
 
 	if success {
 		comp.SuccessCount++
@@ -319,27 +337,28 @@ func (t *Tracker) recordComponentCheck(name string, component *health.ComponentH
 		comp.FailureCount++
 	}
 
-	if comp.MinLatency == 0 || duration < comp.MinLatency {
+	if duration < comp.MinLatency {
 		comp.MinLatency = duration
 	}
 	if duration > comp.MaxLatency {
 		comp.MaxLatency = duration
 	}
-	if comp.CheckCount == 1 {
-		comp.AverageLatency = duration
-	} else {
-		totalLatency := comp.AverageLatency * time.Duration(comp.CheckCount-1)
-		comp.AverageLatency = (totalLatency + duration) / time.Duration(comp.CheckCount)
-	}
+	// 两字长总量保留整数精度。非负 time.Duration 与计数的乘积可放入 128 位。
+	total := t.elapsedTotals[name]
+	lo, carry := bits.Add64(total.lo, uint64(duration), 0)
+	total = latencyTotal{hi: total.hi + carry, lo: lo}
+	t.elapsedTotals[name] = total
+	average, _ := bits.Div64(total.hi, total.lo, uint64(comp.CheckCount))
+	comp.AverageLatency = time.Duration(average)
 
 	record := HealthCheckRecord{
 		Timestamp: time.Now(),
 		Duration:  duration,
 		Success:   success,
-		Status:    component.Status,
+		Status:    state,
 	}
-	if err != nil {
-		record.ErrorMessage = err.Error()
+	if !success {
+		record.ErrorMessage = "component check failed"
 	}
 	comp.RecentHistory = append(comp.RecentHistory, record)
 	if len(comp.RecentHistory) > 10 {
@@ -503,6 +522,7 @@ func (t *Tracker) Reset() {
 		ComponentMetrics: make(map[string]*ComponentMetrics),
 	}
 	t.history = nil
+	t.elapsedTotals = make(map[string]latencyTotal)
 }
 
 // GenerateReport generates a comprehensive health report from tracker state.
@@ -592,13 +612,10 @@ func (t *Tracker) QueryHealthHistory(query HealthHistoryQuery) HealthHistoryQuer
 		offset = 0
 	}
 
-	end := offset + limit
-	if end > len(filtered) {
-		end = len(filtered)
-	}
-
+	end := total
 	entries := make([]HealthHistoryEntry, 0)
-	if offset < len(filtered) {
+	if offset < total {
+		end = offset + min(limit, total-offset)
 		// Keep entries outside the page inaccessible to the caller.
 		entries = filtered[offset:end:end]
 		for i, entry := range entries {

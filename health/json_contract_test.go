@@ -270,3 +270,16 @@ func TestReadinessZeroValueHasExplicitTimeAndState(t *testing.T) {
 		}
 	}
 }
+
+func TestComponentHealthJSONEmbedsStateAndExplicitEnabled(t *testing.T) {
+	for _, c := range []ComponentHealth{
+		{}, {HealthStatus: HealthStatus{Status: StatusHealthy, Dependencies: []string{}}, Enabled: true},
+		{HealthStatus: HealthStatus{Status: StatusUnhealthy, Dependencies: []string{"fixture"}}},
+	} {
+		fields := marshalObject(t, c)
+		if fields["enabled"] != c.Enabled || fields["status"] != string(c.Status) || fields["timestamp"] == nil ||
+			(fields["dependencies"] == nil) != (len(c.Dependencies) == 0) {
+			t.Fatalf("model=%+v fields=%v", c, fields)
+		}
+	}
+}

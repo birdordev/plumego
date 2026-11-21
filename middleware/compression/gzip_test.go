@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -1800,6 +1801,99 @@ func TestGzipConditionalAndRangeVariantsKeepFraming(t *testing.T) {
 		}
 		if tc.enc == "" && w.Body.String() != tc.body {
 			t.Fatalf("status=%d body=%q", w.Code, w.Body)
+		}
+	}
+}
+
+type gzipCommitRecorder struct {
+	*httptest.ResponseRecorder
+	commits []int
+}
+
+func (r *gzipCommitRecorder) WriteHeader(code int) {
+	r.commits = append(r.commits, code)
+	r.ResponseRecorder.WriteHeader(code)
+}
+
+func TestAcceptanceGzipAbnormalExitKeepsCommitOwnership(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		encoding string
+		exit     string
+		stream   bool
+		want     int
+	}{
+		{"normal", "gzip", "", false, 1},
+		{"identity", "identity", "goexit", false, 0},
+		{"untouched", "gzip", "goexit", false, 0},
+		{"panic", "gzip", "panic", false, 0},
+		{"stream", "gzip", "goexit", true, 1},
+		{"stream-panic", "gzip", "panic", true, 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			w := &gzipCommitRecorder{ResponseRecorder: httptest.NewRecorder()}
+			req := httptest.NewRequest("GET", "/fixture", nil)
+			req.Header.Set("Accept-Encoding", tc.encoding)
+			handler := Middleware(Config{})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "text/plain")
+				if tc.stream {
+					_, _ = io.WriteString(w, "fixture")
+				}
+				switch tc.exit {
+				case "goexit":
+					runtime.Goexit()
+				case "panic":
+					panic("fixture")
+				}
+			}))
+			var recovered any
+			done := make(chan struct{})
+			go func() {
+				defer close(done)
+				defer func() { recovered = recover() }()
+				handler.ServeHTTP(w, req)
+			}()
+			<-done
+			if len(w.commits) != tc.want || (recovered == "fixture") != (tc.exit == "panic") {
+				t.Fatalf("commits=%v panic=%v", w.commits, recovered)
+			}
+			if tc.stream {
+				reader, err := gzip.NewReader(w.Body)
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer reader.Close()
+				content, err := io.ReadAll(reader)
+				if string(content) != "fixture" || err != nil {
+					t.Fatalf("stream=%q err=%v", content, err)
+				}
+			}
+		})
+	}
+}
+
+func TestGzipHeaderOnlyCompletionPreservesTrailer(t *testing.T) {
+	server := httptest.NewServer(Middleware(Config{})(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Trailer", "X-Trailer")
+		w.WriteHeader(http.StatusAccepted)
+		w.Header().Set("X-Trailer", "fixture")
+	})))
+	defer server.Close()
+	for _, encoding := range []string{"gzip", "identity"} {
+		req, err := http.NewRequestWithContext(t.Context(), "GET", server.URL, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("Accept-Encoding", encoding)
+		resp, err := server.Client().Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		body, readErr := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if readErr != nil || len(body) != 0 || resp.StatusCode != 202 || resp.Header.Get("X-Trailer") != "" ||
+			resp.Trailer.Get("X-Trailer") != "fixture" || resp.Header.Get("Content-Encoding") != "" {
+			t.Fatalf("encoding=%s status=%d headers=%v trailers=%v body=%q err=%v", encoding, resp.StatusCode, resp.Header, resp.Trailer, body, readErr)
 		}
 	}
 }

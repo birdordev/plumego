@@ -1569,3 +1569,77 @@ func TestAnyFallbackDoesNotPolluteAllowForUnrelatedBranches(t *testing.T) {
 		}
 	}
 }
+
+func TestNamedWildcardRoundTripsEncodedValueWithInnerEmptySegment(t *testing.T) {
+	r := NewRouter()
+	mustAddRoute(r, "GET", "/files/*item", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Pattern", contract.RequestContextFromContext(r.Context()).RoutePattern)
+		_, _ = io.WriteString(w, Param(r, "item"))
+	}), WithRouteName("file"))
+	for _, value := range []string{"start//世界", "space test/a"} {
+		path, err := r.URL("file", "item", value)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for range 2 {
+			rec := serveRouter(r, "GET", path)
+			if rec.Code != 200 || rec.Body.String() != value || rec.Header().Get("X-Pattern") != "/files/*item" {
+				t.Fatalf("path=%q status=%d body=%q", path, rec.Code, rec.Body.String())
+			}
+		}
+	}
+	for _, value := range []string{"/start", "end/"} {
+		if path, err := r.URL("file", "item", value); err == nil || path != "" {
+			t.Fatalf("value=%q path=%q err=%v", value, path, err)
+		}
+	}
+}
+
+func TestRouteOptionOverlappingFreezeDoesNotPublishMetadata(t *testing.T) {
+	r := NewRouter(WithMethodNotAllowed(true))
+	mustAddRoute(r, "GET", "/first", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(204) }), WithRouteName("first"))
+	entered, release := make(chan struct{}), make(chan struct{})
+	done := make(chan error, 1)
+	go func() {
+		done <- r.AddRoute("GET", "/late", http.NotFoundHandler(), func(meta *RouteMeta) {
+			close(entered)
+			<-release
+			meta.Name = "late"
+		})
+	}()
+	<-entered
+	r.Freeze()
+	close(release)
+	if err := <-done; err == nil || len(r.Routes()) != 1 || len(r.NamedRoutes()) != 1 || r.HasRoute("late") {
+		t.Fatalf("late registration=%v routes=%v", err, r.Routes())
+	}
+	if rec := serveRouter(r, "POST", "/first"); rec.Code != 405 || rec.Header().Get("Allow") != "GET, HEAD" {
+		t.Fatalf("old route=%d %v", rec.Code, rec.Header())
+	}
+	if rec := serveRouter(r, "GET", "/late"); rec.Code != 404 {
+		t.Fatalf("late route=%d", rec.Code)
+	}
+}
+
+func TestFrozenRouterKeepsPrewarmedAllowPolicy(t *testing.T) {
+	for _, enabled := range []bool{false, true} {
+		r := NewRouter(WithMethodNotAllowed(enabled))
+		mustAddRoute(r, "GET", "/fixture", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(204) }))
+		for range 2 {
+			for _, method := range []string{"GET", "HEAD"} {
+				if rec := serveRouter(r, method, "/fixture"); rec.Code != 204 {
+					t.Fatalf("%s status=%d", method, rec.Code)
+				}
+			}
+			w := serveRouter(r, "POST", "/fixture")
+			if enabled && (w.Code != 405 || w.Header().Get("Allow") != "GET, HEAD") || !enabled && w.Code != 404 {
+				t.Fatalf("policy=%t status=%d headers=%v", enabled, w.Code, w.Header())
+			}
+			if rec := serveRouter(r, "POST", "/missing"); rec.Code != 404 {
+				t.Fatalf("missing status=%d", rec.Code)
+			}
+			r.Freeze()
+			r.SetMethodNotAllowed(!enabled)
+		}
+	}
+}

@@ -202,3 +202,23 @@ func TestAttachRequestIDDetachesHeadersWhenWriting(t *testing.T) {
 		}
 	}
 }
+
+func TestInvalidGeneratedIDFallbackWithoutRequestHeaderWriteback(t *testing.T) {
+	req := httptest.NewRequest("GET", "/", nil)
+	req.Header.Set("X-Metadata", "fixture")
+	var seen string
+	calls := 0
+	h := Middleware(WithRequestHeader(false), WithGenerator(func() string { calls++; return "bad\nfixture" }))(
+		http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+			seen = contract.RequestIDFromContext(r.Context())
+			if r.Header.Get(contract.RequestIDHeader) != "" || r.Header.Get("X-Metadata") != "fixture" {
+				t.Errorf("headers=%v", r.Header)
+			}
+		}))
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if calls != 1 || seen == "" || w.Header().Get(contract.RequestIDHeader) != seen ||
+		contract.RequestIDFromContext(req.Context()) != "" || req.Header.Get(contract.RequestIDHeader) != "" {
+		t.Fatalf("calls=%d context=%q response=%v request=%v", calls, seen, w.Header(), req.Header)
+	}
+}

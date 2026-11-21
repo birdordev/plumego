@@ -1487,3 +1487,67 @@ func TestCanceledPingLeavesCallerPoolUsable(t *testing.T) {
 		t.Fatalf("recovered Ping=%v calls=%d stats=%+v", err, conn.pingCount, database.Stats())
 	}
 }
+
+type partialPoolCloseFixture struct{}
+
+func (*partialPoolCloseFixture) Error() string { return "fixture close problem" }
+
+func TestPartialPoolFailurePreservesTypedCloseCauseAndFixedMessage(t *testing.T) {
+	openerCause := errors.New("fixture opener problem")
+	closeCause := &partialPoolCloseFixture{}
+	conn := &stubConn{closeErr: closeCause}
+	pool := sql.OpenDB(&stubConnector{conn: conn})
+	defer pool.Close()
+	if err := pool.PingContext(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	result, err := OpenWith(DefaultConfig("stub", "fixture"), func(string, string) (*sql.DB, error) { return pool, openerCause })
+	var found *partialPoolCloseFixture
+	if result != nil || !errors.Is(err, ErrConnectionFailed) || !errors.Is(err, openerCause) ||
+		!errors.As(err, &found) || found != closeCause || err.Error() != ErrConnectionFailed.Error() ||
+		conn.closeCount != 1 || pool.PingContext(t.Context()) == nil {
+		t.Fatalf("pool=%v cause=%T closes=%d error=%v", result, found, conn.closeCount, err)
+	}
+}
+
+type cancelStrictRows struct {
+	multiResultRows
+	closed chan struct{}
+}
+
+func (r *cancelStrictRows) Close() error {
+	defer close(r.closed)
+	return r.multiResultRows.Close()
+}
+
+func TestStrictRowCancellationClosesRowsAndKeepsPoolUsable(t *testing.T) {
+	rows := &cancelStrictRows{
+		multiResultRows: multiResultRows{
+			fixedRows: fixedRows{cols: []string{"n"}, values: [][]driver.Value{{int64(1)}}},
+			remaining: [][][]driver.Value{{{int64(2)}}},
+		}, closed: make(chan struct{}),
+	}
+	pool := sql.OpenDB(&rowsConnector{rows: rows})
+	defer pool.Close()
+	pool.SetMaxOpenConns(1)
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	calls := 0
+	err := QueryRowStrict(ctx, pool, "SELECT n", func(current *sql.Rows) error {
+		calls++
+		var n int64
+		if err := current.Scan(&n); err != nil || n != 1 {
+			t.Fatalf("row=%d err=%v", n, err)
+		}
+		cancel()
+		<-rows.closed
+		return nil
+	})
+	if !errors.Is(err, context.Canceled) || !errors.Is(err, ErrQueryFailed) ||
+		calls != 1 || rows.closes != 1 || len(rows.remaining) != 1 || pool.Stats().InUse != 0 {
+		t.Fatalf("err=%v calls=%d closes=%d remaining=%d stats=%+v", err, calls, rows.closes, len(rows.remaining), pool.Stats())
+	}
+	if err := pool.PingContext(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+}

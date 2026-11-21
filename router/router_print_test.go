@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"io"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 )
@@ -81,4 +82,35 @@ func TestRouterPrintWritesAfterSnapshot(t *testing.T) {
 	}
 
 	assertOutputContains(t, writer.buf.String(), "GET    /users")
+}
+
+type printFixtureWriter func([]byte) (int, error)
+
+func (f printFixtureWriter) Write(p []byte) (int, error) { return f(p) }
+
+func TestPrintRetriesWithNewSnapshotAfterRegistrationAndFailure(t *testing.T) {
+	r := NewRouter()
+	handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(204) })
+	for _, route := range []string{"/a", "/c"} {
+		mustAddRoute(r, "GET", route, handler)
+	}
+	var seen []string
+	r.Print(printFixtureWriter(func(data []byte) (int, error) {
+		seen = append(seen, string(data))
+		if len(seen) == 2 {
+			mustAddRoute(r, "GET", "/b", handler)
+		}
+		if len(seen) == 3 {
+			return 0, io.ErrClosedPipe
+		}
+		return len(data), nil
+	}))
+	if len(seen) != 3 || !strings.Contains(seen[2], "/c") {
+		t.Fatalf("old snapshot=%v", seen)
+	}
+	var out bytes.Buffer
+	r.Print(&out)
+	if !strings.Contains(out.String(), "/a\nGET    /b\nGET    /c") || serveRouter(r, "GET", "/b").Code != 204 {
+		t.Fatalf("retry=%s", out.String())
+	}
 }

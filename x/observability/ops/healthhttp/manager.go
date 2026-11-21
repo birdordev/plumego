@@ -218,6 +218,11 @@ func (m *manager) GetAllHealth() map[string]*health.ComponentHealth {
 }
 
 func (m *manager) CheckComponent(ctx context.Context, name string) error {
+	var result componentCheckResult
+	return m.checkComponent(ctx, name, &result)
+}
+
+func (m *manager) checkComponent(ctx context.Context, name string, result *componentCheckResult) error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -250,6 +255,9 @@ func (m *manager) CheckComponent(ctx context.Context, name string) error {
 	start := time.Now()
 	attempts, err := runCheckWithRetry(checkCtx, checker, config)
 	duration := time.Since(start)
+	result.attempted = attempts > 0
+	result.duration = duration
+	result.failed = err != nil
 
 	timestamp := time.Now()
 	status := health.StatusHealthy
@@ -291,6 +299,11 @@ func (m *manager) CheckComponent(ctx context.Context, name string) error {
 }
 
 func (m *manager) CheckAllComponents(ctx context.Context) health.HealthStatus {
+	status, _, _ := m.checkBatch(ctx)
+	return status
+}
+
+func (m *manager) checkBatch(ctx context.Context) (health.HealthStatus, []string, []componentCheckResult) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -302,7 +315,7 @@ func (m *manager) CheckAllComponents(ctx context.Context) health.HealthStatus {
 			Status:    health.StatusUnhealthy,
 			Message:   errManagerClosed.Error(),
 			Timestamp: time.Now(),
-		}
+		}, nil, nil
 	}
 	m.aggregateVersion++
 	version := m.aggregateVersion
@@ -328,10 +341,10 @@ func (m *manager) CheckAllComponents(ctx context.Context) health.HealthStatus {
 	defer m.mu.Unlock()
 
 	if m.closed {
-		return health.HealthStatus{Status: health.StatusUnhealthy, Message: errManagerClosed.Error(), Timestamp: time.Now()}
+		return health.HealthStatus{Status: health.StatusUnhealthy, Message: errManagerClosed.Error(), Timestamp: time.Now()}, components, results
 	}
 	if version != m.aggregateVersion {
-		return health.HealthStatus{Status: health.StatusUnhealthy, Message: "aggregate check was superseded", Timestamp: time.Now()}
+		return health.HealthStatus{Status: health.StatusUnhealthy, Message: "aggregate check was superseded", Timestamp: time.Now()}, components, results
 	}
 	status, message := calculateOverallStatus(m.health)
 	if len(components) == 0 && len(m.health) == 0 {
@@ -382,7 +395,7 @@ func (m *manager) CheckAllComponents(ctx context.Context) health.HealthStatus {
 		Details:      map[string]any{},
 		Duration:     duration,
 		Dependencies: components,
-	}
+	}, components, results
 }
 
 func optimalConcurrency(componentCount int) int {
@@ -509,8 +522,11 @@ func sleepWithContext(ctx context.Context, delay time.Duration) bool {
 }
 
 type componentCheckResult struct {
-	complete bool
-	err      error
+	complete  bool
+	attempted bool
+	duration  time.Duration
+	failed    bool
+	err       error
 }
 
 func (m *manager) checkAggregateComponents(ctx context.Context, names []string) []componentCheckResult {
@@ -521,12 +537,16 @@ func (m *manager) checkAggregateComponents(ctx context.Context, names []string) 
 	var worker func()
 	worker = func() {
 		current := -1
+		var started time.Time
 		defer func() {
 			_ = recover()
 			if current >= 0 {
 				// panic 和 Goexit 都会执行此 defer。
 				// 仅在还有未领取的检查时补充 worker。
-				results[current] = componentCheckResult{complete: true, err: errComponentCheckIncomplete}
+				results[current] = componentCheckResult{
+					complete: true, attempted: true, duration: time.Since(started),
+					failed: true, err: errComponentCheckIncomplete,
+				}
 				if next.Load() < int64(len(names)) {
 					wg.Go(worker)
 				}
@@ -538,10 +558,10 @@ func (m *manager) checkAggregateComponents(ctx context.Context, names []string) 
 				return
 			}
 			current = int(index)
-			results[current] = componentCheckResult{
-				complete: true,
-				err:      m.CheckComponent(ctx, names[current]),
-			}
+			started = time.Now()
+			result := &results[current]
+			result.err = m.checkComponent(ctx, names[current], result)
+			result.complete = true
 			current = -1
 		}
 	}

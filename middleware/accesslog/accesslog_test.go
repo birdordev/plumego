@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"errors"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -14,6 +15,7 @@ import (
 	"github.com/birdordev/plumego/log"
 	"github.com/birdordev/plumego/middleware"
 	mwtracing "github.com/birdordev/plumego/middleware/tracing"
+	"github.com/birdordev/plumego/router"
 )
 
 type logEntry struct {
@@ -318,5 +320,42 @@ func TestAccessLogUsesRoutePublicationAndCompletionFields(t *testing.T) {
 		if f["path"] != "/items/1" || f["route"] != wantRoute || f["status"] != http.StatusAccepted || f["bytes"] != len("/downstream") || f["request_id"] != "fixture" {
 			t.Fatalf("observed fields=%v", f)
 		}
+	}
+}
+
+type shortFixtureLogWriter struct{ http.ResponseWriter }
+
+func (w shortFixtureLogWriter) Write(p []byte) (int, error) {
+	n, err := w.ResponseWriter.Write(p[:min(2, len(p))])
+	if err != nil {
+		return n, err
+	}
+	return n, io.ErrClosedPipe
+}
+
+func TestAccessLogRecordsMatchedRouteAfterShortWrite(t *testing.T) {
+	logger := newStubLogger()
+	wrap, err := Middleware(Config{Logger: logger})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := router.NewRouter()
+	if err := r.AddRoute("GET", "/sample/:id", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(201)
+		if n, err := w.Write([]byte("fixture")); n != 2 || !errors.Is(err, io.ErrClosedPipe) {
+			t.Errorf("write=%d err=%v", n, err)
+		}
+	}), router.WithRouteName("sample")); err != nil {
+		t.Fatal(err)
+	}
+	rec := httptest.NewRecorder()
+	wrap(r).ServeHTTP(shortFixtureLogWriter{rec}, httptest.NewRequest("GET", "/sample/1", nil))
+	entries := *logger.entries
+	if len(entries) != 1 {
+		t.Fatalf("entries=%v", entries)
+	}
+	f := entries[0].fields
+	if f["status"] != 201 || f["bytes"] != 2 || f["route"] != "/sample/:id" || f["route_name"] != "sample" || rec.Body.String() != "fi" {
+		t.Fatalf("fields=%v body=%q", f, rec.Body.String())
 	}
 }

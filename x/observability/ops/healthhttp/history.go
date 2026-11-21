@@ -41,19 +41,20 @@ func HealthHistoryExportHandler(tracker *Tracker) http.Handler {
 			format = "json"
 		}
 
-		result := tracker.QueryHealthHistory(query)
-
-		switch format {
-		case "csv":
-			writeHistoryCSV(w, result.Entries)
-		case "json":
-			_ = contract.WriteResponse(w, r, http.StatusOK, result, nil)
-		default:
+		if format != "json" && format != "csv" {
 			_ = contract.WriteError(w, r, contract.NewErrorBuilder().
 				Type(contract.TypeInvalidFormat).
 				Message("supported formats: json, csv").
 				Build())
+			return
 		}
+
+		result := tracker.QueryHealthHistory(query)
+		if format == "csv" {
+			writeHistoryCSV(w, result.Entries)
+			return
+		}
+		_ = contract.WriteResponse(w, r, http.StatusOK, result, nil)
 	})
 }
 
@@ -97,19 +98,27 @@ func parseHistoryQuery(r *http.Request) (HealthHistoryQuery, error) {
 		q.Component = s
 	}
 
-	if s := params.Get("limit"); s != "" {
-		if n, err := strconv.Atoi(s); err == nil {
-			q.Limit = n
-		}
+	q.Limit, err = parseHistoryInt("limit", params.Get("limit"))
+	if err != nil {
+		return q, err
 	}
-
-	if s := params.Get("offset"); s != "" {
-		if n, err := strconv.Atoi(s); err == nil {
-			q.Offset = n
-		}
+	q.Offset, err = parseHistoryInt("offset", params.Get("offset"))
+	if err != nil {
+		return q, err
 	}
 
 	return q, nil
+}
+
+func parseHistoryInt(param, value string) (int, error) {
+	if value == "" {
+		return 0, nil
+	}
+	parsed, err := strconv.Atoi(value)
+	if err != nil {
+		return 0, &invalidParamError{param: param, msg: "must be an integer in the supported range"}
+	}
+	return parsed, nil
 }
 
 func parseHistoryTime(param, value string) (*time.Time, error) {

@@ -489,3 +489,33 @@ func TestTimeoutCloseParentCancellationAndLocalDeadline(t *testing.T) {
 		})
 	}
 }
+
+func TestCanceledParentOwnsResponseBeforeLatePanicHook(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ctx, cancel := context.WithCancel(t.Context())
+		defer cancel()
+		entered, release, returned := make(chan struct{}), make(chan struct{}), make(chan struct{})
+		var calls atomic.Int32
+		h := Middleware(Config{Timeout: time.Hour, OnPanic: func(r *http.Request, recovered any) {
+			if r.Context().Err() != context.Canceled || recovered != "fixture" {
+				t.Errorf("context=%v panic=%v", r.Context().Err(), recovered)
+			}
+			calls.Add(1)
+		}})(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			_, _ = io.WriteString(w, "private to buffer")
+			close(entered)
+			<-release
+			panic("fixture")
+		}))
+		dst := &responseWriteCounter{ResponseWriter: httptest.NewRecorder()}
+		go func() { defer close(returned); h.ServeHTTP(dst, httptest.NewRequestWithContext(ctx, "GET", "/", nil)) }()
+		<-entered
+		cancel()
+		<-returned
+		close(release)
+		synctest.Wait()
+		if calls.Load() != 1 || dst.writes != 0 {
+			t.Fatalf("hooks=%d writes=%d", calls.Load(), dst.writes)
+		}
+	})
+}

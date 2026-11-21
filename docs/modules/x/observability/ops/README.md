@@ -114,3 +114,16 @@ manager lock and rechecks closure before publishing.
 
 History exports accept RFC3339 `start_time` and `end_time` filters. Invalid
 timestamps and reversed ranges return the standard invalid-query response.
+
+Tracker uses the built-in manager's per-batch component outcomes for
+statistics. An interrupted check counts as a failure, and components
+skipped before their first attempt do not count as checks. External
+implementations of Manager supply component snapshots, so their tracker
+statistics reflect the available snapshots. Public metrics use a fixed
+failure message while direct component calls retain their error causes.
+Latency statistics use nonnegative durations and round the mean down to
+a whole nanosecond.
+
+History exports validate explicit integer `limit` and `offset` values.
+Absent values keep their defaults. A page at or beyond the end of the
+filtered history has no next page.

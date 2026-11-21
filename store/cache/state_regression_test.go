@@ -452,3 +452,45 @@ func TestExpiredReadNearClosePreservesFinalAccounting(t *testing.T) {
 		}
 	})
 }
+
+type cacheEntryContext struct {
+	context.Context
+	checked chan struct{}
+	once    sync.Once
+}
+
+func (c *cacheEntryContext) Err() error {
+	err := c.Context.Err()
+	c.once.Do(func() { close(c.checked) })
+	return err
+}
+
+func TestCanceledSetWaitingForWriteLockPreservesCache(t *testing.T) {
+	c := NewMemoryCache()
+	defer c.Close()
+	if err := c.Set(t.Context(), "fixture", []byte("old"), 0); err != nil {
+		t.Fatal(err)
+	}
+	before := c.Stats()
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	checkpoint := &cacheEntryContext{Context: ctx, checked: make(chan struct{})}
+	done := make(chan error, 1)
+	c.writeMu.Lock()
+	go func() { done <- c.Set(checkpoint, "fixture", []byte("new value"), 0) }()
+	<-checkpoint.checked
+	cancel()
+	c.writeMu.Unlock()
+	if err := <-done; !errors.Is(err, context.Canceled) {
+		t.Fatalf("set error=%v", err)
+	}
+	if after := c.Stats(); after != before {
+		t.Fatalf("before=%+v after=%+v", before, after)
+	}
+	if val, err := c.Get(t.Context(), "fixture"); string(val) != "old" || err != nil {
+		t.Fatalf("value=%q err=%v", val, err)
+	}
+	if err := c.Set(t.Context(), "fixture", []byte("next"), 0); err != nil {
+		t.Fatal(err)
+	}
+}

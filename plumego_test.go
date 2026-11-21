@@ -205,3 +205,16 @@ func TestFacadeExplicitZeroConfigKeepsCoreValidation(t *testing.T) {
 		t.Fatalf("default server=%v error=%v", server, err)
 	}
 }
+
+func TestFacadeParamAcceptsNilAndLegacyMetadata(t *testing.T) {
+	req := httptest.NewRequest("GET", "/fixture", nil)
+	withParam := req.WithContext(contract.WithRequestContext(req.Context(), contract.RequestContext{Params: map[string]string{"id": "legacy"}}))
+	for _, tc := range []struct {
+		request *http.Request
+		want    string
+	}{{nil, ""}, {req, ""}, {withParam, "legacy"}} {
+		if got := plumego.Param(tc.request, "id"); got != tc.want || plumego.Param(tc.request, "missing") != "" {
+			t.Fatalf("param=%q want=%q", got, tc.want)
+		}
+	}
+}

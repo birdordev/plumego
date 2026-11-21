@@ -83,16 +83,16 @@ func Middleware(cfg Config) middleware.Middleware {
 				cfg:            cfg,
 			}
 
+			returned := false
 			defer func() {
-				if rec := recover(); rec != nil {
-					gw.finalize(true)
-					panic(rec)
+				gw.finalize(!returned)
+				if returned {
+					variant.Prepare()
 				}
-				gw.finalize(false)
-				variant.Prepare()
 			}()
 
 			next.ServeHTTP(gw, r)
+			returned = true
 		})
 	}
 }
@@ -173,11 +173,11 @@ func (w *gzipResponseWriter) Unwrap() http.ResponseWriter {
 	return w.ResponseWriter
 }
 
-func (w *gzipResponseWriter) finalize(panicking bool) {
+func (w *gzipResponseWriter) finalize(aborted bool) {
 	if w.hijacked {
 		return
 	}
-	if panicking && !w.headersFlushed && w.gz == nil {
+	if aborted && !w.headersFlushed && w.gz == nil {
 		return
 	}
 	if w.buffer != nil {

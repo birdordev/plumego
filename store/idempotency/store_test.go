@@ -362,3 +362,24 @@ func TestValidateKeyKeepsLegalUnicodeAndBoundarySpaces(t *testing.T) {
 		}
 	}
 }
+
+func TestCompletionExpirationAndStatusUseSuppliedClock(t *testing.T) {
+	expires := time.Now()
+	for _, status := range []Status{StatusInProgress, StatusCompleted} {
+		record := Record{Key: "fixture", RequestHash: "fixture", Status: status, ExpiresAt: expires}
+		for _, offset := range []time.Duration{-1, 0, 1} {
+			var want error
+			if offset >= 0 {
+				want = ErrExpired
+			} else if status == StatusCompleted {
+				want = ErrAlreadyCompleted
+			}
+			if got := ValidateCompletionAt(record, "fixture", expires.Add(offset)); !errors.Is(got, want) {
+				t.Fatalf("status=%s offset=%v err=%v want=%v", status, offset, got, want)
+			}
+		}
+		if err := ValidateCompletionAt(record, "different", expires); !errors.Is(err, ErrRequestMismatch) {
+			t.Fatalf("mismatch=%v", err)
+		}
+	}
+}

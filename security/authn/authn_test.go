@@ -159,3 +159,17 @@ func TestPrincipalFromContextNilContext(t *testing.T) {
 		t.Fatalf("expected nil for nil context, got %+v", got)
 	}
 }
+
+func TestPrincipalCopyPreservesNilAndEmptyContainers(t *testing.T) {
+	ctx := WithPrincipal(t.Context(), &Principal{Roles: []string{}, Claims: map[string]string{}})
+	first := PrincipalFromContext(ctx)
+	if first.Roles == nil || first.Claims == nil || first.Scopes != nil {
+		t.Fatalf("first=%+v", first)
+	}
+	first.Claims["fixture"] = "local"
+	first.Roles = append(first.Roles, "fixture")
+	second := PrincipalFromContext(ctx)
+	if len(second.Claims) != 0 || len(second.Roles) != 0 || second.Claims == nil || second.Roles == nil {
+		t.Fatalf("second=%+v", second)
+	}
+}

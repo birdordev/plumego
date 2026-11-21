@@ -760,3 +760,30 @@ func TestCanceledStartCheckLeavesLifecycleRegistrationOpen(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestLifecycleReadyOwnsPhaseUntilCallbackReturns(t *testing.T) {
+	g := NewLifecycleGroup()
+	entered, release := make(chan struct{}), make(chan struct{})
+	calls := 0
+	g.Add("main", Component{OnReady: func(context.Context) error {
+		calls++
+		close(entered)
+		<-release
+		return nil
+	}, OnStop: func(context.Context) error { calls++; return nil }})
+	if err := g.Start(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() { done <- g.Ready(t.Context()) }()
+	<-entered
+	readyErr, stopErr := g.Ready(t.Context()), g.Stop(t.Context())
+	g.Add("late", Component{OnStop: func(context.Context) error { t.Error("late component stopped"); return nil }})
+	close(release)
+	if err := <-done; err != nil || readyErr == nil || stopErr == nil {
+		t.Fatalf("ready=%v overlapping=%v stop=%v", err, readyErr, stopErr)
+	}
+	if err := g.Stop(t.Context()); err != nil || calls != 2 {
+		t.Fatalf("final stop=%v calls=%d", err, calls)
+	}
+}

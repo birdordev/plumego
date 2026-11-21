@@ -1254,3 +1254,21 @@ func TestErrorBuilderReuseKeepsPreviousDetailsAndWireShape(t *testing.T) {
 		}
 	}
 }
+
+func TestTypedDetailSliceViewsKeepTheirLengths(t *testing.T) {
+	type labels []string
+	original := labels{"first", "second"}
+	e := NewErrorBuilder().Detail("short", original[:1]).Detail("long", original).Build()
+	copy := e.Details()
+	copy["short"].(labels)[0] = "local"
+	if original[0] != "first" || len(copy["long"].(labels)) != 2 || len(copy["short"].(labels)) != 1 {
+		t.Fatalf("original=%v copy=%v", original, copy)
+	}
+	w := httptest.NewRecorder()
+	if err := WriteError(w, nil, e); err != nil {
+		t.Fatal(err)
+	}
+	if got := w.Body.String(); !strings.Contains(got, `"short":["first"]`) || !strings.Contains(got, `"long":["first","second"]`) {
+		t.Fatalf("error JSON=%s", got)
+	}
+}

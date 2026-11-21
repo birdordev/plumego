@@ -446,3 +446,35 @@ func BenchmarkPathPoolDeepPaths(b *testing.B) {
 		})
 	}
 }
+
+func BenchmarkRoutePathPoolBoundary(b *testing.B) {
+	for _, segments := range []int{63, 64, 65} {
+		for _, warm := range []bool{false, true} {
+			b.Run(fmt.Sprintf("segments=%d/warm=%t", segments, warm), func(b *testing.B) {
+				r := NewRouter(WithCacheCapacity(1))
+				path := strings.Repeat("/fixture", segments-1)
+				h := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+					if Param(req, "tail") != "value" {
+						b.Fatal("route metadata changed")
+					}
+					w.WriteHeader(http.StatusNoContent)
+				})
+				if err := r.AddRoute("GET", path+"/:tail", h); err != nil {
+					b.Fatal(err)
+				}
+				req := httptest.NewRequest("GET", path+"/value", nil)
+				rec := httptest.NewRecorder()
+				b.ReportAllocs()
+				for b.Loop() {
+					if !warm {
+						r.state.matchCache.Clear()
+					}
+					r.ServeHTTP(rec, req)
+				}
+				if rec.Code != 204 {
+					b.Fatalf("status=%d", rec.Code)
+				}
+			})
+		}
+	}
+}

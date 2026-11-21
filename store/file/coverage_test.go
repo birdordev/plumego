@@ -306,3 +306,19 @@ func TestUploadAndFileMetadataCopiesFromSameSourceDetach(t *testing.T) {
 		t.Fatalf("metadata aliases: first=%v second=%v result=%v original=%v", a, b, result.Metadata, shared)
 	}
 }
+
+func TestFileClonesOwnTimePointersAndMetadataAcrossViews(t *testing.T) {
+	stamp := time.Now()
+	file := File{LastAccessAt: &stamp, DeletedAt: &stamp, Metadata: map[string]any{"state": "original"}}
+	one, two := file.Clone(), file.Clone()
+	*one.LastAccessAt = stamp.Add(time.Hour)
+	*two.DeletedAt = stamp.Add(-time.Hour)
+	one.Metadata["state"] = "changed"
+	if !file.LastAccessAt.Equal(stamp) || !one.DeletedAt.Equal(stamp) || !two.LastAccessAt.Equal(stamp) ||
+		two.Metadata["state"] != "original" || file.Metadata["state"] != "original" {
+		t.Fatalf("source=%+v first=%+v second=%+v", file, one, two)
+	}
+	if empty := (File{}).Clone(); empty.DeletedAt != nil || empty.LastAccessAt != nil || empty.Metadata != nil {
+		t.Fatalf("empty=%+v", empty)
+	}
+}

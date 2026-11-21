@@ -291,3 +291,20 @@ func TestHTTPRecordCombinesStatusAndExplicitErrorOnce(t *testing.T) {
 		t.Fatalf("record counts=%+v", stats)
 	}
 }
+
+func TestNamelessRecordsCountWithoutCreatingSeries(t *testing.T) {
+	c := NewBaseMetricsCollector()
+	c.Record(t.Context(), MetricRecord{})
+	c.Record(t.Context(), MetricRecord{Error: errors.New("fixture")})
+	c.ObserveHTTP(t.Context(), "GET", "/fixture", 204, 0, time.Second)
+	before := c.GetStats()
+	if before.TotalRecords != 3 || before.ErrorRecords != 1 || before.ActiveSeries != 1 ||
+		len(before.NameBreakdown) != 1 || before.NameBreakdown[MetricHTTPRequest] != 1 {
+		t.Fatalf("stats=%+v", before)
+	}
+	c.Clear()
+	if after := c.GetStats(); after.TotalRecords != 0 || after.ErrorRecords != 0 || after.ActiveSeries != 0 ||
+		len(after.NameBreakdown) != 0 || after.StartTime.Before(before.StartTime) {
+		t.Fatalf("before=%+v after=%+v", before, after)
+	}
+}
