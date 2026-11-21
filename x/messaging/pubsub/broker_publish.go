@@ -21,7 +21,8 @@ func (b *InProcBroker) PublishAsync(topic string, msg Message) error {
 	return b.publishInternal(context.Background(), topic, msg, true)
 }
 
-// PublishBatch publishes multiple messages to a topic atomically.
+// PublishBatch publishes messages to a topic in slice order without modifying
+// the caller's message envelopes. Each delivery uses the subscriber's policy.
 func (b *InProcBroker) PublishBatch(topic string, msgs []Message) error {
 	if b.closed.Load() {
 		return newErr(ErrCodeClosed, "publish_batch", topic, "broker is closed", nil)
@@ -30,13 +31,6 @@ func (b *InProcBroker) PublishBatch(topic string, msgs []Message) error {
 	topic, err := normalizePublishTopic(topic, "publish_batch")
 	if err != nil {
 		return err
-	}
-
-	for i := range msgs {
-		msgs[i].Topic = topic
-		if msgs[i].Time.IsZero() {
-			msgs[i].Time = time.Now().UTC()
-		}
 	}
 
 	subs := b.shards.getTopicSubscribersIfAny(topic)
@@ -54,6 +48,10 @@ func (b *InProcBroker) PublishBatch(topic string, msgs []Message) error {
 
 	bgCtx := context.Background()
 	for _, msg := range msgs {
+		msg.Topic = topic
+		if msg.Time.IsZero() {
+			msg.Time = time.Now().UTC()
+		}
 		clonedMsg := cloneMessage(msg)
 		b.metrics.incPublish(topic)
 		b.notifyPublish(topic, &clonedMsg)
@@ -72,7 +70,8 @@ func (b *InProcBroker) PublishBatch(topic string, msgs []Message) error {
 	return nil
 }
 
-// PublishMulti publishes messages to multiple topics.
+// PublishMulti publishes messages one topic at a time. An error can occur after
+// other topics have already received messages.
 func (b *InProcBroker) PublishMulti(msgs map[string][]Message) error {
 	if b.closed.Load() {
 		return newErr(ErrCodeClosed, "publish_multi", "", "broker is closed", nil)

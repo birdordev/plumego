@@ -1,6 +1,7 @@
 package scheduler
 
 import (
+	"crypto/rand"
 	"crypto/sha256"
 	"fmt"
 	"time"
@@ -14,6 +15,8 @@ import (
 //   - "0 * * * *"  - every hour
 //   - "@daily"     - every day at midnight
 //   - "@every 5m"  - every 5 minutes
+//
+// An empty id generates an opaque job ID.
 func (s *Scheduler) AddCron(id JobID, spec string, task TaskFunc, opts ...JobOption) (JobID, error) {
 	parsed, err := ParseCronSpec(spec)
 	if err != nil {
@@ -25,6 +28,7 @@ func (s *Scheduler) AddCron(id JobID, spec string, task TaskFunc, opts ...JobOpt
 // AddCronWithLocation registers a cron job with a specific timezone.
 // This allows scheduling jobs in timezones other than UTC.
 // Example: AddCronWithLocation("daily-report", "0 9 * * *", task, time.FixedZone("EST", -5*3600))
+// An empty id generates an opaque job ID.
 func (s *Scheduler) AddCronWithLocation(id JobID, spec string, task TaskFunc, location *time.Location, opts ...JobOption) (JobID, error) {
 	if location == nil {
 		location = time.UTC
@@ -37,6 +41,7 @@ func (s *Scheduler) AddCronWithLocation(id JobID, spec string, task TaskFunc, lo
 }
 
 // Schedule registers a job to run at a specific time.
+// An empty id generates an opaque job ID.
 func (s *Scheduler) Schedule(id JobID, runAt time.Time, task TaskFunc, opts ...JobOption) (JobID, error) {
 	if runAt.IsZero() {
 		return "", ErrRunAtRequired
@@ -45,6 +50,7 @@ func (s *Scheduler) Schedule(id JobID, runAt time.Time, task TaskFunc, opts ...J
 }
 
 // Delay registers a job to run after the specified delay.
+// An empty id generates an opaque job ID.
 func (s *Scheduler) Delay(id JobID, delay time.Duration, task TaskFunc, opts ...JobOption) (JobID, error) {
 	return s.Schedule(id, s.clock.Now().Add(delay), task, opts...)
 }
@@ -303,7 +309,7 @@ func (s *Scheduler) addJob(id JobID, kind jobKind, task TaskFunc, spec CronSpec,
 		return "", ErrTaskNil
 	}
 	if id == "" {
-		id = JobID(fmt.Sprintf("job-%d", s.clock.Now().UnixNano()))
+		id = JobID("job-" + rand.Text())
 	}
 	jobOpts := defaultJobOptions()
 	for _, opt := range opts {

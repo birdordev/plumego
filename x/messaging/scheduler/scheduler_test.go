@@ -3235,3 +3235,38 @@ func (s *skippedJobDeleteStore) Delete(id JobID) error {
 	}
 	return s.MemoryStore.Delete(id)
 }
+
+func TestGeneratedJobIDsAreDistinct(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		s := New()
+		task := func(context.Context) error { return nil }
+		register := func() JobID {
+			id, err := s.Delay("", time.Hour, task)
+			if err != nil {
+				t.Errorf("Delay: %v", err)
+			}
+			return id
+		}
+		ids := []JobID{register(), register()}
+		concurrent := make(chan JobID, 2)
+		for range 2 {
+			go func() { concurrent <- register() }()
+		}
+		ids = append(ids, <-concurrent, <-concurrent)
+		if len(s.List()) != len(ids) {
+			t.Errorf("registered %d distinct jobs, want %d", len(s.List()), len(ids))
+		}
+		for _, id := range ids {
+			if status, ok := s.Status(id); !ok || id == "" || status.ID != id || status.State != JobStateScheduled {
+				t.Errorf("Status(%q) = %+v, %v", id, status, ok)
+			}
+		}
+
+		if _, err := s.Delay("fixed", time.Hour, task); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := s.Delay("fixed", 2*time.Hour, task); !errors.Is(err, ErrJobExists) {
+			t.Errorf("duplicate explicit ID = %v, want ErrJobExists", err)
+		}
+	})
+}

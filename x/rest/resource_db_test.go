@@ -15,6 +15,7 @@ import (
 	"testing"
 
 	"github.com/birdordev/plumego/contract"
+	"github.com/birdordev/plumego/router"
 )
 
 type dbResourceTestItem struct {
@@ -623,5 +624,27 @@ func TestParamExtractorPreservesExplicitQueryValues(t *testing.T) {
 		if n, b := p.GetQueryInt(r, "count", 9), p.GetQueryBool(r, "enabled", true); n != tc.count || b != tc.enabled {
 			t.Errorf("query %q yielded %d, %t", tc.query, n, b)
 		}
+	}
+}
+
+func TestParamExtractorUsesRouteContext(t *testing.T) {
+	r := router.NewRouter()
+	p := &ParamExtractor{}
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := p.GetParam(r, "id"); got != "route-id" {
+			t.Errorf("path parameter=%q", got)
+		}
+		if got := p.GetParam(r, "missing"); got != "" {
+			t.Errorf("missing parameter=%q", got)
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
+	if err := r.AddRoute(http.MethodGet, "/items/:id", handler); err != nil {
+		t.Fatal(err)
+	}
+	out := httptest.NewRecorder()
+	r.ServeHTTP(out, httptest.NewRequest(http.MethodGet, "/items/route-id?id=query-id", nil))
+	if out.Code != http.StatusNoContent {
+		t.Errorf("response=%d", out.Code)
 	}
 }

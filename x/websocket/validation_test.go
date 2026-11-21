@@ -279,3 +279,10 @@ func TestValidateTextMessage_AllControlCharacters(t *testing.T) {
 		t.Fatalf("expected ErrControlCharacters for DEL, got %v", err)
 	}
 }
+
+func TestNewValidationErrorReportsFieldAndReason(t *testing.T) {
+	err := NewValidationError("room", "name is missing")
+	if got, want := err.Error(), "websocket: validation error on room: name is missing"; got != want {
+		t.Errorf("error=%q, want %q", got, want)
+	}
+}

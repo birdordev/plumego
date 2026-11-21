@@ -1564,3 +1564,33 @@ func TestFramedClientDelegatesRawTimeouts(t *testing.T) {
 		t.Errorf("read=%d %q, %v", n, buffer, err)
 	}
 }
+
+type heartbeatApplicationWriteFixture struct {
+	Client
+	write func([]byte, time.Duration) (int, error)
+}
+
+func (c heartbeatApplicationWriteFixture) WriteWithTimeout(p []byte, d time.Duration) (int, error) {
+	return c.write(p, d)
+}
+func (c heartbeatApplicationWriteFixture) Close() error { return nil }
+
+func TestHeartbeatClientDelegatesApplicationWriteTimeout(t *testing.T) {
+	sentinel := errors.New("application write failure")
+	calls := 0
+	underlying := heartbeatApplicationWriteFixture{write: func(p []byte, d time.Duration) (int, error) {
+		calls++
+		if string(p) != "app" || d != 250*time.Millisecond {
+			t.Errorf("write=%q, %v", p, d)
+		}
+		return 2, sentinel
+	}}
+	wrapped, err := NewHeartbeatClient(underlying, &HeartbeatConfig{Enabled: true, Interval: time.Hour})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = wrapped.Close() })
+	if n, err := wrapped.WriteWithTimeout([]byte("app"), 250*time.Millisecond); n != 2 || !errors.Is(err, sentinel) || calls != 1 {
+		t.Errorf("write=%d, %v, calls=%d", n, err, calls)
+	}
+}

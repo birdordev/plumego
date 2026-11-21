@@ -387,3 +387,28 @@ func TestCollectorFilterReentryAndSnapshotOwnership(t *testing.T) {
 		t.Fatalf("stored trace changed: %+v", original)
 	}
 }
+
+func TestRecordSpanEventCopiesTopLevelAttributes(t *testing.T) {
+	config := DefaultTracerConfig()
+	config.SamplingRate = 1
+	tr, err := NewTracer(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, span := tr.StartTrace(t.Context(), "event trace")
+	if span == nil {
+		t.Fatal("no span")
+	}
+	attrs := map[string]any{"count": 3}
+	tr.RecordSpanEvent(span, "sample", WithEventAttributes(attrs))
+	attrs["count"] = 5
+	tr.RecordSpanEvent(span, "empty", WithEventAttributes(nil))
+	snapshot, ok := tr.collector.GetTrace(span.TraceID)
+	if !ok || len(snapshot.Spans) != 1 || len(snapshot.Spans[0].Events) != 2 {
+		t.Fatalf("trace=%+v", snapshot)
+	}
+	first, second := snapshot.Spans[0].Events[0], snapshot.Spans[0].Events[1]
+	if first.Name != "sample" || first.Attributes["count"] != 3 || first.Timestamp.IsZero() || second.Name != "empty" || len(second.Attributes) != 0 {
+		t.Errorf("events=%+v and %+v", first, second)
+	}
+}

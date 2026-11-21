@@ -108,16 +108,21 @@ func (l *Logger) Entries() []Entry {
 	defer l.shared.mu.RUnlock()
 	cp := make([]Entry, len(l.shared.entries))
 	for i, entry := range l.shared.entries {
-		entry.Fields = maps.Clone(entry.Fields)
-		cp[i] = entry
+		cp[i] = cloneEntry(entry)
 	}
 	return cp
 }
 
-// Clear removes all captured entries.
+func cloneEntry(entry Entry) Entry {
+	entry.Fields = maps.Clone(entry.Fields)
+	return entry
+}
+
+// Clear releases captured field references and reuses the entry buffer.
 func (l *Logger) Clear() {
 	l.shared.mu.Lock()
 	defer l.shared.mu.Unlock()
+	clear(l.shared.entries)
 	l.shared.entries = l.shared.entries[:0]
 }
 
@@ -153,14 +158,14 @@ func (l *Logger) HasEntry(level Level, substr string) bool {
 	return false
 }
 
-// LastEntry returns the most recently captured entry, if any.
+// LastEntry returns the most recent entry, with the same field ownership as Entries.
 func (l *Logger) LastEntry() (Entry, bool) {
 	l.shared.mu.RLock()
 	defer l.shared.mu.RUnlock()
 	if len(l.shared.entries) == 0 {
 		return Entry{}, false
 	}
-	return l.shared.entries[len(l.shared.entries)-1], true
+	return cloneEntry(l.shared.entries[len(l.shared.entries)-1]), true
 }
 
 func (l *Logger) handleFatal(msg string) {

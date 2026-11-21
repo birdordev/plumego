@@ -212,3 +212,35 @@ func TestChain(t *testing.T) {
 		t.Errorf("expected ErrTenantNotFound, got %v", err)
 	}
 }
+
+func TestHooksForwardConfiguredCallbacks(t *testing.T) {
+	ctx := t.Context()
+	resolve := ResolveInfo{TenantID: "tenant", Source: "extractor"}
+	policy := PolicyDecision{TenantID: "tenant", Allowed: true}
+	quota := QuotaDecision{TenantID: "tenant", RemainingTokens: 10}
+	rate := RateLimitDecision{TenantID: "tenant", Limit: 10}
+	calls := map[string]int{}
+	check := func(name string, in context.Context, matched bool) {
+		calls[name]++
+		if in != ctx || !matched {
+			t.Errorf("%s hook argument or context changed", name)
+		}
+	}
+	h := Hooks{
+		OnResolve:   func(in context.Context, got ResolveInfo) { check("resolve", in, got == resolve) },
+		OnPolicy:    func(in context.Context, got PolicyDecision) { check("policy", in, got == policy) },
+		OnQuota:     func(in context.Context, got QuotaDecision) { check("quota", in, got == quota) },
+		OnRateLimit: func(in context.Context, got RateLimitDecision) { check("rate", in, got == rate) },
+	}
+	for _, hooks := range []Hooks{{}, h} {
+		hooks.Resolve(ctx, resolve)
+		hooks.Policy(ctx, policy)
+		hooks.Quota(ctx, quota)
+		hooks.RateLimit(ctx, rate)
+	}
+	for _, name := range []string{"resolve", "policy", "quota", "rate"} {
+		if calls[name] != 1 {
+			t.Errorf("%s calls=%d", name, calls[name])
+		}
+	}
+}

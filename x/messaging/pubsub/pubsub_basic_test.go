@@ -1,6 +1,7 @@
 package pubsub
 
 import (
+	"context"
 	"errors"
 	"testing"
 	"time"
@@ -157,5 +158,77 @@ func TestPubSub_MessageImmutability(t *testing.T) {
 	}
 	if got2.Meta["source"] != "test" {
 		t.Fatalf("expected isolated meta, got %v", got2.Meta["source"])
+	}
+}
+
+func TestPublishBatchDoesNotMutateInputEnvelope(t *testing.T) {
+	b := New()
+	defer b.Close()
+	sub, err := b.Subscribe(t.Context(), "batch", SubOptions{BufferSize: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sub.Cancel()
+	explicit := time.Unix(123, 0).UTC()
+	messages := []Message{
+		{ID: "one", Data: "sample"},
+		{ID: "two", Topic: "original", Time: explicit},
+	}
+	if err := b.PublishBatch("batch", messages); err != nil {
+		t.Fatal(err)
+	}
+	for index, original := range messages {
+		select {
+		case m := <-sub.C():
+			if m.ID != original.ID || m.Topic != "batch" || m.Time.IsZero() {
+				t.Errorf("delivery %d envelope = %+v", index, m)
+			}
+			if index == 1 && !m.Time.Equal(explicit) {
+				t.Errorf("explicit time changed to %v", m.Time)
+			}
+		case <-time.After(time.Second):
+			t.Fatal("no delivery")
+		}
+	}
+	if messages[0].Topic != "" || !messages[0].Time.IsZero() ||
+		messages[1].Topic != "original" || !messages[1].Time.Equal(explicit) {
+		t.Error("publish mutated caller's message envelope")
+	}
+}
+
+func TestPublishAsyncDeliveryAndClosedError(t *testing.T) {
+	b := New()
+	t.Cleanup(func() { _ = b.Close() })
+	sub, err := b.Subscribe(t.Context(), "async", SubOptions{BufferSize: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sub.Cancel()
+	if err := b.PublishAsync("async", Message{ID: "async-item", Data: "value"}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case got := <-sub.C():
+		if got.ID != "async-item" || got.Topic != "async" || got.Data != "value" {
+			t.Errorf("received=%+v", got)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("no delivery")
+	}
+	drainCtx, cancel := context.WithTimeout(t.Context(), time.Second)
+	defer cancel()
+	if err := b.Drain(drainCtx); err != nil {
+		t.Fatal(err)
+	}
+	if got := sub.Stats().Received; got != 1 {
+		t.Errorf("subscription received %d messages, want 1", got)
+	}
+	if err := b.Close(); err != nil {
+		t.Fatal(err)
+	}
+	err = b.PublishAsync("async", Message{ID: "after-close"})
+	var closed *Error
+	if !errors.As(err, &closed) || closed.Code != ErrCodeClosed {
+		t.Errorf("closed publish = %v", err)
 	}
 }

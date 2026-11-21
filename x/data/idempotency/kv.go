@@ -34,7 +34,8 @@ func DefaultKVConfig() KVConfig {
 //
 // Atomicity is process-local: wrappers over the same underlying KVStore share a
 // mutex, but separate processes or separate KVStore instances do not coordinate
-// claims.
+// claims. Storage reads and writes honor cancellation. A canceled writer may
+// wait for the shared lock, but checks cancellation before accessing storage.
 type KVStore struct {
 	store  *kvstore.KVStore
 	prefix string
@@ -65,7 +66,7 @@ func NewKVStore(store *kvstore.KVStore, cfg KVConfig) *KVStore {
 
 // Get returns a miss for an expired record. Physical cleanup is left to the
 // underlying store so a stale read cannot remove a newer claim.
-func (s *KVStore) Get(_ context.Context, key string) (Record, bool, error) {
+func (s *KVStore) Get(ctx context.Context, key string) (Record, bool, error) {
 	if s == nil || s.store == nil {
 		return Record{}, false, ErrNotFound
 	}
@@ -74,7 +75,7 @@ func (s *KVStore) Get(_ context.Context, key string) (Record, bool, error) {
 		return Record{}, false, ErrInvalidKey
 	}
 
-	data, err := s.store.Get(s.key(key))
+	data, err := s.store.GetContext(ctx, s.key(key))
 	if err != nil {
 		if errors.Is(err, kvstore.ErrKeyNotFound) || errors.Is(err, kvstore.ErrKeyExpired) {
 			return Record{}, false, nil
@@ -111,10 +112,9 @@ func (s *KVStore) PutIfAbsent(ctx context.Context, record Record) (bool, error) 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if existing, found, err := s.Get(ctx, record.Key); err != nil {
+	if _, found, err := s.Get(ctx, record.Key); err != nil {
 		return false, err
 	} else if found {
-		_ = existing
 		return false, nil
 	}
 
@@ -132,7 +132,7 @@ func (s *KVStore) PutIfAbsent(ctx context.Context, record Record) (bool, error) 
 		return false, err
 	}
 
-	if err := s.store.Set(s.key(record.Key), data, s.ttl(record)); err != nil {
+	if err := s.store.SetContext(ctx, s.key(record.Key), data, s.ttl(record)); err != nil {
 		return false, err
 	}
 	return true, nil
@@ -161,7 +161,9 @@ func (s *KVStore) Complete(ctx context.Context, key string, response []byte) err
 		return ErrNotFound
 	}
 	if s.isExpired(record) {
-		_ = s.store.Delete(s.key(key))
+		if err := s.store.DeleteContext(ctx, s.key(key)); err != nil {
+			return errors.Join(ErrExpired, err)
+		}
 		return ErrExpired
 	}
 
@@ -174,10 +176,10 @@ func (s *KVStore) Complete(ctx context.Context, key string, response []byte) err
 		return err
 	}
 
-	return s.store.Set(s.key(key), data, s.ttl(record))
+	return s.store.SetContext(ctx, s.key(key), data, s.ttl(record))
 }
 
-func (s *KVStore) Delete(_ context.Context, key string) error {
+func (s *KVStore) Delete(ctx context.Context, key string) error {
 	if s == nil || s.store == nil {
 		return ErrNotFound
 	}
@@ -187,7 +189,7 @@ func (s *KVStore) Delete(_ context.Context, key string) error {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.store.Delete(s.key(key))
+	return s.store.DeleteContext(ctx, s.key(key))
 }
 
 func kvStoreLock(store *kvstore.KVStore) *sync.Mutex {

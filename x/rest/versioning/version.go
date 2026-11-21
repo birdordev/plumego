@@ -401,12 +401,15 @@ func isVersionSupported(version int, supported []int) bool {
 type Extractor func(r *http.Request) int
 
 // CustomExtractor creates a middleware with custom version extraction.
-// It copies supportedVersions at construction.
+// A nil extractor uses defaultVersion. It copies supportedVersions at construction.
 func CustomExtractor(extractor Extractor, defaultVersion int, supportedVersions []int) mw.Middleware {
 	supportedVersions = slices.Clone(supportedVersions)
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			version := extractor(r)
+			version := defaultVersion
+			if extractor != nil {
+				version = extractor(r)
+			}
 
 			if version <= 0 {
 				version = defaultVersion

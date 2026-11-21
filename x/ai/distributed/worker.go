@@ -200,6 +200,7 @@ func (e *StepExecutor) RegisterStep(name string, step orchestration.Step) {
 }
 
 // ExecuteTask executes a workflow task.
+// A canceled context prevents a registered step from starting.
 func (e *StepExecutor) ExecuteTask(ctx context.Context, task *WorkflowTask) (*orchestration.AgentResult, map[string]any, error) {
 	if task == nil {
 		return nil, nil, fmt.Errorf("task cannot be nil")
@@ -220,7 +221,9 @@ func (e *StepExecutor) ExecuteTask(ctx context.Context, task *WorkflowTask) (*or
 		State: task.WorkflowState,
 	}
 
-	// Execute the step
+	if err := ctx.Err(); err != nil {
+		return nil, nil, err
+	}
 	result, err := step.Execute(ctx, workflow)
 	if err != nil {
 		return result, workflow.State, fmt.Errorf("step execution failed: %w", err)

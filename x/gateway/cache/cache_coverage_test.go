@@ -571,3 +571,27 @@ func TestMemoryStoreClearResetsEntriesAndSize(t *testing.T) {
 		t.Errorf("stats after refill=%+v", got)
 	}
 }
+
+func TestMemoryStoreDeleteReleasesOneSlot(t *testing.T) {
+	s := NewMemoryStore(2)
+	put := func(key string) { s.Set(key, &CachedResponse{Body: []byte(key), Size: int64(len(key))}, time.Hour) }
+	put("old")
+	put("keep")
+	s.Delete("old")
+	s.Delete("old")
+	if got := s.Stats(); got.Items != 1 || got.Size != 4 || got.Evictions != 0 {
+		t.Errorf("after delete=%+v", got)
+	}
+	if _, ok := s.Get("old"); ok {
+		t.Error("deleted response still exists")
+	}
+	put("new")
+	for _, key := range []string{"keep", "new"} {
+		if got, ok := s.Get(key); !ok || string(got.Body) != key {
+			t.Errorf("response %q=%+v, %t", key, got, ok)
+		}
+	}
+	if got := s.Stats(); got.Items != 2 || got.Size != 7 || got.Evictions != 0 {
+		t.Errorf("after refill=%+v", got)
+	}
+}

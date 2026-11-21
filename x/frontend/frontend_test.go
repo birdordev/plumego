@@ -224,3 +224,32 @@ func TestFrontendPlanRejectsNormalizedConflicts(t *testing.T) {
 		}
 	}
 }
+
+func TestSPAFallbackPreservesVaryWildcard(t *testing.T) {
+	root := t.TempDir()
+	writeTestFile(t, root, "index.html", "home")
+	h, err := NewHandlerFS(http.Dir(root), WithFallback(true))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		accept string
+		status int
+		vary   []string
+	}{
+		{"application/json", http.StatusNotFound, []string{"*"}},
+		{"text/html", http.StatusOK, []string{"*", "Accept-Encoding"}},
+	} {
+		req := httptest.NewRequest(http.MethodGet, "/route", nil)
+		req.Header.Set("Accept", tc.accept)
+		rec := httptest.NewRecorder()
+		rec.Header().Set("Vary", "*")
+		h.ServeHTTP(rec, req)
+		if rec.Code != tc.status || !slices.Equal(rec.Header().Values("Vary"), tc.vary) {
+			t.Errorf("Accept %q: status=%d Vary=%v", tc.accept, rec.Code, rec.Header().Values("Vary"))
+		}
+		if tc.status == http.StatusOK && rec.Body.String() != "home" {
+			t.Errorf("SPA body=%q", rec.Body.String())
+		}
+	}
+}

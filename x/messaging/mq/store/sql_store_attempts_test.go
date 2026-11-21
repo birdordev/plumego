@@ -246,3 +246,43 @@ func TestAudit19ReserveReturnsExpiryUpdateFailure(t *testing.T) {
 			conn.queryCalls, tx.committed, tx.rolledBack, db.Stats())
 	}
 }
+
+type statsConn struct {
+	attemptConn
+	row []driver.Value
+	err error
+}
+
+func (c statsConn) QueryContext(context.Context, string, []driver.NamedValue) (driver.Rows, error) {
+	if c.err != nil {
+		return nil, c.err
+	}
+	return &attemptRows{cols: []string{"queued", "leased", "dead", "expired"}, values: [][]driver.Value{c.row}}, nil
+}
+
+type statsConnector struct {
+	driver.Connector
+	conn statsConn
+}
+
+func (c statsConnector) Connect(context.Context) (driver.Conn, error) { return &c.conn, nil }
+
+func TestSQLStoreStatsHandlesNullCountsAndQueryError(t *testing.T) {
+	sentinel := errors.New("test stats failure")
+	for _, tc := range []struct {
+		row   []driver.Value
+		stats mq.Stats
+		err   error
+	}{
+		{[]driver.Value{nil, nil, nil, nil}, mq.Stats{}, nil},
+		{[]driver.Value{int64(1), int64(2), int64(3), int64(4)}, mq.Stats{Queued: 1, Leased: 2, Dead: 3, Expired: 4}, nil},
+		{nil, mq.Stats{}, sentinel},
+	} {
+		db := sql.OpenDB(statsConnector{conn: statsConn{row: tc.row, err: tc.err}})
+		t.Cleanup(func() { _ = db.Close() })
+		got, err := NewSQL(db, DefaultSQLConfig()).Stats(t.Context())
+		if got != tc.stats || !errors.Is(err, tc.err) {
+			t.Errorf("Stats=%+v, %v; want %+v, %v", got, err, tc.stats, tc.err)
+		}
+	}
+}

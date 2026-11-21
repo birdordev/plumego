@@ -578,3 +578,17 @@ func TestWorkerPoolScaleRollsBackNewWorkers(t *testing.T) {
 		}
 	}
 }
+
+func TestStepExecutorSkipsCanceledTask(t *testing.T) {
+	e := NewStepExecutor(nil)
+	calls := 0
+	e.RegisterStep("work", engineTestStep(func(context.Context, *orchestration.Workflow) (*orchestration.AgentResult, error) {
+		calls++
+		return &orchestration.AgentResult{}, nil
+	}))
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	if _, _, err := e.ExecuteTask(ctx, &WorkflowTask{StepName: "work"}); calls != 0 || !errors.Is(err, context.Canceled) {
+		t.Errorf("calls=%d err=%v", calls, err)
+	}
+}

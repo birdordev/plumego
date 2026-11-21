@@ -1437,3 +1437,23 @@ func TestUploadMalformedMultipartStopsBeforeStorage(t *testing.T) {
 		t.Errorf("response=%d %+v storage calls=%d", rec.Code, env, calls)
 	}
 }
+
+type knownLengthUploadBody struct{ reads int }
+
+func (b *knownLengthUploadBody) Read([]byte) (int, error) { b.reads++; return 0, io.EOF }
+func (b *knownLengthUploadBody) Close() error             { return nil }
+
+func TestUploadRejectsKnownOversizeBeforeReading(t *testing.T) {
+	body := &knownLengthUploadBody{}
+	r := httptest.NewRequest(http.MethodPost, "/files", body)
+	r.ContentLength = 1 + multipartOverheadLimit + 1
+	r.Header.Set("Content-Type", "multipart/form-data; boundary=fixture")
+	r = r.WithContext(tenantcore.WithTenantID(r.Context(), "tenant"))
+	calls := 0
+	storage := &mockStorage{putFunc: func(context.Context, datafile.PutOptions) (*datafile.File, error) { calls++; return nil, nil }}
+	rec := httptest.NewRecorder()
+	NewHandler(storage, &mockMetadataManager{}).WithMaxSize(1).Upload(rec, r)
+	if rec.Code != http.StatusRequestEntityTooLarge || body.reads != 0 || calls != 0 {
+		t.Errorf("status=%d reads=%d storage=%d", rec.Code, body.reads, calls)
+	}
+}

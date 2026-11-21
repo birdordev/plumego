@@ -602,3 +602,30 @@ func TestAcceptVersionUsesMediaTypeOnly(t *testing.T) {
 		})
 	}
 }
+
+func TestCustomExtractorWithoutCallbackUsesDefault(t *testing.T) {
+	for _, tc := range []struct {
+		supported int
+		status    int
+		calls     int
+	}{
+		{2, http.StatusNoContent, 1}, {3, http.StatusNotAcceptable, 0},
+	} {
+		calls := 0
+		h := CustomExtractor(nil, 2, []int{tc.supported})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			calls++
+			if got := VersionFromContext(r.Context()); got != 2 {
+				t.Errorf("version=%d", got)
+			}
+			w.WriteHeader(http.StatusNoContent)
+		}))
+		out := httptest.NewRecorder()
+		h.ServeHTTP(out, httptest.NewRequest(http.MethodGet, "/", nil))
+		if calls != tc.calls || out.Code != tc.status {
+			t.Errorf("calls=%d, status=%d", calls, out.Code)
+		}
+		if tc.calls == 1 && out.Header().Get("X-API-Version") != "2" {
+			t.Error("default version header missing")
+		}
+	}
+}

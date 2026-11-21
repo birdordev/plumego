@@ -273,3 +273,27 @@ func TestTrackerConfigRoundTripAndError(t *testing.T) {
 		t.Error("rejected write changed configuration")
 	}
 }
+
+func TestTrackerGetAllHealthPreservesSnapshotOwnership(t *testing.T) {
+	m, err := NewManager(Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tracker := NewTracker(m)
+	t.Cleanup(func() { _ = tracker.Close() })
+	for _, name := range []string{"first", "second"} {
+		if err := tracker.RegisterComponent(functionChecker{name, func(context.Context) error { return nil }}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	snapshot := tracker.GetAllHealth()
+	if len(snapshot) != 2 || snapshot["first"] == nil || snapshot["second"] == nil {
+		t.Fatalf("snapshot=%v", snapshot)
+	}
+	delete(snapshot, "first")
+	snapshot["second"].Enabled = false
+	next := tracker.GetAllHealth()
+	if len(next) != 2 || next["first"] == nil || next["second"] == nil || !next["second"].Enabled {
+		t.Errorf("snapshot mutation leaked: %v", next)
+	}
+}

@@ -1,6 +1,7 @@
 package idempotency
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"sync"
@@ -290,5 +291,64 @@ func TestKVStorePutIfAbsentDoesNotReportSuccessOnSetFailure(t *testing.T) {
 	created, err := wrapper.PutIfAbsent(t.Context(), Record{Key: "fixture"})
 	if created || !errors.Is(err, kvstore.ErrStoreClosed) {
 		t.Errorf("created=%v err=%v", created, err)
+	}
+}
+
+func TestKVStoreHonorsCanceledOperations(t *testing.T) {
+	base, err := kvstore.NewKVStore(kvstore.Config{DataDir: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer base.Close()
+	s := NewKVStore(base, DefaultKVConfig())
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	seed := func(key string) {
+		t.Helper()
+		if _, err := s.PutIfAbsent(t.Context(), Record{Key: key}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	seed("complete")
+	seed("delete")
+	if ok, err := s.PutIfAbsent(ctx, Record{Key: "new"}); ok || !errors.Is(err, context.Canceled) {
+		t.Errorf("put=%v/%v", ok, err)
+	}
+	if _, ok, err := s.Get(ctx, "complete"); ok || !errors.Is(err, context.Canceled) {
+		t.Errorf("get=%v/%v", ok, err)
+	}
+	if err := s.Complete(ctx, "complete", []byte("response")); !errors.Is(err, context.Canceled) {
+		t.Errorf("complete=%v", err)
+	}
+	if err := s.Delete(ctx, "delete"); !errors.Is(err, context.Canceled) {
+		t.Errorf("delete=%v", err)
+	}
+	if _, found, err := s.Get(t.Context(), "new"); err != nil || found {
+		t.Errorf("canceled claim created a record: %t, %v", found, err)
+	}
+	if got, found, err := s.Get(t.Context(), "complete"); err != nil || !found || got.Status != StatusInProgress || len(got.Response) != 0 {
+		t.Errorf("canceled complete changed state: %+v, %t, %v", got, found, err)
+	}
+	if _, found, err := s.Get(t.Context(), "delete"); err != nil || !found {
+		t.Errorf("canceled delete removed the record: %t, %v", found, err)
+	}
+
+	s.mu.Lock()
+	enter := make(chan struct{})
+	done := make(chan error, 1)
+	waitCtx, stop := context.WithCancel(t.Context())
+	defer stop()
+	go func() {
+		close(enter)
+		done <- s.Delete(waitCtx, "delete")
+	}()
+	<-enter
+	stop()
+	s.mu.Unlock()
+	if err := <-done; !errors.Is(err, context.Canceled) {
+		t.Errorf("canceled under lock: %v", err)
+	}
+	if _, found, err := s.Get(t.Context(), "delete"); err != nil || !found {
+		t.Errorf("canceled waiter removed record: %t, %v", found, err)
 	}
 }

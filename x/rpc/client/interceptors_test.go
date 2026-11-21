@@ -125,3 +125,18 @@ func TestTracingInterceptorWithoutTracerPassesThrough(t *testing.T) {
 		t.Errorf("invocation calls = %d, error = %v", calls, err)
 	}
 }
+
+func TestTraceMetadataOmitsIncompleteCarriers(t *testing.T) {
+	tid, sid := "1234567890abcdef1234567890abcdef", "1234567890abcdef"
+	for _, tc := range []contract.TraceContext{{}, {TraceID: tid}, {SpanID: sid}} {
+		if got := TraceMetadata(contract.WithTraceContext(t.Context(), tc)); got != nil {
+			t.Errorf("invalid trace produced metadata: %v", got)
+		}
+	}
+	if got := TraceMetadata(t.Context()); got != nil {
+		t.Errorf("missing trace produced metadata: %v", got)
+	}
+	if got := TraceMetadata(contract.WithTraceContext(t.Context(), contract.TraceContext{TraceID: tid, SpanID: sid})); len(got) != 2 || got["x-trace-id"] != tid || got["x-span-id"] != sid {
+		t.Errorf("valid trace metadata=%v", got)
+	}
+}

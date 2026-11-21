@@ -204,3 +204,31 @@ func TestInstalledListsReportPartialReadFailures(t *testing.T) {
 		t.Errorf("update workflow = %v", err)
 	}
 }
+
+func TestManagerListInstalledWorkflowsPreservesPartialResults(t *testing.T) {
+	manager := newTestManager(t)
+	sources := map[string]string{
+		"valid":  `{"type":"workflow","id":"valid","version":"v1","metadata":{"id":"valid","version":"v1"}}`,
+		"broken": "{",
+	}
+	for id, source := range sources {
+		dir := filepath.Join(manager.installer.installDir, "workflows", id, "v1")
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "install.json"), []byte(source), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, err := manager.ListInstalledWorkflows()
+	var syntax *json.SyntaxError
+	if len(got) != 1 || got[0].ID != "valid" || !errors.As(err, &syntax) {
+		t.Errorf("workflows=%v, %v", got, err)
+	}
+	for id, source := range sources {
+		path := filepath.Join(manager.installer.installDir, "workflows", id, "v1", "install.json")
+		if data, err := os.ReadFile(path); err != nil || string(data) != source {
+			t.Errorf("install record %q changed: %q, %v", id, data, err)
+		}
+	}
+}

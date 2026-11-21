@@ -1033,3 +1033,24 @@ func TestAtomicAdapterDecrDelegates(t *testing.T) {
 		}
 	}
 }
+
+func TestNewAtomicAdapterCompatibilityContract(t *testing.T) {
+	ctx := t.Context()
+	client := &stubClient{}
+	a, err := NewAtomicAdapter(client, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n, err := a.Incr(ctx, "count", 3); err != nil || n != 3 {
+		t.Errorf("increment=%d, %v", n, err)
+	}
+	if err := a.Append(ctx, "text", []byte("value")); err != nil {
+		t.Fatal(err)
+	}
+	if got := string(client.data["text"]); got != "value" {
+		t.Errorf("append=%q", got)
+	}
+	if unsupported, err := NewAtomicAdapter(&noAtomicClient{}, nil); unsupported != nil || !errors.Is(err, cache.ErrCapabilityUnsupported) {
+		t.Errorf("unsupported adapter=%v, %v", unsupported, err)
+	}
+}

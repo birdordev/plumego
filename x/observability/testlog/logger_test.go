@@ -1,6 +1,7 @@
 package testlog
 
 import (
+	"reflect"
 	"testing"
 
 	"github.com/birdordev/plumego/contract"
@@ -152,5 +153,40 @@ func TestEntriesOwnCapturedFields(t *testing.T) {
 	l.Entries()[0].Fields["key"] = "modified"
 	if got := l.Entries()[0].Fields["key"]; got != "original" {
 		t.Errorf("stored field = %v", got)
+	}
+}
+
+func TestLastEntryOwnsCapturedFields(t *testing.T) {
+	l := New()
+	if _, ok := l.LastEntry(); ok {
+		t.Fatal("empty logger returned an entry")
+	}
+	l.Info("no fields", nil)
+	if e, ok := l.LastEntry(); !ok || e.Message != "no fields" || len(e.Fields) != 0 {
+		t.Fatalf("fieldless entry = %+v, %t", e, ok)
+	}
+	l.Info("message", Fields{"key": "original", "other": "kept"})
+	e, ok := l.LastEntry()
+	if !ok {
+		t.Fatal("missing last entry")
+	}
+	e.Fields["key"] = "changed"
+	delete(e.Fields, "other")
+	if got := l.Entries()[1].Fields; got["key"] != "original" || got["other"] != "kept" {
+		t.Error("last entry aliases stored fields")
+	}
+}
+
+func TestClearReleasesCapturedEntries(t *testing.T) {
+	l := New()
+	l.Info("message", Fields{"key": "payload"})
+	previous := l.shared.entries
+	l.Clear()
+	if !reflect.DeepEqual(previous[0], Entry{}) {
+		t.Error("cleared slot retains data")
+	}
+	l.Info("after clear", nil)
+	if entries := l.Entries(); len(entries) != 1 || entries[0].Message != "after clear" {
+		t.Errorf("entries after reuse = %+v", entries)
 	}
 }

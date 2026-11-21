@@ -1,8 +1,13 @@
 package multimodal
 
 import (
+	"errors"
+	"io"
+	"net/http"
 	"testing"
 	"time"
+
+	"github.com/birdordev/plumego/x/ai/provider"
 )
 
 func TestNewTextMessage(t *testing.T) {
@@ -326,5 +331,37 @@ func TestImageContent_Base64String(t *testing.T) {
 	expected := "dGVzdCBkYXRh" // base64 of "test data"
 	if b64 != expected {
 		t.Errorf("Base64String() = %s, want %s", b64, expected)
+	}
+}
+
+type streamCloseBody struct {
+	calls int
+	err   error
+}
+
+func (b *streamCloseBody) Read([]byte) (int, error) { return 0, io.EOF }
+func (b *streamCloseBody) Close() error             { b.calls++; return b.err }
+
+type streamCloseTransport struct{ body io.ReadCloser }
+
+func (tr streamCloseTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	if req.Body != nil {
+		_ = req.Body.Close()
+	}
+	return &http.Response{StatusCode: http.StatusOK, Body: tr.body, Header: make(http.Header)}, nil
+}
+
+func TestMultimodalStreamClosePreservesUnderlyingError(t *testing.T) {
+	sentinel := errors.New("test close failure")
+	body := &streamCloseBody{err: sentinel}
+	client := &http.Client{Transport: streamCloseTransport{body: body}}
+	p := provider.NewOpenAIProvider("", provider.WithOpenAIHTTPClient(client))
+	s, err := p.CompleteStream(t.Context(), &provider.CompletionRequest{Model: "test-model"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader := &StreamReader{stream: s}
+	if err := reader.Close(); !errors.Is(err, sentinel) || body.calls != 1 {
+		t.Errorf("close=%v, underlying calls=%d", err, body.calls)
 	}
 }
