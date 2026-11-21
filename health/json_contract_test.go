@@ -164,3 +164,38 @@ func assertFieldAbsent(t *testing.T, fields map[string]any, key string) {
 		t.Fatalf("%s should be omitted", key)
 	}
 }
+
+func TestHealthStateWireAndReadinessAgree(t *testing.T) {
+	for _, tc := range []struct {
+		state        HealthState
+		known, ready bool
+	}{
+		{"", false, false},
+		{"unknown", false, false},
+		{StatusHealthy, true, true},
+		{StatusDegraded, true, true},
+		{StatusUnhealthy, true, false},
+	} {
+		fields := marshalObject(t, HealthStatus{Status: tc.state})
+		assertStringField(t, fields, "status", string(tc.state))
+		if tc.state.IsKnown() != tc.known || tc.state.IsReady() != tc.ready {
+			t.Errorf("state %q: known=%t ready=%t", tc.state, tc.state.IsKnown(), tc.state.IsReady())
+		}
+	}
+}
+
+func TestReadinessEmptyComponentsWireAndClone(t *testing.T) {
+	for _, components := range []map[string]bool{nil, {}} {
+		status := ReadinessStatus{Components: components}
+		assertFieldAbsent(t, marshalObject(t, status), "components")
+		if cloned := status.Clone().Components; (cloned == nil) != (components == nil) {
+			t.Fatalf("Clone Components=%v for input=%v", cloned, components)
+		}
+	}
+	status := ReadinessStatus{Components: map[string]bool{"db": true}}
+	cloned := status.Clone()
+	cloned.Components["db"] = false
+	if !status.Components["db"] {
+		t.Fatal("clone changed original status")
+	}
+}

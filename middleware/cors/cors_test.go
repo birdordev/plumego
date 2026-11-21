@@ -611,3 +611,31 @@ func TestCORSVaryIncludesFallbackResponses(t *testing.T) {
 		})
 	}
 }
+
+func TestPreflightUsesExactMethodName(t *testing.T) {
+	handler := Middleware(CORSOptions{AllowedOrigins: []string{"https://example.test"}, AllowedMethods: []string{"GET", "CUSTOM"}})(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusAccepted)
+	}))
+	for _, tc := range []struct {
+		method string
+		status int
+	}{
+		{"GET", http.StatusNoContent},
+		{"CUSTOM", http.StatusNoContent},
+		{"get", http.StatusAccepted},
+		{"Custom", http.StatusAccepted},
+	} {
+		req := httptest.NewRequest(http.MethodOptions, "/", nil)
+		req.Header.Set("Origin", "https://example.test")
+		req.Header.Set("Access-Control-Request-Method", tc.method)
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		want := ""
+		if tc.status == http.StatusNoContent {
+			want = "GET, CUSTOM"
+		}
+		if rec.Code != tc.status || rec.Header().Get("Access-Control-Allow-Methods") != want {
+			t.Errorf("%s: status=%d headers=%v", tc.method, rec.Code, rec.Header())
+		}
+	}
+}

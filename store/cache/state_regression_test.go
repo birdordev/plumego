@@ -180,3 +180,55 @@ func BenchmarkRejectedAppend(b *testing.B) {
 		})
 	}
 }
+
+func TestAppendCapacityFailurePreservesExpiration(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		cache, err := NewMemoryCacheWithConfig(Config{MaxMemoryUsage: 4, DefaultTTL: 10 * time.Second})
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer cache.Close()
+		if err := cache.Set(t.Context(), "key", []byte("old"), 2*time.Second); err != nil {
+			t.Fatal(err)
+		}
+		time.Sleep(time.Second)
+		before := cache.Stats()
+		if err := cache.Append(t.Context(), "key", []byte("too large")); !errors.Is(err, ErrCacheFull) {
+			t.Fatalf("append error=%v, want capacity error", err)
+		}
+		if value, err := cache.Get(t.Context(), "key"); err != nil || string(value) != "old" || cache.Stats() != before {
+			t.Fatalf("value=%q error=%v stats=%+v", value, err, cache.Stats())
+		}
+		if err := cache.Append(t.Context(), "key", []byte("!")); err != nil {
+			t.Fatal(err)
+		}
+		time.Sleep(time.Second)
+		if _, err := cache.Get(t.Context(), "key"); !errors.Is(err, ErrNotFound) {
+			t.Fatalf("value still available at original deadline: %v", err)
+		}
+	})
+}
+
+func TestCloseTracksFinalPendingWriteInStats(t *testing.T) {
+	cache := NewMemoryCache()
+	if err := cache.Set(t.Context(), "existing", []byte("one"), 0); err != nil {
+		t.Fatal(err)
+	}
+	if err := cache.lockWriteOperation(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() { done <- cache.Close() }()
+	<-cache.stopChan
+	before := cache.Stats()
+	cache.storeValueLocked("in-flight", []byte("two"), time.Time{}, 0, false)
+	cache.writeMu.Unlock()
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	after := cache.Stats()
+	if !before.Closed || before.Entries != 1 || before.MemoryUsage != 3 ||
+		!after.Closed || after.Entries != 2 || after.MemoryUsage != 6 {
+		t.Fatalf("before=%+v after=%+v", before, after)
+	}
+}

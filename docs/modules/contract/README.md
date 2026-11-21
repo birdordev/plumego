@@ -127,6 +127,8 @@ extension-owned refinements.
 - `ErrorBuilder.Build` and `APIError.Details` clone supported map and slice
   values. Each call creates a separate snapshot that preserves nested empty
   containers, nil values, and repeated references of the same container type.
+  Unsupported values, such as pointers to custom JSON marshalers, remain
+  caller-owned. Keep those values stable during response encoding.
   Cyclic detail values rejected by JSON encoding trigger the fallback above.
 - Request ids are accepted only when the trimmed value is non-empty, valid UTF-8,
   free of control characters, and at most 128 bytes. Rejected request ids are not
@@ -149,6 +151,9 @@ needs one route param and does not need a full `RequestContext` snapshot.
 Both read accessors use the complete metadata from a non-nil `RouteState`
 when present, even if `WithRequestContext` was called later. They consult
 the stored `RequestContext` only when there is no non-nil `RouteState`.
+
+`WithRouteState` borrows the state pointer. Finish setting route metadata before
+publication and keep it immutable while any reader still holds the context.
 
 `RouteState` stores the first eight parameters inline and preserves additional
 parameters in overflow storage. Both parameter accessors include overflow

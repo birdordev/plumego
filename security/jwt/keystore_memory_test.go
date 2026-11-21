@@ -391,3 +391,26 @@ func TestInMemoryKeyStoreExpiryBoundary(t *testing.T) {
 		}
 	})
 }
+
+func TestInMemoryKeyStoreCopiesAndRejectsCanceledOverwrite(t *testing.T) {
+	store := NewInMemoryKeyStore()
+	input := []byte("original")
+	if err := store.SetContext(t.Context(), "fixture", input, 0); err != nil {
+		t.Fatal(err)
+	}
+	input[0] = 'X'
+	first, err := store.GetContext(t.Context(), "fixture")
+	if err != nil || string(first) != "original" {
+		t.Fatalf("first read=%q err=%v", first, err)
+	}
+	first[0] = 'Y'
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	if err := store.SetContext(ctx, "fixture", input, 0); !errors.Is(err, context.Canceled) {
+		t.Fatalf("canceled overwrite=%v", err)
+	}
+	again, err := store.GetContext(t.Context(), "fixture")
+	if err != nil || string(again) != "original" {
+		t.Fatalf("second read=%q err=%v", again, err)
+	}
+}

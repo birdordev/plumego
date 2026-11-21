@@ -653,3 +653,35 @@ func TestBodyLimitEmptyReadDoesNotProbe(t *testing.T) {
 		})
 	}
 }
+
+func TestBodyLimitEnforcesBytesReadIndependentlyOfDeclaredLength(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		read   int64
+		body   string
+		status int
+	}{
+		{"no read", 0, "abcde", http.StatusNoContent},
+		{"partial read", 2, "abcde", http.StatusNoContent},
+		{"exact limit", 4, "abcd", http.StatusNoContent},
+		{"overrun", 5, "abcde", http.StatusRequestEntityTooLarge},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			calls := 0
+			handler := Middleware(Config{MaxBytes: 4})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				calls++
+				if tc.read > 0 {
+					_, _ = io.CopyN(io.Discard, r.Body, tc.read)
+				}
+				w.WriteHeader(http.StatusNoContent)
+			}))
+			req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(tc.body))
+			req.ContentLength = 64
+			dst := httptest.NewRecorder()
+			handler.ServeHTTP(dst, req)
+			if dst.Code != tc.status || calls != 1 {
+				t.Fatalf("status=%d calls=%d, want %d and one call", dst.Code, calls, tc.status)
+			}
+		})
+	}
+}

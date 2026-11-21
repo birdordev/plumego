@@ -6,6 +6,7 @@ import (
 	"compress/gzip"
 	"context"
 	"errors"
+	"github.com/birdordev/plumego/router"
 	"io"
 	"net"
 	"net/http"
@@ -409,3 +410,39 @@ type conformanceSpan struct{}
 func (conformanceSpan) End(int, int, string) {}
 func (conformanceSpan) TraceID() string      { return "" }
 func (conformanceSpan) SpanID() string       { return "" }
+
+type observingFunc func(path string, status, bytes int)
+
+func (fn observingFunc) ObserveHTTP(_ context.Context, _ string, path string, status, bytes int, _ time.Duration) {
+	fn(path, status, bytes)
+}
+
+func TestLayeredObserversSeeSameCommittedRoute(t *testing.T) {
+	r := router.NewRouter()
+	const route = "/items/:id"
+	if err := r.AddRoute(http.MethodGet, route, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusCreated)
+		_, _ = io.WriteString(w, "ok")
+	})); err != nil {
+		t.Fatal(err)
+	}
+
+	type observation struct {
+		path          string
+		status, bytes int
+	}
+	var outer, inner []observation
+	buildObserver := func(samples *[]observation) middleware.Middleware {
+		return httpmetrics.Middleware(observingFunc(func(path string, status, bytes int) {
+			*samples = append(*samples, observation{path, status, bytes})
+		}))
+	}
+	wrapped := middleware.NewChain(buildObserver(&outer), buildObserver(&inner), timeout.Middleware(timeout.Config{Timeout: time.Second})).Build(r)
+	rec := httptest.NewRecorder()
+	wrapped.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/items/42", nil))
+	want := observation{route, http.StatusCreated, 2}
+	if len(outer) != 1 || len(inner) != 1 || outer[0] != want || inner[0] != want ||
+		rec.Code != want.status || rec.Body.String() != "ok" {
+		t.Fatalf("outer=%+v inner=%+v status=%d body=%q", outer, inner, rec.Code, rec.Body.String())
+	}
+}

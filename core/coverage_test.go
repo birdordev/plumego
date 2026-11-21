@@ -334,15 +334,6 @@ func TestNoRoutesWarningCanReenterPrepare(t *testing.T) {
 				if warnings != 1 {
 					t.Fatal("expected only one no-route warning")
 				}
-				// Check the locks without blocking before invoking the nested Prepare.
-				if !app.handlerPrepareMu.TryLock() {
-					t.Fatal("Warn ran with the handler preparation lock held")
-				}
-				app.handlerPrepareMu.Unlock()
-				if !app.serverPrepareMu.TryLock() {
-					t.Fatal("Warn ran with the server preparation lock held")
-				}
-				app.serverPrepareMu.Unlock()
 				if state := app.PreparationState(); state != tt.state {
 					t.Fatalf("state in Warn = %q, want %q", state, tt.state)
 				}
@@ -545,5 +536,84 @@ func TestPrepareRetriesWhenMiddlewareReturnsNilHandler(t *testing.T) {
 	}
 	if attempts != 2 {
 		t.Fatalf("middleware builds = %d, want 2", attempts)
+	}
+}
+
+func TestOverlappingShutdownsKeepDrainOwnershipScoped(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Skipf("network listen not available: %v", err)
+	}
+	defer ln.Close()
+
+	handlerStarted := make(chan struct{})
+	release := make(chan struct{})
+	app := newTestApp()
+	mustRegisterRoute(t, app.Get("/", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		close(handlerStarted)
+		<-release
+		w.WriteHeader(http.StatusNoContent)
+	})))
+	if err := app.Prepare(); err != nil {
+		t.Fatal(err)
+	}
+	server, err := app.Server()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	shutdownStarted := make(chan struct{}, 2)
+	server.RegisterOnShutdown(func() { shutdownStarted <- struct{}{} })
+	serverDone := make(chan error, 1)
+	go func() { serverDone <- server.Serve(ln) }()
+	clientDone := make(chan error, 1)
+	go func() {
+		resp, err := (&http.Client{Timeout: 5 * time.Second}).Get("http://" + ln.Addr().String())
+		if err == nil {
+			err = resp.Body.Close()
+		}
+		clientDone <- err
+	}()
+	select {
+	case <-handlerStarted:
+	case err := <-clientDone:
+		close(release)
+		t.Fatalf("request ended before handler started: %v", err)
+	}
+
+	startShutdown := func() (context.CancelFunc, <-chan error) {
+		ctx, cancel := context.WithCancel(t.Context())
+		result := make(chan error, 1)
+		go func() { result <- app.Shutdown(ctx) }()
+		<-shutdownStarted
+		return cancel, result
+	}
+	cancelFirst, first := startShutdown()
+	owner := app.connTracker.activeDrain.Load()
+	cancelSecond, second := startShutdown()
+	cancelSecond()
+	if err := <-second; !errors.Is(err, context.Canceled) {
+		t.Errorf("second shutdown = %v, want canceled", err)
+	}
+	if owner == nil || app.connTracker.activeDrain.Load() != owner {
+		t.Error("second shutdown changed the first attempt's drain")
+	}
+	cancelFirst()
+	if err := <-first; !errors.Is(err, context.Canceled) {
+		t.Errorf("first shutdown = %v, want canceled", err)
+	}
+	if app.connTracker.activeDrain.Load() != nil {
+		t.Error("first shutdown retained the drain")
+	}
+
+	close(release)
+	if err := <-clientDone; err != nil {
+		t.Error(err)
+	}
+	if err := <-serverDone; !errors.Is(err, http.ErrServerClosed) {
+		t.Error(err)
+	}
+	if err := app.Shutdown(t.Context()); err != nil {
+		t.Fatalf("retry after releasing connection: %v", err)
 	}
 }

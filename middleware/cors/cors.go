@@ -171,7 +171,7 @@ func serveCORS(w http.ResponseWriter, r *http.Request, next http.Handler, opts C
 
 	if r.Method == http.MethodOptions && r.Header.Get("Access-Control-Request-Method") != "" {
 		requestMethod := strings.TrimSpace(r.Header.Get("Access-Control-Request-Method"))
-		if !containsFold(opts.AllowedMethods, requestMethod) {
+		if !contains(opts.AllowedMethods, requestMethod) {
 			next.ServeHTTP(w, r)
 			return
 		}

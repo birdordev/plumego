@@ -61,14 +61,16 @@ other modules can depend on safely.
 ## Stable behavior notes
 
 - `BaseMetricsCollector` keeps aggregate counts and name breakdowns only; it does
-  not store raw records or normalize generic record timestamps/labels.
+  not store raw records or normalize generic record timestamps/labels. It keeps
+  one counter per distinct nonempty name until `Clear`. Use a fixed name set
+  and put changing dimensions in labels.
 - `CollectorStats.NameBreakdown` snapshots are caller-owned maps, including empty
   base/no-op snapshots; empty/no-op stats keep zero start time while base
   collectors set start time on construction and clear.
-- `ObserveHTTP(...)` records duration in seconds through the canonical HTTP
-  record shape, and `NewHTTPRecord(...)` assigns the record timestamp. Response
-  bytes remain available to collectors through the observer method argument, but
-  stable base stats do not turn bytes into labels.
+- `BaseMetricsCollector.ObserveHTTP(...)` counts observations and classifies
+  errors by status. It does not retain duration or bytes.
+  `NewHTTPRecord(...)` creates a timestamped record with the duration in seconds
+  for collectors that accept individual records.
 - `NewMultiCollector(...)` is the only stable fan-out helper: nil inputs are
   ignored, empty internal slots are skipped, zero targets return a no-op, one target
   is returned unchanged, and multiple targets fan out in order.

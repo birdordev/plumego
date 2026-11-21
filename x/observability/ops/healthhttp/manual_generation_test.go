@@ -2,8 +2,9 @@ package healthhttp
 
 import (
 	"context"
-	"github.com/birdordev/plumego/health"
 	"testing"
+
+	"github.com/birdordev/plumego/health"
 )
 
 type manualGenerationChecker struct{ entered, release chan struct{} }
@@ -68,5 +69,32 @@ func TestManualUpdatesAfterClose(t *testing.T) {
 	after := m.Readiness()
 	if after.Ready || after.Reason != before.Reason || !after.Timestamp.Equal(before.Timestamp) {
 		t.Fatalf("manual update changed closed state: %+v", after)
+	}
+}
+
+func TestCloseRejectsManualUpdatesWithProbeInFlight(t *testing.T) {
+	m, err := NewManager(Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	probe := manualGenerationChecker{entered: make(chan struct{}), release: make(chan struct{})}
+	if err := m.RegisterComponent(probe); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan health.HealthStatus, 1)
+	go func() { done <- m.CheckAllComponents(t.Context()) }()
+	<-probe.entered
+	if err := m.Close(); err != nil {
+		t.Fatal(err)
+	}
+	closed := m.Readiness()
+	m.MarkReady()
+	m.MarkNotReady("manual")
+	close(probe.release)
+	result := <-done
+	after := m.Readiness()
+	if closed.Ready || after.Ready || after.Reason != closed.Reason || !after.Timestamp.Equal(closed.Timestamp) ||
+		result.Status != health.StatusUnhealthy {
+		t.Fatalf("closed=%+v after=%+v result=%+v", closed, after, result)
 	}
 }

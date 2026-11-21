@@ -283,8 +283,8 @@ func TestDebugErrorsNotFound(t *testing.T) {
 	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
-	if payload.Error.Code != "not_found" {
-		t.Fatalf("expected code not_found, got %q", payload.Error.Code)
+	if payload.Error.Code != contract.CodeResourceNotFound {
+		t.Fatalf("expected code resource_not_found, got %q", payload.Error.Code)
 	}
 	if hint, ok := payload.Error.Details["hint"]; !ok || hint != "/_debug/routes" {
 		t.Fatalf("expected hint to be set")
@@ -442,8 +442,8 @@ func TestDebugErrorsZeroValueConfig(t *testing.T) {
 	if _, ok := payload.Error.Details["path"]; ok {
 		t.Error("expected path not present in details when IncludeRequest is false")
 	}
-	if _, ok := payload.Error.Details["query"]; ok {
-		t.Error("expected query not present in details when IncludeQuery is false")
+	if _, ok := payload.Error.Details["query_present"]; ok {
+		t.Error("expected query_present not present in details when IncludeQuery is false")
 	}
 }
 
@@ -688,7 +688,7 @@ func TestDebugErrorsSkipConnect(t *testing.T) {
 }
 
 // TestDebugErrorsNotFoundRequestDetails verifies IncludeRequest=true adds method/path,
-// and IncludeQuery=true adds query params.
+// and IncludeQuery=true reports whether a query is present.
 func TestDebugErrorsNotFoundRequestDetails(t *testing.T) {
 	mw := Middleware(Config{
 		IncludeRequest: true,
@@ -717,8 +717,8 @@ func TestDebugErrorsNotFoundRequestDetails(t *testing.T) {
 	if payload.Error.Details["path"] != "/missing" {
 		t.Errorf("expected path=/missing, got %v", payload.Error.Details["path"])
 	}
-	if payload.Error.Details["query"] != "foo=bar" {
-		t.Errorf("expected query=foo=bar, got %v", payload.Error.Details["query"])
+	if payload.Error.Details["query_present"] != true || strings.Contains(resp.Body.String(), "foo=bar") {
+		t.Errorf("unexpected query details in response: %s", resp.Body.String())
 	}
 	if payload.Error.Details["hint"] != "try /other" {
 		t.Errorf("expected hint, got %v", payload.Error.Details["hint"])
@@ -1147,5 +1147,52 @@ func TestDebugErrorsWrite_BodyFlushedOnPassthroughTransition(t *testing.T) {
 	// Body should have the original content (passthrough after buffer flush).
 	if got := resp.Body.String(); got != "abcdef" {
 		t.Fatalf("body = %q, want abcdef", got)
+	}
+}
+
+func TestDebugDefaultsOmitQueryMetadata(t *testing.T) {
+	handler := Middleware(DefaultConfig())(http.NotFoundHandler())
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/missing?sample=placeholder", nil)
+	req = req.WithContext(contract.WithRequestID(req.Context(), "test-request"))
+	handler.ServeHTTP(rec, req)
+	var payload struct {
+		RequestID string `json:"request_id"`
+		Error     struct {
+			Code    string
+			Details map[string]any
+		}
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if rec.Code != http.StatusNotFound || payload.RequestID != "test-request" || payload.Error.Code != contract.CodeResourceNotFound {
+		t.Fatalf("unexpected status or metadata: %d %+v", rec.Code, payload)
+	}
+	if _, found := payload.Error.Details["query_present"]; found || strings.Contains(rec.Body.String(), "placeholder") {
+		t.Fatal("default debug response included query metadata")
+	}
+}
+
+func TestDebugErrorCodesMatchContract(t *testing.T) {
+	for _, typ := range []contract.ErrorType{contract.TypeNotFound, contract.TypeInvalidRequest} {
+		meta := typ.Meta()
+		handler := Middleware(Config{})(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(meta.Status)
+		}))
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
+		var payload struct {
+			Error struct {
+				Type contract.ErrorType
+				Code string
+			}
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+			t.Fatal(err)
+		}
+		if rec.Code != meta.Status || payload.Error.Type != typ || payload.Error.Code != meta.Code {
+			t.Fatalf("type %s: status = %d, error = %+v", typ, rec.Code, payload.Error)
+		}
 	}
 }

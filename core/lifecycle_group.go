@@ -207,7 +207,9 @@ func (g *LifecycleGroup) startComponents(ctx context.Context) error {
 // Stop cleans up pending components in reverse registration order and joins
 // cleanup errors. If a callback panics, Stop re-panics with the first panic
 // after attempting the remaining callbacks. A later Stop retries only failed
-// cleanup. A nil context uses context.Background. If a lifecycle operation is
+// cleanup. A callback that terminates the calling goroutine interrupts this
+// attempt. The unfinished callbacks remain pending for a later Stop.
+// A nil context uses context.Background. If a lifecycle operation is
 // already executing callbacks, Stop returns an error for retry.
 func (g *LifecycleGroup) Stop(ctx context.Context) error {
 	if ctx == nil {

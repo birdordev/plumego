@@ -4,6 +4,7 @@ import (
 	"math"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 )
 
@@ -215,4 +216,26 @@ func TestRandomness(t *testing.T) {
 	if avg < expectedAvg-700 || avg > expectedAvg+700 {
 		t.Errorf("random distribution seems skewed: average %f, expected ~%f", avg, expectedAvg)
 	}
+}
+
+func TestGenerateRecoversWhenClockCatchesUpToExhaustedSequence(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		g := NewRequestIDGenerator()
+		g.lastMs = time.Now().Add(3 * time.Millisecond).UnixMilli()
+		g.seq = int32(seqMax)
+		done := make(chan string, 1)
+		go func() { done <- g.Generate() }()
+		synctest.Wait()
+		select {
+		case <-done:
+			t.Fatal("generated a duplicate timestamp and sequence while clock was behind")
+		default:
+		}
+		time.Sleep(5 * time.Millisecond)
+		id := <-done
+		next := g.Generate()
+		if len(id) != idWidth || id == next {
+			t.Fatalf("first=%q next=%q", id, next)
+		}
+	})
 }

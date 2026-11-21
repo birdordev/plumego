@@ -211,12 +211,12 @@ func newTimeoutResponseWriter(ctx context.Context, cfg Config) *timeoutResponseW
 }
 
 type timeoutResponseWriter struct {
-	publishRoute func(context.Context)
-	ctx          context.Context
-	cfg          Config
-	buffer       *internaltransport.BufferedResponse
-	overflow     bool
-	bypassUsed   bool // Whether buffering was abandoned for an oversized response.
+	publishRoute        func(context.Context)
+	ctx                 context.Context
+	cfg                 Config
+	buffer              *internaltransport.BufferedResponse
+	overflow            bool
+	replayLimitExceeded bool // Whether the response exceeded the replay budget.
 }
 
 func (w *timeoutResponseWriter) Header() http.Header {
@@ -247,13 +247,13 @@ func (w *timeoutResponseWriter) Write(p []byte) (int, error) {
 
 	// If buffering was abandoned, discard later writes and let WriteTo emit the
 	// canonical large-response error.
-	if w.bypassUsed {
+	if w.replayLimitExceeded {
 		return len(p), nil
 	}
 
 	currentSize := w.buffer.Len() + len(p)
 	if currentSize > w.cfg.MaxReplayBytes {
-		w.bypassUsed = true
+		w.replayLimitExceeded = true
 		w.buffer.ClearBody() // Free memory
 		return len(p), nil
 	}
@@ -266,7 +266,7 @@ func (w *timeoutResponseWriter) Write(p []byte) (int, error) {
 }
 
 func (w *timeoutResponseWriter) writeTo(dst http.ResponseWriter, r *http.Request) {
-	if w.bypassUsed {
+	if w.replayLimitExceeded {
 		internaltransport.WriteTransportError(dst, r, http.StatusInternalServerError, contract.CodeInternalError, "response too large for timeout buffering", nil)
 		return
 	}

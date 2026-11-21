@@ -234,8 +234,9 @@ bodyless responses with status 204 or 304.
 All `Accept-Encoding` field lines are evaluated as one list. Quality weights
 use the HTTP decimal syntax from 0 to 1 with up to three fractional digits.
 An invalid weight makes its coding unavailable for gzip negotiation.
-Negotiated gzip and identity responses include `Vary: Accept-Encoding` while
-preserving other `Vary` values.
+Gzip and identity responses vary on both `Accept` and `Accept-Encoding`,
+including when the request opts out of compression with an SSE media type.
+Other `Vary` values are preserved.
 When gzip starts, digest headers and their trailer declarations and values
 are removed along with strong ETags tied to the original bytes. Weak ETags
 and unrelated trailers are preserved.
@@ -258,7 +259,9 @@ response open and preserves the normal compression decision for later writes.
 `debug.Middleware(...)` is a development-facing transport helper for replacing
 empty or plain-text error responses with structured JSON. Do not wire it into a
 production baseline unless the application owner explicitly accepts the risk of
-debug metadata exposure.
+debug metadata exposure. Query metadata is disabled by default. When enabled,
+it reports only whether the request carried a query string. Debug replacements
+use the canonical machine code for the corresponding contract error type.
 
 Debug capture is bounded by `Config.MaxBodyBytes`. If a response
 exceeds the capture limit, the middleware stops debug replacement and passes the
@@ -279,6 +282,8 @@ If draining the buffered body fails, `http.ResponseController.Flush` returns
 the error and a later flush does not replay the buffered bytes.
 
 ### CORS contract
+
+CORS preflight matches configured method names case-sensitively.
 
 `cors.Middleware(...)` applies CORS headers only when the request origin and
 preflight attributes match the configured allow lists. Disallowed origins,
@@ -366,6 +371,10 @@ coalescer, not a cache or a business freshness policy. It is appropriate only
 for bounded, safe, non-streaming responses whose variants are fully represented
 by the coalesce key. It forwards the leader request response to the leader client
 while capturing a bounded copy for concurrent waiters with the same coalesce key.
+The number of simultaneous keys depends on active leaders. A waiter timeout
+only ends that wait. Put `concurrencylimit` outside coalescing when a deployment
+needs a total request and queue bound, and pass cancellations to the underlying
+handler work so each leader releases its slot.
 The default `Config.MaxResponseBytes` is 10MB. If the leader response exceeds
 the capture limit, the leader still receives the upstream response, but waiters
 receive a structured upstream failure instead of replaying an unbounded

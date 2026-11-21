@@ -1184,3 +1184,35 @@ func TestErrorDetailsCloneDeepNamedContainers(t *testing.T) {
 		t.Fatalf("fallback status = %d, body = %q, error = %v", rec.Code, rec.Body.String(), err)
 	}
 }
+
+type customDetailEncoding struct {
+	value string
+}
+
+func (d *customDetailEncoding) MarshalJSON() ([]byte, error) {
+	return json.Marshal(d.value)
+}
+
+func TestErrorDetailsPreserveCustomEncodingAndCopyContainers(t *testing.T) {
+	custom := &customDetailEncoding{value: "initial"}
+	ordinary := map[string]any{"value": "original"}
+	err := NewErrorBuilder().Type(TypeBadRequest).
+		Detail("custom", custom).Detail("ordinary", ordinary).Build()
+	custom.value = "custom-encoded"
+	ordinary["value"] = "changed"
+	snapshot := err.Details()
+	snapshot["ordinary"].(map[string]any)["value"] = "changed again"
+
+	w := httptest.NewRecorder()
+	if writeErr := WriteError(w, nil, err); writeErr != nil {
+		t.Fatal(writeErr)
+	}
+	var resp errorResponse
+	if decodeErr := json.Unmarshal(w.Body.Bytes(), &resp); decodeErr != nil {
+		t.Fatal(decodeErr)
+	}
+	if resp.Error.Details["custom"] != "custom-encoded" ||
+		resp.Error.Details["ordinary"].(map[string]any)["value"] != "original" {
+		t.Fatalf("unexpected error details: %+v", resp.Error.Details)
+	}
+}

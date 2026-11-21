@@ -84,3 +84,15 @@ func TestCloneDeepMetadataWithBoundedStack(t *testing.T) {
 		t.Fatalf("deep metadata subprocess failed: %v\n%s", err, output)
 	}
 }
+
+func TestMetadataClonePreservesSharedContainerWithinSnapshot(t *testing.T) {
+	child := map[string]any{"field": "source"}
+	data := map[string]any{"left": child, "right": []any{child}}
+	for _, clone := range []map[string]any{(File{Metadata: data}).Clone().Metadata, (PutOptions{Metadata: data}).CloneMetadata()} {
+		clone["left"].(map[string]any)["field"] = "clone"
+		got := clone["right"].([]any)[0].(map[string]any)["field"]
+		if got != "clone" || child["field"] != "source" {
+			t.Fatalf("clone reference=%v source=%v", got, child["field"])
+		}
+	}
+}

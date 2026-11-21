@@ -2,8 +2,10 @@ package metrics
 
 import (
 	"context"
+	"net/http"
 	"sync"
 	"testing"
+	"time"
 )
 
 type labelMutatingCollector struct{ *NoopCollector }
@@ -113,5 +115,48 @@ func TestConcurrentFanoutDoesNotShareInputLabels(t *testing.T) {
 	}
 	if record.Labels["status"] != "500" {
 		t.Fatal("fanout mutated shared input")
+	}
+}
+
+type contextRecordingCollector struct {
+	*NoopCollector
+	got    context.Context
+	status string
+}
+
+func (c *contextRecordingCollector) Record(ctx context.Context, record MetricRecord) {
+	c.got = ctx
+	c.status = record.Labels["status"]
+}
+
+func TestFanoutPreservesCallerContextAndIsolatesLabels(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	observer := &contextRecordingCollector{NoopCollector: NewNoopCollector()}
+	multi := NewMultiCollector(&labelMutatingCollector{NewNoopCollector()}, observer)
+	record := MetricRecord{Labels: MetricLabels{"status": "500"}}
+	multi.Record(ctx, record)
+	if observer.got != ctx || observer.got.Err() != context.Canceled || observer.status != "500" || record.Labels["status"] != "500" {
+		t.Fatal("context or labels changed in fan-out")
+	}
+}
+
+func TestConcurrentHTTPRecordAndObserveClassification(t *testing.T) {
+	statuses := []int{200, 399, 400, 404, 500}
+	collector := NewBaseMetricsCollector()
+	var workers sync.WaitGroup
+	for _, status := range statuses {
+		workers.Go(func() {
+			collector.ObserveHTTP(t.Context(), http.MethodGet, "/", status, 0, time.Millisecond)
+		})
+		workers.Go(func() {
+			collector.Record(t.Context(), NewHTTPRecord(http.MethodGet, "/", status, time.Millisecond))
+		})
+	}
+	workers.Wait()
+	stats := collector.GetStats()
+	if stats.TotalRecords != 10 || stats.ErrorRecords != 6 ||
+		stats.NameBreakdown[MetricHTTPRequest] != 10 || stats.ActiveSeries != 1 {
+		t.Fatalf("unexpected mixed collector stats: %+v", stats)
 	}
 }

@@ -675,3 +675,88 @@ func TestWaiterWriteOutcomeControlsReplayHooks(t *testing.T) {
 		})
 	}
 }
+
+func TestDistinctLeaderKeysAreReleasedOnCompletion(t *testing.T) {
+	coalescer := New(Config{})
+	started := make(chan struct{}, 3)
+	release := make(chan struct{})
+	handler := coalescer.Middleware()(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		started <- struct{}{}
+		<-release
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	var workers sync.WaitGroup
+	for i := range cap(started) {
+		path := fmt.Sprintf("/item/%d", i)
+		workers.Go(func() {
+			handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, path, nil))
+		})
+	}
+	for range cap(started) {
+		<-started
+	}
+	if got := coalescer.Stats().InFlight; got != cap(started) {
+		t.Errorf("in flight = %d, want %d", got, cap(started))
+	}
+	close(release)
+	workers.Wait()
+	if got := coalescer.Stats().InFlight; got != 0 {
+		t.Errorf("in flight after all leaders finish = %d", got)
+	}
+}
+
+type blockingReplayDestination struct {
+	*httptest.ResponseRecorder
+	entered chan struct{}
+	release chan struct{}
+}
+
+func (w *blockingReplayDestination) Write(p []byte) (int, error) {
+	close(w.entered)
+	<-w.release
+	return w.ResponseRecorder.Write(p)
+}
+
+func TestConcurrentLeaderGenerationsKeepWaiterResponse(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		started := make(chan struct{})
+		release := make(chan struct{})
+		h := New(Config{}).Middleware()(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			generation := r.Header.Get("X-Test-Generation")
+			if generation == "old" {
+				close(started)
+				<-release
+			}
+			_, _ = io.WriteString(w, generation)
+		}))
+		submit := func(w http.ResponseWriter, generation string) {
+			req := httptest.NewRequest(http.MethodGet, "/", nil)
+			req.Header.Set("X-Test-Generation", generation)
+			h.ServeHTTP(w, req)
+		}
+		go submit(httptest.NewRecorder(), "old")
+		<-started
+
+		waiter := &blockingReplayDestination{
+			ResponseRecorder: httptest.NewRecorder(),
+			entered:          make(chan struct{}),
+			release:          make(chan struct{}),
+		}
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			submit(waiter, "unused")
+		}()
+		synctest.Wait()
+		close(release)
+		<-waiter.entered
+
+		next := httptest.NewRecorder()
+		submit(next, "new")
+		close(waiter.release)
+		<-done
+		if waiter.Body.String() != "old" || next.Body.String() != "new" {
+			t.Fatalf("old waiter=%q new leader=%q", waiter.Body.String(), next.Body.String())
+		}
+	})
+}

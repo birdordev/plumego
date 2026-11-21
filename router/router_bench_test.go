@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -352,4 +353,31 @@ func BenchmarkOptFrozenVsUnfrozen(b *testing.B) {
 			}
 		})
 	})
+}
+
+func BenchmarkRouteCachePathLength(b *testing.B) {
+	for _, length := range []int{16, 256, 2048} {
+		for _, distinct := range []int{1, defaultCacheCapacity + 1} {
+			b.Run(fmt.Sprintf("length=%d/paths=%d", length, distinct), func(b *testing.B) {
+				r := NewRouter()
+				if err := r.AddRoute(http.MethodGet, "/items/:id", http.NotFoundHandler()); err != nil {
+					b.Fatal(err)
+				}
+				r.Freeze()
+				paths := make([]string, distinct)
+				for i := range paths {
+					paths[i] = fmt.Sprintf("/items/%s%d", strings.Repeat("a", length), i)
+				}
+				b.ReportAllocs()
+				i := 0
+				for b.Loop() {
+					result := r.cachedMatch(http.MethodGet, paths[i%len(paths)])
+					if result == nil || result.RoutePattern != "/items/:id" {
+						b.Fatal("cache changed route selection")
+					}
+					i++
+				}
+			})
+		}
+	}
 }

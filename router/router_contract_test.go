@@ -1497,3 +1497,46 @@ func TestRouteOptionsCanInspectAndFreezeRouter(t *testing.T) {
 		})
 	}
 }
+
+func TestRoutingMatrixBeforeAndAfterFreeze(t *testing.T) {
+	r := NewRouter(WithMethodNotAllowed(true))
+	add := func(method, path, name string) {
+		t.Helper()
+		if err := r.AddRoute(method, path, http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			w.Header().Set("X-Route", name)
+			w.Header().Set("X-Param", Param(req, "id"))
+			_, _ = io.WriteString(w, name)
+		})); err != nil {
+			t.Fatal(err)
+		}
+	}
+	add(http.MethodGet, "/items/:id", "get")
+	add(http.MethodHead, "/items/fixed", "head")
+	add(MethodAny, "/other/:id", "any")
+
+	cases := []struct {
+		method, path, route, param, allow string
+		status                            int
+	}{
+		{http.MethodGet, "/items/fixed", "get", "fixed", "", http.StatusOK},
+		{http.MethodHead, "/items/fixed", "head", "", "", http.StatusOK},
+		{http.MethodHead, "/items/17", "get", "17", "", http.StatusOK},
+		{http.MethodHead, "/other/17", "any", "17", "", http.StatusOK},
+		{http.MethodPost, "/items/17", "", "", "GET, HEAD", http.StatusMethodNotAllowed},
+		{http.MethodHead, "/missing", "", "", "", http.StatusNotFound},
+	}
+	for _, stage := range []string{"mutable cold", "mutable warm", "frozen", "frozen warm"} {
+		if stage == "frozen" {
+			r.Freeze()
+		}
+		for _, tc := range cases {
+			rec := httptest.NewRecorder()
+			r.ServeHTTP(rec, httptest.NewRequest(tc.method, tc.path, nil))
+			if rec.Code != tc.status || rec.Header().Get("X-Route") != tc.route ||
+				rec.Header().Get("X-Param") != tc.param || rec.Header().Get("Allow") != tc.allow ||
+				(tc.method == http.MethodHead && rec.Body.Len() != 0) {
+				t.Fatalf("%s %s %s: status=%d headers=%v body=%q", stage, tc.method, tc.path, rec.Code, rec.Header(), rec.Body.String())
+			}
+		}
+	}
+}

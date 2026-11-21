@@ -316,3 +316,31 @@ func TestHeadPreservesCommitBeforeRecoveredPanic(t *testing.T) {
 		}
 	}
 }
+
+func TestHeadControllerThroughWrappedServer(t *testing.T) {
+	r := NewRouter()
+	if err := r.AddRoute(http.MethodGet, "/", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("X-Test", "first")
+		w.WriteHeader(http.StatusAccepted)
+		if err := http.NewResponseController(w).Flush(); err != nil {
+			t.Error(err)
+		}
+		w.Header().Set("X-Test", "late")
+		_, _ = io.WriteString(w, "discarded")
+	})); err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		r.ServeHTTP(headUnwrapWriter{headUnwrapWriter{w}}, req)
+	}))
+	defer server.Close()
+	resp, err := server.Client().Head(server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil || resp.StatusCode != http.StatusAccepted || resp.Header.Get("X-Test") != "first" || len(body) != 0 {
+		t.Fatalf("status=%d headers=%v body=%q err=%v", resp.StatusCode, resp.Header, body, err)
+	}
+}

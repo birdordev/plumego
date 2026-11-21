@@ -371,8 +371,8 @@ func ScanRow(row *sql.Row, dest ...any) error {
 	return nil
 }
 
-// ScanRows scans multiple rows into a slice and closes any non-nil rows,
-// including when scanFunc is nil.
+// ScanRows scans the current result set into a slice and closes any non-nil
+// rows, including when scanFunc is nil. It does not advance to later result sets.
 func ScanRows[T any](rows *sql.Rows, scanFunc func(*sql.Rows) (T, error)) (results []T, err error) {
 	if rows == nil {
 		return nil, fmt.Errorf("%w: rows is nil", ErrQueryFailed)

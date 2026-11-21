@@ -45,6 +45,7 @@ package headers
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"net/http"
 	"strings"
 	"time"
@@ -173,7 +174,7 @@ func DefaultPolicy() Policy {
 }
 
 // Compile precomputes invariant header values (currently HSTS) and returns an
-// optimised copy of the policy with detached HSTS options.
+// copy of the policy with detached HSTS options and additional headers.
 //
 // Call Compile once after the policy is fully configured, typically inside the
 // transport middleware constructor. Uncompiled policies still produce correct
@@ -182,6 +183,7 @@ func DefaultPolicy() Policy {
 // the precomputed header value.
 func (p Policy) Compile() Policy {
 	p.compiledHSTS = ""
+	p.Additional = maps.Clone(p.Additional)
 	if p.StrictTransportSecurity != nil {
 		hsts := *p.StrictTransportSecurity
 		p.StrictTransportSecurity = &hsts

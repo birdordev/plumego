@@ -27,7 +27,7 @@ const defaultMaxBodyBytes = 64 << 10
 //
 //	config := debug.Config{
 //		IncludeRequest: true,  // Include request method and path
-//		IncludeQuery:   true,  // Include query parameters
+//		IncludeQuery:   true,  // Report whether a query was provided
 //		IncludeBody:    false, // Don't include response body (security)
 //		NotFoundHint:   "Try /api/v1/users", // Hint for 404 errors
 //	}
@@ -39,7 +39,8 @@ type Config struct {
 	// IncludeRequest controls whether to include request method and path in error details
 	IncludeRequest bool
 
-	// IncludeQuery controls whether to include query parameters in error details
+	// IncludeQuery reports whether the request has a query string.
+	// The response never includes parameter names or values.
 	IncludeQuery bool
 
 	// IncludeBody controls whether to include response body in error details
@@ -59,7 +60,6 @@ type Config struct {
 func DefaultConfig() Config {
 	return Config{
 		IncludeRequest: true,
-		IncludeQuery:   true,
 		MaxBodyBytes:   defaultMaxBodyBytes,
 	}
 }
@@ -94,7 +94,7 @@ func DefaultConfig() Config {
 //
 //	{
 //	  "error": {
-//	    "code": "not_found",
+//	    "code": "RESOURCE_NOT_FOUND",
 //	    "message": "not found",
 //	    "category": "client",
 //	    "type": "resource_not_found",
@@ -362,7 +362,6 @@ func isStreamingContentType(contentType string) bool {
 
 func debugErrorPayload(errorType contract.ErrorType, status int, r *http.Request, cfg Config, body []byte) contract.APIError {
 	message := strings.ToLower(http.StatusText(status))
-	code := strings.ReplaceAll(message, " ", "_")
 
 	details := map[string]any{}
 	if cfg.IncludeRequest {
@@ -370,7 +369,7 @@ func debugErrorPayload(errorType contract.ErrorType, status int, r *http.Request
 		details["path"] = r.URL.Path
 	}
 	if cfg.IncludeQuery && r.URL.RawQuery != "" {
-		details["query"] = r.URL.RawQuery
+		details["query_present"] = true
 	}
 	if status == http.StatusNotFound && cfg.NotFoundHint != "" {
 		details["hint"] = cfg.NotFoundHint
@@ -384,7 +383,6 @@ func debugErrorPayload(errorType contract.ErrorType, status int, r *http.Request
 
 	return contract.NewErrorBuilder().
 		Type(errorType).
-		Code(code).
 		Message(message).
 		Details(details).
 		Build()

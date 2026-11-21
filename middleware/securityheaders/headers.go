@@ -60,12 +60,6 @@ func Middleware(config Config) (middleware.Middleware, error) {
 	effective := headers.DefaultPolicy()
 	if config.Policy != nil {
 		effective = *config.Policy
-		if config.Policy.Additional != nil {
-			effective.Additional = make(map[string]string, len(config.Policy.Additional))
-			for key, value := range config.Policy.Additional {
-				effective.Additional[key] = value
-			}
-		}
 		if err := effective.Validate(); err != nil {
 			return nil, err
 		}

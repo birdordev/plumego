@@ -271,11 +271,11 @@ func TestValidateCompletion(t *testing.T) {
 			want:        ErrExpired,
 		},
 		{
-			name: "completed expired",
+			name: "completed at expiry",
 			record: func() Record {
 				record := valid
 				record.Status = StatusCompleted
-				record.ExpiresAt = now.Add(-time.Second)
+				record.ExpiresAt = now
 				return record
 			}(),
 			requestHash: "sha256:request",

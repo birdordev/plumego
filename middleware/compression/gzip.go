@@ -68,15 +68,10 @@ func Middleware(cfg Config) middleware.Middleware {
 				return
 			}
 
-			// Skip SSE (Server-Sent Events)
+			variant := internaltransport.NewVaryWriter(w, "Accept-Encoding", "Accept")
 			accept := r.Header.Get("Accept")
-			if strings.Contains(accept, "text/event-stream") {
-				next.ServeHTTP(w, r)
-				return
-			}
-
-			variant := internaltransport.NewVaryWriter(w, "Accept-Encoding")
-			if !acceptsGzip(strings.Join(r.Header.Values("Accept-Encoding"), ",")) {
+			if strings.Contains(accept, "text/event-stream") ||
+				!acceptsGzip(strings.Join(r.Header.Values("Accept-Encoding"), ",")) {
 				next.ServeHTTP(variant, r)
 				variant.Prepare()
 				return

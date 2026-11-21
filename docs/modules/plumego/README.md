@@ -45,7 +45,9 @@ need a single import to get started.
 ```go
 // Minimal (default config, no logger)
 app := plumego.New()
-app.Get("/ping", http.HandlerFunc(handler))
+if err := app.Get("/ping", http.HandlerFunc(handler)); err != nil {
+    log.Fatal(err)
+}
 log.Fatal(http.ListenAndServe(":8080", app))
 
 // Non-default address

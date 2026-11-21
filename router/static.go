@@ -15,7 +15,8 @@ import (
 	"github.com/birdordev/plumego/contract"
 )
 
-// normalizeStaticPrefix ensures the prefix always starts with "/"
+// normalizeStaticPrefix trims surrounding whitespace and trailing slashes.
+// It adds a leading slash if needed and uses "/" for an empty prefix.
 func normalizeStaticPrefix(prefix string) string {
 	prefix = strings.TrimSpace(prefix)
 	if prefix == "" || prefix == "/" {

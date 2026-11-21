@@ -66,3 +66,32 @@ func BenchmarkLoadTrimSnapshot(b *testing.B) {
 		}
 	}
 }
+
+func BenchmarkKVWriteSnapshotScale(b *testing.B) {
+	for _, size := range []int{10, 100, 1000} {
+		b.Run(fmt.Sprint(size), func(b *testing.B) {
+			opts := DefaultConfig(b.TempDir())
+			kv, err := NewKVStore(opts)
+			if err != nil {
+				b.Fatal(err)
+			}
+			defer kv.Close()
+			payload := make([]byte, 128)
+			for i := range size {
+				key := fmt.Sprint(i)
+				kv.data[key] = &entry{Value: payload, Size: entrySize(key, payload)}
+			}
+			b.ReportAllocs()
+			for b.Loop() {
+				if err := kv.Set("updated", payload, 0); err != nil {
+					b.Fatal(err)
+				}
+			}
+			info, err := os.Stat(filepath.Join(opts.DataDir, stateFileName))
+			if err != nil {
+				b.Fatal(err)
+			}
+			b.ReportMetric(float64(info.Size()), "snapshot-B")
+		})
+	}
+}

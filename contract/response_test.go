@@ -689,3 +689,34 @@ func TestJSONResponseReportsShortWrite(t *testing.T) {
 		}
 	}
 }
+
+func TestWriteErrorJoinsEncodingFailureWithShortWrite(t *testing.T) {
+	w := &responseWriteProbe{ResponseRecorder: httptest.NewRecorder(), short: true}
+	err := WriteError(w, nil, NewErrorBuilder().Type(TypeNotFound).Detail("unsupported", make(chan int)).Build())
+	var encErr *json.UnsupportedTypeError
+	if !errors.As(err, &encErr) || !errors.Is(err, io.ErrShortWrite) {
+		t.Fatalf("error = %v, want encoding failure and short write", err)
+	}
+	if w.Code != http.StatusNotFound || w.headerCalls != 1 {
+		t.Fatalf("status=%d commits=%d", w.Code, w.headerCalls)
+	}
+}
+
+func TestWriteResponseBodylessFramingBeforeTransport(t *testing.T) {
+	for _, status := range []int{http.StatusNoContent, http.StatusResetContent} {
+		w := &countingResponseWriter{ResponseRecorder: httptest.NewRecorder()}
+		w.Header().Set("Content-Length", "4")
+		w.Header().Set("Transfer-Encoding", "chunked")
+		if err := WriteResponse(w, nil, status, make(chan int), nil); err != nil {
+			t.Fatal(err)
+		}
+		h := w.Result().Header
+		wantLength := ""
+		if status == http.StatusResetContent {
+			wantLength = "0"
+		}
+		if w.headerWrites != 1 || w.bodyWrites != 0 || h.Get("Content-Length") != wantLength || h.Get("Transfer-Encoding") != "" {
+			t.Fatalf("status=%d commits=%d body writes=%d headers=%v", status, w.headerWrites, w.bodyWrites, h)
+		}
+	}
+}

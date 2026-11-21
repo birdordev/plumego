@@ -839,3 +839,27 @@ func TestLimiterWithCustomTimeFunction(t *testing.T) {
 		t.Errorf("Expected second request to be allowed after time advance")
 	}
 }
+
+func TestConcurrentStopWaitsForCleanupAndKeepsAdmissionUsable(t *testing.T) {
+	limiter := NewLimiter(DefaultConfig())
+	done := make(chan bool, 2)
+	for range 2 {
+		go func() {
+			limiter.Stop()
+			select {
+			case <-limiter.stoppedCh:
+				done <- true
+			default:
+				done <- false
+			}
+		}()
+	}
+	for range 2 {
+		if !<-done {
+			t.Error("Stop returned before cleanup finished")
+		}
+	}
+	if result := limiter.Allow("test-key"); !result.Allowed {
+		t.Errorf("admission after stopping cleanup: %+v", result)
+	}
+}

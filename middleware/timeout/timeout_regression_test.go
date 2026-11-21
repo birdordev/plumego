@@ -10,6 +10,7 @@ import (
 	"runtime"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/birdordev/plumego/contract"
@@ -330,29 +331,33 @@ func TestTimeoutParentDeadline(t *testing.T) {
 }
 
 func TestTimeoutLatePanicRunsAfterResponse(t *testing.T) {
-	release := make(chan struct{})
-	finished := make(chan struct{})
-	reported := make(chan int, 1)
-	rr := httptest.NewRecorder()
-	handler := Middleware(Config{
-		Timeout: 100 * time.Millisecond,
-		OnPanic: func(r *http.Request, value any) { reported <- rr.Code },
-	})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		defer close(finished)
-		<-release
-		panic("late panic")
-	}))
-	handler.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/", nil))
-	close(release)
-	awaitSignal(t, finished)
-	select {
-	case status := <-reported:
-		if status != http.StatusGatewayTimeout {
-			t.Fatalf("hook saw status = %d, want 504", status)
+	synctest.Test(t, func(t *testing.T) {
+		release := make(chan struct{})
+		finished := make(chan struct{})
+		var reported []int
+		rr := httptest.NewRecorder()
+		dst := &responseWriteCounter{ResponseWriter: rr}
+		handler := Middleware(Config{
+			Timeout: time.Millisecond,
+			OnPanic: func(_ *http.Request, _ any) {
+				reported = append(reported, rr.Code)
+			},
+		})(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
+			defer close(finished)
+			<-release
+			panic("late panic")
+		}))
+		handler.ServeHTTP(dst, httptest.NewRequest(http.MethodGet, "/", nil))
+		if rr.Code != http.StatusGatewayTimeout || dst.writes != 2 {
+			t.Errorf("status=%d writes=%d", rr.Code, dst.writes)
 		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("late panic was not reported")
-	}
+		close(release)
+		<-finished
+		synctest.Wait()
+		if len(reported) != 1 || reported[0] != http.StatusGatewayTimeout || dst.writes != 2 {
+			t.Fatalf("hook statuses=%v response writes=%d", reported, dst.writes)
+		}
+	})
 }
 
 func TestTimeoutInformationalResponsesPreserveFinalStatus(t *testing.T) {
@@ -376,5 +381,27 @@ func TestTimeoutInformationalResponsesPreserveFinalStatus(t *testing.T) {
 	}
 	if resp.StatusCode != http.StatusCreated || string(body) != "created" {
 		t.Fatalf("status=%d body=%q, want 201 created", resp.StatusCode, body)
+	}
+}
+
+type failedReplayWriter struct {
+	responseWriteCounter
+}
+
+func (w *failedReplayWriter) Write([]byte) (int, error) {
+	w.writes++
+	return 0, io.ErrClosedPipe
+}
+
+func TestTimeoutReplayWriteFailureDoesNotCommitAgain(t *testing.T) {
+	rec := httptest.NewRecorder()
+	dst := &failedReplayWriter{responseWriteCounter{ResponseWriter: rec}}
+	handler := Middleware(Config{Timeout: time.Second})(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusCreated)
+		_, _ = io.WriteString(w, "body")
+	}))
+	handler.ServeHTTP(dst, httptest.NewRequest(http.MethodGet, "/", nil))
+	if rec.Code != http.StatusCreated || dst.writes != 2 || rec.Body.Len() != 0 {
+		t.Fatalf("status=%d writes=%d body=%q", rec.Code, dst.writes, rec.Body.String())
 	}
 }

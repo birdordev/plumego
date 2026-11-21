@@ -720,11 +720,13 @@ func TestJSONFormatLoggerWithFieldsSharesWriterLock(t *testing.T) {
 	child := base.WithFields(Fields{"scope": "child"})
 
 	const n = 200
+	start := make(chan struct{})
 	var wg sync.WaitGroup
 	wg.Add(2)
 
 	go func() {
 		defer wg.Done()
+		<-start
 		for i := 0; i < n; i++ {
 			base.Info("base", Fields{"idx": i})
 		}
@@ -732,11 +734,13 @@ func TestJSONFormatLoggerWithFieldsSharesWriterLock(t *testing.T) {
 
 	go func() {
 		defer wg.Done()
+		<-start
 		for i := 0; i < n; i++ {
 			child.Info("child", Fields{"idx": i})
 		}
 	}()
 
+	close(start)
 	wg.Wait()
 
 	lines := strings.Split(strings.TrimSpace(buf.String()), "\n")
@@ -744,7 +748,10 @@ func TestJSONFormatLoggerWithFieldsSharesWriterLock(t *testing.T) {
 		t.Fatalf("expected %d lines, got %d", 2*n, len(lines))
 	}
 	for _, line := range lines {
-		_ = decodeTestJSONLogEntry(t, []byte(line))
+		entry := decodeTestJSONLogEntry(t, []byte(line))
+		if entry.Level != "INFO" || (entry.Msg == "child") != (entry.Scope == "child") {
+			t.Fatalf("unexpected level or scope in %q", line)
+		}
 	}
 }
 
@@ -794,5 +801,25 @@ func TestJSONEncoderPanicIsIsolatedToTheField(t *testing.T) {
 	if entry.Good != "keep" || entry.JSON != "[unsupported]" || len(entry.Nested) != 2 ||
 		entry.Nested[0] != "[unsupported]" || entry.Nested[1] != "keep" || strings.Contains(out.String(), "private encoder panic") {
 		t.Fatalf("unexpected log: %s", out.String())
+	}
+}
+
+func BenchmarkJSONRecordFieldBudget(b *testing.B) {
+	for _, count := range []int{1, 32} {
+		b.Run(strconv.Itoa(count), func(b *testing.B) {
+			l := NewLogger(LoggerConfig{Format: LoggerFormatJSON, Output: io.Discard})
+			fields := make(Fields, count)
+			wide := make([]any, maxJSONFieldNodes+10)
+			for i := range wide {
+				wide[i] = i
+			}
+			for i := range count {
+				fields[strconv.Itoa(i)] = wide
+			}
+			b.ReportAllocs()
+			for b.Loop() {
+				l.Info("bounded", fields)
+			}
+		})
 	}
 }

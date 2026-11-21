@@ -196,3 +196,27 @@ func TestStoredHashParserPreservesWrappedBase64(t *testing.T) {
 		}
 	}
 }
+
+func TestCheckPasswordErrorsOmitInputMaterial(t *testing.T) {
+	const password = "example-password-placeholder"
+	const malformed = "example-format-placeholder"
+	hash, err := HashPasswordWithCost(password, MinimumCost)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		hash, input string
+		want        error
+	}{
+		{malformed, password, ErrInvalidHash},
+		{hash, password + "-other", ErrPasswordMismatch},
+	} {
+		err := CheckPassword(tc.hash, tc.input)
+		if !errors.Is(err, tc.want) {
+			t.Fatalf("expected %v, got error type %T", tc.want, err)
+		}
+		if strings.Contains(err.Error(), tc.hash) || strings.Contains(err.Error(), tc.input) {
+			t.Fatal("error message contains input material")
+		}
+	}
+}

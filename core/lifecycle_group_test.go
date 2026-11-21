@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"errors"
+	"runtime"
 	"slices"
 	"testing"
 	"time"
@@ -604,5 +605,45 @@ func TestLifecycleGroupRollbackPanicPreservesStartupError(t *testing.T) {
 	}
 	if err := g.Stop(t.Context()); err != nil || !slices.Equal(stops, []string{"second", "first", "second"}) {
 		t.Fatalf("retry error=%v, stops=%v", err, stops)
+	}
+}
+
+func TestLifecycleGroupRetainsPendingStopAfterGoexit(t *testing.T) {
+	var calls []string
+	exits := true
+	g := NewLifecycleGroup().
+		Add("first", Component{OnStop: func(context.Context) error {
+			calls = append(calls, "first")
+			return nil
+		}}).
+		Add("second", Component{OnStop: func(context.Context) error {
+			calls = append(calls, "second")
+			if exits {
+				runtime.Goexit()
+			}
+			return nil
+		}}).
+		Add("third", Component{OnStop: func(context.Context) error {
+			calls = append(calls, "third")
+			return nil
+		}})
+	if err := g.Start(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	exited := make(chan struct{})
+	go func() {
+		defer close(exited)
+		if err := g.Stop(t.Context()); err != nil {
+			t.Error(err)
+		}
+		t.Error("first Stop unexpectedly returned")
+	}()
+	<-exited
+	exits = false
+	if err := g.Stop(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(calls, []string{"third", "second", "second", "first"}) {
+		t.Fatalf("cleanup order = %v", calls)
 	}
 }

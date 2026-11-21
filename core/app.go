@@ -23,16 +23,15 @@ type App struct {
 
 	// Runtime state (protected by mutex)
 	mu                 sync.RWMutex
-	serverPrepareMu    sync.Mutex
 	preparationState   PreparationState // Last successfully published phase
 	registrationFrozen bool
+	handlerBuilding    bool
 
 	// Server components
-	httpServer       *http.Server               // HTTP server instance
-	connTracker      *connectionTracker         // Open HTTP connection tracker
-	handler          http.Handler               // Combined handler with middleware applied; guarded by mu
-	handlerPrepareMu sync.Mutex                 // Serializes handler assembly until it succeeds
-	handlerFast      atomic.Pointer[handlerRef] // Published once after successful assembly
+	httpServer  *http.Server               // HTTP server instance
+	connTracker *connectionTracker         // Open HTTP connection tracker
+	handler     http.Handler               // Combined handler with middleware applied; guarded by mu
+	handlerFast atomic.Pointer[handlerRef] // Published once after successful assembly
 }
 
 // New creates an App from a value-copied config and explicit dependencies.

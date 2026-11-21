@@ -4,7 +4,9 @@
 // it the minimal import for a new service:
 //
 //	app := plumego.New()
-//	app.Get("/ping", http.HandlerFunc(pingHandler))
+//	if err := app.Get("/ping", http.HandlerFunc(pingHandler)); err != nil {
+//	    log.Fatal(err)
+//	}
 //	log.Fatal(http.ListenAndServe(":8080", app))
 //
 // All routing, middleware, and lifecycle methods are on [*core.App].
@@ -31,9 +33,8 @@ type AppConfig = core.AppConfig
 // AppDependencies is an alias for [core.AppDependencies].
 type AppDependencies = core.AppDependencies
 
-// DefaultConfig returns the canonical baseline application configuration:
-// address ":8080", 30 s read/write timeouts, 5 s header timeout, 1 MiB max
-// header bytes, and HTTP/2 enabled.
+// DefaultConfig returns the baseline application configuration from
+// [core.DefaultConfig].
 func DefaultConfig() AppConfig {
 	return core.DefaultConfig()
 }
@@ -63,10 +64,12 @@ func NewWithConfig(cfg AppConfig) *core.App {
 // Param extracts the named path parameter from the matched route.
 // It returns an empty string when the parameter is absent.
 //
-//	app.Get("/users/:id", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+//	if err := app.Get("/users/:id", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 //	    id := plumego.Param(r, "id")
 //	    ...
-//	}))
+//	})); err != nil {
+//	    log.Fatal(err)
+//	}
 func Param(r *http.Request, name string) string {
 	return router.Param(r, name)
 }

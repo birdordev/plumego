@@ -1,6 +1,7 @@
 package metrics
 
 import (
+	"fmt"
 	"testing"
 	"time"
 )
@@ -68,5 +69,31 @@ func BenchmarkMultiCollectorObserveHTTP(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		collector.ObserveHTTP(ctx, "GET", "/test", 200, 100, 50*time.Millisecond)
+	}
+}
+
+func BenchmarkBaseCollectorNameCardinality(b *testing.B) {
+	for _, count := range []int{1, 1000} {
+		b.Run(fmt.Sprint(count), func(b *testing.B) {
+			names := make([]string, count)
+			for i := range names {
+				names[i] = fmt.Sprintf("metric-%d", i)
+			}
+			b.ReportAllocs()
+			for b.Loop() {
+				collector := NewBaseMetricsCollector()
+				for _, name := range names {
+					collector.Record(b.Context(), MetricRecord{Name: name})
+				}
+				stats := collector.GetStats()
+				if stats.ActiveSeries != count {
+					b.Fatal(stats.ActiveSeries)
+				}
+				collector.Clear()
+				if collector.GetStats().ActiveSeries != 0 {
+					b.Fatal("Clear retained names")
+				}
+			}
+		})
 	}
 }

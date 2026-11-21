@@ -1844,3 +1844,17 @@ func readState(t *testing.T, dir string, state *diskState) {
 		t.Fatalf("decode state: %v", err)
 	}
 }
+
+func TestSnapshotReadBudget(t *testing.T) {
+	file := filepath.Join(t.TempDir(), stateFileName)
+	original := []byte(`{"entries":{}}`)
+	if err := os.WriteFile(file, original, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if data, err := readSnapshot(file, int64(len(original))); err != nil || string(data) != string(original) {
+		t.Fatalf("read at limit = %q, %v", data, err)
+	}
+	if data, err := readSnapshot(file, int64(len(original)-1)); err == nil || data != nil {
+		t.Fatalf("read above limit = %q, %v", data, err)
+	}
+}

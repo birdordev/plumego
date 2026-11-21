@@ -441,3 +441,35 @@ func TestNewMultiCollectorFiltersNilPointers(t *testing.T) {
 		t.Fatalf("fan-out order = %v, original labels = %v", order, labels)
 	}
 }
+
+type gatedClearCollector struct {
+	*BaseMetricsCollector
+	entered, release chan struct{}
+}
+
+func (c *gatedClearCollector) Clear() {
+	close(c.entered)
+	<-c.release
+	c.BaseMetricsCollector.Clear()
+}
+
+func TestMultiCollectorClearPublishesEachResetIndependently(t *testing.T) {
+	first := NewBaseMetricsCollector()
+	second := &gatedClearCollector{NewBaseMetricsCollector(), make(chan struct{}), make(chan struct{})}
+	multi := NewMultiCollector(first, second)
+	multi.Record(t.Context(), MetricRecord{Name: "count"})
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		multi.Clear()
+	}()
+	<-second.entered
+	if stats := multi.GetStats(); stats.TotalRecords != 1 || stats.NameBreakdown["count"] != 1 {
+		t.Errorf("between resets: %+v", stats)
+	}
+	close(second.release)
+	<-done
+	if stats := multi.GetStats(); stats.TotalRecords != 0 || len(stats.NameBreakdown) != 0 {
+		t.Errorf("after both resets: %+v", stats)
+	}
+}

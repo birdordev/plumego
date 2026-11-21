@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 	"testing/fstest"
+	"time"
 
 	"github.com/birdordev/plumego/contract"
 )
@@ -258,7 +259,15 @@ func (s staticOpenResult) Open(string) (http.File, error) {
 
 type closeCountingStaticFile struct {
 	http.File
-	closes int
+	closes  int
+	statErr error
+}
+
+func (f *closeCountingStaticFile) Stat() (fs.FileInfo, error) {
+	if f.statErr != nil {
+		return nil, f.statErr
+	}
+	return f.File.Stat()
 }
 
 func (f *closeCountingStaticFile) Close() error {
@@ -271,11 +280,13 @@ func TestStaticFSClosesFilesFromInjectedOpen(t *testing.T) {
 		name     string
 		withFile bool
 		err      error
+		statErr  error
 		status   int
 	}{
-		{"partial open", true, errors.New("open failed"), http.StatusNotFound},
-		{"missing file", false, fs.ErrNotExist, http.StatusNotFound},
-		{"success", true, nil, http.StatusOK},
+		{"partial open", true, errors.New("open failed"), nil, http.StatusNotFound},
+		{"missing file", false, fs.ErrNotExist, nil, http.StatusNotFound},
+		{"stat fails", true, nil, errors.New("stat failed"), http.StatusNotFound},
+		{"success", true, nil, nil, http.StatusOK},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			source := staticOpenResult{err: tc.err}
@@ -285,7 +296,7 @@ func TestStaticFSClosesFilesFromInjectedOpen(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				tracked = &closeCountingStaticFile{File: file}
+				tracked = &closeCountingStaticFile{File: file, statErr: tc.statErr}
 				defer func() {
 					if tracked.closes == 0 {
 						_ = tracked.Close()
@@ -540,6 +551,46 @@ func TestStaticFSSequentialAndSeekable(t *testing.T) {
 			}
 			if tc.method == http.MethodHead && reads != 0 {
 				t.Fatalf("HEAD read file contents %d times", reads)
+			}
+		})
+	}
+}
+
+func TestStaticFSSequentialConditionalRequestContract(t *testing.T) {
+	const body = "example"
+	modified := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
+	files := fstest.MapFS{"sample.txt": {Data: []byte(body), ModTime: modified}}
+	for _, tc := range []struct {
+		name       string
+		sequential bool
+		status     int
+	}{
+		{"seekable", false, http.StatusNotModified},
+		{"sequential", true, http.StatusOK},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var reads int
+			var source fs.FS = files
+			if tc.sequential {
+				source = sequentialFS{FS: files, reads: &reads}
+			}
+			r := NewRouter()
+			if err := r.StaticFS("/assets", http.FS(source)); err != nil {
+				t.Fatal(err)
+			}
+			for _, method := range []string{http.MethodGet, http.MethodHead} {
+				req := httptest.NewRequest(method, "/assets/sample.txt", nil)
+				req.Header.Set("If-Modified-Since", modified.Format(http.TimeFormat))
+				rec := httptest.NewRecorder()
+				before := reads
+				r.ServeHTTP(rec, req)
+				wantBody := ""
+				if tc.sequential && method == http.MethodGet {
+					wantBody = body
+				}
+				if rec.Code != tc.status || rec.Body.String() != wantBody || (method == http.MethodHead && reads != before) {
+					t.Fatalf("%s: status=%d body=%q reads=%d", method, rec.Code, rec.Body.String(), reads-before)
+				}
 			}
 		})
 	}

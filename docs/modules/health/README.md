@@ -52,7 +52,8 @@ aggregate health models.
 - `HealthStatus` can describe a single component or an aggregate health result
 - `ComponentHealth` embeds `HealthStatus` and adds whether that component is
   enabled
-- `ReadinessStatus.Components` maps component names to readiness booleans when
+- `ReadinessStatus.Components` is omitted from JSON when nil or empty. It maps
+  component names to readiness booleans when
   the owning checker exposes per-component decisions
 - `HealthStatus.Duration` is encoded as integer nanoseconds in JSON. For
   example, 1500 milliseconds is `1500000000`. A zero duration is omitted.

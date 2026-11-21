@@ -25,7 +25,6 @@ func TestRotationWaitHonorsCancellation(t *testing.T) {
 				now := manager.currentTime().Add(cfg.RotationInterval)
 				manager.now = func() time.Time { return now }
 				store.entered, store.release = make(chan struct{}), make(chan struct{})
-				defer close(store.release)
 				first := make(chan error, 1)
 				go func() {
 					_, err := manager.RotateKeyContext(t.Context())
@@ -59,7 +58,19 @@ func TestRotationWaitHonorsCancellation(t *testing.T) {
 				select {
 				case err := <-first:
 					t.Errorf("active rotation returned before storage was released: %v", err)
+					return
 				default:
+				}
+				close(store.release)
+				if err := <-first; err != nil {
+					t.Fatal(err)
+				}
+				store.entered = nil
+				if _, err := manager.GenerateTokenPair(t.Context(), IdentityClaims{Subject: "example"}, AuthorizationClaims{}); err != nil {
+					t.Fatalf("sign after cancellation: %v", err)
+				}
+				if _, err := manager.RotateKeyContext(t.Context()); err != nil {
+					t.Fatalf("rotate after cancellation: %v", err)
 				}
 			})
 		})

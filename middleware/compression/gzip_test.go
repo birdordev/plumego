@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"compress/gzip"
+	"errors"
 	"io"
 	"mime"
 	"mime/multipart"
@@ -1633,5 +1634,72 @@ func TestVaryCoversEncodingVariants(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestVaryCoversEventStreamBypass(t *testing.T) {
+	handler := Middleware(DefaultConfig())(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Vary", "Origin, Accept")
+		w.Header().Set("Content-Type", "text/plain")
+		_, _ = w.Write([]byte("hello"))
+	}))
+	for _, tc := range []struct{ accept, encoding string }{
+		{"text/plain", "gzip"},
+		{"text/event-stream", ""},
+	} {
+		t.Run(tc.accept, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "/", nil)
+			req.Header.Set("Accept", tc.accept)
+			req.Header.Set("Accept-Encoding", "gzip")
+			rec := httptest.NewRecorder()
+			handler.ServeHTTP(rec, req)
+
+			header := rec.Result().Header
+			if got := header.Get("Content-Encoding"); got != tc.encoding {
+				t.Errorf("Content-Encoding = %q, want %q", got, tc.encoding)
+			}
+			for _, token := range []string{"Accept", "Accept-Encoding", "Origin"} {
+				if got := countHeaderToken(header.Values("Vary"), token); got != 1 {
+					t.Errorf("Vary = %v, want %s once", header.Values("Vary"), token)
+				}
+			}
+			body := rec.Body.String()
+			if tc.encoding == "gzip" {
+				body = gunzipBody(t, rec)
+			}
+			if body != "hello" {
+				t.Errorf("body = %q, want hello", body)
+			}
+		})
+	}
+}
+
+type failingGzipDestination struct {
+	*httptest.ResponseRecorder
+	finals int
+}
+
+func (w *failingGzipDestination) WriteHeader(status int) {
+	w.finals++
+	w.ResponseRecorder.WriteHeader(status)
+}
+
+func (w *failingGzipDestination) Write([]byte) (int, error) { return 0, io.ErrClosedPipe }
+
+func TestGzipWriteFailureCommitsAtMostOnce(t *testing.T) {
+	dst := &failingGzipDestination{ResponseRecorder: httptest.NewRecorder()}
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.Header.Set("Accept-Encoding", "gzip")
+	h := Middleware(DefaultConfig())(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/plain")
+		const body = "hello"
+		n, err := io.WriteString(w, body)
+		if n < 0 || n > len(body) || !errors.Is(err, io.ErrClosedPipe) {
+			t.Errorf("write = %d, %v", n, err)
+		}
+	}))
+	h.ServeHTTP(dst, req)
+	if dst.finals != 1 || dst.Code != http.StatusOK {
+		t.Fatalf("commits=%d status=%d", dst.finals, dst.Code)
 	}
 }

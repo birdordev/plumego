@@ -434,7 +434,7 @@ func (l *Limiter) AllowKey(key string) (Decision, error) {
 	return l.Allow(key), nil
 }
 
-// Stop stops the cleanup loop.
+// Stop stops the cleanup loop and waits for it to exit. Admission remains available.
 func (l *Limiter) Stop() {
 	if !l.ready() {
 		return

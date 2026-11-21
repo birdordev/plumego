@@ -2,6 +2,7 @@ package core
 
 import (
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -9,53 +10,76 @@ import (
 	"github.com/birdordev/plumego/contract"
 )
 
+var (
+	errHandlerBuilding      = errors.New("handler preparation is already in progress")
+	errHandlerNotConfigured = errors.New("handler not configured")
+)
+
 // ensureHandlerPrepared freezes registration before calling middleware builders.
 // It reports whether this call published a handler with no registered routes.
-func (a *App) ensureHandlerPrepared() bool {
+func (a *App) ensureHandlerPrepared() (bool, error) {
 	if a.handlerFast.Load() != nil {
-		return false
-	}
-
-	a.handlerPrepareMu.Lock()
-	defer a.handlerPrepareMu.Unlock()
-	if a.handlerFast.Load() != nil {
-		return false
+		return false, nil
 	}
 
 	a.mu.Lock()
+	if a.handler != nil {
+		a.mu.Unlock()
+		return false, nil
+	}
+	if a.handlerBuilding {
+		a.mu.Unlock()
+		return false, errHandlerBuilding
+	}
 	chain, r := a.middlewareChain, a.router
 	if chain == nil || r == nil {
 		a.mu.Unlock()
-		return false
+		return false, errHandlerNotConfigured
 	}
 	a.freezeRegistration()
+	if chain.Len() == 0 {
+		a.publishHandlerLocked(r)
+		a.mu.Unlock()
+		return len(r.Routes()) == 0, nil
+	}
+	a.handlerBuilding = true
 	a.mu.Unlock()
 
+	defer func() {
+		a.mu.Lock()
+		a.handlerBuilding = false
+		a.mu.Unlock()
+	}()
 	handler := chain.Build(r)
 	if handler == nil {
-		return false
+		return false, errHandlerNotConfigured
 	}
 	warnNoRoutes := len(r.Routes()) == 0
 
 	a.mu.Lock()
+	a.publishHandlerLocked(handler)
+	a.mu.Unlock()
+	return warnNoRoutes, nil
+}
+
+func (a *App) publishHandlerLocked(handler http.Handler) {
 	a.handler = handler
 	a.preparationState = PreparationStateHandlerPrepared
 	a.handlerFast.Store(&handlerRef{h: handler})
-	a.mu.Unlock()
-	return warnNoRoutes
 }
 
 // ensureServerPrepared constructs the backing http.Server for the explicit
 // Prepare/Server lifecycle path and reports whether to warn about no routes.
 func (a *App) ensureServerPrepared() (bool, error) {
-	a.serverPrepareMu.Lock()
-	defer a.serverPrepareMu.Unlock()
-
 	a.mu.RLock()
 	prepared := a.httpServer != nil
+	building := a.handlerBuilding && a.handler == nil
 	a.mu.RUnlock()
 	if prepared {
 		return false, nil
+	}
+	if building {
+		return false, wrapCoreError(errHandlerBuilding, operationPrepareServer, nil)
 	}
 
 	config, err := a.serverConfigSnapshot()
@@ -71,7 +95,10 @@ func (a *App) ensureServerPrepared() (bool, error) {
 		return false, wrapCoreError(err, operationPrepareServer, nil)
 	}
 
-	warnNoRoutes := a.ensureHandlerPrepared()
+	warnNoRoutes, err := a.ensureHandlerPrepared()
+	if err != nil {
+		return false, wrapCoreError(err, operationPrepareServer, nil)
+	}
 	handler, err := a.preparedHandlerSnapshot()
 	if err != nil {
 		return false, err
@@ -114,6 +141,9 @@ func (a *App) preparedHandlerSnapshot() (http.Handler, error) {
 func (a *App) installHTTPServer(config AppConfig, tlsConfig *tls.Config, handler http.Handler) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	if a.httpServer != nil {
+		return
+	}
 	a.httpServer = &http.Server{
 		Addr:              config.Addr,
 		Handler:           handler,
@@ -151,7 +181,7 @@ func prepareTLSConfig(cfg TLSConfig) (*tls.Config, error) {
 
 // ServeHTTP allows App to be used directly with net/http servers.
 func (a *App) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if a.ensureHandlerPrepared() {
+	if warnNoRoutes, _ := a.ensureHandlerPrepared(); warnNoRoutes {
 		a.warnNoRoutes()
 	}
 

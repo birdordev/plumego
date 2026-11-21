@@ -664,3 +664,17 @@ func TestSetFlagDirectiveNilBuilder(t *testing.T) {
 		t.Fatal("expected nil from nil-receiver setFlagDirective")
 	}
 }
+
+func TestCompiledPolicyDetachesAdditionalHeaders(t *testing.T) {
+	policy := DefaultPolicy()
+	policy.Additional = map[string]string{"X-Custom": "original"}
+	compiled := policy.Compile()
+	policy.Additional["X-Custom"] = "changed"
+	rec := httptest.NewRecorder()
+	if err := compiled.ApplyChecked(rec, httptest.NewRequest(http.MethodGet, "https://example.test/", nil)); err != nil {
+		t.Fatal(err)
+	}
+	if rec.Header().Get("X-Custom") != "original" || rec.Header().Get("X-Frame-Options") != policy.FrameOptions {
+		t.Fatalf("unexpected compiled policy headers: %v", rec.Header())
+	}
+}

@@ -1412,3 +1412,28 @@ func TestOpenWithClosesPartiallyOpenedPool(t *testing.T) {
 		t.Fatal("discarded database remains open")
 	}
 }
+
+func TestScanRowsClosesWithoutAdvancingResultSets(t *testing.T) {
+	closeErr := errors.New("close failed")
+	rows := &multiResultRows{
+		fixedRows: fixedRows{
+			cols: []string{"n"}, values: [][]driver.Value{{int64(1)}}, closeErr: closeErr,
+		},
+		remaining: [][][]driver.Value{{{int64(2)}}},
+	}
+	db := sql.OpenDB(&rowsConnector{rows: rows})
+	t.Cleanup(func() { _ = db.Close() })
+	resultSet, err := QueryContext(t.Context(), db, "SELECT n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := ScanRows(resultSet, func(rows *sql.Rows) (int64, error) {
+		var n int64
+		err := rows.Scan(&n)
+		return n, err
+	})
+	if len(got) != 1 || got[0] != 1 || len(rows.remaining) != 1 || rows.closes != 1 ||
+		!errors.Is(err, closeErr) || !errors.Is(err, ErrQueryFailed) {
+		t.Fatalf("rows=%v remaining=%d closes=%d error=%v", got, len(rows.remaining), rows.closes, err)
+	}
+}

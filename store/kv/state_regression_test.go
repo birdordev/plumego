@@ -420,3 +420,44 @@ func TestKVRejectsUnrepresentableCapacityBeforeCreatingDirectory(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+type failedSnapshotTemp struct {
+	path               string
+	writeErr, closeErr error
+	closes             int
+}
+
+func (f *failedSnapshotTemp) Name() string              { return f.path }
+func (f *failedSnapshotTemp) Write([]byte) (int, error) { return 0, f.writeErr }
+func (f *failedSnapshotTemp) Sync() error               { return nil }
+func (f *failedSnapshotTemp) Close() error {
+	f.closes++
+	return f.closeErr
+}
+
+func TestSnapshotWritePreservesCleanupErrors(t *testing.T) {
+	dir := t.TempDir()
+	state := filepath.Join(dir, stateFileName)
+	if err := os.WriteFile(state, []byte("original"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	nonEmpty := filepath.Join(dir, "tmp")
+	if err := os.Mkdir(nonEmpty, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(nonEmpty, "child"), nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	writeErr := errors.New("test write failure")
+	closeErr := errors.New("test close failure")
+	tmp := &failedSnapshotTemp{path: nonEmpty, writeErr: writeErr, closeErr: closeErr}
+	err := replaceSnapshot(tmp, state, []byte("replacement"))
+	var removeErr *os.PathError
+	if !errors.Is(err, writeErr) || !errors.Is(err, closeErr) || !errors.As(err, &removeErr) || removeErr.Op != "remove" || tmp.closes != 1 {
+		t.Fatalf("replaceSnapshot = %v, Close calls = %d", err, tmp.closes)
+	}
+	raw, err := os.ReadFile(state)
+	if err != nil || string(raw) != "original" {
+		t.Fatalf("snapshot = %q, error = %v", raw, err)
+	}
+}

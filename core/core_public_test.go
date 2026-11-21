@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -49,6 +50,9 @@ func testPrepareRejectsBuilderResult(t *testing.T, invalid http.Handler) {
 	}
 	if _, err := app.Server(); err == nil {
 		t.Fatal("failed preparation published a server")
+	}
+	if err := app.Get("/late", http.NotFoundHandler()); err == nil {
+		t.Fatal("registration reopened after failed assembly")
 	}
 	if err := app.Prepare(); err != nil {
 		t.Fatal(err)
@@ -418,21 +422,117 @@ func TestPublicPreparationRetriesMiddlewarePanic(t *testing.T) {
 		workers.Go(func() {
 			<-start
 			if i%2 == 0 {
-				if err := app.Prepare(); err != nil {
+				if err := app.Prepare(); err != nil && !strings.Contains(err.Error(), "preparation is already in progress") {
 					t.Error(err)
 				}
 				return
 			}
 			rec := httptest.NewRecorder()
 			app.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
-			if rec.Code != http.StatusNoContent {
+			if rec.Code != http.StatusNoContent && rec.Code != http.StatusServiceUnavailable {
 				t.Errorf("status = %d", rec.Code)
 			}
 		})
 	}
 	close(start)
 	workers.Wait()
+	if err := app.Prepare(); err != nil {
+		t.Fatal(err)
+	}
 	if state := app.PreparationState(); state != core.PreparationStateServerPrepared || builds.Load() != 2 {
 		t.Fatalf("state = %q, builds = %d", state, builds.Load())
+	}
+}
+
+func TestPublicMiddlewareBuilderCanReenterPreparation(t *testing.T) {
+	app := core.New(core.DefaultConfig(), core.AppDependencies{})
+	if err := app.Get("/", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	})); err != nil {
+		t.Fatal(err)
+	}
+
+	started := make(chan struct{})
+	finish := make(chan struct{})
+	type attempt struct {
+		err    error
+		status int
+	}
+	nested := make(chan attempt, 1)
+	if err := app.Use(func(next http.Handler) http.Handler {
+		close(started)
+		err := app.Prepare()
+		rec := httptest.NewRecorder()
+		app.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
+		nested <- attempt{err: err, status: rec.Code}
+		<-finish
+		return next
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	prepared := make(chan error, 1)
+	go func() { prepared <- app.Prepare() }()
+	<-started
+	defer close(finish)
+	got := <-nested
+	if got.err == nil || !strings.Contains(got.err.Error(), "preparation is already in progress") || got.status != http.StatusServiceUnavailable {
+		t.Errorf("nested Prepare = %v, nested ServeHTTP status = %d", got.err, got.status)
+	}
+	if err := app.Prepare(); err == nil || !strings.Contains(err.Error(), "preparation is already in progress") {
+		t.Errorf("concurrent Prepare = %v, want in-progress error", err)
+	}
+	finish <- struct{}{}
+	if err := <-prepared; err != nil {
+		t.Fatal(err)
+	}
+	server, err := app.Server()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := app.Prepare(); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := app.Server(); err != nil || got != server {
+		t.Fatalf("Server = %p, %v; want %p", got, err, server)
+	}
+}
+
+func TestPublicPrepareRetriesAfterTLSFilesAppear(t *testing.T) {
+	certFile, keyFile := nettest.WriteSelfSignedTLSCertFiles(t, "test-cert-*.pem", "test-key-*.pem")
+	cert, err := os.ReadFile(certFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(certFile); err != nil {
+		t.Fatal(err)
+	}
+	cfg := core.DefaultConfig()
+	cfg.TLS = core.TLSConfig{Enabled: true, CertFile: certFile, KeyFile: keyFile}
+	app := core.New(cfg, core.AppDependencies{})
+	if err := app.Prepare(); !errors.Is(err, os.ErrNotExist) || app.PreparationState() != core.PreparationStateMutable {
+		t.Fatalf("Prepare() = %v, state = %s", err, app.PreparationState())
+	}
+	if err := app.Get("/", http.NotFoundHandler()); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(certFile, cert, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := app.Prepare(); err != nil {
+		t.Fatal(err)
+	}
+	first, err := app.Server()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := app.Prepare(); err != nil {
+		t.Fatal(err)
+	}
+	if again, err := app.Server(); err != nil || first != again {
+		t.Fatalf("Server() = %p, %v, want %p", again, err, first)
+	}
+	if err := app.Shutdown(t.Context()); err != nil {
+		t.Fatal(err)
 	}
 }

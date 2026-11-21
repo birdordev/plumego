@@ -7,6 +7,7 @@ import (
 	"runtime"
 	"sync/atomic"
 	"testing"
+	"time"
 )
 
 type trackedTransaction struct {
@@ -62,4 +63,68 @@ func TestTransactionAlwaysReleasesConnection(t *testing.T) {
 			}
 		})
 	}
+}
+
+type gatedCommit struct {
+	trackedTransaction
+	started, proceed chan struct{}
+}
+
+func (tx *gatedCommit) Commit() error {
+	close(tx.started)
+	<-tx.proceed
+	return tx.trackedTransaction.Commit()
+}
+
+type observedRollback struct {
+	trackedTransaction
+	finished chan struct{}
+}
+
+func (tx *observedRollback) Rollback() error {
+	defer close(tx.finished)
+	return tx.trackedTransaction.Rollback()
+}
+
+func TestCancellationAtTransactionCommitBoundary(t *testing.T) {
+	t.Run("before driver commit", func(t *testing.T) {
+		tracked := &observedRollback{finished: make(chan struct{})}
+		database := sql.OpenDB(&stubConnector{conn: &stubConn{tx: tracked}})
+		t.Cleanup(func() { _ = database.Close() })
+		ctx, cancel := context.WithCancel(t.Context())
+		defer cancel()
+		err := WithTransaction(ctx, database, nil, func(*sql.Tx) error {
+			cancel()
+			return nil
+		})
+		if !errors.Is(err, ErrTransactionFailed) ||
+			(!errors.Is(err, context.Canceled) && !errors.Is(err, sql.ErrTxDone)) {
+			t.Fatalf("unexpected result before commit: %v", err)
+		}
+		select {
+		case <-tracked.finished:
+		case <-time.After(5 * time.Second):
+			t.Fatal("database/sql did not complete cancellation rollback")
+		}
+		if tracked.commits.Load() != 0 || tracked.rollbacks.Load() != 1 {
+			t.Fatalf("commits=%d rollbacks=%d", tracked.commits.Load(), tracked.rollbacks.Load())
+		}
+	})
+	t.Run("after driver commit enters", func(t *testing.T) {
+		tracked := &gatedCommit{started: make(chan struct{}), proceed: make(chan struct{})}
+		database := sql.OpenDB(&stubConnector{conn: &stubConn{tx: tracked}})
+		t.Cleanup(func() { _ = database.Close() })
+		ctx, cancel := context.WithCancel(t.Context())
+		defer cancel()
+		done := make(chan error, 1)
+		go func() {
+			done <- WithTransaction(ctx, database, nil, func(*sql.Tx) error { return nil })
+		}()
+		<-tracked.started
+		cancel()
+		close(tracked.proceed)
+		if err := <-done; err != nil || tracked.commits.Load() != 1 || tracked.rollbacks.Load() != 0 {
+			t.Fatalf("error=%v commits=%d rollbacks=%d", err, tracked.commits.Load(), tracked.rollbacks.Load())
+		}
+	})
 }
