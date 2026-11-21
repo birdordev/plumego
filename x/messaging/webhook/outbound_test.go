@@ -944,3 +944,23 @@ func TestQueueCloseWakesBlockedSendersAndPreservesBufferedTasks(t *testing.T) {
 		}
 	})
 }
+
+func TestGetRetryReasonDistinguishesUnavailable(t *testing.T) {
+	for _, tc := range []struct {
+		status   int
+		retry429 bool
+		err      error
+		want     string
+	}{
+		{http.StatusServiceUnavailable, false, nil, "service_unavailable"},
+		{http.StatusBadGateway, false, nil, "server_error"},
+		{http.StatusRequestTimeout, false, nil, "timeout"},
+		{http.StatusTooManyRequests, true, nil, "rate_limited"},
+		{http.StatusTooManyRequests, false, nil, "unknown"},
+		{http.StatusServiceUnavailable, false, errors.New("network unavailable"), "network_error"},
+	} {
+		if got := GetRetryReason(tc.status, tc.err, tc.retry429); got != tc.want {
+			t.Errorf("status=%d err=%v retry429=%t: got %q; want %q", tc.status, tc.err, tc.retry429, got, tc.want)
+		}
+	}
+}

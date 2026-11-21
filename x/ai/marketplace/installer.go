@@ -330,7 +330,8 @@ func (i *Installer) CreateAgentFromInstalled(
 	return agentInstance, nil
 }
 
-// CreateWorkflowFromInstalled creates a workflow from installed template.
+// CreateWorkflowFromInstalled builds a sequential workflow from an installed template.
+// It returns an error if any template step cannot be built.
 func (i *Installer) CreateWorkflowFromInstalled(
 	id string,
 	version string,
@@ -354,35 +355,23 @@ func (i *Installer) CreateWorkflowFromInstalled(
 	// Create workflow
 	workflow := orchestration.NewWorkflow(template.ID, template.Name, template.Description)
 
-	// Add steps from template
 	for _, stepTemplate := range template.Steps {
-		agentInstance, ok := agentMap[stepTemplate.AgentID]
-		if !ok {
+		if stepTemplate.Type != "sequential" {
+			return nil, fmt.Errorf("workflow step %q has unsupported type %q", stepTemplate.Name, stepTemplate.Type)
+		}
+		agentInstance := agentMap[stepTemplate.AgentID]
+		if agentInstance == nil {
 			return nil, fmt.Errorf("agent %s not found in agent map", stepTemplate.AgentID)
 		}
 
-		switch stepTemplate.Type {
-		case "sequential":
-			step := &orchestration.SequentialStep{
-				StepName: stepTemplate.Name,
-				Agent:    agentInstance,
-				InputFn: func(state map[string]any) string {
-					// Default input function - can be overridden
-					return fmt.Sprintf("%v", state)
-				},
-				OutputKey: stepTemplate.OutputKey,
-			}
-			workflow.AddStep(step)
-
-		case "parallel":
-			// For parallel steps, would need multiple agents
-			// This is a simplified implementation
-			continue
-
-		case "conditional":
-			// Conditional steps would need condition function
-			continue
-		}
+		workflow.AddStep(&orchestration.SequentialStep{
+			StepName: stepTemplate.Name,
+			Agent:    agentInstance,
+			InputFn: func(state map[string]any) string {
+				return fmt.Sprintf("%v", state)
+			},
+			OutputKey: stepTemplate.OutputKey,
+		})
 	}
 
 	return workflow, nil

@@ -5,6 +5,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/birdordev/plumego/metrics"
 )
 
 func TestRedactSQL(t *testing.T) {
@@ -431,5 +433,32 @@ func TestDevCollectorClearOrdersHTTPAndDBObservations(t *testing.T) {
 			d.Clear()
 			assertTotal(0)
 		})
+	}
+}
+
+func TestDevCollectorRecordDelegates(t *testing.T) {
+	collector := NewDevCollector(DevCollectorConfig{})
+	timestamp := time.Unix(1000, 0)
+	record := metrics.MetricRecord{
+		Name: "fixture.record", Value: 4, Timestamp: timestamp,
+		Labels: metrics.MetricLabels{"kind": "original"},
+	}
+	collector.Record(t.Context(), record)
+	record.Labels["kind"] = "changed"
+
+	stats := collector.GetStats()
+	if stats.TotalRecords != 1 || stats.NameBreakdown[record.Name] != 1 {
+		t.Errorf("aggregate stats = %+v", stats)
+	}
+	entries := collector.base.GetRecords()
+	if len(entries) != 1 {
+		t.Fatalf("record buffer = %+v", entries)
+	}
+	if got := entries[0]; got.Name != record.Name || got.Value != record.Value ||
+		got.Labels["kind"] != "original" || !got.Timestamp.Equal(timestamp) {
+		t.Errorf("buffered record = %+v", got)
+	}
+	if snapshot := collector.Snapshot(); len(snapshot.Recent) != 0 {
+		t.Errorf("ordinary record created HTTP samples: %+v", snapshot.Recent)
 	}
 }

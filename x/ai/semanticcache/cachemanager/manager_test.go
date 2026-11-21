@@ -348,3 +348,70 @@ func TestWarmerSelectsQueriesByStrategyMetadata(t *testing.T) {
 		})
 	}
 }
+
+func TestWarmWithProgressReportsBatchFailures(t *testing.T) {
+	offline := errors.New("embedding unavailable")
+	busy := errors.New("embedding busy")
+	stop := errors.New("stop warming")
+	for _, tc := range []struct {
+		name       string
+		stopEarly  bool
+		wantErrors []error
+		wantStored []string
+		wantCalls  int
+		wantSteps  []int
+	}{
+		{"continue after failure", false, []error{offline, busy}, []string{"first", "last"}, 4, []int{1, 4}},
+		{"stop after cancellation", true, []error{stop}, []string{"first"}, 1, []int{1}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx, cancel := context.WithCancelCause(t.Context())
+			defer cancel(nil)
+			backend := vectorstore.NewMemoryBackend(vectorstore.MemoryConfig{})
+			calls := 0
+			provider := warmingBatchFixture{batchSize: 1, generate: func(_ context.Context, texts []string) ([]*embedding.Embedding, error) {
+				calls++
+				switch texts[0] {
+				case "offline":
+					return nil, offline
+				case "busy":
+					return nil, busy
+				default:
+					return []*embedding.Embedding{{Vector: []float64{1, 0}}}, nil
+				}
+			}}
+			queries := []cachemanager.QueryResponse{{Query: "first"}, {Query: "offline"}, {Query: "busy"}, {Query: "last"}}
+			var steps []int
+			err := cachemanager.NewWarmer(backend, provider).WarmWithProgress(ctx, queries,
+				func(current, total int, stats *cachemanager.WarmingStats) {
+					steps = append(steps, current)
+					if total != len(queries) || stats.QueriesWarmed != len(steps) {
+						t.Errorf("unexpected progress: current=%d total=%d stats=%+v", current, total, stats)
+					}
+					if tc.stopEarly {
+						cancel(stop)
+					}
+				})
+			for _, want := range tc.wantErrors {
+				if !errors.Is(err, want) {
+					t.Errorf("WarmWithProgress error = %v; missing %v", err, want)
+				}
+			}
+			if calls != tc.wantCalls || !slices.Equal(steps, tc.wantSteps) {
+				t.Errorf("calls=%d progress=%v; want %d, %v", calls, steps, tc.wantCalls, tc.wantSteps)
+			}
+			results, err := backend.Search(t.Context(), []float64{1, 0}, 4, 0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var stored []string
+			for _, result := range results {
+				stored = append(stored, result.Entry.Text)
+			}
+			slices.Sort(stored)
+			if !slices.Equal(stored, tc.wantStored) {
+				t.Errorf("stored = %v; want %v", stored, tc.wantStored)
+			}
+		})
+	}
+}

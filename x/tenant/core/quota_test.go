@@ -503,3 +503,35 @@ func TestRemainingHelper(t *testing.T) {
 		})
 	}
 }
+
+func TestFixedWindowQuotaEvictsOnlyExpiredCounters(t *testing.T) {
+	configs := NewInMemoryConfigManager()
+	for _, cfg := range []struct {
+		id     string
+		window QuotaWindow
+	}{
+		{"expired", QuotaWindowMinute},
+		{"active", QuotaWindowHour},
+	} {
+		configs.SetTenantConfig(Config{TenantID: cfg.id, Quota: QuotaConfig{
+			Limits: []QuotaLimit{{Window: cfg.window, Requests: 4}},
+		}})
+	}
+	manager := NewFixedWindowQuotaManager(configs)
+	start := time.Now().UTC().Truncate(time.Hour).Add(time.Hour)
+	ctx := t.Context()
+	for _, id := range []string{"expired", "active"} {
+		got, err := manager.Allow(ctx, id, QuotaRequest{Now: start, Requests: 1})
+		if err != nil || !got.Allowed || got.RemainingRequests != 3 {
+			t.Fatalf("first %s decision = %+v, %v", id, got, err)
+		}
+	}
+
+	got, err := manager.Allow(ctx, "active", QuotaRequest{Now: start.Add(2 * time.Minute), Requests: 1})
+	if err != nil || !got.Allowed || got.RemainingRequests != 2 {
+		t.Errorf("active quota after cleanup = %+v, %v", got, err)
+	}
+	if _, found := manager.counters["expired"]; found || len(manager.counters) != 1 {
+		t.Errorf("expected only the active counter after cleanup, got %v", manager.counters)
+	}
+}

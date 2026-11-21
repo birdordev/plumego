@@ -1246,3 +1246,26 @@ func TestMiddlewarePreservesWriteDeadline(t *testing.T) {
 		}
 	}
 }
+
+func TestClosedBreakerPreservesStateAfterCallbackPanic(t *testing.T) {
+	breaker := New(Config{})
+	sentinel := errors.New("fixture callback interrupted")
+	func() {
+		defer func() {
+			if got := recover(); got != sentinel {
+				t.Errorf("panic propagated as %v; want %v", got, sentinel)
+			}
+		}()
+		_ = breaker.Call(func() error { panic(sentinel) })
+	}()
+
+	if state, counts := breaker.State(), breaker.Counts(); state != StateClosed || counts != (Counts{}) {
+		t.Errorf("after callback panic: state=%v counts=%+v", state, counts)
+	}
+	if err := breaker.Call(func() error { return nil }); err != nil {
+		t.Fatalf("subsequent Call = %v", err)
+	}
+	if counts := breaker.Counts(); counts != (Counts{Requests: 1, Successes: 1}) {
+		t.Errorf("subsequent counts = %+v", counts)
+	}
+}

@@ -5,8 +5,12 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/birdordev/plumego/x/ai/orchestration"
+	"github.com/birdordev/plumego/x/ai/provider"
 )
 
 func newTestManager(t *testing.T) *Manager {
@@ -263,5 +267,90 @@ func TestManagerWorkflowInstallLifecycle(t *testing.T) {
 	}
 	if got, err := m.GetWorkflow(ctx, template.ID, template.Version); err != nil || got == nil || got.Version != template.Version {
 		t.Errorf("registry after uninstall=%+v, %v", got, err)
+	}
+}
+
+func TestInstalledWorkflowRejectsUnsupportedSteps(t *testing.T) {
+	for _, kind := range []string{"sequential", "conditional", "parallel", "historical"} {
+		t.Run(kind, func(t *testing.T) {
+			m := newTestManager(t)
+			ctx := t.Context()
+			template := &WorkflowTemplate{
+				ID: "workflow-fixture", Name: "Fixture", Version: "1.0.0", Author: "tester",
+				Description: "Fixture workflow for assembly", Category: WorkflowCategoryGeneral, License: "MIT",
+				Steps: []StepTemplate{
+					{Name: "first", Type: "sequential", AgentID: "first-agent", OutputKey: "one"},
+					{Name: "second", Type: kind, AgentID: "second-agent", OutputKey: "two"},
+				},
+			}
+			installer := m.Installer()
+			if kind == "historical" {
+				dir := filepath.Join(installer.installDir, "workflows", template.ID, template.Version)
+				if err := os.MkdirAll(dir, 0755); err != nil {
+					t.Fatal(err)
+				}
+				if err := installer.saveInstallationRecord(dir, &InstallationRecord{
+					Type: "workflow", ID: template.ID, Version: template.Version, Metadata: template,
+				}); err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				if err := m.PublishWorkflow(ctx, template); err != nil {
+					t.Fatal(err)
+				}
+				if err := m.InstallWorkflow(ctx, template.ID, template.Version); err != nil {
+					t.Fatal(err)
+				}
+			}
+			first, second := &orchestration.Agent{ID: "first-agent"}, &orchestration.Agent{ID: "second-agent"}
+			agents := map[string]*orchestration.Agent{first.ID: first, second.ID: second}
+			workflow, err := installer.CreateWorkflowFromInstalled(template.ID, template.Version, agents)
+			if kind != "sequential" {
+				if workflow != nil || err == nil || !strings.Contains(err.Error(), "second") || !strings.Contains(err.Error(), kind) {
+					t.Fatalf("unsupported step: workflow=%v error=%v", workflow, err)
+				}
+				return
+			}
+			if err != nil || workflow == nil || len(workflow.Steps) != 2 {
+				t.Fatalf("sequential assembly: workflow=%v error=%v", workflow, err)
+			}
+			for i, agent := range []*orchestration.Agent{first, second} {
+				step, ok := workflow.Steps[i].(*orchestration.SequentialStep)
+				want := template.Steps[i]
+				if !ok || step.Name() != want.Name || step.Agent != agent || step.OutputKey != want.OutputKey {
+					t.Errorf("step %d = %+v", i, workflow.Steps[i])
+				}
+			}
+			agents[second.ID] = nil
+			if workflow, err := installer.CreateWorkflowFromInstalled(template.ID, template.Version, agents); workflow != nil || err == nil {
+				t.Errorf("nil agent binding: workflow=%v error=%v", workflow, err)
+			}
+		})
+	}
+}
+
+func TestCreateAgentFromInstalledUsesMetadata(t *testing.T) {
+	m := newTestManager(t)
+	ctx := t.Context()
+	meta := testAgentMetadata("agent-fixture", "1.0.0")
+	meta.Config = AgentConfig{Temperature: 0.25, MaxTokens: 1234}
+	if err := m.PublishAgent(ctx, meta); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.InstallAgent(ctx, meta.ID, meta.Version); err != nil {
+		t.Fatal(err)
+	}
+	upstream := provider.NewMockProvider("fixture")
+	agent, err := m.Installer().CreateAgentFromInstalled(meta.ID, meta.Version, upstream)
+	if err != nil || agent == nil {
+		t.Fatalf("CreateAgentFromInstalled = %v, %v", agent, err)
+	}
+	if agent.ID != meta.ID || agent.Name != meta.Name || agent.Model != meta.Model ||
+		agent.SystemPrompt != meta.Prompt.System || agent.Temperature != meta.Config.Temperature ||
+		agent.MaxTokens != meta.Config.MaxTokens || agent.Provider != upstream {
+		t.Errorf("installed agent did not preserve metadata and provider: %+v", agent)
+	}
+	if agent, err := m.Installer().CreateAgentFromInstalled(meta.ID, "2.0.0", upstream); agent != nil || err == nil {
+		t.Errorf("uninstalled version = %v, %v", agent, err)
 	}
 }

@@ -1,6 +1,7 @@
 package mq
 
 import (
+	"context"
 	"errors"
 	"testing"
 	"time"
@@ -419,5 +420,46 @@ func TestAckNoPolicySkipsTracking(t *testing.T) {
 	pending, _ := broker.ackTracker.stats()
 	if pending != 0 {
 		t.Fatalf("expected 0 pending acks (AckNone policy), got %d", pending)
+	}
+}
+
+func TestSubscribeWithAckRespectsConfiguration(t *testing.T) {
+	const topic = "fixture"
+	for _, enabled := range []bool{false, true} {
+		name := "disabled"
+		if enabled {
+			name = "enabled"
+		}
+		t.Run(name, func(t *testing.T) {
+			ps := pubsub.New()
+			defer ps.Close()
+			cfg := DefaultConfig()
+			cfg.EnableAckSupport = enabled
+			broker, err := NewInProcBroker(ps, WithConfig(cfg))
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer broker.Close()
+			ctx, cancel := context.WithCancel(t.Context())
+			cancel()
+			if sub, err := broker.SubscribeWithAck(ctx, topic, SubOptions{}); sub != nil || !errors.Is(err, context.Canceled) {
+				t.Errorf("canceled subscription = %v, %v", sub, err)
+			}
+
+			sub, err := broker.SubscribeWithAck(t.Context(), topic, SubOptions{})
+			if !enabled {
+				if sub != nil || !errors.Is(err, ErrInvalidConfig) || ps.GetSubscriberCount(topic) != 0 {
+					t.Errorf("disabled subscription = %v, %v, count=%d", sub, err, ps.GetSubscriberCount(topic))
+				}
+				return
+			}
+			if err != nil || sub == nil || sub.Topic() != topic || ps.GetSubscriberCount(topic) != 1 {
+				t.Fatalf("enabled subscription = %v, %v, count=%d", sub, err, ps.GetSubscriberCount(topic))
+			}
+			sub.Cancel()
+			if ps.GetSubscriberCount(topic) != 0 {
+				t.Error("subscription still registered after Cancel")
+			}
+		})
 	}
 }

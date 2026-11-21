@@ -373,3 +373,53 @@ func TestMemoryStorePreservesNilAndEmptyResponseData(t *testing.T) {
 		}
 	}
 }
+
+type cacheAccessRecorder struct {
+	Store
+	gets, sets int
+}
+
+func (s *cacheAccessRecorder) Get(key string) (*CachedResponse, bool) {
+	s.gets++
+	return s.Store.Get(key)
+}
+
+func (s *cacheAccessRecorder) Set(key string, response *CachedResponse, ttl time.Duration) {
+	s.sets++
+	s.Store.Set(key, response, ttl)
+}
+
+func TestEmptyCacheKeyBypassesStore(t *testing.T) {
+	store := &cacheAccessRecorder{Store: NewMemoryStore(10)}
+	var calls, hits, misses int
+	cfg := Config{
+		Store: store,
+		KeyStrategy: NewPathPatternKeyStrategy(map[string]KeyStrategy{
+			"/uncached": NewNoCacheKeyStrategy(),
+		}),
+		OnCacheHit:  func(string, *CachedResponse) { hits++ },
+		OnCacheMiss: func(string) { misses++ },
+	}
+	handler := Middleware(cfg)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls++
+		_, _ = w.Write([]byte("fixture"))
+	}))
+	serve := func(path string) {
+		t.Helper()
+		out := httptest.NewRecorder()
+		handler.ServeHTTP(out, httptest.NewRequest(http.MethodGet, path, nil))
+		if out.Code != http.StatusOK || out.Body.String() != "fixture" {
+			t.Errorf("%s returned %d, %q", path, out.Code, out.Body.String())
+		}
+	}
+
+	serve("/uncached")
+	if calls != 1 || store.gets != 0 || store.sets != 0 || hits != 0 || misses != 0 {
+		t.Errorf("bypass: handler=%d gets=%d sets=%d hits=%d misses=%d", calls, store.gets, store.sets, hits, misses)
+	}
+	serve("/cached")
+	serve("/cached")
+	if calls != 2 || store.gets != 2 || store.sets != 1 || hits != 1 || misses != 1 {
+		t.Errorf("ordinary key: handler=%d gets=%d sets=%d hits=%d misses=%d", calls, store.gets, store.sets, hits, misses)
+	}
+}

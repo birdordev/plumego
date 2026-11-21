@@ -77,9 +77,13 @@ func NextBackoff(now time.Time, attempt int, base, max time.Duration) time.Time 
 }
 
 // GetRetryReason returns a human-readable reason for retrying.
+// A network error takes precedence over the HTTP status.
 func GetRetryReason(status int, err error, retryOn429 bool) string {
 	if err != nil {
 		return "network_error"
+	}
+	if status == 503 {
+		return "service_unavailable"
 	}
 	if status >= 500 && status <= 599 {
 		return "server_error"
@@ -89,9 +93,6 @@ func GetRetryReason(status int, err error, retryOn429 bool) string {
 	}
 	if status == 408 {
 		return "timeout"
-	}
-	if status == 503 {
-		return "service_unavailable"
 	}
 	return "unknown"
 }

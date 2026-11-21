@@ -629,3 +629,43 @@ func TestCustomExtractorWithoutCallbackUsesDefault(t *testing.T) {
 		}
 	}
 }
+
+func TestMiddlewareVersionCallbacksOwnTheirBranches(t *testing.T) {
+	var calls []string
+	handler := Middleware(Config{
+		Strategy:          StrategyURLPath,
+		SupportedVersions: []int{2},
+		OnVersionMismatch: func(w http.ResponseWriter, r *http.Request, version int) {
+			calls = append(calls, "mismatch")
+			if version != 3 || r.URL.Path != "/v3/items" {
+				t.Errorf("mismatch received version=%d path=%q", version, r.URL.Path)
+			}
+			w.WriteHeader(http.StatusGone)
+		},
+		OnVersionExtracted: func(r *http.Request, version int) {
+			calls = append(calls, "extracted")
+			if version != 2 || r.URL.Path != "/items" || VersionFromContext(r.Context()) != 0 {
+				t.Errorf("extracted received version=%d path=%q context version=%d", version, r.URL.Path, VersionFromContext(r.Context()))
+			}
+		},
+	})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls = append(calls, "next")
+		if r.URL.Path != "/items" || VersionFromContext(r.Context()) != 2 {
+			t.Errorf("next received path=%q version=%d", r.URL.Path, VersionFromContext(r.Context()))
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+
+	out := httptest.NewRecorder()
+	handler.ServeHTTP(out, httptest.NewRequest(http.MethodGet, "/v3/items", nil))
+	if out.Code != http.StatusGone || !slices.Equal(calls, []string{"mismatch"}) {
+		t.Errorf("unsupported version status=%d callbacks=%v", out.Code, calls)
+	}
+	calls = nil
+	out = httptest.NewRecorder()
+	handler.ServeHTTP(out, httptest.NewRequest(http.MethodGet, "/v2/items", nil))
+	if out.Code != http.StatusNoContent || out.Header().Get("X-API-Version") != "2" ||
+		!slices.Equal(calls, []string{"extracted", "next"}) {
+		t.Errorf("supported version status=%d header=%q callbacks=%v", out.Code, out.Header().Get("X-API-Version"), calls)
+	}
+}

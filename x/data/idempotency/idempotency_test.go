@@ -1,6 +1,7 @@
 package idempotency
 
 import (
+	"errors"
 	"testing"
 	"time"
 
@@ -400,3 +401,30 @@ func TestSQLStorePlaceholder(t *testing.T) {
 type testError struct{ msg string }
 
 func (e *testError) Error() string { return e.msg }
+
+func TestExtensionValidationMatchesStableContract(t *testing.T) {
+	for _, tc := range []struct {
+		key string
+		err error
+	}{
+		{"fixture-key", nil},
+		{"  ", ErrInvalidKey},
+	} {
+		if err := ValidateKey(tc.key); !errors.Is(err, tc.err) {
+			t.Errorf("ValidateKey(%q) = %v; want %v", tc.key, err, tc.err)
+		}
+	}
+
+	for _, tc := range []struct {
+		record Record
+		err    error
+	}{
+		{Record{Key: "fixture", RequestHash: "hash", Status: StatusInProgress}, nil},
+		{Record{Key: "fixture", Status: StatusInProgress}, ErrInvalidRecord},
+		{Record{RequestHash: "hash", Status: StatusInProgress}, ErrInvalidKey},
+	} {
+		if err := ValidateRecord(tc.record); !errors.Is(err, tc.err) {
+			t.Errorf("ValidateRecord(%+v) = %v; want %v", tc.record, err, tc.err)
+		}
+	}
+}

@@ -61,12 +61,11 @@ func RetryInterceptor(maxAttempts int, retryCodes ...Code) UnaryInterceptor {
 		retryable[code] = struct{}{}
 	}
 	return func(ctx context.Context, method string, req any, reply any, invoker UnaryInvoker, opts ...CallOption) error {
-		var err error
-		for attempt := 1; attempt <= maxAttempts; attempt++ {
+		for attempt := 1; ; attempt++ {
 			if err := ctx.Err(); err != nil {
 				return err
 			}
-			err = invoker(ctx, method, req, reply, opts...)
+			err := invoker(ctx, method, req, reply, opts...)
 			if err == nil {
 				return nil
 			}
@@ -77,7 +76,6 @@ func RetryInterceptor(maxAttempts int, retryCodes ...Code) UnaryInterceptor {
 				return err
 			}
 		}
-		return err
 	}
 }
 

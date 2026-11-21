@@ -1681,3 +1681,12 @@ func TestReconnectClientDelegatesReadWithTimeout(t *testing.T) {
 		t.Errorf("closed read = %d, %v; underlying calls = %d", n, err, underlying.reads)
 	}
 }
+
+func TestFramedClientCloseDelegatesError(t *testing.T) {
+	for _, want := range []error{nil, errors.New("fixture close failed")} {
+		raw := &poolCloseTestClient{err: want}
+		if err := NewFramedClient(raw).Close(); raw.calls != 1 || !errors.Is(err, want) {
+			t.Errorf("Close returned %v after %d calls; want %v after one call", err, raw.calls, want)
+		}
+	}
+}

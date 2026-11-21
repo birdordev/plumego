@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/birdordev/plumego/contract"
@@ -411,4 +412,31 @@ func TestRecordSpanEventCopiesTopLevelAttributes(t *testing.T) {
 	if first.Name != "sample" || first.Attributes["count"] != 3 || first.Timestamp.IsZero() || second.Name != "empty" || len(second.Attributes) != 0 {
 		t.Errorf("events=%+v and %+v", first, second)
 	}
+}
+
+func TestTraceStatisticsSeparatesActiveAndCompleted(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		config := DefaultTracerConfig()
+		config.SamplingRate = 1
+		tracer, err := NewTracer(config)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, active := tracer.StartTrace(t.Context(), "active")
+		_, completed := tracer.StartTrace(t.Context(), "completed")
+		defer tracer.EndSpan(active)
+		time.Sleep(2 * time.Second)
+		tracer.EndSpan(completed, WithSpanStatus(SpanStatus{Code: StatusCodeError}))
+
+		got := tracer.GetTraceStatistics()
+		if got.TotalTraces != 2 || got.ActiveTraces != 1 || got.CompletedTraces != 1 || got.TotalSpans != 2 ||
+			got.AverageDuration != 2*time.Second || !got.LastTraceTime.Equal(completed.StartTime) ||
+			got.ByStatus[StatusCodeUnset] != 1 || got.ByStatus[StatusCodeError] != 1 {
+			t.Errorf("unexpected statistics: %+v", got)
+		}
+		got.ByStatus[StatusCodeError] = 42
+		if again := tracer.GetTraceStatistics(); again.ByStatus[StatusCodeError] != 1 {
+			t.Errorf("changing returned status map altered statistics: %+v", again)
+		}
+	})
 }

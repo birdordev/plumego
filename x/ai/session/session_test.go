@@ -554,3 +554,32 @@ func TestExpiredSessionReportsCleanupFailure(t *testing.T) {
 		t.Fatalf("retry Get = %v, %v, stored = %d, delete calls = %d", got, err, storage.Count(), storage.calls)
 	}
 }
+
+func TestTrimMessagesPersistsNewestMessages(t *testing.T) {
+	ctx := t.Context()
+	storage := NewMemoryStorage()
+	manager := NewManager(storage, WithTokenizer(noopTokenizer{}))
+	session, err := manager.Create(ctx, CreateOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"oldest", "newer", "newest"} {
+		if err := manager.AppendMessage(ctx, session.ID, provider.NewTextMessage(provider.RoleUser, name)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := manager.TrimMessages(ctx, session.ID, 6); err != nil {
+		t.Fatal(err)
+	}
+	stored, err := storage.Load(ctx, session.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(stored.Messages) != 2 || stored.Messages[0].GetText() != "newer" || stored.Messages[1].GetText() != "newest" || stored.Usage.TotalTokens != 6 {
+		t.Errorf("persisted session = %+v", stored)
+	}
+	_, wantErr := storage.Load(ctx, "missing")
+	if err := manager.TrimMessages(ctx, "missing", 6); wantErr == nil || err == nil || err.Error() != wantErr.Error() {
+		t.Errorf("missing session: TrimMessages=%v Load=%v", err, wantErr)
+	}
+}

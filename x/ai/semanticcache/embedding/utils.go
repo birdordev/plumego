@@ -116,7 +116,11 @@ func BatchCosineSimilarity(query []float64, vectors [][]float64) ([]float64, err
 }
 
 // TopK returns the indices of the top K most similar vectors.
+// A nonpositive k returns an empty selection.
 func TopK(similarities []float64, k int) []int {
+	if k <= 0 {
+		return []int{}
+	}
 	if k > len(similarities) {
 		k = len(similarities)
 	}

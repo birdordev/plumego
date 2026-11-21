@@ -87,7 +87,8 @@ type StreamReader struct {
 	stream *provider.StreamReader
 }
 
-// Next reads the next chunk from the stream and returns the accumulated response.
+// Next returns a response containing only the next chunk. Callers assemble
+// a complete response from the chunks they receive.
 func (s *StreamReader) Next() (*CompletionResponse, error) {
 	chunk, err := s.stream.Next()
 	if err != nil {

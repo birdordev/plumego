@@ -1,6 +1,7 @@
 package pubsub
 
 import (
+	"errors"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -611,5 +612,34 @@ func BenchmarkEnhancedDLQ_Query(b *testing.B) {
 		_, _ = dlq.Query(DLQQueryOptions{
 			Limit: 10,
 		})
+	}
+}
+
+func TestDLQGetReturnsDetachedMessageValue(t *testing.T) {
+	ps := New()
+	defer ps.Close()
+	config := DefaultDLQConfig("dlq.fixture")
+	config.RetryStrategy = NoRetry
+	dlq := NewDLQ(ps, config)
+	defer dlq.Close()
+
+	if err := dlq.Add(Message{Data: "fixture"}, "jobs", "failed"); err != nil {
+		t.Fatal(err)
+	}
+	messages, err := dlq.Query(DLQQueryOptions{})
+	if err != nil || len(messages) != 1 {
+		t.Fatalf("Query returned %d messages, %v", len(messages), err)
+	}
+	id := messages[0].ID
+	snapshot, err := dlq.Get(id)
+	if err != nil || snapshot == nil || snapshot.Reason != "failed" || snapshot.OriginalTopic != "jobs" {
+		t.Fatalf("Get = %+v, %v", snapshot, err)
+	}
+	snapshot.Reason = "changed"
+	if got, err := dlq.Get(id); err != nil || got == nil || got.Reason != "failed" {
+		t.Errorf("Get after modifying the snapshot = %+v, %v", got, err)
+	}
+	if got, err := dlq.Get("missing"); got != nil || !errors.Is(err, ErrDLQNotFound) {
+		t.Errorf("Get for missing ID = %+v, %v", got, err)
 	}
 }

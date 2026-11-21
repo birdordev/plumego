@@ -2,6 +2,7 @@ package embedding
 
 import (
 	"math"
+	"slices"
 	"testing"
 )
 
@@ -271,5 +272,19 @@ func TestBatchCosineSimilarityContract(t *testing.T) {
 		if got, err := BatchCosineSimilarity(query, bad); got != nil || err == nil {
 			t.Errorf("invalid vector at %d: batch = %v, %v", i, got, err)
 		}
+	}
+}
+
+func TestTopKHandlesNonpositiveCount(t *testing.T) {
+	for _, k := range []int{-1, 0} {
+		if got := TopK([]float64{1, 2, 0}, k); got == nil || len(got) != 0 {
+			t.Errorf("TopK with k=%d returned %#v; want an empty selection", k, got)
+		}
+	}
+	if got := TopK(nil, 2); len(got) != 0 {
+		t.Errorf("TopK on empty input = %v", got)
+	}
+	if got := TopK([]float64{1, 2, 0}, 4); !slices.Equal(got, []int{1, 0, 2}) {
+		t.Errorf("TopK with oversized k = %v", got)
 	}
 }

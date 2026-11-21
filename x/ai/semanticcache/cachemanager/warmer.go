@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"slices"
 	"time"
@@ -257,10 +258,17 @@ type WarmingStats struct {
 // ProgressCallback is called during warming to report progress.
 type ProgressCallback func(current, total int, stats *WarmingStats)
 
-// WarmWithProgress warms cache with progress reporting.
+// WarmWithProgress warms cache with progress reporting for successful batches.
+// Failed batches are reported together. Successfully stored batches remain
+// available, and cancellation stops the operation before starting another batch.
 func (w *Warmer) WarmWithProgress(ctx context.Context, queries []QueryResponse, callback ProgressCallback) error {
+	if len(queries) == 0 {
+		return nil
+	}
+
 	stats := &WarmingStats{}
 	start := time.Now()
+	var failures []error
 
 	// Process queries in batches
 	batchSize := w.provider.MaxBatchSize()
@@ -269,6 +277,9 @@ func (w *Warmer) WarmWithProgress(ctx context.Context, queries []QueryResponse, 
 	}
 
 	for i := 0; i < len(queries); i += batchSize {
+		if ctx.Err() != nil {
+			break
+		}
 		end := i + batchSize
 		if end > len(queries) {
 			end = len(queries)
@@ -277,6 +288,7 @@ func (w *Warmer) WarmWithProgress(ctx context.Context, queries []QueryResponse, 
 		batch := queries[i:end]
 		if err := w.WarmFromQueries(ctx, batch); err != nil {
 			stats.ErrorCount++
+			failures = append(failures, fmt.Errorf("warm batch [%d, %d): %w", i, end, err))
 			continue
 		}
 
@@ -293,5 +305,8 @@ func (w *Warmer) WarmWithProgress(ctx context.Context, queries []QueryResponse, 
 		stats.AverageLatency = stats.TotalTime / time.Duration(stats.QueriesWarmed)
 	}
 
-	return nil
+	if cause := context.Cause(ctx); cause != nil {
+		failures = append(failures, cause)
+	}
+	return errors.Join(failures...)
 }

@@ -1,6 +1,8 @@
 package mq_test
 
 import (
+	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -148,5 +150,41 @@ func TestTaskQueueLeaseLost(t *testing.T) {
 
 	if err := queue.ExtendLease(t.Context(), reserved[0].ID, "c-1", 1*time.Second, now.Add(2*time.Second)); err != mq.ErrLeaseLost {
 		t.Fatalf("expected lease lost, got %v", err)
+	}
+}
+
+type statsQueueStore struct {
+	mq.TaskStore
+	stats mq.Stats
+	err   error
+}
+
+func (s statsQueueStore) Stats(context.Context) (mq.Stats, error) {
+	return s.stats, s.err
+}
+
+type observeQueueOperation func(context.Context, string, string, time.Duration, error, bool)
+
+func (observe observeQueueOperation) ObserveMQ(ctx context.Context, op, topic string, duration time.Duration, err error, panicked bool) {
+	observe(ctx, op, topic, duration, err, panicked)
+}
+
+func TestTaskQueueObservesStatsErrors(t *testing.T) {
+	ctx := t.Context()
+	for _, wantErr := range []error{nil, errors.New("fixture store unavailable")} {
+		calls := 0
+		want := mq.Stats{Queued: 4}
+		queue := mq.NewTaskQueue(statsQueueStore{stats: want, err: wantErr}, mq.WithQueueMetricsObserver(
+			observeQueueOperation(func(gotCtx context.Context, op, topic string, duration time.Duration, err error, panicked bool) {
+				calls++
+				if gotCtx != ctx || op != "queue_stats" || topic != "" || duration < 0 || !errors.Is(err, wantErr) || panicked {
+					t.Errorf("observation: ctx match=%t op=%q topic=%q duration=%v err=%v panic=%t",
+						gotCtx == ctx, op, topic, duration, err, panicked)
+				}
+			}),
+		))
+		if got, err := queue.Stats(ctx); got != want || !errors.Is(err, wantErr) || calls != 1 {
+			t.Errorf("Stats = %+v, %v, observed %d calls; want %+v, %v, one call", got, err, calls, want, wantErr)
+		}
 	}
 }

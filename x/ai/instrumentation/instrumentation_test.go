@@ -550,3 +550,24 @@ func TestInstrumentedCacheMutationMetrics(t *testing.T) {
 		}
 	}
 }
+
+func TestInstrumentedGetWorkflowRecordsTiming(t *testing.T) {
+	collector := metrics.NewMemoryCollector()
+	engine := NewInstrumentedEngine(orchestration.NewEngine(), collector)
+	workflow := orchestration.NewWorkflow("fixture", "workflow", "")
+	engine.RegisterWorkflow(workflow)
+
+	if got, err := engine.GetWorkflow(workflow.ID); got != workflow || err != nil {
+		t.Errorf("GetWorkflow = %p, %v; want %p", got, err, workflow)
+	}
+	if got, err := engine.GetWorkflow("missing"); got != nil || err == nil {
+		t.Errorf("GetWorkflow for missing ID = %v, %v", got, err)
+	}
+	timings := collector.Snapshot().Histograms
+	for _, id := range []string{workflow.ID, "missing"} {
+		key := "ai_workflow_get_duration_seconds{workflow_id=" + id + "}"
+		if got := timings[key]; got.Count != 1 || got.Tags["workflow_id"] != id {
+			t.Errorf("%s timing = %+v", id, got)
+		}
+	}
+}

@@ -80,7 +80,7 @@ type StoreStats struct {
 	Size      int64 // Approximate size in bytes
 }
 
-// KeyStrategy generates cache keys from requests
+// KeyStrategy generates cache keys from requests. An empty key bypasses caching.
 type KeyStrategy interface {
 	Generate(r *http.Request) string
 }
@@ -202,6 +202,10 @@ func Middleware(config Config) func(http.Handler) http.Handler {
 
 			// Generate cache key
 			key := cfg.KeyStrategy.Generate(r)
+			if key == "" {
+				next.ServeHTTP(w, r)
+				return
+			}
 
 			// Try to get from cache
 			cached, found := cfg.Store.Get(key)

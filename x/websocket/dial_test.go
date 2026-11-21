@@ -382,3 +382,45 @@ func TestDialClosesResponseWhenParentCanceled(t *testing.T) {
 		t.Errorf("Dial = %v, %v, %v; body closed %d times", conn, resp, err, body.closes)
 	}
 }
+
+func TestDialAcceptsRequestedSubprotocol(t *testing.T) {
+	stream, peer := net.Pipe()
+	defer peer.Close()
+	defer stream.Close()
+	const protocol = "fixture.v1"
+
+	client := &http.Client{Transport: canceledDialTransport(func(r *http.Request) (*http.Response, error) {
+		if got := r.Header.Get("Sec-WebSocket-Protocol"); got != protocol {
+			t.Errorf("requested subprotocol = %q; want %q", got, protocol)
+		}
+		return &http.Response{
+			StatusCode: http.StatusSwitchingProtocols,
+			Header: http.Header{
+				"Connection":             []string{"Upgrade"},
+				"Upgrade":                []string{"websocket"},
+				"Sec-Websocket-Accept":   []string{computeAcceptKey(r.Header.Get("Sec-WebSocket-Key"))},
+				"Sec-Websocket-Protocol": []string{protocol},
+			},
+			Body: stream,
+		}, nil
+	})}
+	conn, resp, err := Dial(t.Context(), "ws://fixture.invalid", &DialOptions{
+		HTTPClient: client, Subprotocols: []string{protocol},
+	})
+	if err != nil || conn == nil || resp == nil {
+		t.Fatalf("Dial = %v, %v, %v", conn, resp, err)
+	}
+	defer conn.Close()
+	if got := resp.Header.Get("Sec-WebSocket-Protocol"); got != protocol {
+		t.Errorf("negotiated subprotocol = %q; want %q", got, protocol)
+	}
+	if err := conn.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := peer.SetReadDeadline(time.Now().Add(time.Second)); err != nil && !errors.Is(err, io.ErrClosedPipe) {
+		t.Fatal(err)
+	}
+	if n, err := peer.Read(make([]byte, 1)); n != 0 || !errors.Is(err, io.EOF) {
+		t.Errorf("underlying stream after Close = %d, %v; want EOF", n, err)
+	}
+}

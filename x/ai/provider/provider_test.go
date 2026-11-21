@@ -938,3 +938,35 @@ func (r *singleProviderRouter) Route(_ context.Context, _ *CompletionRequest, pr
 	}
 	return nil, fmt.Errorf("provider %q not found", r.name)
 }
+
+func TestMockProviderResetClearsQueuedState(t *testing.T) {
+	ctx := t.Context()
+	mock := NewMockProvider("fixture")
+	req := &CompletionRequest{Model: "mock-model"}
+	sentinel := errors.New("fixture unavailable")
+	mock.QueueResponse(&CompletionResponse{ID: "queued"})
+	mock.SetStreamChunks([]*StreamChunk{{Type: "fixture"}})
+	mock.SetError(sentinel)
+	if _, err := mock.Complete(ctx, req); !errors.Is(err, sentinel) || mock.CallCount() != 1 {
+		t.Fatalf("configured error=%v calls=%d", err, mock.CallCount())
+	}
+
+	mock.Reset()
+	if mock.CallCount() != 0 || mock.Name() != "fixture" {
+		t.Errorf("after Reset: calls=%d name=%q", mock.CallCount(), mock.Name())
+	}
+	if got, err := mock.Complete(ctx, req); err != nil || got == nil || got.ID != "mock-resp" {
+		t.Errorf("Complete after Reset = %+v, %v", got, err)
+	}
+	stream, err := mock.CompleteStream(ctx, req)
+	if err != nil || stream == nil {
+		t.Fatalf("CompleteStream after Reset = %v, %v", stream, err)
+	}
+	defer stream.Close()
+	if chunk, err := stream.Next(); chunk != nil || !errors.Is(err, io.EOF) {
+		t.Errorf("Next after Reset = %+v, %v", chunk, err)
+	}
+	if model, err := mock.GetModel(ctx, "mock-model"); err != nil || model == nil || model.Provider != "fixture" {
+		t.Errorf("GetModel after Reset = %+v, %v", model, err)
+	}
+}
