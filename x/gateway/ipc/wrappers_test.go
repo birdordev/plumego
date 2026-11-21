@@ -1488,3 +1488,79 @@ func TestPoolCloseReportsConnectionErrors(t *testing.T) {
 		t.Errorf("Get after close = %v, %v, want a closed-pool error", conn, err)
 	}
 }
+
+type heartbeatCloseFixture struct {
+	Client
+	closed int
+}
+
+func (c *heartbeatCloseFixture) Close() error { c.closed++; return nil }
+
+func TestHeartbeatClientValidatesIntervalBeforeStart(t *testing.T) {
+	client := &heartbeatCloseFixture{}
+	disabled, err := NewHeartbeatClient(client, &HeartbeatConfig{Interval: -time.Second})
+	if err != nil || disabled != client {
+		t.Fatalf("disabled = %v, %v", disabled, err)
+	}
+	if got, err := NewHeartbeatClient(client, &HeartbeatConfig{Enabled: true, Interval: -time.Second}); err == nil || got != nil {
+		t.Fatalf("negative interval = %v, %v", got, err)
+	}
+	for _, interval := range []time.Duration{0, time.Hour} {
+		cfg := &HeartbeatConfig{Enabled: true, Interval: interval}
+		got, err := NewHeartbeatClient(client, cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		hb := got.(*heartbeatClient)
+		if err := hb.Close(); err != nil {
+			t.Fatal(err)
+		}
+		want := interval
+		if want == 0 {
+			want = DefaultHeartbeatConfig().Interval
+		}
+		cfg.Interval = time.Second
+		if hb.config.Interval != want {
+			t.Errorf("owned interval = %v, want %v", hb.config.Interval, want)
+		}
+	}
+}
+
+type rawTimeoutFixture struct {
+	Client
+	write func([]byte, time.Duration) (int, error)
+	read  func([]byte, time.Duration) (int, error)
+}
+
+func (c rawTimeoutFixture) WriteWithTimeout(p []byte, d time.Duration) (int, error) {
+	return c.write(p, d)
+}
+func (c rawTimeoutFixture) ReadWithTimeout(p []byte, d time.Duration) (int, error) {
+	return c.read(p, d)
+}
+
+func TestFramedClientDelegatesRawTimeouts(t *testing.T) {
+	sentinel := errors.New("test deadline error")
+	raw := rawTimeoutFixture{
+		write: func(p []byte, d time.Duration) (int, error) {
+			if string(p) != "raw" || d != time.Second {
+				t.Errorf("raw write=%q, %v", p, d)
+			}
+			return 1, sentinel
+		},
+		read: func(p []byte, d time.Duration) (int, error) {
+			if d != 2*time.Second {
+				t.Errorf("read timeout=%v", d)
+			}
+			return copy(p, "ok"), sentinel
+		},
+	}
+	w := NewFramedClient(raw)
+	if n, err := w.WriteWithTimeout([]byte("raw"), time.Second); n != 1 || !errors.Is(err, sentinel) {
+		t.Errorf("write=%d, %v", n, err)
+	}
+	var buffer [2]byte
+	if n, err := w.ReadWithTimeout(buffer[:], 2*time.Second); n != 2 || string(buffer[:]) != "ok" || !errors.Is(err, sentinel) {
+		t.Errorf("read=%d %q, %v", n, buffer, err)
+	}
+}

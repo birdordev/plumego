@@ -1,6 +1,7 @@
 package mq
 
 import (
+	"context"
 	"errors"
 	"testing"
 	"time"
@@ -367,5 +368,115 @@ func TestDeadLetterTimestamp(t *testing.T) {
 	if stats.LastMessageTime.Before(before) || stats.LastMessageTime.After(after) {
 		t.Fatalf("LastMessageTime %v should be between %v and %v",
 			stats.LastMessageTime, before, after)
+	}
+}
+
+func TestReplayDeadLetterReportsPartialFailure(t *testing.T) {
+	t.Run("mixed results", testReplayDeadLetterMixedResults)
+	t.Run("requeue failure", testReplayDeadLetterRequeueFailure)
+}
+
+type replayPublishFixture struct {
+	pubsub.Broker
+	publish func(string, Message) error
+}
+
+func (b replayPublishFixture) Publish(topic string, msg Message) error { return b.publish(topic, msg) }
+
+func testReplayDeadLetterRequeueFailure(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.EnableDeadLetterQueue = true
+	cfg.DeadLetterTopic = "dlq"
+	sentinel := errors.New("test republish failure")
+	var b *InProcBroker
+	backend := pubsub.New()
+	ps := replayPublishFixture{Broker: backend, publish: func(topic string, msg Message) error {
+		if topic == "source" {
+			b.deadLetterManager.close()
+			return sentinel
+		}
+		return backend.Publish(topic, msg)
+	}}
+	var err error
+	b, err = NewInProcBroker(ps, WithConfig(cfg))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = b.Close() })
+	if err := b.PublishToDeadLetter(t.Context(), "source", Message{ID: "fixture", Data: "test"}, "fixture"); err != nil {
+		t.Fatal(err)
+	}
+	if err := b.ReplayDeadLetter(t.Context(), 0); !errors.Is(err, sentinel) || !errors.Is(err, ErrBrokerClosed) {
+		t.Errorf("replay and requeue errors = %v", err)
+	}
+}
+
+func testReplayDeadLetterMixedResults(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.EnableDeadLetterQueue = true
+	cfg.DeadLetterTopic = "dlq"
+	b, err := NewInProcBroker(pubsub.New(), WithConfig(cfg))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = b.Close() })
+	sub, err := b.Subscribe(t.Context(), "good", SubOptions{BufferSize: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sub.Cancel()
+	for _, topic := range []string{"", "good"} {
+		if err := b.PublishToDeadLetter(t.Context(), topic, Message{ID: "fixture", Data: "message"}, "test"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := b.ReplayDeadLetter(t.Context(), 0); !errors.Is(err, ErrInvalidTopic) {
+		t.Errorf("replay error = %v", err)
+	}
+	select {
+	case <-sub.C():
+	case <-time.After(time.Second):
+		t.Fatal("valid message was not forwarded")
+	}
+	if err := b.ReplayDeadLetter(t.Context(), 0); !errors.Is(err, ErrInvalidTopic) {
+		t.Errorf("retry error = %v", err)
+	}
+	select {
+	case <-sub.C():
+		t.Error("valid message forwarded twice")
+	default:
+	}
+	left, err := b.DrainDeadLetter(t.Context(), 0)
+	if err != nil || len(left) != 1 || left[0].ID != "fixture" {
+		t.Errorf("remaining messages = %v, %v", left, err)
+	}
+}
+
+func TestDrainDeadLetterRespectsLimitAndCancellation(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.EnableDeadLetterQueue = true
+	cfg.DeadLetterTopic = "dlq"
+	b, err := NewInProcBroker(pubsub.New(), WithConfig(cfg))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = b.Close() })
+	for _, id := range []string{"first", "second", "third"} {
+		if err := b.PublishToDeadLetter(t.Context(), "source", Message{ID: id, Data: "message"}, "test"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	if drained, err := b.DrainDeadLetter(ctx, 0); len(drained) != 0 || !errors.Is(err, context.Canceled) {
+		t.Errorf("canceled drain=%v, %v", drained, err)
+	}
+	first, err := b.DrainDeadLetter(t.Context(), 1)
+	if err != nil || len(first) != 1 || first[0].ID != "first" {
+		t.Errorf("limited drain=%v, %v", first, err)
+	}
+	tail, err := b.DrainDeadLetter(t.Context(), 0)
+	if err != nil || len(tail) != 2 || tail[0].ID != "second" || tail[1].ID != "third" {
+		t.Errorf("remaining drain=%v, %v", tail, err)
 	}
 }

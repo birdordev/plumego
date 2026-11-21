@@ -998,3 +998,38 @@ func TestAdapterDelete(t *testing.T) {
 		t.Fatal("expected key to be deleted")
 	}
 }
+
+type recordingDecrementClient struct {
+	stubClient
+	incr func(context.Context, string, int64) (int64, error)
+}
+
+func (c *recordingDecrementClient) IncrBy(ctx context.Context, key string, delta int64) (int64, error) {
+	return c.incr(ctx, key, delta)
+}
+
+func TestAtomicAdapterDecrDelegates(t *testing.T) {
+	ctx := t.Context()
+	sentinel := errors.New("test decrement failure")
+	for _, wantErr := range []error{nil, sentinel} {
+		calls := 0
+		client := &recordingDecrementClient{incr: func(got context.Context, key string, delta int64) (int64, error) {
+			calls++
+			if got != ctx || key != "count" || delta != -3 {
+				t.Errorf("backend args: %q %d", key, delta)
+			}
+			if wantErr != nil {
+				return 0, wantErr
+			}
+			return 7, nil
+		}}
+		adapter, err := NewValidatedAtomicAdapterWithOptions(client)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, err := adapter.Decr(ctx, "count", 3)
+		if calls != 1 || !errors.Is(err, wantErr) || (wantErr == nil && got != 7) {
+			t.Errorf("Decr=%d, %v, calls=%d", got, err, calls)
+		}
+	}
+}

@@ -248,3 +248,28 @@ func TestTrackerUnregisterUpdatesChecks(t *testing.T) {
 		t.Error("repeated removal returned nil")
 	}
 }
+
+func TestTrackerConfigRoundTripAndError(t *testing.T) {
+	m, err := NewManager(Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tracker := NewTracker(m)
+	t.Cleanup(func() { _ = tracker.Close() })
+	want := Config{RetryCount: 2}
+	if err := tracker.SetConfig(want); err != nil {
+		t.Fatal(err)
+	}
+	if tracker.GetConfig().RetryCount != 2 || m.GetConfig().RetryCount != 2 {
+		t.Error("configuration was not forwarded")
+	}
+	if err := tracker.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := tracker.SetConfig(Config{RetryCount: 3}); !errors.Is(err, errManagerClosed) {
+		t.Errorf("closed configuration write = %v", err)
+	}
+	if tracker.GetConfig().RetryCount != 2 {
+		t.Error("rejected write changed configuration")
+	}
+}

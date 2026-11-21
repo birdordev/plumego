@@ -544,3 +544,30 @@ func TestKeyStrategiesCopyConstructorSlices(t *testing.T) {
 		t.Fatal("mutating the constructor slices changed a strategy")
 	}
 }
+
+func TestMemoryStoreClearResetsEntriesAndSize(t *testing.T) {
+	s := NewMemoryStore(2)
+	put := func(key string) { s.Set(key, &CachedResponse{Body: []byte(key), Size: int64(len(key))}, time.Hour) }
+	put("old")
+	s.Get("old")
+	s.Get("missing")
+	before := s.Stats()
+	s.Clear()
+	after := s.Stats()
+	if after.Items != 0 || after.Size != 0 || after.Hits != before.Hits || after.Misses != before.Misses || after.Evictions != before.Evictions {
+		t.Errorf("stats before=%+v, after=%+v", before, after)
+	}
+	if _, ok := s.Get("old"); ok {
+		t.Error("cleared entry remains")
+	}
+	put("one")
+	put("two")
+	s.Get("one")
+	put("three")
+	if _, ok := s.Get("two"); ok {
+		t.Error("least recently used entry was retained")
+	}
+	if got := s.Stats(); got.Items != 2 || got.Size != 8 || got.Evictions != before.Evictions+1 {
+		t.Errorf("stats after refill=%+v", got)
+	}
+}

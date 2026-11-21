@@ -328,3 +328,31 @@ type stubTx struct{}
 
 func (stubTx) Commit() error   { return nil }
 func (stubTx) Rollback() error { return nil }
+
+func TestSlowQueryDBQueryContextObservesAndPreservesErrors(t *testing.T) {
+	sentinel := errors.New("test query failure")
+	for _, wantErr := range []error{nil, sentinel} {
+		db := newMockDB(func(m *mockDB) { m.queryErr = wantErr })
+		t.Cleanup(func() { _ = db.Close() })
+		base := testmetrics.NewMockCollector()
+		w := NewSlowQueryDB(NewInstrumentedDB(db, base, "test"), "test", WithThreshold(0))
+		rows, err := w.QueryContext(t.Context(), "SELECT id FROM items")
+		if !errors.Is(err, wantErr) {
+			t.Errorf("query error = %v, want %v", err, wantErr)
+		}
+		if wantErr == nil {
+			if rows == nil {
+				t.Fatal("query did not return rows")
+			}
+			if rows.Next() {
+				t.Fatal("mock unexpectedly returned a row")
+			}
+			if err := rows.Close(); err != nil {
+				t.Error(err)
+			}
+		}
+		if got := w.GetDetector().GetTotalDetected(); got != 1 || base.DBCallCount() != 1 {
+			t.Errorf("detected=%d, observed=%d", got, base.DBCallCount())
+		}
+	}
+}

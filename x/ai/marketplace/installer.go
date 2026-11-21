@@ -3,6 +3,7 @@ package marketplace
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -134,7 +135,8 @@ func (i *Installer) IsAgentInstalled(id string, version string) bool {
 	return err == nil
 }
 
-// ListInstalledAgents lists all installed agents.
+// ListInstalledAgents returns readable installed agents and any record
+// read or decode errors encountered while listing them.
 func (i *Installer) ListInstalledAgents() ([]*AgentMetadata, error) {
 	agentsDir := filepath.Join(i.installDir, "agents")
 	if _, err := os.Stat(agentsDir); os.IsNotExist(err) {
@@ -142,6 +144,7 @@ func (i *Installer) ListInstalledAgents() ([]*AgentMetadata, error) {
 	}
 
 	var agents []*AgentMetadata
+	var failures []error
 
 	// Walk through agent directories
 	entries, err := os.ReadDir(agentsDir)
@@ -157,6 +160,7 @@ func (i *Installer) ListInstalledAgents() ([]*AgentMetadata, error) {
 		agentID := entry.Name()
 		versionEntries, err := os.ReadDir(filepath.Join(agentsDir, agentID))
 		if err != nil {
+			failures = append(failures, fmt.Errorf("list installed versions for %q: %w", entry.Name(), err))
 			continue
 		}
 
@@ -167,6 +171,7 @@ func (i *Installer) ListInstalledAgents() ([]*AgentMetadata, error) {
 
 			record, err := i.loadInstallationRecord(filepath.Join(agentsDir, agentID, versionEntry.Name()))
 			if err != nil {
+				failures = append(failures, fmt.Errorf("read installation %q version %q: %w", entry.Name(), versionEntry.Name(), err))
 				continue
 			}
 
@@ -176,7 +181,7 @@ func (i *Installer) ListInstalledAgents() ([]*AgentMetadata, error) {
 		}
 	}
 
-	return agents, nil
+	return agents, errors.Join(failures...)
 }
 
 // InstallWorkflow installs a workflow template.
@@ -238,7 +243,8 @@ func (i *Installer) IsWorkflowInstalled(id string, version string) bool {
 	return err == nil
 }
 
-// ListInstalledWorkflows lists all installed workflows.
+// ListInstalledWorkflows returns readable installed workflows and any record
+// read or decode errors encountered while listing them.
 func (i *Installer) ListInstalledWorkflows() ([]*WorkflowTemplate, error) {
 	workflowsDir := filepath.Join(i.installDir, "workflows")
 	if _, err := os.Stat(workflowsDir); os.IsNotExist(err) {
@@ -246,6 +252,7 @@ func (i *Installer) ListInstalledWorkflows() ([]*WorkflowTemplate, error) {
 	}
 
 	var workflows []*WorkflowTemplate
+	var failures []error
 
 	// Walk through workflow directories
 	entries, err := os.ReadDir(workflowsDir)
@@ -261,6 +268,7 @@ func (i *Installer) ListInstalledWorkflows() ([]*WorkflowTemplate, error) {
 		workflowID := entry.Name()
 		versionEntries, err := os.ReadDir(filepath.Join(workflowsDir, workflowID))
 		if err != nil {
+			failures = append(failures, fmt.Errorf("list installed versions for %q: %w", entry.Name(), err))
 			continue
 		}
 
@@ -271,6 +279,7 @@ func (i *Installer) ListInstalledWorkflows() ([]*WorkflowTemplate, error) {
 
 			record, err := i.loadInstallationRecord(filepath.Join(workflowsDir, workflowID, versionEntry.Name()))
 			if err != nil {
+				failures = append(failures, fmt.Errorf("read installation %q version %q: %w", entry.Name(), versionEntry.Name(), err))
 				continue
 			}
 
@@ -280,7 +289,7 @@ func (i *Installer) ListInstalledWorkflows() ([]*WorkflowTemplate, error) {
 		}
 	}
 
-	return workflows, nil
+	return workflows, errors.Join(failures...)
 }
 
 // CreateAgentFromInstalled creates an agent instance from installed metadata.

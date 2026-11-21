@@ -827,3 +827,30 @@ func TestActiveConnectionsDeduplicateRooms(t *testing.T) {
 	hub.Leave("two", conn)
 	check(0, 0)
 }
+
+func TestNewHubDelegatesConfiguration(t *testing.T) {
+	for _, tc := range []struct {
+		workers, queue, wantWorkers, wantQueue int
+		err                                    error
+	}{
+		{2, 5, 2, 5, nil}, {0, 0, 4, 1024, nil}, {-1, 1, 0, 0, ErrNegativeWorkerCount}, {1, -1, 0, 0, ErrNegativeJobQueue},
+	} {
+		h, err := NewHub(tc.workers, tc.queue)
+		if !errors.Is(err, tc.err) {
+			t.Fatalf("NewHub(%d,%d) error=%v", tc.workers, tc.queue, err)
+		}
+		if tc.err != nil {
+			if h != nil {
+				t.Error("invalid configuration returned a hub")
+			}
+			continue
+		}
+		if h == nil {
+			t.Fatal("nil hub")
+		}
+		if h.workers != tc.wantWorkers || cap(h.jobQueue) != tc.wantQueue {
+			t.Errorf("workers=%d queue=%d", h.workers, cap(h.jobQueue))
+		}
+		h.Stop()
+	}
+}

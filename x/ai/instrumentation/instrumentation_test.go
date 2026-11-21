@@ -452,3 +452,41 @@ func TestInstrumentedStep_Execute(t *testing.T) {
 		t.Errorf("Step executions = %v, want 1.0", counter.Value)
 	}
 }
+
+type tokenCountingProvider struct {
+	provider.Provider
+	count func(string) (int, error)
+}
+
+func (p tokenCountingProvider) CountTokens(s string) (int, error) { return p.count(s) }
+
+func TestInstrumentedCountTokensRecordsOnlySuccessfulCounts(t *testing.T) {
+	collector := metrics.NewMemoryCollector()
+	sentinel := errors.New("test count failure")
+	calls := 0
+	p := tokenCountingProvider{Provider: &mockProvider{name: "fixture"}, count: func(s string) (int, error) {
+		calls++
+		switch s {
+		case "success":
+			return 7, nil
+		case "failure":
+			return 0, sentinel
+		default:
+			t.Errorf("unexpected input %q", s)
+			return 0, nil
+		}
+	}}
+	w := NewInstrumentedProvider(p, collector)
+	if n, err := w.CountTokens("success"); n != 7 || err != nil {
+		t.Errorf("successful count=%d, %v", n, err)
+	}
+	if _, err := w.CountTokens("failure"); !errors.Is(err, sentinel) {
+		t.Errorf("count error=%v", err)
+	}
+	h := collector.Snapshot().Histograms
+	count := h["ai_token_count_value{provider=fixture}"]
+	timing := h["ai_count_tokens_duration_seconds{provider=fixture}"]
+	if calls != 2 || timing.Count != 2 || count.Count != 1 || count.Sum != 7 {
+		t.Errorf("calls=%d timing=%+v count=%+v", calls, timing, count)
+	}
+}

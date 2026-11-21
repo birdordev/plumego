@@ -209,3 +209,23 @@ func TestTranscoderOptionsObserveInitializedTarget(t *testing.T) {
 		t.Errorf("constructed target = %q, option order = %v", tcd.Target(), order)
 	}
 }
+
+func TestTranscoderBlankPatternUsesGETRoot(t *testing.T) {
+	tc := New("service")
+	calls := 0
+	if err := tc.Register(t.Context(), func(w http.ResponseWriter, r *http.Request, _ map[string]string) {
+		calls++
+		if r.URL.Path != "/" {
+			t.Errorf("path=%q", r.URL.Path)
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}, "  "); err != nil {
+		t.Fatal(err)
+	}
+	get, post := httptest.NewRecorder(), httptest.NewRecorder()
+	tc.Handler().ServeHTTP(get, httptest.NewRequest(http.MethodGet, "/", nil))
+	tc.Handler().ServeHTTP(post, httptest.NewRequest(http.MethodPost, "/", nil))
+	if get.Code != http.StatusNoContent || post.Code != http.StatusMethodNotAllowed || post.Header().Get("Allow") != "GET" || calls != 1 {
+		t.Errorf("GET=%d POST=%d Allow=%q calls=%d", get.Code, post.Code, post.Header().Get("Allow"), calls)
+	}
+}

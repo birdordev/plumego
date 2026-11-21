@@ -606,3 +606,22 @@ func TestRepositoryExistsBindsIDAndPreservesErrors(t *testing.T) {
 		})
 	}
 }
+
+func TestParamExtractorPreservesExplicitQueryValues(t *testing.T) {
+	var p ParamExtractor
+	for _, tc := range []struct {
+		query   string
+		count   int
+		enabled bool
+	}{
+		{"", 9, true},
+		{"?count=bad&enabled=bad", 9, true},
+		{"?count=0&enabled=false", 0, false},
+		{"?count=2&enabled=true", 2, true},
+	} {
+		r := httptest.NewRequest(http.MethodGet, "/"+tc.query, nil)
+		if n, b := p.GetQueryInt(r, "count", 9), p.GetQueryBool(r, "enabled", true); n != tc.count || b != tc.enabled {
+			t.Errorf("query %q yielded %d, %t", tc.query, n, b)
+		}
+	}
+}

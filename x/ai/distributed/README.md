@@ -141,6 +141,9 @@ workflow.AddStep(parallelStep)
 `RecoverStaleTasks` placeholder returns zero without scanning or retrying tasks.
 `MonitorTimeouts` waits for context cancellation and performs no timeout checks.
 
+The execution engine does not read the reserved `ExecutionOptions.RetryPolicy`
+field. Use the standalone helper to retry an operation explicitly.
+
 ```go
 // Create a recovery manager
 recovery := distributed.NewRecoveryManager(persistence, queue, engine)

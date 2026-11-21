@@ -10,7 +10,7 @@ import (
 // HeartbeatConfig holds configuration for connection heartbeat
 type HeartbeatConfig struct {
 	Enabled  bool          // Enable heartbeat mechanism
-	Interval time.Duration // Interval between heartbeat checks
+	Interval time.Duration // Interval between heartbeat checks; zero uses the default
 	Timeout  time.Duration // Timeout applied separately to the ping write and pong read
 	// OnDead is called once on heartbeat failure, outside the client lock.
 	// Close suppresses a notification that has not been selected yet.
@@ -48,9 +48,17 @@ func NewHeartbeatClient(client Client, cfg *HeartbeatConfig) (Client, error) {
 		return client, nil
 	}
 
+	config := *cfg
+	if config.Interval < 0 {
+		return nil, fmt.Errorf("heartbeat interval must be non-negative: %s", config.Interval)
+	}
+	if config.Interval == 0 {
+		config.Interval = DefaultHeartbeatConfig().Interval
+	}
+
 	hb := &heartbeatClient{
 		client:   client,
-		config:   cfg,
+		config:   &config,
 		stopCh:   make(chan struct{}),
 		stopped:  false,
 		lastSeen: time.Now(),

@@ -5,6 +5,7 @@ import (
 	"hash/fnv"
 	"math"
 	"math/rand"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -94,8 +95,9 @@ func (b *RandomBalancer) Name() string {
 
 // WeightedRoundRobinBalancer implements weighted round-robin load balancing
 type WeightedRoundRobinBalancer struct {
-	currentWeight []int
-	mu            sync.Mutex
+	currentWeight    []int
+	previousBackends []*Backend
+	mu               sync.Mutex
 }
 
 // NewWeightedRoundRobinBalancer creates a new weighted round-robin load balancer
@@ -106,6 +108,7 @@ func NewWeightedRoundRobinBalancer() *WeightedRoundRobinBalancer {
 // Next returns the next backend using smooth weighted round-robin.
 // Zero weights count as one. Negative weights or arithmetic that exceeds the
 // integer range return ErrInvalidConfig without advancing the weights.
+// A change in healthy backend membership or order resets the accumulated scores.
 func (b *WeightedRoundRobinBalancer) Next(pool *BackendPool) (*Backend, error) {
 	backends := pool.HealthyBackends()
 	if len(backends) == 0 {
@@ -116,7 +119,7 @@ func (b *WeightedRoundRobinBalancer) Next(pool *BackendPool) (*Backend, error) {
 	defer b.mu.Unlock()
 
 	totalWeight, selected, maxCurrent := 0, 0, 0
-	sameSize := len(b.currentWeight) == len(backends)
+	sameBackends := slices.Equal(b.previousBackends, backends)
 	for i, backend := range backends {
 		weight := backend.Weight
 		if weight == 0 {
@@ -127,7 +130,7 @@ func (b *WeightedRoundRobinBalancer) Next(pool *BackendPool) (*Backend, error) {
 		}
 		totalWeight += weight
 		current := 0
-		if sameSize {
+		if sameBackends {
 			current = b.currentWeight[i]
 		}
 		if current > math.MaxInt-weight {
@@ -140,7 +143,8 @@ func (b *WeightedRoundRobinBalancer) Next(pool *BackendPool) (*Backend, error) {
 	}
 
 	// Apply the round only after validating all weights and scores.
-	if !sameSize {
+	if !sameBackends {
+		b.previousBackends = backends
 		b.currentWeight = make([]int, len(backends))
 	}
 	for i, backend := range backends {
@@ -156,6 +160,7 @@ func (b *WeightedRoundRobinBalancer) Reset() {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.currentWeight = nil
+	b.previousBackends = nil
 }
 
 // Name returns the strategy name

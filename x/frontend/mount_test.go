@@ -617,3 +617,10 @@ func TestNewHandlerFSPropagatesMissingDirectory(t *testing.T) {
 		t.Errorf("NewHandlerFS = %v, %v", h, err)
 	}
 }
+
+func TestNewMountFSPropagatesVariantScanFailure(t *testing.T) {
+	mount, err := NewMountFS(localDirFS(filepath.Join(t.TempDir(), "removed")), WithPrecompressed(true))
+	if mount != nil || !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("NewMountFS = %v, %v", mount, err)
+	}
+}

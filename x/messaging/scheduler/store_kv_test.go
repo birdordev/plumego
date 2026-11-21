@@ -119,3 +119,28 @@ func TestKVStorePersistence(t *testing.T) {
 	s.Start()
 	_ = s.Stop(t.Context())
 }
+
+func TestKVStoreRejectsMismatchedStoredJobIDs(t *testing.T) {
+	base, err := kvstore.NewKVStore(kvstore.Config{DataDir: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer base.Close()
+	store := NewKVStore(base, "jobs")
+	if err := store.Save(StoredJob{}); !errors.Is(err, errInvalidStoredJob) {
+		t.Errorf("empty job save=%v", err)
+	}
+	if err := store.Save(StoredJob{ID: "valid"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := base.Set("jobs:wrong", []byte(`{"id":"different","task_name":"work"}`), 0); err != nil {
+		t.Fatal(err)
+	}
+	if err := base.Set("jobs:empty", []byte("null"), 0); err != nil {
+		t.Fatal(err)
+	}
+	jobs, err := store.List()
+	if len(jobs) != 1 || jobs[0].ID != "valid" || !errors.Is(err, errInvalidStoredJob) {
+		t.Errorf("jobs=%d err=%v", len(jobs), err)
+	}
+}

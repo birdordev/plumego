@@ -1,6 +1,7 @@
 package tenant
 
 import (
+	"errors"
 	"reflect"
 	"sync"
 	"testing"
@@ -319,5 +320,21 @@ func TestInMemoryConfigManagerOwnsSnapshots(t *testing.T) {
 	manager.SetTenantConfig(Config{TenantID: "sample"})
 	if got := load(); !reflect.DeepEqual(got, Config{TenantID: "sample"}) {
 		t.Fatalf("replacement config = %+v", got)
+	}
+}
+
+func TestInMemoryConfigProvidesRateLimitConfiguration(t *testing.T) {
+	m := NewInMemoryConfigManager()
+	first, second := RateLimitConfig{RequestsPerSecond: 3, Burst: 8}, RateLimitConfig{RequestsPerSecond: 2}
+	m.SetTenantConfig(Config{TenantID: "one", RateLimit: first})
+	m.SetTenantConfig(Config{TenantID: "two", RateLimit: second})
+	var p RateLimitConfigProvider = m
+	for id, want := range map[string]RateLimitConfig{"one": first, "two": second} {
+		if got, err := p.RateLimitConfig(t.Context(), id); err != nil || got != want {
+			t.Errorf("%s rate=%+v, %v", id, got, err)
+		}
+	}
+	if got, err := p.RateLimitConfig(t.Context(), "missing"); got != (RateLimitConfig{}) || !errors.Is(err, ErrTenantNotFound) {
+		t.Errorf("missing rate=%+v, %v", got, err)
 	}
 }

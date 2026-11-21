@@ -3,6 +3,7 @@ package pubsub
 import (
 	"encoding/json"
 	"math"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -18,79 +19,53 @@ func testClusterConfig(nodeID, listenAddr string) ClusterConfig {
 	return config
 }
 
+func joinTestClusterPair(t *testing.T) (*DistributedPubSub, *DistributedPubSub) {
+	t.Helper()
+	var listeners [2]net.Listener
+	for i := range listeners {
+		ln, err := newListener("127.0.0.1:0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = ln.Close() })
+		listeners[i] = ln
+	}
+	var nodes [2]*DistributedPubSub
+	for i, id := range []string{"node1", "node2"} {
+		ln := listeners[i]
+		cfg := testClusterConfig(id, ln.Addr().String())
+		if i == 1 {
+			cfg.Peers = []string{listeners[0].Addr().String()}
+		}
+		node, err := NewDistributed(cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = node.Close() })
+		if err := node.joinCluster(t.Context(), func() (net.Listener, error) { return ln, nil }); err != nil {
+			t.Fatalf("%s join: %v", id, err)
+		}
+		nodes[i] = node
+	}
+	if err := nodes[0].sendHeartbeat(t.Context(), listeners[1].Addr().String()); err != nil {
+		t.Fatal(err)
+	}
+	return nodes[0], nodes[1]
+}
+
 func TestDistributedPubSub_Basic(t *testing.T) {
 	t.Parallel()
-	// Create two nodes
-	config1 := testClusterConfig("node1", "127.0.0.1:17001")
-	config1.Peers = []string{"127.0.0.1:17002"}
-
-	config2 := testClusterConfig("node2", "127.0.0.1:17002")
-	config2.Peers = []string{"127.0.0.1:17001"}
-
-	dps1, err := NewDistributed(config1)
-	if err != nil {
-		t.Fatalf("Failed to create node1: %v", err)
-	}
-	defer dps1.Close()
-
-	dps2, err := NewDistributed(config2)
-	if err != nil {
-		t.Fatalf("Failed to create node2: %v", err)
-	}
-	defer dps2.Close()
-
-	// Join cluster
-	ctx := t.Context()
-	if err := dps1.JoinCluster(ctx); err != nil {
-		t.Fatalf("node1 failed to join: %v", err)
-	}
-
-	if err := dps2.JoinCluster(ctx); err != nil {
-		t.Fatalf("node2 failed to join: %v", err)
-	}
-
-	// Wait for discovery
-	time.Sleep(200 * time.Millisecond)
-
-	// Check nodes discovered each other
-	nodes1 := dps1.Nodes()
-	if len(nodes1) < 2 {
-		t.Logf("Note: Node discovery might be eventual (found %d nodes)", len(nodes1))
-	}
-
-	nodes2 := dps2.Nodes()
-	if len(nodes2) < 2 {
-		t.Logf("Note: Node discovery might be eventual (found %d nodes)", len(nodes2))
+	first, second := joinTestClusterPair(t)
+	for _, node := range []*DistributedPubSub{first, second} {
+		if got := len(node.Nodes()); got != 2 {
+			t.Errorf("nodes discovered = %d, want 2", got)
+		}
 	}
 }
 
 func TestDistributedPubSub_GlobalPublish(t *testing.T) {
 	t.Parallel()
-	// Create two nodes
-	config1 := testClusterConfig("node1", "127.0.0.1:17011")
-	config1.Peers = []string{"127.0.0.1:17012"}
-
-	config2 := testClusterConfig("node2", "127.0.0.1:17012")
-	config2.Peers = []string{"127.0.0.1:17011"}
-
-	dps1, err := NewDistributed(config1)
-	if err != nil {
-		t.Fatalf("Failed to create node1: %v", err)
-	}
-	defer dps1.Close()
-
-	dps2, err := NewDistributed(config2)
-	if err != nil {
-		t.Fatalf("Failed to create node2: %v", err)
-	}
-	defer dps2.Close()
-
-	// Join cluster
-	ctx := t.Context()
-	_ = dps1.JoinCluster(ctx)
-	_ = dps2.JoinCluster(ctx)
-
-	time.Sleep(300 * time.Millisecond) // Wait for cluster formation
+	dps1, dps2 := joinTestClusterPair(t)
 
 	// Subscribe on node2
 	sub, err := dps2.Subscribe(t.Context(), "test.global", SubOptions{BufferSize: 10})
@@ -129,7 +104,7 @@ func TestDistributedPubSub_GlobalPublish(t *testing.T) {
 
 func TestDistributedPubSub_Heartbeat(t *testing.T) {
 	t.Parallel()
-	config := testClusterConfig("test-node", "127.0.0.1:17021")
+	config := testClusterConfig("test-node", "127.0.0.1:0")
 	config.HeartbeatInterval = 100 * time.Millisecond
 	config.HeartbeatTimeout = 300 * time.Millisecond
 
@@ -142,14 +117,6 @@ func TestDistributedPubSub_Heartbeat(t *testing.T) {
 	ctx := t.Context()
 	if err := dps.JoinCluster(ctx); err != nil {
 		t.Fatalf("Failed to join cluster: %v", err)
-	}
-
-	// Wait for heartbeats
-	time.Sleep(400 * time.Millisecond)
-
-	stats := dps.ClusterStats()
-	if stats.Heartbeats == 0 && len(config.Peers) > 0 {
-		t.Log("Note: No heartbeats sent (expected with no peers)")
 	}
 
 	// Check self is healthy
@@ -780,5 +747,54 @@ func TestDistributedHeartbeatDefaultsAndStarts(t *testing.T) {
 		if err := broker.Close(); err != nil {
 			t.Fatal(err)
 		}
+	}
+}
+
+func TestDistributedClusterLifecycleRejectsReuse(t *testing.T) {
+	occupied, err := newListener("127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = occupied.Close() })
+	b, err := NewDistributed(testClusterConfig("node", occupied.Addr().String()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = b.Close() })
+	if err := b.JoinCluster(t.Context()); err == nil {
+		t.Fatal("join with occupied port succeeded")
+	}
+	if err := occupied.Close(); err != nil {
+		t.Fatal(err)
+	}
+	results := make(chan error, 2)
+	for range 2 {
+		go func() { results <- b.JoinCluster(t.Context()) }()
+	}
+	first, second := <-results, <-results
+	if (first == nil) == (second == nil) {
+		t.Fatalf("join results = %v and %v", first, second)
+	}
+	if err := b.LeaveCluster(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if err := b.JoinCluster(t.Context()); err == nil {
+		t.Error("rejoin succeeded")
+	}
+	rebound, err := newListener(b.config.ListenAddr)
+	if err != nil {
+		t.Fatalf("listener was not released: %v", err)
+	}
+	_ = rebound.Close()
+
+	closed, err := NewDistributed(testClusterConfig("closed", "127.0.0.1:0"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := closed.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := closed.JoinCluster(t.Context()); err == nil {
+		t.Error("closed instance joined")
 	}
 }

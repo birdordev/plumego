@@ -1,6 +1,10 @@
 package marketplace
 
 import (
+	"encoding/json"
+	"errors"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 )
@@ -164,5 +168,39 @@ func TestManager_UninstallAgent(t *testing.T) {
 
 	if mgr.IsAgentInstalled("removable", "1.0.0") {
 		t.Error("IsAgentInstalled should return false after uninstall")
+	}
+}
+
+func TestInstalledListsReportPartialReadFailures(t *testing.T) {
+	dir := t.TempDir()
+	installer, err := NewInstaller(nil, nil, dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, kind := range []string{"agent", "workflow"} {
+		for id, body := range map[string]string{"good": `{"type":"` + kind + `","id":"good","version":"v1","metadata":{"id":"good","version":"v1"}}`, "bad": "{"} {
+			record := filepath.Join(dir, kind+"s", id, "v1")
+			if err := os.MkdirAll(record, 0755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(record, "install.json"), []byte(body), 0600); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	agents, agentErr := installer.ListInstalledAgents()
+	workflows, workflowErr := installer.ListInstalledWorkflows()
+	var syntax *json.SyntaxError
+	if len(agents) != 1 || agents[0].ID != "good" || !errors.As(agentErr, &syntax) {
+		t.Errorf("agent list=%v, error=%v", agents, agentErr)
+	}
+	if len(workflows) != 1 || workflows[0].ID != "good" || !errors.As(workflowErr, &syntax) {
+		t.Errorf("workflow list=%v, error=%v", workflows, workflowErr)
+	}
+	if err := installer.UpdateAgent(t.Context(), "good", "v2"); !errors.As(err, &syntax) {
+		t.Errorf("update agent = %v", err)
+	}
+	if err := installer.UpdateWorkflow(t.Context(), "good", "v2"); !errors.As(err, &syntax) {
+		t.Errorf("update workflow = %v", err)
 	}
 }

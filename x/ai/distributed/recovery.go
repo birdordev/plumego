@@ -62,7 +62,8 @@ func (rm *RecoveryManager) MonitorTimeouts(ctx context.Context, _ time.Duration)
 
 // RetryWithPolicy retries an operation with exponential backoff.
 // Cancellation prevents the next attempt from starting. A nil policy, nil
-// operation, or negative MaxRetries returns an argument error.
+// operation, or negative MaxRetries returns an argument error. A positive
+// MaxDelay caps every retry delay, including the first.
 func RetryWithPolicy(
 	ctx context.Context,
 	policy *RetryPolicy,
@@ -79,6 +80,9 @@ func RetryWithPolicy(
 	}
 	var lastErr error
 	delay := policy.InitialDelay
+	if policy.MaxDelay > 0 {
+		delay = min(delay, policy.MaxDelay)
+	}
 	timer := time.NewTimer(0)
 	if !timer.Stop() {
 		<-timer.C

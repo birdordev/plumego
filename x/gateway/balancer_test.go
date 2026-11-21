@@ -449,3 +449,23 @@ func TestLeastConnectionsConcurrent(t *testing.T) {
 	}
 	wg.Wait()
 }
+
+func TestWeightedRoundRobinResetsOnMembershipChange(t *testing.T) {
+	p, err := NewBackendPool([]string{"http://a.test", "http://b.test", "http://c.test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	bs := p.Backends()
+	bs[2].SetHealthy(false)
+	b := NewWeightedRoundRobinBalancer()
+	if _, err := b.Next(p); err != nil {
+		t.Fatal(err)
+	}
+	bs[1].SetHealthy(false)
+	bs[2].SetHealthy(true)
+	got, err := b.Next(p)
+	want, otherErr := NewWeightedRoundRobinBalancer().Next(p)
+	if err != nil || otherErr != nil || got != want {
+		t.Errorf("selection copied score from replaced slot: selected %p, fresh %p, errors %v / %v", got, want, err, otherErr)
+	}
+}

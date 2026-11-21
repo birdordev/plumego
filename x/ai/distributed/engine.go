@@ -27,8 +27,8 @@ type DistributedEngine struct {
 type EngineConfig struct {
 	DefaultTimeout    time.Duration
 	EnableCheckpoints bool
-	MaxRetries        int
-	RetryDelay        time.Duration
+	MaxRetries        int           // Reserved for engine-level retries
+	RetryDelay        time.Duration // Reserved for engine-level retries
 }
 
 // DefaultEngineConfig returns default engine configuration.
@@ -45,7 +45,7 @@ func DefaultEngineConfig() EngineConfig {
 type ExecutionOptions struct {
 	Distributed bool          // Use distributed execution
 	Timeout     time.Duration // Total execution timeout; zero uses the engine default
-	RetryPolicy *RetryPolicy  // Retry policy for failed steps
+	RetryPolicy *RetryPolicy  // Reserved; use RetryWithPolicy to retry an operation
 	Checkpoints bool          // Enable checkpoint snapshots
 }
 

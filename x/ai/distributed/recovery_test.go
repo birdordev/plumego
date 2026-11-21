@@ -276,3 +276,20 @@ func TestRetryWithPolicyRejectsInvalidInputs(t *testing.T) {
 		t.Errorf("operation called %d times for invalid inputs", calls)
 	}
 }
+
+func TestRetryWithPolicyCapsFirstDelay(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		start := time.Now()
+		n := 0
+		err := RetryWithPolicy(t.Context(), &RetryPolicy{MaxRetries: 1, InitialDelay: time.Minute, MaxDelay: time.Second, Multiplier: 2}, func() error {
+			n++
+			if n == 1 {
+				return errors.New("retry")
+			}
+			return nil
+		})
+		if elapsed := time.Since(start); err != nil || elapsed != time.Second {
+			t.Errorf("err=%v elapsed=%v", err, elapsed)
+		}
+	})
+}

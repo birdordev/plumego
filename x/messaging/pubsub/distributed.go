@@ -116,9 +116,11 @@ type DistributedPubSub struct {
 	config ClusterConfig
 
 	// Cluster state
-	nodes   map[string]*ClusterNode
-	nodesMu sync.RWMutex
-	joined  atomic.Bool
+	nodes       map[string]*ClusterNode
+	nodesMu     sync.RWMutex
+	joined      atomic.Bool
+	lifecycleMu sync.Mutex
+	stopped     chan struct{}
 
 	// HTTP server for cluster API
 	httpServer *http.Server
@@ -243,15 +245,42 @@ func (dps *DistributedPubSub) setupHTTPServer() {
 	}
 }
 
-// JoinCluster joins the cluster and starts serving
+// JoinCluster joins the cluster and starts serving. A stopped instance cannot
+// join again. An initial listener failure leaves the instance retryable.
 func (dps *DistributedPubSub) JoinCluster(ctx context.Context) error {
+	return dps.joinCluster(ctx, func() (net.Listener, error) {
+		return newListener(dps.config.ListenAddr)
+	})
+}
+
+func (dps *DistributedPubSub) joinCluster(ctx context.Context, listen func() (net.Listener, error)) error {
+	if err := dps.startCluster(listen); err != nil {
+		return err
+	}
+	discoveryCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	stop := context.AfterFunc(dps.ctx, cancel)
+	defer stop()
+	dps.discoverPeers(discoveryCtx)
+	if !dps.joined.Load() {
+		return errors.New("cluster stopped during join")
+	}
+	return nil
+}
+
+func (dps *DistributedPubSub) startCluster(listen func() (net.Listener, error)) error {
+	dps.lifecycleMu.Lock()
+	defer dps.lifecycleMu.Unlock()
+	if dps.closed.Load() || dps.stopped != nil {
+		return errors.New("cluster instance is stopped")
+	}
 	if dps.joined.Load() {
 		return errors.New("already joined to cluster")
 	}
 
 	// Bind the listener before starting the goroutine so the port is ready
 	// before we advertise the address to peers — avoids the fragile sleep.
-	ln, err := newListener(dps.config.ListenAddr)
+	ln, err := listen()
 	if err != nil {
 		return fmt.Errorf("cluster listener failed: %w", err)
 	}
@@ -274,11 +303,6 @@ func (dps *DistributedPubSub) JoinCluster(ctx context.Context) error {
 	}
 	dps.nodesMu.Unlock()
 
-	// Discover peers
-	if err := dps.discoverPeers(ctx); err != nil {
-		return fmt.Errorf("peer discovery failed: %w", err)
-	}
-
 	dps.joined.Store(true)
 
 	// Start background workers
@@ -288,7 +312,7 @@ func (dps *DistributedPubSub) JoinCluster(ctx context.Context) error {
 }
 
 // discoverPeers discovers and connects to peer nodes
-func (dps *DistributedPubSub) discoverPeers(ctx context.Context) error {
+func (dps *DistributedPubSub) discoverPeers(ctx context.Context) {
 	for _, peerAddr := range dps.config.Peers {
 		// Send heartbeat to discover peer
 		if err := dps.sendHeartbeat(ctx, peerAddr); err != nil {
@@ -296,14 +320,28 @@ func (dps *DistributedPubSub) discoverPeers(ctx context.Context) error {
 			continue
 		}
 	}
-	return nil
 }
 
-// LeaveCluster leaves the cluster and stops serving
+// LeaveCluster stops a joined cluster. It cannot be joined again afterward.
 func (dps *DistributedPubSub) LeaveCluster(ctx context.Context) error {
+	dps.lifecycleMu.Lock()
+	if stopped := dps.stopped; stopped != nil {
+		dps.lifecycleMu.Unlock()
+		select {
+		case <-stopped:
+			return nil
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
 	if !dps.joined.Swap(false) {
+		dps.lifecycleMu.Unlock()
 		return nil
 	}
+	stopped := make(chan struct{})
+	dps.stopped = stopped
+	dps.lifecycleMu.Unlock()
+	defer close(stopped)
 
 	// Stop workers
 	dps.cancel()
@@ -311,12 +349,12 @@ func (dps *DistributedPubSub) LeaveCluster(ctx context.Context) error {
 	// Shutdown HTTP server
 	shutdownCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	_ = dps.httpServer.Shutdown(shutdownCtx)
-
-	// Wait for workers
+	err := dps.httpServer.Shutdown(shutdownCtx)
+	if err != nil {
+		err = errors.Join(err, dps.httpServer.Close())
+	}
 	dps.wg.Wait()
-
-	return nil
+	return err
 }
 
 // PublishGlobal publishes a message to the entire cluster
@@ -705,10 +743,8 @@ func (dps *DistributedPubSub) Close() error {
 	// Leave cluster
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	_ = dps.LeaveCluster(ctx)
-
-	// Close base pubsub
-	return dps.InProcBroker.Close()
+	leaveErr := dps.LeaveCluster(ctx)
+	return errors.Join(leaveErr, dps.InProcBroker.Close())
 }
 
 // Nodes returns detached snapshots of the current cluster nodes.

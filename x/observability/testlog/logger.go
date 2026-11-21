@@ -2,6 +2,7 @@ package testlog
 
 import (
 	"context"
+	"maps"
 	"math/bits"
 	"os"
 	"strings"
@@ -100,12 +101,16 @@ func (l *Logger) FatalCtx(ctx context.Context, msg string, fields ...Fields) {
 	l.handleFatal(msg)
 }
 
-// Entries returns a snapshot of all captured log entries.
+// Entries returns a snapshot with detached top-level field maps. Nested
+// field values retain their original ownership.
 func (l *Logger) Entries() []Entry {
 	l.shared.mu.RLock()
 	defer l.shared.mu.RUnlock()
 	cp := make([]Entry, len(l.shared.entries))
-	copy(cp, l.shared.entries)
+	for i, entry := range l.shared.entries {
+		entry.Fields = maps.Clone(entry.Fields)
+		cp[i] = entry
+	}
 	return cp
 }
 

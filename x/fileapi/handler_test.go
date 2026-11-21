@@ -1413,3 +1413,27 @@ func TestFileListForwardsTimeRange(t *testing.T) {
 		t.Fatalf("response = %d %+v, calls=%d", rec.Code, env.Data, calls)
 	}
 }
+
+func TestUploadMalformedMultipartStopsBeforeStorage(t *testing.T) {
+	r := httptest.NewRequest(http.MethodPost, "/files", strings.NewReader("--fixture\r\nContent-Disposition: form-data; name=\"file\"; filename=\"a.txt\"\r\n\r\ntruncated"))
+	r.Header.Set("Content-Type", "multipart/form-data; boundary=fixture")
+	r = r.WithContext(tenantcore.WithTenantID(r.Context(), "tenant"))
+	calls := 0
+	storage := &mockStorage{putFunc: func(context.Context, datafile.PutOptions) (*datafile.File, error) {
+		calls++
+		return &datafile.File{}, nil
+	}}
+	rec := httptest.NewRecorder()
+	NewHandler(storage, &mockMetadataManager{}).Upload(rec, r)
+	var env struct {
+		Error struct {
+			Code string `json:"code"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &env); err != nil {
+		t.Fatal(err)
+	}
+	if rec.Code != http.StatusBadRequest || env.Error.Code != contract.CodeBadRequest || calls != 0 {
+		t.Errorf("response=%d %+v storage calls=%d", rec.Code, env, calls)
+	}
+}

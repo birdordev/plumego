@@ -2,6 +2,7 @@ package mq
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -182,7 +183,9 @@ func (b *InProcBroker) DrainDeadLetter(ctx context.Context, limit int) ([]Messag
 
 // ReplayDeadLetter re-publishes up to limit messages from the dead letter queue
 // back to their original topics so they can be processed again.
-// Pass limit = 0 to replay all current entries.
+// Pass limit = 0 to replay all current entries. Successfully published entries
+// stay removed. Failed entries are requeued when possible, and publish and
+// requeue failures are returned together.
 // Returns ErrDeadLetterNotSupported when the DLQ is not enabled.
 func (b *InProcBroker) ReplayDeadLetter(ctx context.Context, limit int) error {
 	if ctx != nil {
@@ -198,14 +201,16 @@ func (b *InProcBroker) ReplayDeadLetter(ctx context.Context, limit int) error {
 	}
 
 	entries := b.deadLetterManager.drain(limit)
+	var failures []error
 	for _, e := range entries {
 		if err := b.Publish(ctx, e.originalTopic, e.message); err != nil {
-			// Re-add on republish failure to avoid silent data loss.
-			_ = b.deadLetterManager.add(e.originalTopic, e.message,
-				fmt.Sprintf("replay failed: %v", err))
+			failures = append(failures, fmt.Errorf("replay dead letter: %w", err))
+			if requeueErr := b.deadLetterManager.add(e.originalTopic, e.message, e.reason); requeueErr != nil {
+				failures = append(failures, fmt.Errorf("requeue dead letter: %w", requeueErr))
+			}
 		}
 	}
-	return nil
+	return errors.Join(failures...)
 }
 
 // GetDeadLetterStats returns statistics about the dead letter queue.

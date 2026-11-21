@@ -29,7 +29,11 @@ func NewKVStore(kv *kvstore.KVStore, prefix string) *KVStore {
 	return &KVStore{kv: kv, prefix: prefix}
 }
 
+// Save persists a job under its non-empty ID.
 func (k *KVStore) Save(job StoredJob) error {
+	if job.ID == "" {
+		return errInvalidStoredJob
+	}
 	if k == nil || k.kv == nil {
 		return nil
 	}
@@ -47,7 +51,8 @@ func (k *KVStore) Delete(id JobID) error {
 	return k.kv.Delete(k.prefix + string(id))
 }
 
-// List returns readable jobs and reports records it could not read or decode.
+// List returns readable jobs and reports records that cannot be read, decoded,
+// or matched to their storage key.
 func (k *KVStore) List() ([]StoredJob, error) {
 	if k == nil || k.kv == nil {
 		return nil, nil
@@ -72,6 +77,10 @@ func (k *KVStore) List() ([]StoredJob, error) {
 		var job StoredJob
 		if err := json.Unmarshal(raw, &job); err != nil {
 			failures = append(failures, fmt.Errorf("decode scheduler job %q: %w", strings.TrimPrefix(key, k.prefix), errInvalidStoredJob))
+			continue
+		}
+		if job.ID == "" || string(job.ID) != strings.TrimPrefix(key, k.prefix) {
+			failures = append(failures, fmt.Errorf("scheduler job identity for key %q: %w", strings.TrimPrefix(key, k.prefix), errInvalidStoredJob))
 			continue
 		}
 		out = append(out, job)

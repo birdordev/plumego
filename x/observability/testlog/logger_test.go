@@ -145,3 +145,12 @@ func TestMergeFieldsKeepsExtraPrecedence(t *testing.T) {
 		}
 	}
 }
+
+func TestEntriesOwnCapturedFields(t *testing.T) {
+	l := New()
+	l.Info("message", Fields{"key": "original"})
+	l.Entries()[0].Fields["key"] = "modified"
+	if got := l.Entries()[0].Fields["key"]; got != "original" {
+		t.Errorf("stored field = %v", got)
+	}
+}
