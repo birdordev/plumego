@@ -286,3 +286,64 @@ func Example_mockCollector_hooks() {
 	// Output:
 	// observed query on postgres
 }
+
+func TestMockCollectorOwnsCapturedLabels(t *testing.T) {
+	c := NewMockCollector()
+	ctx := t.Context()
+	hookCalls := 0
+	c.OnRecord = func(gotCtx context.Context, record MetricRecord) {
+		hookCalls++
+		if gotCtx != ctx || len(c.GetRecords()) != hookCalls {
+			t.Error("hook did not observe the captured record")
+		}
+		if record.Labels != nil {
+			record.Labels["phase"] = "hook"
+		}
+	}
+	labels := metrics.MetricLabels{"phase": "original"}
+	c.Record(ctx, MetricRecord{Name: "fixture", Labels: labels})
+	labels["phase"] = "caller"
+	records := c.GetRecords()
+	if records[0].Labels["phase"] != "original" {
+		t.Error("recorded labels alias caller or hook")
+	}
+	records[0].Labels["phase"] = "reader"
+	c.Record(ctx, MetricRecord{Name: "without labels"})
+	got := c.GetRecords()
+	if got[0].Labels["phase"] != "original" || got[1].Labels != nil || hookCalls != 2 {
+		t.Errorf("captured records=%+v, hook calls=%d", got, hookCalls)
+	}
+}
+
+func TestMockCollectorClearZerosCapturedSlots(t *testing.T) {
+	c := NewMockCollector()
+	ctx := t.Context()
+	sentinel := errors.New("sample")
+	c.Record(ctx, MetricRecord{Name: "record", Labels: metrics.MetricLabels{"phase": "original"}, Error: sentinel})
+	c.ObserveHTTP(ctx, "GET", "/fixture", 200, 4, time.Second)
+	c.ObserveDB(ctx, "select", "driver", "query", 1, time.Second, sentinel)
+	c.ObserveKV(ctx, "get", "key", time.Second, sentinel, true)
+	c.ObserveIPC(ctx, "read", "addr", "local", 1, time.Second, sentinel)
+	c.ObserveMQ(ctx, "read", "topic", time.Second, sentinel, false)
+	c.ObservePubSub(ctx, "send", "topic", time.Second, sentinel)
+	records, httpCalls, dbCalls, kvCalls := c.records, c.httpCalls, c.dbCalls, c.kvCalls
+	ipcCalls, mqCalls, pubsubCalls := c.ipcCalls, c.mqCalls, c.pubsubCalls
+	cleared := false
+	c.OnClear = func() {
+		cleared = true
+		if len(c.GetRecords()) != 0 || len(c.GetHTTPCalls()) != 0 || len(c.GetDBCalls()) != 0 ||
+			len(c.GetKVCalls()) != 0 || len(c.GetIPCCalls()) != 0 || len(c.GetMQCalls()) != 0 || len(c.GetPubSubCalls()) != 0 {
+			t.Error("Clear hook observed old records")
+		}
+	}
+	c.Clear()
+	if !cleared || records[0].Labels != nil || records[0].Error != nil || records[0].Name != "" ||
+		httpCalls[0] != (HTTPCall{}) || dbCalls[0] != (DBCall{}) || kvCalls[0] != (KVCall{}) ||
+		ipcCalls[0] != (IPCCall{}) || mqCalls[0] != (MQCall{}) || pubsubCalls[0] != (PubSubCall{}) {
+		t.Error("Clear retained captured data")
+	}
+	c.Record(ctx, MetricRecord{Name: "new"})
+	if got := c.GetRecords(); len(got) != 1 || got[0].Name != "new" {
+		t.Errorf("records after Clear=%+v", got)
+	}
+}

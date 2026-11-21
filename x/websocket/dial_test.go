@@ -319,3 +319,23 @@ func TestRWCConnReadAfterCloseDoesNotDelegate(t *testing.T) {
 		t.Errorf("closed Read = %d, %v, underlying reads=%d", n, err, stream.reads)
 	}
 }
+
+type canceledDialTransport func(*http.Request) (*http.Response, error)
+
+func (f canceledDialTransport) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+func TestDialPreservesPreCanceledContextCause(t *testing.T) {
+	sentinel := errors.New("caller canceled the dial")
+	ctx, cancel := context.WithCancelCause(t.Context())
+	cancel(sentinel)
+	client := &http.Client{Transport: canceledDialTransport(func(r *http.Request) (*http.Response, error) {
+		if got := context.Cause(r.Context()); !errors.Is(got, sentinel) {
+			t.Errorf("transport context cause=%v", got)
+		}
+		return nil, context.Cause(r.Context())
+	})}
+	conn, resp, err := Dial(ctx, "ws://fixture.invalid", &DialOptions{HTTPClient: client})
+	if conn != nil || resp != nil || !errors.Is(err, sentinel) {
+		t.Errorf("Dial=%v, %v, %v", conn, resp, err)
+	}
+}

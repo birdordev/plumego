@@ -325,3 +325,75 @@ func TestMemStore_ReplayDLQ_NilStore_Error(t *testing.T) {
 		t.Error("expected error for nil MemStore")
 	}
 }
+
+func TestMemStoreOwnsTaskPayloadAndMeta(t *testing.T) {
+	ctx := t.Context()
+	s := NewMemory(MemConfig{})
+	task := mq.Task{ID: "one", Payload: []byte("original"), Meta: map[string]string{"key": "original"}}
+	if err := s.Insert(ctx, task); err != nil {
+		t.Fatal(err)
+	}
+	task.Payload[0] = 'x'
+	task.Meta["key"] = "changed"
+	now := time.Unix(100, 0)
+	got, err := s.Reserve(ctx, mq.ReserveOptions{ConsumerID: "one", Now: now, Lease: time.Second, Limit: 1})
+	if err != nil || len(got) != 1 {
+		t.Fatalf("Reserve: %v %v", got, err)
+	}
+	if string(got[0].Payload) != "original" || got[0].Meta["key"] != "original" {
+		t.Error("inserted task alias")
+	}
+	got[0].Payload[0] = 'y'
+	got[0].Meta["key"] = "again"
+	got, err = s.Reserve(ctx, mq.ReserveOptions{ConsumerID: "two", Now: now.Add(2 * time.Second), Limit: 1})
+	if err != nil || len(got) != 1 {
+		t.Fatalf("Reserve again: %v %v", got, err)
+	}
+	if string(got[0].Payload) != "original" || got[0].Meta["key"] != "original" {
+		t.Error("reserved task alias")
+	}
+	if got[0].LeaseOwner != "two" || got[0].Attempts != 2 {
+		t.Errorf("unexpected second lease: %+v", got[0])
+	}
+	if stats, err := s.Stats(ctx); err != nil || stats.Leased != 1 || stats.Queued != 0 {
+		t.Errorf("lease stats = %+v, %v", stats, err)
+	}
+}
+
+func TestMemStoreExtendLeaseDefaults(t *testing.T) {
+	for _, tc := range []struct {
+		name            string
+		lease, duration time.Duration
+	}{
+		{"zero", 0, mq.DefaultLeaseDuration},
+		{"negative", -time.Second, mq.DefaultLeaseDuration},
+		{"explicit", time.Minute, time.Minute},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := t.Context()
+			s := NewMemory(MemConfig{})
+			now := time.Unix(100, 0)
+			if err := s.Insert(ctx, mq.Task{ID: "one"}); err != nil {
+				t.Fatal(err)
+			}
+			got, err := s.Reserve(ctx, mq.ReserveOptions{ConsumerID: "owner", Now: now, Lease: time.Second, Limit: 1})
+			if err != nil || len(got) != 1 {
+				t.Fatalf("Reserve = %v, %v", got, err)
+			}
+			renewed := now.Add(time.Millisecond)
+			if err := s.ExtendLease(ctx, "one", "owner", tc.lease, renewed); err != nil {
+				t.Fatal(err)
+			}
+			at := renewed.Add(tc.duration)
+			if err := s.ExtendLease(ctx, "one", "other", time.Hour, renewed); !errors.Is(err, mq.ErrLeaseLost) {
+				t.Fatalf("wrong owner renewal = %v", err)
+			}
+			if err := s.Ack(ctx, "one", "owner", at.Add(time.Nanosecond)); !errors.Is(err, mq.ErrLeaseLost) {
+				t.Errorf("lease should have expired after %v, got %v", tc.duration, err)
+			}
+			if err := s.Ack(ctx, "one", "owner", at); err != nil {
+				t.Errorf("ack at lease boundary: %v", err)
+			}
+		})
+	}
+}

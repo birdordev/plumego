@@ -118,9 +118,6 @@ func splitPattern(pattern string) (string, string) {
 	}
 	method = strings.TrimSpace(method)
 	path = strings.TrimSpace(path)
-	if method == "" {
-		method = http.MethodGet
-	}
 	if path == "" {
 		path = "/"
 	}

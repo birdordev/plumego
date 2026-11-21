@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http/httptest"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/birdordev/plumego/health"
@@ -126,4 +127,44 @@ func TestTrackerSingleCheckRecordsOwnedHistory(t *testing.T) {
 	if !ok || again.CheckCount != 2 || len(again.RecentHistory) != 2 || !again.RecentHistory[0].Success {
 		t.Errorf("history was modified through returned metrics: %+v", again)
 	}
+}
+
+func TestTrackerResetRestartsUptimeAndSuccessRate(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		m, err := NewManager(Config{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		tracker := NewTracker(m)
+		defer func() { _ = tracker.Close() }()
+		if got := tracker.GetSuccessRate(); got != 0 {
+			t.Errorf("empty rate=%v", got)
+		}
+		sentinel := errors.New("fixture unhealthy")
+		var cause error
+		if err := tracker.RegisterComponent(functionChecker{"sample", func(context.Context) error { return cause }}); err != nil {
+			t.Fatal(err)
+		}
+		for _, want := range []error{nil, sentinel} {
+			cause = want
+			if err := tracker.CheckComponent(t.Context(), "sample"); !errors.Is(err, want) {
+				t.Errorf("CheckComponent=%v, want %v", err, want)
+			}
+		}
+		time.Sleep(3 * time.Second)
+		if got := tracker.GetUptime(); got != 3*time.Second {
+			t.Errorf("initial uptime=%v", got)
+		}
+		if got := tracker.GetSuccessRate(); got != 50 {
+			t.Errorf("success rate=%v, want 50", got)
+		}
+		tracker.Reset()
+		time.Sleep(time.Second)
+		if got := tracker.GetUptime(); got != time.Second {
+			t.Errorf("uptime after Reset=%v", got)
+		}
+		if got := tracker.GetSuccessRate(); got != 0 {
+			t.Errorf("rate after Reset=%v", got)
+		}
+	})
 }

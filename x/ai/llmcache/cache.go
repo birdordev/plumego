@@ -7,6 +7,8 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"reflect"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -151,6 +153,8 @@ func (c *MemoryCache) Get(ctx context.Context, key *CacheKey) (*CacheEntry, erro
 
 // Set implements Cache. Only inserting a new key at capacity evicts an entry.
 // A zero expiration uses the cache TTL and is filled in on the stored copy.
+// Content blocks, JSON-shaped maps and slices, and byte slices are copied.
+// Other metadata values are shared and should be treated as immutable.
 func (c *MemoryCache) Set(ctx context.Context, key *CacheKey, entry *CacheEntry) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -220,7 +224,13 @@ func (c *MemoryCache) evictOldest() {
 }
 
 // BuildCacheKey builds a cache key from a request.
+// The hash uses a versioned encoding of the completion request. Tracking
+// metadata is excluded. Older hashes miss naturally, and an empty hash means
+// the request could not be encoded for caching.
 func BuildCacheKey(req *provider.CompletionRequest) *CacheKey {
+	if req == nil {
+		return &CacheKey{}
+	}
 	key := &CacheKey{
 		Model:       req.Model,
 		Temperature: req.Temperature,
@@ -240,12 +250,23 @@ func BuildCacheKey(req *provider.CompletionRequest) *CacheKey {
 
 	// Serialize tools
 	if len(req.Tools) > 0 {
-		toolsJSON, _ := json.Marshal(req.Tools)
+		toolsJSON, err := json.Marshal(req.Tools)
+		if err != nil {
+			return key
+		}
 		key.Tools = string(toolsJSON)
 	}
 
-	// Compute hash
-	key.Hash = computeHash(key)
+	request := *req
+	request.Metadata = nil
+	data, err := json.Marshal(request)
+	if err != nil {
+		return key
+	}
+	digest := sha256.New()
+	_, _ = digest.Write([]byte("llmcache:v2\n"))
+	_, _ = digest.Write(data)
+	key.Hash = hex.EncodeToString(digest.Sum(nil))
 
 	return key
 }
@@ -255,39 +276,88 @@ func NormalizePrompt(prompt string) string {
 	return strings.Join(strings.Fields(prompt), " ")
 }
 
-// computeHash computes a cache key hash.
-func computeHash(key *CacheKey) string {
-	data := fmt.Sprintf("%s|%s|%s|%f|%d|%s",
-		key.Model,
-		key.System,
-		key.Prompt,
-		key.Temperature,
-		key.MaxTokens,
-		key.Tools,
-	)
-
-	hash := sha256.Sum256([]byte(data))
-	return hex.EncodeToString(hash[:])
-}
-
-// copyResponse creates a deep copy of a response.
+// copyResponse copies content blocks and JSON-shaped metadata. Other metadata
+// values are opaque and must be immutable while shared with the cache.
 func copyResponse(resp *provider.CompletionResponse) *provider.CompletionResponse {
 	if resp == nil {
 		return nil
 	}
 
 	copied := *resp
-	copied.Content = make([]provider.ContentBlock, len(resp.Content))
-	copy(copied.Content, resp.Content)
-
-	if resp.Metadata != nil {
-		copied.Metadata = make(map[string]any)
-		for k, v := range resp.Metadata {
-			copied.Metadata[k] = v
+	cloner := make(responseValueCloner)
+	copied.Metadata = cloner.cloneMap(resp.Metadata)
+	copied.Content = slices.Clone(resp.Content)
+	for i := range copied.Content {
+		block := &copied.Content[i]
+		if block.ToolUse != nil {
+			tool := *block.ToolUse
+			tool.Input = cloner.cloneMap(tool.Input)
+			block.ToolUse = &tool
+		}
+		if block.ToolResult != nil {
+			result := *block.ToolResult
+			block.ToolResult = &result
+		}
+		if block.Image != nil {
+			image := *block.Image
+			block.Image = &image
 		}
 	}
-
 	return &copied
+}
+
+type responseValueKey struct {
+	pointer uintptr
+	length  int
+	slice   bool
+}
+
+// Record each clone before visiting children so cyclic containers are safe.
+type responseValueCloner map[responseValueKey]any
+
+func (c responseValueCloner) cloneMap(value map[string]any) map[string]any {
+	if value == nil {
+		return nil
+	}
+	key := responseValueKey{pointer: reflect.ValueOf(value).Pointer()}
+	if existing, ok := c[key]; ok {
+		return existing.(map[string]any)
+	}
+	result := make(map[string]any, len(value))
+	c[key] = result
+	for name, field := range value {
+		result[name] = c.clone(field)
+	}
+	return result
+}
+
+func (c responseValueCloner) clone(value any) any {
+	switch v := value.(type) {
+	case map[string]any:
+		return c.cloneMap(v)
+	case []any:
+		if len(v) == 0 {
+			return slices.Clone(v)
+		}
+		key := responseValueKey{pointer: reflect.ValueOf(v).Pointer(), length: len(v), slice: true}
+		if existing, ok := c[key]; ok {
+			return existing.([]any)
+		}
+		result := make([]any, len(v))
+		c[key] = result
+		for i, field := range v {
+			result[i] = c.clone(field)
+		}
+		return result
+	case []string:
+		return slices.Clone(v)
+	case []byte:
+		return slices.Clone(v)
+	case json.RawMessage:
+		return slices.Clone(v)
+	default:
+		return v
+	}
 }
 
 // CachingProvider wraps a provider with caching.
@@ -309,10 +379,13 @@ func (p *CachingProvider) Name() string {
 	return p.provider.Name()
 }
 
-// Complete implements Provider with caching.
+// Complete caches encodable requests and delegates uncacheable requests directly.
 func (p *CachingProvider) Complete(ctx context.Context, req *provider.CompletionRequest) (*provider.CompletionResponse, error) {
 	// Build cache key
 	key := BuildCacheKey(req)
+	if key.Hash == "" {
+		return p.provider.Complete(ctx, req)
+	}
 
 	// Try cache first
 	cached, err := p.cache.Get(ctx, key)

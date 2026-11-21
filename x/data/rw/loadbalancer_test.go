@@ -4,6 +4,7 @@ import (
 	"errors"
 	"math"
 	"slices"
+	"sync"
 	"testing"
 )
 
@@ -433,5 +434,31 @@ func BenchmarkWeightedBalancer(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_, _ = lb.Next(replicas)
+	}
+}
+
+func TestRandomBalancerResetKeepsHealthySelection(t *testing.T) {
+	b := NewRandomBalancer()
+	replicas := []Replica{{}, {IsHealthy: true}, {}}
+	var workers sync.WaitGroup
+	workers.Go(func() {
+		for range 100 {
+			b.Reset()
+		}
+	})
+	workers.Go(func() {
+		for range 100 {
+			if got, err := b.Next(replicas); got != 1 || err != nil {
+				t.Errorf("Next=%d, %v", got, err)
+			}
+		}
+	})
+	workers.Wait()
+	b.Reset()
+	if _, err := b.Next(nil); !errors.Is(err, ErrNoReplicasAvailable) {
+		t.Errorf("empty Next=%v", err)
+	}
+	if _, err := b.Next([]Replica{{}}); !errors.Is(err, ErrNoHealthyReplicas) {
+		t.Errorf("unhealthy Next=%v", err)
 	}
 }

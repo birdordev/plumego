@@ -271,3 +271,28 @@ func TestStandaloneFrontendHandlerRejectsOutsidePrefix(t *testing.T) {
 		}
 	}
 }
+
+func TestSPAFallbackIgnoresUnrelatedAcceptParameters(t *testing.T) {
+	root := t.TempDir()
+	writeTestFile(t, root, "index.html", "home")
+	h, err := NewHandlerFS(http.Dir(root), WithFallback(true))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		accept string
+		status int
+	}{
+		{"text/html; level=1; q=0.8; foo=bar", http.StatusOK},
+		{"text/html; level=1; q=0; foo=bar, text/*; q=1", http.StatusNotFound},
+	} {
+		req := httptest.NewRequest(http.MethodGet, "/client-route", nil)
+		req.Header.Set("Accept", tc.accept)
+		out := httptest.NewRecorder()
+		h.ServeHTTP(out, req)
+		if out.Code != tc.status || (out.Body.String() == "home") != (tc.status == http.StatusOK) ||
+			!slices.Contains(out.Header().Values("Vary"), "Accept") {
+			t.Errorf("Accept %q: status=%d, body=%q, Vary=%v", tc.accept, out.Code, out.Body.String(), out.Header().Values("Vary"))
+		}
+	}
+}

@@ -4,6 +4,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestDefaultConfig(t *testing.T) {
@@ -673,6 +674,29 @@ func TestParseBool(t *testing.T) {
 			result := parseBool(tt.input)
 			if result != tt.expected {
 				t.Errorf("parseBool(%s) = %v, expected %v", tt.input, result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestDatabaseConfigParsesConnectionDurations(t *testing.T) {
+	for _, tc := range []struct {
+		name, life, idle     string
+		wantLife, wantIdle   time.Duration
+		lifeError, idleError bool
+	}{
+		{name: "empty"},
+		{name: "valid", life: "1h2m3s", idle: "1500ms", wantLife: time.Hour + 2*time.Minute + 3*time.Second, wantIdle: 1500 * time.Millisecond},
+		{name: "invalid lifetime", life: "invalid", idle: "2s", wantIdle: 2 * time.Second, lifeError: true},
+		{name: "invalid idle", life: "2m", idle: "invalid", wantLife: 2 * time.Minute, idleError: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := DatabaseConfig{ConnMaxLifetime: tc.life, ConnMaxIdleTime: tc.idle}
+			if got, err := cfg.ParseConnMaxLifetime(); got != tc.wantLife || (err != nil) != tc.lifeError {
+				t.Errorf("lifetime=%v, %v", got, err)
+			}
+			if got, err := cfg.ParseConnMaxIdleTime(); got != tc.wantIdle || (err != nil) != tc.idleError {
+				t.Errorf("idle=%v, %v", got, err)
 			}
 		})
 	}

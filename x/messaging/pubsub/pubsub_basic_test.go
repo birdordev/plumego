@@ -232,3 +232,65 @@ func TestPublishAsyncDeliveryAndClosedError(t *testing.T) {
 		t.Errorf("closed publish = %v", err)
 	}
 }
+
+func TestPublishMultiDeliveryAndErrors(t *testing.T) {
+	b := New()
+	t.Cleanup(func() { _ = b.Close() })
+	channels := make(map[string]<-chan Message)
+	for _, topic := range []string{"first", "second"} {
+		sub, err := b.Subscribe(t.Context(), topic, SubOptions{BufferSize: 1})
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer sub.Cancel()
+		channels[topic] = sub.C()
+	}
+	messages := map[string][]Message{"first": {{ID: "one"}}, "second": {{ID: "two"}}}
+	if err := b.PublishMulti(messages); err != nil {
+		t.Fatal(err)
+	}
+	for topic, ch := range channels {
+		select {
+		case msg := <-ch:
+			src := messages[topic][0]
+			if msg.Topic != topic || msg.ID != src.ID || msg.Time.IsZero() ||
+				src.Topic != "" || !src.Time.IsZero() {
+				t.Errorf("received=%+v, input=%+v", msg, src)
+			}
+		case <-time.After(time.Second):
+			t.Fatalf("missing delivery on %q", topic)
+		}
+	}
+	if err := b.PublishMulti(map[string][]Message{" ": {{ID: "invalid"}}}); err == nil {
+		t.Fatal("empty topic accepted")
+	} else {
+		var classified *Error
+		if !errors.As(err, &classified) || classified.Code != ErrCodeInvalidTopic {
+			t.Errorf("invalid topic error=%v", err)
+		}
+	}
+	if err := b.Close(); err != nil {
+		t.Fatal(err)
+	}
+	var closed *Error
+	if err := b.PublishMulti(messages); !errors.As(err, &closed) || closed.Code != ErrCodeClosed {
+		t.Errorf("closed broker error=%v", err)
+	}
+}
+
+func TestClosedBrokerHealthErrorsIdentifyCheck(t *testing.T) {
+	b := New()
+	defer b.Close()
+	if ready, live := b.ReadinessCheck(), b.LivenessCheck(); ready != nil || live != nil {
+		t.Fatalf("healthy broker readiness=%v, liveness=%v", ready, live)
+	}
+	if err := b.Close(); err != nil {
+		t.Fatal(err)
+	}
+	for op, err := range map[string]error{"readiness": b.ReadinessCheck(), "liveness": b.LivenessCheck()} {
+		var got *Error
+		if !errors.As(err, &got) || got.Code != ErrCodeClosed || got.Op != op {
+			t.Errorf("%s=%v", op, err)
+		}
+	}
+}

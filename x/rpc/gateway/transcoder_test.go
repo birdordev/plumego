@@ -229,3 +229,35 @@ func TestTranscoderBlankPatternUsesGETRoot(t *testing.T) {
 		t.Errorf("GET=%d POST=%d Allow=%q calls=%d", get.Code, post.Code, post.Header().Get("Allow"), calls)
 	}
 }
+
+func TestTranscoderDefaultRoutePatternBehavior(t *testing.T) {
+	for _, tc := range []struct {
+		pattern, method, path string
+		invalid               bool
+	}{
+		{pattern: " /plain ", method: http.MethodGet, path: "/plain"},
+		{pattern: "POST  /explicit ", method: http.MethodPost, path: "/explicit"},
+		{pattern: "  ", method: http.MethodGet, path: "/"},
+		{pattern: "GET /invalid/{", invalid: true},
+	} {
+		t.Run(tc.pattern, func(t *testing.T) {
+			transcoder := New("fixture")
+			calls := 0
+			err := transcoder.Register(t.Context(), func(w http.ResponseWriter, _ *http.Request, _ map[string]string) {
+				calls++
+				w.WriteHeader(http.StatusNoContent)
+			}, tc.pattern)
+			if (err != nil) != tc.invalid {
+				t.Fatalf("Register(%q)=%v", tc.pattern, err)
+			}
+			if tc.invalid {
+				return
+			}
+			out := httptest.NewRecorder()
+			transcoder.Handler().ServeHTTP(out, httptest.NewRequest(tc.method, tc.path, nil))
+			if out.Code != http.StatusNoContent || calls != 1 {
+				t.Errorf("response=%d, calls=%d", out.Code, calls)
+			}
+		})
+	}
+}

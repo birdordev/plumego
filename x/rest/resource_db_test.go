@@ -673,3 +673,35 @@ func TestParamExtractorReadsOnlyQueryValues(t *testing.T) {
 		t.Errorf("response status = %d", out.Code)
 	}
 }
+
+func TestRepositoryUpdatePreservesPreparationAndExecErrors(t *testing.T) {
+	prepareErr := errors.New("prepare values failed")
+	execErr := errors.New("database update failed")
+	for _, tc := range []struct {
+		name             string
+		prepareErr, want error
+		writes           int
+	}{
+		{"prepare failure", prepareErr, prepareErr, 0},
+		{"exec failure", nil, execErr, 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			writes := 0
+			db := sql.OpenDB(repositoryExecConnector{err: execErr, observe: func(query string, args []driver.NamedValue) {
+				writes++
+				want := []driver.NamedValue{{Ordinal: 1, Value: "updated"}, {Ordinal: 2, Value: "item"}}
+				if !strings.Contains(query, "WHERE id = ?") || !slices.Equal(args, want) {
+					t.Errorf("update=%q %v", query, args)
+				}
+			}})
+			defer db.Close()
+			builder := NewSQLBuilder("items", "id").WithColumns("id", "name").WithUpdateFunc(func(data any) ([]any, error) {
+				return []any{data.(*dbResourceTestItem).Name}, tc.prepareErr
+			})
+			repo := NewBaseRepository[dbResourceTestItem](db, builder)
+			if err := repo.Update(t.Context(), "item", &dbResourceTestItem{Name: "updated"}); !errors.Is(err, tc.want) || writes != tc.writes {
+				t.Errorf("Update=%v, writes=%d", err, writes)
+			}
+		})
+	}
+}

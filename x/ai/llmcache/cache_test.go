@@ -604,3 +604,124 @@ func TestCachingProviderStreamBypassesCache(t *testing.T) {
 		t.Errorf("provider calls = %d, want 2", calls)
 	}
 }
+
+func TestCachingProviderSeparatesCompletionSemantics(t *testing.T) {
+	ctx := t.Context()
+	base := provider.CompletionRequest{
+		Model: "fixture", TopP: 0.25, Temperature: 0.2, System: "original",
+		Messages: []provider.Message{{Role: provider.RoleUser, Content: "fixture"}},
+	}
+	for _, tc := range []struct {
+		name   string
+		change func(*provider.CompletionRequest)
+	}{
+		{"top p", func(r *provider.CompletionRequest) { r.TopP = 0.75 }},
+		{"top k", func(r *provider.CompletionRequest) { r.TopK = 30 }},
+		{"temperature precision", func(r *provider.CompletionRequest) { r.Temperature = 0.20000001 }},
+		{"role", func(r *provider.CompletionRequest) {
+			r.Messages = []provider.Message{{Role: provider.RoleAssistant, Content: "fixture"}}
+		}},
+		{"message order", func(r *provider.CompletionRequest) {
+			r.Messages = []provider.Message{
+				{Role: provider.RoleSystem, Content: "instructions"}, {Role: provider.RoleUser, Content: "fixture"},
+			}
+		}},
+		{"content blocks", func(r *provider.CompletionRequest) {
+			r.Messages = []provider.Message{{Role: provider.RoleUser,
+				Content: []provider.ContentBlock{{Type: provider.ContentTypeText, Text: "fixture"}, {Type: provider.ContentTypeText, Text: "second block"}},
+			}}
+		}},
+		{"system", func(r *provider.CompletionRequest) { r.System = "changed" }},
+		{"stops", func(r *provider.CompletionRequest) { r.StopSequences = []string{"end"} }},
+		{"tool choice", func(r *provider.CompletionRequest) { r.ToolChoice = provider.ToolChoice{Type: "none"} }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			upstream := &mockProvider{}
+			p := NewCachingProvider(upstream, NewMemoryCache(time.Hour, 4))
+			changed := base
+			tc.change(&changed)
+			same := base
+			same.Metadata = map[string]string{"trace": "another"}
+			for _, req := range []*provider.CompletionRequest{&base, &same, &changed, &changed} {
+				if _, err := p.Complete(t.Context(), req); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if upstream.callCount != 2 {
+				t.Errorf("upstream calls=%d, want 2", upstream.callCount)
+			}
+		})
+	}
+
+	upstream := &mockProvider{}
+	p := NewCachingProvider(upstream, struct{ Cache }{})
+	unencodable := base
+	unencodable.Tools = []provider.Tool{{Function: provider.FunctionDef{Parameters: map[string]any{"unsupported": make(chan int)}}}}
+	for range 2 {
+		if _, err := p.Complete(ctx, &unencodable); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if upstream.callCount != 2 || BuildCacheKey(&unencodable).Hash != "" {
+		t.Errorf("unencodable request did not bypass cache, upstream calls=%d", upstream.callCount)
+	}
+}
+
+func TestMemoryCacheOwnsCompletionPayload(t *testing.T) {
+	ctx := t.Context()
+	c := NewMemoryCache(time.Hour, 2)
+	key := &CacheKey{Hash: "fixture"}
+	metadata := map[string]any{"list": []any{int64(123), []byte("original")}}
+	metadata["self"] = metadata
+	entry := &CacheEntry{Response: &provider.CompletionResponse{Metadata: metadata, Content: []provider.ContentBlock{{
+		ToolUse:    &provider.ToolUse{Name: "original", Input: map[string]any{"nested": map[string]any{"text": "original"}}},
+		ToolResult: &provider.ToolResult{Content: "original"},
+		Image:      &provider.Image{Data: "original"},
+	}}}}
+	mutate := func(resp *provider.CompletionResponse) {
+		block := resp.Content[0]
+		block.ToolUse.Name = "changed"
+		block.ToolUse.Input["nested"].(map[string]any)["text"] = "changed"
+		block.ToolResult.Content = "changed"
+		block.Image.Data = "changed"
+		list := resp.Metadata["self"].(map[string]any)["list"].([]any)
+		list[0] = int64(0)
+		list[1].([]byte)[0] = 'x'
+	}
+	if err := c.Set(ctx, key, entry); err != nil {
+		t.Fatal(err)
+	}
+	mutate(entry.Response)
+	for range 2 {
+		got, err := c.Get(ctx, key)
+		if err != nil {
+			t.Fatal(err)
+		}
+		block := got.Response.Content[0]
+		list := got.Response.Metadata["list"].([]any)
+		if block.ToolUse.Name != "original" || block.ToolUse.Input["nested"].(map[string]any)["text"] != "original" ||
+			block.ToolResult.Content != "original" || block.Image.Data != "original" || list[0] != int64(123) || string(list[1].([]byte)) != "original" {
+			t.Error("cache snapshot was changed through caller-owned data")
+		}
+		mutate(got.Response)
+	}
+	empty := &CacheEntry{Response: &provider.CompletionResponse{}}
+	if err := c.Set(ctx, key, empty); err != nil {
+		t.Fatal(err)
+	}
+	got, err := c.Get(ctx, key)
+	if err != nil || got.Response.Content != nil || got.Response.Metadata != nil {
+		t.Errorf("nil fields not preserved: %+v, %v", got, err)
+	}
+}
+
+func BenchmarkBuildCacheKey(b *testing.B) {
+	request := &provider.CompletionRequest{Model: "fixture", System: "instructions", Temperature: 0.2, TopP: 0.75,
+		Messages: []provider.Message{{Role: provider.RoleUser, Content: "ordinary completion request"}},
+		Tools:    []provider.Tool{{Type: "function", Function: provider.FunctionDef{Name: "lookup", Parameters: map[string]any{"type": "object"}}}},
+	}
+	b.ReportAllocs()
+	for b.Loop() {
+		BuildCacheKey(request)
+	}
+}

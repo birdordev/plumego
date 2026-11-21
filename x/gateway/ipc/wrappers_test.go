@@ -1610,3 +1610,14 @@ func TestFramedClientRawReadPreservesPartialResult(t *testing.T) {
 		t.Errorf("Read = %d, %v, buffer = %q, calls = %d", n, err, buffer, calls)
 	}
 }
+
+func TestStreamClientCloseDelegatesError(t *testing.T) {
+	sentinel := errors.New("test close failed")
+	raw := &poolCloseTestClient{err: sentinel}
+	stream := NewStreamClient(raw, nil)
+	for call := 1; call <= 2; call++ {
+		if err := stream.Close(); !errors.Is(err, sentinel) || raw.calls != call {
+			t.Errorf("Close %d=%v, calls=%d", call, err, raw.calls)
+		}
+	}
+}

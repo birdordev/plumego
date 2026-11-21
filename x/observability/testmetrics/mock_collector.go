@@ -2,6 +2,7 @@ package testmetrics
 
 import (
 	"context"
+	"maps"
 	"sync"
 	"time"
 
@@ -147,14 +148,18 @@ func NewMockCollector() *MockCollector {
 	}
 }
 
-// Record captures the metric record and optionally calls the OnRecord hook.
+// Record captures the metric record and calls OnRecord, if set, outside the lock.
+// The stored record and hook each receive their own labels.
 func (m *MockCollector) Record(ctx context.Context, record MetricRecord) {
 	m.mu.Lock()
-	m.records = append(m.records, record)
+	stored := record
+	stored.Labels = maps.Clone(record.Labels)
+	m.records = append(m.records, stored)
 	hook := m.OnRecord
 	m.mu.Unlock()
 
 	if hook != nil {
+		record.Labels = maps.Clone(stored.Labels)
 		hook(ctx, record)
 	}
 }
@@ -285,15 +290,22 @@ func (m *MockCollector) GetStats() CollectorStats {
 	}
 }
 
-// Clear resets all captured calls and optionally calls the OnClear hook.
+// Clear releases captured values, reuses the backing buffers, and calls OnClear if set.
 func (m *MockCollector) Clear() {
 	m.mu.Lock()
+	clear(m.records)
 	m.records = m.records[:0]
+	clear(m.httpCalls)
 	m.httpCalls = m.httpCalls[:0]
+	clear(m.dbCalls)
 	m.dbCalls = m.dbCalls[:0]
+	clear(m.kvCalls)
 	m.kvCalls = m.kvCalls[:0]
+	clear(m.ipcCalls)
 	m.ipcCalls = m.ipcCalls[:0]
+	clear(m.mqCalls)
 	m.mqCalls = m.mqCalls[:0]
+	clear(m.pubsubCalls)
 	m.pubsubCalls = m.pubsubCalls[:0]
 	hook := m.OnClear
 	m.mu.Unlock()
@@ -356,12 +368,15 @@ func (m *MockCollector) PubSubCallCount() int {
 
 // Getter methods for captured calls
 
-// GetRecords returns a copy of all captured metric records.
+// GetRecords returns a snapshot with caller-owned labels.
 func (m *MockCollector) GetRecords() []MetricRecord {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	result := make([]MetricRecord, len(m.records))
-	copy(result, m.records)
+	for i, record := range m.records {
+		record.Labels = maps.Clone(record.Labels)
+		result[i] = record
+	}
 	return result
 }
 

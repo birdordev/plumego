@@ -3270,3 +3270,76 @@ func TestGeneratedJobIDsAreDistinct(t *testing.T) {
 		}
 	})
 }
+
+func TestTaskRetryContextCarriesScheduleAndFailure(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		s := New(WithWorkers(1))
+		s.Start()
+		defer func() {
+			if err := s.Stop(t.Context()); err != nil {
+				t.Error(err)
+			}
+		}()
+		sentinel := errors.New("retry once")
+		const backoff = 2 * time.Second
+		scheduled := time.Now().Add(time.Second)
+		type execution struct {
+			attempt  int
+			when     time.Time
+			started  time.Time
+			hasTime  bool
+			last     error
+			hasError bool
+		}
+		runs := make(chan execution, 2)
+		if _, err := s.Schedule("context", scheduled, func(ctx context.Context) error {
+			attempt, _ := JobAttemptFromContext(ctx)
+			when, hasTime := JobScheduledAtFromContext(ctx)
+			last, hasError := JobLastErrorFromContext(ctx)
+			runs <- execution{attempt, when, time.Now(), hasTime, last, hasError}
+			if attempt == 1 {
+				return sentinel
+			}
+			return nil
+		}, WithRetryPolicy(RetryFixed(2, backoff))); err != nil {
+			t.Fatal(err)
+		}
+		for attempt := 1; attempt <= 2; attempt++ {
+			select {
+			case got := <-runs:
+				wantStart := scheduled.Add(time.Duration(attempt-1) * backoff)
+				if got.attempt != attempt || !got.hasTime || !got.when.Equal(scheduled) || !got.started.Equal(wantStart) {
+					t.Errorf("run %d=%+v, want schedule %v and start %v", attempt, got, scheduled, wantStart)
+				}
+				if attempt == 1 && (got.hasError || got.last != nil) || attempt == 2 && (!got.hasError || !errors.Is(got.last, sentinel)) {
+					t.Errorf("run %d previous error=%v, present=%t", attempt, got.last, got.hasError)
+				}
+			case <-time.After(5 * time.Second):
+				t.Fatalf("attempt %d did not finish", attempt)
+			}
+		}
+	})
+}
+
+func TestRetryPolicyConstructorsRespectBackoffLimits(t *testing.T) {
+	base, capDelay := time.Second, 5*time.Second
+	fixed := RetryFixed(4, base)
+	if fixed.Kind != "fixed" || fixed.MaxAttempts != 4 || fixed.BaseDelay != base {
+		t.Errorf("fixed policy=%+v", fixed)
+	}
+	exponential := RetryExponential(8, base, capDelay)
+	if exponential.Kind != "exponential" || exponential.MaxAttempts != 8 || exponential.BaseDelay != base || exponential.MaxBackoff != capDelay {
+		t.Errorf("exponential policy=%+v", exponential)
+	}
+	for _, tc := range []struct {
+		attempt int
+		want    time.Duration
+	}{{1, base}, {2, 2 * base}, {3, 4 * base}, {4, capDelay}, {1000, capDelay}} {
+		if got := fixed.Backoff(tc.attempt); got != base {
+			t.Errorf("fixed backoff(%d)=%v", tc.attempt, got)
+		}
+		if got := exponential.Backoff(tc.attempt); got != tc.want {
+			t.Errorf("exponential backoff(%d)=%v, want %v", tc.attempt, got, tc.want)
+		}
+	}
+}

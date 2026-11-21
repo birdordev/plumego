@@ -159,7 +159,7 @@ func (ps *InProcBroker) ReadinessCheck() error {
 // Returns nil if alive, error otherwise.
 func (ps *InProcBroker) LivenessCheck() error {
 	if ps.closed.Load() {
-		return newErr(ErrCodeClosed, "readiness", "", "broker is closed", nil)
+		return newErr(ErrCodeClosed, "liveness", "", "broker is closed", nil)
 	}
 
 	// Check if worker pool is responsive

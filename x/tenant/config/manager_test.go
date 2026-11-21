@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"database/sql/driver"
+	"encoding/json"
 	"errors"
 	"io"
 	"strings"
@@ -663,5 +664,22 @@ func TestConfigProvidersReturnOwnedSections(t *testing.T) {
 	}
 	if _, err := manager.PolicyConfig(t.Context(), "missing"); !errors.Is(err, tenant.ErrTenantNotFound) {
 		t.Errorf("missing policy = %v", err)
+	}
+}
+
+func TestListTenantsReportsInvalidConfigAndClosesRows(t *testing.T) {
+	conn := &snapshotConnector{metadata: "{"}
+	db := sql.OpenDB(conn)
+	defer db.Close()
+	m := NewDBTenantConfigManager(db)
+	items, err := m.ListTenants(t.Context(), 10, 0)
+	var syntax *json.SyntaxError
+	if len(items) != 0 || !errors.As(err, &syntax) || conn.rowsClosed != 1 {
+		t.Errorf("ListTenants=%+v, %v, closed=%d", items, err, conn.rowsClosed)
+	}
+	conn.metadata = `{"region":"valid"}`
+	items, err = m.ListTenants(t.Context(), 10, 0)
+	if err != nil || len(items) != 1 || items[0].Metadata["region"] != "valid" || conn.rowsClosed != 2 {
+		t.Errorf("next ListTenants=%+v, %v, closed=%d", items, err, conn.rowsClosed)
 	}
 }

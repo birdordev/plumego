@@ -232,3 +232,36 @@ func TestManagerListInstalledWorkflowsPreservesPartialResults(t *testing.T) {
 		}
 	}
 }
+
+func TestManagerWorkflowInstallLifecycle(t *testing.T) {
+	m := newTestManager(t)
+	ctx := t.Context()
+	template := &WorkflowTemplate{ID: "workflow-fixture", Name: "Fixture", Version: "1.0.0", Author: "tester",
+		Description: "Fixture workflow for the install lifecycle", Category: WorkflowCategoryGeneral, License: "MIT",
+		Steps: []StepTemplate{{Name: "first", Type: "sequential", AgentID: "test-agent"}},
+	}
+	if err := m.PublishWorkflow(ctx, template); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.InstallWorkflow(ctx, template.ID, template.Version); err != nil {
+		t.Fatal(err)
+	}
+	if !m.IsWorkflowInstalled(template.ID, template.Version) {
+		t.Fatal("workflow was not installed")
+	}
+	if got, err := m.ListInstalledWorkflows(); err != nil || len(got) != 1 || got[0].ID != template.ID || got[0].Version != template.Version {
+		t.Fatalf("installed=%+v, %v", got, err)
+	}
+	if err := m.InstallWorkflow(ctx, template.ID, template.Version); err == nil {
+		t.Error("duplicate install succeeded")
+	}
+	if err := m.UninstallWorkflow(ctx, template.ID, template.Version); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := m.ListInstalledWorkflows(); err != nil || len(got) != 0 || m.IsWorkflowInstalled(template.ID, template.Version) {
+		t.Errorf("after uninstall=%+v, %v", got, err)
+	}
+	if got, err := m.GetWorkflow(ctx, template.ID, template.Version); err != nil || got == nil || got.Version != template.Version {
+		t.Errorf("registry after uninstall=%+v, %v", got, err)
+	}
+}

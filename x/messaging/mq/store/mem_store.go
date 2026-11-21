@@ -2,6 +2,8 @@ package store
 
 import (
 	"context"
+	"maps"
+	"slices"
 	"sort"
 	"sync"
 	"time"
@@ -36,6 +38,7 @@ func NewMemory(cfg MemConfig) *MemStore {
 
 var _ mq.TaskStore = (*MemStore)(nil)
 
+// Insert stores a task with its own payload and metadata.
 func (m *MemStore) Insert(_ context.Context, task mq.Task) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -51,10 +54,11 @@ func (m *MemStore) Insert(_ context.Context, task mq.Task) error {
 		m.dedupe[key] = task.ID
 	}
 
-	m.tasks[task.ID] = &memRecord{task: task, status: mq.TaskStatusQueued}
+	m.tasks[task.ID] = &memRecord{task: cloneTask(task), status: mq.TaskStatusQueued}
 	return nil
 }
 
+// Reserve returns leased tasks with caller-owned payloads and metadata.
 func (m *MemStore) Reserve(_ context.Context, opts mq.ReserveOptions) ([]mq.Task, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -109,10 +113,16 @@ func (m *MemStore) Reserve(_ context.Context, opts mq.ReserveOptions) ([]mq.Task
 		rec.task.LeaseUntil = opts.Now.Add(opts.Lease)
 		rec.task.Attempts++
 		rec.task.UpdatedAt = opts.Now
-		selected = append(selected, rec.task)
+		selected = append(selected, cloneTask(rec.task))
 	}
 
 	return selected, nil
+}
+
+func cloneTask(task mq.Task) mq.Task {
+	task.Payload = slices.Clone(task.Payload)
+	task.Meta = maps.Clone(task.Meta)
+	return task
 }
 
 func (m *MemStore) Ack(_ context.Context, taskID, consumerID string, now time.Time) error {
@@ -189,6 +199,9 @@ func (m *MemStore) ExtendLease(_ context.Context, taskID, consumerID string, lea
 		return mq.ErrLeaseLost
 	}
 
+	if lease <= 0 {
+		lease = mq.DefaultLeaseDuration
+	}
 	rec.task.LeaseUntil = now.Add(lease)
 	rec.task.UpdatedAt = now
 	return nil

@@ -392,3 +392,107 @@ func TestSQLStoreExtendLeaseContract(t *testing.T) {
 		})
 	}
 }
+
+type replayTestConn struct {
+	attemptConn
+	leaseTestTx
+	total, affected        int64
+	execErr, commitErr     error
+	selectArgs, updateArgs []driver.NamedValue
+	updateSQL              string
+}
+
+func (c *replayTestConn) BeginTx(context.Context, driver.TxOptions) (driver.Tx, error) { return c, nil }
+func (c *replayTestConn) Commit() error {
+	c.commits++
+	return c.commitErr
+}
+func (c *replayTestConn) QueryContext(_ context.Context, query string, args []driver.NamedValue) (driver.Rows, error) {
+	switch {
+	case strings.HasPrefix(query, "SELECT COUNT"):
+		return &attemptRows{cols: []string{"count"}, values: [][]driver.Value{{c.total}}}, nil
+	case strings.HasPrefix(query, "SELECT id"):
+		c.selectArgs = slices.Clone(args)
+		return &attemptRows{cols: []string{"id"}, values: [][]driver.Value{{"oldest"}}}, nil
+	default:
+		return nil, errors.New("unexpected replay query")
+	}
+}
+func (c *replayTestConn) ExecContext(_ context.Context, query string, args []driver.NamedValue) (driver.Result, error) {
+	c.updateSQL = query
+	c.updateArgs = slices.Clone(args)
+	if c.execErr != nil {
+		return nil, c.execErr
+	}
+	return attemptResult{rows: c.affected}, nil
+}
+
+type replayTestConnector struct {
+	driver.Connector
+	conn *replayTestConn
+}
+
+func (c replayTestConnector) Connect(context.Context) (driver.Conn, error) { return c.conn, nil }
+
+func TestSQLStoreReplayDLQTransaction(t *testing.T) {
+	now := time.Unix(123, 0).UTC()
+	available := now.Add(time.Minute)
+	sentinel := errors.New("replay driver failed")
+	for _, tc := range []struct {
+		name               string
+		total, affected    int64
+		max                int
+		execErr, commitErr error
+		want               ReplayResult
+		commits, rollbacks int
+	}{
+		{name: "empty", commits: 1},
+		{name: "limited", total: 3, affected: 1, max: 1, want: ReplayResult{Replayed: 1, Remaining: 2}, commits: 1},
+		{name: "all", total: 3, affected: 3, want: ReplayResult{Replayed: 3}, commits: 1},
+		{name: "exec failure", total: 3, max: 1, execErr: sentinel, rollbacks: 1},
+		{name: "commit failure", total: 3, affected: 3, commitErr: sentinel, commits: 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			conn := &replayTestConn{total: tc.total, affected: tc.affected, execErr: tc.execErr, commitErr: tc.commitErr}
+			db := sql.OpenDB(replayTestConnector{conn: conn})
+			defer db.Close()
+			got, err := NewSQL(db, DefaultSQLConfig()).ReplayDLQ(t.Context(), ReplayOptions{Now: now, AvailableAt: available, Max: tc.max, ResetAttempts: true})
+			if got != tc.want {
+				t.Errorf("ReplayDLQ=%+v, %v", got, err)
+			}
+			if tc.execErr != nil || tc.commitErr != nil {
+				if !errors.Is(err, sentinel) {
+					t.Errorf("driver error lost: %v", err)
+				}
+			} else if err != nil {
+				t.Errorf("unexpected replay error: %v", err)
+			}
+			if conn.commits != tc.commits || conn.rollbacks != tc.rollbacks || db.Stats().InUse != 0 {
+				t.Errorf("commits=%d rollbacks=%d database=%+v", conn.commits, conn.rollbacks, db.Stats())
+			}
+			if tc.total == 0 {
+				if conn.updateSQL != "" {
+					t.Errorf("empty replay issued %q", conn.updateSQL)
+				}
+				return
+			}
+			wantArgs := []any{string(mq.TaskStatusQueued), available, now, int64(0), string(mq.TaskStatusDead)}
+			if tc.max != 0 {
+				wantArgs[4] = "oldest"
+				wantSelect := []driver.NamedValue{{Ordinal: 1, Value: string(mq.TaskStatusDead)}, {Ordinal: 2, Value: int64(1)}}
+				if !slices.Equal(conn.selectArgs, wantSelect) || !strings.Contains(conn.updateSQL, "WHERE id IN") {
+					t.Errorf("unexpected limited replay: %v %q", conn.selectArgs, conn.updateSQL)
+				}
+			} else if len(conn.selectArgs) != 0 || !strings.Contains(conn.updateSQL, "WHERE status =") {
+				t.Errorf("unexpected full replay: %v %q", conn.selectArgs, conn.updateSQL)
+			}
+			gotArgs := make([]any, len(conn.updateArgs))
+			for i, arg := range conn.updateArgs {
+				gotArgs[i] = arg.Value
+			}
+			if !slices.Equal(gotArgs, wantArgs) {
+				t.Errorf("update args=%v, want %v", gotArgs, wantArgs)
+			}
+		})
+	}
+}
