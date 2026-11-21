@@ -292,3 +292,30 @@ func TestDialClientTimeoutEndsAtUpgrade(t *testing.T) {
 		t.Fatalf("read = %q, %v", payload, err)
 	}
 }
+
+type partialRWCStub struct {
+	rwcStub
+	reads int
+	err   error
+}
+
+func (s *partialRWCStub) Read(p []byte) (int, error) {
+	s.reads++
+	return copy(p, "data"), s.err
+}
+
+func TestRWCConnReadAfterCloseDoesNotDelegate(t *testing.T) {
+	sentinel := errors.New("partial read")
+	stream := &partialRWCStub{err: sentinel}
+	conn := newRWCConn(stream)
+	buffer := make([]byte, 8)
+	if n, err := conn.Read(buffer); n != 4 || string(buffer[:4]) != "data" || !errors.Is(err, sentinel) {
+		t.Errorf("Read = %d, %v, buffer=%q", n, err, buffer)
+	}
+	if err := conn.Close(); err != nil || !stream.closed {
+		t.Fatalf("Close = %v, underlying closed = %t", err, stream.closed)
+	}
+	if n, err := conn.Read(buffer); n != 0 || !errors.Is(err, errClosedDialConn) || stream.reads != 1 {
+		t.Errorf("closed Read = %d, %v, underlying reads=%d", n, err, stream.reads)
+	}
+}

@@ -372,3 +372,17 @@ func TestGenerateIncludesRootRoute(t *testing.T) {
 		t.Errorf("unexpected root operation: %+v", root.Get)
 	}
 }
+
+func TestGeneratorDefaultInfoMatchesNilReceiver(t *testing.T) {
+	routes := []router.RouteInfo{{Method: http.MethodGet, Path: "/items/:id"}}
+	var absent *Generator
+	defaultDoc := New().Generate(routes, nil)
+	nilDoc := absent.Generate(routes, nil)
+	if defaultDoc.Info != (Info{Title: "Plumego API", Version: "0.0.0"}) || nilDoc.Info != defaultDoc.Info ||
+		nilDoc.OpenAPI != defaultDoc.OpenAPI || nilDoc.Paths["/items/{id}"].Get == nil {
+		t.Errorf("default document = %+v, nil receiver document = %+v", defaultDoc, nilDoc)
+	}
+	if got := (new(Generator)).Generate(routes, nil).Info; got != (Info{}) {
+		t.Errorf("zero generator info = %+v", got)
+	}
+}

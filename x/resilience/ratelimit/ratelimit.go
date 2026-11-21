@@ -32,7 +32,8 @@ type TokenBucket struct {
 	mu        sync.Mutex
 	rate      float64   // tokens replenished per second
 	burst     int64     // maximum token capacity
-	tokens    float64   // current available tokens
+	tokens    int64     // whole-token balance
+	fraction  float64   // replenishment below one token
 	lastCheck time.Time // time of last token replenishment
 }
 
@@ -43,7 +44,7 @@ func New(rate float64, burst int64) *TokenBucket {
 	return &TokenBucket{
 		rate:      finiteRate(rate),
 		burst:     burst,
-		tokens:    float64(burst),
+		tokens:    burst,
 		lastCheck: time.Now(),
 	}
 }
@@ -67,10 +68,10 @@ func (b *TokenBucket) AllowN(n int64) bool {
 // take consumes tokens with b.mu held.
 func (b *TokenBucket) take(n int64) bool {
 	b.replenish(time.Now())
-	if n > b.burst || b.tokens < float64(n) {
+	if n > b.burst || b.tokens < n {
 		return false
 	}
-	b.tokens -= float64(n)
+	b.tokens -= n
 	return true
 }
 
@@ -79,10 +80,7 @@ func (b *TokenBucket) Remaining() int64 {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.replenish(time.Now())
-	if b.tokens <= 0 {
-		return 0
-	}
-	return int64(b.tokens)
+	return max(0, b.tokens)
 }
 
 // Wait blocks until one token is available or ctx is cancelled.
@@ -139,8 +137,9 @@ func (b *TokenBucket) updateRate(rate float64, burst int64, now time.Time) {
 	b.rate = finiteRate(rate)
 	if burst > 0 {
 		b.burst = burst
-		if b.tokens > float64(burst) {
-			b.tokens = float64(burst)
+		if b.tokens >= burst {
+			b.tokens = burst
+			b.fraction = 0
 		}
 	}
 }
@@ -155,19 +154,26 @@ func finiteRate(rate float64) float64 {
 // replenish adds tokens for elapsed time. Must be called with b.mu held.
 func (b *TokenBucket) replenish(now time.Time) {
 	elapsed := now.Sub(b.lastCheck).Seconds()
-	if b.rate <= 0 {
-		if elapsed > 0 {
-			b.lastCheck = now
-		}
+	if elapsed <= 0 {
 		return
 	}
-	if elapsed > 0 {
-		b.tokens += elapsed * b.rate
-		if b.tokens > float64(b.burst) {
-			b.tokens = float64(b.burst)
-		}
-		b.lastCheck = now
+	b.lastCheck = now
+	if b.rate <= 0 || b.tokens == b.burst {
+		return
 	}
+
+	credit := b.fraction + elapsed*b.rate
+	// Unsigned subtraction can represent the full distance between two int64
+	// balances, including a negative initial balance after a burst increase.
+	room := uint64(b.burst) - uint64(b.tokens)
+	if credit >= 0x1p64 || uint64(credit) >= room {
+		b.tokens = b.burst
+		b.fraction = 0
+		return
+	}
+	whole := uint64(credit)
+	b.tokens = int64(uint64(b.tokens) + whole)
+	b.fraction = credit - float64(whole)
 }
 
 // KeyedBuckets manages per-key token buckets with shared rate and burst settings.

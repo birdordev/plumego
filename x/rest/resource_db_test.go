@@ -648,3 +648,28 @@ func TestParamExtractorUsesRouteContext(t *testing.T) {
 		t.Errorf("response=%d", out.Code)
 	}
 }
+
+func TestParamExtractorReadsOnlyQueryValues(t *testing.T) {
+	r := router.NewRouter()
+	p := &ParamExtractor{}
+	handler := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		if got := p.GetParam(req, "id"); got != "route" {
+			t.Errorf("path id = %q", got)
+		}
+		if got := p.GetQueryParam(req, "id"); got != "query value" {
+			t.Errorf("query id = %q", got)
+		}
+		if got := p.GetQueryParam(req, "missing"); got != "" {
+			t.Errorf("missing query = %q", got)
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
+	if err := r.AddRoute(http.MethodGet, "/items/:id", handler); err != nil {
+		t.Fatal(err)
+	}
+	out := httptest.NewRecorder()
+	r.ServeHTTP(out, httptest.NewRequest(http.MethodGet, "/items/route?id=query%20value&id=second", nil))
+	if out.Code != http.StatusNoContent {
+		t.Errorf("response status = %d", out.Code)
+	}
+}

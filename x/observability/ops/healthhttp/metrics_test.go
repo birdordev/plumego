@@ -1,6 +1,8 @@
 package healthhttp
 
 import (
+	"context"
+	"errors"
 	"net/http/httptest"
 	"testing"
 	"time"
@@ -86,5 +88,42 @@ func TestTrackerResetPreservesManagerReadiness(t *testing.T) {
 	tracker.CheckAllComponents(t.Context())
 	if got := tracker.GetMetrics().CheckCount; got != 1 || len(tracker.GetHealthHistory()) == 0 {
 		t.Errorf("new check count = %d, history = %d", got, len(tracker.GetHealthHistory()))
+	}
+}
+
+func TestTrackerSingleCheckRecordsOwnedHistory(t *testing.T) {
+	manager, err := NewManager(Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tracker := NewTracker(manager)
+	t.Cleanup(func() { _ = tracker.Close() })
+	sentinel := errors.New("test component unavailable")
+	var cause error
+	if err := tracker.RegisterComponent(functionChecker{"db", func(context.Context) error { return cause }}); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []error{nil, sentinel} {
+		cause = want
+		if err := tracker.CheckComponent(t.Context(), "db"); !errors.Is(err, want) {
+			t.Errorf("check = %v, want %v", err, want)
+		}
+	}
+	if err := tracker.CheckComponent(t.Context(), "missing"); err == nil {
+		t.Error("unknown component was accepted")
+	}
+	if _, ok := tracker.GetComponentMetrics("missing"); ok {
+		t.Error("unknown component has metrics")
+	}
+	got, ok := tracker.GetComponentMetrics("db")
+	if !ok || got.CheckCount != 2 || got.SuccessCount != 1 || got.FailureCount != 1 ||
+		len(got.RecentHistory) != 2 || !got.RecentHistory[0].Success || got.RecentHistory[1].Success {
+		t.Fatalf("component metrics = %+v", got)
+	}
+	got.RecentHistory[0].Success = false
+	got.CheckCount = 0
+	again, ok := tracker.GetComponentMetrics("db")
+	if !ok || again.CheckCount != 2 || len(again.RecentHistory) != 2 || !again.RecentHistory[0].Success {
+		t.Errorf("history was modified through returned metrics: %+v", again)
 	}
 }

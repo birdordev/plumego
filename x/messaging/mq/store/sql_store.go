@@ -139,6 +139,7 @@ func (s *SQLStore) Reserve(ctx context.Context, opts mq.ReserveOptions) ([]mq.Ta
 	return tasks, err
 }
 
+// Ack rolls back any open transaction before returning a lease error.
 func (s *SQLStore) Ack(ctx context.Context, taskID, consumerID string, now time.Time) error {
 	if s == nil || s.db == nil {
 		return mq.ErrNotInitialized
@@ -167,11 +168,7 @@ func (s *SQLStore) Ack(ctx context.Context, taskID, consumerID string, now time.
 	if err != nil {
 		return err
 	}
-	defer func() {
-		if err != nil {
-			_ = tx.Rollback()
-		}
-	}()
+	defer func() { _ = tx.Rollback() }()
 
 	query, args := s.buildAck(taskID, consumerID, now)
 	res, err := tx.ExecContext(ctx, query, args...)
@@ -191,6 +188,7 @@ func (s *SQLStore) Ack(ctx context.Context, taskID, consumerID string, now time.
 	return tx.Commit()
 }
 
+// Release rolls back any open transaction before returning a lease error.
 func (s *SQLStore) Release(ctx context.Context, taskID, consumerID string, opts mq.ReleaseOptions) error {
 	if s == nil || s.db == nil {
 		return mq.ErrNotInitialized
@@ -222,11 +220,7 @@ func (s *SQLStore) Release(ctx context.Context, taskID, consumerID string, opts 
 	if err != nil {
 		return err
 	}
-	defer func() {
-		if err != nil {
-			_ = tx.Rollback()
-		}
-	}()
+	defer func() { _ = tx.Rollback() }()
 
 	query, args := s.buildRelease(taskID, consumerID, opts)
 	res, err := tx.ExecContext(ctx, query, args...)
@@ -246,6 +240,7 @@ func (s *SQLStore) Release(ctx context.Context, taskID, consumerID string, opts 
 	return tx.Commit()
 }
 
+// MoveToDLQ rolls back any open transaction before returning a lease error.
 func (s *SQLStore) MoveToDLQ(ctx context.Context, taskID, consumerID, reason string, now time.Time) error {
 	if s == nil || s.db == nil {
 		return mq.ErrNotInitialized
@@ -258,11 +253,7 @@ func (s *SQLStore) MoveToDLQ(ctx context.Context, taskID, consumerID, reason str
 	if err != nil {
 		return err
 	}
-	defer func() {
-		if err != nil {
-			_ = tx.Rollback()
-		}
-	}()
+	defer func() { _ = tx.Rollback() }()
 
 	task, err := s.selectForDLQ(ctx, tx, taskID, consumerID, now)
 	if err != nil {

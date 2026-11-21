@@ -278,13 +278,15 @@ func (e *Etcd) Health(ctx context.Context, serviceID string, healthy bool) error
 			lastErr = err
 			continue
 		}
-		defer func() { _ = resp.Body.Close() }()
 		if resp.StatusCode != http.StatusOK {
+			_ = resp.Body.Close()
 			lastErr = fmt.Errorf("etcd returned status %d", resp.StatusCode)
 			continue
 		}
 		var result etcdRangeResponse
-		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		err = json.NewDecoder(resp.Body).Decode(&result)
+		_ = resp.Body.Close()
+		if err != nil {
 			lastErr = err
 			continue
 		}

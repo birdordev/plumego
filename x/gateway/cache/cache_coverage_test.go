@@ -3,6 +3,7 @@ package cache
 import (
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -593,5 +594,34 @@ func TestMemoryStoreDeleteReleasesOneSlot(t *testing.T) {
 	}
 	if got := s.Stats(); got.Items != 2 || got.Size != 7 || got.Evictions != 0 {
 		t.Errorf("after refill=%+v", got)
+	}
+}
+
+func TestMemoryStoreKeysAndHitRate(t *testing.T) {
+	s := NewMemoryStore(2)
+	if s.HitRate() != 0 || len(s.Keys()) != 0 {
+		t.Fatal("new store has keys or hits")
+	}
+	s.Set("a", &CachedResponse{Body: []byte("a")}, time.Hour)
+	s.Set("b", &CachedResponse{Body: []byte("b")}, time.Hour)
+	if _, ok := s.Get("a"); !ok {
+		t.Fatal("expected a hit")
+	}
+	if _, ok := s.Get("missing"); ok {
+		t.Fatal("expected a miss")
+	}
+	keys := s.Keys()
+	slices.Sort(keys)
+	if !slices.Equal(keys, []string{"a", "b"}) || s.HitRate() != 0.5 {
+		t.Fatalf("keys = %v, hit rate = %v", keys, s.HitRate())
+	}
+	keys[0] = "changed"
+	s.Delete("b")
+	if got := s.Keys(); !slices.Equal(got, []string{"a"}) {
+		t.Errorf("keys after delete = %v", got)
+	}
+	s.Clear()
+	if len(s.Keys()) != 0 || s.HitRate() != 0.5 {
+		t.Errorf("after Clear: keys = %v, hit rate = %v", s.Keys(), s.HitRate())
 	}
 }

@@ -2,6 +2,7 @@ package sharding
 
 import (
 	"errors"
+	"slices"
 	"testing"
 	"time"
 )
@@ -832,5 +833,43 @@ func TestRangeStrategyChecksQueryTypesBeforeComparing(t *testing.T) {
 	}
 	if shards, err := strategy.ShardRange(int64(15), int64(1), 2); err != nil || len(shards) != 2 || shards[0] != 0 || shards[1] != 1 {
 		t.Errorf("ShardRange with reversed bounds = %v, %v", shards, err)
+	}
+}
+
+func TestListStrategySnapshotAndDefaultRoute(t *testing.T) {
+	s := NewListStrategyWithDefault(map[any]int{"explicit": 1, "other": 0}, 0)
+	snapshot := s.GetMapping()
+	snapshot["explicit"] = 2
+	delete(snapshot, "other")
+	s.SetDefaultShard(2)
+	if got := s.GetDefaultShard(); got != 2 {
+		t.Errorf("default shard = %d", got)
+	}
+	for key, want := range map[string]int{"explicit": 1, "other": 0, "unmapped": 2} {
+		if got, err := s.Shard(key, 3); err != nil || got != want {
+			t.Errorf("Shard(%s) = %d, %v; want %d", key, got, err, want)
+		}
+	}
+	s.SetDefaultShard(-1)
+	if got := s.GetDefaultShard(); got != -1 {
+		t.Errorf("disabled default = %d", got)
+	}
+	if _, err := s.Shard("unmapped", 3); !errors.Is(err, ErrNoMatchingList) {
+		t.Errorf("unmapped error = %v", err)
+	}
+	if got, err := s.Shard("explicit", 3); err != nil || got != 1 {
+		t.Errorf("explicit shard = %d, %v", got, err)
+	}
+}
+
+func TestListStrategyShardRangeFansOut(t *testing.T) {
+	s := NewListStrategy(map[any]int{"begin": 1, "end": 1})
+	if got, err := s.ShardRange("begin", "end", 3); err != nil || !slices.Equal(got, []int{0, 1, 2}) {
+		t.Errorf("range = %v, %v", got, err)
+	}
+	for _, n := range []int{0, -1} {
+		if got, err := s.ShardRange("begin", "end", n); len(got) != 0 || !errors.Is(err, ErrInvalidNumShards) {
+			t.Errorf("range with %d shards = %v, %v", n, got, err)
+		}
 	}
 }

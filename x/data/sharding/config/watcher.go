@@ -35,7 +35,7 @@ func WithWatchInterval(interval time.Duration) WatcherOption {
 	}
 }
 
-// WithOnChange adds a callback function to be called when configuration changes
+// WithOnChange registers a callback with the same execution rules as AddOnChange.
 func WithOnChange(fn func(*ShardingConfig)) WatcherOption {
 	return func(w *ConfigWatcher) {
 		w.onChange = append(w.onChange, fn)
@@ -78,7 +78,7 @@ func NewConfigWatcher(path string, opts ...WatcherOption) (*ConfigWatcher, error
 }
 
 // Start starts watching the configuration file for changes.
-// It must be called at most once. Stop will block until Start returns.
+// It must be called at most once. Stop waits for the watch loop to exit.
 func (w *ConfigWatcher) Start(ctx context.Context) error {
 	if w.stopped.Load() {
 		return fmt.Errorf("config watcher has been stopped")
@@ -106,7 +106,8 @@ func (w *ConfigWatcher) Start(ctx context.Context) error {
 }
 
 // Stop signals the watcher to stop and waits for it to exit.
-// It is a no-op if Start was never called.
+// Stop is terminal, including before Start, and may be called repeatedly.
+// Call it outside callbacks invoked by the watch loop.
 func (w *ConfigWatcher) Stop() {
 	w.stopped.Store(true)
 	w.stopOnce.Do(func() {
@@ -179,6 +180,9 @@ func (w *ConfigWatcher) Reload() error {
 }
 
 // AddOnChange registers a callback that receives its own configuration snapshot.
+// Callbacks run synchronously in the watch loop or the caller of Reload, outside
+// the watcher lock. A watch-loop callback that needs to stop watching can signal
+// cancellation and return so the loop can exit.
 func (w *ConfigWatcher) AddOnChange(fn func(*ShardingConfig)) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -207,7 +211,7 @@ func (r *ConfigReloader) Start(ctx context.Context) error {
 	return r.watcher.Start(ctx)
 }
 
-// Stop stops the configuration reloader
+// Stop stops the configuration reloader permanently. See ConfigWatcher.Stop.
 func (r *ConfigReloader) Stop() {
 	r.watcher.Stop()
 }
@@ -217,7 +221,7 @@ func (r *ConfigReloader) Get() *ShardingConfig {
 	return r.watcher.Get()
 }
 
-// OnChange registers a callback for configuration changes
+// OnChange registers a callback for configuration changes. See ConfigWatcher.AddOnChange.
 func (r *ConfigReloader) OnChange(fn func(*ShardingConfig)) {
 	r.watcher.AddOnChange(fn)
 }

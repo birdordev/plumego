@@ -440,3 +440,44 @@ func TestGetRuntimeInfo(t *testing.T) {
 		t.Fatalf("expected positive goroutine count, got %d", info.NumGoroutine)
 	}
 }
+
+func TestRuntimeInfoHandlerResponseAndNoStore(t *testing.T) {
+	out := httptest.NewRecorder()
+	RuntimeInfoHandler().ServeHTTP(out, httptest.NewRequest(http.MethodGet, "/runtime", nil))
+	if out.Code != http.StatusOK || out.Header().Get("Cache-Control") != "no-cache, no-store, must-revalidate" {
+		t.Fatalf("response status = %d, cache control = %q", out.Code, out.Header().Get("Cache-Control"))
+	}
+	info := decodeHealthHTTPData[RuntimeInfo](t, out)
+	if info.GoVersion != runtime.Version() || info.NumCPU != runtime.NumCPU() ||
+		info.GOARCH != runtime.GOARCH || info.GOOS != runtime.GOOS || info.NumGoroutine < 1 {
+		t.Errorf("runtime info = %+v", info)
+	}
+	fields := decodeHealthHTTPData[map[string]json.RawMessage](t, out)
+	for _, field := range []string{"go_version", "num_goroutine", "num_cpu", "goarch", "goos", "mem_alloc_bytes", "mem_sys_bytes", "num_gc"} {
+		if _, ok := fields[field]; !ok {
+			t.Errorf("missing runtime field %q", field)
+		}
+	}
+	for _, field := range []string{"config", "readiness", "health", "components", "build_info", "timestamp", "runtime"} {
+		if _, ok := fields[field]; ok {
+			t.Errorf("unexpected diagnostics field %q", field)
+		}
+	}
+}
+
+func TestBuildInfoHandlerEnvelope(t *testing.T) {
+	out := httptest.NewRecorder()
+	BuildInfoHandler().ServeHTTP(out, httptest.NewRequest(http.MethodGet, "/build", nil))
+	if out.Code != http.StatusOK {
+		t.Fatalf("status = %d", out.Code)
+	}
+	if got, want := decodeHealthHTTPData[BuildInfo](t, out), GetBuildInfo(); got != want {
+		t.Errorf("build info = %+v, want %+v", got, want)
+	}
+	fields := decodeHealthHTTPData[map[string]json.RawMessage](t, out)
+	for _, field := range []string{"version", "commit", "buildTime"} {
+		if _, ok := fields[field]; !ok {
+			t.Errorf("missing build field %q", field)
+		}
+	}
+}

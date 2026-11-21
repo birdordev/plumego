@@ -274,3 +274,31 @@ func TestKeyedWaitDoesNotAllocateCanceledBucket(t *testing.T) {
 		t.Fatalf("canceled existing Wait = %v, remaining = %d", err, buckets.Remaining("active"))
 	}
 }
+
+func TestTokenBucketPreservesWholeTokensAtLargeBurst(t *testing.T) {
+	b := ratelimit.New(0, math.MaxInt64)
+	if !b.AllowN(math.MaxInt64-1) || b.Remaining() != 1 || !b.Allow() || b.Allow() {
+		t.Fatal("large debit did not leave exactly one token")
+	}
+
+	b = ratelimit.New(0, math.MaxInt64)
+	b.UpdateRate(0, math.MaxInt64-1)
+	if b.AllowN(math.MaxInt64) || !b.AllowN(math.MaxInt64-2) || b.Remaining() != 1 {
+		t.Fatal("burst update did not preserve exact whole-token accounting")
+	}
+
+	synctest.Test(t, func(t *testing.T) {
+		b := ratelimit.New(0.5, 1)
+		if !b.Allow() {
+			t.Fatal("initial token unavailable")
+		}
+		time.Sleep(time.Second)
+		if b.Allow() {
+			t.Fatal("admitted a partial token")
+		}
+		time.Sleep(time.Second)
+		if !b.Allow() || b.Allow() {
+			t.Fatal("two half-token refill intervals did not yield exactly one token")
+		}
+	})
+}

@@ -2,12 +2,14 @@ package config
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 )
 
@@ -698,5 +700,63 @@ func TestConfigWatcherRejectsNonpositiveInterval(t *testing.T) {
 		if err := <-done; err != nil && err.Error() != "config watcher has been stopped" {
 			t.Errorf("Start returned %v", err)
 		}
+	}
+}
+
+func TestConfigReloaderStartStopLifecycle(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	data := []byte(`{
+		"shards": [{"name": "shard0", "primary": {"driver": "mysql", "host": "localhost", "database": "test"}}],
+		"sharding_rules": [{"table_name": "users", "shard_key_column": "id", "strategy": "mod"}],
+		"cross_shard_policy": "deny",
+		"log_level": "info"
+	}`)
+	if err := os.WriteFile(path, data, 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	synctest.Test(t, func(t *testing.T) {
+		reloader, err := NewConfigReloader(path, WithWatchInterval(time.Hour))
+		if err != nil {
+			t.Fatal(err)
+		}
+		ctx, cancel := context.WithCancel(t.Context())
+		defer cancel()
+		done := make(chan error, 1)
+		go func() { done <- reloader.Start(ctx) }()
+		synctest.Wait()
+		reloader.Stop()
+		select {
+		case err := <-done:
+			if err != nil {
+				t.Errorf("Start after Stop = %v", err)
+			}
+		case <-time.After(time.Second):
+			t.Fatal("Start did not exit")
+		}
+		reloader.Stop()
+		if err := reloader.Start(ctx); err == nil || !strings.Contains(err.Error(), "stopped") {
+			t.Errorf("restart = %v", err)
+		}
+	})
+
+	reloader, err := NewConfigReloader(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	if err := reloader.Start(ctx); !errors.Is(err, context.Canceled) {
+		t.Errorf("pre-canceled Start = %v", err)
+	}
+	reloader.Stop()
+
+	reloader, err = NewConfigReloader(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reloader.Stop()
+	if err := reloader.Start(ctx); err == nil || !strings.Contains(err.Error(), "stopped") {
+		t.Errorf("Start after early Stop = %v", err)
 	}
 }

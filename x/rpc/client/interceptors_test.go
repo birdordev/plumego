@@ -140,3 +140,25 @@ func TestTraceMetadataOmitsIncompleteCarriers(t *testing.T) {
 		t.Errorf("valid trace metadata=%v", got)
 	}
 }
+
+func TestRetryInterceptorNormalizesNonpositiveAttempts(t *testing.T) {
+	sentinel := &codedError{code: "Unavailable"}
+	for _, limit := range []int{0, -2} {
+		t.Run(fmt.Sprint(limit), func(t *testing.T) {
+			retry := RetryInterceptor(limit, "Unavailable")
+			calls := 0
+			invoke := func(context.Context, string, any, any, ...CallOption) error {
+				calls++
+				return sentinel
+			}
+			if err := retry(t.Context(), "Read", nil, nil, invoke); err != sentinel || errorCode(err) != "Unavailable" || calls != 1 {
+				t.Errorf("attempts = %d, error = %v", calls, err)
+			}
+			ctx, cancel := context.WithCancel(t.Context())
+			cancel()
+			if err := retry(ctx, "Read", nil, nil, invoke); !errors.Is(err, context.Canceled) || calls != 1 {
+				t.Errorf("pre-canceled call returned %v, total invocations %d", err, calls)
+			}
+		})
+	}
+}

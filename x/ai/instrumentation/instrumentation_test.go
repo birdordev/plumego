@@ -490,3 +490,63 @@ func TestInstrumentedCountTokensRecordsOnlySuccessfulCounts(t *testing.T) {
 		t.Errorf("calls=%d timing=%+v count=%+v", calls, timing, count)
 	}
 }
+
+type mutationTestCache struct {
+	llmcache.Cache
+	delete func(context.Context, *llmcache.CacheKey) error
+	clear  func(context.Context) error
+}
+
+func (c mutationTestCache) Delete(ctx context.Context, key *llmcache.CacheKey) error {
+	return c.delete(ctx, key)
+}
+func (c mutationTestCache) Clear(ctx context.Context) error { return c.clear(ctx) }
+
+func TestInstrumentedCacheMutationMetrics(t *testing.T) {
+	ctx := t.Context()
+	key := &llmcache.CacheKey{Hash: "fixture"}
+	sentinel := errors.New("cache mutation failed")
+	collector := metrics.NewMemoryCollector()
+	deletes, clears := 0, 0
+	var cause error
+	cache := NewInstrumentedCache(mutationTestCache{
+		delete: func(gotCtx context.Context, gotKey *llmcache.CacheKey) error {
+			deletes++
+			if gotCtx != ctx || gotKey != key {
+				t.Error("Delete inputs changed")
+			}
+			return cause
+		},
+		clear: func(gotCtx context.Context) error {
+			clears++
+			if gotCtx != ctx {
+				t.Error("Clear context changed")
+			}
+			return cause
+		},
+	}, collector, "fixture")
+
+	for _, want := range []error{nil, sentinel} {
+		cause = want
+		if err := cache.Delete(ctx, key); !errors.Is(err, want) {
+			t.Errorf("Delete = %v, want %v", err, want)
+		}
+		if err := cache.Clear(ctx); !errors.Is(err, want) {
+			t.Errorf("Clear = %v, want %v", err, want)
+		}
+	}
+	if deletes != 2 || clears != 2 {
+		t.Errorf("delete calls = %d, clear calls = %d", deletes, clears)
+	}
+	snapshot := collector.Snapshot()
+	for _, name := range []string{"ai_cache_delete_duration_seconds", "ai_cache_clear_duration_seconds"} {
+		if got := snapshot.Histograms[name+"{cache_type=fixture}"].Count; got != 2 {
+			t.Errorf("%s count = %d, want 2", name, got)
+		}
+	}
+	for _, name := range []string{"ai_cache_deletions_total", "ai_cache_clears_total"} {
+		if got := snapshot.Counters[name+"{cache_type=fixture}"].Value; got != 1 {
+			t.Errorf("%s = %v, want 1", name, got)
+		}
+	}
+}

@@ -2,6 +2,7 @@ package llmcache
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"testing"
 	"time"
@@ -563,5 +564,43 @@ func TestMemoryCacheDeleteReleasesCapacity(t *testing.T) {
 	}
 	if got := c.Stats().Evictions; got != 0 {
 		t.Errorf("evictions = %d", got)
+	}
+}
+
+type streamTestProvider struct {
+	provider.Provider
+	stream func(context.Context, *provider.CompletionRequest) (*provider.StreamReader, error)
+}
+
+func (p streamTestProvider) CompleteStream(ctx context.Context, req *provider.CompletionRequest) (*provider.StreamReader, error) {
+	return p.stream(ctx, req)
+}
+
+func TestCachingProviderStreamBypassesCache(t *testing.T) {
+	ctx := t.Context()
+	request := &provider.CompletionRequest{Model: "fixture"}
+	sentinel := errors.New("stream unavailable")
+	reader := new(provider.StreamReader)
+	calls := 0
+	upstream := streamTestProvider{stream: func(gotCtx context.Context, gotReq *provider.CompletionRequest) (*provider.StreamReader, error) {
+		calls++
+		if gotCtx != ctx || gotReq != request {
+			t.Error("stream inputs changed")
+		}
+		if calls == 1 {
+			return reader, nil
+		}
+		return nil, sentinel
+	}}
+	// Any access to this cache fails immediately.
+	wrapped := NewCachingProvider(upstream, struct{ Cache }{})
+	if got, err := wrapped.CompleteStream(ctx, request); got != reader || err != nil {
+		t.Errorf("first stream = %p, %v", got, err)
+	}
+	if got, err := wrapped.CompleteStream(ctx, request); got != nil || !errors.Is(err, sentinel) {
+		t.Errorf("second stream = %p, %v", got, err)
+	}
+	if calls != 2 {
+		t.Errorf("provider calls = %d, want 2", calls)
 	}
 }

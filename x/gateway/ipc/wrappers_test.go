@@ -1594,3 +1594,19 @@ func TestHeartbeatClientDelegatesApplicationWriteTimeout(t *testing.T) {
 		t.Errorf("write=%d, %v, calls=%d", n, err, calls)
 	}
 }
+
+func TestFramedClientRawReadPreservesPartialResult(t *testing.T) {
+	buffer := make([]byte, 8)
+	sentinel := errors.New("partial raw read")
+	calls := 0
+	client := NewFramedClient(directionalFrameTestClient{read: func(got []byte) (int, error) {
+		calls++
+		if len(got) != len(buffer) || &got[0] != &buffer[0] {
+			t.Fatal("raw buffer changed")
+		}
+		return copy(got, "abc"), sentinel
+	}})
+	if n, err := client.Read(buffer); n != 3 || !errors.Is(err, sentinel) || string(buffer[:3]) != "abc" || calls != 1 {
+		t.Errorf("Read = %d, %v, buffer = %q, calls = %d", n, err, buffer, calls)
+	}
+}

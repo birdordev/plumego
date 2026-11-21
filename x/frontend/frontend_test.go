@@ -253,3 +253,21 @@ func TestSPAFallbackPreservesVaryWildcard(t *testing.T) {
 		}
 	}
 }
+
+func TestStandaloneFrontendHandlerRejectsOutsidePrefix(t *testing.T) {
+	dir := t.TempDir()
+	writeTestFile(t, dir, "index.html", "home")
+	h, err := NewHandlerFS(http.Dir(dir), WithPrefix("/app"), WithFallback(true))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for path, want := range map[string]int{"/app": http.StatusOK, "/app/route": http.StatusOK, "/application": http.StatusNotFound, "/outside": http.StatusNotFound} {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req.Header.Set("Accept", "text/html")
+		out := httptest.NewRecorder()
+		h.ServeHTTP(out, req)
+		if out.Code != want || (out.Body.String() == "home") != (want == http.StatusOK) {
+			t.Errorf("%s: response = %d, %q", path, out.Code, out.Body.String())
+		}
+	}
+}

@@ -1,12 +1,15 @@
 package discovery
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
@@ -287,4 +290,92 @@ func TestEtcdOwnsEndpointOrder(t *testing.T) {
 
 func TestEtcdCloseStopsActiveWatch(t *testing.T) {
 	testPollingCloseStopsActiveWatch(t, "etcd")
+}
+
+type trackedEtcdBody struct {
+	io.Reader
+	closed bool
+}
+
+func (b *trackedEtcdBody) Close() error {
+	b.closed = true
+	return nil
+}
+
+func TestEtcdHealthClosesResponsesBeforeNextOperation(t *testing.T) {
+	e, err := NewEtcd([]string{"http://first.invalid", "http://second.invalid"}, EtcdConfig{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer e.Close()
+	instance := Instance{ID: "one", Name: "fixture", Healthy: true}
+	for _, tc := range []struct {
+		name    string
+		wantErr error
+	}{
+		{name: "write back"},
+		{name: "missing", wantErr: ErrServiceNotFound},
+		{name: "canceled", wantErr: context.Canceled},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			first := &trackedEtcdBody{Reader: strings.NewReader("")}
+			rangeBody := etcdRangeBody([]Instance{instance})
+			if tc.wantErr == ErrServiceNotFound {
+				rangeBody = etcdRangeBody(nil)
+			}
+			second := &trackedEtcdBody{Reader: bytes.NewReader(rangeBody)}
+			writes := 0
+			e.client.Transport = consulTestRoundTripper(func(r *http.Request) (*http.Response, error) {
+				if err := r.Context().Err(); err != nil {
+					return nil, err
+				}
+				switch r.URL.Path {
+				case "/v3/kv/range":
+					if r.URL.Host == "first.invalid" {
+						if tc.wantErr == context.Canceled {
+							cancel()
+						}
+						return &http.Response{StatusCode: http.StatusServiceUnavailable, Body: first}, nil
+					}
+					if !first.closed {
+						t.Error("first range body still open during failover")
+					}
+					return &http.Response{StatusCode: http.StatusOK, Body: second}, nil
+				case "/v3/kv/put":
+					writes++
+					if !second.closed {
+						t.Error("range body still open during write back")
+					}
+					var request struct{ Value string }
+					if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+						t.Fatal(err)
+					}
+					payload, err := base64.StdEncoding.DecodeString(request.Value)
+					if err != nil {
+						t.Fatal(err)
+					}
+					var updated Instance
+					if err := json.Unmarshal(payload, &updated); err != nil || updated.Healthy || updated.ID != instance.ID {
+						t.Errorf("updated instance = %+v, %v", updated, err)
+					}
+					return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(""))}, nil
+				default:
+					t.Fatalf("unexpected request %s", r.URL)
+					return nil, nil
+				}
+			})
+			if err := e.Health(ctx, "fixture/one", false); !errors.Is(err, tc.wantErr) {
+				t.Fatalf("Health = %v, want %v", err, tc.wantErr)
+			}
+			wantWrites := 0
+			if tc.wantErr == nil {
+				wantWrites = 1
+			}
+			if !first.closed || (tc.wantErr != context.Canceled && !second.closed) || writes != wantWrites {
+				t.Errorf("bodies closed = %t, %t, writes = %d", first.closed, second.closed, writes)
+			}
+		})
+	}
 }

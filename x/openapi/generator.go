@@ -9,19 +9,18 @@ type Generator struct {
 
 // New creates a generator with default document metadata.
 func New() *Generator {
-	return &Generator{
-		info: Info{
-			Title:   "Plumego API",
-			Version: "0.0.0",
-		},
-	}
+	return &Generator{info: defaultInfo()}
+}
+
+func defaultInfo() Info {
+	return Info{Title: "Plumego API", Version: "0.0.0"}
 }
 
 // Generate converts route metadata and optional operation hints into a document.
 // It adds required string parameters for path placeholders without hints.
 // It includes GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS, and TRACE routes.
 func (g *Generator) Generate(routes []router.RouteInfo, hints map[string]Op) Document {
-	info := Info{Title: "Plumego API", Version: "0.0.0"}
+	info := defaultInfo()
 	if g != nil {
 		info = g.info
 	}

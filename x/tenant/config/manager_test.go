@@ -632,3 +632,36 @@ func TestTenantConfigDeleteReportsDriverFailures(t *testing.T) {
 		})
 	}
 }
+
+func TestConfigProvidersReturnOwnedSections(t *testing.T) {
+	manager := NewDBTenantConfigManager(nil, WithTenantCache(3, time.Minute))
+	for _, id := range []string{"first", "second"} {
+		cfg := tenant.Config{TenantID: id}
+		cfg.Quota.Limits = []tenant.QuotaLimit{{Window: tenant.QuotaWindowMinute, Requests: 10}}
+		if id == "second" {
+			cfg.Quota.Limits[0].Requests = 20
+		}
+		cfg.Policy.AllowedModels = []string{id}
+		storeTenantCache(manager.cache, id, cfg)
+	}
+	for range 2 {
+		for id, requests := range map[string]int64{"first": 10, "second": 20} {
+			q, err := manager.QuotaConfig(t.Context(), id)
+			if err != nil || len(q.Limits) != 1 || q.Limits[0].Requests != requests || q.Limits[0].Window != tenant.QuotaWindowMinute {
+				t.Fatalf("%s quota = %+v, %v", id, q, err)
+			}
+			p, err := manager.PolicyConfig(t.Context(), id)
+			if err != nil || len(p.AllowedModels) != 1 || p.AllowedModels[0] != id {
+				t.Fatalf("%s policy = %+v, %v", id, p, err)
+			}
+			q.Limits[0].Requests = 0
+			p.AllowedModels[0] = "changed"
+		}
+	}
+	if _, err := manager.QuotaConfig(t.Context(), "missing"); !errors.Is(err, tenant.ErrTenantNotFound) {
+		t.Errorf("missing quota = %v", err)
+	}
+	if _, err := manager.PolicyConfig(t.Context(), "missing"); !errors.Is(err, tenant.ErrTenantNotFound) {
+		t.Errorf("missing policy = %v", err)
+	}
+}

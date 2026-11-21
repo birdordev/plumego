@@ -286,3 +286,109 @@ func TestSQLStoreStatsHandlesNullCountsAndQueryError(t *testing.T) {
 		}
 	}
 }
+
+type leaseTestTx struct{ commits, rollbacks int }
+
+func (tx *leaseTestTx) Commit() error   { tx.commits++; return nil }
+func (tx *leaseTestTx) Rollback() error { tx.rollbacks++; return nil }
+
+type leaseTestConn struct {
+	attemptConn
+	tx      leaseTestTx
+	rows    int64
+	args    []driver.NamedValue
+	execErr error
+}
+
+func (c *leaseTestConn) BeginTx(context.Context, driver.TxOptions) (driver.Tx, error) {
+	return &c.tx, nil
+}
+func (*leaseTestConn) QueryContext(context.Context, string, []driver.NamedValue) (driver.Rows, error) {
+	now := time.Unix(100, 0).UTC()
+	return &attemptRows{cols: make([]string, 15), values: [][]driver.Value{{
+		"task", "fixture", nil, []byte("sample"), nil, int64(0), nil, now, nil, int64(1), int64(2), "consumer", now, now, now,
+	}}}, nil
+}
+
+func (c *leaseTestConn) ExecContext(_ context.Context, query string, args []driver.NamedValue) (driver.Result, error) {
+	if strings.HasPrefix(query, "UPDATE mq_tasks SET") {
+		c.args = slices.Clone(args)
+		return attemptResult{rows: c.rows}, c.execErr
+	}
+	return attemptResult{rows: 1}, nil
+}
+
+type leaseTestConnector struct {
+	driver.Connector
+	conn *leaseTestConn
+}
+
+func (c leaseTestConnector) Connect(context.Context) (driver.Conn, error) { return c.conn, nil }
+
+func TestSQLStoreLostLeaseRollsBack(t *testing.T) {
+	for _, name := range []string{"ack", "release", "move_to_dlq", "move_to_dlq_success"} {
+		t.Run(name, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(t.Context())
+			conn := &leaseTestConn{}
+			if name == "move_to_dlq_success" {
+				conn.rows = 1
+			}
+			db := sql.OpenDB(leaseTestConnector{conn: conn})
+			defer db.Close()
+			defer cancel()
+			cfg := DefaultSQLConfig()
+			cfg.EnableAttemptLog = true
+			s := NewSQL(db, cfg)
+			var err error
+			switch name {
+			case "ack":
+				err = s.Ack(ctx, "task", "consumer", s.nowFunc())
+			case "release":
+				err = s.Release(ctx, "task", "consumer", mq.ReleaseOptions{})
+			case "move_to_dlq", "move_to_dlq_success":
+				err = s.MoveToDLQ(ctx, "task", "consumer", "fixture", s.nowFunc())
+			}
+			wantErr, commits, rollbacks := mq.ErrLeaseLost, 0, 1
+			if name == "move_to_dlq_success" {
+				wantErr, commits, rollbacks = nil, 1, 0
+			}
+			if !errors.Is(err, wantErr) || db.Stats().InUse != 0 || conn.tx.commits != commits || conn.tx.rollbacks != rollbacks {
+				t.Errorf("err=%v in_use=%d commits=%d rollbacks=%d", err, db.Stats().InUse, conn.tx.commits, conn.tx.rollbacks)
+			}
+		})
+	}
+}
+
+func TestSQLStoreExtendLeaseContract(t *testing.T) {
+	now := time.Unix(1234, 0).UTC()
+	sentinel := errors.New("database unavailable")
+	for _, tc := range []struct {
+		name             string
+		lease, wantLease time.Duration
+		rows             int64
+		execErr, wantErr error
+	}{
+		{name: "default", lease: -time.Second, wantLease: mq.DefaultLeaseDuration, rows: 1},
+		{name: "explicit", lease: time.Minute, wantLease: time.Minute, rows: 1},
+		{name: "lost", lease: time.Minute, wantLease: time.Minute, wantErr: mq.ErrLeaseLost},
+		{name: "driver failure", lease: time.Minute, wantLease: time.Minute, execErr: sentinel, wantErr: sentinel},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			conn := &leaseTestConn{rows: tc.rows, execErr: tc.execErr}
+			db := sql.OpenDB(leaseTestConnector{conn: conn})
+			defer db.Close()
+			s := NewSQL(db, DefaultSQLConfig())
+			if err := s.ExtendLease(t.Context(), "task", "consumer", tc.lease, now); !errors.Is(err, tc.wantErr) {
+				t.Errorf("ExtendLease = %v, want %v", err, tc.wantErr)
+			}
+			want := []any{now.Add(tc.wantLease), now, "task", "consumer", string(mq.TaskStatusLeased), now}
+			got := make([]any, len(conn.args))
+			for i, arg := range conn.args {
+				got[i] = arg.Value
+			}
+			if !slices.Equal(got, want) {
+				t.Errorf("renewal args = %v, want %v", got, want)
+			}
+		})
+	}
+}
