@@ -65,46 +65,65 @@ func (s *Scheduler) loadPersisted() {
 		s.logError("scheduler load persisted jobs failed", err)
 	}
 
-	// Two-pass loading: first restore jobs without dependencies so that
-	// dependency targets exist when the second pass runs.
-	var withDeps []StoredJob
+	// Queue records whose dependencies are already registered. Each restored
+	// job then releases the records that were waiting for it.
+	type pendingJob struct {
+		item    StoredJob
+		task    TaskFunc
+		missing int
+	}
+	var pending []*pendingJob
+	var ready []*pendingJob
+	waiting := make(map[JobID][]*pendingJob)
 	for _, item := range stored {
 		if item.TaskName == "" {
 			continue
 		}
-		if s.lookupTask(item.TaskName) == nil {
-			continue
-		}
-		if len(item.Dependencies) > 0 {
-			withDeps = append(withDeps, item)
-			continue
-		}
-		if _, err := s.Schedule(item.ID, item.RunAt, s.lookupTask(item.TaskName), s.buildLoadOpts(item)...); err != nil {
-			if s.logger != nil {
-				s.logger.Warn("scheduler: failed to restore job", log.Fields{
-					"job_id": item.ID,
-					"error":  err.Error(),
-				})
-			}
-		}
-	}
-
-	// Second pass: jobs with dependencies (their targets are now registered).
-	for _, item := range withDeps {
 		task := s.lookupTask(item.TaskName)
 		if task == nil {
 			continue
 		}
-		opts := append(s.buildLoadOpts(item), WithDependsOn(item.DependencyPolicy, item.Dependencies...))
-		if _, err := s.Schedule(item.ID, item.RunAt, task, opts...); err != nil {
-			if s.logger != nil {
-				s.logger.Warn("scheduler: failed to restore job with dependencies", log.Fields{
-					"job_id":       item.ID,
-					"dependencies": item.Dependencies,
-					"error":        err.Error(),
-				})
+		job := &pendingJob{item: item, task: task}
+		for _, dependency := range item.Dependencies {
+			if _, exists := s.Status(dependency); !exists {
+				waiting[dependency] = append(waiting[dependency], job)
+				job.missing++
 			}
 		}
+		if job.missing == 0 {
+			ready = append(ready, job)
+		} else {
+			pending = append(pending, job)
+		}
+	}
+	for i := 0; i < len(ready); i++ {
+		job := ready[i]
+		item := job.item
+		opts := append(s.buildLoadOpts(item), WithDependsOn(item.DependencyPolicy, item.Dependencies...))
+		if _, err := s.Schedule(item.ID, item.RunAt, job.task, opts...); err != nil {
+			s.reportRestoreFailure(item, err)
+			continue
+		}
+		for _, dependent := range waiting[item.ID] {
+			dependent.missing--
+			if dependent.missing == 0 {
+				ready = append(ready, dependent)
+			}
+		}
+		delete(waiting, item.ID)
+	}
+	for _, job := range pending {
+		if job.missing > 0 {
+			s.reportRestoreFailure(job.item, errors.New("missing or cyclic dependencies"))
+		}
+	}
+}
+
+func (s *Scheduler) reportRestoreFailure(item StoredJob, err error) {
+	if s.logger != nil {
+		s.logger.Warn("scheduler: failed to restore job", log.Fields{
+			"job_id": item.ID, "dependencies": item.Dependencies, "error": err.Error(),
+		})
 	}
 }
 
@@ -160,10 +179,23 @@ func (s *Scheduler) triggerDependentJobs(completedJob *job) {
 	}
 }
 
+type terminalCleanupFailure struct {
+	id  JobID
+	err error
+}
+
+func (s *Scheduler) unlockAndReportCleanup(failures *[]terminalCleanupFailure) {
+	s.mu.Unlock()
+	for _, failure := range *failures {
+		s.reportTerminalCleanupFailure(failure.id, failure.err)
+	}
+}
+
 // handleDependentJobsOnFailure handles dependent jobs when a dependency fails.
 func (s *Scheduler) handleDependentJobsOnFailure(failedJob *job) {
+	var failures []terminalCleanupFailure
 	s.mu.Lock()
-	defer s.mu.Unlock()
+	defer s.unlockAndReportCleanup(&failures)
 
 	if s.jobs[failedJob.id] != failedJob || failedJob.canceled.Load() {
 		return
@@ -179,7 +211,7 @@ func (s *Scheduler) handleDependentJobsOnFailure(failedJob *job) {
 		if !exists || depJob.canceled.Load() {
 			continue
 		}
-		s.applyDependentPolicyLocked(depJobID, depJob, failedJob.id, dependencyEventFailure)
+		s.applyDependentPolicyLocked(depJobID, depJob, failedJob.id, dependencyEventFailure, &failures)
 	}
 }
 
@@ -216,12 +248,12 @@ func (s *Scheduler) wakeScheduler() {
 }
 
 // cancelJobLocked cancels a single job. Must be called with s.mu held.
-func (s *Scheduler) cancelJobLocked(id JobID, j *job) {
+func (s *Scheduler) cancelJobLocked(id JobID, j *job, failures *[]terminalCleanupFailure) {
 	s.setJobCanceledLocked(j)
 	if s.store != nil {
 		_ = s.store.Delete(id)
 	}
-	s.finishJobCancellationLocked(id, j)
+	s.finishJobCancellationLocked(id, j, failures)
 }
 
 func (s *Scheduler) setJobCanceledLocked(j *job) {
@@ -229,11 +261,11 @@ func (s *Scheduler) setJobCanceledLocked(j *job) {
 	s.setJobStateLocked(j, JobStateCanceled)
 }
 
-func (s *Scheduler) finishJobCancellationLocked(id JobID, j *job) {
+func (s *Scheduler) finishJobCancellationLocked(id JobID, j *job, failures *[]terminalCleanupFailure) {
 	// Notify dependent jobs that were waiting for this job before cleaning
 	// up the dependents map entry, so we still have the list of waiters.
 	if deps := s.dependents[id]; len(deps) > 0 {
-		s.notifyDependentsCanceledLocked(id, deps)
+		s.notifyDependentsCanceledLocked(id, deps, failures)
 	}
 	// Clean up dependency tracking to prevent memory leaks.
 	s.cleanupDependencyTrackingLocked(id, j)
@@ -262,13 +294,13 @@ func (s *Scheduler) retireJobLocked(j *job) {
 // notifyDependentsCanceledLocked applies DependencyFailurePolicy to each job
 // that was waiting for canceledID to complete. Called from cancelJobLocked;
 // s.mu must be held.
-func (s *Scheduler) notifyDependentsCanceledLocked(canceledID JobID, dependentIDs []JobID) {
+func (s *Scheduler) notifyDependentsCanceledLocked(canceledID JobID, dependentIDs []JobID, failures *[]terminalCleanupFailure) {
 	for _, depJobID := range dependentIDs {
 		depJob, exists := s.jobs[depJobID]
 		if !exists || depJob.canceled.Load() {
 			continue
 		}
-		s.applyDependentPolicyLocked(depJobID, depJob, canceledID, dependencyEventCancellation)
+		s.applyDependentPolicyLocked(depJobID, depJob, canceledID, dependencyEventCancellation, failures)
 	}
 }
 
@@ -282,14 +314,16 @@ var (
 	dependencyEventCancellation = dependencyEvent{noun: "cancellation", field: "canceled_dependency"}
 )
 
-func (s *Scheduler) applyDependentPolicyLocked(depJobID JobID, depJob *job, triggerID JobID, event dependencyEvent) {
+func (s *Scheduler) applyDependentPolicyLocked(depJobID JobID, depJob *job, triggerID JobID, event dependencyEvent, failures *[]terminalCleanupFailure) {
 	switch depJob.options.DependencyPolicy {
 	case DependencyFailureSkip:
 		s.logDependentPolicy("skipping dependent job due to dependency "+event.noun, depJobID, triggerID, event.field, true)
-		s.skipDependentJobLocked(depJobID, depJob)
+		if err := s.skipDependentJobLocked(depJob); err != nil {
+			*failures = append(*failures, terminalCleanupFailure{id: depJobID, err: err})
+		}
 	case DependencyFailureCancel:
 		s.logDependentPolicy("canceling dependent job due to dependency "+event.noun, depJobID, triggerID, event.field, true)
-		s.cancelJobLocked(depJobID, depJob)
+		s.cancelJobLocked(depJobID, depJob, failures)
 	case DependencyFailureContinue:
 		s.logDependentPolicy("continuing dependent job despite dependency "+event.noun, depJobID, triggerID, event.field, false)
 		depJob.resolveDependencyLocked(triggerID)
@@ -297,7 +331,7 @@ func (s *Scheduler) applyDependentPolicyLocked(depJobID JobID, depJob *job, trig
 	}
 }
 
-func (s *Scheduler) skipDependentJobLocked(depJobID JobID, depJob *job) {
+func (s *Scheduler) skipDependentJobLocked(depJob *job) error {
 	switch depJob.kind {
 	case jobKindCron:
 		// Reschedule cron job at its next natural trigger time.
@@ -310,10 +344,9 @@ func (s *Scheduler) skipDependentJobLocked(depJobID JobID, depJob *job) {
 		// A delay job runs once; if its dependency is skipped/canceled with Skip
 		// policy, mark it failed and remove persisted entry.
 		s.setJobStateLocked(depJob, JobStateFailed)
-		if s.store != nil {
-			_ = s.store.Delete(depJobID)
-		}
+		return s.deleteTerminalJobLocked(depJob)
 	}
+	return nil
 }
 
 func (s *Scheduler) logDependentPolicy(msg string, depJobID JobID, triggerID JobID, triggerField string, warn bool) {

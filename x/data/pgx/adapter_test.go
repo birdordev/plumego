@@ -124,6 +124,7 @@ type fakePool struct {
 	execTag     CommandTag
 	queryRowSQL string
 	pinged      bool
+	closed      int
 }
 
 func (p *fakePool) QueryRow(_ context.Context, query string, _ ...any) Row {
@@ -157,7 +158,7 @@ func (p *fakePool) Ping(context.Context) error {
 	return nil
 }
 
-func (p *fakePool) Close() {}
+func (p *fakePool) Close() { p.closed++ }
 
 type fakeCommandTag struct {
 	rows int64
@@ -264,6 +265,18 @@ func TestQueryRowWithoutPoolReturnsClassifiableScanError(t *testing.T) {
 		}
 		if err := row.Scan(&value); !errors.Is(err, storedb.ErrQueryFailed) || value != "unchanged" {
 			t.Errorf("Scan = %v, value = %q; want ErrQueryFailed and unchanged value", err, value)
+		}
+	}
+}
+
+func TestCloseDelegatesToPool(t *testing.T) {
+	pool := &fakePool{}
+	if err := NewWithPool(pool).Close(); err != nil || pool.closed != 1 {
+		t.Errorf("Close error = %v, pool closes = %d", err, pool.closed)
+	}
+	for _, db := range []*DB{nil, {}} {
+		if err := db.Close(); err != nil {
+			t.Error(err)
 		}
 	}
 }

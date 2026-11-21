@@ -319,3 +319,38 @@ func TestStatsRoutePreservesResponseContract(t *testing.T) {
 		})
 	}
 }
+
+func TestReceiptLookupRouteContract(t *testing.T) {
+	svc := New(Config{})
+	if err := svc.receipts.Save(Receipt{ID: "available", Channel: ChannelEmail, Status: messageStatusQueued}); err != nil {
+		t.Fatal(err)
+	}
+	r := router.NewRouter()
+	if err := RegisterRoutes(r, svc, ""); err != nil {
+		t.Fatal(err)
+	}
+	request := func(id string) *httptest.ResponseRecorder {
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/messages/"+id+"/receipt", nil))
+		return rec
+	}
+	found := request("available")
+	if found.Code != http.StatusOK {
+		t.Fatalf("lookup status = %d", found.Code)
+	}
+	if receipt := decodeMessagingAPIData[Receipt](t, found); receipt.ID != "available" || receipt.Channel != ChannelEmail || receipt.Status != messageStatusQueued {
+		t.Errorf("receipt = %+v", receipt)
+	}
+	missing := request("missing")
+	var env struct {
+		Error struct {
+			Code string `json:"code"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(missing.Body.Bytes(), &env); err != nil {
+		t.Fatal(err)
+	}
+	if missing.Code != http.StatusNotFound || env.Error.Code != contract.CodeResourceNotFound {
+		t.Errorf("missing receipt response = %d %+v", missing.Code, env)
+	}
+}

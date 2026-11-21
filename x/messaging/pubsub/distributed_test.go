@@ -2,6 +2,7 @@ package pubsub
 
 import (
 	"encoding/json"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -726,5 +727,58 @@ func BenchmarkDistributedPubSub_GlobalPublish(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_ = dps1.PublishGlobal("bench.topic", msg)
+	}
+}
+
+func TestDistributedHeartbeatIntervalBounds(t *testing.T) {
+	for _, d := range []time.Duration{-time.Second, time.Duration(math.MaxInt64/2) + 1} {
+		broker, err := NewDistributed(ClusterConfig{NodeID: "node", ListenAddr: "127.0.0.1:0", HeartbeatInterval: d})
+		if broker != nil {
+			defer broker.Close()
+		}
+		if err == nil {
+			t.Errorf("accepted interval %s", d)
+		}
+	}
+}
+
+func TestClusterNodesDetachTopics(t *testing.T) {
+	broker, err := NewDistributed(ClusterConfig{NodeID: "local", ListenAddr: "127.0.0.1:0"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = broker.Close() })
+	broker.nodes["peer"] = &ClusterNode{ID: "peer", Topics: []string{"updates"}}
+	first := broker.Nodes()[0]
+	first.ID = "changed"
+	first.Topics[0] = "changed"
+	second := broker.Nodes()[0]
+	if second.ID != "peer" || second.Topics[0] != "updates" {
+		t.Fatalf("node changed: %+v", second)
+	}
+}
+
+func TestDistributedHeartbeatDefaultsAndStarts(t *testing.T) {
+	for _, interval := range []time.Duration{0, time.Second} {
+		cfg := testClusterConfig("local", "127.0.0.1:0")
+		cfg.HeartbeatInterval = interval
+		broker, err := NewDistributed(cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = broker.Close() })
+		want := interval
+		if want == 0 {
+			want = 5 * time.Second
+		}
+		if broker.config.HeartbeatInterval != want {
+			t.Errorf("heartbeat interval = %v, want %v", broker.config.HeartbeatInterval, want)
+		}
+		if err := broker.JoinCluster(t.Context()); err != nil {
+			t.Fatal(err)
+		}
+		if err := broker.Close(); err != nil {
+			t.Fatal(err)
+		}
 	}
 }

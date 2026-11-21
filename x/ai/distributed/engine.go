@@ -44,7 +44,7 @@ func DefaultEngineConfig() EngineConfig {
 // ExecutionOptions configures workflow execution.
 type ExecutionOptions struct {
 	Distributed bool          // Use distributed execution
-	Timeout     time.Duration // Execution timeout
+	Timeout     time.Duration // Total execution timeout; zero uses the engine default
 	RetryPolicy *RetryPolicy  // Retry policy for failed steps
 	Checkpoints bool          // Enable checkpoint snapshots
 }
@@ -112,14 +112,14 @@ func NewDistributedEngine(
 	}
 }
 
-// ExecuteAsync executes a workflow asynchronously.
+// ExecuteAsync executes a workflow asynchronously and returns an opaque execution ID.
 func (e *DistributedEngine) ExecuteAsync(
 	ctx context.Context,
 	workflowID string,
 	initialState map[string]any,
 	options ExecutionOptions,
 ) (string, error) {
-	id, _, err := e.startExecution(ctx, workflowID, initialState, options)
+	id, _, _, err := e.startExecution(ctx, workflowID, initialState, options)
 	return id, err
 }
 
@@ -128,17 +128,18 @@ func (e *DistributedEngine) startExecution(
 	workflowID string,
 	initialState map[string]any,
 	options ExecutionOptions,
-) (string, *executionContext, error) {
+) (string, context.Context, *executionContext, error) {
 	workflow, err := e.localEngine.GetWorkflow(workflowID)
 	if err != nil {
-		return "", nil, err
+		return "", nil, nil, err
 	}
 
 	now := time.Now()
-	id := fmt.Sprintf("%s-%d", workflowID, now.UnixNano())
+	id := fmt.Sprintf("%s-%d-%s", workflowID, now.UnixNano(), rand.Text())
 	snapshot := &ExecutionSnapshot{
 		ExecutionID:    id,
 		WorkflowID:     workflowID,
+		Distributed:    &options.Distributed,
 		State:          maps.Clone(initialState),
 		CompletedSteps: []int{},
 		Results:        []*orchestration.AgentResult{},
@@ -147,16 +148,16 @@ func (e *DistributedEngine) startExecution(
 		UpdatedAt:      now,
 		TTL:            24 * time.Hour,
 	}
-	runCtx, execution, err := e.reserveExecution(ctx, id)
+	runCtx, execution, err := e.reserveExecution(ctx, id, e.executionTimeout(options))
 	if err != nil {
-		return "", nil, err
+		return "", nil, nil, err
 	}
 	if err := e.persistence.SaveSnapshot(runCtx, snapshot); err != nil {
 		e.cleanupExecution(id, execution)
-		return "", nil, fmt.Errorf("save initial snapshot: %w", err)
+		return "", nil, nil, fmt.Errorf("save initial snapshot: %w", err)
 	}
 	e.launchExecution(runCtx, workflow, execution, snapshot, options)
-	return id, execution, nil
+	return id, runCtx, execution, nil
 }
 
 // ExecuteSync executes a workflow synchronously. If execution fails, it returns
@@ -167,21 +168,22 @@ func (e *DistributedEngine) ExecuteSync(
 	initialState map[string]any,
 	options ExecutionOptions,
 ) ([]*orchestration.AgentResult, error) {
-	_, execution, err := e.startExecution(ctx, workflowID, initialState, options)
+	_, runCtx, execution, err := e.startExecution(ctx, workflowID, initialState, options)
 	if err != nil {
 		return nil, err
 	}
 
-	timeout := e.executionTimeout(options)
-	timer := time.NewTimer(timeout)
-	defer timer.Stop()
 	select {
 	case <-execution.done:
 		return execution.result, execution.err
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	case <-timer.C:
-		return nil, fmt.Errorf("execution timeout after %v", timeout)
+	case <-runCtx.Done():
+		// Normal completion releases the execution context after publishing results.
+		select {
+		case <-execution.done:
+			return execution.result, execution.err
+		default:
+			return nil, runCtx.Err()
+		}
 	}
 }
 
@@ -192,14 +194,14 @@ func (e *DistributedEngine) executionTimeout(options ExecutionOptions) time.Dura
 	return e.config.DefaultTimeout
 }
 
-func (e *DistributedEngine) reserveExecution(ctx context.Context, id string) (context.Context, *executionContext, error) {
+func (e *DistributedEngine) reserveExecution(ctx context.Context, id string, timeout time.Duration) (context.Context, *executionContext, error) {
 	e.executionsMu.Lock()
 	defer e.executionsMu.Unlock()
 	if _, exists := e.executions[id]; exists {
 		return nil, nil, fmt.Errorf("execution %s is already active", id)
 	}
 
-	runCtx, cancel := context.WithCancel(ctx)
+	runCtx, cancel := context.WithTimeout(ctx, timeout)
 	execution := &executionContext{cancel: cancel, done: make(chan struct{})}
 	e.executions[id] = execution
 	return runCtx, execution, nil
@@ -223,8 +225,9 @@ func (e *DistributedEngine) launchExecution(
 	execution.snapshot = snapshot
 	execution.mu.Unlock()
 	go func() {
+		defer execution.cancel()
 		defer close(execution.done)
-		defer e.cleanupExecution(snapshot.ExecutionID, execution)
+		defer e.removeExecution(snapshot.ExecutionID)
 		status, err := e.runWorkflow(ctx, workflow, execution, snapshot, options)
 		e.finishExecution(ctx, execution, status, err)
 	}()
@@ -278,7 +281,7 @@ func (e *DistributedEngine) runWorkflow(
 					return StatusFailed, errors.New("task result subscription returned a nil channel")
 				}
 			}
-			result, err = e.executeStepDistributed(ctx, workflow, step, i, initial.ExecutionID, results, options)
+			result, err = e.executeStepDistributed(ctx, workflow, step, i, initial.ExecutionID, results)
 		} else {
 			result, err = step.Execute(ctx, workflow)
 		}
@@ -392,9 +395,15 @@ func (e *DistributedEngine) executeStepDistributed(
 	stepIndex int,
 	executionID string,
 	results <-chan *TaskResult,
-	options ExecutionOptions,
 ) (*orchestration.AgentResult, error) {
-	timeout := e.executionTimeout(options)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	deadline, _ := ctx.Deadline()
+	timeout := time.Until(deadline)
+	if timeout <= 0 {
+		return nil, context.DeadlineExceeded
+	}
 	task := &WorkflowTask{
 		ID:            fmt.Sprintf("%s-%d-%s", executionID, stepIndex, rand.Text()),
 		ExecutionID:   executionID,
@@ -410,8 +419,6 @@ func (e *DistributedEngine) executeStepDistributed(
 		return nil, fmt.Errorf("enqueue task: %w", err)
 	}
 
-	timer := time.NewTimer(timeout)
-	defer timer.Stop()
 	for {
 		select {
 		case <-ctx.Done():
@@ -428,8 +435,6 @@ func (e *DistributedEngine) executeStepDistributed(
 			}
 			maps.Copy(workflow.State, result.UpdatedState)
 			return result.AgentResult, nil
-		case <-timer.C:
-			return nil, fmt.Errorf("task execution timeout after %v", timeout)
 		}
 	}
 }
@@ -437,7 +442,7 @@ func (e *DistributedEngine) executeStepDistributed(
 // Resume restarts an inactive execution using its persisted snapshot. Steps
 // already recorded as complete are skipped, including in older snapshots.
 func (e *DistributedEngine) Resume(ctx context.Context, executionID string) error {
-	runCtx, execution, err := e.reserveExecution(ctx, executionID)
+	runCtx, execution, err := e.reserveExecution(ctx, executionID, e.executionTimeout(DefaultExecutionOptions()))
 	if err != nil {
 		return err
 	}
@@ -463,7 +468,11 @@ func (e *DistributedEngine) Resume(ctx context.Context, executionID string) erro
 		e.cleanupExecution(executionID, execution)
 		return fmt.Errorf("execution %s cannot resume past the last step", executionID)
 	}
-	e.launchExecution(runCtx, workflow, execution, snapshot, DefaultExecutionOptions())
+	options := DefaultExecutionOptions()
+	if snapshot.Distributed != nil {
+		options.Distributed = *snapshot.Distributed
+	}
+	e.launchExecution(runCtx, workflow, execution, snapshot, options)
 	return nil
 }
 
@@ -500,6 +509,10 @@ func (e *DistributedEngine) GetExecutionStatus(ctx context.Context, executionID 
 
 func (e *DistributedEngine) cleanupExecution(id string, execution *executionContext) {
 	execution.cancel()
+	e.removeExecution(id)
+}
+
+func (e *DistributedEngine) removeExecution(id string) {
 	e.executionsMu.Lock()
 	delete(e.executions, id)
 	e.executionsMu.Unlock()

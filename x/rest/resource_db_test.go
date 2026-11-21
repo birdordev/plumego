@@ -303,21 +303,26 @@ func TestSQLBuilderOwnsColumns(t *testing.T) {
 
 type repositoryListConnector struct {
 	driver.Connector
-	rows *repositoryListRows
+	rows    *repositoryListRows
+	observe func(string, []driver.NamedValue)
 }
 
 func (c repositoryListConnector) Connect(context.Context) (driver.Conn, error) {
-	return repositoryListConn{rows: c.rows}, nil
+	return repositoryListConn{rows: c.rows, observe: c.observe}, nil
 }
 
 type repositoryListConn struct {
 	driver.Conn
-	rows *repositoryListRows
+	rows    *repositoryListRows
+	observe func(string, []driver.NamedValue)
 }
 
 func (repositoryListConn) Close() error { return nil }
 
-func (c repositoryListConn) QueryContext(_ context.Context, query string, _ []driver.NamedValue) (driver.Rows, error) {
+func (c repositoryListConn) QueryContext(_ context.Context, query string, args []driver.NamedValue) (driver.Rows, error) {
+	if c.observe != nil {
+		c.observe(query, args)
+	}
 	if strings.HasPrefix(query, "SELECT COUNT(*)") {
 		return &repositoryListRows{columns: []string{"count"}, value: int64(4)}, nil
 	}
@@ -570,6 +575,33 @@ func TestRepositoryCreateBindsValuesAndPreservesErrors(t *testing.T) {
 			repo := NewBaseRepository[dbResourceTestItem](db, builder)
 			if err := repo.Create(t.Context(), item); !errors.Is(err, tc.wantErr) || calls != tc.wantCalls {
 				t.Errorf("create error = %v, exec calls = %d; want %v, %d", err, calls, tc.wantErr, tc.wantCalls)
+			}
+		})
+	}
+}
+
+func TestRepositoryExistsBindsIDAndPreservesErrors(t *testing.T) {
+	sentinel := errors.New("first row failed")
+	for _, tc := range []struct {
+		name  string
+		value bool
+		err   error
+	}{
+		{"found", true, nil}, {"missing", false, nil}, {"scan failure", false, sentinel},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rows := &repositoryListRows{columns: []string{"exists"}, value: tc.value, read: tc.err != nil, endErr: tc.err}
+			calls := 0
+			db := sql.OpenDB(repositoryListConnector{rows: rows, observe: func(query string, args []driver.NamedValue) {
+				calls++
+				if query != "SELECT EXISTS(SELECT 1 FROM items WHERE id = ?)" || !slices.Equal(args, []driver.NamedValue{{Ordinal: 1, Value: "requested"}}) {
+					t.Errorf("query = %q, args = %v", query, args)
+				}
+			}})
+			t.Cleanup(func() { _ = db.Close() })
+			repo := NewBaseRepository[string](db, NewSQLBuilder("items", "id"))
+			if got, err := repo.Exists(t.Context(), "requested"); got != tc.value || !errors.Is(err, tc.err) || calls != 1 {
+				t.Errorf("Exists = %t, %v, calls=%d", got, err, calls)
 			}
 		})
 	}

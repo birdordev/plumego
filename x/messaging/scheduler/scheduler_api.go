@@ -119,6 +119,7 @@ func (s *Scheduler) UpdateCron(id JobID, spec string) error {
 // Retry a failed deletion by calling Cancel again. Restarting before it
 // succeeds may restore the still-persisted job.
 func (s *Scheduler) Cancel(id JobID) bool {
+	var failures []terminalCleanupFailure
 	s.mu.Lock()
 	j, ok := s.jobs[id]
 	if !ok {
@@ -135,9 +136,9 @@ func (s *Scheduler) Cancel(id JobID) bool {
 		err = s.store.Delete(id)
 	}
 	if first {
-		s.finishJobCancellationLocked(id, j)
+		s.finishJobCancellationLocked(id, j, &failures)
 	}
-	s.mu.Unlock()
+	s.unlockAndReportCleanup(&failures)
 
 	if err != nil && s.logger != nil {
 		s.logger.Error("scheduler delete canceled job failed", log.Fields{
@@ -239,11 +240,12 @@ func (s *Scheduler) CancelByGroup(group string) int {
 	if group == "" {
 		return 0
 	}
+	var failures []terminalCleanupFailure
 	s.mu.Lock()
-	defer s.mu.Unlock()
+	defer s.unlockAndReportCleanup(&failures)
 	return s.applyBatchLocked(
 		func(_ JobID, j *job) bool { return j.options.Group == group },
-		func(id JobID, j *job) { s.cancelJobLocked(id, j) },
+		func(id JobID, j *job) { s.cancelJobLocked(id, j, &failures) },
 	)
 }
 
@@ -253,11 +255,12 @@ func (s *Scheduler) CancelByTags(tags ...string) int {
 	if len(tags) == 0 {
 		return 0
 	}
+	var failures []terminalCleanupFailure
 	s.mu.Lock()
-	defer s.mu.Unlock()
+	defer s.unlockAndReportCleanup(&failures)
 	return s.applyBatchLocked(
 		func(_ JobID, j *job) bool { return hasAllTags(j.options.Tags, tags) },
-		func(id JobID, j *job) { s.cancelJobLocked(id, j) },
+		func(id JobID, j *job) { s.cancelJobLocked(id, j, &failures) },
 	)
 }
 
@@ -310,9 +313,10 @@ func (s *Scheduler) addJob(id JobID, kind jobKind, task TaskFunc, spec CronSpec,
 	}
 
 	var persistErr error
+	var failures []terminalCleanupFailure
 	s.mu.Lock()
 	defer func() {
-		s.mu.Unlock()
+		s.unlockAndReportCleanup(&failures)
 		if persistErr != nil && s.logger != nil {
 			s.logger.Error("scheduler persist job failed", log.Fields{
 				"job_id": id,
@@ -369,7 +373,7 @@ func (s *Scheduler) addJob(id JobID, kind jobKind, task TaskFunc, spec CronSpec,
 		// Use cancelJobLocked to ensure full cleanup: dependency maps,
 		// dependents reverse-index, and the persistence store are all
 		// cleared before the replacement job is registered.
-		s.cancelJobLocked(id, existing)
+		s.cancelJobLocked(id, existing, &failures)
 	}
 
 	s.jobs[id] = j

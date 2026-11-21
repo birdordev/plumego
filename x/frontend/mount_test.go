@@ -610,3 +610,10 @@ func TestMountDoesNotDescendThroughDirectoryIndex(t *testing.T) {
 		}
 	}
 }
+
+func TestNewHandlerFSPropagatesMissingDirectory(t *testing.T) {
+	h, err := NewHandlerFS(http.Dir(filepath.Join(t.TempDir(), "missing")))
+	if h != nil || !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("NewHandlerFS = %v, %v", h, err)
+	}
+}

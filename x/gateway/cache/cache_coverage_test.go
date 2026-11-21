@@ -528,3 +528,19 @@ func TestMemoryStoreCleanupPreservesAccounting(t *testing.T) {
 		t.Errorf("stats after eviction = %+v", stats)
 	}
 }
+
+func TestKeyStrategiesCopyConstructorSlices(t *testing.T) {
+	r := httptest.NewRequest(http.MethodGet, "/items?sort=name&limit=10", nil)
+	r.Header.Set("Accept", "application/json")
+	headers := []string{"Accept"}
+	ignored := []string{"sort"}
+	children := []KeyStrategy{NewHeaderAwareKeyStrategy(headers)}
+	header := children[0]
+	query := NewQueryParamKeyStrategy(ignored)
+	composite := NewCompositeKeyStrategy(children...)
+	headerKey, queryKey, compositeKey := header.Generate(r), query.Generate(r), composite.Generate(r)
+	headers[0], ignored[0], children[0] = "Accept-Language", "limit", query
+	if header.Generate(r) != headerKey || query.Generate(r) != queryKey || composite.Generate(r) != compositeKey {
+		t.Fatal("mutating the constructor slices changed a strategy")
+	}
+}

@@ -500,3 +500,16 @@ func TestServerClosesInvalidTextPayload(t *testing.T) {
 		t.Fatalf("expected close code %d, got %d", CloseInvalidPayload, got)
 	}
 }
+
+func TestCloseErrorPreservesCause(t *testing.T) {
+	sentinel := errors.New("test cause")
+	err := fmt.Errorf("handler: %w", NewCloseError(CloseGoingAway, "closing", sentinel))
+	var closeErr *CloseError
+	if !errors.As(err, &closeErr) || !errors.Is(err, sentinel) || closeErr.Code != CloseGoingAway ||
+		closeErr.Reason != "closing" || !strings.Contains(closeErr.Error(), sentinel.Error()) {
+		t.Fatalf("close error = %v", err)
+	}
+	if plain := NewCloseError(CloseNormalClosure, "done", nil); plain.Unwrap() != nil || !strings.Contains(plain.Error(), "done") {
+		t.Errorf("plain close error = %v", plain)
+	}
+}

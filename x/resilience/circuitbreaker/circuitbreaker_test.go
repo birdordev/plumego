@@ -1208,3 +1208,41 @@ func TestMiddlewareLegacyFlushCommitsResponse(t *testing.T) {
 		t.Errorf("downstream calls = %d; want 2", calls)
 	}
 }
+
+type deadlineRecorder struct {
+	*httptest.ResponseRecorder
+	deadline time.Time
+	calls    int
+	err      error
+}
+
+func (w *deadlineRecorder) SetWriteDeadline(deadline time.Time) error {
+	w.calls++
+	w.deadline = deadline
+	return w.err
+}
+
+func TestMiddlewarePreservesWriteDeadline(t *testing.T) {
+	deadline := time.Unix(123, 0)
+	sentinel := errors.New("test deadline error")
+	for _, supported := range []bool{true, false} {
+		rec := httptest.NewRecorder()
+		writer := &deadlineRecorder{ResponseRecorder: rec, err: sentinel}
+		var w http.ResponseWriter = rec
+		var wantErr error = http.ErrNotSupported
+		if supported {
+			w = writer
+			wantErr = sentinel
+		}
+		handler := Middleware(Config{})(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			if err := http.NewResponseController(w).SetWriteDeadline(deadline); !errors.Is(err, wantErr) {
+				t.Errorf("SetWriteDeadline=%v", err)
+			}
+			w.WriteHeader(http.StatusCreated)
+		}))
+		handler.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/", nil))
+		if rec.Code != http.StatusCreated || (supported && (writer.calls != 1 || !writer.deadline.Equal(deadline))) {
+			t.Errorf("status=%d, deadline=%v, calls=%d", rec.Code, writer.deadline, writer.calls)
+		}
+	}
+}

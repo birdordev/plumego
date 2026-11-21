@@ -191,3 +191,21 @@ func TestHandlerCanRegisterAnotherRPCPath(t *testing.T) {
 		t.Fatalf("new route status = %d", rec.Code)
 	}
 }
+
+func TestTranscoderOptionsObserveInitializedTarget(t *testing.T) {
+	var instances []*HTTPTranscoder
+	var order []int
+	option := func(i int) Option {
+		return func(tcd *HTTPTranscoder) {
+			if tcd.Target() != "service" || tcd.Handler() == nil {
+				t.Error("option received an uninitialized transcoder")
+			}
+			instances = append(instances, tcd)
+			order = append(order, i)
+		}
+	}
+	tcd := New(" service ", option(1), nil, option(2))
+	if len(order) != 2 || order[0] != 1 || order[1] != 2 || instances[0] != tcd || instances[1] != tcd || tcd.Target() != "service" {
+		t.Errorf("constructed target = %q, option order = %v", tcd.Target(), order)
+	}
+}

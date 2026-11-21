@@ -312,3 +312,24 @@ func TestCachedRoutePolicyBestEffortFill(t *testing.T) {
 		t.Fatalf("invalidate: %v", err)
 	}
 }
+
+func TestDeleteRoutePolicyIsScopedToTenant(t *testing.T) {
+	ctx := t.Context()
+	store := NewInMemoryRoutePolicyStore()
+	for _, id := range []string{"removed", "kept"} {
+		if err := store.SetRoutePolicy(ctx, RoutePolicy{TenantID: id, Strategy: "weighted"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for range 2 {
+		if err := store.DeleteRoutePolicy(ctx, "removed"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := store.RoutePolicy(ctx, "removed"); !errors.Is(err, ErrRoutePolicyNotFound) {
+		t.Errorf("deleted tenant error=%v", err)
+	}
+	if got, err := store.RoutePolicy(ctx, "kept"); err != nil || got.TenantID != "kept" || got.Strategy != "weighted" {
+		t.Errorf("other tenant = %+v, %v", got, err)
+	}
+}

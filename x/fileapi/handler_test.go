@@ -1387,3 +1387,29 @@ func TestUploadNegativeLimitRestoresDefault(t *testing.T) {
 		t.Fatalf("with restored limit: status = %d, store calls = %d", rec.Code, calls)
 	}
 }
+
+func TestFileListForwardsTimeRange(t *testing.T) {
+	r := httptest.NewRequest(http.MethodGet, "/files?page=2&page_size=5&start_time=2026-01-02T03:04:05%2B02:00&end_time=2026-01-02T06:00:00Z", nil)
+	ctx := tenantcore.WithTenantID(r.Context(), "tenant")
+	r = r.WithContext(ctx)
+	calls := 0
+	metadata := &mockMetadataManager{listFunc: func(got context.Context, q datafile.Query) ([]*datafile.File, int64, error) {
+		calls++
+		if got != ctx || q.TenantID != "tenant" || !q.StartTime.Equal(time.Date(2026, 1, 2, 1, 4, 5, 0, time.UTC)) ||
+			!q.EndTime.Equal(time.Date(2026, 1, 2, 6, 0, 0, 0, time.UTC)) {
+			t.Errorf("metadata query = %+v", q)
+		}
+		return nil, 8, nil
+	}}
+	rec := httptest.NewRecorder()
+	NewHandler(&mockStorage{}, metadata).List(rec, r)
+	var env struct {
+		Data listResponse `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &env); err != nil {
+		t.Fatal(err)
+	}
+	if rec.Code != http.StatusOK || calls != 1 || env.Data.Page != 2 || env.Data.PageSize != 5 || env.Data.TotalPage != 2 {
+		t.Fatalf("response = %d %+v, calls=%d", rec.Code, env.Data, calls)
+	}
+}

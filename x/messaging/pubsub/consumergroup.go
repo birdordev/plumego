@@ -133,10 +133,18 @@ func NewConsumerGroupManager(ps *InProcBroker) *ConsumerGroupManager {
 	}
 }
 
-// CreateGroup creates a new consumer group
+// CreateGroup creates a new consumer group. A negative heartbeat interval or
+// an enabled auto-commit with a negative interval returns an error.
 func (cgm *ConsumerGroupManager) CreateGroup(config ConsumerGroupConfig) error {
 	if config.GroupID == "" {
 		return errors.New("group ID is required")
+	}
+
+	if config.HeartbeatInterval < 0 {
+		return errors.New("HeartbeatInterval must be non-negative")
+	}
+	if config.AutoCommit && config.AutoCommitInterval < 0 {
+		return errors.New("AutoCommitInterval must be non-negative when auto-commit is enabled")
 	}
 
 	// Apply defaults

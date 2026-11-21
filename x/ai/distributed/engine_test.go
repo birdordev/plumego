@@ -2,6 +2,7 @@ package distributed
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"path/filepath"
@@ -650,4 +651,109 @@ func TestResumeIgnoresPriorDispatchResult(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestDistinctExecutionIDsAtSameTime(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		p := &engineTestPersistence{}
+		e := newEngineForTest(nil, p)
+		first, err := e.ExecuteAsync(t.Context(), "workflow", nil, ExecutionOptions{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		synctest.Wait()
+		second, err := e.ExecuteAsync(t.Context(), "workflow", nil, ExecutionOptions{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		synctest.Wait()
+		if first == second {
+			t.Errorf("sequential completed runs share ID %q", first)
+		}
+	})
+}
+
+func TestExecutionDeadlineReachesLocalSteps(t *testing.T) {
+	for _, callerDeadline := range []time.Duration{time.Second, 3 * time.Second} {
+		synctest.Test(t, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(t.Context(), callerDeadline)
+			defer cancel()
+			budget := 2 * time.Second
+			want := time.Now().Add(min(budget, callerDeadline))
+			p := &engineTestPersistence{}
+			var deadlines []time.Time
+			var stepErr error
+			step := func(ctx context.Context) {
+				deadline, ok := ctx.Deadline()
+				if !ok {
+					t.Error("step has no deadline")
+				}
+				deadlines = append(deadlines, deadline)
+			}
+			e := newEngineForTest(nil, p, engineTestStep(func(ctx context.Context, _ *orchestration.Workflow) (*orchestration.AgentResult, error) {
+				step(ctx)
+				time.Sleep(500 * time.Millisecond)
+				return &orchestration.AgentResult{}, nil
+			}), engineTestStep(func(ctx context.Context, _ *orchestration.Workflow) (*orchestration.AgentResult, error) {
+				step(ctx)
+				<-ctx.Done()
+				stepErr = ctx.Err()
+				return nil, stepErr
+			}))
+			id, err := e.ExecuteAsync(ctx, "workflow", nil, ExecutionOptions{Timeout: budget})
+			if err != nil {
+				t.Fatal(err)
+			}
+			time.Sleep(min(budget, callerDeadline))
+			synctest.Wait()
+			if len(deadlines) != 2 || !deadlines[0].Equal(want) || !deadlines[1].Equal(want) || !errors.Is(stepErr, context.DeadlineExceeded) {
+				t.Errorf("deadlines = %v, want %v; step error = %v", deadlines, want, stepErr)
+			}
+			snapshot, err := e.GetExecutionStatus(t.Context(), id)
+			if err != nil || snapshot.Status != StatusCancelled || !strings.Contains(snapshot.Error, context.DeadlineExceeded.Error()) {
+				t.Errorf("terminal snapshot = %+v, error = %v", snapshot, err)
+			}
+		})
+	}
+}
+
+func TestResumePreservesPersistedExecutionMode(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		p := &engineTestPersistence{}
+		calls := 0
+		step := engineTestStep(func(context.Context, *orchestration.Workflow) (*orchestration.AgentResult, error) {
+			calls++
+			if calls == 1 {
+				return nil, errors.New("first run failed")
+			}
+			return &orchestration.AgentResult{Output: "done"}, nil
+		})
+		e := newEngineForTest(nil, p, step)
+		id, err := e.ExecuteAsync(t.Context(), "workflow", nil, ExecutionOptions{Checkpoints: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		synctest.Wait()
+		saved, err := e.GetExecutionStatus(t.Context(), id)
+		if err != nil || saved.Status != StatusFailed {
+			t.Fatalf("initial snapshot = %+v, %v", saved, err)
+		}
+		encoded, err := json.Marshal(saved)
+		if err != nil {
+			t.Fatal(err)
+		}
+		recovered := &engineTestPersistence{}
+		if err := json.Unmarshal(encoded, &recovered.snapshot); err != nil {
+			t.Fatal(err)
+		}
+		e = newEngineForTest(nil, recovered, step)
+		if err := e.Resume(t.Context(), id); err != nil {
+			t.Fatal(err)
+		}
+		synctest.Wait()
+		snap, err := e.GetExecutionStatus(t.Context(), id)
+		if err != nil || calls != 2 || snap.Status != StatusCompleted {
+			t.Errorf("calls=%d status=%s snapshot error=%v", calls, snap.Status, err)
+		}
+	})
 }

@@ -7,8 +7,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"net"
 	"net/http"
+	"slices"
 	"sort"
 	"sync"
 	"sync/atomic"
@@ -37,7 +39,7 @@ type ClusterConfig struct {
 	// Peers are the addresses of other cluster nodes
 	Peers []string
 
-	// HeartbeatInterval for node health checks (default: 5s)
+	// HeartbeatInterval defaults to 5s. Health checks run at twice this interval.
 	HeartbeatInterval time.Duration
 
 	// HeartbeatTimeout before marking node as unhealthy (default: 15s)
@@ -176,6 +178,10 @@ func NewDistributed(config ClusterConfig, opts ...Option) (*DistributedPubSub, e
 
 	if config.ListenAddr == "" {
 		return nil, errors.New("listen address is required")
+	}
+
+	if config.HeartbeatInterval < 0 || config.HeartbeatInterval > time.Duration(math.MaxInt64/2) {
+		return nil, errors.New("HeartbeatInterval must be non-negative and safe to double")
 	}
 
 	// Apply defaults
@@ -705,7 +711,7 @@ func (dps *DistributedPubSub) Close() error {
 	return dps.InProcBroker.Close()
 }
 
-// Nodes returns current cluster nodes
+// Nodes returns detached snapshots of the current cluster nodes.
 func (dps *DistributedPubSub) Nodes() []*ClusterNode {
 	dps.nodesMu.RLock()
 	defer dps.nodesMu.RUnlock()
@@ -714,6 +720,7 @@ func (dps *DistributedPubSub) Nodes() []*ClusterNode {
 	for _, node := range dps.nodes {
 		// Create copy
 		nodeCopy := *node
+		nodeCopy.Topics = slices.Clone(node.Topics)
 		nodes = append(nodes, &nodeCopy)
 	}
 

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"hash/fnv"
 	"net/http"
+	"slices"
 	"sort"
 	"strings"
 )
@@ -33,9 +34,10 @@ type HeaderAwareKeyStrategy struct {
 }
 
 // NewHeaderAwareKeyStrategy creates a header-aware key strategy
+// The strategy owns a copy of the input slice.
 func NewHeaderAwareKeyStrategy(headers []string) *HeaderAwareKeyStrategy {
 	return &HeaderAwareKeyStrategy{
-		Headers: headers,
+		Headers: slices.Clone(headers),
 	}
 }
 
@@ -77,9 +79,10 @@ type QueryParamKeyStrategy struct {
 }
 
 // NewQueryParamKeyStrategy creates a query parameter key strategy
+// The strategy owns a copy of the input slice.
 func NewQueryParamKeyStrategy(ignoreParams []string) *QueryParamKeyStrategy {
 	return &QueryParamKeyStrategy{
-		IgnoreParams: ignoreParams,
+		IgnoreParams: slices.Clone(ignoreParams),
 	}
 }
 
@@ -218,9 +221,10 @@ type CompositeKeyStrategy struct {
 }
 
 // NewCompositeKeyStrategy creates a composite key strategy
+// The strategy owns a copy of the input slice.
 func NewCompositeKeyStrategy(strategies ...KeyStrategy) *CompositeKeyStrategy {
 	return &CompositeKeyStrategy{
-		Strategies: strategies,
+		Strategies: slices.Clone(strategies),
 	}
 }
 

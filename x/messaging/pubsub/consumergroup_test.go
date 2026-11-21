@@ -902,3 +902,32 @@ func BenchmarkConsumerGroup_Commit(b *testing.B) {
 		_ = cgm.CommitOffset("bench-commit", "test", i%16, uint64(i))
 	}
 }
+
+func TestConsumerGroupRejectsInvalidTickerIntervals(t *testing.T) {
+	broker := New()
+	t.Cleanup(func() { _ = broker.Close() })
+	manager := NewConsumerGroupManager(broker)
+	for _, tc := range []struct {
+		heartbeat, commit time.Duration
+		autoCommit, valid bool
+	}{
+		{-time.Second, 0, false, false},
+		{time.Second, -time.Second, true, false},
+		{time.Second, -time.Second, false, true},
+		{0, 0, true, true},
+		{time.Second, time.Second, true, true},
+	} {
+		cfg := ConsumerGroupConfig{GroupID: "test", HeartbeatInterval: tc.heartbeat, AutoCommitInterval: tc.commit, AutoCommit: tc.autoCommit}
+		err := manager.CreateGroup(cfg)
+		if (err == nil) != tc.valid {
+			t.Fatalf("CreateGroup(%+v) = %v", cfg, err)
+		}
+		if tc.valid {
+			if err := manager.DeleteGroup(cfg.GroupID); err != nil {
+				t.Fatal(err)
+			}
+		} else if _, present := manager.groups[cfg.GroupID]; present {
+			t.Fatal("invalid group was registered")
+		}
+	}
+}

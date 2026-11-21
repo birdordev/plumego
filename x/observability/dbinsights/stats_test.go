@@ -1,6 +1,7 @@
 package dbinsights
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"testing"
@@ -286,5 +287,36 @@ func TestTopSlowTablesBreaksTies(t *testing.T) {
 		if alpha < 0 || zeta < alpha {
 			t.Fatalf("summary tie order:\n%s", summary)
 		}
+	}
+}
+
+type aggregateObservationFunc func(context.Context, string, string, string, int, time.Duration, error)
+
+func (fn aggregateObservationFunc) ObserveDB(ctx context.Context, operation, driver, query string, rows int, duration time.Duration, err error) {
+	fn(ctx, operation, driver, query, rows, duration, err)
+}
+
+func TestAggregatingObserverForwardsAndCounts(t *testing.T) {
+	ctx := t.Context()
+	sentinel := errors.New("test database failure")
+	calls := 0
+	base := aggregateObservationFunc(func(got context.Context, operation, driver, query string, rows int, duration time.Duration, err error) {
+		calls++
+		if got != ctx || operation != "query" || driver != "test" || query != "SELECT id FROM items" || rows != calls ||
+			duration != time.Duration(calls)*time.Millisecond || (calls == 1 && err != nil) || (calls == 2 && err != sentinel) {
+			t.Errorf("observation %d: %s %s %q %d %v %v", calls, operation, driver, query, rows, duration, err)
+		}
+	})
+	for _, observer := range []MetricsObserver{base, nil} {
+		o := NewAggregatingObserver(observer, time.Second)
+		o.ObserveDB(ctx, "query", "test", "SELECT id FROM items", 1, time.Millisecond, nil)
+		o.ObserveDB(ctx, "query", "test", "SELECT id FROM items", 2, 2*time.Millisecond, sentinel)
+		s := o.GetAggregator().GetGlobalStats()
+		if s.TotalQueries != 2 || s.SuccessQueries != 1 || s.FailedQueries != 1 {
+			t.Errorf("stats = %+v", s)
+		}
+	}
+	if calls != 2 {
+		t.Errorf("forwarded calls=%d", calls)
 	}
 }

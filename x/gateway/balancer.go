@@ -172,16 +172,14 @@ func NewIPHashBalancer() *IPHashBalancer {
 	return &IPHashBalancer{}
 }
 
-// Next returns a backend based on client IP hash
+// Next selects a healthy backend using the current time as a fallback.
+// Use NextWithIP to select a backend by client IP.
 func (b *IPHashBalancer) Next(pool *BackendPool) (*Backend, error) {
 	backends := pool.HealthyBackends()
 	if len(backends) == 0 {
 		return nil, ErrNoHealthyBackends
 	}
 
-	// Note: This needs the client IP to be passed through context
-	// For now, we'll use a simple round-robin fallback
-	// In production, you would extract IP from request context
 	index := int(time.Now().UnixNano() % int64(len(backends)))
 	return backends[index], nil
 }

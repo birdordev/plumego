@@ -220,3 +220,31 @@ func TestTrackerClosePreservesManagerContract(t *testing.T) {
 	}
 	check(http.StatusServiceUnavailable)
 }
+
+func TestTrackerUnregisterUpdatesChecks(t *testing.T) {
+	manager, err := NewManager(Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tracker := NewTracker(manager)
+	t.Cleanup(func() { _ = tracker.Close() })
+	calls := 0
+	if err := tracker.RegisterComponent(functionChecker{"db", func(context.Context) error { calls++; return errors.New("offline") }}); err != nil {
+		t.Fatal(err)
+	}
+	if result := tracker.CheckAllComponents(t.Context()); result.Status.IsReady() || calls != 1 {
+		t.Fatalf("registered failing component: result=%+v calls=%d", result, calls)
+	}
+	if err := tracker.UnregisterComponent("db"); err != nil {
+		t.Fatal(err)
+	}
+	if result := tracker.CheckAllComponents(t.Context()); !result.Status.IsReady() || calls != 1 {
+		t.Fatalf("after removal: result=%+v calls=%d", result, calls)
+	}
+	if _, ok := tracker.GetComponentHealth("db"); ok {
+		t.Error("removed component remains visible")
+	}
+	if err := tracker.UnregisterComponent("db"); err == nil {
+		t.Error("repeated removal returned nil")
+	}
+}

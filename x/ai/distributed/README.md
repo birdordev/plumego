@@ -63,6 +63,14 @@ current task and releases the subscription when the execution ends.
 Checkpoints advance the recovery cursor only after their snapshot has been
 saved. When a step result exists, the engine writes it before saving the
 snapshot. A result record can therefore exist even when the checkpoint fails.
+Execution IDs are opaque. Each run uses a single execution timeout budget for
+local steps, queue operations, and remote results. A shorter caller deadline
+still applies. Terminal snapshot writes use the engine's separate persistence
+budget.
+
+New snapshots record the execution mode so local runs resume locally. Older
+snapshots without a mode retain the default distributed behavior.
+
 Execution stops on either failure. Resume uses the last readable snapshot
 and skips steps recorded as complete, including in older snapshots. Steps
 with external side effects should be prepared for retries.

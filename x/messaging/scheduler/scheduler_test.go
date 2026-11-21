@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -3128,4 +3129,109 @@ func TestRegistrationUsesCompletedDependencies(t *testing.T) {
 			t.Errorf("final runs (immediate, waiting, paused) = %d, %d, %d", immediate, waiting, paused)
 		}
 	})
+}
+
+type orderedRecoveryStore struct {
+	*MemoryStore
+	jobs []StoredJob
+}
+
+func (s orderedRecoveryStore) List() ([]StoredJob, error) { return s.jobs, nil }
+
+func TestLoadPersistedRestoresDependencyChain(t *testing.T) {
+	for _, reverse := range []bool{false, true} {
+		synctest.Test(t, func(t *testing.T) {
+			at := time.Now()
+			jobs := []StoredJob{
+				{ID: "last", TaskName: "task", RunAt: at, Dependencies: []JobID{"middle", "other"}},
+				{ID: "middle", TaskName: "task", RunAt: at, Dependencies: []JobID{"first"}},
+				{ID: "other", TaskName: "task", RunAt: at, Dependencies: []JobID{"first"}},
+				{ID: "first", TaskName: "task", RunAt: at},
+				{ID: "missing", TaskName: "task", RunAt: at, Dependencies: []JobID{"absent"}},
+				{ID: "cycle-a", TaskName: "task", RunAt: at, Dependencies: []JobID{"cycle-b"}},
+				{ID: "cycle-b", TaskName: "task", RunAt: at, Dependencies: []JobID{"cycle-a"}},
+			}
+			if reverse {
+				slices.Reverse(jobs)
+			}
+			var output bytes.Buffer
+			logger := log.NewLogger(log.LoggerConfig{Format: log.LoggerFormatJSON, Output: &output, ErrorOutput: &output})
+			s := New(WithWorkers(1), WithStore(orderedRecoveryStore{NewMemoryStore(), jobs}), WithLogger(logger))
+			var ran []JobID
+			if err := s.RegisterTask("task", func(ctx context.Context) error {
+				id, _ := JobIDFromContext(ctx)
+				ran = append(ran, id)
+				return nil
+			}); err != nil {
+				t.Fatal(err)
+			}
+			s.Start()
+			synctest.Wait()
+			if err := s.Stop(t.Context()); err != nil {
+				t.Fatal(err)
+			}
+			if len(ran) != 4 || ran[0] != "first" || ran[3] != "last" || !slices.Contains(ran, "middle") || !slices.Contains(ran, "other") {
+				t.Errorf("run order = %v", ran)
+			}
+			if got := strings.Count(output.String(), "missing or cyclic dependencies"); got != 3 {
+				t.Errorf("invalid records diagnosed = %d", got)
+			}
+		})
+	}
+}
+
+func TestSkippedDelayJobRetriesPersistenceCleanup(t *testing.T) {
+	for _, failures := range []int{1, 2} {
+		synctest.Test(t, func(t *testing.T) {
+			store := &skippedJobDeleteStore{MemoryStore: NewMemoryStore(), failures: failures}
+			var output bytes.Buffer
+			var s *Scheduler
+			logger := saveDiagnosticLogger{
+				StructuredLogger: log.NewLogger(log.LoggerConfig{Format: log.LoggerFormatJSON, Output: &output, ErrorOutput: &output}),
+				onError: func() {
+					if status, ok := s.Status("child"); !ok || status.State != JobStateFailed {
+						t.Errorf("status during cleanup diagnostic = %+v", status)
+					}
+				},
+			}
+			s = New(WithStore(store), WithLogger(logger))
+			at := time.Now().Add(time.Hour)
+			task := func(context.Context) error { return nil }
+			if _, err := s.Schedule("parent", at, task); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := s.Schedule("child", at, task, WithTaskName("child"), WithDependsOn(DependencyFailureSkip, "parent")); err != nil {
+				t.Fatal(err)
+			}
+			if !s.Cancel("parent") {
+				t.Fatal("cancel failed")
+			}
+			records, err := store.List()
+			if err != nil || len(records) != failures-1 || store.calls != 2 {
+				t.Errorf("remaining records=%d delete attempts=%d list error=%v", len(records), store.calls, err)
+			}
+			if status, ok := s.Status("child"); !ok || status.State != JobStateFailed {
+				t.Errorf("final child status = %+v", status)
+			}
+			if diagnosed := strings.Contains(output.String(), "test skipped job delete failure"); diagnosed != (failures == 2) {
+				t.Errorf("cleanup diagnostics = %s", output.String())
+			}
+		})
+	}
+}
+
+type skippedJobDeleteStore struct {
+	*MemoryStore
+	calls    int
+	failures int
+}
+
+func (s *skippedJobDeleteStore) Delete(id JobID) error {
+	if id == "child" {
+		s.calls++
+		if s.calls <= s.failures {
+			return errors.New("test skipped job delete failure")
+		}
+	}
+	return s.MemoryStore.Delete(id)
 }

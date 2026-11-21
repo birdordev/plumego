@@ -535,3 +535,33 @@ func TestMemoryCacheInvalidateByModelPreservesOtherModels(t *testing.T) {
 		}
 	}
 }
+
+func TestMemoryCacheDeleteReleasesCapacity(t *testing.T) {
+	c := NewMemoryCache(time.Hour, 2)
+	ctx := t.Context()
+	removed, kept, newKey := &CacheKey{Hash: "removed"}, &CacheKey{Hash: "kept"}, &CacheKey{Hash: "new"}
+	for _, key := range []*CacheKey{removed, kept} {
+		if err := c.Set(ctx, key, &CacheEntry{}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for range 2 {
+		if err := c.Delete(ctx, removed); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := c.Get(ctx, removed); err == nil {
+		t.Error("deleted entry still exists")
+	}
+	if err := c.Set(ctx, newKey, &CacheEntry{}); err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []*CacheKey{kept, newKey} {
+		if _, err := c.Get(ctx, key); err != nil {
+			t.Errorf("Get(%s) = %v", key.Hash, err)
+		}
+	}
+	if got := c.Stats().Evictions; got != 0 {
+		t.Errorf("evictions = %d", got)
+	}
+}

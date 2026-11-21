@@ -44,7 +44,9 @@ type ExecutionSnapshot struct {
 	Error          string                       `json:"error,omitempty"`
 	CreatedAt      time.Time                    `json:"created_at"`
 	UpdatedAt      time.Time                    `json:"updated_at"`
-	TTL            time.Duration                `json:"ttl,omitempty"`
+	// Distributed records the execution mode. Nil uses the historical resume default.
+	Distributed *bool         `json:"distributed,omitempty"`
+	TTL         time.Duration `json:"ttl,omitempty"`
 }
 
 // WorkflowPersistence defines the interface for persisting workflow definitions and execution state.
