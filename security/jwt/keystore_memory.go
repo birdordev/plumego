@@ -101,11 +101,29 @@ func (s *InMemoryKeyStore) KeysContext(ctx context.Context) ([]string, error) {
 		return nil, err
 	}
 	now := time.Now()
-	keys := make([]string, 0, len(s.entries))
+	// Buffer small live sets without reserving space for expired entries.
+	var small [32]string
+	var keys []string
+	count, expired := 0, 0
 	for k, e := range s.entries {
-		if !e.expiredAt(now) {
-			keys = append(keys, k)
+		if e.expiredAt(now) {
+			expired++
+			continue
 		}
+		if keys == nil {
+			if count < len(small) {
+				small[count] = k
+				count++
+				continue
+			}
+			// Only the entries not yet seen can need additional capacity.
+			keys = make([]string, count, len(s.entries)-expired)
+			copy(keys, small[:])
+		}
+		keys = append(keys, k)
 	}
-	return keys, nil
+	if keys != nil {
+		return keys, nil
+	}
+	return append([]string{}, small[:count]...), nil
 }

@@ -1193,3 +1193,27 @@ func TestDebugRequestDetailsUseAvailableRoutePattern(t *testing.T) {
 		}
 	}
 }
+
+func TestUnsupportedDebugFlushPreservesSelectedStatusBoundary(t *testing.T) {
+	for _, selected := range []bool{true, false} {
+		h := Middleware(Config{})(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "text/plain")
+			if selected {
+				w.WriteHeader(http.StatusNotFound)
+			}
+			if err := http.NewResponseController(w).Flush(); !errors.Is(err, http.ErrNotSupported) {
+				t.Errorf("Flush = %v", err)
+			}
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = w.Write([]byte("fixture"))
+		}))
+		w := httptest.NewRecorder()
+		h.ServeHTTP(struct{ http.ResponseWriter }{w}, httptest.NewRequest(http.MethodGet, "/", nil))
+		if w.Code != http.StatusNotFound {
+			t.Fatalf("status=%d", w.Code)
+		}
+		if selected && w.Body.String() != "fixture" || !selected && !json.Valid(w.Body.Bytes()) {
+			t.Fatalf("selected=%t body=%q", selected, w.Body)
+		}
+	}
+}

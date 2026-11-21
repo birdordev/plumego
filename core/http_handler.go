@@ -108,6 +108,7 @@ func (a *App) ensureServerPrepared() (bool, error) {
 }
 
 func (a *App) warnNoRoutes() {
+	defer func() { _ = recover() }()
 	a.Logger().Warn("no routes registered. Register routes before preparing the application.", nil)
 }
 

@@ -265,3 +265,19 @@ func BenchmarkTraceBaggageCopies(b *testing.B) {
 		})
 	}
 }
+
+func TestSiblingTraceSnapshotsKeepSamplingAndBaggageSeparate(t *testing.T) {
+	parent := WithRequestID(t.Context(), "fixture")
+	baggage := map[string]string{"owner": "first"}
+	first := WithTraceContext(parent, TraceContext{Flags: traceFlagsSampled, Baggage: baggage})
+	baggage["owner"] = "second"
+	second := WithTraceContext(parent, TraceContext{Baggage: baggage})
+	baggage["owner"] = "changed"
+	a, okA := TraceContextFromContext(first)
+	b, okB := TraceContextFromContext(second)
+	if !okA || !okB || !a.IsSampled() || b.IsSampled() ||
+		a.Baggage["owner"] != "first" || b.Baggage["owner"] != "second" ||
+		RequestIDFromContext(first) != "fixture" || RequestIDFromContext(second) != "fixture" {
+		t.Fatalf("first=%+v second=%+v", a, b)
+	}
+}

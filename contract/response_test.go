@@ -679,11 +679,17 @@ func TestJSONResponseReportsShortWrite(t *testing.T) {
 		} {
 			t.Run(response.name+"/"+tc.name, func(t *testing.T) {
 				w := &responseWriteProbe{ResponseRecorder: httptest.NewRecorder(), short: tc.short, err: tc.err}
+				w.Header().Set("Cache-Control", "private")
+				w.Header().Set("X-Application", "fixture")
 				if err := response.write(w); !errors.Is(err, tc.want) {
 					t.Fatalf("error = %v, want %v", err, tc.want)
 				}
 				if w.Code != response.status || w.headerCalls != 1 {
 					t.Fatalf("status = %d, header calls = %d", w.Code, w.headerCalls)
+				}
+				h := w.Result().Header
+				if h.Get("Cache-Control") != "private" || h.Get("X-Application") != "fixture" || h.Get("Content-Type") != ContentTypeJSON {
+					t.Fatalf("committed headers=%v", h)
 				}
 			})
 		}
@@ -792,5 +798,29 @@ func TestWriteErrorPreservesIntegerDetailsAndEmptyContainers(t *testing.T) {
 	}
 	if body.RequestID != "fixture" {
 		t.Fatalf("request ID = %q", body.RequestID)
+	}
+}
+
+func TestErrorRequestIDFallbackAndCauseIsolation(t *testing.T) {
+	for _, input := range []struct{ explicit, inherited, want string }{
+		{"explicit", "parent", "explicit"},
+		{"", "parent", "parent"},
+		{"invalid\n", "parent", "invalid"},
+		{"bad\nvalue", "parent", "parent"},
+		{"", "", ""},
+	} {
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest(http.MethodGet, "/", nil)
+		r = r.WithContext(WithRequestID(r.Context(), input.inherited))
+		cause := errors.New("private fixture message")
+		apiErr := NewErrorBuilder().Type(TypeInternal).RequestID(input.explicit).Wrap(cause).Build()
+		if err := WriteError(w, r, apiErr); err != nil {
+			t.Fatal(err)
+		}
+		var got errorResponse
+		if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil || got.RequestID != input.want ||
+			strings.Contains(w.Body.String(), cause.Error()) {
+			t.Fatalf("request_id=%q want=%q response=%s err=%v", got.RequestID, input.want, w.Body, err)
+		}
 	}
 }

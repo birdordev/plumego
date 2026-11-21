@@ -284,3 +284,39 @@ func TestLoggerPanicLeavesNormalResponsesIntact(t *testing.T) {
 		}
 	}
 }
+
+func TestAccessLogUsesRoutePublicationAndCompletionFields(t *testing.T) {
+	for _, published := range []bool{false, true} {
+		logger := newStubLogger()
+		wrap, err := Middleware(Config{Logger: logger})
+		if err != nil {
+			t.Fatal(err)
+		}
+		h := wrap(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if published {
+				w.(interface{ SetRouteContext(context.Context) }).SetRouteContext(contract.WithRequestContext(r.Context(), contract.RequestContext{RoutePattern: "/items/:id"}))
+			}
+			rewrite := *r.URL
+			rewrite.Path = "/downstream"
+			derived := r.Clone(r.Context())
+			derived.URL = &rewrite
+			w.WriteHeader(http.StatusAccepted)
+			_, _ = w.Write([]byte(derived.URL.Path))
+		}))
+		r := httptest.NewRequest(http.MethodGet, "/items/1", nil)
+		r = r.WithContext(contract.WithRequestID(r.Context(), "fixture"))
+		h.ServeHTTP(httptest.NewRecorder(), r)
+		entries := *logger.entries
+		var wantRoute any
+		if published {
+			wantRoute = "/items/:id"
+		}
+		if len(entries) != 1 {
+			t.Fatalf("entries = %v", entries)
+		}
+		f := entries[0].fields
+		if f["path"] != "/items/1" || f["route"] != wantRoute || f["status"] != http.StatusAccepted || f["bytes"] != len("/downstream") || f["request_id"] != "fixture" {
+			t.Fatalf("observed fields=%v", f)
+		}
+	}
+}

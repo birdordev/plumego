@@ -3,6 +3,7 @@ package metrics
 import (
 	"errors"
 	"maps"
+	"strconv"
 	"testing"
 	"time"
 )
@@ -256,5 +257,20 @@ func TestUnnamedRecordsCountWithoutCreatingSeries(t *testing.T) {
 	c.Clear()
 	if stats := c.GetStats(); stats.TotalRecords != 0 || stats.ErrorRecords != 0 || stats.ActiveSeries != 0 {
 		t.Fatalf("cleared records = %+v", stats)
+	}
+}
+
+func TestResetAtBoundedCardinalityKeepsPriorSnapshotIndependent(t *testing.T) {
+	c := NewBaseMetricsCollector()
+	for i := range 256 {
+		c.Record(t.Context(), MetricRecord{Name: strconv.Itoa(i)})
+	}
+	before := c.GetStats()
+	c.Clear()
+	c.Record(t.Context(), MetricRecord{Name: "0"})
+	after := c.GetStats()
+	if before.ActiveSeries != 256 || before.TotalRecords != 256 || len(before.NameBreakdown) != 256 ||
+		after.ActiveSeries != 1 || after.TotalRecords != 1 || after.NameBreakdown["0"] != 1 {
+		t.Fatalf("sizes: before=%d/%d after=%d/%d", before.ActiveSeries, before.TotalRecords, after.ActiveSeries, after.TotalRecords)
 	}
 }

@@ -3,6 +3,7 @@ package idempotency
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 )
@@ -328,4 +329,23 @@ type hashAwareNoopStore struct {
 
 func (hashAwareNoopStore) CompleteWithRequestHash(context.Context, string, string, []byte) error {
 	return ErrRequestMismatch
+}
+
+func TestValidateCompletionAtChecksMismatchThenExpiryThenStatus(t *testing.T) {
+	now := time.Now()
+	record := Record{Key: "fixture", RequestHash: "stored", Status: StatusCompleted, ExpiresAt: now}
+	for _, tc := range []struct {
+		hash string
+		at   time.Time
+		want error
+	}{
+		{"other", now, ErrRequestMismatch},
+		{"stored", now, ErrExpired},
+		{"stored", now.Add(-time.Nanosecond), ErrAlreadyCompleted},
+	} {
+		err := ValidateCompletionAt(record, tc.hash, tc.at)
+		if !errors.Is(err, tc.want) || strings.Contains(err.Error(), record.RequestHash) {
+			t.Fatalf("classification=%v want=%v", err, tc.want)
+		}
+	}
 }

@@ -162,3 +162,17 @@ func TestClonePreservesEmptyMapsAndSharesNestedDetails(t *testing.T) {
 		t.Fatalf("nested details should be shared and top-level map detached: %v", original.Details)
 	}
 }
+
+func TestHealthStatusCloneKeepsTimestampAndSeparatesDependencies(t *testing.T) {
+	stamp := time.Date(2026, 1, 3, 7, 12, 0, 0, time.FixedZone("fixture", 1800))
+	nested := map[string]int{"value": 1}
+	original := HealthStatus{Timestamp: stamp, Status: StatusDegraded, Dependencies: []string{"primary"}, Details: map[string]any{"shared": nested}}
+	cloned := original.Clone()
+	cloned.Dependencies[0] = "changed"
+	cloned.Details["local"] = true
+	nested["value"] = 2
+	if original.Dependencies[0] != "primary" || original.Details["local"] != nil || cloned.Timestamp != stamp ||
+		cloned.Status != StatusDegraded || cloned.Details["shared"].(map[string]int)["value"] != 2 {
+		t.Fatalf("original=%+v clone=%+v", original, cloned)
+	}
+}

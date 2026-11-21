@@ -951,30 +951,32 @@ func TestWriteErrorNormalizesInvalidStatus(t *testing.T) {
 }
 
 func TestWriteErrorNormalizesNonErrorStatus(t *testing.T) {
-	w := httptest.NewRecorder()
+	for _, status := range []int{http.StatusOK, http.StatusNoContent, http.StatusResetContent} {
+		w := httptest.NewRecorder()
 
-	if err := WriteError(w, nil, APIError{
-		status:   http.StatusOK,
-		code:     CodeBadRequest,
-		message:  "bad request",
-		category: CategoryClient,
-	}); err != nil {
-		t.Fatalf("unexpected write error: %v", err)
-	}
+		if err := WriteError(w, nil, APIError{
+			status:   status,
+			code:     CodeBadRequest,
+			message:  "bad request",
+			category: CategoryClient,
+		}); err != nil {
+			t.Fatalf("unexpected write error: %v", err)
+		}
 
-	if w.Code != http.StatusInternalServerError {
-		t.Fatalf("expected non-error status to normalize to 500, got %d", w.Code)
-	}
+		if w.Code != http.StatusInternalServerError {
+			t.Fatalf("expected non-error status to normalize to 500, got %d", w.Code)
+		}
 
-	var response errorResponse
-	if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
-		t.Fatalf("decode response: %v", err)
-	}
-	if response.Error.Category != CategoryServer {
-		t.Fatalf("expected category %q, got %q", CategoryServer, response.Error.Category)
-	}
-	if response.Error.Code != CodeBadRequest {
-		t.Fatalf("expected explicit code to be preserved, got %q", response.Error.Code)
+		var response errorResponse
+		if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
+			t.Fatalf("decode response: %v", err)
+		}
+		if response.Error.Category != CategoryServer {
+			t.Fatalf("expected category %q, got %q", CategoryServer, response.Error.Category)
+		}
+		if response.Error.Code != CodeBadRequest {
+			t.Fatalf("expected explicit code to be preserved, got %q", response.Error.Code)
+		}
 	}
 }
 
@@ -1214,5 +1216,19 @@ func TestErrorDetailsPreserveCustomEncodingAndCopyContainers(t *testing.T) {
 	if resp.Error.Details["custom"] != "custom-encoded" ||
 		resp.Error.Details["ordinary"].(map[string]any)["value"] != "original" {
 		t.Fatalf("unexpected error details: %+v", resp.Error.Details)
+	}
+}
+
+func TestErrorDetailOverlappingSliceViewsRemainIndependent(t *testing.T) {
+	input := []string{"first", "second"}
+	apiErr := NewErrorBuilder().Detail("views", [][]string{input[:1], input[:2]}).Build()
+	input[0] = "changed"
+	views := apiErr.Details()["views"].([][]string)
+	if len(views[0]) != 1 || len(views[1]) != 2 || views[1][0] != "first" {
+		t.Fatalf("cloned views = %v", views)
+	}
+	views[0][0] = "short only"
+	if views[1][0] != "first" || apiErr.Details()["views"].([][]string)[0][0] != "first" {
+		t.Fatal("short view shares the long view or stored snapshot")
 	}
 }

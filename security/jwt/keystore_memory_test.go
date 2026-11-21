@@ -414,3 +414,57 @@ func TestInMemoryKeyStoreCopiesAndRejectsCanceledOverwrite(t *testing.T) {
 		t.Fatalf("second read=%q err=%v", again, err)
 	}
 }
+
+func BenchmarkKeyStoreKeysExpiryRatio(b *testing.B) {
+	const entries = 4096
+	for _, live := range []int{0, 32, entries} {
+		b.Run(fmt.Sprint(live), func(b *testing.B) {
+			store := NewInMemoryKeyStore()
+			past := time.Now().Add(-time.Hour)
+			for i := range entries {
+				var expiry time.Time
+				if i >= live {
+					expiry = past
+				}
+				store.entries[fmt.Sprint(i)] = memEntry{expiry: expiry}
+			}
+			b.ReportAllocs()
+			for b.Loop() {
+				keys, err := store.KeysContext(b.Context())
+				if err != nil || len(keys) != live {
+					b.Fatalf("keys=%d err=%v", len(keys), err)
+				}
+			}
+		})
+	}
+}
+
+func TestExpiredKeySnapshotAndOverwriteUseNewValue(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		store := NewInMemoryKeyStore()
+		if err := store.SetContext(t.Context(), "fixture", []byte("first"), time.Second); err != nil {
+			t.Fatal(err)
+		}
+		old, err := store.GetContext(t.Context(), "fixture")
+		if err != nil {
+			t.Fatal(err)
+		}
+		time.Sleep(time.Second)
+		if keys, err := store.KeysContext(t.Context()); err != nil || keys == nil || len(keys) != 0 {
+			t.Fatalf("expired enumeration=%v err=%v", keys, err)
+		}
+		if _, err := store.GetContext(t.Context(), "fixture"); !errors.Is(err, ErrKeyExpired) {
+			t.Fatalf("expired read=%v", err)
+		}
+		if err := store.SetContext(t.Context(), "fixture", []byte("second"), 0); err != nil {
+			t.Fatal(err)
+		}
+		old[0] = 'X'
+		if got, err := store.GetContext(t.Context(), "fixture"); err != nil || string(got) != "second" {
+			t.Fatalf("overwritten value=%q err=%v", got, err)
+		}
+		if keys, err := store.KeysContext(t.Context()); err != nil || !slices.Equal(keys, []string{"fixture"}) {
+			t.Fatalf("live enumeration=%v err=%v", keys, err)
+		}
+	})
+}

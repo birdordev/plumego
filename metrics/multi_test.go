@@ -2,8 +2,10 @@ package metrics
 
 import (
 	"context"
+	"errors"
 	"math"
 	"reflect"
+	"slices"
 	"testing"
 	"time"
 )
@@ -500,4 +502,37 @@ func TestMultiObserveHTTPPropagatesContextAndObservationInOrder(t *testing.T) {
 	if !reflect.DeepEqual(order, []int{1, 2}) {
 		t.Fatalf("ordering=%v", order)
 	}
+}
+
+func TestAggregateEarliestNonZeroTimeIsIndependentOfOrder(t *testing.T) {
+	early := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	late := early.Add(time.Hour)
+	known := newStubAggregateCollector(func() CollectorStats { return CollectorStats{StartTime: early} })
+	other := newStubAggregateCollector(func() CollectorStats { return CollectorStats{StartTime: late, TotalRecords: 2} })
+	unset := newStubAggregateCollector(func() CollectorStats { return CollectorStats{} })
+	for _, input := range [][]AggregateCollector{{unset, known, other}, {other, unset, known}, {known, other, unset}} {
+		got := NewMultiCollector(input...).GetStats()
+		if !got.StartTime.Equal(early) || got.TotalRecords != 2 {
+			t.Fatalf("stats=%+v", got)
+		}
+	}
+}
+
+func TestAggregateStopsPropagationAtPanickingRecordCollector(t *testing.T) {
+	var calls []string
+	failure := errors.New("collector fixture")
+	m := NewMultiCollector(
+		&recordingCollector{onRecord: func(MetricRecord) { calls = append(calls, "first") }},
+		&recordingCollector{onRecord: func(MetricRecord) {
+			calls = append(calls, "second")
+			panic(failure)
+		}},
+		&recordingCollector{onRecord: func(MetricRecord) { calls = append(calls, "third") }},
+	)
+	defer func() {
+		if p := recover(); p != failure || !slices.Equal(calls, []string{"first", "second"}) {
+			t.Fatalf("panic=%v calls=%v", p, calls)
+		}
+	}()
+	m.Record(t.Context(), MetricRecord{})
 }

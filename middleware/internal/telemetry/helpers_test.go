@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/birdordev/plumego/contract"
 )
@@ -251,5 +252,40 @@ func TestBeginTracePublishesOnlyValidTraceIdentity(t *testing.T) {
 		if !span.ended || span.status != http.StatusCreated {
 			t.Fatal("span did not finish")
 		}
+	}
+}
+
+type countingDeadlineSpan struct {
+	stubSpan
+	calls int
+}
+
+func (s *countingDeadlineSpan) End(status, bytes int, id string) {
+	s.calls++
+	s.stubSpan.End(status, bytes, id)
+}
+
+func TestBeginTracePreservesDerivedDeadlineAndParentCancellation(t *testing.T) {
+	parent, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	w := httptest.NewRecorder()
+	prepared := PrepareRequest(w, httptest.NewRequest(http.MethodGet, "/", nil).WithContext(parent))
+	span := &countingDeadlineSpan{stubSpan: stubSpan{traceID: "1234567890abcdef1234567890abcdef", spanID: "1234567890abcdef"}}
+	deadline := time.Now().Add(time.Hour)
+	derived, release := context.WithDeadline(prepared.Request.Context(), deadline)
+	defer release()
+	r, active := BeginTrace(w, prepared, func(ctx context.Context, _ *http.Request) (context.Context, TraceSpan) {
+		if ctx != prepared.Request.Context() {
+			t.Error("starter did not receive prepared request context")
+		}
+		return derived, span
+	})
+	cancel()
+	if got, ok := r.Context().Deadline(); !ok || !got.Equal(deadline) || r.Context().Err() != context.Canceled {
+		t.Fatalf("deadline=%v canceled=%v", got, r.Context().Err())
+	}
+	EndTrace(active, prepared.Complete(r))
+	if span.calls != 1 || w.Header().Get(SpanIDHeader) != span.spanID {
+		t.Fatalf("calls=%d headers=%v", span.calls, w.Header())
 	}
 }

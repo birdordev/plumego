@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -772,4 +773,23 @@ func TestConcurrentLeaderGenerationsKeepWaiterResponse(t *testing.T) {
 			t.Fatalf("old waiter=%q new leader=%q", waiter.Body.String(), next.Body.String())
 		}
 	})
+}
+
+func TestCoalescerMethodsDetachFromCallerConfiguration(t *testing.T) {
+	source := []string{http.MethodGet, http.MethodHead}
+	c := New(Config{Methods: source})
+	source[0], source[1] = http.MethodPost, http.MethodPut
+	var leaders []string
+	h := c.Middleware()(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if c.Stats().InFlight != 0 {
+			leaders = append(leaders, r.Method)
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	for _, method := range []string{http.MethodGet, http.MethodPost, http.MethodHead, http.MethodPut} {
+		h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(method, "/", nil))
+	}
+	if !slices.Equal(leaders, []string{http.MethodGet, http.MethodHead}) {
+		t.Fatalf("leaders=%v", leaders)
+	}
 }

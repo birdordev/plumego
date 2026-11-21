@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -182,5 +183,20 @@ func TestFacadeConstructorsRetainCoreDependencyContract(t *testing.T) {
 		if app.Logger() == nil || reflect.TypeOf(app.Logger()) != reflect.TypeOf(explicit.Logger()) {
 			t.Fatalf("default facade logger = %T, explicit = %T", app.Logger(), explicit.Logger())
 		}
+	}
+}
+
+func TestFacadeExplicitZeroConfigKeepsCoreValidation(t *testing.T) {
+	zero := plumego.NewWithConfig(plumego.AppConfig{})
+	if err := zero.Prepare(); err == nil || !strings.Contains(err.Error(), "server address cannot be empty") {
+		t.Fatalf("zero config Prepare=%v", err)
+	}
+	app := plumego.New()
+	if err := app.Prepare(); err != nil {
+		t.Fatal(err)
+	}
+	server, err := app.Server()
+	if err != nil || server.Addr != plumego.DefaultConfig().Addr {
+		t.Fatalf("default server=%v error=%v", server, err)
 	}
 }

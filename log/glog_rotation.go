@@ -63,8 +63,7 @@ func (l *gLogger) initLogFiles() error {
 
 		linkName := fmt.Sprintf("%s.%s", l.program, lname)
 		linkPath := filepath.Join(l.logDir, linkName)
-		_ = os.Remove(linkPath)
-		if err := os.Symlink(filename, linkPath); err != nil {
+		if err := replaceLogSymlink(filename, linkPath); err != nil {
 			return fmt.Errorf("failed to create symlink %s: %w", linkPath, err)
 		}
 	}

@@ -618,3 +618,83 @@ func TestOversizedSnapshotStartupReleasesDirectoryLock(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestEmptySnapshotShapeAndCorruptEntriesRecovery(t *testing.T) {
+	for _, tc := range []struct {
+		state string
+		valid bool
+	}{
+		{`{"entries":{}}`, true},
+		{`{}`, false},
+		{`{"entries":null}`, false},
+	} {
+		dir := t.TempDir()
+		path := filepath.Join(dir, stateFileName)
+		if err := os.WriteFile(path, []byte(tc.state), 0600); err != nil {
+			t.Fatal(err)
+		}
+		options := DefaultConfig(dir)
+		store, err := NewKVStore(options)
+		if tc.valid {
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := store.Close(); err != nil {
+				t.Fatal(err)
+			}
+			continue
+		}
+		if !errors.Is(err, ErrCorruptState) {
+			if store != nil {
+				_ = store.Close()
+			}
+			t.Fatalf("corrupt fixture returned %v", err)
+		}
+		if err := os.WriteFile(path, []byte(`{"entries":{}}`), 0600); err != nil {
+			t.Fatal(err)
+		}
+		reopened, err := NewKVStore(options)
+		if err != nil {
+			t.Fatalf("retry failed: %v", err)
+		}
+		if err := reopened.Close(); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func TestSnapshotBudgetWideningAllowsReadWithoutWriting(t *testing.T) {
+	// Verify the historical floor and saturation without opening a large file.
+	maxMemoryMB := int64(math.MaxInt64 / bytesPerMiB)
+	for _, tc := range []struct {
+		mem, want int64
+	}{
+		{1, defaultMaxMemoryMB * bytesPerMiB * 6},
+		{defaultMaxMemoryMB + 1, (defaultMaxMemoryMB + 1) * bytesPerMiB * 6},
+		{maxMemoryMB, math.MaxInt64 - 1},
+	} {
+		if int64(int(tc.mem)) != tc.mem {
+			continue
+		}
+		kv := &KVStore{opts: Options{MaxMemoryMB: int(tc.mem)}}
+		if got := kv.snapshotReadLimit(); got != tc.want {
+			t.Fatalf("budget(%d)=%d want=%d", tc.mem, got, tc.want)
+		}
+	}
+	path := filepath.Join(t.TempDir(), stateFileName)
+	original := []byte(`{"entries":{}}`)
+	if err := os.WriteFile(path, original, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if data, err := readSnapshot(path, int64(len(original)-1)); data != nil || err == nil {
+		t.Fatalf("undersized read=%s err=%v", data, err)
+	}
+	data, err := readSnapshot(path, int64(len(original)))
+	if err != nil || !bytes.Equal(data, original) {
+		t.Fatalf("retry=%s err=%v", data, err)
+	}
+	after, err := os.ReadFile(path)
+	if err != nil || !bytes.Equal(after, original) {
+		t.Fatalf("snapshot changed: %s err=%v", after, err)
+	}
+}

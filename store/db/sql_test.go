@@ -1458,3 +1458,18 @@ func TestOpenFailureUsesSafeDefaultDiagnostic(t *testing.T) {
 		t.Fatalf("database present=%t error type=%T", db != nil, err)
 	}
 }
+
+func TestQueryRowContextClassifiesDeferredCancellationAtScan(t *testing.T) {
+	db := sql.OpenDB(&rowsConnector{rows: &fixedRows{cols: []string{"id"}}})
+	defer db.Close()
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	row, err := QueryRowContext(ctx, db, "SELECT id")
+	if err != nil || row == nil {
+		t.Fatalf("query=%p err=%v", row, err)
+	}
+	var id int
+	if err := ScanRow(row, &id); !errors.Is(err, ErrQueryFailed) || !errors.Is(err, context.Canceled) {
+		t.Fatalf("scan error=%v", err)
+	}
+}

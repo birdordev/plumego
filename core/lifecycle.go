@@ -186,8 +186,13 @@ func (t *connectionTracker) drain(ctx context.Context) {
 			return
 		case <-ticker.C:
 			if t.logger != nil && ctx.Err() == nil {
-				t.logger.Info("draining open connections", log.Fields{"open_connections": t.open.Load()})
+				t.logDrainProgress()
 			}
 		}
 	}
+}
+
+func (t *connectionTracker) logDrainProgress() {
+	defer func() { _ = recover() }()
+	t.logger.Info("draining open connections", log.Fields{"open_connections": t.open.Load()})
 }

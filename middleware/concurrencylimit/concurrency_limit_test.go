@@ -429,3 +429,32 @@ func assertNotDone(t *testing.T, done <-chan *httptest.ResponseRecorder, d time.
 	case <-time.After(d):
 	}
 }
+
+func TestReuseOfOneBuilderSharesAdmissionAcrossHandlers(t *testing.T) {
+	build := Middleware(Config{MaxConcurrent: 1})
+	entered, release, done := make(chan struct{}), make(chan struct{}), make(chan struct{})
+	h := build(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		close(entered)
+		<-release
+	}))
+	go func() {
+		defer close(done)
+		h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/", nil))
+	}()
+	<-entered
+	next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) })
+	shared := build(next)
+	independent := Middleware(Config{MaxConcurrent: 1})(next)
+	getStatus := func(handler http.Handler) int {
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/", nil))
+		return w.Code
+	}
+	sharedStatus, independentStatus := getStatus(shared), getStatus(independent)
+	close(release)
+	<-done
+	if sharedStatus != http.StatusServiceUnavailable || independentStatus != http.StatusNoContent ||
+		getStatus(shared) != http.StatusNoContent {
+		t.Fatalf("shared=%d independent=%d", sharedStatus, independentStatus)
+	}
+}

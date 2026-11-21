@@ -632,3 +632,41 @@ func prepareConcurrentTLS(t testing.TB, app *core.App, workers int) *http.Server
 	}
 	return first.server
 }
+
+func TestTLSPrepareRetriesAfterDirectHandlerPublication(t *testing.T) {
+	cert, key := nettest.WriteSelfSignedTLSCertFiles(t, "cert-*.pem", "key-*.pem")
+	cfg := core.DefaultConfig()
+	cfg.TLS = core.TLSConfig{Enabled: true, CertFile: cert + ".pending", KeyFile: key}
+	app := core.New(cfg, core.AppDependencies{})
+	if err := app.Get("/", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	})); err != nil {
+		t.Fatal(err)
+	}
+	checkHandler := func() {
+		w := httptest.NewRecorder()
+		app.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/", nil))
+		if w.Code != http.StatusNoContent {
+			t.Fatalf("direct handler status=%d", w.Code)
+		}
+	}
+	checkHandler()
+	if err := app.Prepare(); !errors.Is(err, os.ErrNotExist) || app.PreparationState() != core.PreparationStateHandlerPrepared {
+		t.Fatalf("Prepare=%v, state=%s", err, app.PreparationState())
+	}
+	checkHandler()
+	if err := os.Rename(cert, cfg.TLS.CertFile); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(cfg.TLS.CertFile)
+	if err := app.Prepare(); err != nil {
+		t.Fatal(err)
+	}
+	first, err := app.Server()
+	if err != nil || first == nil {
+		t.Fatalf("Server=%p: %v", first, err)
+	}
+	if again, err := app.Server(); err != nil || again != first {
+		t.Fatalf("retry=%p, want %p: %v", again, first, err)
+	}
+}

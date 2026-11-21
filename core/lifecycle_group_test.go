@@ -694,3 +694,33 @@ func TestNestedGroupRetriesOnlyPendingChildCleanup(t *testing.T) {
 		t.Fatalf("retry calls=%v err=%v", calls, err)
 	}
 }
+
+func TestReadyGoexitRestoresRunningPhase(t *testing.T) {
+	probes, stopped := 0, 0
+	group := NewLifecycleGroup().Add("fixture", Component{
+		OnReady: func(context.Context) error {
+			probes++
+			if probes == 1 {
+				runtime.Goexit()
+			}
+			return nil
+		},
+		OnStop: func(context.Context) error { stopped++; return nil },
+	})
+	if err := group.Start(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		_ = group.Ready(t.Context())
+		t.Error("Ready returned after Goexit")
+	}()
+	<-done
+	if err := group.Ready(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if err := group.Stop(t.Context()); err != nil || stopped != 1 || probes != 2 {
+		t.Fatalf("Stop=%v checked=%d stopped=%d", err, probes, stopped)
+	}
+}

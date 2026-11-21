@@ -92,8 +92,10 @@ failure returns a fixed internal error with the request ID when available.
 Component health probes return 503 when the fresh check fails, is canceled,
 is superseded, or cannot run after manager closure. A cached healthy result
 cannot turn such a probe into a successful response. Missing components remain
-404. Failure bodies use a fixed message without backend error text; producing
-that response does not mutate a newer shared component result.
+404. A component reported as present with no snapshot returns a structured
+503. Failure messages omit backend error text. The handler derives the response
+from a local value, so an injected manager can retain ownership of its
+snapshot. Component names in the list response are sorted lexically.
 
 Overlapping aggregate health checks publish readiness only from the newest batch. Superseded batches return an unhealthy check result without replacing newer readiness; component-level version checks remain independent.
 

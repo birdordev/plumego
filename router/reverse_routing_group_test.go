@@ -130,6 +130,15 @@ func TestURLMalformedParamPairsReturnEmpty(t *testing.T) {
 	if got, err := r.URL("users.show", "id", "42", "id", "43"); err == nil || got != "" {
 		t.Fatalf("URL() with duplicate param = %q, err = %v, want empty string and error", got, err)
 	}
+	valid, err := r.URL("users.show", "id", "after review")
+	if err != nil || valid != "/users/after%20review" {
+		t.Fatalf("valid URL after rejected arguments: %q, %v", valid, err)
+	}
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, valid, nil))
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("valid URL status=%d", w.Code)
+	}
 }
 
 func TestNamedRouteCollisionAcrossGroupsReturnsError(t *testing.T) {

@@ -1582,3 +1582,120 @@ func TestRotationKeepsNewWriterWhenOldCloseFails(t *testing.T) {
 		t.Fatalf("new writer content=%q err=%v", content, err)
 	}
 }
+
+func TestAcceptanceInitLinkFailurePreservesTargetsAndCanRetry(t *testing.T) {
+	dir := t.TempDir()
+	logger := newGLogger()
+	logger.logDir, logger.program, logger.toStderr = dir, "fixture", false
+	t.Cleanup(logger.Close)
+	info := filepath.Join(dir, "fixture.INFO")
+	warning := filepath.Join(dir, "fixture."+levelName(WARNING))
+	if err := os.WriteFile(filepath.Join(dir, "previous.log"), []byte("prior"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("previous.log", info); err != nil {
+		if runtime.GOOS == "windows" || runtime.GOOS == "plan9" {
+			t.Skipf("symlink unavailable: %v", err)
+		}
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(warning, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := logger.initLogFiles(); err == nil {
+		t.Fatal("init replaced a directory with a link")
+	}
+	if _, err := os.Stat(info); err != nil || len(logger.logFiles) != 0 || len(logger.currentSize) != 0 {
+		t.Fatalf("link=%v opened files=%d sizes=%d", err, len(logger.logFiles), len(logger.currentSize))
+	}
+	if stat, err := os.Stat(warning); err != nil || !stat.IsDir() {
+		t.Fatalf("failed publication replaced destination: %v, %v", stat, err)
+	}
+	if err := os.Remove(warning); err != nil {
+		t.Fatal(err)
+	}
+	if err := logger.initLogFiles(); err != nil {
+		t.Fatal(err)
+	}
+	logger.Info("fixture after retry")
+	if got, err := os.ReadFile(info); err != nil || !bytes.Contains(got, []byte("fixture after retry")) {
+		t.Fatalf("published target: %q, %v", got, err)
+	}
+	if tmp, err := filepath.Glob(filepath.Join(dir, ".log-link-*")); err != nil || len(tmp) != 0 {
+		t.Fatalf("staging directories: %v, %v", tmp, err)
+	}
+}
+
+func TestRetentionAtEqualModificationTimesKeepsQuotaAndActiveFiles(t *testing.T) {
+	dir := t.TempDir()
+	now := time.Now()
+	const program, host = "fixture", "local"
+	active := make(map[string]struct{})
+	for _, level := range []Level{INFO, WARNING} {
+		for i := range 4 {
+			name := logFilename(program, host, levelName(level), now.Add(time.Duration(i)), 1)
+			path := filepath.Join(dir, name)
+			if err := os.WriteFile(path, []byte("fixture"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Chtimes(path, now, now); err != nil {
+				t.Fatal(err)
+			}
+			if i == 0 {
+				active[name] = struct{}{}
+			}
+		}
+	}
+	cleanupOldLogs(dir, program, rotationConfig{MaxBackups: 1}, active)
+	for name := range active {
+		if _, err := os.Stat(filepath.Join(dir, name)); err != nil {
+			t.Fatalf("active file %q: %v", name, err)
+		}
+	}
+	for _, level := range []Level{INFO, WARNING} {
+		pattern := filepath.Join(dir, program+"."+host+"."+levelName(level)+".*.log")
+		files, err := filepath.Glob(pattern)
+		if err != nil || len(files) != 2 {
+			t.Fatalf("level %v files=%v err=%v", level, files, err)
+		}
+	}
+}
+
+func TestFileFlushCompletesWhileMirrorIsStillWriting(t *testing.T) {
+	logger := newGLogger()
+	logger.logDir, logger.toStderr, logger.alsoToStderr = t.TempDir(), false, true
+	if err := logger.initLogFiles(); err != nil {
+		t.Fatal(err)
+	}
+	defer logger.Close()
+	entered, release, written := make(chan struct{}), make(chan struct{}), make(chan struct{})
+	logger.SetOutput(diagnosticOutputFunc(func(p []byte) (int, error) {
+		close(entered)
+		<-release
+		return len(p), nil
+	}))
+	go func() {
+		defer close(written)
+		logger.Info("fixture before mirror")
+	}()
+	<-entered
+	flushed := make(chan struct{})
+	go func() {
+		defer close(flushed)
+		logger.Flush()
+	}()
+	select {
+	case <-flushed:
+	case <-time.After(2 * time.Second):
+		close(release)
+		<-written
+		<-flushed
+		t.Fatal("Flush blocked on the output mirror")
+	}
+	close(release)
+	<-written
+	filename := logger.logFiles[INFO].Name()
+	if body, err := os.ReadFile(filename); err != nil || !bytes.Contains(body, []byte("fixture before mirror")) {
+		t.Fatalf("saved output=%q error=%v", body, err)
+	}
+}

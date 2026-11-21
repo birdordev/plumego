@@ -17,8 +17,10 @@ func TestDecodeRequestIDRejectsOverflow(t *testing.T) {
 	if _, random, seq, err := DecodeRequestID(maxID); err != nil || random != randMask || seq != seqMax {
 		t.Fatalf("decode maximum: random=%d seq=%d error=%v", random, seq, err)
 	}
-	if _, _, _, err := DecodeRequestID(overflowID); err != errInvalidBase62 {
-		t.Fatalf("overflow error = %v", err)
+	for _, invalid := range []string{overflowID, maxID[1:], maxID[:idWidth-1] + "!"} {
+		if _, _, _, err := DecodeRequestID(invalid); err != errInvalidBase62 {
+			t.Fatalf("decode boundary %q: %v", invalid, err)
+		}
 	}
 }
 

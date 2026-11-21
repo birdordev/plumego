@@ -2,6 +2,7 @@ package router
 
 import (
 	"errors"
+	"io"
 	"io/fs"
 	"net/http"
 	"net/http/httptest"
@@ -641,5 +642,56 @@ func TestStaticFSEmptySeekableFileHasZeroLength(t *testing.T) {
 			w.Header().Get("Content-Type") != "application/example" {
 			t.Fatalf("%s: status=%d headers=%v body=%q", method, w.Code, w.Header(), w.Body)
 		}
+	}
+}
+
+func TestStaticRootDisappearingReturnsFixedNotFound(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "visible.txt"), []byte("fixture"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	r := NewRouter()
+	if err := r.Static("/files", dir); err != nil {
+		t.Fatal(err)
+	}
+	reqPath := "/files/visible.txt"
+	if w := serveRouter(r, http.MethodGet, reqPath); w.Code != http.StatusOK || w.Body.String() != "fixture" {
+		t.Fatalf("initial asset: %d %q", w.Code, w.Body)
+	}
+	if err := os.Remove(filepath.Join(dir, "visible.txt")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(dir); err != nil {
+		t.Fatal(err)
+	}
+	if w := serveRouter(r, http.MethodGet, reqPath); w.Code != http.StatusNotFound || w.Body.String() != "404 page not found\n" {
+		t.Fatalf("unavailable root: %d %q", w.Code, w.Body)
+	}
+}
+
+type rewindFailingFile struct {
+	*closeCountingStaticFile
+}
+
+func (*rewindFailingFile) Seek(_ int64, origin int) (int64, error) {
+	if origin == io.SeekEnd {
+		return 8, nil
+	}
+	return 0, errors.New("fixture rewind failure")
+}
+
+func TestStaticRewindFailureStopsBeforeServingContent(t *testing.T) {
+	file, err := http.FS(fstest.MapFS{"file.txt": {Data: []byte("fixture!")}}).Open("file.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	fixture := &rewindFailingFile{&closeCountingStaticFile{File: file}}
+	r := NewRouter()
+	if err := r.StaticFS("/files", staticOpenResult{file: fixture}); err != nil {
+		t.Fatal(err)
+	}
+	w := serveRouter(r, http.MethodGet, "/files/file.txt")
+	if w.Code != http.StatusInternalServerError || w.Body.String() != "cannot rewind static file\n" || fixture.closes != 1 {
+		t.Fatalf("status=%d body=%q closes=%d", w.Code, w.Body, fixture.closes)
 	}
 }

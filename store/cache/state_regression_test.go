@@ -1,6 +1,7 @@
 package cache
 
 import (
+	"context"
 	"errors"
 	"strconv"
 	"sync"
@@ -227,6 +228,16 @@ func TestCloseTracksFinalPendingWriteInStats(t *testing.T) {
 		t.Fatal(err)
 	}
 	after := cache.Stats()
+	cache.store.Range(func(_, _ any) bool {
+		t.Error("closed cache retained a payload")
+		return false
+	})
+	if err := cache.Close(); err != nil || cache.Stats() != after {
+		t.Fatalf("repeated Close modified stats: %v", err)
+	}
+	if _, err := cache.Get(t.Context(), "existing"); !errors.Is(err, ErrCacheClosed) {
+		t.Fatalf("Get after Close: %v", err)
+	}
 	if !before.Closed || before.Entries != 1 || before.MemoryUsage != 3 ||
 		!after.Closed || after.Entries != 2 || after.MemoryUsage != 6 {
 		t.Fatalf("before=%+v after=%+v", before, after)
@@ -367,4 +378,43 @@ func mustLegacyCounter(t *testing.T, count int64) []byte {
 		t.Fatal(err)
 	}
 	return raw
+}
+
+type deleteCheckpointContext struct {
+	context.Context
+	once    sync.Once
+	checked chan struct{}
+}
+
+func (c *deleteCheckpointContext) Err() error {
+	err := c.Context.Err()
+	c.once.Do(func() { close(c.checked) })
+	return err
+}
+
+func TestDeleteCanceledWhileCloseWaitsRetainsFinalCounts(t *testing.T) {
+	cache := mustNewMemoryCacheWithConfig(t, Config{})
+	if err := cache.Set(t.Context(), "fixture", []byte("before"), 0); err != nil {
+		t.Fatal(err)
+	}
+	cache.writeMu.Lock()
+	parent, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	ctx := &deleteCheckpointContext{Context: parent, checked: make(chan struct{})}
+	deleted, closed := make(chan error, 1), make(chan error, 1)
+	go func() { deleted <- cache.Delete(ctx, "fixture") }()
+	<-ctx.checked
+	go func() { closed <- cache.Close() }()
+	<-cache.stopChan
+	cancel()
+	cache.writeMu.Unlock()
+	if err := <-deleted; !errors.Is(err, context.Canceled) {
+		t.Fatalf("delete = %v", err)
+	}
+	if err := <-closed; err != nil {
+		t.Fatal(err)
+	}
+	if got := cache.Stats(); !got.Closed || got.Entries != 1 || got.MemoryUsage != 6 {
+		t.Fatalf("close snapshot = %+v", got)
+	}
 }

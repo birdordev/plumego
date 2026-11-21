@@ -2,6 +2,7 @@ package healthhttp
 
 import (
 	"net/http"
+	"slices"
 
 	"github.com/birdordev/plumego/contract"
 	"github.com/birdordev/plumego/health"
@@ -106,12 +107,21 @@ func ComponentHealthHandler(manager Manager, componentName string) http.Handler 
 			return
 		}
 
-		if checkErr != nil {
-			// A cached success cannot represent a failed or unavailable fresh check.
-			componentHealth.Status = health.StatusUnhealthy
-			componentHealth.Message = "component check failed"
+		if componentHealth == nil {
+			_ = contract.WriteError(w, r, contract.NewErrorBuilder().
+				Type(contract.TypeUnavailable).
+				Message("component health unavailable").
+				Build())
+			return
 		}
-		_ = writeHealthResponse(w, r, httpStatusForHealth(componentHealth.Status), componentHealth)
+
+		status := *componentHealth
+		if checkErr != nil {
+			// Derive the failure response without changing the manager's snapshot.
+			status.Status = health.StatusUnhealthy
+			status.Message = "component check failed"
+		}
+		_ = writeHealthResponse(w, r, httpStatusForHealth(status.Status), status)
 	})
 }
 
@@ -151,6 +161,7 @@ func ComponentsListHandler(manager Manager) http.Handler {
 			names = append(names, name)
 		}
 
+		slices.Sort(names)
 		_ = contract.WriteResponse(w, r, http.StatusOK, ComponentsListResponse{
 			Components: names,
 			Count:      len(names),

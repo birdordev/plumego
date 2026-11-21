@@ -902,3 +902,17 @@ func BenchmarkNormalizeJSONFieldMapLimits(b *testing.B) {
 		})
 	}
 }
+
+func TestTypedNilMarshalerKeepsValidSiblingFields(t *testing.T) {
+	var out bytes.Buffer
+	logger := newTestJSONLogger(t, LoggerConfig{Output: &out})
+	var nilJSON *panickingJSONField
+	var nilText *panickingTextField
+	logger.Info("fixture", Fields{"json_value": nilJSON, "text_value": nilText, "ordinary": 123})
+	var parsed map[string]json.RawMessage
+	if err := json.Unmarshal(out.Bytes(), &parsed); err != nil || bytes.Count(out.Bytes(), []byte{'\n'}) != 1 ||
+		string(parsed["json_value"]) != "null" || string(parsed["text_value"]) != "null" ||
+		string(parsed["ordinary"]) != "123" {
+		t.Fatalf("record=%s err=%v", &out, err)
+	}
+}

@@ -714,3 +714,17 @@ func BenchmarkCompiledHeaderValidation(b *testing.B) {
 		})
 	}
 }
+
+func TestMultipleInvalidPolicyFieldsPreserveClassificationAndHeaders(t *testing.T) {
+	policy := DefaultPolicy()
+	policy.FrameOptions = "fixture-option"
+	policy.StrictTransportSecurity = &HSTSOptions{MaxAge: -1}
+	w := httptest.NewRecorder()
+	w.Header().Set("X-Application", "fixture")
+	err := policy.ApplyChecked(w, httptest.NewRequest(http.MethodGet, "/", nil))
+	if !errors.Is(err, ErrInvalidPolicy) || !strings.Contains(err.Error(), "X-Frame-Options") ||
+		!strings.Contains(err.Error(), "Strict-Transport-Security") || len(w.Header()) != 1 ||
+		w.Header().Get("X-Application") != "fixture" {
+		t.Fatalf("error=%v headers=%v", err, w.Header())
+	}
+}

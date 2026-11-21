@@ -238,3 +238,19 @@ func TestReadinessClonePreservesTimestampOffsetAndReason(t *testing.T) {
 	assertStringField(t, fields, "timestamp", "2026-03-04T07:08:09+05:30")
 	assertStringField(t, fields, "reason", "warming")
 }
+
+func TestDetailsWireShapeDistinguishesMissingMapAndNullMembers(t *testing.T) {
+	for _, input := range []map[string]any{nil, {}} {
+		fields := marshalObject(t, (HealthStatus{Details: input}).Clone())
+		assertFieldAbsent(t, fields, "details")
+	}
+	withValues := (HealthStatus{Details: map[string]any{"null": nil, "zero": 0}}).Clone()
+	result, ok := marshalObject(t, withValues)["details"].(map[string]any)
+	if !ok {
+		t.Fatal("missing details object")
+	}
+	if n, ok := result["null"]; !ok || n != nil {
+		t.Fatalf("null member=%v", result)
+	}
+	assertNumberField(t, result, "zero", 0)
+}

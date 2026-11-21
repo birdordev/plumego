@@ -236,3 +236,13 @@ func TestHealthHistoryPreservesEmptyComponentsAndPagination(t *testing.T) {
 		t.Fatalf("unexpected second page: %+v", page)
 	}
 }
+
+func TestHistoryCSVExportStopsAfterFailedWrite(t *testing.T) {
+	tracker, _ := newHistoryManager(t)
+	tracker.CheckAllComponents(t.Context())
+	w := &componentWriteFailure{ResponseRecorder: httptest.NewRecorder()}
+	HealthHistoryExportHandler(tracker).ServeHTTP(w, httptest.NewRequest("GET", "/?format=csv", nil))
+	if w.Code != 200 || w.headers != 1 || w.writes != 1 || w.Header().Get("Content-Type") != "text/csv" {
+		t.Fatalf("status=%d commits=%d writes=%d headers=%v", w.Code, w.headers, w.writes, w.Header())
+	}
+}

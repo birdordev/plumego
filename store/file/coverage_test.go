@@ -292,3 +292,16 @@ func TestFileStat_ModifiedTime(t *testing.T) {
 		t.Error("ModifiedTime should not be zero")
 	}
 }
+
+func TestUploadAndFileMetadataCopiesFromSameSourceDetach(t *testing.T) {
+	shared := map[string]any{"labels": []string{"original"}}
+	options := PutOptions{Metadata: shared}
+	file := File{Metadata: shared}
+	a, b, result := options.CloneMetadata(), options.CloneMetadata(), file.Clone()
+	a["labels"].([]string)[0] = "first"
+	b["labels"].([]string)[0] = "second"
+	if got := result.Metadata["labels"].([]string)[0]; got != "original" || shared["labels"].([]string)[0] != "original" ||
+		a["labels"].([]string)[0] != "first" {
+		t.Fatalf("metadata aliases: first=%v second=%v result=%v original=%v", a, b, result.Metadata, shared)
+	}
+}

@@ -936,3 +936,30 @@ func TestLimiterMetricsIndividualBoundsAndSettledTotals(t *testing.T) {
 		t.Fatalf("final metrics=%+v, want %+v", got, want)
 	}
 }
+
+func BenchmarkLimiterRequestCleanupCost(b *testing.B) {
+	const keys = 2048
+	for _, scan := range []bool{false, true} {
+		b.Run(fmt.Sprintf("scan=%t", scan), func(b *testing.B) {
+			now := time.Now()
+			limiter := NewLimiter(Config{
+				Rate: 1, Capacity: 1, MaxIdle: time.Duration(1<<63 - 1), CleanupInterval: time.Second,
+				Now: func() time.Time { return now },
+			})
+			defer limiter.Stop()
+			for i := range keys {
+				limiter.Allow(fmt.Sprint(i))
+			}
+			b.ReportAllocs()
+			for b.Loop() {
+				if scan {
+					now = now.Add(time.Second)
+				}
+				decision := limiter.Allow("0")
+				if decision.Allowed != scan {
+					b.Fatalf("unexpected admission: %+v", decision)
+				}
+			}
+		})
+	}
+}

@@ -1771,3 +1771,35 @@ func TestGzipRetainsPreencodedRepresentationMetadata(t *testing.T) {
 		}
 	}
 }
+
+func TestGzipConditionalAndRangeVariantsKeepFraming(t *testing.T) {
+	const tag = `"fixture"`
+	payload := strings.Repeat("fixture-content", 40)
+	h := Middleware(DefaultConfig())(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("ETag", tag)
+		http.ServeContent(w, r, "fixture.txt", time.Time{}, strings.NewReader(payload))
+	}))
+	for _, tc := range []struct {
+		method, match, rang, enc, body string
+		status                         int
+	}{
+		{http.MethodGet, "", "", "gzip", "", http.StatusOK},
+		{http.MethodGet, tag, "bytes=0-4", "", "", http.StatusNotModified},
+		{http.MethodGet, "", "bytes=0-4", "", payload[:5], http.StatusPartialContent},
+		{http.MethodHead, tag, "", "", "", http.StatusNotModified},
+	} {
+		r := httptest.NewRequest(tc.method, "/", nil)
+		r.Header.Set("Accept-Encoding", "gzip")
+		r.Header.Set("If-None-Match", tc.match)
+		r.Header.Set("Range", tc.rang)
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		if w.Code != tc.status || w.Header().Get("Content-Encoding") != tc.enc ||
+			!strings.Contains(strings.Join(w.Header().Values("Vary"), ","), "Accept-Encoding") {
+			t.Fatalf("status=%d headers=%v want=%d encoding=%q", w.Code, w.Header(), tc.status, tc.enc)
+		}
+		if tc.enc == "" && w.Body.String() != tc.body {
+			t.Fatalf("status=%d body=%q", w.Code, w.Body)
+		}
+	}
+}

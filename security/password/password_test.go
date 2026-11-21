@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -217,6 +218,21 @@ func TestCheckPasswordErrorsOmitInputMaterial(t *testing.T) {
 		}
 		if strings.Contains(err.Error(), tc.hash) || strings.Contains(err.Error(), tc.input) {
 			t.Fatal("error message contains input material")
+		}
+	}
+}
+
+func TestInvalidWorkFactorsRejectedBeforeDecodingStoredFields(t *testing.T) {
+	const fixture = "local fixture"
+	for _, cost := range []int{MinimumCost - 1, MaximumCost + 1} {
+		if got, err := HashPasswordWithCost(fixture, cost); got != "" || !errors.Is(err, ErrInvalidCost) {
+			t.Fatalf("unexpected hashing result: %v", err)
+		}
+		encoded := strconv.Itoa(cost) + "$fixture-salt$fixture-hash"
+		err := CheckPassword(encoded, fixture)
+		if !errors.Is(err, ErrInvalidHash) || !errors.Is(err, ErrInvalidCost) ||
+			strings.Contains(err.Error(), fixture) || strings.Contains(err.Error(), "fixture-salt") {
+			t.Fatalf("unexpected error classification: %v", err)
 		}
 	}
 }

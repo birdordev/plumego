@@ -12,8 +12,8 @@ type Stats struct {
 	Closed bool
 }
 
-// Stats returns a point-in-time snapshot of tracked entries, payload bytes, and
-// lifecycle state.
+// Stats returns tracked entries, payload bytes, and lifecycle state. After
+// Close returns, the counters reflect final usage before the data was released.
 func (mc *MemoryCache) Stats() Stats {
 	if mc == nil {
 		return Stats{Closed: true}

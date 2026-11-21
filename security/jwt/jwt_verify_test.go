@@ -1,6 +1,7 @@
 package jwt
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"testing"
@@ -312,5 +313,27 @@ func TestVerifyTokenRequiresConfiguredIssuerAudienceAndSubject(t *testing.T) {
 				t.Fatalf("VerifyToken error = %v, want %v", err, tt.want)
 			}
 		})
+	}
+}
+
+func TestVerifyCanceledContextPrecedesOrdinaryInvalidInput(t *testing.T) {
+	manager, err := NewJWTManager(NewInMemoryKeyStore(), DefaultJWTConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+	const fixture = "invalid local fixture"
+	canceled, cancel := context.WithCancel(t.Context())
+	cancel()
+	for _, tc := range []struct {
+		ctx  context.Context
+		want error
+	}{
+		{canceled, context.Canceled},
+		{t.Context(), ErrInvalidToken},
+	} {
+		if result, err := manager.VerifyToken(tc.ctx, fixture, TokenTypeAccess); result != nil || !errors.Is(err, tc.want) ||
+			strings.Contains(err.Error(), fixture) {
+			t.Fatalf("want=%v returned=%v err=%v", tc.want, result, err)
+		}
 	}
 }

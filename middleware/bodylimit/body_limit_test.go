@@ -803,3 +803,28 @@ func TestBodyLimitRequestOwnershipAcrossTimeoutOrders(t *testing.T) {
 		}
 	}
 }
+
+func TestCancellationAfterReadOverrunSkipsPendingError(t *testing.T) {
+	for _, committed := range []bool{true, false} {
+		ctx, cancel := context.WithCancel(t.Context())
+		outer := httptest.NewRecorder()
+		h := Middleware(Config{MaxBytes: 1})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if committed {
+				w.WriteHeader(http.StatusAccepted)
+			}
+			if _, err := io.ReadAll(r.Body); !errors.Is(err, errRequestTooLarge) {
+				t.Errorf("ReadAll: %v", err)
+			}
+			cancel()
+		}))
+		h.ServeHTTP(outer, httptest.NewRequest(http.MethodPost, "/", strings.NewReader("AB")).WithContext(ctx))
+		cancel()
+		want := http.StatusOK
+		if committed {
+			want = http.StatusAccepted
+		}
+		if outer.Code != want || outer.Body.Len() != 0 {
+			t.Fatalf("committed=%t status=%d body=%q", committed, outer.Code, outer.Body)
+		}
+	}
+}

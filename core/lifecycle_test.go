@@ -673,10 +673,23 @@ func TestConcurrentPrepareReturnsSameServer(t *testing.T) {
 }
 
 func TestPreparedServerCanServeTLSViaPublicPath(t *testing.T) {
+	for _, tc := range []struct {
+		enabled  bool
+		protocol int
+	}{{true, 2}, {false, 1}} {
+		t.Run(fmt.Sprintf("http2=%t", tc.enabled), func(t *testing.T) {
+			checkPreparedTLSProtocol(t, tc.enabled, tc.protocol)
+		})
+	}
+}
+
+func checkPreparedTLSProtocol(t *testing.T, enabled bool, protocol int) {
+	t.Helper()
 	addr := requireNetwork(t)
 	certFile, keyFile := nettest.WriteSelfSignedTLSCertFiles(t, "plumego-test-cert-*.pem", "plumego-test-key-*.pem")
 	cfg := DefaultConfig()
 	cfg.Addr = addr
+	cfg.HTTP2Enabled = enabled
 	cfg.TLS = TLSConfig{Enabled: true, CertFile: certFile, KeyFile: keyFile}
 
 	app := New(cfg, AppDependencies{})
@@ -710,11 +723,21 @@ func TestPreparedServerCanServeTLSViaPublicPath(t *testing.T) {
 
 	client := &http.Client{
 		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+			ForceAttemptHTTP2: true,
+			TLSClientConfig:   &tls.Config{InsecureSkipVerify: true},
 		},
 		Timeout: 2 * time.Second,
 	}
-	nettest.WaitForHTTPStatus(t, client, "https://"+ln.Addr().String()+"/test", http.StatusOK)
+	url := "https://" + ln.Addr().String() + "/test"
+	nettest.WaitForHTTPStatus(t, client, url, http.StatusOK)
+	resp, err := client.Get(url)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusOK || resp.ProtoMajor != protocol {
+		t.Fatalf("negotiated %s, status=%d want major %d", resp.Proto, resp.StatusCode, protocol)
+	}
 
 	if err := app.Shutdown(t.Context()); err != nil {
 		t.Fatalf("shutdown returned unexpected error: %v", err)
@@ -1170,6 +1193,111 @@ func TestConnectionDrainStopsSchedulingAfterCanceledCallback(t *testing.T) {
 			retry()
 		} else {
 			t.Fatal("retry could not own the drain")
+		}
+	})
+}
+
+type panicDiagnosticLogger struct {
+	log.StructuredLogger
+	warnings, progress int
+}
+
+func (l *panicDiagnosticLogger) Warn(string, ...log.Fields) {
+	l.warnings++
+	panic("warning fixture")
+}
+
+func (l *panicDiagnosticLogger) Info(string, ...log.Fields) {
+	l.progress++
+	if l.progress == 1 {
+		panic("progress fixture")
+	}
+}
+
+func TestAcceptanceMissingRouteWarningDoesNotInterruptPublication(t *testing.T) {
+	for _, direct := range []bool{true, false} {
+		logger := new(panicDiagnosticLogger)
+		app := New(DefaultConfig(), AppDependencies{Logger: logger})
+		if direct {
+			w := httptest.NewRecorder()
+			app.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/", nil))
+			if w.Code != http.StatusNotFound {
+				t.Fatalf("direct status=%d", w.Code)
+			}
+		}
+		if err := app.Prepare(); err != nil {
+			t.Fatal(err)
+		}
+		before, err := app.Server()
+		if err != nil || before == nil || logger.warnings != 1 {
+			t.Fatalf("server=%v err=%v warnings=%d", before, err, logger.warnings)
+		}
+		if err := app.Prepare(); err != nil {
+			t.Fatal(err)
+		}
+		after, err := app.Server()
+		if err != nil || after != before || logger.warnings != 1 {
+			t.Fatalf("after=%p before=%p err=%v warnings=%d", after, before, err, logger.warnings)
+		}
+	}
+}
+
+func TestAcceptanceDrainContinuesAfterDiagnosticPanic(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		logger := new(panicDiagnosticLogger)
+		tracker := newConnectionTracker(logger, time.Second)
+		tracker.track(nil, http.StateNew)
+		ctx, cancel := context.WithCancel(t.Context())
+		defer cancel()
+		stop := tracker.startDrain(ctx)
+		if stop == nil {
+			t.Fatal("drain did not start")
+		}
+		defer stop()
+		synctest.Wait()
+		time.Sleep(2 * time.Second)
+		synctest.Wait()
+		if logger.progress != 2 {
+			t.Fatalf("progress callbacks=%d", logger.progress)
+		}
+		cancel()
+		stop()
+		time.Sleep(2 * time.Second)
+		synctest.Wait()
+		if logger.progress != 2 || tracker.activeDrain.Load() != nil {
+			t.Fatalf("progress after cancellation=%d", logger.progress)
+		}
+		if retry := tracker.startDrain(t.Context()); retry != nil {
+			retry()
+		} else {
+			t.Fatal("another attempt could not acquire the drain")
+		}
+	})
+}
+
+func TestDrainLastCloseStopsBeforeNextDiagnostic(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		logger := &blockedDrainLogger{entered: make(chan struct{}), release: make(chan struct{})}
+		tracker := newConnectionTracker(logger, time.Second)
+		tracker.track(nil, http.StateNew)
+		stop := tracker.startDrain(t.Context())
+		if stop == nil {
+			t.Fatal("no drain")
+		}
+		defer stop()
+		<-logger.entered
+		time.Sleep(time.Second)
+		tracker.track(nil, http.StateClosed)
+		close(logger.release)
+		synctest.Wait()
+		if logger.calls != 1 || tracker.activeDrain.Load() != nil {
+			t.Fatalf("calls=%d active=%v", logger.calls, tracker.activeDrain.Load())
+		}
+		tracker.track(nil, http.StateNew)
+		if stop := tracker.startDrain(t.Context()); stop != nil {
+			stop()
+		} else {
+			t.Fatal("next drain did not acquire ownership")
 		}
 	})
 }

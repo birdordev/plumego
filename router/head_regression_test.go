@@ -255,7 +255,9 @@ func TestHeadHijackRejectsWritesWithoutCommittingHeaders(t *testing.T) {
 	conn, peer := net.Pipe()
 	defer conn.Close()
 	defer peer.Close()
-	writer := &noBodyWriter{ResponseWriter: headHijackWriter{httptest.NewRecorder(), conn}}
+	dst := httptest.NewRecorder()
+	writer := &noBodyWriter{ResponseWriter: headHijackWriter{dst, conn}}
+	writer.WriteHeader(http.StatusCreated)
 	if _, _, err := http.NewResponseController(writer).Hijack(); err != nil {
 		t.Fatal(err)
 	}
@@ -265,18 +267,18 @@ func TestHeadHijackRejectsWritesWithoutCommittingHeaders(t *testing.T) {
 		}
 	}
 	writer.commit(true)
-	if writer.status != 0 {
-		t.Fatal("headers committed after hijack")
+	if dst.Code == http.StatusCreated || dst.Body.Len() != 0 {
+		t.Fatal("response committed after hijack")
 	}
 }
 
 func TestHeadFailedHijackPreservesResponse(t *testing.T) {
 	dst := httptest.NewRecorder()
 	writer := &noBodyWriter{ResponseWriter: dst}
+	writer.WriteHeader(http.StatusAccepted)
 	if _, _, err := http.NewResponseController(writer).Hijack(); !errors.Is(err, http.ErrNotSupported) {
 		t.Fatalf("Hijack error=%v, want ErrNotSupported", err)
 	}
-	writer.WriteHeader(http.StatusAccepted)
 	if n, err := writer.Write([]byte("normal")); n != 6 || err != nil {
 		t.Fatalf("Write = (%d, %v), want (6, nil)", n, err)
 	}

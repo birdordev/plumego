@@ -72,7 +72,9 @@
   and empty values can consume memory without using this limit. Choose
   input and lifetime bounds at the call site.
 - `store/cache.MemoryCache` and `store/kv.KVStore` are constructor-only objects; zero-value or nil receiver operations fail closed with the package closed-store sentinel where practical.
-- `store/cache.MemoryCache.Close` closes the cache lifecycle; it waits for the cache write boundary before returning, and later operations return `cache.ErrCacheClosed`.
+- `store/cache.MemoryCache.Close` waits for accepted writes and releases stored
+  payloads. Statistics retain the final entry and byte counts for diagnostics.
+  Subsequent operations return `cache.ErrCacheClosed`.
 - keep DB analytics, summaries, instrumentation wrappers, pool-stat polling, and slow-query inspection out of `store/db`; route them to `x/observability/dbinsights`
 - keep DB health payloads, open-retry loops, and generic timeout policy helpers out of `store/db`; callers own operation deadlines through `context.Context`
 - keep HTTP response caching, request-derived cache keys, and cache metrics/introspection ownership out of `store/cache`

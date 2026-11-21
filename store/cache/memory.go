@@ -184,6 +184,10 @@ func (mc *MemoryCache) Get(ctx context.Context, key string) ([]byte, error) {
 	}
 	val, ok := mc.store.Load(key)
 	if !ok {
+		// A concurrent Close may have cleared the value after the initial check.
+		if err := mc.closedErr(); err != nil {
+			return nil, err
+		}
 		return nil, ErrNotFound
 	}
 
@@ -292,6 +296,10 @@ func (mc *MemoryCache) Exists(ctx context.Context, key string) (bool, error) {
 	}
 	val, ok := mc.store.Load(key)
 	if !ok {
+		// A concurrent Close may have cleared the value after the initial check.
+		if err := mc.closedErr(); err != nil {
+			return false, err
+		}
 		return false, nil
 	}
 
@@ -447,11 +455,11 @@ func (mc *MemoryCache) Close() error {
 			close(mc.stopChan)
 			mc.wg.Wait()
 		}
-		// Barrier: acquiring writeMu after marking the cache closed blocks
-		// until any in-flight write operation has fully released the lock,
-		// so Close does not return while a write is still mid-flight.
+		// Wait for writes that passed the closed check, then release the data
+		// while retaining the final usage counters for Stats.
 		mc.writeMu.Lock()
-		mc.writeMu.Unlock() //nolint:staticcheck // SA2001: empty critical section is an intentional barrier
+		mc.store.Clear()
+		mc.writeMu.Unlock()
 	})
 	return nil
 }

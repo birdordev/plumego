@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"runtime"
+	"slices"
 	"testing"
 	"time"
 
@@ -599,4 +600,103 @@ func (w *componentWriteFailure) Write(body []byte) (int, error) {
 		return w.ResponseRecorder.Write(body)
 	}
 	return 0, io.ErrClosedPipe
+}
+
+type componentSnapshotManager struct {
+	Manager
+	status   *health.ComponentHealth
+	exists   bool
+	checkErr error
+}
+
+func (m componentSnapshotManager) CheckComponent(context.Context, string) error { return m.checkErr }
+
+func (m componentSnapshotManager) GetComponentHealth(string) (*health.ComponentHealth, bool) {
+	return m.status, m.exists
+}
+
+func TestAcceptanceComponentFailureLeavesBorrowedSnapshotIntact(t *testing.T) {
+	snapshot := &health.ComponentHealth{HealthStatus: health.HealthStatus{Status: health.StatusHealthy, Message: "previous"}}
+	manager := componentSnapshotManager{status: snapshot, exists: true, checkErr: mockError("backend fixture")}
+	w := httptest.NewRecorder()
+	ComponentHealthHandler(manager, "db").ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/", nil))
+	response := decodeHealthHTTPData[health.ComponentHealth](t, w)
+	if w.Code != http.StatusServiceUnavailable || response.Status != health.StatusUnhealthy || response.Message != "component check failed" ||
+		snapshot.Status != health.StatusHealthy || snapshot.Message != "previous" {
+		t.Fatalf("code=%d response=%+v snapshot=%+v", w.Code, response, snapshot)
+	}
+}
+
+func TestAcceptanceComponentSnapshotAvailability(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		manager    componentSnapshotManager
+		wantStatus int
+		wantCode   string
+	}{
+		{"missing", componentSnapshotManager{}, http.StatusNotFound, "COMPONENT_NOT_FOUND"},
+		{"empty", componentSnapshotManager{exists: true}, http.StatusServiceUnavailable, contract.CodeUnavailable},
+		{"empty after failure", componentSnapshotManager{exists: true, checkErr: mockError("backend fixture")}, http.StatusServiceUnavailable, contract.CodeUnavailable},
+		{"healthy", componentSnapshotManager{exists: true, status: &health.ComponentHealth{HealthStatus: health.HealthStatus{Status: health.StatusHealthy}}}, http.StatusOK, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := httptest.NewRequest(http.MethodGet, "/", nil)
+			r = r.WithContext(contract.WithRequestID(r.Context(), "fixture"))
+			w := &componentWriteFailure{ResponseRecorder: httptest.NewRecorder(), accept: true}
+			ComponentHealthHandler(tc.manager, "db").ServeHTTP(w, r)
+			var payload struct {
+				RequestID string `json:"request_id"`
+				Error     struct{ Code string }
+			}
+			if err := json.Unmarshal(w.Body.Bytes(), &payload); err != nil || w.Code != tc.wantStatus ||
+				payload.Error.Code != tc.wantCode || payload.RequestID != "fixture" || w.headers != 1 || w.writes != 1 {
+				t.Fatalf("status=%d commits=%d writes=%d body=%q error=%v", w.Code, w.headers, w.writes, w.Body, err)
+			}
+		})
+	}
+}
+
+func TestAcceptanceComponentNamesSortedAndEmptyArrayPreserved(t *testing.T) {
+	for _, components := range []map[string]*health.ComponentHealth{nil, {"z": {}, "a": {}, "m": {}}} {
+		handler := ComponentsListHandler(readinessManager{components: components})
+		want := []string{}
+		if len(components) > 0 {
+			want = []string{"a", "m", "z"}
+		}
+		for range 12 {
+			w := httptest.NewRecorder()
+			handler.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/", nil))
+			got := decodeHealthHTTPData[ComponentsListResponse](t, w)
+			if w.Code != http.StatusOK || got.Components == nil || !slices.Equal(got.Components, want) || got.Count != len(want) {
+				t.Fatalf("status=%d list=%+v", w.Code, got)
+			}
+		}
+	}
+}
+
+type nilSafeReadinessManager struct {
+	Manager
+}
+
+func (*nilSafeReadinessManager) Readiness() health.ReadinessStatus {
+	return health.ReadinessStatus{Ready: false, Reason: "fixture"}
+}
+
+func TestReadinessDistinguishesNilInterfaceAndNilSafeManager(t *testing.T) {
+	var nilSafe *nilSafeReadinessManager
+	for _, tc := range []struct {
+		manager Manager
+		field   string
+	}{
+		{nil, "error"},
+		{nilSafe, "data"},
+	} {
+		w := httptest.NewRecorder()
+		ReadinessHandler(tc.manager).ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/", nil))
+		var body map[string]json.RawMessage
+		if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil || w.Code != http.StatusServiceUnavailable ||
+			body[tc.field] == nil || len(body) != 1 {
+			t.Fatalf("status=%d body=%s error=%v", w.Code, w.Body, err)
+		}
+	}
 }
