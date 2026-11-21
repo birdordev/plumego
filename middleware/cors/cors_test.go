@@ -716,3 +716,20 @@ func TestCORSConstructionDetachesMethodsAndExposedHeaders(t *testing.T) {
 		t.Fatalf("simple=%d %v calls=%d", w.Code, w.Header(), calls)
 	}
 }
+
+func TestPreflightKeepsRequestedHeaderCaseAndOrder(t *testing.T) {
+	calls := 0
+	handler := Middleware(CORSOptions{
+		AllowedOrigins: []string{"https://fixture.example"}, AllowedMethods: []string{"GET"}, AllowedHeaders: []string{"X-First", "X-Second"},
+	})(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { calls++ }))
+	req := httptest.NewRequest(http.MethodOptions, "/", nil)
+	req.Header.Set("Origin", "https://fixture.example")
+	req.Header.Set("Access-Control-Request-Method", http.MethodGet)
+	req.Header.Add("Access-Control-Request-Headers", "X-Second, x-first")
+	req.Header.Add("Access-Control-Request-Headers", "X-FIRST")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != 204 || calls != 0 || rec.Header().Get("Access-Control-Allow-Headers") != "X-Second, x-first, X-FIRST" {
+		t.Fatalf("status=%d headers=%v calls=%d", rec.Code, rec.Header(), calls)
+	}
+}

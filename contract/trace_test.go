@@ -316,3 +316,17 @@ func TestTraceParentPointerOwnedIndependentlyOfBaggage(t *testing.T) {
 		}
 	}
 }
+
+func TestUnsampledTraceRetainsValidContextAndBaggage(t *testing.T) {
+	for _, baggage := range []map[string]string{nil, {"fixture": "original"}} {
+		trace := TraceContext{TraceID: "0123456789abcdef0123456789abcdef", SpanID: "0123456789abcdef", Baggage: baggage}
+		ctx := WithTraceContext(t.Context(), trace)
+		if baggage != nil {
+			baggage["fixture"] = "mutated"
+		}
+		got, ok := TraceContextFromContext(ctx)
+		if !ok || !got.Valid() || got.IsSampled() || (baggage != nil && got.Baggage["fixture"] != "original") {
+			t.Fatalf("trace=%+v ok=%t", got, ok)
+		}
+	}
+}

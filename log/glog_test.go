@@ -1783,3 +1783,41 @@ func TestRetentionUsesAgeAndBackupsAfterProtectingPublishedFiles(t *testing.T) {
 		}
 	}
 }
+
+func TestFileRotationTracksBytesWhileDisabled(t *testing.T) {
+	logger := newGLogger()
+	logger.logDir, logger.toStderr = t.TempDir(), false
+	logger.SetRotationConfig(rotationConfig{})
+	if err := logger.initLogFiles(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(logger.Close)
+	for range 2 {
+		logger.SetRotationConfig(rotationConfig{})
+		previousInfo, previousError := logger.logFiles[INFO], logger.logFiles[ERROR]
+		logger.Error(strings.Repeat("x", 1<<20))
+		for _, level := range []Level{INFO, ERROR} {
+			info, err := logger.logFiles[level].Stat()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if info.Size() < 1<<20 || logger.currentSize[level] != info.Size() {
+				t.Fatalf("level=%v file_size=%d tracked=%d", level, info.Size(), logger.currentSize[level])
+			}
+		}
+		logger.SetRotationConfig(rotationConfig{MaxSize: 1})
+		logger.Error("rotate")
+		if logger.logFiles[INFO] == previousInfo || logger.logFiles[ERROR] == previousError {
+			t.Fatal("enabled rotation did not replace both files")
+		}
+	}
+	outputOnly := newGLogger()
+	outputOnly.SetOutput(io.Discard)
+	outputOnly.SetRotationConfig(rotationConfig{})
+	outputOnly.Info("no file")
+	outputOnly.SetRotationConfig(rotationConfig{MaxSize: 1})
+	outputOnly.Info("still no file")
+	if len(outputOnly.currentSize) != 0 {
+		t.Fatalf("unexpected file counters: %v", outputOnly.currentSize)
+	}
+}

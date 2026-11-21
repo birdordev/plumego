@@ -245,3 +245,24 @@ func TestFacadeForwardsRouterMethodNotAllowedPolicy(t *testing.T) {
 		}
 	}
 }
+
+func TestFacadeParamAfterPreparingNestedGroup(t *testing.T) {
+	app := plumego.New()
+	group := app.Group("/api").Group("/v1")
+	if err := group.Get("/items/:id", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if plumego.Param(r, "id") != "fixture" || plumego.Param(r, "other") != "" {
+			t.Errorf("params id=%q other=%q", plumego.Param(r, "id"), plumego.Param(r, "other"))
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})); err != nil {
+		t.Fatal(err)
+	}
+	if err := app.Prepare(); err != nil {
+		t.Fatal(err)
+	}
+	rec := httptest.NewRecorder()
+	app.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/items/fixture", nil))
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("status=%d", rec.Code)
+	}
+}

@@ -1030,3 +1030,21 @@ func TestLimiterResetDoesNotMoveBackwardOnClockRollback(t *testing.T) {
 		t.Fatalf("initial=%+v rollback=%+v recovered=%+v", initial, rollback, recovered)
 	}
 }
+
+func TestEmptyKeyDoesNotConsumeBucketCapacity(t *testing.T) {
+	config := DefaultConfig()
+	config.MaxEntries = 1
+	limiter := NewLimiter(config)
+	t.Cleanup(limiter.Stop)
+	before := limiter.Metrics()
+	denied, err := limiter.AllowKey("")
+	afterReject := limiter.Metrics()
+	if !errors.Is(err, ErrInvalidKey) || denied.Allowed || afterReject.Buckets != before.Buckets || afterReject.Rejected != before.Rejected+1 {
+		t.Fatalf("before=%+v after=%+v decision=%+v error=%v", before, afterReject, denied, err)
+	}
+	allowed, err := limiter.AllowKey("fixture")
+	afterAllow := limiter.Metrics()
+	if err != nil || !allowed.Allowed || afterAllow.Buckets != 1 || afterAllow.Evictions != 0 {
+		t.Fatalf("after=%+v decision=%+v error=%v", afterAllow, allowed, err)
+	}
+}

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"runtime"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 )
@@ -846,5 +847,42 @@ func TestCancellationInLastStartRollsBackAllAcquiredComponents(t *testing.T) {
 	}
 	if err := g.Stop(t.Context()); err != nil || !slices.Equal(stops, []string{"c", "b", "a", "b"}) {
 		t.Fatalf("retry=%v stops=%v", err, stops)
+	}
+}
+
+func TestNestedReadyPreservesErrorAndProbeOrder(t *testing.T) {
+	failure := errors.New("fixture")
+	var sequence []string
+	var cancel context.CancelFunc
+	inner := NewLifecycleGroup().Add("first", Component{OnReady: func(context.Context) error {
+		sequence = append(sequence, "first")
+		if cancel != nil {
+			cancel()
+		}
+		return failure
+	}}).Add("second", Component{OnReady: func(context.Context) error {
+		sequence = append(sequence, "second")
+		return nil
+	}})
+	outer := NewLifecycleGroup().Add("nested", inner).Add("outer", Component{OnReady: func(context.Context) error {
+		sequence = append(sequence, "outer")
+		return nil
+	}})
+	if err := outer.Start(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = outer.Stop(context.Background()) })
+	err := outer.Ready(t.Context())
+	if !errors.Is(err, failure) || !strings.Contains(err.Error(), "\"nested\"") ||
+		!strings.Contains(err.Error(), "\"first\"") || !slices.Equal(sequence, []string{"first", "second", "outer"}) {
+		t.Fatalf("error=%v sequence=%v", err, sequence)
+	}
+	sequence = nil
+	ctx, stop := context.WithCancel(t.Context())
+	defer stop()
+	cancel = stop
+	err = outer.Ready(ctx)
+	if !errors.Is(err, failure) || !errors.Is(err, context.Canceled) || !slices.Equal(sequence, []string{"first"}) {
+		t.Fatalf("error=%v sequence=%v", err, sequence)
 	}
 }

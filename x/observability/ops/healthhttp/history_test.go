@@ -468,3 +468,58 @@ func BenchmarkHistoryFirstSmallPage(b *testing.B) {
 		})
 	}
 }
+
+func historyFilterFixture(size, stride int) (*Tracker, int) {
+	tracker := NewTracker(nil)
+	tracker.history = make([]HealthHistoryEntry, size)
+	total := 0
+	for index := range tracker.history {
+		entry := &tracker.history[index]
+		entry.Components = []string{"other"}
+		if index%stride == 0 {
+			entry.Components = []string{"fixture"}
+			total++
+		}
+		entry.State = health.StatusHealthy
+		entry.Timestamp = time.Unix(int64(index), 0).UTC()
+	}
+	return tracker, total
+}
+
+func TestHistoryCSVFilterProducesOnePageAndJSONKeepsTotal(t *testing.T) {
+	for _, stride := range []int{1, 100} {
+		tracker, wantTotal := historyFilterFixture(1000, stride)
+		handler := HealthHistoryExportHandler(tracker)
+		const query = "/export?component=fixture&limit=1&offset=1"
+		csvRecorder := httptest.NewRecorder()
+		handler.ServeHTTP(csvRecorder, httptest.NewRequest("GET", query+"&format=csv", nil))
+		rows, err := csv.NewReader(csvRecorder.Body).ReadAll()
+		if err != nil || csvRecorder.Code != 200 || len(rows) != 2 || rows[1][3] != "fixture" || rows[1][0] != time.Unix(int64(stride), 0).UTC().Format(time.RFC3339) {
+			t.Fatalf("stride=%d status=%d rows=%v error=%v", stride, csvRecorder.Code, rows, err)
+		}
+		jsonRecorder := httptest.NewRecorder()
+		handler.ServeHTTP(jsonRecorder, httptest.NewRequest("GET", query, nil))
+		got := decodeHealthHTTPData[HealthHistoryQueryResult](t, jsonRecorder)
+		if jsonRecorder.Code != 200 || got.Total != wantTotal || len(got.Entries) != 1 || !got.HasMore {
+			t.Fatalf("stride=%d status=%d page=%+v", stride, jsonRecorder.Code, got)
+		}
+	}
+}
+
+func BenchmarkHistoryCSVFilterDensity(b *testing.B) {
+	for _, stride := range []int{1, 100} {
+		b.Run(fmt.Sprintf("stride_%d", stride), func(b *testing.B) {
+			tracker, _ := historyFilterFixture(10000, stride)
+			handler := HealthHistoryExportHandler(tracker)
+			req := httptest.NewRequest("GET", "/export?format=csv&component=fixture&limit=1&offset=1", nil)
+			b.ReportAllocs()
+			for b.Loop() {
+				rec := httptest.NewRecorder()
+				handler.ServeHTTP(rec, req)
+				if rec.Code != 200 {
+					b.Fatalf("response=%d", rec.Code)
+				}
+			}
+		})
+	}
+}

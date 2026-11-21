@@ -2,8 +2,10 @@ package healthhttp
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"math"
+	"strconv"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -248,5 +250,38 @@ func TestManagerPreservesSchedulingIntervalForCaller(t *testing.T) {
 	}
 	if got := manager.GetConfig().HealthCheckInterval; got != time.Second {
 		t.Fatalf("updated interval=%v", got)
+	}
+}
+
+func TestManagerEnabledFieldPreservesExplicitChecks(t *testing.T) {
+	for _, config := range []Config{{}, {Enabled: true}, {Enabled: false, Timeout: time.Second}} {
+		m, err := NewManager(config)
+		if err != nil {
+			t.Fatal(err)
+		}
+		calls := 0
+		if err := m.RegisterComponent(functionChecker{name: "fixture", check: func(context.Context) error { calls++; return nil }}); err != nil {
+			t.Fatal(err)
+		}
+		if err := m.CheckComponent(t.Context(), "fixture"); err != nil {
+			t.Fatal(err)
+		}
+		if calls != 1 || m.GetConfig().Enabled != config.Enabled {
+			t.Fatalf("config=%+v calls=%d", m.GetConfig(), calls)
+		}
+		data, err := json.Marshal(m.GetConfig())
+		if err != nil {
+			t.Fatal(err)
+		}
+		var wire map[string]json.RawMessage
+		if err := json.Unmarshal(data, &wire); err != nil {
+			t.Fatal(err)
+		}
+		if got := string(wire["enabled"]); got != strconv.FormatBool(config.Enabled) {
+			t.Fatalf("enabled on wire=%q, configured=%t", got, config.Enabled)
+		}
+		if err := m.Close(); err != nil {
+			t.Fatal(err)
+		}
 	}
 }

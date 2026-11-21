@@ -160,3 +160,18 @@ func TestObservesBodylessRequestsOnceWithMatchedRoute(t *testing.T) {
 		}
 	}
 }
+
+func TestNilObserverPreservesUnderlyingFlush(t *testing.T) {
+	rec := httptest.NewRecorder()
+	Middleware(nil)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if w != rec {
+			t.Error("nil observer wrapped the writer")
+		}
+		if err := http.NewResponseController(w).Flush(); err != nil {
+			t.Error(err)
+		}
+	})).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
+	if !rec.Flushed {
+		t.Fatal("flush did not reach the underlying writer")
+	}
+}

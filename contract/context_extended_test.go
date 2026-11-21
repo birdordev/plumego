@@ -61,3 +61,16 @@ func TestStatusCategoryFallback(t *testing.T) {
 		})
 	}
 }
+
+func TestRouteStateSnapshotKeepsCaseDistinctParameters(t *testing.T) {
+	state := GetRouteState()
+	state.AddParam("Name", "upper")
+	state.AddParam("name", "lower")
+	ctx := WithRouteState(t.Context(), state)
+	PutRouteState(state)
+	snapshot := RequestContextFromContext(ctx)
+	if RequestParamFromContext(ctx, "Name") != "upper" || RequestParamFromContext(ctx, "name") != "lower" ||
+		snapshot.Params["Name"] != "upper" || snapshot.Params["name"] != "lower" {
+		t.Fatalf("snapshot=%+v", snapshot)
+	}
+}

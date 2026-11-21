@@ -227,3 +227,14 @@ func TestComponentCloneKeepsDependencyAppendAndEnabledIndependent(t *testing.T) 
 		t.Fatalf("source=%+v first=%+v second=%+v", source, a, b)
 	}
 }
+
+func TestReadinessEmptyReasonOmittedRegardlessOfReady(t *testing.T) {
+	for _, ready := range []bool{false, true} {
+		cloned := (ReadinessStatus{Ready: ready}).Clone()
+		fields := marshalObject(t, cloned)
+		assertFieldAbsent(t, fields, "reason")
+		if got := fields["ready"]; got != ready || cloned.Reason != "" {
+			t.Fatalf("fields=%v clone=%+v", fields, cloned)
+		}
+	}
+}

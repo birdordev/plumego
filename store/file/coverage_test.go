@@ -347,3 +347,14 @@ func TestFileErrorKeepsOptionalPathAndTypedClassification(t *testing.T) {
 		}
 	}
 }
+
+func TestMetadataClonePreservesRepeatedReferenceWithinOneSnapshot(t *testing.T) {
+	repeated := []any{"fixture"}
+	metadata := map[string]any{"first": repeated, "second": repeated}
+	upload := (PutOptions{Metadata: metadata}).CloneMetadata()
+	download := (File{Metadata: metadata}).Clone().Metadata
+	upload["first"].([]any)[0] = "changed"
+	if upload["second"].([]any)[0] != "changed" || download["second"].([]any)[0] != "fixture" || repeated[0] != "fixture" {
+		t.Fatalf("upload=%v download=%v original=%v", upload, download, repeated)
+	}
+}

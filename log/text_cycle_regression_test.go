@@ -54,3 +54,36 @@ func TestTextTimeFormattingPreserved(t *testing.T) {
 		t.Fatalf("got %q want %q", got, want)
 	}
 }
+
+func TestTextWriterChangesKeepLevelDestinationsIndependent(t *testing.T) {
+	logger := newGLogger()
+	var info1, info2, error1, error2 bytes.Buffer
+	logger.SetOutput(&info1)
+	logger.SetErrorOutput(&error1)
+	logger.Info("initial info")
+	logger.Error("initial error")
+	logger.SetOutput(&info2)
+	logger.Info("switched info")
+	logger.Error("retained error")
+	logger.SetErrorOutput(&error2)
+	logger.Info("retained info")
+	logger.Error("switched error")
+	for _, row := range []struct {
+		output   *bytes.Buffer
+		messages []string
+	}{
+		{&info1, []string{"initial info"}},
+		{&info2, []string{"switched info", "retained info"}},
+		{&error1, []string{"initial error", "retained error"}},
+		{&error2, []string{"switched error"}},
+	} {
+		if strings.Count(row.output.String(), "\n") != len(row.messages) {
+			t.Fatalf("unexpected output: %q", row.output.String())
+		}
+		for _, message := range row.messages {
+			if !strings.Contains(row.output.String(), message) {
+				t.Fatalf("missing %q in %q", message, row.output.String())
+			}
+		}
+	}
+}

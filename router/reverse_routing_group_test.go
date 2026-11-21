@@ -477,3 +477,14 @@ func TestWildcardURLRoundTripsEscapedSuffixFromNestedGroup(t *testing.T) {
 		t.Fatalf("static route priority: %d", w.Code)
 	}
 }
+
+func TestNamedGroupURLRejectsUnpairedParameterThenRecovers(t *testing.T) {
+	r := NewRouter()
+	mustAddRoute(r.Group("/api").Group("/v2"), http.MethodGet, "/:id", http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}), WithRouteName("item"))
+	if url, err := r.URL("item", "id", "fixture", "extra"); err == nil || url != "" {
+		t.Fatalf("unpaired result=%q error=%v", url, err)
+	}
+	if url, err := r.URL("item", "id", "fixture"); err != nil || url != "/api/v2/fixture" {
+		t.Fatalf("valid result=%q error=%v", url, err)
+	}
+}

@@ -592,3 +592,24 @@ func TestKeyStoreReadCanceledAtWaitReturnsNoCopy(t *testing.T) {
 		t.Fatalf("read=%q err=%v", got, err)
 	}
 }
+
+func TestKeystoreZeroTTLReplacementOutlivesPreviousDeadline(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		store := NewInMemoryKeyStore()
+		if err := store.SetContext(t.Context(), "fixture", []byte("before"), time.Second); err != nil {
+			t.Fatal(err)
+		}
+		if err := store.SetContext(t.Context(), "fixture", []byte("after"), 0); err != nil {
+			t.Fatal(err)
+		}
+		<-time.After(time.Second)
+		got, err := store.GetContext(t.Context(), "fixture")
+		if err != nil || string(got) != "after" {
+			t.Fatalf("replacement survived=%t error=%v", string(got) == "after", err)
+		}
+		keys, err := store.KeysContext(t.Context())
+		if err != nil || !slices.Equal(keys, []string{"fixture"}) {
+			t.Fatalf("keys=%v error=%v", keys, err)
+		}
+	})
+}

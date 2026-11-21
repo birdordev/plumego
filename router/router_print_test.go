@@ -114,3 +114,20 @@ func TestPrintRetriesWithNewSnapshotAfterRegistrationAndFailure(t *testing.T) {
 		t.Fatalf("retry=%s", out.String())
 	}
 }
+
+func TestPrintOrdersSamePatternByMethodAcrossFreeze(t *testing.T) {
+	const want = "Registered Routes:\nGET    /item\nPOST   /item\n"
+	for _, methods := range [][]string{{http.MethodPost, http.MethodGet}, {http.MethodGet, http.MethodPost}} {
+		r := NewRouter()
+		for _, method := range methods {
+			mustAddRoute(r, method, "/item", http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+		}
+		var before, after strings.Builder
+		r.Print(&before)
+		r.Freeze()
+		r.Print(&after)
+		if before.String() != want || after.String() != want {
+			t.Fatalf("before=%q after=%q", before.String(), after.String())
+		}
+	}
+}

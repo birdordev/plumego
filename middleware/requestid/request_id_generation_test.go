@@ -241,3 +241,17 @@ func TestGenerateRecoversWhenClockCatchesUpToExhaustedSequence(t *testing.T) {
 		}
 	})
 }
+
+func TestDecodeRequestIDPaddedFieldRoundTrip(t *testing.T) {
+	for _, tc := range []struct {
+		offset           int64
+		random, sequence int
+	}{{}, {1, 2, 3}, {(1 << tsBits) - 1, randMask, seqMax}} {
+		packed := uint64(tc.offset)<<shiftTS | uint64(tc.random)<<shiftRand | uint64(tc.sequence)
+		id := encodeBase62Fixed(packed, idWidth)
+		at, random, sequence, err := DecodeRequestID(id)
+		if len(id) != idWidth || at != epochMilli+tc.offset || random != tc.random || sequence != tc.sequence || err != nil {
+			t.Fatalf("length=%d decoded fields=%d,%d,%d error=%v", len(id), at, random, sequence, err)
+		}
+	}
+}

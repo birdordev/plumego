@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"math"
 	"net/http/httptest"
 	"runtime"
+	"sync/atomic"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -422,5 +424,115 @@ func TestManualReadinessAndObservedComponentHealthStayIndependent(t *testing.T) 
 	}
 	if batch := tracker.CheckAllComponents(t.Context()); !batch.Status.IsReady() || !m.Readiness().Ready {
 		t.Fatal("next check did not own readiness")
+	}
+}
+
+func TestTrackerDirectMetricsUseOwnAttempt(t *testing.T) {
+	for _, olderFails := range []bool{false, true} {
+		t.Run(fmt.Sprintf("older_fails_%t", olderFails), func(t *testing.T) {
+			m, err := NewManager(Config{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = m.Close() })
+			tracker := NewTracker(m)
+			var calls atomic.Int32
+			entered, release := make(chan struct{}), make(chan struct{})
+			checkErr := errors.New("fixture failure")
+			if err := tracker.RegisterComponent(functionChecker{name: "fixture", check: func(context.Context) error {
+				if calls.Add(1) == 1 {
+					close(entered)
+					<-release
+					if olderFails {
+						return checkErr
+					}
+					return nil
+				}
+				if !olderFails {
+					return checkErr
+				}
+				return nil
+			}}); err != nil {
+				t.Fatal(err)
+			}
+			done := make(chan error, 1)
+			go func() { done <- tracker.CheckComponent(t.Context(), "fixture") }()
+			<-entered
+			newerErr := tracker.CheckComponent(t.Context(), "fixture")
+			close(release)
+			olderErr := <-done
+			ctx, cancel := context.WithCancel(t.Context())
+			cancel()
+			canceledErr := tracker.CheckComponent(ctx, "fixture")
+			if (newerErr != nil) == olderFails || olderErr == nil || olderErr.Error() != "component check was superseded" ||
+				!errors.Is(canceledErr, context.Canceled) {
+				t.Fatalf("newer=%v older=%v canceled=%v", newerErr, olderErr, canceledErr)
+			}
+			want := health.StatusHealthy
+			if !olderFails {
+				want = health.StatusUnhealthy
+			}
+			component, _ := tracker.GetComponentHealth("fixture")
+			stats, ok := tracker.GetComponentMetrics("fixture")
+			if !ok || stats.SuccessCount != 1 || stats.FailureCount != 1 || len(stats.RecentHistory) != 2 ||
+				stats.RecentHistory[1].Success == olderFails || component.Status != want {
+				t.Fatalf("stats=%+v component=%+v", stats, component)
+			}
+		})
+	}
+}
+
+func TestTrackerCloseKeepsExecutedDirectAttemptMetrics(t *testing.T) {
+	m, err := NewManager(Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tracker := NewTracker(m)
+	entered, release := make(chan struct{}), make(chan struct{})
+	if err := tracker.RegisterComponent(functionChecker{name: "fixture", check: func(context.Context) error {
+		close(entered)
+		<-release
+		return nil
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	before, _ := tracker.GetComponentHealth("fixture")
+	result := make(chan error, 1)
+	go func() { result <- tracker.CheckComponent(t.Context(), "fixture") }()
+	<-entered
+	closeErr := tracker.Close()
+	close(release)
+	activeErr := <-result
+	lateErr := tracker.CheckComponent(t.Context(), "fixture")
+	stats, ok := tracker.GetComponentMetrics("fixture")
+	after, hasComponent := tracker.GetComponentHealth("fixture")
+	if closeErr != nil || !errors.Is(activeErr, errManagerClosed) || !errors.Is(lateErr, errManagerClosed) ||
+		!ok || stats.SuccessCount != 1 || stats.CheckCount != 1 || !hasComponent || after.Timestamp != before.Timestamp || after.Status != before.Status {
+		t.Fatalf("close=%v active=%v late=%v metrics=%+v has component=%t", closeErr, activeErr, lateErr, stats, hasComponent)
+	}
+}
+
+func TestTrackerExternalManagerDirectSnapshotFallback(t *testing.T) {
+	fixtureError := errors.New("fixture check failure")
+	for _, tc := range []struct {
+		state   health.HealthState
+		exists  bool
+		err     error
+		success bool
+	}{
+		{health.StatusHealthy, true, nil, true},
+		{health.StatusHealthy, true, fixtureError, false},
+		{health.StatusDegraded, true, nil, false},
+		{health.StatusUnhealthy, false, fixtureError, false},
+	} {
+		manager := componentSnapshotManager{status: &health.ComponentHealth{HealthStatus: health.HealthStatus{Status: tc.state}}, exists: tc.exists, checkErr: tc.err}
+		tracker := NewTracker(manager)
+		if err := tracker.CheckComponent(t.Context(), "fixture"); err != tc.err {
+			t.Fatalf("error=%v want=%v", err, tc.err)
+		}
+		got, ok := tracker.GetComponentMetrics("fixture")
+		if ok != tc.exists || (ok && (got.CheckCount != 1 || len(got.RecentHistory) != 1 || got.RecentHistory[0].Success != tc.success || got.LastStatus != tc.state)) {
+			t.Fatalf("fixture=%+v metrics=%+v exists=%t", tc, got, ok)
+		}
 	}
 }

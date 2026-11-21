@@ -295,3 +295,41 @@ func TestStatusModelPreservesUnknownAndDetailsWhileRejectingReadiness(t *testing
 		}
 	}
 }
+
+func TestHealthDetailsExplicitNullSurvivesCloneAndEncoding(t *testing.T) {
+	for _, details := range []map[string]any{nil, {}, {"fixture": nil}} {
+		cloned := (HealthStatus{Status: StatusHealthy, Details: details}).Clone()
+		fields := marshalObject(t, cloned)
+		if len(details) == 0 {
+			assertFieldAbsent(t, fields, "details")
+		} else {
+			if got, exists := fields["details"].(map[string]any)["fixture"]; !exists || got != nil {
+				t.Fatalf("details=%v", fields["details"])
+			}
+		}
+	}
+}
+
+func TestComponentDurationCloneJSONRoundTrip(t *testing.T) {
+	for _, duration := range []time.Duration{0, time.Nanosecond} {
+		original := ComponentHealth{Enabled: true, HealthStatus: HealthStatus{Status: StatusHealthy, Duration: duration}}
+		cloned := original.Clone()
+		fields := marshalObject(t, cloned)
+		if duration == 0 {
+			assertFieldAbsent(t, fields, "duration")
+		} else {
+			assertNumberField(t, fields, "duration", 1)
+		}
+		buf, err := json.Marshal(cloned)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var decoded ComponentHealth
+		if err := json.Unmarshal(buf, &decoded); err != nil {
+			t.Fatal(err)
+		}
+		if decoded.Duration != duration || decoded.Status != original.Status || !decoded.Enabled {
+			t.Fatalf("round trip: %+v", decoded)
+		}
+	}
+}

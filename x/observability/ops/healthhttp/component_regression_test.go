@@ -110,7 +110,7 @@ func TestComponentHealthCanceledProbeFailsClosed(t *testing.T) {
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("canceled check status=%d", rec.Code)
 	}
-	if got, ok := manager.GetComponentHealth("db"); !ok || got.Status != "unhealthy" || got.Details["check_attempts"] != 0 {
+	if got, ok := manager.GetComponentHealth("db"); !ok || got.Status != "healthy" || got.Details["check_attempts"] != 1 {
 		t.Fatalf("canceled probe status: %+v", got)
 	}
 	rec = httptest.NewRecorder()

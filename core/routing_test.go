@@ -685,3 +685,27 @@ func TestNestedRouteOptionCanRegisterAnotherAppRoute(t *testing.T) {
 		t.Fatalf("routes=%v", a.Routes())
 	}
 }
+
+func TestGroupEmptyRelativePathNamedRoute(t *testing.T) {
+	app := newTestApp()
+	group := app.Group("/api").Group("/v2")
+	handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) })
+	if err := group.AddRoute(http.MethodGet, "", handler, router.WithRouteName("root")); err != nil {
+		t.Fatal(err)
+	}
+	if err := group.AddRoute(http.MethodGet, "/", handler, router.WithRouteName("duplicate")); err == nil {
+		t.Fatal("expected slash to resolve to the same route")
+	}
+	if _, err := app.URL("duplicate"); err == nil {
+		t.Fatal("invalid route published a name")
+	}
+	path, err := app.URL("root")
+	if err != nil || path != "/api/v2" {
+		t.Fatalf("url=%q error=%v", path, err)
+	}
+	rec := httptest.NewRecorder()
+	app.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("status=%d", rec.Code)
+	}
+}

@@ -769,3 +769,38 @@ func TestEmptyRegularStaticFileMatchesServeContentRangesAndConditions(t *testing
 		}
 	}
 }
+
+func TestStaticIfRangeDateParity(t *testing.T) {
+	at := time.Date(2025, 1, 2, 3, 4, 5, 0, time.UTC)
+	dir := t.TempDir()
+	file := createTempFile(t, dir, "fixture.txt", "abcdef")
+	if err := os.Chtimes(file, at, at); err != nil {
+		t.Fatal(err)
+	}
+	r := NewRouter()
+	if err := r.Static("/disk", dir); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.StaticFS("/fs", http.FS(fstest.MapFS{"fixture.txt": {Data: []byte("abcdef"), ModTime: at}})); err != nil {
+		t.Fatal(err)
+	}
+	for _, prefix := range []string{"/disk", "/fs"} {
+		for _, tc := range []struct {
+			date               time.Time
+			code               int
+			body, contentRange string
+		}{
+			{at, 206, "bc", "bytes 1-2/6"},
+			{at.Add(-time.Second), 200, "abcdef", ""},
+		} {
+			req := httptest.NewRequest(http.MethodGet, prefix+"/fixture.txt", nil)
+			req.Header.Set("Range", "bytes=1-2")
+			req.Header.Set("If-Range", tc.date.Format(http.TimeFormat))
+			rec := httptest.NewRecorder()
+			r.ServeHTTP(rec, req)
+			if rec.Code != tc.code || rec.Body.String() != tc.body || rec.Header().Get("Content-Range") != tc.contentRange {
+				t.Fatalf("prefix=%v status=%d body=%q headers=%v", prefix, rec.Code, rec.Body.String(), rec.Header())
+			}
+		}
+	}
+}

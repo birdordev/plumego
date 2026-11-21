@@ -20,6 +20,8 @@ var (
 
 // Config holds ops-owned health check execution policy.
 type Config struct {
+	// Enabled is retained for callers that configure health checks at assembly time.
+	// Explicit Manager checks run regardless of this field.
 	Enabled    bool          `json:"enabled"`
 	Timeout    time.Duration `json:"timeout"`
 	RetryCount int           `json:"retry_count"`
@@ -227,30 +229,43 @@ func (m *manager) checkComponent(ctx context.Context, name string, result *compo
 		ctx = context.Background()
 	}
 
-	m.mu.Lock()
-	if m.closed {
-		m.mu.Unlock()
-		return errManagerClosed
-	}
+	m.mu.RLock()
+	closed := m.closed
 	checker, exists := m.components[name]
 	expectedHealth := m.health[name]
 	config := m.config
-	var checkVersion uint64
-	if exists {
-		if m.checkVersions == nil {
-			m.checkVersions = make(map[string]uint64)
-		}
-		m.checkVersions[name]++
-		checkVersion = m.checkVersions[name]
+	m.mu.RUnlock()
+	if closed {
+		return errManagerClosed
 	}
-	m.mu.Unlock()
-
 	if !exists {
 		return fmt.Errorf("component %s not found", name)
 	}
 
 	checkCtx, cancel := withCheckTimeout(ctx, config.Timeout)
 	defer cancel()
+
+	// Obtain the context's signal outside the lock. Admission and the first
+	// attempt share a decision so skipped calls never take publication rights.
+	done := checkCtx.Done()
+	m.mu.Lock()
+	if m.closed {
+		m.mu.Unlock()
+		return errManagerClosed
+	}
+	if m.health[name] != expectedHealth {
+		m.mu.Unlock()
+		return errors.New("component check was superseded")
+	}
+	select {
+	case <-done:
+		m.mu.Unlock()
+		return checkCtx.Err()
+	default:
+	}
+	m.checkVersions[name]++
+	checkVersion := m.checkVersions[name]
+	m.mu.Unlock()
 
 	start := time.Now()
 	attempts := 0
@@ -274,9 +289,6 @@ func (m *manager) checkComponent(ctx context.Context, name string, result *compo
 	result.attempted = attempts > 0
 	result.duration = time.Since(start)
 	result.failed = err != nil
-	if publishAborted && !result.attempted {
-		return err
-	}
 	if publishErr := m.publishComponentCheck(name, expectedHealth, checkVersion, attempts, result); publishErr != nil {
 		return publishErr
 	}
@@ -513,8 +525,11 @@ func runCheckWithRetry(ctx context.Context, checker health.ComponentChecker, con
 
 	var err error
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
-		if err := ctx.Err(); err != nil {
-			return err
+		// The first attempt has already been admitted by the manager.
+		if attempt > 1 {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
 		}
 		*attempts = attempt
 		err = checker.Check(ctx)

@@ -927,3 +927,26 @@ func TestErrorDetailFallbackJoinsEncodingAndWriterFailures(t *testing.T) {
 		t.Fatalf("result=%d %v %q err=%v", w.Code, w.Header(), w.Body.String(), err)
 	}
 }
+
+type countedResetContentMarshaler struct{ calls *int }
+
+func (m countedResetContentMarshaler) MarshalJSON() ([]byte, error) {
+	*m.calls++
+	return []byte(`"fixture"`), nil
+}
+func TestResetContentDoesNotCallUserMarshaler(t *testing.T) {
+	calls := 0
+	payload := countedResetContentMarshaler{calls: &calls}
+	rec := httptest.NewRecorder()
+	rec.Header().Set("Transfer-Encoding", "chunked")
+	if err := WriteResponse(rec, nil, 205, payload, nil); err != nil {
+		t.Fatal(err)
+	}
+	if calls != 0 || rec.Code != 205 || rec.Body.Len() != 0 || rec.Header().Get("Content-Length") != "0" || rec.Header().Get("Transfer-Encoding") != "" {
+		t.Fatalf("calls=%d response=%d headers=%v", calls, rec.Code, rec.Header())
+	}
+	rec = httptest.NewRecorder()
+	if err := WriteResponse(rec, nil, 200, payload, nil); err != nil || calls != 1 {
+		t.Fatalf("calls=%d error=%v", calls, err)
+	}
+}

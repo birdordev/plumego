@@ -923,3 +923,67 @@ func TestKVFailedSnapshotReplacementDoesNotExtendPreviousTTL(t *testing.T) {
 		}
 	})
 }
+
+type snapshotBoundaryReader struct {
+	data    string
+	readErr error
+}
+
+func (r snapshotBoundaryReader) Read(p []byte) (int, error) { return copy(p, r.data), r.readErr }
+
+func TestReadSnapshotAtLimitPreservesReaderError(t *testing.T) {
+	const limit = 4
+	readErr := errors.New("fixture read failure")
+	for _, length := range []int{limit - 1, limit, limit + 1} {
+		input := strings.Repeat("x", length)
+		data, err := readSnapshotBytes(strings.NewReader(input), limit)
+		var budget snapshotReadBudgetError
+		if length <= limit && (err != nil || string(data) != input) || length > limit && !errors.As(err, &budget) {
+			t.Fatalf("length=%d bytes=%q error=%v", length, data, err)
+		}
+		if _, err := readSnapshotBytes(snapshotBoundaryReader{data: input, readErr: readErr}, limit); !errors.Is(err, readErr) {
+			t.Fatalf("length=%d read error=%v", length, err)
+		}
+	}
+}
+
+func TestMissingDeletePreservesSnapshotFileAndReopen(t *testing.T) {
+	dir := t.TempDir()
+	options := Options{DataDir: dir}
+	store, err := NewKVStore(options)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	if err := store.Set("saved", []byte("fixture"), 0); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, stateFileName)
+	before, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	if err := store.DeleteContext(ctx, "missing"); !errors.Is(err, context.Canceled) {
+		t.Fatalf("canceled delete=%v", err)
+	}
+	if err := store.DeleteContext(t.Context(), "missing"); !errors.Is(err, ErrKeyNotFound) {
+		t.Fatalf("missing delete=%v", err)
+	}
+	after, err := os.Stat(path)
+	if err != nil || !os.SameFile(before, after) {
+		t.Fatalf("snapshot changed, error=%v", err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := NewKVStore(options)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopened.Close()
+	if got, err := reopened.Get("saved"); err != nil || string(got) != "fixture" {
+		t.Fatalf("value=%q error=%v", got, err)
+	}
+}

@@ -1706,3 +1706,54 @@ func TestNestedWildcardWinsAfterBothMoreSpecificDeadEnds(t *testing.T) {
 		}
 	}
 }
+
+func TestAllowMethodsAcrossOverlapWithExplicitHead(t *testing.T) {
+	r := NewRouter()
+	r.SetMethodNotAllowed(true)
+	for _, entry := range []struct {
+		method, path string
+		status       int
+	}{
+		{http.MethodGet, "/files/item", 200},
+		{http.MethodPost, "/files/*rest", 201},
+		{http.MethodHead, "/files/:id", 202},
+	} {
+		mustAddRoute(r, entry.method, entry.path, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(entry.status) }))
+	}
+	r.Freeze()
+	for range 2 {
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, httptest.NewRequest(http.MethodPut, "/files/item", nil))
+		if rec.Code != 405 || rec.Header().Get("Allow") != "GET, HEAD, POST" {
+			t.Fatalf("status=%d allow=%v", rec.Code, rec.Header())
+		}
+		rec = httptest.NewRecorder()
+		r.ServeHTTP(rec, httptest.NewRequest(http.MethodHead, "/files/item", nil))
+		if rec.Code != 202 {
+			t.Fatalf("explicit HEAD=%d", rec.Code)
+		}
+	}
+}
+
+func TestAllowHeaderDetachedAfterPositiveCacheWarms(t *testing.T) {
+	r := NewRouter()
+	r.SetMethodNotAllowed(true)
+	mustAddRoute(r, http.MethodGet, "/item/:id", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(204) }))
+	r.Freeze()
+	first := httptest.NewRecorder()
+	r.ServeHTTP(first, httptest.NewRequest(http.MethodPost, "/item/value", nil))
+	if first.Code != 405 || first.Header().Get("Allow") != "GET, HEAD" {
+		t.Fatalf("first=%d headers=%v", first.Code, first.Header())
+	}
+	first.Header().Set("Allow", "fixture")
+	warm := httptest.NewRecorder()
+	r.ServeHTTP(warm, httptest.NewRequest(http.MethodGet, "/item/value", nil))
+	if warm.Code != 204 {
+		t.Fatalf("warm status=%d", warm.Code)
+	}
+	after := httptest.NewRecorder()
+	r.ServeHTTP(after, httptest.NewRequest(http.MethodPost, "/item/value", nil))
+	if after.Code != 405 || after.Header().Get("Allow") != "GET, HEAD" {
+		t.Fatalf("after=%d headers=%v", after.Code, after.Header())
+	}
+}

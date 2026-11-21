@@ -30,3 +30,6 @@ app.Use(debug.Middleware(debug.DefaultConfig()))
 
 - Not for production hot paths; the full response is buffered in memory.
 - The wrapped `ResponseWriter` supports `Unwrap()`, `Flush()`, and `Hijack()`.
+- If an outer recovery middleware completes a response already streamed by
+  Debug, Debug forwards its declared trailers during unwinding. The application
+  owns the connection and trailers after a successful hijack.

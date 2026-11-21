@@ -1501,3 +1501,32 @@ func TestConcurrentShutdownLeavesDrainVacantUntilNewCaller(t *testing.T) {
 		t.Fatalf("shutdown errors=%v %v open=%d", secondErr, thirdErr, app.connTracker.open.Load())
 	}
 }
+
+func TestPreparedRunPreservesBindErrorOnShutdown(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	cfg := DefaultConfig()
+	cfg.Addr = listener.Addr().String()
+	app := New(cfg, AppDependencies{})
+	if err := app.Prepare(); err != nil {
+		t.Fatal(err)
+	}
+	before, err := app.Server()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var bindErr *net.OpError
+	if err := app.Run(); !errors.As(err, &bindErr) || bindErr.Op != "listen" {
+		t.Fatalf("Run=%v, want listen error", err)
+	}
+	if err := app.Shutdown(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	after, err := app.Server()
+	if err != nil || before != after {
+		t.Fatalf("server before=%p after=%p error=%v", before, after, err)
+	}
+}

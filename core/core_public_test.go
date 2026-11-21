@@ -2,6 +2,7 @@ package core_test
 
 import (
 	"bytes"
+	"context"
 	"crypto/tls"
 	"errors"
 	"fmt"
@@ -819,6 +820,35 @@ func TestPreparedServerPreservesMixedExplicitTimeoutFields(t *testing.T) {
 		if server.ReadTimeout != config.ReadTimeout || server.ReadHeaderTimeout != config.ReadHeaderTimeout ||
 			server.IdleTimeout != config.IdleTimeout || server.WriteTimeout != config.WriteTimeout {
 			t.Fatalf("prepared timeouts=%v/%v/%v/%v", server.ReadTimeout, server.ReadHeaderTimeout, server.IdleTimeout, server.WriteTimeout)
+		}
+	}
+}
+
+func TestPreparedServerPreservesRequestContext(t *testing.T) {
+	type key struct{}
+	app := core.New(core.DefaultConfig(), core.AppDependencies{})
+	if err := app.Get("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Context().Value(key{}) != "fixture" || !errors.Is(r.Context().Err(), context.Canceled) {
+			t.Errorf("received context=%v value=%v", r.Context().Err(), r.Context().Value(key{}))
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})); err != nil {
+		t.Fatal(err)
+	}
+	if err := app.Prepare(); err != nil {
+		t.Fatal(err)
+	}
+	server, err := app.Server()
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.WithValue(t.Context(), key{}, "fixture"))
+	cancel()
+	for _, h := range []http.Handler{server.Handler, app} {
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil).WithContext(ctx))
+		if rec.Code != http.StatusNoContent {
+			t.Fatalf("status=%d", rec.Code)
 		}
 	}
 }

@@ -1960,3 +1960,22 @@ func TestDynamicFlushRefusalPreservesSelectedStatusCommit(t *testing.T) {
 		t.Fatalf("commits=%v body=%q header=%v", dst.commits, dst.Body.String(), dst.Header())
 	}
 }
+
+func TestGzipPreservesExplicitEncodingAcrossFlush(t *testing.T) {
+	handler := Middleware(DefaultConfig())(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Encoding", "fixture")
+		w.WriteHeader(202)
+		_, _ = io.WriteString(w, "before")
+		if err := http.NewResponseController(w).Flush(); err != nil {
+			t.Error(err)
+		}
+		_, _ = io.WriteString(w, " after")
+	}))
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.Header.Set("Accept-Encoding", "gzip")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != 202 || rec.Body.String() != "before after" || rec.Header().Get("Content-Encoding") != "fixture" || !rec.Flushed {
+		t.Fatalf("status=%d headers=%v body=%q flushed=%t", rec.Code, rec.Header(), rec.Body.String(), rec.Flushed)
+	}
+}

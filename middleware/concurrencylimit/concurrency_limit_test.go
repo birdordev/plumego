@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"runtime"
+	"sync/atomic"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -494,4 +495,31 @@ func TestAbnormalWorkerExitReleasesBothAdmissionSlots(t *testing.T) {
 			t.Fatalf("next status=%d", next.Code)
 		}
 	})
+}
+
+func TestNoQueueReleasesSlotsAfterRejectedCall(t *testing.T) {
+	entered, release, firstDone := make(chan struct{}), make(chan struct{}), make(chan struct{})
+	var calls atomic.Int32
+	handler := Middleware(Config{MaxConcurrent: 1})(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if calls.Add(1) == 1 {
+			close(entered)
+			<-release
+		}
+		w.WriteHeader(204)
+	}))
+	send := func() *httptest.ResponseRecorder {
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
+		return rec
+	}
+	var first *httptest.ResponseRecorder
+	go func() { defer close(firstDone); first = send() }()
+	<-entered
+	rejected := send()
+	close(release)
+	<-firstDone
+	next := send()
+	if first.Code != 204 || rejected.Code != 503 || next.Code != 204 || calls.Load() != 2 {
+		t.Fatalf("status sequence=%d,%d,%d handler calls=%d", first.Code, rejected.Code, next.Code, calls.Load())
+	}
 }

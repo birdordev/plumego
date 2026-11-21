@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -255,5 +257,38 @@ func TestAsDelegatedPointerIsFallbackToLaterValue(t *testing.T) {
 	}
 	if got, ok := AsAPIError(errors.Join(delegated, value)); !ok || got.Code() != value.Code() {
 		t.Fatalf("preferred=%v", got)
+	}
+}
+
+func TestKnownTypeNormalizesStatusAndPreservesExplicitCode(t *testing.T) {
+	for _, beforeType := range []bool{true, false} {
+		builder := NewErrorBuilder()
+		wantCode := "FIXTURE"
+		if beforeType {
+			wantCode = TypeMethodNotAllowed.Meta().Code
+			builder.Code("FIXTURE")
+		}
+		builder.Type(TypeMethodNotAllowed)
+		if !beforeType {
+			builder.Code("FIXTURE")
+		}
+		raw := builder.Build()
+		raw.status = http.StatusBadRequest
+		raw.category = ErrorCategory("fixture")
+		extracted, ok := AsAPIError(fmt.Errorf("wrapper: %w", raw))
+		if !ok || extracted.Status() != http.StatusBadRequest {
+			t.Fatalf("extracted status=%d found=%t", extracted.Status(), ok)
+		}
+		normalized := normalizeAPIError(extracted)
+		if normalized.Status() != http.StatusMethodNotAllowed || normalized.Code() != wantCode || normalized.Type() != TypeMethodNotAllowed || normalized.Category() != TypeMethodNotAllowed.Meta().Category {
+			t.Fatalf("normalized=%+v ok=%t", normalized, ok)
+		}
+		rec := httptest.NewRecorder()
+		if err := WriteError(rec, nil, extracted); err != nil {
+			t.Fatal(err)
+		}
+		if rec.Code != http.StatusMethodNotAllowed || !strings.Contains(rec.Body.String(), fmt.Sprintf("\"code\":%q", wantCode)) {
+			t.Fatalf("response=%d %s", rec.Code, rec.Body.String())
+		}
 	}
 }

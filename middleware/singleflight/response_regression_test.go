@@ -834,3 +834,40 @@ func TestOverflowingLeaderRetainsHeadersButWaiterGetsOwnError(t *testing.T) {
 		}
 	})
 }
+
+func TestHandlerPanicReleasesWaiterBeforeNextFlight(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		entered, release := make(chan struct{}), make(chan struct{})
+		calls := 0
+		h := New(Config{}).Middleware()(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			calls++
+			if calls == 1 {
+				close(entered)
+				<-release
+				panic("fixture")
+			}
+			w.WriteHeader(http.StatusAccepted)
+		}))
+		request := func() *http.Request { return httptest.NewRequest(http.MethodGet, "/fixture", nil) }
+		panicked := make(chan any, 1)
+		go func() { defer func() { panicked <- recover() }(); h.ServeHTTP(httptest.NewRecorder(), request()) }()
+		<-entered
+		waiter := httptest.NewRecorder()
+		done := make(chan struct{})
+		go func() { defer close(done); h.ServeHTTP(waiter, request()) }()
+		synctest.Wait()
+		close(release)
+		<-done
+		if got := <-panicked; got != "fixture" {
+			t.Fatalf("panic=%v", got)
+		}
+		if waiter.Code != http.StatusBadGateway {
+			t.Fatalf("waiter=%d body=%s", waiter.Code, waiter.Body.String())
+		}
+		retry := httptest.NewRecorder()
+		h.ServeHTTP(retry, request())
+		if retry.Code != http.StatusAccepted || calls != 2 {
+			t.Fatalf("retry=%d calls=%d", retry.Code, calls)
+		}
+	})
+}

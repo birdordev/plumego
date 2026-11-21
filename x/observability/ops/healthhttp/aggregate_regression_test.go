@@ -4,7 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"runtime"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -270,4 +273,73 @@ func TestBatchReadinessUsesCancellationReasonWithoutNewSample(t *testing.T) {
 	if !after.Timestamp.Equal(before.Timestamp) || after.Status != health.StatusHealthy || m.Readiness().Components["sample"] {
 		t.Fatalf("before=%+v after=%+v readiness=%+v", before, after, m.Readiness())
 	}
+}
+
+func TestPreCanceledDirectCheckPreservesActivePublication(t *testing.T) {
+	m, err := NewManager(Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = m.Close() })
+	var calls atomic.Int32
+	entered, release := make(chan struct{}), make(chan struct{})
+	if err := m.RegisterComponent(functionChecker{name: "fixture", check: func(context.Context) error {
+		if calls.Add(1) == 2 {
+			close(entered)
+			<-release
+		}
+		return nil
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.CheckComponent(t.Context(), "fixture"); err != nil {
+		t.Fatal(err)
+	}
+	before, _ := m.GetComponentHealth("fixture")
+	finished := make(chan error, 1)
+	go func() { finished <- m.CheckComponent(t.Context(), "fixture") }()
+	<-entered
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	cancelErr := m.CheckComponent(ctx, "fixture")
+	during, _ := m.GetComponentHealth("fixture")
+	close(release)
+	activeErr := <-finished
+	after, _ := m.GetComponentHealth("fixture")
+	if !errors.Is(cancelErr, context.Canceled) || activeErr != nil || calls.Load() != 2 {
+		t.Fatalf("canceled=%v active=%v attempts=%d", cancelErr, activeErr, calls.Load())
+	}
+	if during.Status != health.StatusHealthy || during.Timestamp != before.Timestamp ||
+		after.Status != health.StatusHealthy || after.Details["check_attempts"] != 1 {
+		t.Fatalf("check snapshots: before=%+v during=%+v after=%+v", before, during, after)
+	}
+}
+
+func TestHealthReportDistinguishesEmptyAndUncheckedComponent(t *testing.T) {
+	m, err := NewManager(Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = m.Close() })
+	tracker := NewTracker(m)
+	handler := HealthReportHandler(tracker)
+	assert := func(code int, state health.HealthState, names []string, attempts int64) {
+		t.Helper()
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/report", nil))
+		report := decodeHealthHTTPData[HealthReport](t, rec)
+		if rec.Code != code || report.HealthStatus.Status != state || !slices.Equal(report.Components, names) ||
+			report.Metrics.CheckCount != attempts {
+			t.Fatalf("status=%d health=%s components=%v checks=%d", rec.Code, report.HealthStatus.Status, report.Components, report.Metrics.CheckCount)
+		}
+	}
+	assert(200, health.StatusHealthy, nil, 0)
+	if err := m.RegisterComponent(functionChecker{name: "fixture", check: func(context.Context) error { return nil }}); err != nil {
+		t.Fatal(err)
+	}
+	assert(503, health.StatusUnhealthy, []string{"fixture"}, 0)
+	if err := tracker.CheckComponent(t.Context(), "fixture"); err != nil {
+		t.Fatal(err)
+	}
+	assert(200, health.StatusHealthy, []string{"fixture"}, 1)
 }

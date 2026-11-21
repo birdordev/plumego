@@ -587,3 +587,19 @@ func TestThreeWayAggregationRetainsOtherNamesAfterSaturation(t *testing.T) {
 		out.NameBreakdown["right"] = 0
 	}
 }
+
+func TestMultiCollectorCountsExplicitSeriesWithoutBreakdown(t *testing.T) {
+	countOnly := newStubAggregateCollector(func() CollectorStats { return CollectorStats{ActiveSeries: 4} })
+	breakdown := map[string]int64{"fixture": 2}
+	named := newStubAggregateCollector(func() CollectorStats { return CollectorStats{NameBreakdown: breakdown} })
+	for _, order := range [][]AggregateCollector{{countOnly, named}, {named, countOnly}} {
+		got := NewMultiCollector(order...).GetStats()
+		if got.ActiveSeries != 5 || !maps.Equal(got.NameBreakdown, breakdown) {
+			t.Fatalf("aggregate=%+v", got)
+		}
+		got.NameBreakdown["fixture"] = 9
+		if breakdown["fixture"] != 2 {
+			t.Fatal("aggregate shares child breakdown")
+		}
+	}
+}

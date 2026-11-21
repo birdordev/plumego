@@ -102,8 +102,11 @@ Overlapping aggregate health checks publish readiness only from the newest batch
 Manual `MarkReady` and `MarkNotReady` decisions invalidate aggregate checks that started before the decision. Those older aggregates cannot replace the manual state or timestamp. A new aggregate started afterward may publish a new decision; manual state is not a permanent override. Both manual operations are ignored after manager closure.
 
 A manager checks components on demand. Callers own periodic scheduling and can
-retain `HealthCheckInterval` in their configuration. `RetryCount` counts
-retries after the first attempt. Configuration must leave room for that first
+retain `HealthCheckInterval` in their configuration. `Enabled` is retained
+for caller-owned configuration. To disable checks, the application controls
+whether it mounts the handlers or schedules checks. Explicit Manager calls
+run with either value, including the zero-value configuration.
+`RetryCount` counts retries after the first attempt. Configuration must leave room for that first
 attempt in the attempt counter. Canceling a retry delay returns the context
 error.
 
@@ -115,9 +118,15 @@ manager lock and rechecks closure before publishing.
 History exports accept RFC3339 `start_time` and `end_time` filters. Invalid
 timestamps and reversed ranges return the standard invalid-query response.
 
-Tracker uses the built-in manager's per-batch component outcomes for
-statistics. An interrupted check counts as a failure, and components
-skipped before their first attempt do not count as checks. External
+A single-component check canceled before its first attempt leaves the
+published component snapshot and the active check's publication rights
+intact. The canceled request still receives a cancellation error.
+
+Tracker uses the built-in manager's attempted component outcomes from
+direct and batch checks. Direct counters reflect the callback result even
+if a newer check supersedes publication. During a batch, an interrupted
+attempt counts as a failure. Components skipped before their first attempt
+do not count as checks. External
 implementations of Manager supply component snapshots, so their tracker
 statistics reflect the available snapshots. Public metrics use a fixed
 failure message while direct component calls retain their error causes.

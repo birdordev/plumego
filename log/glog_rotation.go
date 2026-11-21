@@ -92,10 +92,10 @@ func (l *gLogger) rotateIfNeeded(level Level, logSize int64) (logDir, program st
 	defer l.mu.Unlock()
 
 	config = l.rotationConfig
+	l.currentSize[level] += logSize
 	if config.MaxSize <= 0 {
 		return
 	}
-	l.currentSize[level] += logSize
 	// Convert bytes to whole MiB so a large configured threshold cannot overflow.
 	if l.currentSize[level]/(1<<20) < int64(config.MaxSize) {
 		return

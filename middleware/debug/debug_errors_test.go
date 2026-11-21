@@ -6,6 +6,8 @@ import (
 	"compress/gzip"
 	"encoding/json"
 	"errors"
+	"github.com/birdordev/plumego/log"
+	"github.com/birdordev/plumego/middleware/recovery"
 	"io"
 	"net"
 	"net/http"
@@ -1216,5 +1218,46 @@ func TestUnsupportedDebugFlushPreservesSelectedStatusBoundary(t *testing.T) {
 		if selected && w.Body.String() != "fixture" || !selected && !json.Valid(w.Body.Bytes()) {
 			t.Fatalf("selected=%t body=%q", selected, w.Body)
 		}
+	}
+}
+
+func TestDebugRecoveredStreamPreservesTrailers(t *testing.T) {
+	recoverer, err := recovery.Middleware(recovery.Config{Logger: log.NewLogger()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, committed := range []bool{false, true} {
+		t.Run(strconv.FormatBool(committed), func(t *testing.T) {
+			handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Trailer", "X-Final")
+				w.WriteHeader(http.StatusAccepted)
+				_, _ = io.WriteString(w, "fixture")
+				if committed {
+					if err := http.NewResponseController(w).Flush(); err != nil {
+						panic(err)
+					}
+				}
+				w.Header().Set("X-Final", "complete")
+				panic("fixture")
+			})
+			server := httptest.NewServer(recoverer(Middleware(DefaultConfig())(handler)))
+			t.Cleanup(server.Close)
+			resp, err := server.Client().Get(server.URL)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer resp.Body.Close()
+			body, err := io.ReadAll(resp.Body)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if committed {
+				if resp.StatusCode != http.StatusAccepted || string(body) != "fixture" || resp.Trailer.Get("X-Final") != "complete" {
+					t.Fatalf("response=%d body=%q trailer=%q", resp.StatusCode, body, resp.Trailer.Get("X-Final"))
+				}
+			} else if resp.StatusCode != http.StatusInternalServerError || resp.Trailer.Get("X-Final") != "" {
+				t.Fatalf("uncommitted response=%d trailer=%v", resp.StatusCode, resp.Trailer)
+			}
+		})
 	}
 }

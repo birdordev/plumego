@@ -1580,3 +1580,51 @@ func TestScanRowsDiscardsPartialResultsAndRetainsCloseCause(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestScanRowKeepsMissingRowAndInvalidInputDistinct(t *testing.T) {
+	db := sql.OpenDB(&stubConnector{conn: &stubConn{}})
+	defer db.Close()
+	row, err := QueryRowContext(t.Context(), db, "SELECT fixture")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var value int
+	missing := ScanRow(row, &value)
+	invalid := ScanRow(nil, &value)
+	if !errors.Is(missing, ErrNoRows) || !errors.Is(missing, sql.ErrNoRows) || errors.Is(missing, ErrQueryFailed) ||
+		!errors.Is(invalid, ErrQueryFailed) || errors.Is(invalid, ErrNoRows) || errors.Is(invalid, sql.ErrNoRows) {
+		t.Fatalf("missing=%v invalid=%v", missing, invalid)
+	}
+	if err := Ping(t.Context(), db); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestApplyConfigShrinksOpenAndIdlePool(t *testing.T) {
+	db := sql.OpenDB(&rowsConnector{rows: stubRows{}})
+	defer db.Close()
+	ApplyConfig(db, Config{MaxOpenConns: 3, MaxIdleConns: 3})
+	var conns []*sql.Conn
+	for range 3 {
+		conn, err := db.Conn(t.Context())
+		if err != nil {
+			t.Fatal(err)
+		}
+		conns = append(conns, conn)
+	}
+	for _, conn := range conns {
+		if err := conn.Close(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if stats := db.Stats(); stats.Idle != 3 {
+		t.Fatalf("prepared stats=%+v", stats)
+	}
+	ApplyConfig(db, Config{MaxOpenConns: 1, MaxIdleConns: 3})
+	if stats := db.Stats(); stats.MaxOpenConnections != 1 || stats.OpenConnections != 1 || stats.Idle != 1 {
+		t.Fatalf("shrunk stats=%+v", stats)
+	}
+	if err := db.PingContext(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+}

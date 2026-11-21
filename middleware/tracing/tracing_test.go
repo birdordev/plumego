@@ -190,3 +190,19 @@ func TestMiddlewareNilTracerPassthrough(t *testing.T) {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusNoContent)
 	}
 }
+
+func TestNilTracerKeepsWriterAndRequestIdentity(t *testing.T) {
+	type key struct{}
+	ctx := context.WithValue(t.Context(), key{}, "fixture")
+	req := httptest.NewRequest(http.MethodGet, "/", nil).WithContext(ctx)
+	rec := httptest.NewRecorder()
+	Middleware(nil)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if w != rec || r != req || r.Context() != ctx {
+			t.Error("nil tracer wrapped the input")
+		}
+		w.WriteHeader(204)
+	})).ServeHTTP(rec, req)
+	if rec.Code != 204 {
+		t.Fatalf("status=%d", rec.Code)
+	}
+}

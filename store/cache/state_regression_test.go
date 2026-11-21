@@ -558,3 +558,58 @@ func TestCacheAppliesByteKeyLimitAcrossOperations(t *testing.T) {
 		t.Fatalf("before=%+v after=%+v", before, after)
 	}
 }
+
+func TestCacheReplacementAtCapacityKeepsExpiryAndAccounting(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		cache, err := NewMemoryCacheWithConfig(Config{MaxMemoryUsage: 5})
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer cache.Close()
+		if err := cache.Set(t.Context(), "item", []byte("old"), time.Minute); err != nil {
+			t.Fatal(err)
+		}
+		if err := cache.Set(t.Context(), "item", []byte("12345"), time.Second); err != nil {
+			t.Fatal(err)
+		}
+		if err := cache.Set(t.Context(), "item", []byte("123456"), time.Hour); !errors.Is(err, ErrCacheFull) {
+			t.Fatalf("over capacity=%v", err)
+		}
+		if data, err := cache.Get(t.Context(), "item"); err != nil || string(data) != "12345" {
+			t.Fatalf("data=%q error=%v", data, err)
+		}
+		if stats := cache.Stats(); stats.Entries != 1 || stats.MemoryUsage != 5 {
+			t.Fatalf("stats=%+v", stats)
+		}
+		<-time.After(time.Second)
+		if exists, err := cache.Exists(t.Context(), "item"); err != nil || exists {
+			t.Fatalf("expired exists=%t error=%v", exists, err)
+		}
+		if stats := cache.Stats(); stats.Entries != 0 || stats.MemoryUsage != 0 {
+			t.Fatalf("stats=%+v", stats)
+		}
+	})
+}
+
+func TestCanceledCacheClearPreservesEntriesAndBytes(t *testing.T) {
+	cache := NewMemoryCache()
+	defer cache.Close()
+	if err := cache.Set(t.Context(), "item", []byte("fixture"), 0); err != nil {
+		t.Fatal(err)
+	}
+	before := cache.Stats()
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	if err := cache.Clear(ctx); !errors.Is(err, context.Canceled) {
+		t.Fatalf("clear=%v", err)
+	}
+	if got := cache.Stats(); got != before {
+		t.Fatalf("before=%+v after=%+v", before, got)
+	}
+	if err := cache.Clear(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if got := cache.Stats(); got != (Stats{}) {
+		t.Fatalf("cleared=%+v", got)
+	}
+}

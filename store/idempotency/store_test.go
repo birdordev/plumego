@@ -400,3 +400,17 @@ func TestRecordResponseClonePreservesEmptyAndNilAndCopiesPayload(t *testing.T) {
 		}
 	}
 }
+
+func TestRecordStatusValidationMatchesExactEnumValues(t *testing.T) {
+	for _, tc := range []struct {
+		state Status
+		valid bool
+	}{
+		{StatusInProgress, true}, {StatusCompleted, true}, {"", false}, {"Completed", false}, {"completed ", false},
+	} {
+		err := ValidateRecord(Record{Status: tc.state, Key: "fixture", RequestHash: "fixture"})
+		if tc.state.Valid() != tc.valid || tc.valid && err != nil || !tc.valid && !errors.Is(err, ErrInvalidRecord) {
+			t.Fatalf("state=%q valid=%t error=%v", tc.state, tc.state.Valid(), err)
+		}
+	}
+}

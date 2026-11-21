@@ -230,6 +230,13 @@ func (t *Tracker) CheckComponent(ctx context.Context, name string) error {
 		return errors.New("health manager is nil")
 	}
 
+	if manager, ok := t.manager.(*manager); ok {
+		var result componentCheckResult
+		err := manager.checkComponent(ctx, name, &result, false)
+		t.recordComponentResult(name, result)
+		return err
+	}
+
 	start := time.Now()
 	err := t.manager.CheckComponent(ctx, name)
 	duration := time.Since(start)
@@ -272,14 +279,7 @@ func (t *Tracker) trackBatch(ctx context.Context) (health.HealthStatus, []string
 		status, names, results := manager.checkBatch(ctx)
 		duration := time.Since(start)
 		for i, result := range results {
-			if !result.attempted {
-				continue
-			}
-			state := health.StatusHealthy
-			if result.failed {
-				state = health.StatusUnhealthy
-			}
-			t.recordComponentCheck(names[i], state, result.duration, result.failed)
+			t.recordComponentResult(names[i], result)
 		}
 		return status, names, duration
 	}
@@ -297,6 +297,17 @@ func (t *Tracker) trackBatch(ctx context.Context) (health.HealthStatus, []string
 	}
 	slices.Sort(names)
 	return status, names, duration
+}
+
+func (t *Tracker) recordComponentResult(name string, result componentCheckResult) {
+	if !result.attempted {
+		return
+	}
+	state := health.StatusHealthy
+	if result.failed {
+		state = health.StatusUnhealthy
+	}
+	t.recordComponentCheck(name, state, result.duration, result.failed)
 }
 
 func (t *Tracker) recordComponentCheck(name string, state health.HealthState, duration time.Duration, failed bool) {

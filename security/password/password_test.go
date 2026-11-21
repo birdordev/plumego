@@ -266,3 +266,13 @@ func TestPasswordStoredFieldRejectionKeepsFixedClassification(t *testing.T) {
 		}
 	}
 }
+
+func TestHashLengthCountsMultibyteInputByBytes(t *testing.T) {
+	input := strings.Repeat("é", MaxPasswordLength/2)
+	if _, err := HashPasswordWithCost(input, MinimumCost); err != nil {
+		t.Fatal("fixture at the exact byte limit was rejected")
+	}
+	if _, err := HashPasswordWithCost(input+"é", MinimumCost); !errors.Is(err, ErrPasswordTooLong) {
+		t.Fatalf("classification=%v", err)
+	}
+}

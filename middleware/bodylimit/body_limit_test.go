@@ -872,3 +872,31 @@ func TestBodyLimitAfterExplicitErrorKeepsBothBodyWrites(t *testing.T) {
 		}
 	}
 }
+
+type boundaryCloseBody struct {
+	io.Reader
+	closeErr error
+	closes   int
+}
+
+func (b *boundaryCloseBody) Close() error { b.closes++; return b.closeErr }
+
+func TestExactLimitDelegatesExplicitBodyClose(t *testing.T) {
+	fixture := &boundaryCloseBody{Reader: strings.NewReader("four"), closeErr: errors.New("fixture close error")}
+	req := httptest.NewRequest(http.MethodPost, "/", nil)
+	req.Body = fixture
+	rec := httptest.NewRecorder()
+	Middleware(Config{MaxBytes: 4})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		data, err := io.ReadAll(r.Body)
+		if string(data) != "four" || err != nil {
+			t.Errorf("data=%q error=%v", data, err)
+		}
+		if err := r.Body.Close(); !errors.Is(err, fixture.closeErr) {
+			t.Errorf("close=%v", err)
+		}
+		w.WriteHeader(204)
+	})).ServeHTTP(rec, req)
+	if fixture.closes != 1 || rec.Code != 204 {
+		t.Fatalf("close count=%d status=%d", fixture.closes, rec.Code)
+	}
+}

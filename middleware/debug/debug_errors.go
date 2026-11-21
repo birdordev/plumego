@@ -120,14 +120,16 @@ func Middleware(config Config) middleware.Middleware {
 			}
 
 			rec := newDebugErrorRecorder(w, cfg.MaxBodyBytes)
+			defer func() {
+				if rec.passthrough && !rec.hijacked {
+					rec.copyTrailers()
+				}
+			}()
 			next.ServeHTTP(rec, r)
-			if !rec.hijacked {
-				defer rec.copyTrailers()
-			}
-
 			if rec.passthrough {
 				return
 			}
+			defer rec.copyTrailers()
 
 			if rec.status == 0 {
 				rec.WriteHeader(http.StatusOK)

@@ -762,3 +762,33 @@ func TestCSPBuildKeepsDirectiveOrderAndSourceSnapshot(t *testing.T) {
 		t.Fatalf("new=%q first=%q", next, first)
 	}
 }
+
+func TestCSPSandboxFlagAndValueReplacement(t *testing.T) {
+	builder := NewCSPBuilder().DefaultSrc("'self'")
+	for _, step := range []struct {
+		values []string
+		value  string
+	}{{nil, "sandbox"}, {[]string{"allow-scripts"}, "sandbox allow-scripts"}, {nil, "sandbox"}} {
+		got, err := builder.Sandbox(step.values...).BuildChecked()
+		if err != nil || got != "default-src 'self'; "+step.value {
+			t.Fatalf("policy=%q error=%v", got, err)
+		}
+	}
+}
+
+func TestCompiledPolicyKeepsHSTSRequestLocal(t *testing.T) {
+	policy := Policy{StrictTransportSecurity: &HSTSOptions{MaxAge: 60 * time.Second}}.Compile()
+	for _, fixture := range []struct{ url, header string }{
+		{"https://fixture.test/", "max-age=60"},
+		{"http://fixture.test/", ""},
+		{"https://fixture.test/", "max-age=60"},
+	} {
+		rec := httptest.NewRecorder()
+		if err := policy.ApplyChecked(rec, httptest.NewRequest(http.MethodGet, fixture.url, nil)); err != nil {
+			t.Fatal(err)
+		}
+		if got := rec.Header().Get("Strict-Transport-Security"); got != fixture.header {
+			t.Fatalf("HSTS=%q want=%q", got, fixture.header)
+		}
+	}
+}

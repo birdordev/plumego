@@ -173,3 +173,19 @@ func TestPrincipalCopyPreservesNilAndEmptyContainers(t *testing.T) {
 		t.Fatalf("second=%+v", second)
 	}
 }
+
+func TestPrincipalSnapshotDistinguishesNilAndEmptyAttributes(t *testing.T) {
+	nilClaims := PrincipalFromContext(WithPrincipal(t.Context(), &Principal{Subject: "fixture"}))
+	if nilClaims.Claims != nil || nilClaims.Roles != nil || nilClaims.Scopes != nil {
+		t.Fatalf("nil snapshot=%+v", nilClaims)
+	}
+	ctx := WithPrincipal(t.Context(), &Principal{Subject: "fixture", Claims: map[string]string{}, Roles: []string{}, Scopes: []string{}})
+	empty := PrincipalFromContext(ctx)
+	if empty.Claims == nil || empty.Roles == nil || empty.Scopes == nil {
+		t.Fatalf("empty snapshot=%+v", empty)
+	}
+	empty.Claims["fixture"] = "changed"
+	if len(PrincipalFromContext(ctx).Claims) != 0 {
+		t.Fatal("caller mutation changed the stored claims")
+	}
+}

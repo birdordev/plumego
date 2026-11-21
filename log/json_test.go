@@ -1019,3 +1019,21 @@ func TestJSONFieldEncoderRunsOnceAndIsolatesFailedSibling(t *testing.T) {
 		}
 	}
 }
+
+func TestJSONLoggerPreservesUnicodeFieldNames(t *testing.T) {
+	var output bytes.Buffer
+	logger := NewLogger(LoggerConfig{Format: LoggerFormatJSON, Output: &output})
+	for range 3 {
+		logger.Info("fixture", Fields{"zone": "local", "地区": "east", "文字": 42})
+	}
+	decoder := json.NewDecoder(&output)
+	for range 3 {
+		var fields map[string]any
+		if err := decoder.Decode(&fields); err != nil {
+			t.Fatal(err)
+		}
+		if fields["zone"] != "local" || fields["地区"] != "east" || fields["文字"] != float64(42) {
+			t.Fatalf("fields=%v", fields)
+		}
+	}
+}
