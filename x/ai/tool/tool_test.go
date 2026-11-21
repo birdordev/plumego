@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"slices"
 	"testing"
 	"time"
 
@@ -531,5 +532,21 @@ func TestCalculatorTool_IntegerInputs(t *testing.T) {
 	out := result.Output.(map[string]any)
 	if out["result"] != float64(7) {
 		t.Errorf("result = %v, want 7", out["result"])
+	}
+}
+
+func TestAllowListPolicyReturnsOwnedToolNames(t *testing.T) {
+	ctx := t.Context()
+	policy := NewAllowListPolicy([]string{"first", "second"})
+	got := policy.GetAllowedTools(ctx)
+	slices.Sort(got)
+	if !slices.Equal(got, []string{"first", "second"}) {
+		t.Fatalf("allowed tools = %v", got)
+	}
+	got[0] = "replaced"
+	again := policy.GetAllowedTools(ctx)
+	slices.Sort(again)
+	if !slices.Equal(again, []string{"first", "second"}) || !policy.CanExecute(ctx, "first") || policy.CanExecute(ctx, "replaced") {
+		t.Errorf("policy observed caller changes: %v", again)
 	}
 }

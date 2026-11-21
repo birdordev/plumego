@@ -890,3 +890,30 @@ func TestCustomHashStrategyReceivesKeyBytes(t *testing.T) {
 		t.Errorf("Shard=%d, %v, calls=%d", got, err, calls)
 	}
 }
+
+func TestRangeStrategyPreservesUint64Boundaries(t *testing.T) {
+	const base = uint64(1 << 63)
+	strategy, err := NewRangeStrategy([]RangeDefinition{
+		{Start: base + 10, End: base + 20, Shard: 1},
+		{Start: base, End: base + 10, Shard: 0},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		key  uint64
+		want int
+	}{
+		{base, 0}, {base + 9, 0}, {base + 10, 1}, {base + 19, 1},
+	} {
+		if got, err := strategy.Shard(tc.key, 2); got != tc.want || err != nil {
+			t.Errorf("Shard(%d) = %d, %v; want %d", tc.key, got, err, tc.want)
+		}
+	}
+	if _, err := strategy.Shard(base+20, 2); !errors.Is(err, ErrNoMatchingRange) {
+		t.Errorf("exclusive upper bound error = %v", err)
+	}
+	if _, err := strategy.Shard(int64(10), 2); !errors.Is(err, ErrInvalidShardKey) {
+		t.Errorf("mismatched key type error = %v", err)
+	}
+}

@@ -12,6 +12,7 @@ import (
 // PrometheusExporter exports metrics in Prometheus text format.
 // This is a zero-dependency implementation that produces
 // Prometheus-compatible metrics without requiring the Prometheus client library.
+// Finite histogram buckets are estimated cumulative counts based on the observed range.
 type PrometheusExporter struct {
 	collector *MemoryCollector
 	namespace string // Optional namespace prefix (e.g., "ai_gateway")
@@ -82,11 +83,8 @@ func (pe *PrometheusExporter) writePrometheusFormat(w io.Writer, snapshot *Snaps
 
 		// Write histogram buckets (simulated)
 		buckets := []float64{0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10}
-		cumulativeCount := int64(0)
 		for _, bucket := range buckets {
-			// Estimate count in bucket
-			bucketCount := pe.estimateBucketCount(hist, bucket)
-			cumulativeCount += bucketCount
+			cumulativeCount := pe.estimateBucketCount(hist, bucket)
 			labelsWithBucket := pe.addBucketLabel(labels, bucket)
 			_, _ = fmt.Fprintf(w, "%s_bucket%s %d\n", fullName, pe.formatLabels(labelsWithBucket), cumulativeCount)
 		}
@@ -186,7 +184,6 @@ func (pe *PrometheusExporter) addBucketLabel(labels map[string]string, bucket fl
 
 // estimateBucketCount estimates the count of values <= bucket
 func (pe *PrometheusExporter) estimateBucketCount(hist HistogramSnapshot, bucket float64) int64 {
-	// Simple estimation: use percentiles
 	if hist.Count == 0 {
 		return 0
 	}

@@ -669,3 +669,42 @@ func TestMiddlewareVersionCallbacksOwnTheirBranches(t *testing.T) {
 		t.Errorf("supported version status=%d header=%q callbacks=%v", out.Code, out.Header().Get("X-API-Version"), calls)
 	}
 }
+
+func TestUnknownVersionStrategyUsesConfiguredDefault(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		supported []int
+		status    int
+		calls     int
+	}{
+		{"supported default", []int{3}, http.StatusNoContent, 1},
+		{"unsupported default", []int{2}, http.StatusNotAcceptable, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			calls := 0
+			handler := Middleware(Config{
+				Strategy: Strategy(1234), SupportedVersions: tc.supported, DefaultVersion: 3,
+			})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				calls++
+				if got := VersionFromContext(r.Context()); got != 3 {
+					t.Errorf("downstream version=%d; want 3", got)
+				}
+				w.WriteHeader(http.StatusNoContent)
+			}))
+			out := httptest.NewRecorder()
+			handler.ServeHTTP(out, httptest.NewRequest(http.MethodGet, "/items", nil))
+			if out.Code != tc.status || calls != tc.calls {
+				t.Errorf("status=%d calls=%d; want %d and %d", out.Code, calls, tc.status, tc.calls)
+			}
+			if tc.calls == 1 && out.Header().Get("X-API-Version") != "3" {
+				t.Errorf("version header = %q", out.Header().Get("X-API-Version"))
+			}
+			if tc.calls == 0 {
+				var result versioningErrorResponse
+				if err := json.Unmarshal(out.Body.Bytes(), &result); err != nil || result.Error.Code != contract.CodeNotAcceptable {
+					t.Errorf("rejection body=%q error=%v", out.Body, err)
+				}
+			}
+		})
+	}
+}

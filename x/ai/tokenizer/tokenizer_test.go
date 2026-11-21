@@ -330,3 +330,27 @@ func BenchmarkStreamCounter(b *testing.B) {
 		_ = counter.Usage()
 	}
 }
+
+func TestSimpleAndGPTCountMessages(t *testing.T) {
+	messages := []Message{
+		{Role: "user", Name: "name", Content: "12345678"},
+		{},
+	}
+	for _, tc := range []struct {
+		name         string
+		tokenizer    Tokenizer
+		empty, multi int
+	}{
+		{"simple", NewSimpleTokenizer("fixture"), 0, 12},
+		{"gpt", NewGPTTokenizer("fixture"), 6, 19},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got, err := tc.tokenizer.CountMessages(nil); got != tc.empty || err != nil {
+				t.Errorf("empty CountMessages = %d, %v; want %d", got, err, tc.empty)
+			}
+			if got, err := tc.tokenizer.CountMessages(messages); got != tc.multi || err != nil {
+				t.Errorf("CountMessages = %d, %v; want %d", got, err, tc.multi)
+			}
+		})
+	}
+}

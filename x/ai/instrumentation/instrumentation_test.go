@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -569,5 +570,99 @@ func TestInstrumentedGetWorkflowRecordsTiming(t *testing.T) {
 		if got := timings[key]; got.Count != 1 || got.Tags["workflow_id"] != id {
 			t.Errorf("%s timing = %+v", id, got)
 		}
+	}
+}
+
+func TestInstrumentedProviderUsesDecimalToolCount(t *testing.T) {
+	for _, count := range []int{0, 2, 10} {
+		t.Run(fmt.Sprint(count), func(t *testing.T) {
+			upstream := provider.NewMockProvider("fixture")
+			response := &provider.CompletionResponse{
+				StopReason: provider.StopReasonEndTurn,
+				Content:    []provider.ContentBlock{{Type: provider.ContentTypeText, Text: "fixture"}},
+			}
+			if count > 0 {
+				response.StopReason = provider.StopReasonToolUse
+				for i := range count {
+					response.Content = append(response.Content, provider.ContentBlock{
+						Type: provider.ContentTypeToolUse, ToolUse: &provider.ToolUse{ID: fmt.Sprint(i)},
+					})
+				}
+			}
+			upstream.QueueResponse(response)
+			collector := metrics.NewMemoryCollector()
+			adapter := NewInstrumentedProvider(upstream, collector)
+			if _, err := adapter.Complete(t.Context(), &provider.CompletionRequest{Model: "fixture"}); err != nil {
+				t.Fatal(err)
+			}
+
+			counters := collector.Snapshot().Counters
+			const prefix = "ai_tool_uses_total{provider=fixture,model=fixture,count="
+			if count == 0 {
+				if got := counters["ai_requests_total{provider=fixture,model=fixture}"].Value; got != 1 {
+					t.Errorf("text completion request count = %v; want 1", got)
+				}
+				for key := range counters {
+					if strings.HasPrefix(key, prefix) {
+						t.Errorf("unexpected tool counter %s", key)
+					}
+				}
+				return
+			}
+			key := fmt.Sprintf("%s%d}", prefix, count)
+			if got := counters[key]; got.Value != float64(count) || got.Tags["count"] != fmt.Sprint(count) {
+				t.Errorf("counter %q = %+v", key, got)
+			}
+		})
+	}
+}
+
+type modelLookupProvider struct {
+	mockProvider
+	lookup func(context.Context, string) (*provider.Model, error)
+}
+
+func (m *modelLookupProvider) GetModel(ctx context.Context, id string) (*provider.Model, error) {
+	return m.lookup(ctx, id)
+}
+
+func TestInstrumentedProviderGetModelRecordsTiming(t *testing.T) {
+	ctx := t.Context()
+	model := &provider.Model{ID: "fixture"}
+	sentinel := errors.New("model lookup unavailable")
+	collector := metrics.NewMemoryCollector()
+	calls := 0
+	upstream := &modelLookupProvider{
+		mockProvider: mockProvider{name: "fixture-provider"},
+		lookup: func(got context.Context, id string) (*provider.Model, error) {
+			calls++
+			if got != ctx {
+				t.Error("lookup lost caller context")
+			}
+			if id == model.ID {
+				return model, nil
+			}
+			if id != "missing" {
+				t.Errorf("unexpected model lookup %q", id)
+			}
+			return nil, sentinel
+		},
+	}
+	adapter := NewInstrumentedProvider(upstream, collector)
+	if got, err := adapter.GetModel(ctx, model.ID); got != model || err != nil {
+		t.Errorf("GetModel = %+v, %v", got, err)
+	}
+	if got, err := adapter.GetModel(ctx, "missing"); got != nil || !errors.Is(err, sentinel) {
+		t.Errorf("failed GetModel = %+v, %v", got, err)
+	}
+	timings := collector.Snapshot().Histograms
+	for _, id := range []string{model.ID, "missing"} {
+		key := "ai_get_model_duration_seconds{provider=fixture-provider,model=" + id + "}"
+		if got := timings[key]; got.Count != 1 || got.Tags["model"] != id || got.Tags["provider"] != "fixture-provider" {
+			t.Errorf("%s timing = %+v", id, got)
+		}
+	}
+	if calls != 2 {
+		t.Errorf("upstream calls = %d; want two", calls)
 	}
 }

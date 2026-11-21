@@ -1690,3 +1690,32 @@ func TestFramedClientCloseDelegatesError(t *testing.T) {
 		}
 	}
 }
+
+func TestPoolClientDelegatesTimedRead(t *testing.T) {
+	sentinel := errors.New("fixture read interrupted")
+	raw := &reconnectTimedReadClient{readErr: sentinel}
+	pool := &Pool{poolCfg: &PoolConfig{MaxConns: 1, MaxIdleTime: time.Hour}, stopCh: make(chan struct{})}
+	pool.conns = []*poolConn{{client: raw, pool: pool, lastUsed: time.Now()}}
+	t.Cleanup(func() { _ = pool.Close() })
+
+	lease, err := pool.GetWithContext(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lease.Close()
+	buf := make([]byte, 16)
+	const timeout = 100 * time.Millisecond
+	n, err := lease.ReadWithTimeout(buf, timeout)
+	if n != len("fixture") || string(buf[:n]) != "fixture" || !errors.Is(err, sentinel) || raw.timeout != timeout || raw.reads != 1 {
+		t.Errorf("leased read = %d, %v, bytes=%q, delegated timeout=%v calls=%d", n, err, buf, raw.timeout, raw.reads)
+	}
+	if err := lease.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if stats := pool.Stats(); stats.Idle != 1 || raw.calls != 0 {
+		t.Errorf("returned lease: stats=%+v raw closes=%d", stats, raw.calls)
+	}
+	if err := pool.Close(); err != nil || raw.calls != 1 {
+		t.Errorf("Close = %v, raw closes=%d", err, raw.calls)
+	}
+}

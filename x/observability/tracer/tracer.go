@@ -47,7 +47,8 @@ type Trace struct {
 	Links      []TraceLink    `json:"links,omitempty"`
 }
 
-// Clone returns a deep copy of the Trace.
+// Clone copies the Trace and its attribute maps. Reference values stored in
+// attributes remain shared and must be treated as immutable.
 func (t *Trace) Clone() *Trace {
 	if t == nil {
 		return nil
@@ -90,7 +91,8 @@ type Span struct {
 	Links        []SpanLink     `json:"links,omitempty"`
 }
 
-// Clone returns a deep copy of the Span.
+// Clone copies the Span and its attribute maps. Reference values stored in
+// attributes remain shared and must be treated as immutable.
 func (s *Span) Clone() *Span {
 	if s == nil {
 		return nil
@@ -155,7 +157,8 @@ type SpanEvent struct {
 	Attributes map[string]any `json:"attributes,omitempty"`
 }
 
-// Clone returns a deep copy of the SpanEvent.
+// Clone copies the SpanEvent and its attribute maps. Reference values stored in
+// attributes remain shared and must be treated as immutable.
 func (e SpanEvent) Clone() SpanEvent {
 	return SpanEvent{
 		Name:       e.Name,
@@ -171,7 +174,8 @@ type SpanLink struct {
 	Attributes map[string]any `json:"attributes,omitempty"`
 }
 
-// Clone returns a deep copy of the SpanLink.
+// Clone copies the SpanLink and its attribute maps. Reference values stored in
+// attributes remain shared and must be treated as immutable.
 func (l SpanLink) Clone() SpanLink {
 	return SpanLink{
 		TraceID:    l.TraceID,
@@ -186,7 +190,8 @@ type TraceLink struct {
 	Attributes map[string]any `json:"attributes,omitempty"`
 }
 
-// Clone returns a deep copy of the TraceLink.
+// Clone copies the TraceLink and its attribute maps. Reference values stored in
+// attributes remain shared and must be treated as immutable.
 func (l TraceLink) Clone() TraceLink {
 	return TraceLink{
 		TraceID:    l.TraceID,

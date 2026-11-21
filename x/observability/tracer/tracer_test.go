@@ -440,3 +440,32 @@ func TestTraceStatisticsSeparatesActiveAndCompleted(t *testing.T) {
 		}
 	})
 }
+
+func TestTraceCloneDetachesLinkAttributes(t *testing.T) {
+	original := &Trace{
+		Links: []TraceLink{
+			{TraceID: "trace-link", Attributes: map[string]any{"kind": "trace"}},
+			{TraceID: "without-attributes"},
+		},
+		Spans: []*Span{{
+			Links: []SpanLink{
+				{TraceID: "target", SpanID: "span-link", Attributes: map[string]any{"kind": "span"}},
+				{SpanID: "without-attributes"},
+			},
+		}},
+	}
+	clone := original.Clone()
+	clone.Links[0].TraceID = "changed"
+	clone.Links[0].Attributes["kind"] = "changed"
+	clone.Spans[0].Links[0].SpanID = "changed"
+	clone.Spans[0].Links[0].Attributes["kind"] = "changed"
+	if link := original.Links[0]; link.TraceID != "trace-link" || link.Attributes["kind"] != "trace" {
+		t.Errorf("original trace link changed: %+v", link)
+	}
+	if link := original.Spans[0].Links[0]; link.SpanID != "span-link" || link.Attributes["kind"] != "span" {
+		t.Errorf("original span link changed: %+v", link)
+	}
+	if clone.Links[1].Attributes != nil || clone.Spans[0].Links[1].Attributes != nil {
+		t.Error("Clone allocated attributes for nil maps")
+	}
+}

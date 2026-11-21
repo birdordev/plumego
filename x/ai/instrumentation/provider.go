@@ -4,6 +4,7 @@ package instrumentation
 
 import (
 	"context"
+	"strconv"
 	"time"
 
 	"github.com/birdordev/plumego/x/ai/metrics"
@@ -70,9 +71,9 @@ func (ip *InstrumentedProvider) Complete(ctx context.Context, req *provider.Comp
 
 		// Record tool usage
 		if resp.HasToolUse() {
-			toolUses := resp.GetToolUses()
-			ip.collector.Counter("ai_tool_uses_total", float64(len(toolUses)),
-				append(tags, metrics.Tag{Key: "count", Value: string(rune(len(toolUses)))})...)
+			count := len(resp.GetToolUses())
+			ip.collector.Counter("ai_tool_uses_total", float64(count),
+				append(tags, metrics.Tag{Key: "count", Value: strconv.Itoa(count)})...)
 		}
 	}
 

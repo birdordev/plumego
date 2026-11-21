@@ -75,19 +75,24 @@ func (w *Warmer) WarmFromQueries(ctx context.Context, queries []QueryResponse) e
 	return nil
 }
 
+// batchSize defaults to 100 when the provider has no positive batch limit.
+func (w *Warmer) batchSize() int {
+	if size := w.provider.MaxBatchSize(); size > 0 {
+		return size
+	}
+	return 100
+}
+
 // WarmFromDocuments pre-warms the cache from a document corpus. A batch
 // with invalid embedding results is rejected before writing it. Earlier
-// batches remain stored.
+// batches remain stored. A nonpositive provider batch limit uses batches of 100.
 func (w *Warmer) WarmFromDocuments(ctx context.Context, docs []Document) error {
 	if len(docs) == 0 {
 		return nil
 	}
 
 	// Process documents in chunks based on provider batch size
-	batchSize := w.provider.MaxBatchSize()
-	if batchSize == 0 {
-		batchSize = 100
-	}
+	batchSize := w.batchSize()
 
 	for i := 0; i < len(docs); i += batchSize {
 		end := i + batchSize
@@ -261,6 +266,7 @@ type ProgressCallback func(current, total int, stats *WarmingStats)
 // WarmWithProgress warms cache with progress reporting for successful batches.
 // Failed batches are reported together. Successfully stored batches remain
 // available, and cancellation stops the operation before starting another batch.
+// A nonpositive provider batch limit uses batches of 100.
 func (w *Warmer) WarmWithProgress(ctx context.Context, queries []QueryResponse, callback ProgressCallback) error {
 	if len(queries) == 0 {
 		return nil
@@ -271,10 +277,7 @@ func (w *Warmer) WarmWithProgress(ctx context.Context, queries []QueryResponse, 
 	var failures []error
 
 	// Process queries in batches
-	batchSize := w.provider.MaxBatchSize()
-	if batchSize == 0 {
-		batchSize = 100
-	}
+	batchSize := w.batchSize()
 
 	for i := 0; i < len(queries); i += batchSize {
 		if ctx.Err() != nil {

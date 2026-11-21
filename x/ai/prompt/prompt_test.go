@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"text/template"
 )
 
 func TestEngine_Register(t *testing.T) {
@@ -448,5 +449,64 @@ func TestMemoryStorage_Clear(t *testing.T) {
 
 	if count := storage.Count(); count != 0 {
 		t.Errorf("Count() after Clear() = %v, want 0", count)
+	}
+}
+
+func TestRegisterNormalizesDefaultVersionBeforeGeneratingID(t *testing.T) {
+	ctx := t.Context()
+	store := NewMemoryStorage()
+	engine := NewEngine(store)
+
+	implicit := &Template{Name: "fixture", Content: "first"}
+	explicit := &Template{Name: "fixture", Version: "v1.0.0", Content: "updated"}
+	for _, tpl := range []*Template{implicit, explicit} {
+		if err := engine.Register(ctx, tpl); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if implicit.Version != "v1.0.0" || implicit.ID != explicit.ID || explicit.ID != "fixture:v1.0.0" {
+		t.Errorf("implicit identity=%q @ %q; explicit identity=%q", implicit.ID, implicit.Version, explicit.ID)
+	}
+	if list, err := engine.ListVersions(ctx, "fixture"); err != nil || len(list) != 1 {
+		t.Errorf("ListVersions = %v, %v; want one version", list, err)
+	}
+	if got, err := engine.RenderByName(ctx, "fixture", nil); err != nil || got != "updated" {
+		t.Errorf("RenderByName = %q, %v; want updated content", got, err)
+	}
+
+	legacy := &Template{ID: "legacy:", Name: "legacy", Version: "v1.0.0", Content: "legacy content"}
+	if err := store.Save(ctx, legacy); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := engine.Render(ctx, legacy.ID, nil); err != nil || got != legacy.Content {
+		t.Errorf("legacy ID Render = %q, %v", got, err)
+	}
+	custom := &Template{ID: "custom-id", Name: "custom", Content: "custom content"}
+	if err := engine.Register(ctx, custom); err != nil {
+		t.Fatal(err)
+	}
+	if custom.ID != "custom-id" || custom.Version != "v1.0.0" {
+		t.Errorf("explicit identity = %q @ %q", custom.ID, custom.Version)
+	}
+}
+
+func TestEngineWithFuncsSupportsRegistrationAndRendering(t *testing.T) {
+	ctx := t.Context()
+	engine := NewEngine(NewMemoryStorage(), WithFuncs(template.FuncMap{
+		"wrap": func(s string) string { return "[" + s + "]" },
+	}))
+	tpl := &Template{Name: "fixture", Content: `{{wrap "custom"}} {{upper "default"}}`}
+	if err := engine.Register(ctx, tpl); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := engine.Render(ctx, tpl.ID, nil); err != nil || got != "[custom] DEFAULT" {
+		t.Errorf("Render = %q, %v", got, err)
+	}
+	invalid := &Template{Name: "invalid", Content: `{{missingFunction "fixture"}}`}
+	if err := engine.Register(ctx, invalid); err == nil {
+		t.Error("registration accepted an undefined function")
+	}
+	if got, err := engine.Get(ctx, invalid.ID); got != nil || err == nil {
+		t.Errorf("Get for invalid template = %v, %v", got, err)
 	}
 }

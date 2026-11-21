@@ -7,12 +7,15 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	phttp "github.com/birdordev/plumego/internal/nethttp"
 	"github.com/birdordev/plumego/log"
 	"github.com/birdordev/plumego/x/messaging/mq"
 	"github.com/birdordev/plumego/x/messaging/mq/store"
@@ -727,6 +730,53 @@ func TestReceiptSaveFailurePreservesDeliveryOutcome(t *testing.T) {
 				if strings.Contains(output.String(), value) {
 					t.Errorf("diagnostic exposed %q", value)
 				}
+			}
+		})
+	}
+}
+
+type smsFixtureTransport func(*http.Request) (*http.Response, error)
+
+func (f smsFixtureTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	return f(r)
+}
+
+func TestHTTPSMSProviderHandlesResponseContract(t *testing.T) {
+	for _, tc := range []struct {
+		name, response string
+		wantErr        error
+	}{
+		{"success", `{"id":"fixture-id"}`, nil},
+		{"bad response", "{", ErrProviderFailure},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			calls := 0
+			p := NewHTTPSMSProvider(HTTPSMSProviderConfig{BaseURL: "https://fixture.invalid"})
+			// The in-memory transport returns a fixture response without dialing.
+			p.client = phttp.New(phttp.WithTransport(smsFixtureTransport(func(r *http.Request) (*http.Response, error) {
+				defer r.Body.Close()
+				calls++
+				if r.Method != http.MethodPost || r.URL.Path != "/send" {
+					t.Errorf("request = %s %s", r.Method, r.URL.Path)
+				}
+				var data map[string]string
+				if err := json.NewDecoder(r.Body).Decode(&data); err != nil || len(data) != 2 ||
+					data["to"] != "+15550100001" || data["body"] != "fixture message" {
+					t.Errorf("request payload = %+v, %v", data, err)
+				}
+				return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(tc.response))}, nil
+			})))
+
+			result, err := p.Send(t.Context(), SMSMessage{To: "+15550100001", Body: "fixture message"})
+			if tc.wantErr != nil {
+				if result != nil || !errors.Is(err, tc.wantErr) {
+					t.Errorf("Send = %+v, %v; want %v", result, err, tc.wantErr)
+				}
+			} else if err != nil || result == nil || result.ProviderID != "fixture-id" {
+				t.Errorf("Send = %+v, %v", result, err)
+			}
+			if calls != 1 {
+				t.Errorf("transport calls = %d; want one", calls)
 			}
 		})
 	}

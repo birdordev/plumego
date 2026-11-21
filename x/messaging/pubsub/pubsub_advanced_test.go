@@ -675,3 +675,44 @@ func TestDeduplicatorCheckDoesNotRefreshWindow(t *testing.T) {
 		}
 	})
 }
+
+func TestPriorityBufferEvictsAndPopsByPriority(t *testing.T) {
+	buffer := NewPriorityBuffer(2)
+	defer buffer.Close()
+	for _, item := range []struct {
+		id       string
+		priority int
+		dropped  string
+	}{
+		{"low", 5, ""},
+		{"middle", 3, ""},
+		{"rejected", 9, "rejected"},
+		{"high", 1, "low"},
+	} {
+		got, dropped := buffer.Push(Message{ID: item.id}, item.priority)
+		if item.dropped == "" {
+			if got != nil || dropped {
+				t.Errorf("Push(%s) unexpectedly dropped %+v", item.id, got)
+			}
+		} else if !dropped || got == nil || got.ID != item.dropped {
+			t.Errorf("Push(%s) dropped %+v, %t; want %s", item.id, got, dropped, item.dropped)
+		}
+	}
+	if buffer.Len() != 2 || buffer.Cap() != 2 {
+		t.Errorf("buffer len=%d cap=%d", buffer.Len(), buffer.Cap())
+	}
+	for _, item := range []struct {
+		id       string
+		priority int
+	}{{"high", 1}, {"middle", 3}} {
+		msg, priority, ok := buffer.Pop()
+		if !ok || msg.ID != item.id || priority != item.priority {
+			t.Errorf("Pop = %q, %d, %t; want %q at %d", msg.ID, priority, ok, item.id, item.priority)
+		}
+	}
+	buffer.Close()
+	buffer.Push(Message{ID: "after-close"}, 0)
+	if buffer.Len() != 0 {
+		t.Error("closed buffer accepted a message")
+	}
+}

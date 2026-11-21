@@ -280,3 +280,26 @@ func TestCloseDelegatesToPool(t *testing.T) {
 		}
 	}
 }
+
+func TestAdapterOperationsClassifyMissingPool(t *testing.T) {
+	ctx := t.Context()
+	for _, tc := range []struct {
+		name string
+		db   *DB
+	}{
+		{"nil receiver", nil},
+		{"absent pool", NewWithPool(nil)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if rows, err := tc.db.Query(ctx, "SELECT 1"); rows != nil || !errors.Is(err, storedb.ErrQueryFailed) {
+				t.Errorf("Query = %v, %v", rows, err)
+			}
+			if tag, err := tc.db.Exec(ctx, "UPDATE fixture SET count = 1"); tag != nil || !errors.Is(err, storedb.ErrQueryFailed) {
+				t.Errorf("Exec = %v, %v", tag, err)
+			}
+			if tx, err := tc.db.BeginTx(ctx, nil); tx != nil || !errors.Is(err, storedb.ErrTransactionFailed) {
+				t.Errorf("BeginTx = %v, %v", tx, err)
+			}
+		})
+	}
+}

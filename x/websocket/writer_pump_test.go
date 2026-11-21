@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	"testing"
+	"testing/synctest"
 	"time"
 )
 
@@ -254,5 +255,52 @@ func TestWriteMessageContextDoesNotQueueAfterCancellation(t *testing.T) {
 	}
 	if got := string((<-c.sendQueue).Data); got != "live" {
 		t.Fatalf("queued data = %q", got)
+	}
+}
+
+func TestBlockingWebSocketWriteAcceptsNilContext(t *testing.T) {
+	for _, closeConn := range []bool{false, true} {
+		name := "queue space"
+		if closeConn {
+			name = "connection close"
+		}
+		t.Run(name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				c := &Conn{
+					sendQueue:    make(chan Outbound, 1),
+					closeC:       make(chan struct{}),
+					sendBehavior: SendBlock,
+				}
+				defer c.Close()
+				c.sendQueue <- Outbound{Op: OpcodeText, Data: []byte("queued")}
+				done := make(chan error, 1)
+				go func() {
+					var ctx context.Context
+					done <- c.WriteMessageContext(ctx, OpcodeText, []byte("fixture"))
+				}()
+				synctest.Wait()
+				select {
+				case err := <-done:
+					t.Fatalf("write returned while queue was full: %v", err)
+				default:
+				}
+				if closeConn {
+					if err := c.Close(); err != nil {
+						t.Fatal(err)
+					}
+					if err := <-done; !errors.Is(err, ErrConnClosed) || len(c.sendQueue) != 1 {
+						t.Errorf("blocked write after Close = %v, queue length %d", err, len(c.sendQueue))
+					}
+					return
+				}
+				<-c.sendQueue
+				if err := <-done; err != nil {
+					t.Fatal(err)
+				}
+				if next := <-c.sendQueue; next.Op != OpcodeText || string(next.Data) != "fixture" {
+					t.Errorf("queued message = %+v", next)
+				}
+			})
+		})
 	}
 }

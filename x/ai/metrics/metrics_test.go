@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -669,3 +670,46 @@ func (s *stubAggregateCollector) GetStats() stablemetrics.CollectorStats {
 }
 
 func (s *stubAggregateCollector) Clear() {}
+
+func TestPrometheusHistogramExportsCumulativeBuckets(t *testing.T) {
+	collector := NewMemoryCollector()
+	collector.Histogram("fixture_seconds", 0.01)
+	collector.Histogram("fixture_seconds", 0.03)
+	out := httptest.NewRecorder()
+	NewPrometheusExporter(collector, "").Handler().ServeHTTP(out, httptest.NewRequest(http.MethodGet, "/", nil))
+	const total = 2
+	var previous, finiteBuckets int
+	var infinity bool
+	for line := range strings.SplitSeq(out.Body.String(), "\n") {
+		if !strings.HasPrefix(line, "fixture_seconds_bucket{") {
+			continue
+		}
+		fields := strings.Fields(line)
+		if len(fields) != 2 {
+			t.Fatalf("invalid bucket line %q", line)
+		}
+		count, err := strconv.Atoi(fields[1])
+		if err != nil || count < previous || count > total {
+			t.Errorf("invalid cumulative bucket %q after count %d", line, previous)
+		}
+		previous = count
+		bound := strings.TrimSuffix(strings.TrimPrefix(fields[0], `fixture_seconds_bucket{le="`), `"}`)
+		if bound == "+Inf" {
+			infinity = true
+			if count != total {
+				t.Errorf("+Inf count = %d; want %d", count, total)
+			}
+			continue
+		}
+		finiteBuckets++
+		max, err := strconv.ParseFloat(bound, 64)
+		if err != nil || (max >= 0.03 && count != total) {
+			t.Errorf("unexpected finite bucket %q", line)
+		}
+	}
+	if out.Code != http.StatusOK || finiteBuckets != 12 || !infinity ||
+		!strings.Contains(out.Body.String(), "fixture_seconds_count 2\n") ||
+		!strings.Contains(out.Body.String(), "fixture_seconds_sum 0.040000\n") {
+		t.Errorf("unexpected histogram exposition:\n%s", out.Body.String())
+	}
+}

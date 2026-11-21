@@ -2,6 +2,7 @@ package devtools
 
 import (
 	"context"
+	"errors"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -460,5 +461,43 @@ func TestDevCollectorRecordDelegates(t *testing.T) {
 	}
 	if snapshot := collector.Snapshot(); len(snapshot.Recent) != 0 {
 		t.Errorf("ordinary record created HTTP samples: %+v", snapshot.Recent)
+	}
+}
+
+func TestDevCollectorDelegatesExtensionMetrics(t *testing.T) {
+	c := NewDevCollector(DevCollectorConfig{})
+	ctx := t.Context()
+	d := 125 * time.Millisecond
+	failure := errors.New("fixture operation failed")
+	c.ObservePubSub(ctx, "publish", "fixture-topic", d, nil)
+	c.ObserveMQ(ctx, "reserve", "fixture-topic", d, failure, true)
+	c.ObserveKV(ctx, "get", "fixture-key", d, nil, true)
+	c.ObserveIPC(ctx, "read", "fixture-address", "loopback", 8, d, nil)
+
+	records := c.base.GetRecords()
+	want := []struct {
+		name, label, value string
+		err                error
+	}{
+		{"pubsub_publish", "topic", "fixture-topic", nil},
+		{"mq_reserve", "panicked", "true", failure},
+		{"kv_get", "hit", "true", nil},
+		{"ipc_read", "bytes", "8", nil},
+	}
+	if len(records) != len(want) {
+		t.Fatalf("buffered records = %+v; want four", records)
+	}
+	for i, expected := range want {
+		got := records[i]
+		if got.Name != expected.name || got.Labels[expected.label] != expected.value ||
+			got.Duration != d || got.Value != d.Seconds() || !errors.Is(got.Error, expected.err) {
+			t.Errorf("record %d = %+v; want %+v", i, got, expected)
+		}
+	}
+	if stats := c.GetStats(); stats.TotalRecords != 4 || stats.ErrorRecords != 1 {
+		t.Errorf("record statistics = %+v", stats)
+	}
+	if snapshot := c.Snapshot(); len(snapshot.Recent) != 0 {
+		t.Errorf("extension observations created HTTP samples: %+v", snapshot.Recent)
 	}
 }

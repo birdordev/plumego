@@ -54,3 +54,34 @@ func TestRegistryAdaptersReturnsCopy(t *testing.T) {
 		t.Fatalf("registry adapters should not be affected by external append")
 	}
 }
+
+func TestGraphQLResponseErrorMetadataMatchesErrors(t *testing.T) {
+	for _, count := range []int{0, 2} {
+		res := &GraphQLResponse{
+			Data:       map[string]any{"fixture": true},
+			Errors:     make([]GraphQLError, count),
+			Extensions: map[string]any{"trace": "fixture"},
+		}
+		var generic Response = res
+		metadata := generic.Metadata()
+		if res.HasErrors() != (count > 0) {
+			t.Errorf("HasErrors for %d errors = %t", count, res.HasErrors())
+		}
+		if count > 0 {
+			if metadata["has_errors"] != true || metadata["error_count"] != count {
+				t.Errorf("error metadata = %+v", metadata)
+			}
+		} else {
+			if _, ok := metadata["has_errors"]; ok {
+				t.Errorf("unexpected error flag: %+v", metadata)
+			}
+			if _, ok := metadata["error_count"]; ok {
+				t.Errorf("unexpected error count: %+v", metadata)
+			}
+		}
+		extensions, ok := metadata["extensions"].(map[string]any)
+		if !ok || extensions["trace"] != "fixture" {
+			t.Errorf("extensions = %v", metadata["extensions"])
+		}
+	}
+}

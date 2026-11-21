@@ -923,3 +923,27 @@ func TestMissingIndexAfterConstructionReturnsNotFound(t *testing.T) {
 		})
 	}
 }
+
+func TestEmptyMIMEOverridesKeepDefaultContentType(t *testing.T) {
+	dir := t.TempDir()
+	writeTestFile(t, dir, "index.html", "index")
+	const body = "fixture text"
+	writeTestFile(t, dir, "asset.txt", body)
+	serve := func(opts ...Option) string {
+		t.Helper()
+		handler, err := NewHandlerFS(http.Dir(dir), opts...)
+		if err != nil {
+			t.Fatal(err)
+		}
+		out := httptest.NewRecorder()
+		handler.ServeHTTP(out, httptest.NewRequest(http.MethodGet, "/asset.txt", nil))
+		if out.Code != http.StatusOK || out.Body.String() != body {
+			t.Errorf("static response = %d, %q", out.Code, out.Body.String())
+		}
+		return out.Header().Get("Content-Type")
+	}
+	want := serve()
+	if got := serve(WithMIMETypes(map[string]string{".txt": " \t "})); want == "" || got != want {
+		t.Errorf("Content-Type with empty override = %q; default = %q", got, want)
+	}
+}

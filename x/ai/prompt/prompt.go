@@ -78,14 +78,14 @@ func WithFuncs(funcs template.FuncMap) EngineOption {
 	}
 }
 
-// Register registers a new template.
+// Register registers a new template. An omitted version defaults to v1.0.0
+// before the ID is derived. An explicit ID is preserved.
 func (e *Engine) Register(ctx context.Context, tmpl *Template) error {
-	if tmpl.ID == "" {
-		tmpl.ID = generateID(tmpl.Name, tmpl.Version)
-	}
-
 	if tmpl.Version == "" {
 		tmpl.Version = "v1.0.0"
+	}
+	if tmpl.ID == "" {
+		tmpl.ID = generateID(tmpl.Name, tmpl.Version)
 	}
 
 	now := time.Now()

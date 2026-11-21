@@ -384,16 +384,17 @@ func storeTenantCache(cache *tenantCache, key string, cfg tenant.Config) {
 
 type snapshotConnector struct {
 	driver.Connector
-	mu          sync.Mutex
-	queries     int
-	metadata    string
-	deleted     bool
-	writeErr    error
-	writeResult driver.Result
-	firstRead   chan struct{}
-	releaseRead chan struct{}
-	nextErr     error
-	rowsClosed  int
+	mu            sync.Mutex
+	queries       int
+	metadata      string
+	deleted       bool
+	writeErr      error
+	writeResult   driver.Result
+	firstQueryErr error
+	firstRead     chan struct{}
+	releaseRead   chan struct{}
+	nextErr       error
+	rowsClosed    int
 }
 
 func (c *snapshotConnector) Connect(context.Context) (driver.Conn, error) {
@@ -412,6 +413,11 @@ func (c *snapshotConn) QueryContext(ctx context.Context, _ string, _ []driver.Na
 	state.mu.Lock()
 	state.queries++
 	first := state.queries == 1
+	if first && state.firstQueryErr != nil {
+		err := state.firstQueryErr
+		state.mu.Unlock()
+		return nil, err
+	}
 	rows := &snapshotRows{metadata: state.metadata, read: state.deleted, nextErr: state.nextErr, onClose: func() {
 		state.mu.Lock()
 		defer state.mu.Unlock()
@@ -710,5 +716,25 @@ func TestGetTenantConfigDoesNotCacheReadFailures(t *testing.T) {
 	}
 	if conn.queries != 3 || conn.rowsClosed != 3 {
 		t.Errorf("queries=%d rows closed=%d; want three each", conn.queries, conn.rowsClosed)
+	}
+}
+
+func TestListTenantsPreservesQueryFailureAndCanRetry(t *testing.T) {
+	sentinel := errors.New("fixture list query unavailable")
+	connector := &snapshotConnector{firstQueryErr: sentinel, metadata: `{"region":"fixture"}`}
+	db := sql.OpenDB(connector)
+	defer db.Close()
+	manager := NewDBTenantConfigManager(db)
+	ctx := t.Context()
+
+	if got, err := manager.ListTenants(ctx, 10, 0); got != nil || !errors.Is(err, sentinel) {
+		t.Errorf("first ListTenants = %+v, %v; want query error", got, err)
+	}
+	if got, err := manager.ListTenants(ctx, 10, 0); err != nil || len(got) != 1 ||
+		got[0].TenantID != "sample" || got[0].Metadata["region"] != "fixture" {
+		t.Errorf("retried ListTenants = %+v, %v", got, err)
+	}
+	if connector.queries != 2 || connector.rowsClosed != 1 {
+		t.Errorf("queries=%d rows closed=%d; want 2 and 1", connector.queries, connector.rowsClosed)
 	}
 }

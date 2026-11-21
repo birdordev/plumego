@@ -3,6 +3,7 @@ package cachemanager_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -413,5 +414,55 @@ func TestWarmWithProgressReportsBatchFailures(t *testing.T) {
 				t.Errorf("stored = %v; want %v", stored, tc.wantStored)
 			}
 		})
+	}
+}
+
+func TestWarmerNormalizesProviderBatchSize(t *testing.T) {
+	const entries = 101
+	docs := make([]cachemanager.Document, entries)
+	queries := make([]cachemanager.QueryResponse, entries)
+	for i := range entries {
+		text := fmt.Sprintf("entry-%d", i)
+		docs[i] = cachemanager.Document{ID: text, Content: text}
+		queries[i] = cachemanager.QueryResponse{Query: text}
+	}
+	for _, operation := range []struct {
+		name string
+		run  func(context.Context, *cachemanager.Warmer) error
+	}{
+		{"documents", func(ctx context.Context, w *cachemanager.Warmer) error { return w.WarmFromDocuments(ctx, docs) }},
+		{"progress", func(ctx context.Context, w *cachemanager.Warmer) error { return w.WarmWithProgress(ctx, queries, nil) }},
+	} {
+		for _, tc := range []struct {
+			size int
+			want []int
+		}{
+			{-1, []int{100, 1}},
+			{0, []int{100, 1}},
+			{50, []int{50, 50, 1}},
+		} {
+			t.Run(fmt.Sprintf("%s/%d", operation.name, tc.size), func(t *testing.T) {
+				ctx := t.Context()
+				store := vectorstore.NewMemoryBackend(vectorstore.MemoryConfig{})
+				var batches []int
+				provider := warmingBatchFixture{batchSize: tc.size, generate: func(_ context.Context, texts []string) ([]*embedding.Embedding, error) {
+					batches = append(batches, len(texts))
+					result := make([]*embedding.Embedding, len(texts))
+					for i := range result {
+						result[i] = &embedding.Embedding{Vector: []float64{1, 0}}
+					}
+					return result, nil
+				}}
+				if err := operation.run(ctx, cachemanager.NewWarmer(store, provider)); err != nil {
+					t.Fatal(err)
+				}
+				if !slices.Equal(batches, tc.want) {
+					t.Errorf("batches = %v; want %v", batches, tc.want)
+				}
+				if count, err := store.Count(ctx); err != nil || count != entries {
+					t.Errorf("stored %d entries, error = %v; want %d", count, err, entries)
+				}
+			})
+		}
 	}
 }
