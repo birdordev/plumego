@@ -220,6 +220,7 @@ func (c *Coalescer) waitForInFlight(w http.ResponseWriter, r *http.Request, key 
 	deadline := time.Now().Add(c.config.Timeout)
 	timer := time.NewTimer(time.Until(deadline))
 	defer timer.Stop()
+	defer c.decrementWaiters(inflight)
 
 	completed := false
 	select {
@@ -234,26 +235,23 @@ func (c *Coalescer) waitForInFlight(w http.ResponseWriter, r *http.Request, key 
 		default:
 		}
 	case <-ctx.Done():
-		c.decrementWaiters(inflight)
 		return
 	}
 
 	// Completion or timeout can win the select even if cancellation is ready.
 	if ctx.Err() != nil {
-		c.decrementWaiters(inflight)
 		return
 	}
 	if !completed || c.config.Timeout < 0 || !inflight.finishedAt.Before(deadline) {
-		c.decrementWaiters(inflight)
 		internaltransport.WriteTransportError(w, r, http.StatusGatewayTimeout, contract.CodeTimeout, "upstream request timeout", nil)
 		return
 	}
 	if inflight.err != nil {
-		c.failWaiter(w, r, key, inflight, inflight.err)
+		c.failWaiter(w, r, key, inflight.err)
 		return
 	}
 	if inflight.response == nil {
-		c.failWaiter(w, r, key, inflight, errUpstreamPanic)
+		c.failWaiter(w, r, key, errUpstreamPanic)
 		return
 	}
 
@@ -265,10 +263,9 @@ func (c *Coalescer) waitForInFlight(w http.ResponseWriter, r *http.Request, key 
 	c.reportCoalesced(key, 1)
 }
 
-func (c *Coalescer) failWaiter(w http.ResponseWriter, r *http.Request, key string, inflight *inFlightRequest, err error) {
+func (c *Coalescer) failWaiter(w http.ResponseWriter, r *http.Request, key string, err error) {
 	c.reportError(key, err)
 	if r.Context().Err() != nil {
-		c.decrementWaiters(inflight)
 		return
 	}
 	internaltransport.WriteTransportError(w, r, http.StatusBadGateway, contract.CodeUpstreamFailed, "upstream request failed", nil)
@@ -294,8 +291,7 @@ func (c *Coalescer) reportCoalesced(key string, count int) {
 	c.config.OnCoalesced(key, count)
 }
 
-// decrementWaiters decrements the waiter count using a CAS loop to avoid
-// underflow during concurrent timeout and normal completion races.
+// decrementWaiters releases one registered waiter without underflow.
 func (c *Coalescer) decrementWaiters(inflight *inFlightRequest) {
 	for {
 		v := inflight.waiters.Load()

@@ -1034,3 +1034,142 @@ func TestConnectionTrackerDrainIntervalDefaults(t *testing.T) {
 		}
 	}
 }
+
+type shutdownPanicLogger struct {
+	log.StructuredLogger
+}
+
+func (shutdownPanicLogger) Error(string, ...log.Fields) { panic("shutdown log failed") }
+func (shutdownPanicLogger) Info(string, ...log.Fields)  {}
+
+func TestAcceptanceShutdownPreservesErrorWhenLoggerPanics(t *testing.T) {
+	ln, err := net.Listen("tcp", requireNetwork(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	app := New(DefaultConfig(), AppDependencies{Logger: shutdownPanicLogger{StructuredLogger: log.NewLogger(log.LoggerConfig{Format: log.LoggerFormatDiscard})}})
+	if err := app.Prepare(); err != nil {
+		t.Fatal(err)
+	}
+	server, err := app.Server()
+	if err != nil {
+		t.Fatal(err)
+	}
+	entered, release := make(chan struct{}), make(chan struct{})
+	defer close(release)
+	server.Handler = http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		close(entered)
+		<-release
+	})
+	served := make(chan error, 1)
+	go func() { served <- server.Serve(ln) }()
+	defer server.Close()
+	conn, err := net.Dial("tcp", ln.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	if _, err := fmt.Fprint(conn, "GET / HTTP/1.1\r\nHost: localhost\r\n\r\n"); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-entered:
+	case <-time.After(time.Second):
+		t.Fatal("handler did not enter")
+	}
+
+	ctx, cancel := context.WithDeadline(t.Context(), time.Now().Add(-time.Second))
+	defer cancel()
+	if err := app.Shutdown(ctx); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("Shutdown = %v, want DeadlineExceeded", err)
+	}
+	if err := <-served; !errors.Is(err, http.ErrServerClosed) {
+		t.Fatalf("Serve = %v", err)
+	}
+}
+
+func TestRunBindFailureKeepsPreparedServerForRetry(t *testing.T) {
+	occupied, err := net.Listen("tcp", requireNetwork(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer occupied.Close()
+	cfg := DefaultConfig()
+	cfg.Addr = occupied.Addr().String()
+	app := New(cfg, AppDependencies{})
+	if err := app.Get("/", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	})); err != nil {
+		t.Fatal(err)
+	}
+	var bindErr *net.OpError
+	if err := app.Run(); !errors.As(err, &bindErr) || bindErr.Op != "listen" {
+		t.Fatalf("Run on occupied address = %v", err)
+	}
+	before, err := app.Server()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := occupied.Close(); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() { done <- app.Run() }()
+	defer before.Close()
+	nettest.WaitForHTTPStatus(t, &http.Client{Timeout: time.Second}, "http://"+cfg.Addr, http.StatusNoContent)
+	after, err := app.Server()
+	if err != nil || before != after {
+		t.Fatalf("server replaced after retry: before=%p after=%p err=%v", before, after, err)
+	}
+	if err := app.Shutdown(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+}
+
+type blockedDrainLogger struct {
+	log.StructuredLogger
+	entered, release chan struct{}
+	calls            int
+}
+
+func (l *blockedDrainLogger) Info(string, ...log.Fields) {
+	l.calls++
+	if l.calls == 1 {
+		close(l.entered)
+		<-l.release
+	}
+}
+
+func TestConnectionDrainStopsSchedulingAfterCanceledCallback(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		logger := &blockedDrainLogger{entered: make(chan struct{}), release: make(chan struct{})}
+		tracker := newConnectionTracker(logger, time.Second)
+		tracker.track(nil, http.StateNew)
+		ctx, cancel := context.WithCancel(t.Context())
+		defer cancel()
+		stop := tracker.startDrain(ctx)
+		if stop == nil {
+			t.Fatal("no active drain")
+		}
+		defer stop()
+		<-logger.entered
+		cancel()
+		tracker.track(nil, http.StateClosed)
+		close(logger.release)
+		time.Sleep(3 * time.Second)
+		synctest.Wait()
+		if logger.calls != 1 || tracker.open.Load() != 0 || tracker.activeDrain.Load() != nil {
+			t.Fatalf("drain calls=%d open=%d active=%v", logger.calls, tracker.open.Load(), tracker.activeDrain.Load())
+		}
+		tracker.track(nil, http.StateNew)
+		if retry := tracker.startDrain(t.Context()); retry != nil {
+			retry()
+		} else {
+			t.Fatal("retry could not own the drain")
+		}
+	})
+}

@@ -210,3 +210,31 @@ func TestHealthDurationUsesSignedNanoseconds(t *testing.T) {
 		}
 	}
 }
+
+func TestComponentEnabledAndStatusHaveIndependentWireValues(t *testing.T) {
+	for _, original := range []ComponentHealth{
+		{Enabled: false, HealthStatus: HealthStatus{Status: StatusHealthy}},
+		{Enabled: true, HealthStatus: HealthStatus{Status: "unknown"}},
+	} {
+		clone := original.Clone()
+		fields := marshalObject(t, clone)
+		assertStringField(t, fields, "status", string(original.Status))
+		if got := fields["enabled"]; got != original.Enabled || clone.Enabled != original.Enabled ||
+			clone.Status != original.Status {
+			t.Fatalf("component = %+v, wire enabled=%v", clone, got)
+		}
+	}
+}
+
+func TestReadinessClonePreservesTimestampOffsetAndReason(t *testing.T) {
+	at := time.Date(2026, 3, 4, 7, 8, 9, 0, time.FixedZone("fixture", 5*3600+1800))
+	original := ReadinessStatus{Timestamp: at, Reason: "warming", Components: map[string]bool{"db": true}}
+	clone := original.Clone()
+	clone.Components["db"] = false
+	if clone.Timestamp != at || !original.Components["db"] {
+		t.Fatalf("source=%+v clone=%+v", original, clone)
+	}
+	fields := marshalObject(t, clone)
+	assertStringField(t, fields, "timestamp", "2026-03-04T07:08:09+05:30")
+	assertStringField(t, fields, "reason", "warming")
+}

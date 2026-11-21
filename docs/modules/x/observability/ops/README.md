@@ -47,7 +47,7 @@
 - Readiness snapshots detach component maps. Closing a health manager makes it unhealthy and not ready; in-flight checks and later `MarkReady` calls cannot restore readiness. Checkers must cooperate with their context to bound execution time.
 - use `x/observability/ops` only for protected admin surfaces
 - keep broader observability adapter work in `x/observability`
-- `x/observability/ops/healthhttp` JSON success bodies use `contract.WriteResponse`; raw probe/export exceptions are limited to the `LiveHandler` liveness text response and health history CSV export
+- `x/observability/ops/healthhttp` uses the standard JSON envelope. Health documents preserve their status code through a shared writer with an encoding fallback. Liveness text and health history CSV remain raw responses.
 - `x/observability/ops/healthhttp` diagnostics JSON success payloads use typed DTO structs instead of one-off maps
 - Health status responses are encoded before sending headers. An encoding
   failure returns a fixed error message and preserves an unhealthy 503.
@@ -83,6 +83,11 @@ Recommended ownership:
 - telemetry export and adapter wiring: `x/observability`
 - local debug and reload tools: `x/observability/devtools`, not production defaults
 
+
+Aggregate and individual health probes return 200 for healthy, 206 for
+degraded, and 503 for unhealthy, empty, or unknown states. The full component
+snapshot returns the usual 200 envelope when it can be encoded. Encoding
+failure returns a fixed internal error with the request ID when available.
 
 Component health probes return 503 when the fresh check fails, is canceled,
 is superseded, or cannot run after manager closure. A cached healthy result

@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"testing/synctest"
 	"time"
 )
 
@@ -397,4 +398,37 @@ func TestRedactFields_ExtraSensitiveKey_CaseInsensitiveMatch(t *testing.T) {
 	if out["API_KEY"] != sensitiveFieldMask {
 		t.Fatalf("API_KEY = %v, want %q", out["API_KEY"], sensitiveFieldMask)
 	}
+}
+
+func TestObserverCompletesBeforeReturningAndIsolatesPanic(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		w := httptest.NewRecorder()
+		observing, release, returned := make(chan struct{}), make(chan struct{}), make(chan struct{})
+		go func() {
+			defer close(returned)
+			h := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(http.StatusAccepted)
+			})
+			WithObserver(h, w, httptest.NewRequest(http.MethodGet, "/", nil), func(metrics RequestMetrics, _ *ResponseRecorder, _ *http.Request) {
+				if metrics.Status != http.StatusAccepted {
+					t.Errorf("observed status = %d", metrics.Status)
+				}
+				close(observing)
+				<-release
+				panic("observer fixture")
+			})
+		}()
+		<-observing
+		synctest.Wait()
+		select {
+		case <-returned:
+			t.Error("returned before synchronous observer finished")
+		default:
+		}
+		close(release)
+		<-returned
+		if w.Code != http.StatusAccepted || w.Body.Len() != 0 {
+			t.Fatalf("status=%d body=%q", w.Code, w.Body)
+		}
+	})
 }

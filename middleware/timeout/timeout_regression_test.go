@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"runtime"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"testing/synctest"
@@ -428,4 +429,63 @@ func TestTimeoutErrorPreservesMetadataAndDropsStaleRepresentation(t *testing.T) 
 			t.Fatalf("status=%d header=%v", w.Code, hdr)
 		}
 	})
+}
+
+func TestAcceptanceTimeoutReplayReleasesCapturedBuffer(t *testing.T) {
+	const maxReplay = 512 << 10
+	var writer *timeoutResponseWriter
+	dst := &responseWriteCounter{ResponseWriter: httptest.NewRecorder()}
+	handler := Middleware(Config{Timeout: time.Second, MaxBufferBytes: 2 * maxReplay, MaxReplayBytes: maxReplay})(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		writer = w.(*timeoutResponseWriter)
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write(make([]byte, maxReplay))
+		_, _ = w.Write([]byte("over"))
+		_, _ = w.Write([]byte("discarded"))
+	}))
+	handler.ServeHTTP(dst, httptest.NewRequest(http.MethodGet, "/", nil))
+	rec := dst.ResponseWriter.(*httptest.ResponseRecorder)
+	if writer == nil || cap(writer.buffer.Body()) != 0 || writer.buffer.StatusCode() != http.StatusCreated {
+		t.Fatalf("unexpected recorder state after abandoning replay: %+v", writer)
+	}
+	if dst.writes != 2 || rec.Code != http.StatusInternalServerError || strings.Contains(rec.Body.String(), "discarded") {
+		t.Fatalf("status=%d count=%d body=%q", rec.Code, dst.writes, rec.Body)
+	}
+}
+
+func TestTimeoutCloseParentCancellationAndLocalDeadline(t *testing.T) {
+	for _, cancelFirst := range []bool{true, false} {
+		synctest.Test(t, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			const limit = time.Second
+			entered, finished := make(chan struct{}), make(chan struct{})
+			w := &responseWriteCounter{ResponseWriter: httptest.NewRecorder()}
+			h := Middleware(Config{Timeout: limit})(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+				defer close(finished)
+				_, _ = w.Write([]byte("discarded"))
+				close(entered)
+				<-req.Context().Done()
+			}))
+			served := make(chan struct{})
+			go func() {
+				defer close(served)
+				h.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/", nil).WithContext(ctx))
+			}()
+			<-entered
+			if cancelFirst {
+				time.Sleep(limit - time.Nanosecond)
+				cancel()
+			}
+			<-served
+			<-finished
+			rec := w.ResponseWriter.(*httptest.ResponseRecorder)
+			if cancelFirst {
+				if w.writes != 0 || rec.Body.Len() != 0 {
+					t.Fatalf("parent canceled: commits=%d body=%q", w.writes, rec.Body)
+				}
+			} else if rec.Code != http.StatusGatewayTimeout || w.writes != 2 || strings.Contains(rec.Body.String(), "discarded") {
+				t.Fatalf("deadline: status=%d commits=%d body=%q", rec.Code, w.writes, rec.Body)
+			}
+		})
+	}
 }

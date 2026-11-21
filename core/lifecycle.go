@@ -92,11 +92,16 @@ func (a *App) Shutdown(ctx context.Context) error {
 
 	var shutdownErr error
 	if err := httpServer.Shutdown(ctx); err != nil && err != http.ErrServerClosed {
-		a.Logger().Error("Server shutdown error", log.Fields{"error": err})
+		reportShutdownError(a.Logger(), err)
 		shutdownErr = wrapCoreError(err, operationShutdownApp, nil)
 	}
 
 	return shutdownErr
+}
+
+func reportShutdownError(logger log.StructuredLogger, err error) {
+	defer func() { _ = recover() }()
+	logger.Error("Server shutdown error", log.Fields{"error": err})
 }
 
 type connectionTracker struct {

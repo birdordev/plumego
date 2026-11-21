@@ -198,6 +198,7 @@ Timeout clones outer response headers into a private buffer. Successful
 responses replay downstream header changes, including explicit deletion.
 If a handler exits with `runtime.Goexit` while the context is still active,
 timeout discards its buffer and sends a structured `500`.
+When replay exceeds its size budget, timeout releases the captured body storage.
 Timeout and buffer-limit errors preserve the original outer headers and discard
 downstream header changes and partial bodies. Responses larger than
 `Config.MaxBufferBytes` or `Config.MaxReplayBytes` become a structured `500`
@@ -330,7 +331,9 @@ defaults require explicit origins.
 writing a response from that reader. The response-owning goroutine emits a
 structured `413` before its next write or when the downstream call returns,
 provided the response has not started and the request context is still active.
-Subsequent writes report their bytes as consumed without appending to the error.
+Subsequent blocked writes return zero bytes and the body-limit error, including
+empty writes. Flush reports the same rejection. The next handler receives a
+request copy with the limited reader, and closing it closes the original body.
 An overrun after final headers or a flush cannot replace the committed response.
 A zero-length read does not consume or probe the body. Flush follows the
 underlying writer chain and returns its error through `http.ResponseController`.

@@ -639,3 +639,30 @@ func TestPreflightUsesExactMethodName(t *testing.T) {
 		}
 	}
 }
+
+func TestCORSAddsRequiredVaryAfterDownstreamReplacement(t *testing.T) {
+	const origin = "https://app.example"
+	calls := 0
+	h := Middleware(CORSOptions{AllowedOrigins: []string{origin}, AllowedMethods: []string{http.MethodGet}})(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls++
+		w.Header().Set("Vary", "Accept-Encoding")
+		w.WriteHeader(http.StatusCreated)
+	}))
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.Header.Set("Origin", origin)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if vary := w.Result().Header.Values("Vary"); countHeaderToken(vary, "Origin") != 1 ||
+		!headerValuesContain(vary, "Accept-Encoding") || w.Header().Get("Access-Control-Allow-Origin") != origin ||
+		w.Code != http.StatusCreated || calls != 1 {
+		t.Fatalf("status=%d headers=%v calls=%d", w.Code, w.Header(), calls)
+	}
+	req = httptest.NewRequest(http.MethodOptions, "/", nil)
+	req.Header.Set("Origin", origin)
+	req.Header.Set("Access-Control-Request-Method", http.MethodGet)
+	w = httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if w.Code != http.StatusNoContent || calls != 1 {
+		t.Fatalf("preflight status=%d calls=%d", w.Code, calls)
+	}
+}

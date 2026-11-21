@@ -522,3 +522,20 @@ func TestValidateEmailLocalAndDomainLabelByteLimits(t *testing.T) {
 		t.Error("non-ASCII domain accepted")
 	}
 }
+
+func TestHeaderValueUTF8AndControlBoundary(t *testing.T) {
+	for _, tc := range []struct {
+		value string
+		valid bool
+	}{
+		{"plum café	value", true},
+		{"正常😀", true},
+		{"café\x7f", false},
+		{"café\x00", false},
+		{"café\xc3", false},
+	} {
+		if got := IsHeaderValue(tc.value); got != tc.valid {
+			t.Errorf("validation result = %t, want %t for %q", got, tc.valid, tc.value)
+		}
+	}
+}

@@ -740,3 +740,57 @@ func TestBodylessResponseKeepsUnrelatedHeaders(t *testing.T) {
 		}
 	}
 }
+
+type pausedJSONWrite struct {
+	*httptest.ResponseRecorder
+	entered, resume chan struct{}
+}
+
+func (w *pausedJSONWrite) Write(data []byte) (int, error) {
+	close(w.entered)
+	<-w.resume
+	return w.ResponseRecorder.Write(data)
+}
+
+func TestPooledJSONBufferRemainsOwnedUntilWriteReturns(t *testing.T) {
+	first := &pausedJSONWrite{ResponseRecorder: httptest.NewRecorder(), entered: make(chan struct{}), resume: make(chan struct{})}
+	done := make(chan error, 1)
+	go func() { done <- WriteResponse(first, nil, http.StatusOK, "first", nil) }()
+	<-first.entered
+	second := httptest.NewRecorder()
+	err := WriteResponse(second, nil, http.StatusOK, strings.Repeat("x", 1024), nil)
+	close(first.resume)
+	if firstErr := <-done; firstErr != nil || err != nil {
+		t.Fatalf("encoding errors: %v, %v", firstErr, err)
+	}
+	if first.Body.String() != "{\"data\":\"first\"}\n" || !json.Valid(second.Body.Bytes()) || second.Body.Len() <= 1024 {
+		t.Fatalf("first=%q second size=%d", first.Body, second.Body.Len())
+	}
+}
+
+func TestWriteErrorPreservesIntegerDetailsAndEmptyContainers(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req = req.WithContext(WithRequestID(req.Context(), "fixture"))
+	w := httptest.NewRecorder()
+	err := NewErrorBuilder().Type(TypeValidation).Details(map[string]any{
+		"integer": int64(9007199254740993), "empty": []string{}, "nil": nil,
+	}).Build()
+	if writeErr := WriteError(w, req, err); writeErr != nil {
+		t.Fatal(writeErr)
+	}
+	var body struct {
+		Error     struct{ Details map[string]json.RawMessage }
+		RequestID string `json:"request_id"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	for k, want := range map[string]string{"integer": "9007199254740993", "empty": "[]", "nil": "null"} {
+		if got := string(body.Error.Details[k]); got != want {
+			t.Errorf("%s = %s, want %s", k, got, want)
+		}
+	}
+	if body.RequestID != "fixture" {
+		t.Fatalf("request ID = %q", body.RequestID)
+	}
+}

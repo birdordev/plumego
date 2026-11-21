@@ -96,3 +96,23 @@ func TestFreezeMethodNotAllowedStructuredError(t *testing.T) {
 		t.Fatalf("category = %q, want %q", body.Error.Category, contract.CategoryClient)
 	}
 }
+
+func TestFreezeThroughGroupClosesExistingRegistrationViews(t *testing.T) {
+	root := NewRouter()
+	group := root.Group("/api")
+	nested := group.Group("/v1")
+	handler := http.HandlerFunc(func(http.ResponseWriter, *http.Request) {})
+	mustAddRoute(nested, http.MethodGet, "/items/:id", handler, WithRouteName("items"))
+	group.Freeze()
+	for _, view := range []*Router{root, group, nested} {
+		if err := view.AddRoute(http.MethodGet, "/late", handler); err == nil {
+			t.Fatal("registered a route through a frozen view")
+		}
+		if got, err := view.URL("items", "id", "42"); err != nil || got != "/api/v1/items/42" {
+			t.Fatalf("URL = %q, %v", got, err)
+		}
+	}
+	if routes := root.Routes(); len(routes) != 1 || routes[0].Meta.Name != "items" {
+		t.Fatalf("routes after freeze = %+v", routes)
+	}
+}

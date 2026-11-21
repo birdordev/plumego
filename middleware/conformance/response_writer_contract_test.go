@@ -6,7 +6,6 @@ import (
 	"compress/gzip"
 	"context"
 	"errors"
-	"github.com/birdordev/plumego/router"
 	"io"
 	"net"
 	"net/http"
@@ -15,15 +14,18 @@ import (
 	"testing"
 	"time"
 
+	"github.com/birdordev/plumego/log"
 	"github.com/birdordev/plumego/middleware"
 	"github.com/birdordev/plumego/middleware/bodylimit"
 	"github.com/birdordev/plumego/middleware/compression"
 	"github.com/birdordev/plumego/middleware/cors"
 	"github.com/birdordev/plumego/middleware/debug"
 	"github.com/birdordev/plumego/middleware/httpmetrics"
+	"github.com/birdordev/plumego/middleware/recovery"
 	"github.com/birdordev/plumego/middleware/singleflight"
 	"github.com/birdordev/plumego/middleware/timeout"
 	"github.com/birdordev/plumego/middleware/tracing"
+	"github.com/birdordev/plumego/router"
 )
 
 func TestResponseWriterConformanceInvalidStatusRecovery(t *testing.T) {
@@ -465,5 +467,49 @@ func TestVaryFallbackAfterUnsupportedFlush(t *testing.T) {
 	got := strings.Join(rec.Result().Header.Values("Vary"), ", ")
 	if rec.Code != http.StatusAccepted || got != "Origin, Accept-Encoding, Accept" {
 		t.Fatalf("status=%d Vary=%q", rec.Code, got)
+	}
+}
+
+type recoveryFlushDestination struct {
+	*httptest.ResponseRecorder
+	flushErr     error
+	finalHeaders int
+}
+
+func (w *recoveryFlushDestination) WriteHeader(status int) {
+	w.finalHeaders++
+	w.ResponseRecorder.WriteHeader(status)
+}
+
+func (w *recoveryFlushDestination) FlushError() error {
+	if !errors.Is(w.flushErr, http.ErrNotSupported) {
+		w.WriteHeader(http.StatusAccepted)
+	}
+	return w.flushErr
+}
+
+func TestRecoveryAfterFlushFailureRespectsCommitOwnership(t *testing.T) {
+	mw, err := recovery.Middleware(recovery.Config{Logger: log.NewLogger(log.LoggerConfig{Format: log.LoggerFormatDiscard})})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		flushErr error
+		want     int
+	}{
+		{http.ErrNotSupported, http.StatusInternalServerError},
+		{io.ErrClosedPipe, http.StatusAccepted},
+	} {
+		w := &recoveryFlushDestination{ResponseRecorder: httptest.NewRecorder(), flushErr: tc.flushErr}
+		handler := mw(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			if err := http.NewResponseController(w).Flush(); !errors.Is(err, tc.flushErr) {
+				t.Errorf("Flush = %v, want %v", err, tc.flushErr)
+			}
+			panic("fixture")
+		}))
+		handler.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/", nil))
+		if w.finalHeaders != 1 || w.Code != tc.want || (tc.want == http.StatusAccepted && w.Body.Len() != 0) {
+			t.Fatalf("flush=%v commits=%d status=%d body=%q", tc.flushErr, w.finalHeaders, w.Code, w.Body)
+		}
 	}
 }

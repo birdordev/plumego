@@ -1892,3 +1892,40 @@ func TestStatsDuringConcurrentReadsAndAfterCompletion(t *testing.T) {
 		t.Fatalf("final stats=%+v error=%v", stats, err)
 	}
 }
+
+func TestHistoricalSnapshotGetDetachesAcrossOverwriteAndReopen(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, stateFileName)
+	if err := os.WriteFile(path, []byte(`{"entries":{"key":{"value":"b2xk"}}}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	options := DefaultConfig(dir)
+	store, err := NewKVStore(options)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	old, err := store.Get("key")
+	if err != nil || string(old) != "old" {
+		t.Fatalf("historical value = %q, %v", old, err)
+	}
+	if err := store.Set("key", []byte("new"), 0); err != nil {
+		t.Fatal(err)
+	}
+	fresh, err := store.Get("key")
+	if err != nil || string(fresh) != "new" {
+		t.Fatalf("fresh value = %q, %v", fresh, err)
+	}
+	old[0], fresh[0] = 'x', 'y'
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := NewKVStore(options)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopened.Close()
+	if got, err := reopened.Get("key"); err != nil || string(got) != "new" {
+		t.Fatalf("reopened value = %q, %v", got, err)
+	}
+}

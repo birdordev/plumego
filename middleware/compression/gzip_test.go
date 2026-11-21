@@ -1732,3 +1732,42 @@ func TestSSERequestOptOutAndVaryAcrossAcceptValues(t *testing.T) {
 		})
 	}
 }
+
+func TestGzipRetainsPreencodedRepresentationMetadata(t *testing.T) {
+	cfg := DefaultConfig()
+	for _, encoding := range []string{"br", ""} {
+		h := Middleware(cfg)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "text/plain")
+			if encoding != "" {
+				w.Header().Set("Content-Encoding", encoding)
+			}
+			w.Header().Set("Content-Digest", "fixture-digest")
+			_, _ = io.WriteString(w, strings.Repeat("fixture", 32))
+		}))
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		req.Header.Set("Accept-Encoding", "gzip")
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, req)
+		if !strings.Contains(strings.Join(w.Header().Values("Vary"), ","), "Accept-Encoding") {
+			t.Fatalf("encoding=%q: Vary=%v", encoding, w.Header().Values("Vary"))
+		}
+		if encoding != "" {
+			if w.Header().Get("Content-Encoding") != encoding || w.Header().Get("Content-Digest") != "fixture-digest" ||
+				w.Body.String() != strings.Repeat("fixture", 32) {
+				t.Fatalf("representation changed: %v", w.Header())
+			}
+			continue
+		}
+		if w.Header().Get("Content-Encoding") != "gzip" || w.Header().Get("Content-Digest") != "" {
+			t.Fatalf("gzip metadata = %v", w.Header())
+		}
+		reader, err := gzip.NewReader(w.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		payload, readErr := io.ReadAll(reader)
+		if err := reader.Close(); readErr != nil || err != nil || string(payload) != strings.Repeat("fixture", 32) {
+			t.Fatalf("gzip payload bytes=%d read=%v close=%v", len(payload), readErr, err)
+		}
+	}
+}

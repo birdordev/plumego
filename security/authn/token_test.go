@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -81,7 +82,10 @@ func TestStaticToken(t *testing.T) {
 			}
 			if tt.wantErr != nil {
 				if principal != nil {
-					t.Fatalf("expected nil principal on auth failure, got %#v", principal)
+					t.Fatal("expected nil principal on auth failure")
+				}
+				if strings.Contains(err.Error(), "secret123") || strings.Contains(err.Error(), "wrong-token") {
+					t.Fatal("failure diagnostics included credential input")
 				}
 				return
 			}

@@ -290,3 +290,81 @@ func TestClearDoesNotInvalidateReaderCopy(t *testing.T) {
 		t.Fatalf("after Clear: %v", err)
 	}
 }
+
+func TestStaleCleanupScanPreservesReplacementAndAccounting(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		cache := mustNewMemoryCacheWithConfig(t, Config{})
+		defer cache.Close()
+		const key = "key"
+		if err := cache.Set(t.Context(), key, []byte("old"), time.Second); err != nil {
+			t.Fatal(err)
+		}
+		var captured, replaceDone, cleaned = make(chan struct{}), make(chan struct{}), make(chan struct{})
+		time.Sleep(2 * time.Second)
+		go func() {
+			item, _ := cache.store.Load(key)
+			close(captured)
+			<-replaceDone
+			cache.removeExpiredItem(key, item.(cacheItem))
+			close(cleaned)
+		}()
+		<-captured
+		err := cache.Set(t.Context(), key, []byte("updated"), time.Second)
+		close(replaceDone)
+		<-cleaned
+		if value, getErr := cache.Get(t.Context(), key); err != nil || getErr != nil || string(value) != "updated" {
+			t.Fatalf("Set error=%v replacement=%q get error=%v", err, value, getErr)
+		}
+		if stats := cache.Stats(); stats.Entries != 1 || stats.MemoryUsage != uint64(len("updated")) {
+			t.Fatalf("replacement accounting = %+v", stats)
+		}
+		time.Sleep(2 * time.Second)
+		cache.cleanupExpired()
+		if stats := cache.Stats(); stats.Entries != 0 || stats.MemoryUsage != 0 {
+			t.Fatalf("cleanup accounting = %+v", stats)
+		}
+	})
+}
+
+func TestLegacyIntegerMigrationPreservesBytesAndTTLOnFailure(t *testing.T) {
+	cache := mustNewMemoryCacheWithConfig(t, Config{})
+	defer cache.Close()
+	for _, tc := range []struct {
+		name    string
+		initial []byte
+		want    string
+	}{
+		{name: "migrate", initial: mustLegacyCounter(t, 7), want: "8"},
+		{name: "overflow", initial: mustLegacyCounter(t, maxInt64)},
+		{name: "not an integer", initial: []byte("not an integer")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := t.Context()
+			if err := cache.Set(ctx, tc.name, tc.initial, time.Minute); err != nil {
+				t.Fatal(err)
+			}
+			expiration := cachedExpiration(t, cache, tc.name)
+			_, updateErr := cache.Incr(ctx, tc.name, 1)
+			got, err := cache.Get(ctx, tc.name)
+			if err != nil || !cachedExpiration(t, cache, tc.name).Equal(expiration) {
+				t.Fatalf("read error=%v or TTL changed", err)
+			}
+			if tc.want == "" {
+				if updateErr == nil || string(got) != string(tc.initial) {
+					t.Fatalf("rejected update changed bytes or succeeded: %v", updateErr)
+				}
+			} else if updateErr != nil || string(got) != tc.want {
+				t.Fatalf("migration = %q, %v", got, updateErr)
+			}
+		})
+	}
+}
+
+func mustLegacyCounter(t *testing.T, count int64) []byte {
+	t.Helper()
+	raw, err := encodeGobInt64(count)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return raw
+}

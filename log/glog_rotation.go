@@ -147,13 +147,28 @@ func (l *gLogger) rotateLogFile(level Level) error {
 	// abort the rotation because the log file itself was opened successfully.
 	linkName := fmt.Sprintf("%s.%s", l.program, lname)
 	linkPath := filepath.Join(l.logDir, linkName)
-	_ = os.Remove(linkPath) // ignore removal error; the next Symlink may still succeed
-	if err := os.Symlink(filename, linkPath); err != nil {
+	if err := replaceLogSymlink(filename, linkPath); err != nil {
 		// Write directly to stderr to avoid recursion through the logger.
 		fmt.Fprintf(os.Stderr, "log: failed to update symlink %s → %s: %v\n", linkPath, filename, err)
 	}
 
 	return nil
+}
+
+func replaceLogSymlink(target, path string) error {
+	// A private directory on the same filesystem keeps the old link in place
+	// until the replacement is ready to publish. The relative target resolves
+	// against the log directory after the rename.
+	dir, err := os.MkdirTemp(filepath.Dir(path), ".log-link-*")
+	if err != nil {
+		return err
+	}
+	defer func() { _ = os.RemoveAll(dir) }()
+	staged := filepath.Join(dir, "active")
+	if err := os.Symlink(target, staged); err != nil {
+		return err
+	}
+	return os.Rename(staged, path)
 }
 
 type logFileInfo struct {

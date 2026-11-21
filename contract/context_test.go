@@ -180,3 +180,25 @@ func TestRouteStateAccessorsAgreeOnDuplicateParams(t *testing.T) {
 		}
 	}
 }
+
+func TestNestedRequestMetadataKeepsIndependentCarriers(t *testing.T) {
+	params := map[string]string{"id": "inherited", "other": "stable"}
+	parent := WithRequestID(t.Context(), "request-id")
+	ctx := WithRequestContext(parent, RequestContext{RoutePattern: "/a/:id", Params: params})
+	params["other"] = "changed"
+	if got := RequestParamFromContext(ctx, "other"); got != "stable" {
+		t.Fatalf("metadata did not snapshot source map: %q", got)
+	}
+	state := new(RouteState)
+	state.AddParam("id", "from route")
+	ctx = WithRouteState(ctx, state)
+	if got := RequestIDFromContext(ctx); got != "request-id" {
+		t.Fatalf("request id = %q", got)
+	}
+	if got := RequestParamFromContext(ctx, "id"); got != "from route" {
+		t.Fatalf("active route param = %q", got)
+	}
+	if RequestIDFromContext(parent) != "request-id" || RequestParamFromContext(parent, "id") != "" {
+		t.Fatal("parent carriers changed")
+	}
+}

@@ -8,6 +8,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 )
 
@@ -861,5 +862,77 @@ func TestConcurrentStopWaitsForCleanupAndKeepsAdmissionUsable(t *testing.T) {
 	}
 	if result := limiter.Allow("test-key"); !result.Allowed {
 		t.Errorf("admission after stopping cleanup: %+v", result)
+	}
+}
+
+func TestAcceptanceCustomClockCleanupAndStop(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		var limiter *Limiter
+		var calls atomic.Int64
+		var stopOnSample atomic.Bool
+		base := time.Now()
+		now := base
+		limiter = NewLimiter(Config{
+			Rate: 1, Capacity: 1, CleanupInterval: time.Second, MaxIdle: time.Second,
+			Now: func() time.Time {
+				calls.Add(1)
+				if stopOnSample.Load() {
+					limiter.Stop()
+				}
+				return now
+			},
+		})
+		defer limiter.Stop()
+		if !limiter.Allow("first").Allowed {
+			t.Fatal("first admission was rejected")
+		}
+		// Time passes in the caller's clock domain independently of the timer.
+		time.Sleep(3 * time.Second)
+		if got := calls.Load(); got != 2 {
+			t.Fatalf("clock was called %d times without a request, want 2 calls from Allow", got)
+		}
+		now = base.Add(2 * time.Second)
+		limiter.Allow("second")
+		if got := limiter.Metrics(); got.Buckets != 1 || got.Evictions != 1 {
+			t.Fatalf("metrics after next admission: %+v", got)
+		}
+		now = base.Add(4 * time.Second)
+		stopOnSample.Store(true)
+		if !limiter.Allow("third").Allowed {
+			t.Fatal("clock callback stopped admission")
+		}
+		if got := limiter.Metrics(); got.Buckets != 2 || got.Evictions != 1 {
+			t.Fatalf("cleanup after Stop: %+v", got)
+		}
+	})
+}
+
+func TestLimiterMetricsIndividualBoundsAndSettledTotals(t *testing.T) {
+	const attempts, limit = 32, 4
+	now := time.Now()
+	l := NewLimiter(Config{Rate: 1, Capacity: 1, MaxEntries: limit, Now: func() time.Time { return now }})
+	defer l.Stop()
+	start, done := make(chan struct{}), make(chan struct{})
+	go func() {
+		defer close(done)
+		<-start
+		for i := range attempts {
+			key := fmt.Sprint(i)
+			l.Allow(key)
+			l.Allow(key)
+		}
+	}()
+	close(start)
+	for range attempts {
+		got := l.Metrics()
+		if got.Allowed < 0 || got.Allowed > attempts || got.Rejected < 0 || got.Rejected > attempts ||
+			got.Evictions < 0 || got.Evictions > attempts-limit || got.Buckets < 0 || got.Buckets > limit {
+			t.Errorf("counter outside its own range: %+v", got)
+		}
+	}
+	<-done
+	want := LimiterMetrics{Allowed: attempts, Rejected: attempts, Evictions: attempts - limit, Buckets: limit}
+	if got := l.Metrics(); got != want {
+		t.Fatalf("final metrics=%+v, want %+v", got, want)
 	}
 }

@@ -1528,3 +1528,57 @@ func TestFileLoggerFlushCloseAndWritesComplete(t *testing.T) {
 		t.Fatalf("file content=%q error=%v", data, err)
 	}
 }
+
+func TestAcceptanceLogLinkReplacementKeepsOldTargetOnFailure(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "app.INFO")
+	for _, filename := range []string{"old.log", "new.log"} {
+		if err := os.WriteFile(filepath.Join(dir, filename), []byte(filename), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Symlink("old.log", path); err != nil {
+		if runtime.GOOS == "windows" || runtime.GOOS == "plan9" {
+			t.Skipf("symlinks unavailable: %v", err)
+		}
+		t.Fatal(err)
+	}
+	if err := replaceLogSymlink("bad\x00target", path); err == nil {
+		t.Fatal("expected failure preparing replacement")
+	}
+	if content, err := os.ReadFile(path); err != nil || string(content) != "old.log" {
+		t.Fatalf("previous target after failure = %q, %v", content, err)
+	}
+	if err := replaceLogSymlink("new.log", path); err != nil {
+		t.Fatal(err)
+	}
+	if content, err := os.ReadFile(path); err != nil || string(content) != "new.log" {
+		t.Fatalf("published target = %q, %v", content, err)
+	}
+	matches, err := filepath.Glob(filepath.Join(dir, ".log-link-*"))
+	if err != nil || len(matches) != 0 {
+		t.Fatalf("temporary links = %v, %v", matches, err)
+	}
+}
+
+func TestRotationKeepsNewWriterWhenOldCloseFails(t *testing.T) {
+	logger := newGLogger()
+	logger.logDir, logger.toStderr = t.TempDir(), false
+	if err := logger.initLogFiles(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(logger.Close)
+	old := logger.logFiles[INFO]
+	if err := old.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := logger.rotateLogFile(INFO); err != nil || logger.logFiles[INFO] == old {
+		t.Fatalf("replacement writer=%v err=%v", logger.logFiles[INFO] != old, err)
+	}
+	logger.Info("fixture after rotation")
+	filename := logger.logFiles[INFO].Name()
+	content, err := os.ReadFile(filename)
+	if err != nil || !bytes.Contains(content, []byte("fixture after rotation")) {
+		t.Fatalf("new writer content=%q err=%v", content, err)
+	}
+}

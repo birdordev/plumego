@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"testing/synctest"
@@ -527,5 +528,93 @@ func TestDeleteCanRemoveExpiredStoredKey(t *testing.T) {
 	defer reopened.Close()
 	if _, err := reopened.Get("key"); !errors.Is(err, ErrKeyNotFound) {
 		t.Fatalf("reopened: %v", err)
+	}
+}
+
+func TestSnapshotBudgetErrorDistinguishesReadFailures(t *testing.T) {
+	path := filepath.Join(t.TempDir(), stateFileName)
+	if err := os.WriteFile(path, []byte("oversized"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	_, byStat := readSnapshot(path, 2)
+	_, byRead := readSnapshotBytes(strings.NewReader("oversized"), 2)
+	for _, err := range []error{byStat, byRead} {
+		var budget snapshotReadBudgetError
+		if !errors.As(err, &budget) || budget.limit != 2 || errors.Is(err, ErrCorruptState) {
+			t.Fatalf("budget failure = %v", err)
+		}
+	}
+	_, err := readSnapshot(path+".missing", 2)
+	var budget snapshotReadBudgetError
+	if !errors.Is(err, os.ErrNotExist) || errors.As(err, &budget) {
+		t.Fatalf("missing file error = %v", err)
+	}
+}
+
+func TestExpiredEntryReadsPreserveStoredSnapshot(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		dir := t.TempDir()
+		kv, err := NewKVStore(DefaultConfig(dir))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer kv.Close()
+		const key = "expiry"
+		if err := kv.Set(key, []byte("original"), time.Second); err != nil {
+			t.Fatal(err)
+		}
+		path := filepath.Join(dir, stateFileName)
+		before, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		time.Sleep(2 * time.Second)
+		if _, err := kv.Get(key); !errors.Is(err, ErrKeyExpired) || mustExists(t, kv, key) ||
+			slices.Contains(mustKeys(t, kv), key) {
+			t.Fatalf("expired read error = %v", err)
+		}
+		after, err := os.ReadFile(path)
+		if kv.data[key] == nil || err != nil || !bytes.Equal(before, after) {
+			t.Fatalf("pure reads changed stored state: exists=%t err=%v", kv.data[key] != nil, err)
+		}
+	})
+}
+
+func TestOversizedSnapshotStartupReleasesDirectoryLock(t *testing.T) {
+	dir := t.TempDir()
+	options := DefaultConfig(dir)
+	path := filepath.Join(dir, stateFileName)
+	file, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	maximum := (&KVStore{opts: options}).snapshotReadLimit()
+	if err := file.Truncate(maximum + 1); err != nil {
+		_ = file.Close()
+		t.Fatal(err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatal(err)
+	}
+	store, err := NewKVStore(options)
+	var budget snapshotReadBudgetError
+	if store != nil || !errors.As(err, &budget) || budget.limit != maximum {
+		if store != nil {
+			_ = store.Close()
+		}
+		t.Fatalf("oversized open = %v", err)
+	}
+	if info, err := os.Stat(path); err != nil || info.Size() != maximum+1 {
+		t.Fatalf("rejected open changed snapshot: %v, %v", info, err)
+	}
+	if err := os.WriteFile(path, []byte(`{"entries":{}}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := NewKVStore(options)
+	if err != nil {
+		t.Fatalf("retry after correcting snapshot: %v", err)
+	}
+	if err := reopened.Close(); err != nil {
+		t.Fatal(err)
 	}
 }

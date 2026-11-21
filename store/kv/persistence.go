@@ -70,6 +70,14 @@ func (kv *KVStore) snapshotReadLimit() int64 {
 	return budget * 6
 }
 
+type snapshotReadBudgetError struct {
+	limit int64
+}
+
+func (e snapshotReadBudgetError) Error() string {
+	return fmt.Sprintf("snapshot exceeds the %d-byte input budget", e.limit)
+}
+
 func readSnapshot(path string, limit int64) ([]byte, error) {
 	file, err := os.Open(path)
 	if err != nil {
@@ -81,15 +89,19 @@ func readSnapshot(path string, limit int64) ([]byte, error) {
 		return nil, err
 	}
 	if info.Size() > limit {
-		return nil, fmt.Errorf("snapshot exceeds the %d-byte input budget", limit)
+		return nil, snapshotReadBudgetError{limit: limit}
 	}
 
+	return readSnapshotBytes(file, limit)
+}
+
+func readSnapshotBytes(file io.Reader, limit int64) ([]byte, error) {
 	raw, err := io.ReadAll(io.LimitReader(file, limit+1))
 	if err != nil {
 		return nil, err
 	}
 	if int64(len(raw)) > limit {
-		return nil, fmt.Errorf("snapshot exceeds the %d-byte input budget", limit)
+		return nil, snapshotReadBudgetError{limit: limit}
 	}
 	return raw, nil
 }

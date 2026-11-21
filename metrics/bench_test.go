@@ -97,3 +97,26 @@ func BenchmarkBaseCollectorNameCardinality(b *testing.B) {
 		})
 	}
 }
+
+func BenchmarkMultiConstructionNilMix(b *testing.B) {
+	var absent *BaseMetricsCollector
+	active := NewBaseMetricsCollector()
+	for _, count := range []int{2, 8, 64} {
+		for _, stride := range []int{2, count + 1} {
+			b.Run(fmt.Sprintf("%d-stride-%d", count, stride), func(b *testing.B) {
+				input := make([]AggregateCollector, count)
+				for i := range input {
+					if i%stride == 0 {
+						input[i] = active
+					} else if i%2 == 1 {
+						input[i] = absent
+					}
+				}
+				b.ReportAllocs()
+				for b.Loop() {
+					_ = NewMultiCollector(input...)
+				}
+			})
+		}
+	}
+}

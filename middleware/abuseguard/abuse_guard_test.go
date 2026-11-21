@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	internaltransport "github.com/birdordev/plumego/internal/httputil"
@@ -410,4 +411,29 @@ func BenchmarkAbuseGuardMiddleware(b *testing.B) {
 		rec := httptest.NewRecorder()
 		wrapped.ServeHTTP(rec, req)
 	}
+}
+
+func TestSharedBorrowedLimiterRemainsOwnedByCaller(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		limiter := abuse.NewLimiter(abuse.Config{Rate: 1, Capacity: 1, CleanupInterval: time.Second, MaxIdle: time.Second})
+		defer limiter.Stop()
+		first := NewAbuseGuard(AbuseGuardConfig{Limiter: limiter})
+		second := NewAbuseGuard(AbuseGuardConfig{Limiter: limiter})
+		first.Stop()
+		h := second.Middleware()(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusAccepted)
+		}))
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/", nil))
+		if w.Code != http.StatusAccepted || limiter.Metrics().Buckets != 1 {
+			t.Fatalf("status=%d metrics=%+v", w.Code, limiter.Metrics())
+		}
+		time.Sleep(3 * time.Second)
+		synctest.Wait()
+		if limiter.Metrics().Buckets != 0 {
+			t.Fatal("borrowed guard disabled limiter cleanup")
+		}
+		second.Stop()
+		limiter.Stop()
+	})
 }

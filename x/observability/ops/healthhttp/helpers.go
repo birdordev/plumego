@@ -65,12 +65,12 @@ func requireTracker(tracker *Tracker, w http.ResponseWriter, r *http.Request) bo
 
 func httpStatusForHealth(state health.HealthState) int {
 	switch state {
-	case health.StatusUnhealthy:
-		return http.StatusServiceUnavailable
+	case health.StatusHealthy:
+		return http.StatusOK
 	case health.StatusDegraded:
 		return http.StatusPartialContent
 	default:
-		return http.StatusOK
+		return http.StatusServiceUnavailable
 	}
 }
 
@@ -93,7 +93,7 @@ func writeHealthResponse(w http.ResponseWriter, r *http.Request, status int, dat
 	}
 
 	var body bytes.Buffer
-	if err := json.NewEncoder(&body).Encode(resp); err != nil {
+	if err := encodeHealthResponse(&body, resp); err != nil {
 		typ := contract.TypeInternal
 		if status == http.StatusServiceUnavailable {
 			typ = contract.TypeUnavailable
@@ -109,6 +109,15 @@ func writeHealthResponse(w http.ResponseWriter, r *http.Request, status int, dat
 		return io.ErrShortWrite
 	}
 	return err
+}
+
+func encodeHealthResponse(dst io.Writer, data healthResponseEnvelope) (err error) {
+	defer func() {
+		if recover() != nil {
+			err = errors.New("health response encoder panicked")
+		}
+	}()
+	return json.NewEncoder(dst).Encode(data)
 }
 
 // RuntimeInfo contains runtime diagnostics for development and debug endpoints.

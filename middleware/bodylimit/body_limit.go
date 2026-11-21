@@ -46,6 +46,7 @@ func Middleware(config Config) mw.Middleware {
 				return
 			}
 
+			r = r.WithContext(r.Context())
 			body := r.Body
 			if body == nil {
 				body = http.NoBody
@@ -104,7 +105,7 @@ func (w *bodyLimitResponseWriter) WriteHeader(statusCode int) {
 func (w *bodyLimitResponseWriter) Write(p []byte) (int, error) {
 	w.checkLimitError()
 	if w.blocked {
-		return len(p), nil
+		return 0, errRequestTooLarge
 	}
 	w.started = true
 	return w.ResponseWriter.Write(p)

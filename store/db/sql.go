@@ -141,7 +141,8 @@ func DefaultConfig(driver, dsn string) Config {
 	}
 }
 
-// Open opens a database connection using the standard sql.Open.
+// Open constructs a database connection pool. Use [Ping] to verify connectivity.
+// The driver may validate configuration without establishing a connection.
 func Open(config Config) (*sql.DB, error) {
 	return OpenWith(config, sql.Open)
 }

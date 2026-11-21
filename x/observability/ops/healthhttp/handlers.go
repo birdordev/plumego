@@ -126,7 +126,7 @@ func AllComponentsHealthHandler(manager Manager) http.Handler {
 		defer cancel()
 
 		manager.CheckAllComponents(ctx)
-		_ = contract.WriteResponse(w, r, http.StatusOK, manager.GetAllHealth(), nil)
+		_ = writeHealthResponse(w, r, http.StatusOK, manager.GetAllHealth())
 	})
 }
 

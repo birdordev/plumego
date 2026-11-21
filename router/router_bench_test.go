@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -411,6 +412,36 @@ func BenchmarkFrozenAllowLookup(b *testing.B) {
 					!strings.HasPrefix(allow, "CUSTOM00, CUSTOM01") {
 					b.Fatalf("status=%d allow=%q", w.Code, allow)
 				}
+			}
+		})
+	}
+}
+
+func TestRouteStringPoolDiscardsDeepSlicesAndClearsTail(t *testing.T) {
+	parts := splitPathToParts(strings.Repeat("/segment", maxPooledRouteSegments+1))
+	if len(*parts) != maxPooledRouteSegments+1 {
+		t.Fatalf("segments = %d", len(*parts))
+	}
+	putPathParts(parts)
+	if *parts != nil {
+		t.Fatal("deep path storage was retained")
+	}
+	pool := new(sync.Pool)
+	tail := []string{"kept", "stale"}
+	short := tail[:1]
+	putRouteStrings(pool, &short)
+	if len(short) != 0 || tail[0] != "" || tail[1] != "" {
+		t.Fatal("pooled storage retained path references")
+	}
+}
+
+func BenchmarkPathPoolDeepPaths(b *testing.B) {
+	for _, segments := range []int{8, maxPooledRouteSegments, maxPooledRouteSegments + 1, 256} {
+		b.Run(fmt.Sprint(segments), func(b *testing.B) {
+			path := strings.Repeat("/segment", segments)
+			b.ReportAllocs()
+			for b.Loop() {
+				putPathParts(splitPathToParts(path))
 			}
 		})
 	}

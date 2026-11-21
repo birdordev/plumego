@@ -173,8 +173,8 @@ func TestWaiterUsesLeaderCompletionTime(t *testing.T) {
 					if rec.Code != tc.wantStatus {
 						t.Fatalf("waiter status = %d, body = %q, want %d", rec.Code, rec.Body.String(), tc.wantStatus)
 					}
-					if tc.wantStatus == http.StatusGatewayTimeout && flight.waiters.Load() != 0 {
-						t.Fatal("timed-out waiter was not released")
+					if got := flight.waiters.Load(); got != 0 {
+						t.Fatalf("remaining waiters = %d", got)
 					}
 				}
 			})
@@ -658,6 +658,9 @@ func TestWaiterWriteOutcomeControlsReplayHooks(t *testing.T) {
 				}))
 				go handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/", nil))
 				synctest.Wait()
+				c.mu.Lock()
+				flight := c.inFlight["same"]
+				c.mu.Unlock()
 				waiter := &responseWriteRecorder{
 					ResponseRecorder: httptest.NewRecorder(),
 					writeBytes:       tc.bytes,
@@ -668,6 +671,9 @@ func TestWaiterWriteOutcomeControlsReplayHooks(t *testing.T) {
 				close(release)
 				synctest.Wait()
 
+				if flight == nil || flight.waiters.Load() != 0 {
+					t.Fatal("response completion did not release the waiter")
+				}
 				if waiter.headers != 1 || waiter.Code != http.StatusOK || waiter.Body.String() != body[:tc.bytes] {
 					t.Fatalf("commits=%d status=%d body=%q", waiter.headers, waiter.Code, waiter.Body)
 				}

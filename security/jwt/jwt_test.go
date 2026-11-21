@@ -324,3 +324,25 @@ func mustSignTokenWithHeader(t *testing.T, mgr *JWTManager, claims TokenClaims, 
 	mac.Write([]byte(signingInput))
 	return signingInput + "." + base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
 }
+
+func TestJWTManagerKeepsNormalizedConfigSnapshot(t *testing.T) {
+	config := DefaultJWTConfig()
+	config.Algorithm = ""
+	config.Issuer = "original"
+	manager, err := NewJWTManager(newRecordingContextKeyStore(), config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	config.Algorithm, config.Issuer = AlgorithmEdDSA, "replacement"
+	if manager.config.Algorithm != AlgorithmHS256 || manager.config.Issuer != "original" {
+		t.Fatalf("manager config = %+v", manager.config)
+	}
+	pair, err := manager.GenerateTokenPair(t.Context(), IdentityClaims{Subject: "fixture"}, AuthorizationClaims{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	claims, err := manager.VerifyToken(t.Context(), pair.AccessToken, TokenTypeAccess)
+	if err != nil || claims.Issuer != "original" {
+		t.Fatalf("snapshot verification err=%v", err)
+	}
+}

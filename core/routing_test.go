@@ -616,3 +616,23 @@ func TestRouteOptionCannotPublishAfterFailedBuildFreezesRouter(t *testing.T) {
 		t.Fatalf("late route published: %v", app.Routes())
 	}
 }
+
+func TestAddRouteErrorOwnershipAndFrozenPrecedence(t *testing.T) {
+	app := newTestApp()
+	if err := app.AddRoute(http.MethodGet, "/nil", nil); !errors.Is(err, contract.ErrHandlerNil) {
+		t.Fatalf("nil handler error = %v", err)
+	}
+	handler := http.HandlerFunc(func(http.ResponseWriter, *http.Request) {})
+	if err := app.AddRoute(http.MethodGet, "/a", handler, router.WithRouteName("same")); err != nil {
+		t.Fatal(err)
+	}
+	if err := app.AddRoute(http.MethodGet, "/b", handler, router.WithRouteName("same")); err == nil || !strings.HasPrefix(err.Error(), "router add_route") {
+		t.Fatalf("duplicate route name = %v", err)
+	}
+	if err := app.Prepare(); err != nil {
+		t.Fatal(err)
+	}
+	if err := app.AddRoute(http.MethodGet, "/nil", nil); err == nil || errors.Is(err, contract.ErrHandlerNil) {
+		t.Fatalf("frozen app registration = %v", err)
+	}
+}

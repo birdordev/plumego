@@ -265,7 +265,7 @@ func (w *timeoutResponseWriter) Write(p []byte) (int, error) {
 	currentSize := w.buffer.Len() + len(p)
 	if currentSize > w.cfg.MaxReplayBytes {
 		w.replayLimitExceeded = true
-		w.buffer.ClearBody() // Free memory
+		w.buffer.ClearBody()
 		return len(p), nil
 	}
 

@@ -136,12 +136,12 @@ func (r *BufferedResponseRecorder) Len() int {
 	return r.body.Len()
 }
 
-// ClearBody clears the captured response body and captured byte count.
+// ClearBody releases the captured body storage and clears the captured byte count.
 func (r *BufferedResponseRecorder) ClearBody() {
 	if r == nil || r.body == nil {
 		return
 	}
-	r.body.Reset()
+	*r.body = bytes.Buffer{}
 	r.bytesWritten = 0
 }
 

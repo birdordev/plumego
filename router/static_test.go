@@ -626,3 +626,20 @@ func TestStaticSequentialReadErrorDoesNotAppendAnotherResponse(t *testing.T) {
 		}
 	}
 }
+
+func TestStaticFSEmptySeekableFileHasZeroLength(t *testing.T) {
+	r := NewRouter()
+	files := fstest.MapFS{"empty.txt": {}}
+	if err := r.StaticFS("/assets", http.FS(files)); err != nil {
+		t.Fatal(err)
+	}
+	for _, method := range []string{http.MethodGet, http.MethodHead} {
+		w := httptest.NewRecorder()
+		w.Header().Set("Content-Type", "application/example")
+		r.ServeHTTP(w, httptest.NewRequest(method, "/assets/empty.txt", nil))
+		if w.Code != http.StatusOK || w.Body.Len() != 0 || w.Header().Get("Content-Length") != "0" ||
+			w.Header().Get("Content-Type") != "application/example" {
+			t.Fatalf("%s: status=%d headers=%v body=%q", method, w.Code, w.Header(), w.Body)
+		}
+	}
+}

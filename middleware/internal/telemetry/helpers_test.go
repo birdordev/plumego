@@ -162,6 +162,7 @@ func TestPreparedRequestCompleteAndEndTrace(t *testing.T) {
 
 func TestWithObserverSharesRouteBetweenMetricsAndRequest(t *testing.T) {
 	const path = "/users/42"
+	type downstreamKey struct{}
 	tests := []struct {
 		name      string
 		inherited string
@@ -188,6 +189,10 @@ func TestWithObserverSharesRouteBetweenMetricsAndRequest(t *testing.T) {
 						RoutePattern: tt.published,
 					}))
 				}
+				r = r.WithContext(context.WithValue(r.Context(), downstreamKey{}, "downstream"))
+				if r.Context().Value(downstreamKey{}) == nil {
+					t.Fatal("downstream value was lost locally")
+				}
 				w.WriteHeader(http.StatusCreated)
 				_, _ = w.Write([]byte("ok"))
 			})
@@ -195,6 +200,9 @@ func TestWithObserverSharesRouteBetweenMetricsAndRequest(t *testing.T) {
 			calls := 0
 			WithObserver(next, httptest.NewRecorder(), req, func(metrics RequestMetrics, _ *ResponseRecorder, observed *http.Request) {
 				calls++
+				if observed.Context().Value(downstreamKey{}) != nil {
+					t.Fatal("downstream context escaped")
+				}
 				route := contract.RequestContextFromContext(observed.Context()).RoutePattern
 				if route != tt.want || metrics.Route != tt.want {
 					t.Errorf("request route = %q, metrics route = %q, want %q", route, metrics.Route, tt.want)

@@ -186,7 +186,9 @@ func (p PreparedRequest) observedRequest(r *http.Request) *http.Request {
 // The observe callback receives:
 //   - metrics: the completed request metrics derived from r
 //   - recorder: the response recorder wrapping the original writer
-//   - r: the modified request (post-handler, for context reads like route/span)
+//   - r: the prepared request with route metadata published through the recorder.
+//     Arbitrary downstream context replacements do not flow back to the observer.
+//     Span information comes from the observed response headers or initial context.
 func WithObserver(next http.Handler, w http.ResponseWriter, r *http.Request, observe func(metrics RequestMetrics, recorder *ResponseRecorder, r *http.Request)) {
 	prepared := PrepareRequest(w, r)
 	recorder := prepared.Recorder

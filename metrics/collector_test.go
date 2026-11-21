@@ -238,3 +238,23 @@ func TestNewHTTPRecordOwnsLabelsForEachObservation(t *testing.T) {
 		t.Fatalf("second record = %+v", second)
 	}
 }
+
+func TestUnnamedRecordsCountWithoutCreatingSeries(t *testing.T) {
+	c := NewBaseMetricsCollector()
+	for _, record := range []MetricRecord{{}, {Name: "named"}, {Error: errors.New("fixture")}} {
+		c.Record(t.Context(), record)
+	}
+	stats := c.GetStats()
+	if stats.TotalRecords != 3 || stats.ErrorRecords != 1 || stats.ActiveSeries != 1 ||
+		len(stats.NameBreakdown) != 1 || stats.NameBreakdown["named"] != 1 {
+		t.Fatalf("mixed records = %+v", stats)
+	}
+	stats.NameBreakdown["invented"] = 2
+	if c.GetStats().NameBreakdown["invented"] != 0 {
+		t.Fatal("caller mutated collector statistics")
+	}
+	c.Clear()
+	if stats := c.GetStats(); stats.TotalRecords != 0 || stats.ErrorRecords != 0 || stats.ActiveSeries != 0 {
+		t.Fatalf("cleared records = %+v", stats)
+	}
+}

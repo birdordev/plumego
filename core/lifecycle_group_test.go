@@ -672,3 +672,25 @@ func TestReadyPanicRestoresGroupBeforeStop(t *testing.T) {
 		t.Fatalf("cleanup=%v phase=%v", order, g.phase)
 	}
 }
+
+func TestNestedGroupRetriesOnlyPendingChildCleanup(t *testing.T) {
+	var calls []string
+	startErr, stopErr := errors.New("start failed"), errors.New("rollback failed")
+	failed := &recorder{name: "failed", log: &calls, startErr: startErr, stopErr: stopErr}
+	child := NewLifecycleGroup().
+		Add("ok", &recorder{name: "ok", log: &calls}).
+		Add("failed", failed)
+	parent := NewLifecycleGroup().Add("child", child)
+	err := parent.Start(t.Context())
+	if !errors.Is(err, startErr) || !errors.Is(err, stopErr) {
+		t.Fatalf("startup chain = %v", err)
+	}
+	if want := []string{"start:ok", "start:failed", "stop:failed", "stop:ok", "stop:failed"}; !slices.Equal(calls, want) {
+		t.Fatalf("rollback calls=%v, want %v", calls, want)
+	}
+	failed.stopErr = nil
+	calls = nil
+	if err := parent.Stop(t.Context()); err != nil || !slices.Equal(calls, []string{"stop:failed"}) {
+		t.Fatalf("retry calls=%v err=%v", calls, err)
+	}
+}

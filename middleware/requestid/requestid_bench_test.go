@@ -3,6 +3,7 @@ package requestid
 import (
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 )
 
@@ -39,4 +40,41 @@ func BenchmarkRequestIDMiddleware(b *testing.B) {
 		w.Body.Reset()
 		handler.ServeHTTP(w, req)
 	}
+}
+
+func TestParallelRequestIDsRemainUniqueAcrossPoolWrap(t *testing.T) {
+	const workers = 8
+	const idsPerWorker = randomPoolSize / workers * 3
+	generator := NewRequestIDGenerator()
+	ids := make(chan string, workers*idsPerWorker)
+	var wg sync.WaitGroup
+	wg.Add(workers)
+	for range workers {
+		go func() {
+			defer wg.Done()
+			for range idsPerWorker {
+				ids <- generator.Generate()
+			}
+		}()
+	}
+	wg.Wait()
+	close(ids)
+	seen := make(map[string]struct{}, workers*idsPerWorker)
+	for id := range ids {
+		if _, ok := seen[id]; ok || len(id) != idWidth {
+			t.Fatalf("duplicate or invalid-width ID %q", id)
+		}
+		seen[id] = struct{}{}
+	}
+}
+
+func BenchmarkRequestIDPoolParallel(b *testing.B) {
+	generator := NewRequestIDGenerator()
+	b.ReportAllocs()
+	b.ResetTimer()
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			_ = generator.Generate()
+		}
+	})
 }

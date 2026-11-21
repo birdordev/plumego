@@ -26,6 +26,7 @@ type routerCallbackWriter struct {
 type routerFailingWriter struct {
 	calls int
 	fail  int
+	buf   bytes.Buffer
 }
 
 func (w *routerFailingWriter) Write(p []byte) (int, error) {
@@ -33,18 +34,22 @@ func (w *routerFailingWriter) Write(p []byte) (int, error) {
 	if w.calls >= w.fail {
 		return 0, io.ErrClosedPipe
 	}
-	return len(p), nil
+	return w.buf.Write(p)
 }
 
 func TestRouterPrintStopsOnWriteError(t *testing.T) {
 	r := NewRouter()
 	mustAddRoute(r, http.MethodGet, "/first", http.NotFoundHandler())
 	mustAddRoute(r, http.MethodGet, "/second", http.NotFoundHandler())
-	for _, fail := range []int{1, 2} {
+	for _, fail := range []int{1, 2, 3} {
 		w := &routerFailingWriter{fail: fail}
 		r.Print(w)
 		if w.calls != fail {
 			t.Errorf("writer failed at call %d, got %d calls", fail, w.calls)
+		}
+		want := []string{"", "Registered Routes:\n", "Registered Routes:\nGET    /first\n"}[fail-1]
+		if got := w.buf.String(); got != want {
+			t.Errorf("writer failed at call %d: output=%q, want %q", fail, got, want)
 		}
 	}
 }

@@ -3,6 +3,7 @@ package healthhttp
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"runtime"
@@ -45,7 +46,8 @@ func (e mockError) Error() string {
 }
 
 type readinessManager struct {
-	status health.HealthStatus
+	status     health.HealthStatus
+	components map[string]*health.ComponentHealth
 }
 
 func (m readinessManager) RegisterComponent(health.ComponentChecker) error {
@@ -69,7 +71,7 @@ func (m readinessManager) GetComponentHealth(string) (*health.ComponentHealth, b
 }
 
 func (m readinessManager) GetAllHealth() map[string]*health.ComponentHealth {
-	return nil
+	return m.components
 }
 
 func (m readinessManager) GetOverallHealth() health.HealthStatus {
@@ -504,4 +506,97 @@ func TestHealthEncodingFailureKeepsUnhealthyStatusAndSafeBody(t *testing.T) {
 	if w.Code != http.StatusServiceUnavailable {
 		t.Fatalf("readiness status=%d", w.Code)
 	}
+}
+
+func TestAcceptanceHealthStateHTTPMapping(t *testing.T) {
+	for _, tt := range []struct {
+		state          health.HealthState
+		summary, ready int
+	}{
+		{health.StatusHealthy, 200, 200},
+		{health.StatusDegraded, 206, 200},
+		{health.StatusUnhealthy, 503, 503},
+		{"", 503, 503},
+		{"unknown", 503, 503},
+	} {
+		t.Run(string(tt.state), func(t *testing.T) {
+			manager := readinessManager{status: health.HealthStatus{Status: tt.state}}
+			req := httptest.NewRequest(http.MethodGet, "/", nil)
+			for _, tc := range []struct {
+				handler http.Handler
+				want    int
+			}{
+				{SummaryHandler(manager), tt.summary},
+				{DetailedHandler(manager), tt.summary},
+				{ReadinessHandlerWithManager(manager), tt.ready},
+			} {
+				w := httptest.NewRecorder()
+				tc.handler.ServeHTTP(w, req)
+				if w.Code != tc.want {
+					t.Fatalf("status=%d, want %d; body=%q", w.Code, tc.want, w.Body.String())
+				}
+			}
+		})
+	}
+}
+
+func TestAcceptanceAllComponentsEncodingAndWriteFailures(t *testing.T) {
+	manager := readinessManager{components: map[string]*health.ComponentHealth{
+		"db": {HealthStatus: health.HealthStatus{Status: health.StatusHealthy}},
+	}}
+	handler := AllComponentsHealthHandler(manager)
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req = req.WithContext(contract.WithRequestID(req.Context(), "request-id"))
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+	components := decodeHealthHTTPData[map[string]*health.ComponentHealth](t, w)
+	if w.Code != http.StatusOK || components["db"].Status != health.StatusHealthy {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body)
+	}
+
+	short := &componentWriteFailure{ResponseRecorder: httptest.NewRecorder()}
+	handler.ServeHTTP(short, req)
+	if short.headers != 1 || short.writes != 1 || short.Code != http.StatusOK {
+		t.Fatalf("post-commit failure: %+v", short)
+	}
+
+	for _, invalid := range []any{make(chan int), panickingHealthDetail{}} {
+		manager.components["db"].Details = map[string]any{"unencodable": invalid}
+		failure := &componentWriteFailure{ResponseRecorder: httptest.NewRecorder(), accept: true}
+		handler.ServeHTTP(failure, req)
+		var payload struct {
+			RequestID string `json:"request_id"`
+			Error     struct{ Code string }
+		}
+		if err := json.Unmarshal(failure.Body.Bytes(), &payload); err != nil ||
+			failure.headers != 1 || failure.writes != 1 || failure.Code != http.StatusInternalServerError ||
+			payload.RequestID != "request-id" || payload.Error.Code != contract.CodeInternalError {
+			t.Fatalf("status=%d headers=%d writes=%d body=%q error=%v", failure.Code, failure.headers, failure.writes, failure.Body, err)
+		}
+	}
+}
+
+type panickingHealthDetail struct{}
+
+func (panickingHealthDetail) MarshalJSON() ([]byte, error) {
+	panic("health detail encoder failed")
+}
+
+type componentWriteFailure struct {
+	*httptest.ResponseRecorder
+	headers, writes int
+	accept          bool
+}
+
+func (w *componentWriteFailure) WriteHeader(status int) {
+	w.headers++
+	w.ResponseRecorder.WriteHeader(status)
+}
+
+func (w *componentWriteFailure) Write(body []byte) (int, error) {
+	w.writes++
+	if w.accept {
+		return w.ResponseRecorder.Write(body)
+	}
+	return 0, io.ErrClosedPipe
 }

@@ -3,6 +3,7 @@ package plumego_test
 import (
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"testing"
 	"time"
 
@@ -170,5 +171,16 @@ func TestParamFromRootFacade(t *testing.T) {
 	app.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/users/42", nil))
 	if rec.Code != http.StatusNoContent || rec.Header().Get("X-Fixture-Param") != "42" {
 		t.Fatalf("status=%d headers=%v", rec.Code, rec.Header())
+	}
+}
+
+func TestFacadeConstructorsRetainCoreDependencyContract(t *testing.T) {
+	deps := plumego.AppDependencies{}
+	explicit := core.New(plumego.DefaultConfig(), deps)
+	apps := []*core.App{plumego.New(), plumego.NewWithConfig(plumego.DefaultConfig())}
+	for _, app := range apps {
+		if app.Logger() == nil || reflect.TypeOf(app.Logger()) != reflect.TypeOf(explicit.Logger()) {
+			t.Fatalf("default facade logger = %T, explicit = %T", app.Logger(), explicit.Logger())
+		}
 	}
 }

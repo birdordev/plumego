@@ -787,7 +787,11 @@ func (panickingTextField) MarshalText() ([]byte, error) {
 
 func TestJSONEncoderPanicIsIsolatedToTheField(t *testing.T) {
 	var out bytes.Buffer
-	logger := newTestJSONLogger(t, LoggerConfig{Output: &out})
+	writes := 0
+	logger := newTestJSONLogger(t, LoggerConfig{Output: diagnosticOutputFunc(func(p []byte) (int, error) {
+		writes++
+		return out.Write(p)
+	})})
 	logger.Info("event", Fields{
 		"good": "keep", "json": panickingJSONField{}, "nested": []any{panickingTextField{}, "keep"},
 	})
@@ -798,7 +802,7 @@ func TestJSONEncoderPanicIsIsolatedToTheField(t *testing.T) {
 	if err := json.Unmarshal(out.Bytes(), &entry); err != nil {
 		t.Fatal(err)
 	}
-	if entry.Good != "keep" || entry.JSON != "[unsupported]" || len(entry.Nested) != 2 ||
+	if writes != 1 || entry.Good != "keep" || entry.JSON != "[unsupported]" || len(entry.Nested) != 2 ||
 		entry.Nested[0] != "[unsupported]" || entry.Nested[1] != "keep" || strings.Contains(out.String(), "private encoder panic") {
 		t.Fatalf("unexpected log: %s", out.String())
 	}
@@ -855,5 +859,46 @@ func TestNewLoggerUsesFirstConfig(t *testing.T) {
 	l.Info("first config")
 	if got := decodeTestJSONLogEntry(t, first.Bytes()); got.Msg != "first config" || later.Len() != 0 {
 		t.Fatalf("first = %+v, later = %q", got, later.String())
+	}
+}
+
+func TestMixedInvalidFieldsAndTruncationKeepSiblingPrecision(t *testing.T) {
+	var out bytes.Buffer
+	logger := newTestJSONLogger(t, LoggerConfig{Output: &out})
+	wide := make(map[string]any, maxJSONFieldNodes*2)
+	for i := range maxJSONFieldNodes * 2 {
+		wide["\xff"+strconv.Itoa(i)] = "discarded"
+	}
+	logger.Info("fixture", Fields{
+		"invalid\xff": "discarded", "precision": uint64(1<<63) + 1,
+		"nested": map[string]any{"wide": wide},
+	})
+	var entry struct {
+		Precision uint64
+		Nested    map[string]map[string]string
+	}
+	if err := json.Unmarshal(out.Bytes(), &entry); err != nil || entry.Precision != uint64(1<<63)+1 ||
+		entry.Nested["wide"]["[truncated]"] != "[truncated]" || strings.Contains(out.String(), "discarded") {
+		t.Fatalf("json=%s err=%v", &out, err)
+	}
+}
+
+func BenchmarkNormalizeJSONFieldMapLimits(b *testing.B) {
+	for _, count := range []int{32, maxJSONFieldNodes * 2} {
+		b.Run(strconv.Itoa(count), func(b *testing.B) {
+			fields := make(map[string]any, count)
+			for i := range count {
+				key := strconv.Itoa(i)
+				if i%2 == 0 {
+					key += "\xff"
+				}
+				fields[key] = i
+			}
+			b.ReportAllocs()
+			for b.Loop() {
+				remaining := maxJSONFieldNodes
+				_ = normalizeJSONFieldMap(fields, 0, &remaining)
+			}
+		})
 	}
 }

@@ -97,6 +97,13 @@ func TestApplyConfigResetsPoolLimitsToZero(t *testing.T) {
 	if stats.Idle != 0 {
 		t.Fatalf("expected idle connections closed after MaxIdleConns reset, got %d", stats.Idle)
 	}
+	ApplyConfig(db, Config{MaxOpenConns: 1, MaxIdleConns: 3})
+	if got := db.Stats(); got.MaxOpenConnections != 1 || got.OpenConnections != 0 || conn.pingCount != 1 {
+		t.Fatalf("configuration implicitly created a connection: stats=%+v pings=%d", got, conn.pingCount)
+	}
+	if err := db.PingContext(t.Context()); err != nil || db.Stats().Idle != 1 {
+		t.Fatalf("ping after reconfiguration: idle=%d err=%v", db.Stats().Idle, err)
+	}
 }
 
 func TestOpenWithDoesNotPingDuringOpen(t *testing.T) {
@@ -113,8 +120,11 @@ func TestOpenWithDoesNotPingDuringOpen(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	defer db.Close()
-	if got := conn.pingCount; got != 0 {
-		t.Fatalf("expected open to avoid implicit ping, got %d ping calls", got)
+	if got := conn.pingCount; got != 0 || db.Stats().OpenConnections != 0 {
+		t.Fatalf("open implicitly used the driver: pings=%d stats=%+v", got, db.Stats())
+	}
+	if err := Ping(t.Context(), db); err != nil || conn.pingCount != 1 {
+		t.Fatalf("explicit ping calls=%d err=%v", conn.pingCount, err)
 	}
 }
 

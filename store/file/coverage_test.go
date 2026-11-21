@@ -104,6 +104,13 @@ func TestFileCloneCopiesMutableFields(t *testing.T) {
 	}
 
 	clone := file.Clone()
+	other := clone.Clone()
+	other.Metadata["owner"] = "other"
+	*other.LastAccessAt = accessed.Add(time.Hour)
+	*other.DeletedAt = deleted.Add(time.Hour)
+	if empty := (File{}).Clone(); empty.LastAccessAt != nil || empty.DeletedAt != nil {
+		t.Fatal("clone invented timestamp pointers")
+	}
 	file.Metadata["owner"] = "mutated"
 	*file.LastAccessAt = accessed.Add(2 * time.Hour)
 	*file.DeletedAt = deleted.Add(2 * time.Hour)

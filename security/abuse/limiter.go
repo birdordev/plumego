@@ -99,7 +99,10 @@ type Config struct {
 	// Shards is the number of lock shards for buckets
 	Shards int
 
-	// Now is a function that returns the current time (for testing)
+	// Now optionally supplies the clock for admission and request-driven
+	// cleanup. It is called outside limiter locks and may be called
+	// concurrently. With a custom clock, idle cleanup runs at most once per
+	// CleanupInterval of observed clock time during Allow.
 	Now func() time.Time
 }
 
@@ -194,11 +197,17 @@ type Limiter struct {
 	now             func() time.Time
 	stopCh          chan struct{}
 	stoppedCh       chan struct{}
-	startOnce       sync.Once
+	customCleanup   *requestCleanup
 	stopOnce        sync.Once
 	bucketCount     atomic.Int64
 	// Metrics for monitoring
 	metrics limiterMetricCounters
+}
+
+type requestCleanup struct {
+	mu        sync.Mutex
+	next      time.Time
+	scheduled bool
 }
 
 type limiterShard struct {
@@ -286,7 +295,11 @@ func NewLimiterWithConfig(config Config) (*Limiter, error) {
 		limiter.shards[i].buckets = make(map[string]*bucket)
 	}
 
-	limiter.startCleanup()
+	if config.Now == nil {
+		go limiter.cleanupLoop()
+	} else {
+		limiter.customCleanup = &requestCleanup{}
+	}
 
 	return limiter, nil
 }
@@ -348,6 +361,9 @@ func (l *Limiter) Allow(key string) Decision {
 	}
 
 	now := l.now()
+	if l.customCleanup != nil {
+		l.cleanupOnRequest(now)
+	}
 	shard := l.shardFor(key)
 
 	// --- critical section: update bucket state only ---
@@ -434,21 +450,42 @@ func (l *Limiter) AllowKey(key string) (Decision, error) {
 	return l.Allow(key), nil
 }
 
-// Stop stops the cleanup loop and waits for it to exit. Admission remains available.
+// Stop disables idle cleanup and waits for any active cleanup to finish.
+// Admission remains available.
 func (l *Limiter) Stop() {
 	if !l.ready() {
 		return
 	}
 	l.stopOnce.Do(func() {
 		close(l.stopCh)
+		if cleanup := l.customCleanup; cleanup != nil {
+			cleanup.mu.Lock()
+			close(l.stoppedCh)
+			cleanup.mu.Unlock()
+		}
 		<-l.stoppedCh
 	})
 }
 
-func (l *Limiter) startCleanup() {
-	l.startOnce.Do(func() {
-		go l.cleanupLoop()
-	})
+func (l *Limiter) cleanupOnRequest(now time.Time) {
+	cleanup := l.customCleanup
+	cleanup.mu.Lock()
+	defer cleanup.mu.Unlock()
+
+	select {
+	case <-l.stopCh:
+		return
+	default:
+	}
+	if !cleanup.scheduled {
+		cleanup.scheduled = true
+		cleanup.next = now.Add(l.cleanupInterval)
+		return
+	}
+	if !now.Before(cleanup.next) {
+		cleanup.next = now.Add(l.cleanupInterval)
+		l.cleanup(now)
+	}
 }
 
 func (l *Limiter) cleanupLoop() {
@@ -458,8 +495,8 @@ func (l *Limiter) cleanupLoop() {
 
 	for {
 		select {
-		case <-ticker.C:
-			l.cleanup(l.now())
+		case now := <-ticker.C:
+			l.cleanup(now)
 		case <-l.stopCh:
 			return
 		}

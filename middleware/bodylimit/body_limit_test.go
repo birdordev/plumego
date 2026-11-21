@@ -8,11 +8,13 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/birdordev/plumego/log"
+	"github.com/birdordev/plumego/middleware/timeout"
 )
 
 type panicLogger struct{}
@@ -158,7 +160,7 @@ func TestMiddlewareLoggerPanicDoesNotBlockLimitError(t *testing.T) {
 	}
 }
 
-func TestMiddlewareDownstreamWriteAfterOverrunReportsConsumed(t *testing.T) {
+func TestMiddlewareDownstreamWriteAfterOverrunReportsRejection(t *testing.T) {
 	mw := Middleware(Config{MaxBytes: 5})
 	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, err := io.ReadAll(r.Body)
@@ -166,11 +168,8 @@ func TestMiddlewareDownstreamWriteAfterOverrunReportsConsumed(t *testing.T) {
 			t.Fatal("expected body read to fail")
 		}
 		n, writeErr := w.Write([]byte("late handler body"))
-		if writeErr != nil {
-			t.Fatalf("post-overrun write error = %v, want nil", writeErr)
-		}
-		if n != len("late handler body") {
-			t.Fatalf("post-overrun write bytes = %d, want %d", n, len("late handler body"))
+		if n != 0 || !errors.Is(writeErr, errRequestTooLarge) {
+			t.Fatalf("post-overrun Write = %d, %v", n, writeErr)
 		}
 	}))
 
@@ -715,5 +714,92 @@ func TestBodyLimitPreservesUnderlyingErrorsAndClose(t *testing.T) {
 	handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusAccepted || body.closeCalls != 1 {
 		t.Fatalf("status=%d closes=%d", rec.Code, body.closeCalls)
+	}
+}
+
+func TestAcceptanceBodyLimitBlockedWritesAndRequestOwnership(t *testing.T) {
+	for _, status := range []int{0, http.StatusCreated, http.StatusBadRequest} {
+		t.Run(strconv.Itoa(status), func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader("ab"))
+			body := &trackedLimitBody{ReadCloser: req.Body}
+			req.Body = body
+			handler := Middleware(Config{MaxBytes: 1})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r == req || r.Body == body || r.Context() != req.Context() {
+					t.Fatal("downstream request did not isolate body replacement")
+				}
+				if status != 0 {
+					w.WriteHeader(status)
+				}
+				if _, err := io.ReadAll(r.Body); !errors.Is(err, errRequestTooLarge) {
+					t.Fatalf("read error = %v", err)
+				}
+				if err := r.Body.Close(); err != nil {
+					t.Fatal(err)
+				}
+				if status == http.StatusBadRequest {
+					if n, err := w.Write([]byte("previous error")); n != 14 || err != nil {
+						t.Fatalf("committed error write = %d, %v", n, err)
+					}
+					return
+				}
+				for _, payload := range [][]byte{nil, []byte("discarded")} {
+					if n, err := w.Write(payload); n != 0 || !errors.Is(err, errRequestTooLarge) {
+						t.Fatalf("blocked Write = %d, %v", n, err)
+					}
+				}
+				if err := http.NewResponseController(w).Flush(); !errors.Is(err, errRequestTooLarge) {
+					t.Fatalf("blocked Flush = %v", err)
+				}
+			}))
+			rec := httptest.NewRecorder()
+			handler.ServeHTTP(rec, req)
+			if req.Body != body || !body.closed {
+				t.Fatal("original body identity or close propagation was lost")
+			}
+			want := status
+			if want == 0 {
+				want = http.StatusRequestEntityTooLarge
+			}
+			if rec.Code != want || strings.Contains(rec.Body.String(), "discarded") {
+				t.Fatalf("status=%d, body=%q", rec.Code, rec.Body.String())
+			}
+		})
+	}
+}
+
+type trackedLimitBody struct {
+	io.ReadCloser
+	closed bool
+}
+
+func (b *trackedLimitBody) Close() error {
+	b.closed = true
+	return b.ReadCloser.Close()
+}
+
+func TestBodyLimitRequestOwnershipAcrossTimeoutOrders(t *testing.T) {
+	bodyLimit := Middleware(Config{MaxBytes: 1})
+	deadline := timeout.Middleware(timeout.Config{Timeout: time.Second})
+	for _, outerLimit := range []bool{true, false} {
+		req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader("ab"))
+		original := req.Body
+		var h http.Handler = http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+			if _, ok := r.Context().Deadline(); !ok || r.Body == original {
+				t.Error("downstream lost its deadline or body wrapper")
+			}
+			if _, err := io.ReadAll(r.Body); !errors.Is(err, errRequestTooLarge) {
+				t.Errorf("body limit read = %v", err)
+			}
+		})
+		if outerLimit {
+			h = bodyLimit(deadline(h))
+		} else {
+			h = deadline(bodyLimit(h))
+		}
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, req)
+		if w.Code != http.StatusRequestEntityTooLarge || req.Body != original {
+			t.Fatalf("limit outside timeout = %t: status=%d owned body=%t", outerLimit, w.Code, req.Body == original)
+		}
 	}
 }

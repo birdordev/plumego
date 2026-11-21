@@ -43,3 +43,24 @@ func TestNewFallsBackToDiscardLogger(t *testing.T) {
 		})
 	}
 }
+
+type optionalDiagnosticLogger struct {
+	log.StructuredLogger
+}
+
+func (l *optionalDiagnosticLogger) Warn(string, ...log.Fields) {
+	if l != nil {
+		panic("expected the nil-safe logger")
+	}
+}
+
+func TestConfiguredTypedNilLoggerRemainsCallerOwned(t *testing.T) {
+	var logger *optionalDiagnosticLogger
+	app := New(DefaultConfig(), AppDependencies{Logger: logger})
+	if got, ok := app.Logger().(*optionalDiagnosticLogger); !ok || got != nil {
+		t.Fatalf("configured logger = %#v", app.Logger())
+	}
+	if err := app.Prepare(); err != nil {
+		t.Fatal(err)
+	}
+}

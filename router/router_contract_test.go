@@ -1524,6 +1524,9 @@ func TestRoutingMatrixBeforeAndAfterFreeze(t *testing.T) {
 		{http.MethodHead, "/other/17", "any", "17", "", http.StatusOK},
 		{http.MethodPost, "/items/17", "", "", "GET, HEAD", http.StatusMethodNotAllowed},
 		{http.MethodHead, "/missing", "", "", "", http.StatusNotFound},
+		{http.MethodPost, "///items/17/", "", "", "GET, HEAD", http.StatusMethodNotAllowed},
+		{http.MethodHead, "///items/17/", "get", "17", "", http.StatusOK},
+		{http.MethodHead, "///missing/", "", "", "", http.StatusNotFound},
 	}
 	for _, stage := range []string{"mutable cold", "mutable warm", "frozen", "frozen warm"} {
 		if stage == "frozen" {
