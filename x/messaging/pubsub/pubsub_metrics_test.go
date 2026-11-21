@@ -129,3 +129,28 @@ func TestPubSubMetricsObserverConcurrentReplacement(t *testing.T) {
 	close(start)
 	wg.Wait()
 }
+
+func TestEnhancedMetricsSnapshotKeepsTopicAggregates(t *testing.T) {
+	m := NewEnhancedMetrics()
+	m.RecordQueueDepth("jobs", 2)
+	m.RecordQueueDepth("jobs", 8)
+	m.RecordMessageSize("jobs", 10)
+	m.RecordMessageSize("jobs", 30)
+	m.RecordQueueDepth("other", 4)
+
+	snapshot := m.Snapshot()
+	jobs := snapshot.Topics["jobs"]
+	other, ok := snapshot.Topics["other"]
+	if jobs.QueueDepthAvg != 5 || jobs.QueueDepthMax != 8 || jobs.MessageSizeAvg != 20 || jobs.MessageSizeMax != 30 {
+		t.Errorf("jobs aggregates = %+v", jobs)
+	}
+	if !ok || other.QueueDepthAvg != 4 || other.MessageSizeAvg != 0 || other.MessageSizeMax != 0 {
+		t.Errorf("other aggregates = %+v, present = %t", other, ok)
+	}
+	delete(snapshot.Topics, "jobs")
+	snapshot.Topics["other"] = EnhancedTopicMetrics{}
+	again := m.Snapshot()
+	if again.Topics["jobs"] != jobs || again.Topics["other"] != other {
+		t.Errorf("mutating snapshot changed the next snapshot: %+v", again)
+	}
+}

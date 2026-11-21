@@ -5,6 +5,7 @@ import (
 	"errors"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/birdordev/plumego/metrics"
@@ -639,4 +640,38 @@ func (c *testMetricsObserver) ObservePubSub(ctx context.Context, operation, topi
 	if c.onObservePubSub != nil {
 		c.onObservePubSub(ctx, operation, topic, duration, err)
 	}
+}
+
+func TestDeduplicatorCheckDoesNotRefreshWindow(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		const window = 10 * time.Second
+		d := NewDeduplicator(DeduplicatorConfig{Window: window, CleanupInterval: time.Minute})
+		defer d.Close()
+
+		d.Mark("")
+		if d.Check("") || d.Check("id") || d.Size() != 0 {
+			t.Fatal("empty or never marked ID was tracked")
+		}
+		d.Mark("id")
+		time.Sleep(window / 2)
+		if !d.Check("id") {
+			t.Fatal("ID expired before its window elapsed")
+		}
+		time.Sleep(window / 2)
+		if d.Check("id") {
+			t.Error("Check extended the original window")
+		}
+
+		d.Mark("id")
+		time.Sleep(window / 2)
+		d.Mark("id")
+		time.Sleep(window / 2)
+		if !d.Check("id") {
+			t.Error("Mark did not refresh the window")
+		}
+		time.Sleep(window / 2)
+		if d.Check("id") {
+			t.Error("ID did not expire after the refreshed window")
+		}
+	})
 }

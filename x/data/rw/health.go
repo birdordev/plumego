@@ -13,6 +13,7 @@ type HealthChecker struct {
 	// Track consecutive failures/successes for each replica
 	failures  map[int]int
 	successes map[int]int
+	health    map[int]bool
 	mu        sync.RWMutex
 
 	lifecycleMu sync.Mutex
@@ -31,6 +32,7 @@ func NewHealthChecker(config HealthCheckConfig) *HealthChecker {
 		config:    config,
 		failures:  make(map[int]int),
 		successes: make(map[int]int),
+		health:    make(map[int]bool),
 	}
 }
 
@@ -102,40 +104,40 @@ func (hc *HealthChecker) checkAll(ctx context.Context, cluster *Cluster) {
 		// before calling cluster.markReplicaHealth to avoid lock-order inversion
 		// (hc.mu → cluster.mu would deadlock if another goroutine holds cluster.mu
 		// and tries to acquire hc.mu).
-		var shouldMark bool
-		var markHealthy bool
-
+		healthy := currentHealth[i]
 		hc.mu.Lock()
 		if err != nil {
 			hc.failures[i]++
 			hc.successes[i] = 0
-			if currentHealth[i] && hc.failures[i] >= hc.config.FailureThreshold {
-				shouldMark = true
-				markHealthy = false
+			if hc.failures[i] >= hc.config.FailureThreshold {
+				healthy = false
 			}
 		} else {
 			hc.successes[i]++
 			hc.failures[i] = 0
-			if !currentHealth[i] && hc.successes[i] >= hc.config.RecoveryThreshold {
-				shouldMark = true
-				markHealthy = true
+			if hc.successes[i] >= hc.config.RecoveryThreshold {
+				healthy = true
 			}
 		}
+		hc.health[i] = healthy
 		hc.mu.Unlock()
 
-		if shouldMark {
-			cluster.markReplicaHealth(i, markHealthy)
+		if healthy != currentHealth[i] {
+			cluster.markReplicaHealth(i, healthy)
 		}
 	}
 }
 
-// IsHealthy returns whether a replica is currently healthy
+// IsHealthy reports the last replica state after applying the failure and
+// recovery thresholds. Reset clears the observed states.
 func (hc *HealthChecker) IsHealthy(idx int) bool {
 	hc.mu.RLock()
 	defer hc.mu.RUnlock()
 
-	failures := hc.failures[idx]
-	return failures < hc.config.FailureThreshold
+	if healthy, observed := hc.health[idx]; observed {
+		return healthy
+	}
+	return 0 < hc.config.FailureThreshold
 }
 
 // GetFailureCount returns the current failure count for a replica
@@ -159,4 +161,5 @@ func (hc *HealthChecker) Reset() {
 
 	hc.failures = make(map[int]int)
 	hc.successes = make(map[int]int)
+	hc.health = make(map[int]bool)
 }

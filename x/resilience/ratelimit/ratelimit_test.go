@@ -302,3 +302,33 @@ func TestTokenBucketPreservesWholeTokensAtLargeBurst(t *testing.T) {
 		}
 	})
 }
+
+func TestKeyedBucketsConcurrentFirstUseSharesBurst(t *testing.T) {
+	const burst, workers = 3, 24
+	keyed := ratelimit.NewKeyed(math.NaN(), burst)
+	start := make(chan struct{})
+	results := make(chan bool, workers)
+	var ready, done sync.WaitGroup
+	ready.Add(workers)
+	for range workers {
+		done.Go(func() {
+			ready.Done()
+			<-start
+			results <- keyed.Allow("new-key")
+		})
+	}
+	ready.Wait()
+	close(start)
+	done.Wait()
+	close(results)
+
+	allowed := 0
+	for granted := range results {
+		if granted {
+			allowed++
+		}
+	}
+	if allowed != burst || keyed.Len() != 1 {
+		t.Errorf("allowed=%d buckets=%d; want %d allowed and one bucket", allowed, keyed.Len(), burst)
+	}
+}

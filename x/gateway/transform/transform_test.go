@@ -491,3 +491,110 @@ func TestRequestTransformFailureUsesGatewayTransformCode(t *testing.T) {
 		t.Fatalf("expected code %q, got %q", contract.CodeValidationError, payload.Error.Code)
 	}
 }
+
+func TestRenameJSONFieldsPreserveNumericValues(t *testing.T) {
+	for _, tc := range []struct {
+		name, input, want string
+	}{
+		{"large integer", `{"before":{"sequence":9007199254740993}}`, `{"after":{"sequence":9007199254740993}}`},
+		{"replace destination", `{"after":false,"before":"value"}`, `{"after":"value"}`},
+		{"array", `[ 1, 2 ]`, `[ 1, 2 ]`},
+		{"invalid JSON", `{"before":`, `{"before":`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, "/", bytes.NewBufferString(tc.input))
+			req.Header.Set("Content-Type", "application/json")
+			if err := RenameJSONRequestField("before", "after")(req); err != nil {
+				t.Fatal(err)
+			}
+			defer req.Body.Close()
+			if got, err := io.ReadAll(req.Body); err != nil || string(got) != tc.want {
+				t.Errorf("request body = %q, %v; want %q", got, err, tc.want)
+			}
+
+			resp := &http.Response{
+				Header: req.Header.Clone(),
+				Body:   io.NopCloser(bytes.NewBufferString(tc.input)),
+			}
+			if err := RenameJSONResponseField("before", "after")(resp); err != nil {
+				t.Fatal(err)
+			}
+			defer resp.Body.Close()
+			if got, err := io.ReadAll(resp.Body); err != nil || string(got) != tc.want {
+				t.Errorf("response body = %q, %v; want %q", got, err, tc.want)
+			}
+		})
+	}
+}
+
+func TestTransformedRequestGetBodyMatchesPrimary(t *testing.T) {
+	const input = `{"old":"value"}`
+	for _, tc := range []struct {
+		name, contentType, want string
+		replayable              bool
+	}{
+		{"replayable", "application/json", `{"renamed":"value"}`, true},
+		{"one-shot", "application/json", `{"renamed":"value"}`, false},
+		{"skipped", "text/plain", input, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			req, err := http.NewRequest(http.MethodPost, "/", bytes.NewBufferString(input))
+			if err != nil {
+				t.Fatal(err)
+			}
+			req.Header.Set("Content-Type", tc.contentType)
+			req.Header.Set("Content-Length", strconv.Itoa(len(input)))
+			if !tc.replayable {
+				req.GetBody = nil
+			}
+
+			if err := RenameJSONRequestField("old", "renamed")(req); err != nil {
+				t.Fatal(err)
+			}
+			assertBody := func(body io.ReadCloser) {
+				t.Helper()
+				defer body.Close()
+				if got, err := io.ReadAll(body); err != nil || string(got) != tc.want {
+					t.Errorf("body = %q, %v; want %q", got, err, tc.want)
+				}
+			}
+			assertBody(req.Body)
+			if req.ContentLength != int64(len(tc.want)) || req.Header.Get("Content-Length") != strconv.Itoa(len(tc.want)) {
+				t.Errorf("lengths = %d, %q; want %d", req.ContentLength, req.Header.Get("Content-Length"), len(tc.want))
+			}
+			if (req.GetBody != nil) != tc.replayable {
+				t.Fatalf("replayable = %t; want %t", req.GetBody != nil, tc.replayable)
+			}
+			if tc.replayable {
+				for range 2 {
+					replay, err := req.GetBody()
+					if err != nil {
+						t.Fatal(err)
+					}
+					assertBody(replay)
+				}
+			}
+		})
+	}
+}
+
+func TestMiddlewareWritesTransformedResponseStatus(t *testing.T) {
+	calls := 0
+	handler := Middleware(Config{
+		ResponseTransformers: []ResponseTransformer{SetResponseStatus(http.StatusAccepted)},
+	})(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls++
+		w.Header().Set("X-Fixture", "kept")
+		w.WriteHeader(http.StatusCreated)
+		if _, err := io.WriteString(w, "fixture body"); err != nil {
+			t.Fatal(err)
+		}
+	}))
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/", nil))
+	resp := w.Result()
+	defer resp.Body.Close()
+	if calls != 1 || resp.StatusCode != http.StatusAccepted || resp.Header.Get("X-Fixture") != "kept" || w.Body.String() != "fixture body" {
+		t.Errorf("calls=%d status=%d header=%q body=%q", calls, resp.StatusCode, resp.Header.Get("X-Fixture"), w.Body.String())
+	}
+}

@@ -1,11 +1,17 @@
 package streaming
 
 import (
+	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http/httptest"
+	"strings"
 	"testing"
+	"testing/synctest"
 
 	"github.com/birdordev/plumego/x/ai/orchestration"
+	"github.com/birdordev/plumego/x/ai/provider"
 	"github.com/birdordev/plumego/x/ai/sse"
 )
 
@@ -336,6 +342,82 @@ func TestConcurrentStreamingParallelStep(t *testing.T) {
 
 		if completedCount != agentCount {
 			t.Errorf("expected %d completed agents, got %d", agentCount, completedCount)
+		}
+	})
+}
+
+type waitingProvider struct {
+	mockProvider
+	release <-chan struct{}
+}
+
+func (p *waitingProvider) Complete(ctx context.Context, req *provider.CompletionRequest) (*provider.CompletionResponse, error) {
+	<-p.release
+	return p.mockProvider.Complete(ctx, req)
+}
+
+func TestParallelProgressTracksCompletedAgents(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		recorder := httptest.NewRecorder()
+		stream, err := sse.NewStream(t.Context(), recorder)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer stream.Close()
+		manager := NewStreamManager()
+		if err := manager.Register("parallel", stream); err != nil {
+			t.Fatal(err)
+		}
+
+		release := make(chan struct{})
+		wantErr := errors.New("slow agent failed")
+		step := NewStreamingParallelStep([]*orchestration.Agent{
+			{Name: "slow", Provider: &waitingProvider{mockProvider: mockProvider{err: wantErr}, release: release}},
+			{Name: "fast", Provider: &mockProvider{output: "done"}},
+		}, "parallel", "step", 0, manager, nil)
+
+		done := make(chan error, 1)
+		go func() {
+			_, err := step.Execute(t.Context(), &orchestration.Workflow{Name: "test"})
+			done <- err
+		}()
+		synctest.Wait()
+		close(release)
+		if err := <-done; !errors.Is(err, wantErr) {
+			t.Fatalf("Execute error = %v; want %v", err, wantErr)
+		}
+
+		completed := 0
+		started := 0
+		for line := range strings.SplitSeq(recorder.Body.String(), "\n") {
+			data, ok := strings.CutPrefix(line, "data: ")
+			if !ok {
+				continue
+			}
+			var update ProgressUpdate
+			if err := json.Unmarshal([]byte(data), &update); err != nil {
+				t.Fatal(err)
+			}
+			if update.StepName == "step" {
+				continue
+			}
+			if update.Status == StatusStarted {
+				started++
+			} else {
+				completed++
+				if completed == 1 && (update.StepName != "fast" || update.ParallelIndex != 1 || update.Status != StatusCompleted) {
+					t.Errorf("first terminal event = %+v", update)
+				}
+				if completed == 2 && (update.StepName != "slow" || update.ParallelIndex != 0 || update.Status != StatusFailed || update.Error != wantErr.Error()) {
+					t.Errorf("second terminal event = %+v", update)
+				}
+			}
+			if want := float64(completed) / 2; update.Progress != want {
+				t.Errorf("%s %s progress = %v; want %v", update.StepName, update.Status, update.Progress, want)
+			}
+		}
+		if started != 2 || completed != 2 {
+			t.Errorf("got %d started, %d terminal events; want two of each", started, completed)
 		}
 	})
 }

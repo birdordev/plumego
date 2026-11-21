@@ -624,3 +624,34 @@ func TestNewMountFSPropagatesVariantScanFailure(t *testing.T) {
 		t.Errorf("NewMountFS = %v, %v", mount, err)
 	}
 }
+
+type snapshotRecordingRegistrar struct {
+	recordingRegistrar
+	snapshots int
+}
+
+func (r *snapshotRecordingRegistrar) Routes() []router.RouteInfo {
+	r.snapshots++
+	return nil
+}
+
+func TestMountRegisterRejectsIncompleteMount(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		mount   *Mount
+		message string
+	}{
+		{"nil mount", nil, "mount cannot be nil"},
+		{"nil handler", &Mount{}, "mount handler cannot be nil"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := &snapshotRecordingRegistrar{}
+			if err := tc.mount.Register(r); err == nil || err.Error() != tc.message {
+				t.Errorf("Register = %v; want %q", err, tc.message)
+			}
+			if r.snapshots != 0 || len(r.routes) != 0 {
+				t.Errorf("preflight calls = %d, registered routes = %v", r.snapshots, r.routes)
+			}
+		})
+	}
+}

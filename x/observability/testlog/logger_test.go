@@ -190,3 +190,27 @@ func TestClearReleasesCapturedEntries(t *testing.T) {
 		t.Errorf("entries after reuse = %+v", entries)
 	}
 }
+
+func TestScopedLoggerCapturesContextError(t *testing.T) {
+	root := New()
+	child := root.With("scope", "child").WithFields(Fields{"region": "original"})
+	ctx := contract.WithRequestID(t.Context(), "req_fixture")
+	fields := Fields{"region": "override", "request_id": "fallback"}
+	child.ErrorCtx(ctx, "operation failed", fields)
+	fields["region"] = "changed"
+	root.Info("parent entry")
+
+	entries := root.Entries()
+	if len(entries) != 2 {
+		t.Fatalf("root entries = %v", entries)
+	}
+	entry := entries[0]
+	if entry.Level != ERROR || entry.Message != "operation failed" ||
+		entry.Fields["scope"] != "child" || entry.Fields["region"] != "override" ||
+		entry.Fields["request_id"] != "req_fixture" {
+		t.Errorf("child error = %+v", entry)
+	}
+	if len(entries[1].Fields) != 0 {
+		t.Errorf("root entry inherited child fields: %+v", entries[1])
+	}
+}

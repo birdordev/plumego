@@ -251,8 +251,27 @@ func decodeJSONObject(body []byte) (map[string]any, bool) {
 	return data, true
 }
 
+func renameJSONField(body []byte, from, to string) ([]byte, error) {
+	var data map[string]json.RawMessage
+	if err := json.Unmarshal(body, &data); err != nil {
+		return nil, nil
+	}
+
+	if value, exists := data[from]; exists {
+		data[to] = value
+		delete(data, from)
+	}
+	return json.Marshal(data)
+}
+
 func setRequestBody(r *http.Request, body []byte) {
 	r.Body = io.NopCloser(bytes.NewReader(body))
+	// Keep retries consistent when the caller supplied a replayable body.
+	if r.GetBody != nil {
+		r.GetBody = func() (io.ReadCloser, error) {
+			return io.NopCloser(bytes.NewReader(body)), nil
+		}
+	}
 	r.ContentLength = int64(len(body))
 	r.Header.Set("Content-Length", strconv.Itoa(len(body)))
 }
@@ -263,7 +282,7 @@ func setResponseBody(r *http.Response, body []byte) {
 	r.Header.Set("Content-Length", strconv.Itoa(len(body)))
 }
 
-// RenameJSONRequestField renames a JSON field in request body
+// RenameJSONRequestField renames a JSON field in the request body without converting field values.
 func RenameJSONRequestField(from, to string) RequestTransformer {
 	return func(r *http.Request) error {
 		// Only process JSON content
@@ -278,27 +297,15 @@ func RenameJSONRequestField(from, to string) RequestTransformer {
 		}
 		_ = r.Body.Close()
 
-		// Parse JSON
-		data, ok := decodeJSONObject(body)
-		if !ok {
-			// Not JSON object, restore body
+		newBody, err := renameJSONField(body, from, to)
+		if err != nil {
+			return err
+		}
+		if newBody == nil {
 			r.Body = io.NopCloser(bytes.NewReader(body))
 			return nil
 		}
 
-		// Rename field
-		if val, exists := data[from]; exists {
-			data[to] = val
-			delete(data, from)
-		}
-
-		// Marshal back to JSON
-		newBody, err := json.Marshal(data)
-		if err != nil {
-			return err
-		}
-
-		// Update request
 		setRequestBody(r, newBody)
 
 		return nil
@@ -371,7 +378,7 @@ func RenameResponseHeader(from, to string) ResponseTransformer {
 	}
 }
 
-// RenameJSONResponseField renames a JSON field in response body
+// RenameJSONResponseField renames a JSON field in the response body without converting field values.
 func RenameJSONResponseField(from, to string) ResponseTransformer {
 	return func(r *http.Response) error {
 		if !isJSONContentType(r.Header.Get("Content-Type")) {
@@ -384,21 +391,13 @@ func RenameJSONResponseField(from, to string) ResponseTransformer {
 		}
 		_ = r.Body.Close()
 
-		data, ok := decodeJSONObject(body)
-		if !ok {
-			r.Body = io.NopCloser(bytes.NewReader(body))
-			return nil
-		}
-
-		// Rename field
-		if val, exists := data[from]; exists {
-			data[to] = val
-			delete(data, from)
-		}
-
-		newBody, err := json.Marshal(data)
+		newBody, err := renameJSONField(body, from, to)
 		if err != nil {
 			return err
+		}
+		if newBody == nil {
+			r.Body = io.NopCloser(bytes.NewReader(body))
+			return nil
 		}
 
 		setResponseBody(r, newBody)

@@ -235,16 +235,16 @@ func TestOpenAIProvider_ImplementsProvider(t *testing.T) {
 	var _ Provider = (*OpenAIProvider)(nil)
 }
 
-type claudeStreamTransport func(*http.Request) (*http.Response, error)
+type adapterStreamTransport func(*http.Request) (*http.Response, error)
 
-func (f claudeStreamTransport) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+func (f adapterStreamTransport) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
 
-type claudeStreamBody struct {
+type adapterStreamBody struct {
 	io.Reader
 	closes int
 }
 
-func (b *claudeStreamBody) Close() error { b.closes++; return nil }
+func (b *adapterStreamBody) Close() error { b.closes++; return nil }
 
 func TestClaudeCompleteStreamOwnsResponseLifecycle(t *testing.T) {
 	payload := "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"fixture\"}}\n\n"
@@ -257,9 +257,9 @@ func TestClaudeCompleteStreamOwnsResponseLifecycle(t *testing.T) {
 		{"response error", http.StatusServiceUnavailable, "fixture unavailable"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			body := &claudeStreamBody{Reader: strings.NewReader(tc.content)}
+			body := &adapterStreamBody{Reader: strings.NewReader(tc.content)}
 			calls := 0
-			client := &http.Client{Transport: claudeStreamTransport(func(r *http.Request) (*http.Response, error) {
+			client := &http.Client{Transport: adapterStreamTransport(func(r *http.Request) (*http.Response, error) {
 				calls++
 				var data struct{ Stream bool }
 				if err := json.NewDecoder(r.Body).Decode(&data); err != nil || !data.Stream || r.Method != http.MethodPost {
@@ -290,6 +290,45 @@ func TestClaudeCompleteStreamOwnsResponseLifecycle(t *testing.T) {
 			}
 			if err := stream.Close(); err != nil || body.closes != 1 || calls != 1 {
 				t.Errorf("Close=%v, closes=%d calls=%d", err, body.closes, calls)
+			}
+		})
+	}
+}
+
+func TestOpenAICompleteStreamOwnsResponse(t *testing.T) {
+	for _, status := range []int{http.StatusOK, http.StatusServiceUnavailable} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			payload := "data: {\"choices\":[{\"delta\":{\"content\":\"fixture\"}}]}\n\ndata: [DONE]\n\ndata: ignored\n"
+			body := &adapterStreamBody{Reader: strings.NewReader(payload)}
+			client := &http.Client{Transport: adapterStreamTransport(func(r *http.Request) (*http.Response, error) {
+				defer r.Body.Close()
+				var request struct{ Stream bool }
+				if err := json.NewDecoder(r.Body).Decode(&request); err != nil || !request.Stream {
+					t.Errorf("stream request = %+v, %v", request, err)
+				}
+				return &http.Response{StatusCode: status, Body: body}, nil
+			})}
+			adapter := NewOpenAIProvider("", WithOpenAIHTTPClient(client))
+			stream, err := adapter.CompleteStream(t.Context(), &CompletionRequest{
+				Model: "fixture", Messages: []Message{NewTextMessage(RoleUser, "prompt")},
+			})
+			if status != http.StatusOK {
+				if stream != nil || err == nil || body.closes != 1 {
+					t.Fatalf("stream = %v, err = %v, closes = %d", stream, err, body.closes)
+				}
+				return
+			}
+			if err != nil || stream == nil {
+				t.Fatalf("CompleteStream = %v, %v", stream, err)
+			}
+			if chunk, err := stream.Next(); err != nil || chunk == nil || chunk.Delta == nil || chunk.Delta.Text != "fixture" {
+				t.Errorf("Next = %+v, %v", chunk, err)
+			}
+			if _, err := stream.Next(); !errors.Is(err, io.EOF) || body.closes != 0 {
+				t.Errorf("terminal event = %v, closes = %d; want EOF and open body", err, body.closes)
+			}
+			if err := stream.Close(); err != nil || body.closes != 1 {
+				t.Errorf("Close = %v, closes = %d", err, body.closes)
 			}
 		})
 	}

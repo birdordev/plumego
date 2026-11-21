@@ -29,25 +29,6 @@ func TestNewHealthChecker(t *testing.T) {
 	}
 }
 
-func TestHealthCheckerIsHealthy(t *testing.T) {
-	config := DefaultHealthCheckConfig()
-	hc := NewHealthChecker(config)
-
-	// Initially healthy (no failures)
-	if !hc.IsHealthy(0) {
-		t.Error("expected replica 0 to be healthy initially")
-	}
-
-	// Mark as failed
-	hc.mu.Lock()
-	hc.failures[0] = config.FailureThreshold
-	hc.mu.Unlock()
-
-	if hc.IsHealthy(0) {
-		t.Error("expected replica 0 to be unhealthy after failures")
-	}
-}
-
 func TestHealthCheckerGetCounts(t *testing.T) {
 	config := DefaultHealthCheckConfig()
 	hc := NewHealthChecker(config)
@@ -481,4 +462,53 @@ func TestHealthCheckerIntervalConfiguration(t *testing.T) {
 	if err := db.PingContext(t.Context()); err != nil {
 		t.Fatalf("caller-owned database: %v", err)
 	}
+}
+
+func TestCheckerHealthTracksRecoveryThreshold(t *testing.T) {
+	replica := &stubConn{}
+	cluster, err := New(Config{
+		Primary:  newStubDB(),
+		Replicas: []*sql.DB{sql.OpenDB(&stubConnector{conn: replica})},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cluster.Close()
+
+	checker := NewHealthChecker(HealthCheckConfig{
+		FailureThreshold: 2, RecoveryThreshold: 2, Timeout: time.Second,
+	})
+	assertHealth := func(stage string, want bool) {
+		t.Helper()
+		if routed, observed := cluster.ReplicaHealth()[0], checker.IsHealthy(0); routed != want || observed != want {
+			t.Errorf("%s: cluster=%t checker=%t; want both %t", stage, routed, observed, want)
+		}
+	}
+
+	assertHealth("before any check", true)
+	replica.pingErr = errors.New("replica unavailable")
+	checker.checkAll(t.Context(), cluster)
+	assertHealth("first failure", true)
+	checker.checkAll(t.Context(), cluster)
+	assertHealth("second failure", false)
+
+	replica.pingErr = nil
+	checker.checkAll(t.Context(), cluster)
+	assertHealth("first success", false)
+	checker.checkAll(t.Context(), cluster)
+	assertHealth("second success", true)
+
+	replica.pingErr = errors.New("replica unavailable")
+	checker.checkAll(t.Context(), cluster)
+	checker.checkAll(t.Context(), cluster)
+	assertHealth("failed again", false)
+	checker.Reset()
+	if !checker.IsHealthy(0) || checker.GetFailureCount(0) != 0 || checker.GetSuccessCount(0) != 0 {
+		t.Fatal("Reset did not restore the checker's initial state")
+	}
+	if cluster.ReplicaHealth()[0] {
+		t.Fatal("Reset changed the cluster routing state")
+	}
+	checker.checkAll(t.Context(), cluster)
+	assertHealth("first check after reset", false)
 }

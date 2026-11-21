@@ -683,3 +683,32 @@ func TestListTenantsReportsInvalidConfigAndClosesRows(t *testing.T) {
 		t.Errorf("next ListTenants=%+v, %v, closed=%d", items, err, conn.rowsClosed)
 	}
 }
+
+func TestGetTenantConfigDoesNotCacheReadFailures(t *testing.T) {
+	sentinel := errors.New("tenant query failed")
+	conn := &snapshotConnector{deleted: true, nextErr: sentinel}
+	db := sql.OpenDB(conn)
+	defer db.Close()
+	manager := NewDBTenantConfigManager(db, WithTenantCache(2, time.Minute))
+	ctx := t.Context()
+	const tenantID = "sample"
+
+	if _, err := manager.GetTenantConfig(ctx, tenantID); !errors.Is(err, sentinel) {
+		t.Errorf("query error = %v; want %v", err, sentinel)
+	}
+	conn.deleted, conn.nextErr, conn.metadata = false, nil, "{"
+	var syntax *json.SyntaxError
+	if _, err := manager.GetTenantConfig(ctx, tenantID); !errors.As(err, &syntax) {
+		t.Errorf("decode error = %v; want *json.SyntaxError", err)
+	}
+	conn.metadata = `{"region":"valid"}`
+	for range 2 {
+		cfg, err := manager.GetTenantConfig(ctx, tenantID)
+		if err != nil || cfg.Metadata["region"] != "valid" {
+			t.Fatalf("retry = %+v, %v", cfg, err)
+		}
+	}
+	if conn.queries != 3 || conn.rowsClosed != 3 {
+		t.Errorf("queries=%d rows closed=%d; want three each", conn.queries, conn.rowsClosed)
+	}
+}

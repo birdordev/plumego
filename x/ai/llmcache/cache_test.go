@@ -725,3 +725,75 @@ func BenchmarkBuildCacheKey(b *testing.B) {
 		BuildCacheKey(request)
 	}
 }
+
+type metadataTestProvider struct {
+	mockProvider
+	listModels  func(context.Context) ([]provider.Model, error)
+	getModel    func(context.Context, string) (*provider.Model, error)
+	countTokens func(string) (int, error)
+}
+
+func (p *metadataTestProvider) ListModels(ctx context.Context) ([]provider.Model, error) {
+	return p.listModels(ctx)
+}
+
+func (p *metadataTestProvider) GetModel(ctx context.Context, id string) (*provider.Model, error) {
+	return p.getModel(ctx, id)
+}
+
+func (p *metadataTestProvider) CountTokens(text string) (int, error) {
+	return p.countTokens(text)
+}
+
+func TestCachedProviderDelegatesMetadata(t *testing.T) {
+	for _, unavailable := range []bool{false, true} {
+		name := "success"
+		var wantErr error
+		if unavailable {
+			name = "failure"
+			wantErr = errors.New("model metadata unavailable")
+		}
+		t.Run(name, func(t *testing.T) {
+			ctx := t.Context()
+			model := &provider.Model{ID: "fixture"}
+			var lists, gets, counts int
+			upstream := &metadataTestProvider{
+				listModels: func(got context.Context) ([]provider.Model, error) {
+					lists++
+					if got != ctx {
+						t.Error("ListModels lost the caller context")
+					}
+					return []provider.Model{*model}, wantErr
+				},
+				getModel: func(got context.Context, id string) (*provider.Model, error) {
+					gets++
+					if got != ctx || id != model.ID {
+						t.Errorf("GetModel: context match=%t, id=%q", got == ctx, id)
+					}
+					return model, wantErr
+				},
+				countTokens: func(text string) (int, error) {
+					counts++
+					if text != "token fixture" {
+						t.Errorf("CountTokens text = %q", text)
+					}
+					return 7, wantErr
+				},
+			}
+			cache := NewMemoryCache(time.Hour, 1)
+			p := NewCachingProvider(upstream, cache)
+			if got, err := p.ListModels(ctx); len(got) != 1 || got[0].ID != model.ID || !errors.Is(err, wantErr) {
+				t.Errorf("ListModels = %v, %v", got, err)
+			}
+			if got, err := p.GetModel(ctx, model.ID); got != model || !errors.Is(err, wantErr) {
+				t.Errorf("GetModel = %v, %v", got, err)
+			}
+			if got, err := p.CountTokens("token fixture"); got != 7 || !errors.Is(err, wantErr) {
+				t.Errorf("CountTokens = %d, %v", got, err)
+			}
+			if lists != 1 || gets != 1 || counts != 1 || cache.Stats() != (CacheStats{}) {
+				t.Errorf("calls = %d/%d/%d, stats = %+v", lists, gets, counts, cache.Stats())
+			}
+		})
+	}
+}

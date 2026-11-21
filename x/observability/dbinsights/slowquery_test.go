@@ -2,7 +2,11 @@ package dbinsights
 
 import (
 	"context"
+	"database/sql"
+	"database/sql/driver"
 	"errors"
+	"io"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -266,5 +270,58 @@ func TestSlowQueryDBExecPreservesDriverFailure(t *testing.T) {
 				t.Errorf("recorded = %+v, want matching exec result", recorded)
 			}
 		})
+	}
+}
+
+type observedRowConn struct {
+	mockDB
+	query func(context.Context, string, []driver.NamedValue) (driver.Rows, error)
+}
+
+func (c *observedRowConn) QueryContext(ctx context.Context, query string, args []driver.NamedValue) (driver.Rows, error) {
+	return c.query(ctx, query, args)
+}
+
+type observedRow struct {
+	read bool
+}
+
+func (*observedRow) Columns() []string { return []string{"value"} }
+func (*observedRow) Close() error      { return nil }
+func (r *observedRow) Next(dest []driver.Value) error {
+	if r.read {
+		return io.EOF
+	}
+	r.read = true
+	dest[0] = "fixture row"
+	return nil
+}
+
+func TestSlowQueryDBObservesQueryRow(t *testing.T) {
+	ctx := t.Context()
+	const query = "SELECT value FROM items WHERE id = ?"
+	calls := 0
+	conn := &observedRowConn{query: func(gotCtx context.Context, gotQuery string, args []driver.NamedValue) (driver.Rows, error) {
+		calls++
+		if gotCtx != ctx || gotQuery != query || !slices.Equal(args, []driver.NamedValue{{Ordinal: 1, Value: "item-1"}}) {
+			t.Errorf("context match=%t query=%q args=%v", gotCtx == ctx, gotQuery, args)
+		}
+		return &observedRow{}, nil
+	}}
+	db := sql.OpenDB(&mockConnector{conn: conn})
+	defer db.Close()
+	wrapper := NewSlowQueryDB(NewInstrumentedDB(db, testmetrics.NewMockCollector(), "fixture"), "fixture", WithThreshold(0))
+
+	row := wrapper.QueryRowContext(ctx, query, "item-1")
+	records := wrapper.GetDetector().GetSlowQueries()
+	if len(records) != 1 || records[0].Query != query || calls != 1 {
+		t.Errorf("before Scan: calls=%d records=%+v", calls, records)
+	}
+	var value string
+	if err := row.Scan(&value); err != nil || value != "fixture row" {
+		t.Errorf("Scan = %q, %v", value, err)
+	}
+	if got := wrapper.GetDetector().GetTotalDetected(); got != 1 {
+		t.Errorf("after Scan: detected %d queries; want one", got)
 	}
 }

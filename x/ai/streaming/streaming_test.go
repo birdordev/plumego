@@ -585,3 +585,27 @@ func TestStreamManagerCloseDetachesBeforeWaitingForWriter(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestExecuteStreamingRejectsNilWorkflow(t *testing.T) {
+	engine := NewStreamingEngine(nil, nil)
+	out := httptest.NewRecorder()
+	stream, err := sse.NewStream(t.Context(), out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stream.Close()
+
+	_, err = engine.ExecuteStreaming(t.Context(), nil, "empty", stream)
+	if err == nil || err.Error() != "workflow is nil" {
+		t.Fatalf("nil workflow error = %v", err)
+	}
+	if engine.StreamManager().Count() != 0 || out.Body.Len() != 0 {
+		t.Fatal("nil workflow changed the stream registry or wrote an event")
+	}
+
+	results, err := engine.ExecuteStreaming(t.Context(), &orchestration.Workflow{Name: "empty"}, "empty", stream)
+	if err != nil || len(results) != 0 || out.Body.Len() == 0 || engine.StreamManager().Count() != 0 {
+		t.Fatalf("empty workflow: results=%v err=%v events=%q active=%d",
+			results, err, out.Body.String(), engine.StreamManager().Count())
+	}
+}

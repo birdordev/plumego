@@ -141,13 +141,8 @@ func (s *Span) RecordError(err error) {
 	})
 }
 
-// End ends the span
-func (s *Span) End() {
-	// In a real implementation, this would:
-	// 1. Record the end time
-	// 2. Send the span to the tracing backend
-	// 3. Remove from context
-}
+// End is a no-op for this local span. It leaves the context unchanged.
+func (s *Span) End() {}
 
 // Context returns the span's context
 func (s *Span) Context() context.Context {

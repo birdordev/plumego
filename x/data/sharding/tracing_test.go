@@ -1,6 +1,7 @@
 package sharding
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"strings"
@@ -394,5 +395,16 @@ func BenchmarkSpan_SetAttribute(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		span.SetAttribute("key", "value")
+	}
+}
+
+func TestSpanEndKeepsLocalTraceContext(t *testing.T) {
+	type contextKey struct{}
+	ctx := context.WithValue(t.Context(), contextKey{}, "local-trace")
+	tracer := NewTracer(TracingConfig{Enabled: true})
+	spanCtx, span := tracer.StartSpan(ctx, "fixture")
+	span.End()
+	if got := span.Context(); got != spanCtx || got.Value(contextKey{}) != "local-trace" {
+		t.Errorf("End changed the local span context: %v", got)
 	}
 }

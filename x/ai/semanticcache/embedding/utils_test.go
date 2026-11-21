@@ -249,3 +249,27 @@ func BenchmarkNormalize(b *testing.B) {
 		Normalize(vec)
 	}
 }
+
+func TestBatchCosineSimilarityContract(t *testing.T) {
+	query := []float64{1, 0}
+	vectors := [][]float64{{0, 1}, {1, 0}, {-1, 0}}
+	got, err := BatchCosineSimilarity(query, vectors)
+	if err != nil || len(got) != len(vectors) {
+		t.Fatalf("batch = %v, %v", got, err)
+	}
+	for i, want := range []float64{0, 1, -1} {
+		if got[i] != want {
+			t.Errorf("similarity[%d] = %v; want %v", i, got[i], want)
+		}
+	}
+	if got, err := BatchCosineSimilarity(query, nil); err != nil || len(got) != 0 {
+		t.Errorf("empty batch = %v, %v", got, err)
+	}
+	for i := range vectors {
+		bad := append([][]float64(nil), vectors...)
+		bad[i] = []float64{1}
+		if got, err := BatchCosineSimilarity(query, bad); got != nil || err == nil {
+			t.Errorf("invalid vector at %d: batch = %v, %v", i, got, err)
+		}
+	}
+}

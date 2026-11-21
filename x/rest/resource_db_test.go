@@ -16,6 +16,7 @@ import (
 
 	"github.com/birdordev/plumego/contract"
 	"github.com/birdordev/plumego/router"
+	storedb "github.com/birdordev/plumego/store/db"
 )
 
 type dbResourceTestItem struct {
@@ -722,5 +723,26 @@ func TestIdentityTransformerPreservesSingleResource(t *testing.T) {
 	}
 	if err := json.Unmarshal(out.Body.Bytes(), &env); err != nil || out.Code != http.StatusOK || env.Data != *resource {
 		t.Errorf("Show status=%d response=%q, error=%v", out.Code, out.Body.String(), err)
+	}
+}
+
+func TestRepositoryCountPreservesReadErrors(t *testing.T) {
+	builder := NewSQLBuilder("items", "id")
+	ctx := t.Context()
+	withoutDB := NewBaseRepository[string](nil, builder)
+	if got, err := withoutDB.Count(ctx, nil); got != 0 || !errors.Is(err, storedb.ErrQueryFailed) {
+		t.Errorf("Count without database = %d, %v", got, err)
+	}
+
+	db := sql.OpenDB(repositoryListConnector{})
+	defer db.Close()
+	repo := NewBaseRepository[string](db, builder)
+	canceled, cancel := context.WithCancel(ctx)
+	cancel()
+	if got, err := repo.Count(canceled, nil); got != 0 || !errors.Is(err, context.Canceled) {
+		t.Errorf("Count with canceled scan = %d, %v", got, err)
+	}
+	if got, err := repo.Count(ctx, nil); got != 4 || err != nil {
+		t.Errorf("Count = %d, %v; want 4", got, err)
 	}
 }

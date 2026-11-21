@@ -47,6 +47,7 @@ func NewStreamingParallelStep(
 }
 
 // Execute executes all agents in parallel and streams results as they complete.
+// Progress reflects the fraction of agents that have succeeded or failed.
 func (sps *StreamingParallelStep) Execute(ctx context.Context, workflow *orchestration.Workflow) (*orchestration.AgentResult, error) {
 	if len(sps.Agents) == 0 {
 		return nil, nil
@@ -68,7 +69,17 @@ func (sps *StreamingParallelStep) Execute(ctx context.Context, workflow *orchest
 	results := make([]*orchestration.AgentResult, len(sps.Agents))
 	errors := make([]error, len(sps.Agents))
 	var wg sync.WaitGroup
-	var mu sync.Mutex
+	var progressMu sync.Mutex
+	completed := 0
+	report := func(index int, status ProgressStatus, result *orchestration.AgentResult, err error) {
+		// Keep the reported progress monotonic in stream order.
+		progressMu.Lock()
+		defer progressMu.Unlock()
+		if status != StatusStarted {
+			completed++
+		}
+		sps.sendAgentUpdate(index, completed, status, result, err)
+	}
 
 	for i, agent := range sps.Agents {
 		wg.Add(1)
@@ -76,22 +87,20 @@ func (sps *StreamingParallelStep) Execute(ctx context.Context, workflow *orchest
 			defer wg.Done()
 
 			// Send agent started event
-			sps.sendAgentUpdate(idx, StatusStarted, nil, nil)
+			report(idx, StatusStarted, nil, nil)
 
 			// Execute agent using provider
 			result, err := executeAgent(ctx, ag)
 
-			// Update results
-			mu.Lock()
+			// Each agent owns its slot until wg.Wait completes.
 			results[idx] = result
 			errors[idx] = err
-			mu.Unlock()
 
 			// Send agent completed/failed event
 			if err != nil {
-				sps.sendAgentUpdate(idx, StatusFailed, nil, err)
+				report(idx, StatusFailed, nil, err)
 			} else {
-				sps.sendAgentUpdate(idx, StatusCompleted, result, nil)
+				report(idx, StatusCompleted, result, nil)
 			}
 		}(i, agent)
 	}
@@ -149,7 +158,7 @@ func (sps *StreamingParallelStep) Execute(ctx context.Context, workflow *orchest
 
 // sendAgentUpdate sends an update for a specific parallel agent.
 func (sps *StreamingParallelStep) sendAgentUpdate(
-	agentIndex int,
+	agentIndex, completedCount int,
 	status ProgressStatus,
 	result *orchestration.AgentResult,
 	err error,
@@ -159,11 +168,6 @@ func (sps *StreamingParallelStep) sendAgentUpdate(
 		agentName = sps.Agents[agentIndex].Name
 	}
 
-	// Calculate progress based on completed agents
-	completedCount := agentIndex + 1
-	if status == StatusStarted {
-		completedCount = agentIndex
-	}
 	progress := float64(completedCount) / float64(len(sps.Agents))
 
 	update := &ProgressUpdate{

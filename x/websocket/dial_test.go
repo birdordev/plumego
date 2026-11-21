@@ -366,3 +366,19 @@ func TestDialClosesReadOnlyUpgradeResponse(t *testing.T) {
 		t.Errorf("Dial=%v, %v, %v, closes=%d", conn, response, err, body.closes)
 	}
 }
+
+func TestDialClosesResponseWhenParentCanceled(t *testing.T) {
+	cause := errors.New("caller stopped waiting")
+	ctx, cancel := context.WithCancelCause(t.Context())
+	defer cancel(nil)
+	body := &readOnlyUpgradeBody{Reader: strings.NewReader("")}
+	client := &http.Client{Transport: canceledDialTransport(func(*http.Request) (*http.Response, error) {
+		cancel(cause)
+		return &http.Response{StatusCode: http.StatusOK, Body: body}, nil
+	})}
+
+	conn, resp, err := Dial(ctx, "ws://fixture.invalid", &DialOptions{HTTPClient: client})
+	if conn != nil || resp != nil || !errors.Is(err, cause) || body.closes != 1 {
+		t.Errorf("Dial = %v, %v, %v; body closed %d times", conn, resp, err, body.closes)
+	}
+}

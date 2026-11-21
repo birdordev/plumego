@@ -195,12 +195,17 @@ func (se *StreamingEngine) StreamManager() *StreamManager {
 }
 
 // ExecuteStreaming executes a workflow with real-time progress updates.
+// A nil workflow returns an error before the stream is registered.
 func (se *StreamingEngine) ExecuteStreaming(
 	ctx context.Context,
 	workflow *orchestration.Workflow,
 	workflowID string,
 	stream *sse.Stream,
 ) ([]*orchestration.AgentResult, error) {
+	if workflow == nil {
+		return nil, errors.New("workflow is nil")
+	}
+
 	// Register stream
 	if err := se.streamMgr.Register(workflowID, stream); err != nil {
 		return nil, err

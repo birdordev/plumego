@@ -1647,3 +1647,37 @@ func TestHeartbeatClientDelegatesApplicationReadTimeout(t *testing.T) {
 		t.Errorf("ReadWithTimeout=%d, %v, buffer=%q, calls=%d", n, err, buffer, calls)
 	}
 }
+
+type reconnectTimedReadClient struct {
+	poolCloseTestClient
+	timeout time.Duration
+	reads   int
+	readErr error
+}
+
+func (c *reconnectTimedReadClient) ReadWithTimeout(buf []byte, timeout time.Duration) (int, error) {
+	c.reads++
+	c.timeout = timeout
+	return copy(buf, "fixture"), c.readErr
+}
+
+func TestReconnectClientDelegatesReadWithTimeout(t *testing.T) {
+	wantErr := errors.New("read deadline reached")
+	underlying := &reconnectTimedReadClient{}
+	wrapper := &reconnectClient{client: underlying}
+	buf := make([]byte, 32)
+	const timeout = 125 * time.Millisecond
+	for _, readErr := range []error{nil, wantErr} {
+		underlying.readErr = readErr
+		n, err := wrapper.ReadWithTimeout(buf, timeout)
+		if n != len("fixture") || string(buf[:n]) != "fixture" || !errors.Is(err, readErr) || underlying.timeout != timeout {
+			t.Fatalf("read = %d, %v; delegated timeout = %v", n, err, underlying.timeout)
+		}
+	}
+	if err := wrapper.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if n, err := wrapper.ReadWithTimeout(buf, timeout); n != 0 || !errors.Is(err, ErrClientClosed) || underlying.reads != 2 {
+		t.Errorf("closed read = %d, %v; underlying calls = %d", n, err, underlying.reads)
+	}
+}

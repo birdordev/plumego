@@ -528,3 +528,34 @@ func TestAudit19BrokerCloseReturnsPersistenceFailure(t *testing.T) {
 		})
 	}
 }
+
+func TestKVPersistenceDeleteSubscriptionContract(t *testing.T) {
+	store, err := NewKVPersistence(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	ctx := t.Context()
+	const topic = "jobs"
+	for _, id := range []string{"removed", "kept"} {
+		if err := store.SaveSubscription(ctx, topic, id, SubOptions{BufferSize: 8}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if before, err := store.GetSubscriptions(ctx, topic); err != nil || len(before) != 2 {
+		t.Fatalf("before DeleteSubscription = %v, %v", before, err)
+	}
+	if err := store.DeleteSubscription(ctx, topic, "removed"); err != nil {
+		t.Fatal(err)
+	}
+	got, err := store.GetSubscriptions(ctx, topic)
+	if err != nil || len(got) != 1 || got["kept"].BufferSize != 8 {
+		t.Errorf("remaining subscriptions = %v, %v", got, err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.DeleteSubscription(ctx, topic, "kept"); !errors.Is(err, ErrBrokerClosed) {
+		t.Errorf("delete after Close = %v; want %v", err, ErrBrokerClosed)
+	}
+}

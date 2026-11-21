@@ -496,3 +496,58 @@ func TestSQLStoreReplayDLQTransaction(t *testing.T) {
 		})
 	}
 }
+
+type insertTestConn struct {
+	attemptConn
+	query string
+	args  []driver.NamedValue
+	err   error
+}
+
+func (c *insertTestConn) ExecContext(_ context.Context, query string, args []driver.NamedValue) (driver.Result, error) {
+	c.query, c.args = query, slices.Clone(args)
+	if c.err != nil {
+		return nil, c.err
+	}
+	return attemptResult{rows: 1}, nil
+}
+
+type insertTestConnector struct {
+	driver.Connector
+	conn *insertTestConn
+}
+
+func (c insertTestConnector) Connect(context.Context) (driver.Conn, error) {
+	return c.conn, nil
+}
+
+func TestSQLStoreInsertContract(t *testing.T) {
+	sentinel := errors.New("database offline")
+	for _, tc := range []struct {
+		name             string
+		execErr, wantErr error
+	}{
+		{name: "queued"},
+		{name: "duplicate", execErr: errors.New("duplicate task ID"), wantErr: mq.ErrDuplicateTask},
+		{name: "driver failure", execErr: sentinel, wantErr: sentinel},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			conn := &insertTestConn{err: tc.execErr}
+			db := sql.OpenDB(insertTestConnector{conn: conn})
+			defer db.Close()
+			task := mq.Task{ID: "task-1", Topic: "jobs", Meta: map[string]string{"source": "fixture"}}
+			s := NewSQL(db, DefaultSQLConfig())
+			if err := s.Insert(t.Context(), task); !errors.Is(err, tc.wantErr) {
+				t.Errorf("Insert = %v; want %v", err, tc.wantErr)
+			}
+			if !strings.HasPrefix(conn.query, "INSERT INTO mq_tasks") || len(conn.args) != 18 {
+				t.Fatalf("query = %q, got %d arguments", conn.query, len(conn.args))
+			}
+			meta, ok := conn.args[4].Value.([]byte)
+			if conn.args[0].Value != task.ID || conn.args[1].Value != task.Topic || !ok ||
+				string(meta) != `{"source":"fixture"}` || conn.args[7].Value != mq.TaskStatusQueued {
+				t.Errorf("unexpected insert arguments: %v", conn.args)
+			}
+		})
+	}
+}
