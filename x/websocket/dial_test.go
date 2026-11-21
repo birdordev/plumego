@@ -424,3 +424,22 @@ func TestDialAcceptsRequestedSubprotocol(t *testing.T) {
 		t.Errorf("underlying stream after Close = %d, %v; want EOF", n, err)
 	}
 }
+
+func TestDialHTTPStreamUsesPlaceholderAddresses(t *testing.T) {
+	srv, _ := startUnauthDialServer(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	conn, _, err := Dial(ctx, srv.URL+"/ws?room=fixture", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	for _, addr := range []net.Addr{conn.conn.LocalAddr(), conn.conn.RemoteAddr()} {
+		if addr == nil || addr.Network() != "websocket" || addr.String() != "websocket" {
+			t.Errorf("stream address = %v, want websocket placeholder", addr)
+		}
+	}
+	if err := conn.Close(); err != nil {
+		t.Error(err)
+	}
+}

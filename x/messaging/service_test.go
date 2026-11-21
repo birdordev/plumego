@@ -781,3 +781,29 @@ func TestHTTPSMSProviderHandlesResponseContract(t *testing.T) {
 		})
 	}
 }
+
+func TestMessagingServiceExposesReceiptStore(t *testing.T) {
+	receipt := Receipt{ID: "fixture", Status: "sent"}
+	injected := NewMemReceiptStore(4)
+	if err := injected.Save(receipt); err != nil {
+		t.Fatal(err)
+	}
+	store := New(Config{Receipts: injected}).Receipts()
+	if store != injected {
+		t.Fatal("Receipts returned a different store")
+	}
+	if got, ok := store.Get(receipt.ID); !ok || got.Status != receipt.Status {
+		t.Errorf("injected receipt = %+v, found=%v", got, ok)
+	}
+
+	defaultStore := New(Config{}).Receipts()
+	if defaultStore == nil {
+		t.Fatal("default receipt store is nil")
+	}
+	if err := defaultStore.Save(receipt); err != nil {
+		t.Fatal(err)
+	}
+	if got, ok := defaultStore.Get(receipt.ID); !ok || got.Status != receipt.Status {
+		t.Errorf("default receipt = %+v, found=%v", got, ok)
+	}
+}

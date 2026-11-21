@@ -418,3 +418,18 @@ func TestEvictionClearsSpanAttributes(t *testing.T) {
 		t.Errorf("stats = %+v", stats)
 	}
 }
+
+func TestOpenTelemetrySpanIDMatchesRequestContext(t *testing.T) {
+	tracer := NewOpenTelemetryTracer("fixture")
+	request := httptest.NewRequest(http.MethodGet, "/fixture", nil)
+	ctx, span := tracer.Start(t.Context(), request)
+	traceContext, ok := contract.TraceContextFromContext(ctx)
+	id := span.SpanID()
+	if !ok || id == "" || traceContext.SpanID != id {
+		t.Fatalf("span ID = %q, trace context = %+v, found=%v", id, traceContext, ok)
+	}
+	span.End(http.StatusOK, 0, "fixture")
+	if recorded := tracer.Spans(); len(recorded) != 1 || recorded[0].SpanID != id {
+		t.Errorf("recorded spans = %+v, want span ID %q", recorded, id)
+	}
+}

@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"maps"
 	"strings"
 	"sync"
 	"text/template"
@@ -145,20 +146,25 @@ func (e *Engine) Render(ctx context.Context, templateID string, vars map[string]
 	return e.RenderTemplate(tmpl, vars)
 }
 
-// RenderTemplate renders a template object.
+// RenderTemplate renders a template object. Defaults for missing required
+// variables are filled in a local map, leaving the caller's map unchanged.
 func (e *Engine) RenderTemplate(tmpl *Template, vars map[string]any) (string, error) {
-	// Check required variables
+	owned := false
 	for _, v := range tmpl.Variables {
-		if v.Required {
-			if _, ok := vars[v.Name]; !ok {
-				// Use default if available
-				if v.Default != nil {
-					vars[v.Name] = v.Default
-				} else {
-					return "", fmt.Errorf("required variable missing: %s", v.Name)
-				}
-			}
+		if _, supplied := vars[v.Name]; !v.Required || supplied {
+			continue
 		}
+		if v.Default == nil {
+			return "", fmt.Errorf("required variable missing: %s", v.Name)
+		}
+		if !owned {
+			vars = maps.Clone(vars)
+			if vars == nil {
+				vars = make(map[string]any)
+			}
+			owned = true
+		}
+		vars[v.Name] = v.Default
 	}
 
 	// Check cache

@@ -417,3 +417,30 @@ func TestManagerWorkflowRatingValidation(t *testing.T) {
 		t.Errorf("rating = %+v, want %+v", got, rating)
 	}
 }
+
+func TestManagerSearchWorkflowsFiltersLatestVersions(t *testing.T) {
+	manager := newTestManager(t)
+	first, latest := workflowVersionFixture("1.0.0"), workflowVersionFixture("2.0.0")
+	first.Tags = []string{"archived"}
+	latest.Tags, latest.Rating = []string{"current"}, 5
+	other := workflowVersionFixture("1.0.0")
+	other.ID, other.Tags, other.Rating = "another-workflow", []string{"current"}, 4
+	excluded := workflowVersionFixture("1.0.0")
+	excluded.ID, excluded.Name, excluded.Tags = "excluded-workflow", "Unrelated", []string{"archived"}
+	for _, workflow := range []*WorkflowTemplate{first, latest, other, excluded} {
+		if err := manager.PublishWorkflow(t.Context(), workflow); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	query := SearchQuery{Text: "fIXTURE", Tags: []string{"current"}}
+	results, err := manager.SearchWorkflows(t.Context(), query)
+	if err != nil || len(results) != 2 || results[0].ID != latest.ID || results[0].Version != latest.Version || results[1].ID != other.ID {
+		t.Fatalf("search results = %v, %v, want latest version and other matching workflow", results, err)
+	}
+	query.Limit = 1
+	results, err = manager.SearchWorkflows(t.Context(), query)
+	if err != nil || len(results) != 1 || results[0].ID != latest.ID || results[0].Version != latest.Version {
+		t.Errorf("limited search results = %v, %v, want highest-rated current version", results, err)
+	}
+}

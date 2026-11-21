@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/birdordev/plumego/x/ai/provider"
+	"github.com/birdordev/plumego/x/ai/tokenizer"
 )
 
 func TestNewTextMessage(t *testing.T) {
@@ -392,5 +393,38 @@ func TestMessageMixedMediaBlocks(t *testing.T) {
 	}
 	if got := message.Content[2]; got.Type != ContentTypeDocument || got.Document != document {
 		t.Errorf("document block = %+v", got)
+	}
+}
+
+func TestStreamReaderPreservesChunksAndEOF(t *testing.T) {
+	mock := provider.NewMockProvider("fixture")
+	usage := tokenizer.TokenUsage{InputTokens: 3, OutputTokens: 2, TotalTokens: 5}
+	mock.SetStreamChunks([]*provider.StreamChunk{
+		{Delta: &provider.ContentDelta{Type: provider.ContentTypeText, Text: "hello"}},
+		{Delta: &provider.ContentDelta{Type: provider.ContentTypeText, Text: " world"}},
+		{Usage: &usage, StopReason: provider.StopReason("end_turn")},
+	})
+	upstream, err := mock.CompleteStream(t.Context(), &provider.CompletionRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	stream := &StreamReader{stream: upstream}
+	t.Cleanup(func() {
+		if err := stream.Close(); err != nil {
+			t.Error(err)
+		}
+	})
+	for _, want := range []string{"hello", " world"} {
+		got, err := stream.Next()
+		if err != nil || got == nil || len(got.Content) != 1 || got.Content[0].Type != provider.ContentTypeText || got.Content[0].Text != want {
+			t.Fatalf("chunk = %+v, %v, want %q", got, err, want)
+		}
+	}
+	last, err := stream.Next()
+	if err != nil || last == nil || len(last.Content) != 0 || last.Usage != usage || last.StopReason != "end_turn" {
+		t.Errorf("final chunk = %+v, %v", last, err)
+	}
+	if next, err := stream.Next(); next != nil || !errors.Is(err, io.EOF) {
+		t.Errorf("end of stream = %v, %v", next, err)
 	}
 }

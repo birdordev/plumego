@@ -123,7 +123,7 @@ func (r *LocalAgentRegistry) Search(ctx context.Context, query SearchQuery) ([]*
 		}
 
 		agentID := entry.Name()
-		versions, err := r.ListVersions(ctx, agentID)
+		versions, err := r.listVersionsLocked(agentID)
 		if err != nil {
 			continue
 		}
@@ -134,7 +134,7 @@ func (r *LocalAgentRegistry) Search(ctx context.Context, query SearchQuery) ([]*
 		}
 		latestVersion := versions[len(versions)-1]
 
-		metadata, err := r.Get(ctx, agentID, latestVersion)
+		metadata, err := r.getLocked(agentID, latestVersion)
 		if err != nil {
 			continue
 		}
@@ -530,7 +530,11 @@ func (r *LocalWorkflowRegistry) Publish(ctx context.Context, template *WorkflowT
 func (r *LocalWorkflowRegistry) Get(ctx context.Context, id string, ver string) (*WorkflowTemplate, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
+	return r.getLocked(id, ver)
+}
 
+// getLocked requires the caller to hold r.mu for reading or writing.
+func (r *LocalWorkflowRegistry) getLocked(id, ver string) (*WorkflowTemplate, error) {
 	templatePath := filepath.Join(r.baseDir, id, ver, "template.json")
 	data, err := os.ReadFile(templatePath)
 	if err != nil {
@@ -570,7 +574,7 @@ func (r *LocalWorkflowRegistry) Search(ctx context.Context, query SearchQuery) (
 		}
 
 		workflowID := entry.Name()
-		versions, err := r.ListVersions(ctx, workflowID)
+		versions, err := r.listVersionsLocked(workflowID)
 		if err != nil {
 			continue
 		}
@@ -581,7 +585,7 @@ func (r *LocalWorkflowRegistry) Search(ctx context.Context, query SearchQuery) (
 		}
 		latestVersion := versions[len(versions)-1]
 
-		template, err := r.Get(ctx, workflowID, latestVersion)
+		template, err := r.getLocked(workflowID, latestVersion)
 		if err != nil {
 			continue
 		}
@@ -644,7 +648,11 @@ func (r *LocalWorkflowRegistry) matchesQuery(template *WorkflowTemplate, query S
 func (r *LocalWorkflowRegistry) ListVersions(ctx context.Context, id string) ([]string, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
+	return r.listVersionsLocked(id)
+}
 
+// listVersionsLocked requires the caller to hold r.mu for reading or writing.
+func (r *LocalWorkflowRegistry) listVersionsLocked(id string) ([]string, error) {
 	workflowDir := filepath.Join(r.baseDir, id)
 	entries, err := os.ReadDir(workflowDir)
 	if err != nil {

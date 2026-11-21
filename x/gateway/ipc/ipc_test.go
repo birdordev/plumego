@@ -1043,3 +1043,27 @@ func copyGlogFields(fields log.Fields) log.Fields {
 	}
 	return result
 }
+
+type ipcCauseFixture struct{ error }
+
+func (e *ipcCauseFixture) Unwrap() error { return e.error }
+
+func TestIPCErrorPreservesCauseAndContext(t *testing.T) {
+	sentinel := errors.New("fixture interrupted")
+	cause := &ipcCauseFixture{error: sentinel}
+	for _, test := range []struct {
+		address, diagnostic string
+	}{
+		{"", "ipc read: fixture interrupted"},
+		{"fixture.sock", "ipc read fixture.sock: fixture interrupted"},
+	} {
+		err := &Error{Op: "read", Addr: test.address, Err: cause}
+		var typed *ipcCauseFixture
+		if !errors.Is(err, sentinel) || !errors.As(err, &typed) || typed != cause {
+			t.Errorf("error lost its original cause: %v", err)
+		}
+		if got := err.Error(); got != test.diagnostic {
+			t.Errorf("diagnostic = %q, want %q", got, test.diagnostic)
+		}
+	}
+}

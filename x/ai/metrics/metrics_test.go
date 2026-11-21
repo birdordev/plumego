@@ -813,3 +813,17 @@ func TestMemoryCollectorHistogramRetainsLatestSamples(t *testing.T) {
 	record(6000)
 	check(2001, 1499.5)
 }
+
+func TestTimerKeepsInitialTags(t *testing.T) {
+	collector := NewMemoryCollector()
+	tags := []Tag{{Key: "stage", Value: "read"}}
+	timer := NewTimer(collector, "operation", tags...)
+	tags[0].Value = "write"
+	timer.Stop()
+	NewTimer(collector, "untagged").Stop()
+
+	histograms := collector.Snapshot().Histograms
+	if len(histograms) != 2 || histograms["operation{stage=read}"].Count != 1 || histograms["untagged"].Count != 1 {
+		t.Errorf("histograms = %+v, want one timing with the initial labels and one untagged timing", histograms)
+	}
+}

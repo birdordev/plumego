@@ -764,3 +764,46 @@ func TestDeduplicatorRemoveAndClear(t *testing.T) {
 		t.Fatal("Clear did not reset duplicate tracking")
 	}
 }
+
+func TestDeduplicatorCleanupAfterDuplicateReordersEntries(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		d := NewDeduplicator(DeduplicatorConfig{Window: 10 * time.Second, MaxSize: 2, CleanupInterval: time.Hour})
+		defer d.Close()
+
+		d.Mark("first")
+		time.Sleep(5 * time.Second)
+		d.Mark("second")
+		if !d.IsDuplicate("first") {
+			t.Fatal("first should still be a duplicate")
+		}
+		time.Sleep(6 * time.Second)
+		d.cleanup()
+		if got := d.Size(); got != 1 || d.Check("first") || !d.Check("second") {
+			t.Fatalf("after cleanup size=%d first=%v second=%v", got, d.Check("first"), d.Check("second"))
+		}
+		d.Mark("third")
+		if d.Size() != 2 || !d.Check("second") || !d.Check("third") {
+			t.Fatal("new entry displaced a live entry after cleanup")
+		}
+	})
+}
+
+func TestPriorityBufferPeekStatsAndClose(t *testing.T) {
+	buffer := NewPriorityBuffer(3)
+	buffer.Push(Message{ID: "low"}, PriorityLow)
+	buffer.Push(Message{ID: "high"}, PriorityHigh)
+	for range 2 {
+		if message, priority, ok := buffer.Peek(); !ok || message.ID != "high" || priority != PriorityHigh {
+			t.Errorf("Peek = %+v, %d, found=%v", message, priority, ok)
+		}
+	}
+	stats := buffer.Stats()
+	if stats.Size != 2 || stats.Capacity != 3 || len(stats.ByPriority) != 2 ||
+		stats.ByPriority[PriorityHigh] != 1 || stats.ByPriority[PriorityLow] != 1 || buffer.IsClosed() {
+		t.Errorf("active buffer stats = %+v, closed=%v", stats, buffer.IsClosed())
+	}
+	buffer.Close()
+	if _, _, ok := buffer.Peek(); ok || !buffer.IsClosed() {
+		t.Errorf("Peek found=%v after close, closed=%v", ok, buffer.IsClosed())
+	}
+}

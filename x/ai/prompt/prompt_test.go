@@ -2,6 +2,7 @@ package prompt
 
 import (
 	"fmt"
+	"maps"
 	"strings"
 	"testing"
 	"text/template"
@@ -531,5 +532,47 @@ func TestEngineCustomCacheCapacity(t *testing.T) {
 	}
 	if got, err := engine.Render(t.Context(), first.ID, nil); got != "one" || err != nil {
 		t.Errorf("render after eviction = %q, %v", got, err)
+	}
+}
+
+func TestEngineRendersWithOwnedDefaults(t *testing.T) {
+	engine := NewEngine(NewMemoryStorage())
+	tmpl := &Template{
+		Name: "greeting", Content: "{{.Salutation}} {{.Name}}",
+		Variables: []Variable{
+			{Name: "Salutation", Required: true, Default: "Hello"},
+			{Name: "Name", Required: true, Default: "World"},
+		},
+	}
+	if err := engine.Register(t.Context(), tmpl); err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range []struct {
+		name string
+		vars map[string]any
+		want string
+	}{
+		{"nil", nil, "Hello World"},
+		{"empty", map[string]any{}, "Hello World"},
+		{"explicit", map[string]any{"Name": "Ada"}, "Hello Ada"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			before := maps.Clone(test.vars)
+			got, err := engine.Render(t.Context(), tmpl.ID, test.vars)
+			if err != nil || got != test.want || !maps.Equal(test.vars, before) {
+				t.Errorf("Render = %q, %v; caller variables = %v, want %q with %v unchanged", got, err, test.vars, test.want, before)
+			}
+		})
+	}
+	missing := &Template{
+		Name: "required", Content: "{{.Salutation}} {{.Name}}",
+		Variables: []Variable{tmpl.Variables[0], {Name: "Name", Required: true}},
+	}
+	if err := engine.Register(t.Context(), missing); err != nil {
+		t.Fatal(err)
+	}
+	vars := map[string]any{}
+	if _, err := engine.Render(t.Context(), missing.ID, vars); err == nil || err.Error() != "required variable missing: Name" || len(vars) != 0 {
+		t.Errorf("missing variable error = %v; caller variables = %v", err, vars)
 	}
 }

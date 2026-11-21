@@ -1783,3 +1783,137 @@ func TestStreamClientDelegatesRawTimeouts(t *testing.T) {
 		t.Errorf("ReadWithTimeout = %d, %v, bytes=%q, reads=%d", n, err, buf, reads)
 	}
 }
+
+type streamReadFixture struct {
+	Client
+	read    func([]byte) (int, error)
+	timed   []time.Duration
+	untimed int
+}
+
+func (f *streamReadFixture) Read(p []byte) (int, error) {
+	f.untimed++
+	return f.read(p)
+}
+
+func (f *streamReadFixture) ReadWithTimeout(p []byte, timeout time.Duration) (int, error) {
+	f.timed = append(f.timed, timeout)
+	return f.read(p)
+}
+
+func TestReadStreamHonorsConfiguredTimeout(t *testing.T) {
+	const timeout = 20 * time.Millisecond
+	for _, configured := range []time.Duration{0, timeout} {
+		t.Run(configured.String(), func(t *testing.T) {
+			stream := bytes.NewReader([]byte{0, 0, 0, 3, 'a', 'b', 'c', 0, 0, 0, 0})
+			raw := &streamReadFixture{read: func(p []byte) (int, error) {
+				return stream.Read(p[:1])
+			}}
+			client := NewStreamClient(raw, &StreamConfig{ChunkSize: 16, Timeout: configured})
+			var output bytes.Buffer
+			if got, err := client.ReadStream(&output); got != 3 || err != nil || output.String() != "abc" {
+				t.Fatalf("read = %d, %v, payload %q", got, err, output.String())
+			}
+			if configured == 0 {
+				if raw.untimed != 11 || len(raw.timed) != 0 {
+					t.Errorf("ordinary calls = %d, timed calls = %v", raw.untimed, raw.timed)
+				}
+				return
+			}
+			if len(raw.timed) != 11 || raw.untimed != 0 {
+				t.Errorf("timed calls = %v, ordinary calls = %d", raw.timed, raw.untimed)
+			}
+			for _, got := range raw.timed {
+				if got != timeout {
+					t.Errorf("delegated timeout = %v, want %v", got, timeout)
+				}
+			}
+		})
+	}
+
+	sentinel := errors.New("fixture read interrupted")
+	for _, tc := range []struct {
+		name   string
+		prefix []byte
+	}{{"header", nil}, {"payload", []byte{0, 0, 0, 3}}} {
+		t.Run(tc.name, func(t *testing.T) {
+			prefix := bytes.NewReader(tc.prefix)
+			raw := &streamReadFixture{read: func(p []byte) (int, error) {
+				if prefix.Len() == 0 {
+					return 0, sentinel
+				}
+				return prefix.Read(p)
+			}}
+			sc := NewStreamClient(raw, &StreamConfig{ChunkSize: 16, Timeout: timeout})
+			if n, err := sc.ReadStream(io.Discard); n != 0 || !errors.Is(err, sentinel) {
+				t.Errorf("read = %d, %v, want zero and sentinel", n, err)
+			}
+			if raw.untimed != 0 || len(raw.timed) == 0 || raw.timed[len(raw.timed)-1] != timeout {
+				t.Errorf("timed calls = %v, ordinary calls = %d", raw.timed, raw.untimed)
+			}
+		})
+	}
+}
+
+type streamPartialWriter struct {
+	calls int
+	err   error
+}
+
+func (w *streamPartialWriter) Write(p []byte) (int, error) {
+	w.calls++
+	if w.calls == 2 {
+		return 1, w.err
+	}
+	return len(p), nil
+}
+
+func TestStreamReportsPartialPayloadOnError(t *testing.T) {
+	sentinel := errors.New("fixture write interrupted")
+	t.Run("read", func(t *testing.T) {
+		reader := bytes.NewReader([]byte{0, 0, 0, 2, 'a', 'b', 0, 0, 0, 2, 'c', 'd', 0, 0, 0, 0})
+		raw := &streamReadFixture{read: reader.Read}
+		dst := &streamPartialWriter{err: sentinel}
+		client := NewStreamClient(raw, nil)
+		if n, err := client.ReadStream(dst); n != 3 || !errors.Is(err, sentinel) || dst.calls != 2 {
+			t.Errorf("read = %d, %v, writes=%d", n, err, dst.calls)
+		}
+	})
+	t.Run("write", func(t *testing.T) {
+		dst := &streamPartialWriter{err: sentinel}
+		raw := rawTimeoutFixture{write: func(p []byte, _ time.Duration) (int, error) {
+			if len(p) == 4 {
+				return len(p), nil
+			}
+			return dst.Write(p)
+		}}
+		client := NewStreamClient(raw, &StreamConfig{ChunkSize: 2})
+		if n, err := client.WriteStream(strings.NewReader("abcd")); n != 3 || !errors.Is(err, sentinel) || dst.calls != 2 {
+			t.Errorf("write = %d, %v, writes=%d", n, err, dst.calls)
+		}
+	})
+}
+
+func TestReconnectClientTimedWriteAndClose(t *testing.T) {
+	const timeout = 50 * time.Millisecond
+	const payload = "fixture"
+	sentinel := errors.New("fixture interrupted")
+	calls := 0
+	raw := &poolCloseTestClient{}
+	wrapper := &reconnectClient{client: rawTimeoutFixture{Client: raw, write: func(p []byte, wait time.Duration) (int, error) {
+		calls++
+		if string(p) != payload || wait != timeout {
+			t.Errorf("delegated write = %q, timeout=%v", p, wait)
+		}
+		return 3, sentinel
+	}}}
+	if n, err := wrapper.WriteWithTimeout([]byte(payload), timeout); n != 3 || !errors.Is(err, sentinel) || calls != 1 {
+		t.Errorf("timed write = %d, %v, calls=%d", n, err, calls)
+	}
+	if err := wrapper.Close(); err != nil || raw.calls != 1 {
+		t.Fatalf("close = %v, underlying calls = %d", err, raw.calls)
+	}
+	if n, err := wrapper.WriteWithTimeout([]byte(payload), timeout); n != 0 || !errors.Is(err, ErrClientClosed) || calls != 1 {
+		t.Errorf("write after close = %d, %v, calls=%d", n, err, calls)
+	}
+}

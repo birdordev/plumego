@@ -688,3 +688,60 @@ func findSubstring(s, substr string) bool {
 	}
 	return false
 }
+
+func TestResolveMultipleUsesConfiguredDefaultShard(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		fallback int
+	}{{"configured", 2}, {"missing", -1}} {
+		t.Run(tc.name, func(t *testing.T) {
+			registry := NewShardingRuleRegistry()
+			rule, err := NewShardingRule("users", "user_id", NewModStrategy(), 4)
+			if err != nil {
+				t.Fatal(err)
+			}
+			rule.DefaultShard = tc.fallback
+			if err := registry.Register(rule); err != nil {
+				t.Fatal(err)
+			}
+			resolver := NewShardKeyResolver(registry)
+			for _, query := range []string{"SELECT * FROM users", "SELECT * FROM users WHERE active = ?"} {
+				var args []any
+				if query != "SELECT * FROM users" {
+					args = []any{true}
+				}
+				plan, err := resolver.ResolveMultiple(query, args)
+				if tc.fallback < 0 {
+					if len(plan) != 0 || !errors.Is(err, ErrShardKeyNotFound) {
+						t.Errorf("%q plan = %v, %v, want ErrShardKeyNotFound", query, plan, err)
+					}
+				} else if err != nil || len(plan) != 1 || plan[0].ShardIndex != tc.fallback || plan[0].ShardKey != nil {
+					t.Errorf("%q plan = %v, %v, want default shard %d", query, plan, err, tc.fallback)
+				}
+			}
+		})
+	}
+}
+
+func TestResolveMultipleOneSidedRangeIncludesAllShards(t *testing.T) {
+	registry := NewShardingRuleRegistry()
+	rule, err := NewShardingRule("users", "user_id", NewModStrategy(), 4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := registry.Register(rule); err != nil {
+		t.Fatal(err)
+	}
+	resolver := NewShardKeyResolver(registry)
+	for _, query := range []string{"SELECT * FROM users WHERE user_id >= ?", "SELECT * FROM users WHERE user_id < ?"} {
+		plan, err := resolver.ResolveMultiple(query, []any{12})
+		if err != nil || len(plan) != rule.ShardCount {
+			t.Fatalf("%q resolved to %v, %v", query, plan, err)
+		}
+		for index, shard := range plan {
+			if shard.ShardIndex != index || shard.TableName != rule.TableName {
+				t.Errorf("shard %d = %+v", index, shard)
+			}
+		}
+	}
+}

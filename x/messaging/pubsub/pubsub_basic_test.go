@@ -348,3 +348,30 @@ func TestPubSubErrorPreservesCause(t *testing.T) {
 		t.Errorf("missing cause unwrapped to %v", unwrapped)
 	}
 }
+
+func TestBrokerHealthSnapshotThroughClose(t *testing.T) {
+	broker := New()
+	t.Cleanup(func() { _ = broker.Close() })
+	if _, err := broker.Subscribe(t.Context(), "local.event", SubOptions{BufferSize: 4}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := broker.SubscribePatternWithContext(t.Context(), "local.*", SubOptions{BufferSize: 4}); err != nil {
+		t.Fatal(err)
+	}
+	if err := broker.Publish("local.event", Message{ID: "fixture"}); err != nil {
+		t.Fatal(err)
+	}
+	health := broker.Health()
+	if !health.Healthy || !broker.IsHealthy() || health.Status != "healthy" ||
+		health.Metrics.TopicCount != 1 || health.Metrics.PatternCount != 1 || health.Metrics.SubscriberCount != 2 ||
+		health.Metrics.TotalPublished != 1 {
+		t.Errorf("active broker health = %+v", health)
+	}
+	if err := broker.Close(); err != nil {
+		t.Fatal(err)
+	}
+	health = broker.Health()
+	if health.Healthy || broker.IsHealthy() || health.Status != "closed" {
+		t.Errorf("closed broker health = %+v", health)
+	}
+}

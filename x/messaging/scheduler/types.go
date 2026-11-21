@@ -387,10 +387,9 @@ func Paused() JobOption {
 	}
 }
 
-// WithJitter adds a random delay in the range [0, d) before each execution.
-// This spreads load when many jobs share an identical schedule (thundering herd).
-// Jitter is applied on top of the normal scheduled time; it does not affect
-// the next calculated run time stored in JobStatus.NextRun.
+// WithJitter adds a random delay in [0, d) when scheduling subsequent cron runs.
+// The initial schedule uses the cron expression as given. JobStatus.NextRun
+// reports the scheduled time including any jitter applied during rescheduling.
 func WithJitter(d time.Duration) JobOption {
 	return func(opts *JobOptions) {
 		if d > 0 {

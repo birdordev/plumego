@@ -3,6 +3,7 @@ package marketplace
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -579,6 +580,84 @@ func TestLocalRegistryRatingReportsPartialUpdate(t *testing.T) {
 				checkRating("1.0.0", 4)
 				checkRating("2.0.0", 5)
 			})
+		})
+	}
+}
+
+func TestRegistrySearchAndMutationComplete(t *testing.T) {
+	for _, kind := range []string{"agent", "workflow"} {
+		t.Run(kind, func(t *testing.T) {
+			manager := newTestManager(t)
+			ctx := t.Context()
+			var search, publish, remove func() error
+			if kind == "agent" {
+				const id = "concurrent-agent"
+				if err := manager.PublishAgent(ctx, testAgentMetadata(id, "1.0.0")); err != nil {
+					t.Fatal(err)
+				}
+				search = func() error {
+					result, err := manager.SearchAgents(ctx, SearchQuery{})
+					if err != nil {
+						return err
+					}
+					if len(result) != 1 || result[0].ID != id {
+						return fmt.Errorf("search result = %v, want one agent", result)
+					}
+					return nil
+				}
+				publish = func() error { return manager.PublishAgent(ctx, testAgentMetadata(id, "2.0.0")) }
+				remove = func() error { return manager.DeleteAgent(ctx, id, "2.0.0") }
+			} else {
+				first, second := workflowVersionFixture("1.0.0"), workflowVersionFixture("2.0.0")
+				if err := manager.PublishWorkflow(ctx, first); err != nil {
+					t.Fatal(err)
+				}
+				search = func() error {
+					result, err := manager.SearchWorkflows(ctx, SearchQuery{})
+					if err != nil {
+						return err
+					}
+					if len(result) != 1 || result[0].ID != first.ID {
+						return fmt.Errorf("search result = %v, want one workflow", result)
+					}
+					return nil
+				}
+				publish = func() error { return manager.PublishWorkflow(ctx, second) }
+				remove = func() error { return manager.DeleteWorkflow(ctx, second.ID, second.Version) }
+			}
+			mutate := func() error {
+				if err := publish(); err != nil {
+					return err
+				}
+				return remove()
+			}
+			start := make(chan struct{})
+			done := make(chan error, 2)
+			for _, operation := range []func() error{search, mutate} {
+				go func() {
+					<-start
+					for range 25 {
+						if err := operation(); err != nil {
+							done <- err
+							return
+						}
+					}
+					done <- nil
+				}()
+			}
+			close(start)
+			deadline := time.NewTimer(5 * time.Second)
+			defer deadline.Stop()
+			for range 2 {
+				select {
+				case err := <-done:
+					if err != nil {
+						t.Error(err)
+					}
+				case <-deadline.C:
+					t.Fatal("concurrent search and mutation did not complete")
+				}
+			}
 		})
 	}
 }

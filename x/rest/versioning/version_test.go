@@ -2,6 +2,7 @@ package versioning
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -706,5 +707,22 @@ func TestUnknownVersionStrategyUsesConfiguredDefault(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestStrategyDiagnosticNames(t *testing.T) {
+	for _, tc := range []struct {
+		strategy fmt.Stringer
+		name     string
+	}{
+		{StrategyAcceptHeader, "accept-header"},
+		{StrategyURLPath, "url-path"},
+		{StrategyQueryParam, "query-param"},
+		{StrategyCustomHeader, "custom-header"},
+		{Strategy(99), "unknown"},
+	} {
+		if got := tc.strategy.String(); got != tc.name {
+			t.Errorf("strategy name = %q, want %q", got, tc.name)
+		}
 	}
 }

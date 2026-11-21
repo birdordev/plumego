@@ -214,3 +214,31 @@ func TestScopedLoggerCapturesContextError(t *testing.T) {
 		t.Errorf("root entry inherited child fields: %+v", entries[1])
 	}
 }
+
+func TestContextLogLevelsCaptureRequestID(t *testing.T) {
+	logger := New()
+	ctx := contract.WithRequestID(t.Context(), "request-fixture")
+	fields := Fields{"component": "fixture"}
+	fatalCalls := 0
+	logger.FatalHook = func(msg string) {
+		fatalCalls++
+		if msg != "fatal fixture" {
+			t.Errorf("fatal hook received %q", msg)
+		}
+	}
+	logger.DebugCtx(ctx, "debug fixture", fields)
+	logger.WarnCtx(ctx, "warning fixture", fields)
+	logger.FatalCtx(ctx, "fatal fixture", fields)
+	if fatalCalls != 1 || len(fields) != 1 || fields["component"] != "fixture" {
+		t.Errorf("fatal hook calls = %d, caller fields = %v", fatalCalls, fields)
+	}
+	entries := logger.Entries()
+	if len(entries) != 3 {
+		t.Fatalf("log entries = %v", entries)
+	}
+	for i, want := range []Level{DEBUG, WARNING, FATAL} {
+		if got := entries[i]; got.Level != want || got.Fields["request_id"] != "request-fixture" || got.Fields["component"] != "fixture" {
+			t.Errorf("entry %d = %+v, want level %v and input fields", i, got, want)
+		}
+	}
+}

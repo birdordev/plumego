@@ -970,3 +970,28 @@ func TestMockProviderResetClearsQueuedState(t *testing.T) {
 		t.Errorf("GetModel after Reset = %+v, %v", model, err)
 	}
 }
+
+func TestProviderModelCatalogLookup(t *testing.T) {
+	for _, adapter := range []Provider{NewOpenAIProvider("fixture"), NewClaudeProvider("fixture")} {
+		t.Run(adapter.Name(), func(t *testing.T) {
+			models, err := adapter.ListModels(t.Context())
+			if err != nil || len(models) == 0 {
+				t.Fatalf("ListModels = %v, %v", models, err)
+			}
+			first := models[0]
+			if first.Provider != adapter.Name() || first.ID == "" || len(first.Capabilities) == 0 {
+				t.Fatalf("unexpected catalog model: %+v", first)
+			}
+			wantCapability := first.Capabilities[0]
+			first.Capabilities[0] = "caller-modified"
+			model, err := adapter.GetModel(t.Context(), first.ID)
+			if err != nil || model == nil || model.ID != first.ID || model.Provider != first.Provider ||
+				len(model.Capabilities) == 0 || model.Capabilities[0] != wantCapability {
+				t.Fatalf("GetModel = %+v, %v", model, err)
+			}
+			if model, err := adapter.GetModel(t.Context(), "unknown-fixture-model"); model != nil || err == nil {
+				t.Errorf("unknown GetModel = %+v, %v", model, err)
+			}
+		})
+	}
+}

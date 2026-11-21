@@ -490,3 +490,24 @@ func TestRecordErrorAppliesCustomAttributes(t *testing.T) {
 		t.Errorf("recorded span = %+v", got)
 	}
 }
+
+func TestEndSpanAppliesCustomAttributes(t *testing.T) {
+	config := DefaultTracerConfig()
+	config.SamplingRate = 1
+	tracer, err := NewTracer(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, span := tracer.StartTrace(t.Context(), "fixture", func(_ *Trace, span *Span) {
+		span.Attributes["existing"] = "value"
+	})
+	tracer.EndSpan(span, WithSpanAttributes(map[string]any{"attempt": 3}))
+	trace, ok := tracer.collector.GetTrace(span.TraceID)
+	if !ok || len(trace.Spans) != 1 {
+		t.Fatalf("trace = %v, found=%v", trace, ok)
+	}
+	got := trace.Spans[0]
+	if got.ID != span.ID || got.EndTime == nil || got.Attributes["existing"] != "value" || got.Attributes["attempt"] != 3 {
+		t.Errorf("recorded span = %+v", got)
+	}
+}

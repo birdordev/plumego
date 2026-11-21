@@ -231,18 +231,15 @@ func (d *Deduplicator) cleanup() {
 
 	now := time.Now()
 
-	// Remove from back (oldest) until we hit non-expired
-	for {
-		elem := d.order.Back()
-		if elem == nil {
-			break
-		}
+	// A duplicate read can move an entry without extending its expiration.
+	for elem := d.order.Back(); elem != nil; {
+		previous := elem.Prev()
 		entry := elem.Value.(*dedupEntry)
-		if now.Before(entry.expireAt) {
-			break
+		if !now.Before(entry.expireAt) {
+			d.order.Remove(elem)
+			delete(d.seen, entry.msgID)
 		}
-		d.order.Remove(elem)
-		delete(d.seen, entry.msgID)
+		elem = previous
 	}
 }
 

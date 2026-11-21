@@ -389,13 +389,13 @@ type TimerContext struct {
 	tags      []Tag
 }
 
-// NewTimer creates a timer context for measuring duration
+// NewTimer starts measuring elapsed time and copies the supplied tags.
 func NewTimer(collector Collector, name string, tags ...Tag) *TimerContext {
 	return &TimerContext{
 		start:     time.Now(),
 		collector: collector,
 		name:      name,
-		tags:      tags,
+		tags:      slices.Clone(tags),
 	}
 }
 
