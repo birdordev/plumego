@@ -1,10 +1,12 @@
 package cachemanager
 
 import (
+	"cmp"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/birdordev/plumego/x/ai/semanticcache/embedding"
@@ -38,9 +40,9 @@ func (w *Warmer) WarmFromQueries(ctx context.Context, queries []QueryResponse) e
 	}
 
 	// Generate embeddings in batch
-	embeddings, err := w.provider.GenerateBatch(ctx, texts)
+	embeddings, err := w.generateBatch(ctx, texts)
 	if err != nil {
-		return fmt.Errorf("failed to generate embeddings: %w", err)
+		return err
 	}
 
 	// Create cache entries
@@ -72,7 +74,9 @@ func (w *Warmer) WarmFromQueries(ctx context.Context, queries []QueryResponse) e
 	return nil
 }
 
-// WarmFromDocuments pre-warms the cache from a document corpus.
+// WarmFromDocuments pre-warms the cache from a document corpus. A batch
+// with invalid embedding results is rejected before writing it. Earlier
+// batches remain stored.
 func (w *Warmer) WarmFromDocuments(ctx context.Context, docs []Document) error {
 	if len(docs) == 0 {
 		return nil
@@ -104,7 +108,9 @@ func (w *Warmer) WarmFromFile(ctx context.Context, path string) error {
 	return fmt.Errorf("%w: warm from file requires a file parser", ErrUnsupportedMaintenance)
 }
 
-// WarmWithStrategy warms cache using a specific strategy.
+// WarmWithStrategy warms cache using the selected strategy. When limiting the
+// result, most-frequent prefers earlier inputs on equal counts, and recent
+// prefers later inputs on equal timestamps. The input order is unchanged.
 func (w *Warmer) WarmWithStrategy(ctx context.Context, strategy WarmingStrategy) error {
 	switch strategy.Type {
 	case StrategyMostFrequent:
@@ -130,9 +136,9 @@ func (w *Warmer) warmBatch(ctx context.Context, docs []Document) error {
 	}
 
 	// Generate embeddings
-	embeddings, err := w.provider.GenerateBatch(ctx, texts)
+	embeddings, err := w.generateBatch(ctx, texts)
 	if err != nil {
-		return fmt.Errorf("failed to generate embeddings: %w", err)
+		return err
 	}
 
 	// Create entries
@@ -162,11 +168,29 @@ func (w *Warmer) warmBatch(ctx context.Context, docs []Document) error {
 	return w.backend.AddBatch(ctx, entries)
 }
 
+func (w *Warmer) generateBatch(ctx context.Context, texts []string) ([]*embedding.Embedding, error) {
+	embeddings, err := w.provider.GenerateBatch(ctx, texts)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate embeddings: %w", err)
+	}
+	if len(embeddings) != len(texts) {
+		return nil, fmt.Errorf("embedding batch returned %d results for %d inputs", len(embeddings), len(texts))
+	}
+	for i, result := range embeddings {
+		if result == nil {
+			return nil, fmt.Errorf("embedding batch returned nil result at index %d", i)
+		}
+	}
+	return embeddings, nil
+}
+
 // warmMostFrequent warms most frequently accessed queries.
 func (w *Warmer) warmMostFrequent(ctx context.Context, queries []QueryResponse, limit int) error {
-	// Sort by access count (if available)
-	// For now, just take first N
 	if limit > 0 && limit < len(queries) {
+		queries = slices.Clone(queries)
+		slices.SortStableFunc(queries, func(a, b QueryResponse) int {
+			return cmp.Compare(b.AccessCount, a.AccessCount)
+		})
 		queries = queries[:limit]
 	}
 
@@ -175,9 +199,11 @@ func (w *Warmer) warmMostFrequent(ctx context.Context, queries []QueryResponse, 
 
 // warmRecent warms most recent queries.
 func (w *Warmer) warmRecent(ctx context.Context, queries []QueryResponse, limit int) error {
-	// Sort by timestamp (if available)
-	// For now, just take last N
 	if limit > 0 && limit < len(queries) {
+		queries = slices.Clone(queries)
+		slices.SortStableFunc(queries, func(a, b QueryResponse) int {
+			return a.Timestamp.Compare(b.Timestamp)
+		})
 		queries = queries[len(queries)-limit:]
 	}
 

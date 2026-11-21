@@ -61,6 +61,7 @@ type InProcBroker struct {
 	startTime     time.Time
 	lastPanic     error
 	lastPanicTime time.Time
+	closing       atomic.Bool
 
 	// Persistence failures can be recorded while HealthCheck reads the snapshot.
 	lastPersistenceError atomic.Pointer[string]

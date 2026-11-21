@@ -201,13 +201,16 @@ func (t *TieredBackend) recordSearch(outcome TieredStats) {
 	t.stats.Promotions += outcome.Promotions
 }
 
-// Get retrieves an entry by ID from any tier.
+// Get retrieves an entry by ID from any tier. If all tiers fail, the error
+// preserves the causes from each configured tier.
 func (t *TieredBackend) Get(ctx context.Context, id string) (*Entry, error) {
 	// Try L1
 	entry, err := t.l1.Get(ctx, id)
 	if err == nil {
 		return entry, nil
 	}
+
+	failures := []error{fmt.Errorf("get on L1: %w", err)}
 
 	// Try L2
 	if t.l2 != nil {
@@ -217,6 +220,7 @@ func (t *TieredBackend) Get(ctx context.Context, id string) (*Entry, error) {
 			_ = t.l1.Add(ctx, entry)
 			return entry, nil
 		}
+		failures = append(failures, fmt.Errorf("get on L2: %w", err))
 	}
 
 	// Try L3
@@ -230,9 +234,10 @@ func (t *TieredBackend) Get(ctx context.Context, id string) (*Entry, error) {
 			_ = t.l1.Add(ctx, entry)
 			return entry, nil
 		}
+		failures = append(failures, fmt.Errorf("get on L3: %w", err))
 	}
 
-	return nil, fmt.Errorf("entry not found: %s", id)
+	return nil, fmt.Errorf("entry not found: %s: %w", id, errors.Join(failures...))
 }
 
 // Delete attempts removal in every configured tier. The returned error

@@ -118,8 +118,5 @@ func splitPattern(pattern string) (string, string) {
 	}
 	method = strings.TrimSpace(method)
 	path = strings.TrimSpace(path)
-	if path == "" {
-		path = "/"
-	}
 	return method, path
 }

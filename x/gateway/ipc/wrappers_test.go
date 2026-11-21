@@ -1621,3 +1621,29 @@ func TestStreamClientCloseDelegatesError(t *testing.T) {
 		}
 	}
 }
+
+type heartbeatReadFixture struct {
+	Client
+	read func([]byte, time.Duration) (int, error)
+}
+
+func (c heartbeatReadFixture) ReadWithTimeout(buf []byte, timeout time.Duration) (int, error) {
+	return c.read(buf, timeout)
+}
+
+func TestHeartbeatClientDelegatesApplicationReadTimeout(t *testing.T) {
+	buffer := make([]byte, 8)
+	deadline := 300 * time.Millisecond
+	sentinel := errors.New("application read timed out")
+	calls := 0
+	hb := &heartbeatClient{client: heartbeatReadFixture{read: func(got []byte, timeout time.Duration) (int, error) {
+		calls++
+		if len(got) != len(buffer) || &got[0] != &buffer[0] || timeout != deadline {
+			t.Errorf("read buffer length=%d, timeout=%v", len(got), timeout)
+		}
+		return copy(got, "abc"), sentinel
+	}}}
+	if n, err := hb.ReadWithTimeout(buffer, deadline); n != 3 || !errors.Is(err, sentinel) || string(buffer[:3]) != "abc" || calls != 1 {
+		t.Errorf("ReadWithTimeout=%d, %v, buffer=%q, calls=%d", n, err, buffer, calls)
+	}
+}

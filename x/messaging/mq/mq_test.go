@@ -1015,3 +1015,65 @@ func (m *metricsCollector) Clear() {
 	m.count = 0
 	m.last = Metrics{}
 }
+
+func TestMQBrokerHealthAfterClose(t *testing.T) {
+	sentinel := errors.New("underlying close failed")
+	for _, tc := range []struct {
+		name     string
+		closeErr error
+	}{{"success", nil}, {"cleanup error", sentinel}} {
+		t.Run(tc.name, func(t *testing.T) {
+			ps := &controlledBrokerClose{InProcBroker: pubsub.New(), err: tc.closeErr}
+			b, err := NewInProcBroker(ps)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = b.Close() })
+			if got := b.HealthCheck().Status; got != "healthy" {
+				t.Errorf("initial status=%q", got)
+			}
+			if err := b.Close(); !errors.Is(err, tc.closeErr) {
+				t.Errorf("Close=%v, want %v", err, tc.closeErr)
+			}
+			if got := b.HealthCheck().Status; got != "unhealthy" {
+				t.Errorf("status after Close=%q", got)
+			}
+			if err := b.Close(); err != nil {
+				t.Errorf("repeat Close=%v", err)
+			}
+			if got := b.HealthCheck().Status; got != "unhealthy" {
+				t.Errorf("status after repeat=%q", got)
+			}
+		})
+	}
+}
+
+func TestMQBrokerSnapshotDelegatesWhenSupported(t *testing.T) {
+	ctx := t.Context()
+	b, err := NewInProcBroker(pubsub.New())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = b.Close() })
+	if err := b.Publish(ctx, "fixture", Message{ID: "one"}); err != nil {
+		t.Fatal(err)
+	}
+	got := b.Snapshot()
+	if got.Topics["fixture"].PublishTotal != 1 {
+		t.Fatalf("snapshot=%+v", got)
+	}
+	delete(got.Topics, "fixture")
+	if again := b.Snapshot(); again.Topics["fixture"].PublishTotal != 1 {
+		t.Errorf("snapshot after mutation=%+v", again)
+	}
+	without, err := NewInProcBroker(&recordingPubSub{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = without.Close() })
+	for _, empty := range []*InProcBroker{nil, {}, without} {
+		if got := empty.Snapshot(); got.Topics != nil {
+			t.Errorf("empty snapshot=%+v", got)
+		}
+	}
+}

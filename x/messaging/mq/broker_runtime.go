@@ -70,13 +70,16 @@ func (b *InProcBroker) checkMemoryLimit() error {
 
 // CloseWithContext shuts down the broker and passes ctx to shutdown observers.
 // It reports errors from both persistence and the underlying broker. Persistence
-// is closed at most once, even if its Close returns an error.
+// is closed at most once, even if its Close returns an error. The broker
+// reports unhealthy from the start of shutdown.
 func (b *InProcBroker) CloseWithContext(ctx context.Context) error {
 	return b.executeWithObservability(ctx, OpClose, "", func() error {
 		// Validate broker initialization
 		if b == nil || b.ps == nil {
 			return nil // Close is idempotent
 		}
+
+		b.closing.Store(true)
 
 		// Stop background memory sampler if it was started.
 		// sync.Once guarantees the channel is closed exactly once even if

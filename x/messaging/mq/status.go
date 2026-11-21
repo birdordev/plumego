@@ -88,6 +88,9 @@ func (b *InProcBroker) HealthCheck() HealthStatus {
 		status.Metrics = b.getMetricsSnapshot()
 	}
 
+	if b.closing.Load() {
+		status.Status = "unhealthy"
+	}
 	return status
 }
 

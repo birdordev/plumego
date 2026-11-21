@@ -34,13 +34,18 @@ func (b *InProcBroker) Snapshot() MetricsSnapshot {
 	return b.metrics.Snapshot()
 }
 
-// SetMetricsObserver replaces the external metrics sink at runtime.
+// SetMetricsObserver replaces the external metrics sink at runtime. A call
+// that has already selected an observer can finish using that observer.
 func (b *InProcBroker) SetMetricsObserver(observer MetricsObserver) {
+	b.observerMu.Lock()
 	b.config.MetricsObserver = observer
+	b.observerMu.Unlock()
 }
 
 // Config returns a copy of the broker's configuration.
 func (b *InProcBroker) Config() Config {
+	b.observerMu.RLock()
+	defer b.observerMu.RUnlock()
 	return b.config
 }
 
@@ -61,10 +66,12 @@ func (b *InProcBroker) TopicShardMapping() map[string]int {
 
 // recordMetrics forwards an operation observation to the external collector, if any.
 func (b *InProcBroker) recordMetrics(ctx context.Context, operation, topic string, duration time.Duration, err error) {
-	if b.config.MetricsObserver == nil {
-		return
+	b.observerMu.RLock()
+	observer := b.config.MetricsObserver
+	b.observerMu.RUnlock()
+	if observer != nil {
+		observer.ObservePubSub(ctx, operation, topic, duration, err)
 	}
-	b.config.MetricsObserver.ObservePubSub(ctx, operation, topic, duration, err)
 }
 
 // --- Observer notification helpers ---

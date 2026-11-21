@@ -296,3 +296,28 @@ func TestSPAFallbackIgnoresUnrelatedAcceptParameters(t *testing.T) {
 		}
 	}
 }
+
+func TestSPAFallbackSkipsEmptyMediaType(t *testing.T) {
+	root := t.TempDir()
+	writeTestFile(t, root, "index.html", "home")
+	h, err := NewHandlerFS(http.Dir(root), WithFallback(true))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		accept string
+		status int
+	}{
+		{";q=1", http.StatusNotFound},
+		{";q=1, text/html;q=0.5", http.StatusOK},
+	} {
+		req := httptest.NewRequest(http.MethodGet, "/client-route", nil)
+		req.Header.Set("Accept", tc.accept)
+		out := httptest.NewRecorder()
+		h.ServeHTTP(out, req)
+		if out.Code != tc.status || !slices.Contains(out.Header().Values("Vary"), "Accept") ||
+			(out.Body.String() == "home") != (tc.status == http.StatusOK) {
+			t.Errorf("Accept %q: status=%d, body=%q, Vary=%v", tc.accept, out.Code, out.Body.String(), out.Header().Values("Vary"))
+		}
+	}
+}

@@ -294,3 +294,36 @@ func TestClosedBrokerHealthErrorsIdentifyCheck(t *testing.T) {
 		}
 	}
 }
+
+func TestPatternSubscriptionInspectionTracksCancellation(t *testing.T) {
+	b := New()
+	defer b.Close()
+	add := func(pattern string) Subscription {
+		t.Helper()
+		s, err := b.SubscribePattern(pattern, SubOptions{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return s
+	}
+	first := add("catalog.*")
+	second := add("catalog.*")
+	other := add("assets.*")
+	list := b.ListPatterns()
+	if len(list) != 2 || list[0] != "assets.*" || list[1] != "catalog.*" || b.GetPatternSubscriberCount("catalog.*") != 2 {
+		t.Fatalf("patterns=%v, catalog=%d", list, b.GetPatternSubscriberCount("catalog.*"))
+	}
+	list[0] = "modified"
+	first.Cancel()
+	if got := b.GetPatternSubscriberCount("catalog.*"); got != 1 {
+		t.Errorf("count after first cancel=%d", got)
+	}
+	second.Cancel()
+	if got := b.ListPatterns(); len(got) != 1 || got[0] != "assets.*" || b.GetPatternSubscriberCount("catalog.*") != 0 {
+		t.Errorf("patterns after catalog cancel=%v", got)
+	}
+	other.Cancel()
+	if got := b.ListPatterns(); len(got) != 0 {
+		t.Errorf("patterns after all cancel=%v", got)
+	}
+}

@@ -1,7 +1,10 @@
 package vectorstore
 
 import (
+	"context"
+	"errors"
 	"fmt"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -430,5 +433,98 @@ func TestMemoryBackendConcurrentGetOwnsAccessCounts(t *testing.T) {
 	}
 	if got.AccessCount != readers+1 || got.Vector[0] != 1 {
 		t.Errorf("Get after concurrent reads = %+v", got)
+	}
+}
+
+func TestMemoryBackendUpdatePreservesVectorDimensions(t *testing.T) {
+	m := NewMemoryBackend(MemoryConfig{Dimensions: 2})
+	if err := m.Add(t.Context(), &Entry{ID: "fixture", Vector: []float64{1, 0}, Metadata: map[string]any{"color": "blue"}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.Update(t.Context(), &Entry{ID: "fixture", Vector: []float64{1}}); err == nil {
+		t.Error("dimension mismatch accepted")
+	}
+	results, err := m.Search(t.Context(), []float64{1, 0}, 1, 0.9)
+	if err != nil || len(results) != 1 {
+		t.Errorf("last valid vector vanished from search: %v, %v", results, err)
+	}
+	if len(results) == 1 && (!slices.Equal(results[0].Entry.Vector, []float64{1, 0}) || results[0].Entry.Metadata["color"] != "blue") {
+		t.Error("invalid update changed the stored entry")
+	}
+	stats, err := m.Stats(t.Context())
+	if err != nil || stats.TotalEntries != 1 || stats.Dimensions != 2 {
+		t.Errorf("stats = %+v, %v", stats, err)
+	}
+	if err := m.Update(t.Context(), &Entry{ID: "fixture", Vector: []float64{0, 1}}); err != nil {
+		t.Fatal(err)
+	}
+	if found, err := m.Search(t.Context(), []float64{0, 1}, 1, 0.9); err != nil || len(found) != 1 {
+		t.Errorf("updated vector search = %v, %v", found, err)
+	}
+	unrestricted := NewMemoryBackend(MemoryConfig{})
+	if err := unrestricted.Add(t.Context(), &Entry{ID: "free", Vector: []float64{1}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := unrestricted.Update(t.Context(), &Entry{ID: "free", Vector: []float64{1, 0}}); err != nil {
+		t.Errorf("unrestricted update = %v", err)
+	}
+}
+
+type cancelBetweenAdds struct {
+	context.Context
+	cancel context.CancelFunc
+	checks int
+}
+
+func (c *cancelBetweenAdds) Err() error {
+	c.checks++
+	if c.checks == 2 {
+		c.cancel()
+	}
+	return c.Context.Err()
+}
+
+func TestMemoryBackendCanceledWritesKeepExistingEntries(t *testing.T) {
+	m := NewMemoryBackend(MemoryConfig{MaxSize: 1})
+	if err := m.Add(t.Context(), &Entry{ID: "original", Vector: []float64{1}}); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	for _, id := range []string{"original", "replacement"} {
+		if err := m.Add(ctx, &Entry{ID: id, Vector: []float64{2}}); !errors.Is(err, context.Canceled) {
+			t.Errorf("pre-canceled Add(%q)=%v", id, err)
+		}
+	}
+	ctx, cancel = context.WithCancel(t.Context())
+	defer cancel()
+	m.mu.Lock()
+	started, done := make(chan struct{}), make(chan error, 1)
+	go func() {
+		close(started)
+		done <- m.Add(ctx, &Entry{ID: "waiting", Vector: []float64{2}})
+	}()
+	<-started
+	cancel()
+	m.mu.Unlock()
+	if err := <-done; !errors.Is(err, context.Canceled) {
+		t.Errorf("canceled waiter=%v", err)
+	}
+	if got, err := m.Get(t.Context(), "original"); err != nil || !slices.Equal(got.Vector, []float64{1}) {
+		t.Errorf("original=%v, %v", got, err)
+	}
+
+	batch := NewMemoryBackend(MemoryConfig{})
+	ctx, cancel = context.WithCancel(t.Context())
+	defer cancel()
+	staged := &cancelBetweenAdds{Context: ctx, cancel: cancel}
+	if err := batch.AddBatch(staged, []*Entry{{ID: "first"}, {ID: "canceled"}, {ID: "skipped"}}); !errors.Is(err, context.Canceled) {
+		t.Errorf("AddBatch=%v", err)
+	}
+	if got, err := batch.Get(t.Context(), "first"); err != nil || got.ID != "first" {
+		t.Errorf("committed entry=%v, %v", got, err)
+	}
+	if count, err := batch.Count(t.Context()); err != nil || count != 1 {
+		t.Errorf("batch count=%d, %v", count, err)
 	}
 }

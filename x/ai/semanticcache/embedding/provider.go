@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"sync"
 	"time"
 )
 
@@ -87,11 +88,11 @@ type Config struct {
 
 // Stats holds embedding generation statistics.
 type Stats struct {
-	TotalEmbeddings int64
+	TotalEmbeddings int64 // Attempted input texts, including failed requests.
 	TotalTokens     int64
 	TotalCost       float64
-	AverageLatency  time.Duration
-	ErrorRate       float64
+	AverageLatency  time.Duration // Mean duration per completed provider call.
+	ErrorRate       float64       // Fraction of completed provider calls that returned an error.
 }
 
 // BatchRequest represents a batch embedding request.
@@ -111,68 +112,54 @@ type BatchResponse struct {
 
 // ProviderWithStats wraps a provider with statistics tracking.
 type ProviderWithStats struct {
-	Provider Provider
-	stats    *Stats
+	Provider      Provider
+	mu            sync.Mutex
+	stats         Stats
+	calls, failed int64
+	meanLatency   float64
 }
 
 // NewProviderWithStats creates a new provider with statistics tracking.
 func NewProviderWithStats(provider Provider) *ProviderWithStats {
 	return &ProviderWithStats{
 		Provider: provider,
-		stats:    &Stats{},
 	}
 }
 
 // Generate wraps the provider's Generate method with stats tracking.
 func (p *ProviderWithStats) Generate(ctx context.Context, text string) (*Embedding, error) {
 	start := time.Now()
-	embedding, err := p.Provider.Generate(ctx, text)
-	duration := time.Since(start)
-
-	p.stats.TotalEmbeddings++
-	if embedding != nil {
-		p.stats.TotalTokens += int64(embedding.TokensUsed)
-		p.stats.TotalCost += embedding.Cost
-	}
-	if err != nil {
-		p.stats.ErrorRate = float64(p.stats.TotalEmbeddings-1) / float64(p.stats.TotalEmbeddings)
-	}
-
-	// Update average latency
-	if p.stats.TotalEmbeddings > 0 {
-		p.stats.AverageLatency = time.Duration(
-			(int64(p.stats.AverageLatency)*p.stats.TotalEmbeddings + int64(duration)) /
-				(p.stats.TotalEmbeddings + 1),
-		)
-	}
-
-	return embedding, err
+	result, err := p.Provider.Generate(ctx, text)
+	p.recordStats(time.Since(start), 1, err, result)
+	return result, err
 }
 
 // GenerateBatch wraps the provider's GenerateBatch method with stats tracking.
 func (p *ProviderWithStats) GenerateBatch(ctx context.Context, texts []string) ([]*Embedding, error) {
 	start := time.Now()
-	embeddings, err := p.Provider.GenerateBatch(ctx, texts)
-	duration := time.Since(start)
+	results, err := p.Provider.GenerateBatch(ctx, texts)
+	p.recordStats(time.Since(start), len(texts), err, results...)
+	return results, err
+}
 
-	p.stats.TotalEmbeddings += int64(len(texts))
-	for _, emb := range embeddings {
-		p.stats.TotalTokens += int64(emb.TokensUsed)
-		p.stats.TotalCost += emb.Cost
-	}
+func (p *ProviderWithStats) recordStats(elapsed time.Duration, attempted int, err error, results ...*Embedding) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	p.calls++
 	if err != nil {
-		p.stats.ErrorRate = float64(p.stats.TotalEmbeddings-int64(len(texts))) / float64(p.stats.TotalEmbeddings)
+		p.failed++
 	}
-
-	// Update average latency
-	if p.stats.TotalEmbeddings > 0 {
-		p.stats.AverageLatency = time.Duration(
-			(int64(p.stats.AverageLatency)*p.stats.TotalEmbeddings + int64(duration)) /
-				(p.stats.TotalEmbeddings + int64(len(texts))),
-		)
+	p.meanLatency += (float64(elapsed) - p.meanLatency) / float64(p.calls)
+	p.stats.AverageLatency = time.Duration(p.meanLatency)
+	p.stats.ErrorRate = float64(p.failed) / float64(p.calls)
+	p.stats.TotalEmbeddings += int64(attempted)
+	for _, result := range results {
+		if result != nil {
+			p.stats.TotalTokens += int64(result.TokensUsed)
+			p.stats.TotalCost += result.Cost
+		}
 	}
-
-	return embeddings, err
 }
 
 // Name returns the provider name.
@@ -205,12 +192,21 @@ func (p *ProviderWithStats) SupportsAsync() bool {
 	return p.Provider.SupportsAsync()
 }
 
-// Stats returns the current statistics.
+// Stats returns a caller-owned snapshot of completed calls since the last reset.
 func (p *ProviderWithStats) Stats() *Stats {
-	return p.stats
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	snapshot := p.stats
+	return &snapshot
 }
 
-// ResetStats resets all statistics.
+// ResetStats clears the statistics. Calls completing afterward are counted in
+// the new interval.
 func (p *ProviderWithStats) ResetStats() {
-	p.stats = &Stats{}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.stats = Stats{}
+	p.calls = 0
+	p.failed = 0
+	p.meanLatency = 0
 }

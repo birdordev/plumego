@@ -339,3 +339,30 @@ func TestDialPreservesPreCanceledContextCause(t *testing.T) {
 		t.Errorf("Dial=%v, %v, %v", conn, resp, err)
 	}
 }
+
+type readOnlyUpgradeBody struct {
+	io.Reader
+	closes int
+}
+
+func (b *readOnlyUpgradeBody) Close() error { b.closes++; return nil }
+
+func TestDialClosesReadOnlyUpgradeResponse(t *testing.T) {
+	body := &readOnlyUpgradeBody{Reader: strings.NewReader("")}
+	client := &http.Client{Transport: canceledDialTransport(func(r *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusSwitchingProtocols,
+			Header: http.Header{
+				"Connection":           []string{"Upgrade"},
+				"Upgrade":              []string{"websocket"},
+				"Sec-Websocket-Accept": []string{computeAcceptKey(r.Header.Get("Sec-WebSocket-Key"))},
+			},
+			Body: body,
+		}, nil
+	})}
+	conn, response, err := Dial(t.Context(), "ws://fixture.invalid", &DialOptions{HTTPClient: client})
+	if conn != nil || response == nil || response.StatusCode != http.StatusSwitchingProtocols ||
+		err == nil || !strings.Contains(err.Error(), "io.ReadWriteCloser") || body.closes != 1 {
+		t.Errorf("Dial=%v, %v, %v, closes=%d", conn, response, err, body.closes)
+	}
+}

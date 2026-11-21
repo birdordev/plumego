@@ -301,3 +301,19 @@ func TestSQLXTransactionOperationsRespectTerminalState(t *testing.T) {
 		})
 	}
 }
+
+func TestSQLXReturnsInjectedDB(t *testing.T) {
+	raw, err := sql.Open("plumego-sqlx-test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer raw.Close()
+	if got := NewWithDB(raw).SQL(); got != raw {
+		t.Errorf("SQL=%p, want %p", got, raw)
+	}
+	for _, empty := range []*DB{nil, NewWithDB(nil)} {
+		if got := empty.SQL(); got != nil {
+			t.Errorf("empty SQL=%p", got)
+		}
+	}
+}

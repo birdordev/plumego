@@ -3,6 +3,7 @@ package cache
 import (
 	"fmt"
 	"hash/fnv"
+	"maps"
 	"net/http"
 	"slices"
 	"sort"
@@ -253,23 +254,27 @@ type PathPatternKeyStrategy struct {
 	DefaultStrategy KeyStrategy
 }
 
-// NewPathPatternKeyStrategy creates a path pattern key strategy
+// NewPathPatternKeyStrategy copies the caller-supplied prefix rules.
 func NewPathPatternKeyStrategy(patterns map[string]KeyStrategy) *PathPatternKeyStrategy {
 	return &PathPatternKeyStrategy{
-		Patterns:        patterns,
+		Patterns:        maps.Clone(patterns),
 		DefaultStrategy: NewDefaultKeyStrategy(),
 	}
 }
 
-// Generate generates a cache key based on path pattern
+// Generate uses the longest matching prefix, falling back to the default strategy.
 func (s *PathPatternKeyStrategy) Generate(r *http.Request) string {
 	path := r.URL.Path
 
-	// Find matching pattern
+	var best KeyStrategy
+	longest := -1
 	for prefix, strategy := range s.Patterns {
-		if strings.HasPrefix(path, prefix) {
-			return strategy.Generate(r)
+		if strategy != nil && len(prefix) > longest && strings.HasPrefix(path, prefix) {
+			best, longest = strategy, len(prefix)
 		}
+	}
+	if best != nil {
+		return best.Generate(r)
 	}
 
 	// Use default strategy

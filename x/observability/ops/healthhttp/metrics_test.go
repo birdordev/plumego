@@ -168,3 +168,32 @@ func TestTrackerResetRestartsUptimeAndSuccessRate(t *testing.T) {
 		}
 	})
 }
+
+func TestTrackerForwardsManualReadinessAndOverallHealth(t *testing.T) {
+	m, err := NewManager(Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = m.Close() }()
+	tracker := NewTracker(m)
+	m.MarkReady()
+	if !tracker.Readiness().Ready {
+		t.Fatal("expected initial readiness")
+	}
+	tracker.MarkNotReady("fixture maintenance")
+	got, want := tracker.Readiness(), m.Readiness()
+	if got.Ready || want.Ready || got.Reason != "fixture maintenance" || got.Reason != want.Reason {
+		t.Errorf("readiness tracker=%+v manager=%+v", got, want)
+	}
+	if actual, expected := tracker.GetOverallHealth(), m.GetOverallHealth(); actual.Status != expected.Status || actual.Message != expected.Message {
+		t.Errorf("overall health tracker=%+v manager=%+v", actual, expected)
+	}
+	empty := NewTracker(nil)
+	empty.MarkNotReady("unused")
+	if got := empty.GetOverallHealth(); got.Status != health.StatusUnhealthy || got.Message != "health manager is nil" || got.Timestamp.IsZero() {
+		t.Errorf("nil manager health=%+v", got)
+	}
+	if empty.Readiness().Ready {
+		t.Error("nil manager became ready")
+	}
+}

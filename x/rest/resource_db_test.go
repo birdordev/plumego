@@ -705,3 +705,22 @@ func TestRepositoryUpdatePreservesPreparationAndExecErrors(t *testing.T) {
 		})
 	}
 }
+
+func TestIdentityTransformerPreservesSingleResource(t *testing.T) {
+	identity := new(IdentityTransformer)
+	resource := &dbResourceTestItem{ID: "1", Name: "one"}
+	for _, input := range []any{resource, nil} {
+		if got, err := identity.Transform(t.Context(), input); got != input || err != nil {
+			t.Errorf("Transform=%v, %v", got, err)
+		}
+	}
+	controller := NewDBResourceController("items", dbResourceTestRepo{})
+	out := httptest.NewRecorder()
+	controller.Show(out, dbResourceRequestWithID(http.MethodGet, "/items/1", nil, "1"))
+	var env struct {
+		Data dbResourceTestItem `json:"data"`
+	}
+	if err := json.Unmarshal(out.Body.Bytes(), &env); err != nil || out.Code != http.StatusOK || env.Data != *resource {
+		t.Errorf("Show status=%d response=%q, error=%v", out.Code, out.Body.String(), err)
+	}
+}

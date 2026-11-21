@@ -53,14 +53,26 @@ func cloneMemoryEntry(entry *Entry) *Entry {
 	return &copy
 }
 
+func (m *MemoryBackend) validateEntryDimensions(entry *Entry) error {
+	if m.dimensions > 0 && len(entry.Vector) != m.dimensions {
+		return fmt.Errorf("vector dimension mismatch: got %d, want %d", len(entry.Vector), m.dimensions)
+	}
+	return nil
+}
+
 // Add adds or replaces a vector entry. Replacing an ID uses its existing slot.
+// Cancellation is checked under the lock before the entry or capacity changes.
 func (m *MemoryBackend) Add(ctx context.Context, entry *Entry) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	// Check dimensions
-	if m.dimensions > 0 && len(entry.Vector) != m.dimensions {
-		return fmt.Errorf("vector dimension mismatch: got %d, want %d", len(entry.Vector), m.dimensions)
+	if ctx != nil {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+	}
+	if err := m.validateEntryDimensions(entry); err != nil {
+		return err
 	}
 
 	// Check size limit
@@ -85,7 +97,7 @@ func (m *MemoryBackend) Add(ctx context.Context, entry *Entry) error {
 	return nil
 }
 
-// AddBatch adds multiple vector entries to the store.
+// AddBatch adds entries in order. Earlier writes remain if a later Add fails.
 func (m *MemoryBackend) AddBatch(ctx context.Context, entries []*Entry) error {
 	for _, entry := range entries {
 		if err := m.Add(ctx, entry); err != nil {
@@ -187,6 +199,10 @@ func (m *MemoryBackend) Update(ctx context.Context, entry *Entry) error {
 
 	if _, exists := m.entries[entry.ID]; !exists {
 		return fmt.Errorf("entry not found: %s", entry.ID)
+	}
+
+	if err := m.validateEntryDimensions(entry); err != nil {
+		return err
 	}
 
 	entry = cloneMemoryEntry(entry)

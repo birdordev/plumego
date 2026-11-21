@@ -625,3 +625,43 @@ func TestMemoryStoreKeysAndHitRate(t *testing.T) {
 		t.Errorf("after Clear: keys = %v, hit rate = %v", s.Keys(), s.HitRate())
 	}
 }
+
+type fixturePathKey string
+
+func (k fixturePathKey) Generate(*http.Request) string { return string(k) }
+
+func TestPathPatternStrategyUsesLongestOwnedPrefix(t *testing.T) {
+	input := map[string]KeyStrategy{"/catalog": fixturePathKey("broad"), "/catalog/books": fixturePathKey("specific")}
+	s := NewPathPatternKeyStrategy(input)
+	s.DefaultStrategy = fixturePathKey("fallback")
+	input["/catalog/books"] = fixturePathKey("changed")
+	req := httptest.NewRequest(http.MethodGet, "/catalog/books/new", nil)
+	for range 128 {
+		if got := s.Generate(req); got != "specific" {
+			t.Fatalf("overlapping path key=%q", got)
+		}
+	}
+	s.Patterns["/catalog/books/new"] = fixturePathKey("configured")
+	if got := s.Generate(req); got != "configured" {
+		t.Errorf("configured key=%q", got)
+	}
+	s.Patterns["/catalog/books/new"] = nil
+	if got := s.Generate(req); got != "specific" {
+		t.Errorf("ignored nil rule key=%q", got)
+	}
+	if got := s.Generate(httptest.NewRequest(http.MethodGet, "/other", nil)); got != "fallback" {
+		t.Errorf("fallback=%q", got)
+	}
+}
+
+func BenchmarkPathPatternStrategy(b *testing.B) {
+	s := NewPathPatternKeyStrategy(map[string]KeyStrategy{
+		"/catalog": fixturePathKey("catalog"), "/catalog/books": fixturePathKey("books"),
+		"/catalog/books/new": fixturePathKey("new"), "/assets": fixturePathKey("assets"), "/help": fixturePathKey("help"),
+	})
+	req := httptest.NewRequest(http.MethodGet, "/catalog/books/new/item", nil)
+	b.ReportAllocs()
+	for b.Loop() {
+		s.Generate(req)
+	}
+}

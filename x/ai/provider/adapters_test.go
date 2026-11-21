@@ -2,8 +2,11 @@ package provider
 
 import (
 	"encoding/json"
+	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -230,4 +233,64 @@ func TestOpenAIProvider_Complete_APIError(t *testing.T) {
 
 func TestOpenAIProvider_ImplementsProvider(t *testing.T) {
 	var _ Provider = (*OpenAIProvider)(nil)
+}
+
+type claudeStreamTransport func(*http.Request) (*http.Response, error)
+
+func (f claudeStreamTransport) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+type claudeStreamBody struct {
+	io.Reader
+	closes int
+}
+
+func (b *claudeStreamBody) Close() error { b.closes++; return nil }
+
+func TestClaudeCompleteStreamOwnsResponseLifecycle(t *testing.T) {
+	payload := "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"fixture\"}}\n\n"
+	for _, tc := range []struct {
+		name    string
+		status  int
+		content string
+	}{
+		{"stream", http.StatusOK, payload},
+		{"response error", http.StatusServiceUnavailable, "fixture unavailable"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			body := &claudeStreamBody{Reader: strings.NewReader(tc.content)}
+			calls := 0
+			client := &http.Client{Transport: claudeStreamTransport(func(r *http.Request) (*http.Response, error) {
+				calls++
+				var data struct{ Stream bool }
+				if err := json.NewDecoder(r.Body).Decode(&data); err != nil || !data.Stream || r.Method != http.MethodPost {
+					t.Errorf("stream request=%+v, %v", data, err)
+				}
+				_ = r.Body.Close()
+				return &http.Response{StatusCode: tc.status, Body: body}, nil
+			})}
+			p := NewClaudeProvider("", WithClaudeHTTPClient(client))
+			stream, err := p.CompleteStream(t.Context(), &CompletionRequest{Model: "fixture", Messages: []Message{NewTextMessage(RoleUser, "prompt")}})
+			if tc.status != http.StatusOK {
+				if stream != nil || err == nil || body.closes != 1 || calls != 1 {
+					t.Errorf("failure=%v, %v, closes=%d calls=%d", stream, err, body.closes, calls)
+				}
+				return
+			}
+			if err != nil || stream == nil {
+				t.Fatalf("CompleteStream=%v, %v", stream, err)
+			}
+			if body.closes != 0 {
+				t.Error("response closed before reader received it")
+			}
+			if got, err := stream.Next(); err != nil || got == nil || got.Delta == nil || got.Delta.Text != "fixture" {
+				t.Errorf("Next=%+v, %v", got, err)
+			}
+			if _, err := stream.Next(); !errors.Is(err, io.EOF) {
+				t.Errorf("end of stream=%v", err)
+			}
+			if err := stream.Close(); err != nil || body.closes != 1 || calls != 1 {
+				t.Errorf("Close=%v, closes=%d calls=%d", err, body.closes, calls)
+			}
+		})
+	}
 }

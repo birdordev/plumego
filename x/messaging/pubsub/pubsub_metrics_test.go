@@ -3,6 +3,7 @@ package pubsub
 import (
 	"context"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -74,4 +75,57 @@ func TestPubSubMetricsObserver(t *testing.T) {
 	if !hasSubscribe || !hasPublish {
 		t.Fatalf("expected publish and subscribe metrics, got %v", collector.ops)
 	}
+}
+
+type switchingMetricsObserver func(context.Context, string, string, time.Duration, error)
+
+func (f switchingMetricsObserver) ObservePubSub(ctx context.Context, op, topic string, duration time.Duration, err error) {
+	f(ctx, op, topic, duration, err)
+}
+
+func TestPubSubMetricsObserverConcurrentReplacement(t *testing.T) {
+	var b *InProcBroker
+	var firstCalls, secondCalls atomic.Int64
+	first := switchingMetricsObserver(func(context.Context, string, string, time.Duration, error) {
+		firstCalls.Add(1)
+		_ = b.Config()
+	})
+	second := switchingMetricsObserver(func(context.Context, string, string, time.Duration, error) {
+		secondCalls.Add(1)
+		_ = b.Config()
+	})
+	b = New(WithMetricsObserver(first))
+	t.Cleanup(func() { _ = b.Close() })
+	publish := func() {
+		t.Helper()
+		if err := b.Publish("fixture", Message{ID: "one"}); err != nil {
+			t.Error(err)
+		}
+	}
+	publish()
+	b.SetMetricsObserver(second)
+	publish()
+	b.SetMetricsObserver(nil)
+	publish()
+	if firstCalls.Load() != 1 || secondCalls.Load() != 1 || b.Config().MetricsObserver != nil {
+		t.Fatalf("first=%d second=%d config=%v", firstCalls.Load(), secondCalls.Load(), b.Config().MetricsObserver)
+	}
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	wg.Go(func() {
+		<-start
+		for range 200 {
+			b.SetMetricsObserver(first)
+			b.SetMetricsObserver(second)
+		}
+	})
+	wg.Go(func() {
+		<-start
+		for range 200 {
+			publish()
+			_ = b.Config()
+		}
+	})
+	close(start)
+	wg.Wait()
 }

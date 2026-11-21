@@ -873,3 +873,20 @@ func TestListStrategyShardRangeFansOut(t *testing.T) {
 		}
 	}
 }
+
+func TestCustomHashStrategyReceivesKeyBytes(t *testing.T) {
+	calls := 0
+	s := NewHashStrategyWithFunc(func(key []byte) uint64 {
+		calls++
+		if string(key) != "shard-key" {
+			t.Errorf("hash input=%q", key)
+		}
+		return 11
+	})
+	if _, err := s.Shard("shard-key", 0); !errors.Is(err, ErrInvalidNumShards) || calls != 0 {
+		t.Errorf("invalid count=%v, calls=%d", err, calls)
+	}
+	if got, err := s.Shard("shard-key", 4); got != 3 || err != nil || calls != 1 {
+		t.Errorf("Shard=%d, %v, calls=%d", got, err, calls)
+	}
+}

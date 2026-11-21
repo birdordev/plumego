@@ -31,8 +31,9 @@ import (
 //
 //	err = b.Publish("user.created", pubsub.Message{Data: "hello"})
 type InProcBroker struct {
-	shards *shardedMap
-	config Config
+	shards     *shardedMap
+	config     Config
+	observerMu sync.RWMutex
 
 	closed atomic.Bool
 	nextID atomic.Uint64

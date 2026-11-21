@@ -5,7 +5,9 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
+	"time"
 
 	"github.com/birdordev/plumego/x/ai/semanticcache/cachemanager"
 	"github.com/birdordev/plumego/x/ai/semanticcache/embedding"
@@ -229,5 +231,120 @@ func TestImportStillRestoresExistingFileWithEntries(t *testing.T) {
 	}
 	if got, err := backend.Get(t.Context(), "sample"); err != nil || got.ID != "sample" || len(got.Vector) != 4 {
 		t.Fatalf("imported entry = %+v, %v", got, err)
+	}
+}
+
+type warmingBatchFixture struct {
+	embedding.Provider
+	batchSize int
+	generate  func(context.Context, []string) ([]*embedding.Embedding, error)
+}
+
+func (p warmingBatchFixture) MaxBatchSize() int { return p.batchSize }
+func (p warmingBatchFixture) GenerateBatch(ctx context.Context, texts []string) ([]*embedding.Embedding, error) {
+	return p.generate(ctx, texts)
+}
+
+func TestWarmerRejectsInvalidEmbeddingBatches(t *testing.T) {
+	ctx := t.Context()
+	valid := &embedding.Embedding{Vector: []float64{1, 0}}
+	sentinel := errors.New("embedding failed")
+	for _, operation := range []struct {
+		name string
+		warm func(*cachemanager.Warmer) error
+	}{
+		{"queries", func(w *cachemanager.Warmer) error {
+			return w.WarmFromQueries(ctx, []cachemanager.QueryResponse{{Query: "one"}})
+		}},
+		{"documents", func(w *cachemanager.Warmer) error {
+			return w.WarmFromDocuments(ctx, []cachemanager.Document{{Content: "one"}})
+		}},
+	} {
+		for _, tc := range []struct {
+			name    string
+			results []*embedding.Embedding
+			err     error
+		}{
+			{name: "short"},
+			{name: "long", results: []*embedding.Embedding{valid, valid}},
+			{name: "nil result", results: []*embedding.Embedding{nil}},
+			{name: "provider error", results: []*embedding.Embedding{valid}, err: sentinel},
+		} {
+			t.Run(operation.name+"/"+tc.name, func(t *testing.T) {
+				store := vectorstore.NewMemoryBackend(vectorstore.MemoryConfig{})
+				w := cachemanager.NewWarmer(store, warmingBatchFixture{batchSize: 1, generate: func(context.Context, []string) ([]*embedding.Embedding, error) { return tc.results, tc.err }})
+				if err := operation.warm(w); err == nil || (tc.err != nil && !errors.Is(err, tc.err)) {
+					t.Errorf("warming error=%v", err)
+				}
+				if n, err := store.Count(ctx); err != nil || n != 0 {
+					t.Errorf("count=%d, %v", n, err)
+				}
+			})
+		}
+	}
+	store := vectorstore.NewMemoryBackend(vectorstore.MemoryConfig{})
+	var batches [][]string
+	w := cachemanager.NewWarmer(store, warmingBatchFixture{batchSize: 2, generate: func(_ context.Context, texts []string) ([]*embedding.Embedding, error) {
+		batches = append(batches, slices.Clone(texts))
+		if len(batches) == 2 {
+			return nil, sentinel
+		}
+		return []*embedding.Embedding{{Vector: []float64{1, 0}}, {Vector: []float64{0, 1}}}, nil
+	}})
+	if err := w.WarmFromDocuments(ctx, []cachemanager.Document{{Content: "first"}, {Content: "second"}, {Content: "failed"}}); !errors.Is(err, sentinel) {
+		t.Errorf("later batch error=%v", err)
+	}
+	if len(batches) != 2 || !slices.Equal(batches[0], []string{"first", "second"}) || !slices.Equal(batches[1], []string{"failed"}) {
+		t.Errorf("batches=%v", batches)
+	}
+	if count, err := store.Count(ctx); err != nil || count != 2 {
+		t.Errorf("committed count=%d, %v", count, err)
+	}
+	for i, query := range [][]float64{{1, 0}, {0, 1}} {
+		got, err := store.Search(ctx, query, 1, 0.9)
+		want := []string{"first", "second"}[i]
+		if err != nil || len(got) != 1 || got[0].Entry.Text != want {
+			t.Errorf("search %q=%v, %v", want, got, err)
+		}
+	}
+}
+
+func TestWarmerSelectsQueriesByStrategyMetadata(t *testing.T) {
+	early := cachemanager.QueryResponse{Query: "early", AccessCount: 9, Timestamp: time.Unix(1, 0)}
+	late := cachemanager.QueryResponse{Query: "late", AccessCount: 1, Timestamp: time.Unix(2, 0)}
+	for _, tc := range []struct {
+		name     string
+		strategy cachemanager.StrategyType
+		limit    int
+		input    []cachemanager.QueryResponse
+		want     []string
+	}{
+		{"frequent", cachemanager.StrategyMostFrequent, 1, []cachemanager.QueryResponse{late, early}, []string{"early"}},
+		{"recent", cachemanager.StrategyRecent, 1, []cachemanager.QueryResponse{late, early}, []string{"late"}},
+		{"frequent tie", cachemanager.StrategyMostFrequent, 1, []cachemanager.QueryResponse{{Query: "first", AccessCount: 5}, {Query: "second", AccessCount: 5}}, []string{"first"}},
+		{"recent tie", cachemanager.StrategyRecent, 1, []cachemanager.QueryResponse{{Query: "first", Timestamp: early.Timestamp}, {Query: "second", Timestamp: early.Timestamp}}, []string{"second"}},
+		{"absent metadata", cachemanager.StrategyRecent, 1, []cachemanager.QueryResponse{{Query: "first"}, {Query: "second"}}, []string{"second"}},
+		{"unlimited", cachemanager.StrategyMostFrequent, 0, []cachemanager.QueryResponse{late, early}, []string{"late", "early"}},
+		{"all", cachemanager.StrategyAll, 1, []cachemanager.QueryResponse{late, early}, []string{"late", "early"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			original := slices.Clone(tc.input)
+			var texts []string
+			store := vectorstore.NewMemoryBackend(vectorstore.MemoryConfig{})
+			w := cachemanager.NewWarmer(store, warmingBatchFixture{generate: func(_ context.Context, inputs []string) ([]*embedding.Embedding, error) {
+				texts = slices.Clone(inputs)
+				result := make([]*embedding.Embedding, len(inputs))
+				for i := range result {
+					result[i] = &embedding.Embedding{Vector: []float64{1, 0}}
+				}
+				return result, nil
+			}})
+			if err := w.WarmWithStrategy(t.Context(), cachemanager.WarmingStrategy{Type: tc.strategy, Queries: tc.input, Limit: tc.limit}); err != nil {
+				t.Fatal(err)
+			}
+			if !slices.Equal(original, tc.input) || !slices.Equal(texts, tc.want) {
+				t.Errorf("input=%v, selected=%v, want=%v", tc.input, texts, tc.want)
+			}
+		})
 	}
 }

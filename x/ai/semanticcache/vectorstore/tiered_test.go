@@ -552,3 +552,73 @@ func TestAudit19CloseReportsTierFailures(t *testing.T) {
 		t.Fatalf("Close with only L1 = %v, calls %v", err, calls)
 	}
 }
+
+type tierQueryFixture struct {
+	Backend
+	entry      *Entry
+	getErr     error
+	count      int64
+	countErr   error
+	countCalls int
+	context    context.Context
+}
+
+func (f *tierQueryFixture) Get(context.Context, string) (*Entry, error) { return f.entry, f.getErr }
+func (f *tierQueryFixture) Count(ctx context.Context) (int64, error) {
+	f.context = ctx
+	f.countCalls++
+	return f.count, f.countErr
+}
+
+func TestTieredGetPreservesBackendErrors(t *testing.T) {
+	first, second := errors.New("L1 unavailable"), errors.New("L2 unavailable")
+	l1 := &tierQueryFixture{Backend: &failingBackend{}, getErr: first}
+	l2 := &tierQueryFixture{Backend: &failingBackend{}, getErr: second}
+	l3 := &tierQueryFixture{Backend: &failingBackend{}, getErr: context.Canceled}
+	tier, err := NewTieredBackend(TieredConfig{L1: l1, L2: l2, L3: l3})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, err := tier.Get(t.Context(), "test"); got != nil || !errors.Is(err, first) || !errors.Is(err, second) || !errors.Is(err, context.Canceled) {
+		t.Errorf("Get=%v, %v", got, err)
+	}
+	l3.entry, l3.getErr = &Entry{ID: "test"}, nil
+	if got, err := tier.Get(t.Context(), "test"); got != l3.entry || err != nil {
+		t.Errorf("L3 hit=%v, %v", got, err)
+	}
+}
+
+func TestTieredCountUsesDeepestTier(t *testing.T) {
+	for depth := 1; depth <= 3; depth++ {
+		tiers := []*tierQueryFixture{{count: 1}, {count: 2}, {count: 3}}
+		cfg := TieredConfig{L1: tiers[0]}
+		if depth > 1 {
+			cfg.L2 = tiers[1]
+		}
+		if depth > 2 {
+			cfg.L3 = tiers[2]
+		}
+		tier, err := NewTieredBackend(cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ctx := t.Context()
+		if got, err := tier.Count(ctx); got != int64(depth) || err != nil {
+			t.Errorf("depth %d Count=%d, %v", depth, got, err)
+		}
+		sentinel := errors.New("count failed")
+		tiers[depth-1].countErr = sentinel
+		if _, err := tier.Count(ctx); !errors.Is(err, sentinel) {
+			t.Errorf("depth %d count error=%v", depth, err)
+		}
+		for i, f := range tiers {
+			if i == depth-1 {
+				if f.context != ctx || f.countCalls != 2 {
+					t.Errorf("depth %d selected tier calls=%d", depth, f.countCalls)
+				}
+			} else if f.countCalls != 0 {
+				t.Errorf("unexpected Count calls in tier %d", i+1)
+			}
+		}
+	}
+}
