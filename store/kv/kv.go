@@ -117,11 +117,18 @@ func (kv *KVStore) SetContext(ctx context.Context, key string, value []byte, ttl
 	if kv == nil {
 		return ErrStoreClosed
 	}
+	err := kv.setWithCancellation(contextDone(ctx), key, value, ttl)
+	if err == errMutationCanceled {
+		return ctx.Err()
+	}
+	return err
+}
+
+func (kv *KVStore) setWithCancellation(done <-chan struct{}, key string, value []byte, ttl time.Duration) error {
 	kv.mu.Lock()
 	defer kv.mu.Unlock()
-
-	if err := contextErr(ctx); err != nil {
-		return err
+	if cancellationSignaled(done) {
+		return errMutationCanceled
 	}
 	if kv.closed || kv.data == nil {
 		return ErrStoreClosed
@@ -147,17 +154,7 @@ func (kv *KVStore) SetContext(ctx context.Context, key string, value []byte, ttl
 		Size:      size,
 	}
 	kv.evictIfNeededLocked(key)
-	if err := contextErr(ctx); err != nil {
-		kv.data = before
-		return err
-	}
-	if committed, err := kv.persistLocked(); err != nil {
-		if !committed {
-			kv.data = before
-		}
-		return err
-	}
-	return nil
+	return kv.persistMutationLocked(done, func() { kv.data = before })
 }
 
 // Get returns a defensive copy of a value.
@@ -173,12 +170,13 @@ func (kv *KVStore) GetContext(ctx context.Context, key string) ([]byte, error) {
 	if kv == nil {
 		return nil, ErrStoreClosed
 	}
+	done := contextDone(ctx)
 	kv.mu.RLock()
-	defer kv.mu.RUnlock()
-
-	if err := contextErr(ctx); err != nil {
-		return nil, err
+	if cancellationSignaled(done) {
+		kv.mu.RUnlock()
+		return nil, ctx.Err()
 	}
+	defer kv.mu.RUnlock()
 	if kv.closed || kv.data == nil {
 		return nil, ErrStoreClosed
 	}
@@ -214,11 +212,18 @@ func (kv *KVStore) DeleteContext(ctx context.Context, key string) error {
 	if kv == nil {
 		return ErrStoreClosed
 	}
+	err := kv.deleteWithCancellation(contextDone(ctx), key)
+	if err == errMutationCanceled {
+		return ctx.Err()
+	}
+	return err
+}
+
+func (kv *KVStore) deleteWithCancellation(done <-chan struct{}, key string) error {
 	kv.mu.Lock()
 	defer kv.mu.Unlock()
-
-	if err := contextErr(ctx); err != nil {
-		return err
+	if cancellationSignaled(done) {
+		return errMutationCanceled
 	}
 	if kv.closed || kv.data == nil {
 		return ErrStoreClosed
@@ -231,17 +236,7 @@ func (kv *KVStore) DeleteContext(ctx context.Context, key string) error {
 		return ErrKeyNotFound
 	}
 	delete(kv.data, key)
-	if err := contextErr(ctx); err != nil {
-		kv.data[key] = item
-		return err
-	}
-	if committed, err := kv.persistLocked(); err != nil {
-		if !committed {
-			kv.data[key] = item
-		}
-		return err
-	}
-	return nil
+	return kv.persistMutationLocked(done, func() { kv.data[key] = item })
 }
 
 // ExistsContext reports whether a non-expired key exists using the caller-provided context.
@@ -252,12 +247,13 @@ func (kv *KVStore) ExistsContext(ctx context.Context, key string) (bool, error) 
 	if kv == nil {
 		return false, ErrStoreClosed
 	}
+	done := contextDone(ctx)
 	kv.mu.RLock()
-	defer kv.mu.RUnlock()
-
-	if err := contextErr(ctx); err != nil {
-		return false, err
+	if cancellationSignaled(done) {
+		kv.mu.RUnlock()
+		return false, ctx.Err()
 	}
+	defer kv.mu.RUnlock()
 	if kv.closed || kv.data == nil {
 		return false, ErrStoreClosed
 	}
@@ -292,12 +288,13 @@ func (kv *KVStore) KeysContext(ctx context.Context) ([]string, error) {
 }
 
 func (kv *KVStore) snapshotKeys(ctx context.Context) ([]string, error) {
+	done := contextDone(ctx)
 	kv.mu.RLock()
-	defer kv.mu.RUnlock()
-
-	if err := contextErr(ctx); err != nil {
-		return nil, err
+	if cancellationSignaled(done) {
+		kv.mu.RUnlock()
+		return nil, ctx.Err()
 	}
+	defer kv.mu.RUnlock()
 	if kv.closed || kv.data == nil {
 		return nil, ErrStoreClosed
 	}
@@ -335,12 +332,13 @@ func (kv *KVStore) SizeContext(ctx context.Context) (int, error) {
 	if kv == nil {
 		return 0, ErrStoreClosed
 	}
+	done := contextDone(ctx)
 	kv.mu.RLock()
-	defer kv.mu.RUnlock()
-
-	if err := contextErr(ctx); err != nil {
-		return 0, err
+	if cancellationSignaled(done) {
+		kv.mu.RUnlock()
+		return 0, ctx.Err()
 	}
+	defer kv.mu.RUnlock()
 	if kv.closed || kv.data == nil {
 		return 0, ErrStoreClosed
 	}
@@ -360,12 +358,13 @@ func (kv *KVStore) GetStatsContext(ctx context.Context) (Stats, error) {
 	if kv == nil {
 		return Stats{}, ErrStoreClosed
 	}
+	done := contextDone(ctx)
 	kv.mu.RLock()
-	defer kv.mu.RUnlock()
-
-	if err := contextErr(ctx); err != nil {
-		return Stats{}, err
+	if cancellationSignaled(done) {
+		kv.mu.RUnlock()
+		return Stats{}, ctx.Err()
 	}
+	defer kv.mu.RUnlock()
 	if kv.closed || kv.data == nil {
 		return Stats{}, ErrStoreClosed
 	}
@@ -534,4 +533,38 @@ func contextErr(ctx context.Context) error {
 		return nil
 	}
 	return ctx.Err()
+}
+
+// Obtain the channel before locking so a caller's context implementation is
+// never invoked while the store is locked.
+func contextDone(ctx context.Context) <-chan struct{} {
+	if ctx == nil {
+		return nil
+	}
+	return ctx.Done()
+}
+
+func cancellationSignaled(done <-chan struct{}) bool {
+	select {
+	case <-done:
+		return true
+	default:
+		return false
+	}
+}
+
+// errMutationCanceled carries cancellation out of the locked mutation before
+// consulting the caller's context for the concrete cancellation reason.
+var errMutationCanceled = errors.New("kv: mutation canceled before persistence")
+
+func (kv *KVStore) persistMutationLocked(done <-chan struct{}, rollback func()) error {
+	if cancellationSignaled(done) {
+		rollback()
+		return errMutationCanceled
+	}
+	committed, err := kv.persistLocked()
+	if err != nil && !committed {
+		rollback()
+	}
+	return err
 }

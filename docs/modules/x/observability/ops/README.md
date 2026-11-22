@@ -111,8 +111,10 @@ attempt in the attempt counter. Canceling a retry delay returns the context
 error.
 
 Aggregate checks bound worker concurrency per batch. An aborted or missing
-component result leaves the batch unready, even if an older component snapshot
-was healthy. Registration invokes the component-name callback outside the
+component result leaves the batch unready while it still belongs to the current
+registration and check version. A superseded result still counts as an actual
+attempt when the check ran. The readiness calculation uses the current
+component state. Registration invokes the component-name callback outside the
 manager lock and rechecks closure before publishing.
 
 History exports accept RFC3339 `start_time` and `end_time` filters. Invalid

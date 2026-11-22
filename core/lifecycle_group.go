@@ -154,14 +154,17 @@ func (g *LifecycleGroup) Start(ctx context.Context) error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	done := ctx.Done()
 	g.mu.Lock()
 	if g.phase != lifecycleIdle {
 		g.mu.Unlock()
 		return errors.New("core: LifecycleGroup already started")
 	}
-	if err := ctx.Err(); err != nil {
+	select {
+	case <-done:
 		g.mu.Unlock()
-		return err
+		return ctx.Err()
+	default:
 	}
 	g.phase = lifecycleStarting
 	g.mu.Unlock()

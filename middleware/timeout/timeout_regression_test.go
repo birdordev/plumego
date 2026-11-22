@@ -598,3 +598,32 @@ func TestTimedOutHandlerCannotFlushOrWriteToOuterResponse(t *testing.T) {
 		}
 	})
 }
+
+func TestTimeoutWritesRespectCommittedContentLength(t *testing.T) {
+	for _, tc := range []struct {
+		length    string
+		parts     []string
+		want      string
+		wantError bool
+	}{
+		{"2", []string{"a", "b"}, "ab", false},
+		{"2", []string{"a", "bc"}, "a", true},
+		{"0", []string{"a"}, "", true},
+		{"2", []string{"abc"}, "", true},
+	} {
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest(http.MethodGet, "/", nil)
+		var gotErr error
+		Middleware(Config{Timeout: time.Second})(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Length", tc.length)
+			w.WriteHeader(http.StatusCreated)
+			w.Header().Set("Content-Length", "99")
+			for _, part := range tc.parts {
+				_, gotErr = io.WriteString(w, part)
+			}
+		})).ServeHTTP(w, r)
+		if errors.Is(gotErr, http.ErrContentLength) != tc.wantError || w.Code != http.StatusCreated || w.Body.String() != tc.want {
+			t.Fatalf("length %s, writes %v: error=%v status=%d body=%q", tc.length, tc.parts, gotErr, w.Code, w.Body)
+		}
+	}
+}

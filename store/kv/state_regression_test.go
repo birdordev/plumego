@@ -272,22 +272,6 @@ func TestConcurrentWritesPreserveAllKeysAfterReload(t *testing.T) {
 	}
 }
 
-// cancelBeforePersistence cancels at the final context check after staging a
-// mutation, allowing rollback to be exercised without scheduler timing.
-type cancelBeforePersistence struct {
-	context.Context
-	cancel context.CancelFunc
-	checks int
-}
-
-func (ctx *cancelBeforePersistence) Err() error {
-	ctx.checks++
-	if ctx.checks == 3 {
-		ctx.cancel()
-	}
-	return ctx.Context.Err()
-}
-
 func TestCanceledStagedMutationRestoresMemoryAndDisk(t *testing.T) {
 	for _, operation := range []string{"set", "delete"} {
 		t.Run(operation, func(t *testing.T) {
@@ -304,16 +288,21 @@ func TestCanceledStagedMutationRestoresMemoryAndDisk(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			base, cancel := context.WithCancel(t.Context())
-			defer cancel()
-			ctx := &cancelBeforePersistence{Context: base, cancel: cancel}
+			ctx, cancel := context.WithCancel(t.Context())
+			store.mu.Lock()
+			original := store.data["original"]
+			delete(store.data, "original")
 			if operation == "set" {
-				err = store.SetContext(ctx, "replacement", []byte("new"), 0)
-			} else {
-				err = store.DeleteContext(ctx, "original")
+				store.data["replacement"] = &entry{Value: []byte("new")}
 			}
-			if !errors.Is(err, context.Canceled) {
-				t.Fatalf("error = %v, want context.Canceled", err)
+			cancel()
+			err = store.persistMutationLocked(ctx.Done(), func() {
+				delete(store.data, "replacement")
+				store.data["original"] = original
+			})
+			store.mu.Unlock()
+			if err != errMutationCanceled {
+				t.Fatalf("staged mutation error = %v", err)
 			}
 			if got, err := store.Get("original"); err != nil || string(got) != "old" {
 				t.Fatalf("original = %q, %v", got, err)

@@ -429,3 +429,32 @@ func TestBatchPublicationRevalidatesAfterRefreshingCancellation(t *testing.T) {
 		})
 	}
 }
+
+func TestOldBatchFailureKeepsReplacementReady(t *testing.T) {
+	m, err := NewManager(Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	entered, release := make(chan struct{}), make(chan struct{})
+	if err := m.RegisterComponent(functionChecker{name: "sample", check: func(context.Context) error { close(entered); <-release; return errors.New("old") }}); err != nil {
+		t.Fatal(err)
+	}
+	m.MarkReady()
+
+	done := make(chan health.HealthStatus, 1)
+	go func() { done <- m.CheckAllComponents(t.Context()) }()
+	<-entered
+	replaceErr := m.RegisterComponent(functionChecker{name: "sample", check: func(context.Context) error { return nil }})
+	checkErr := m.CheckComponent(t.Context(), "sample")
+	close(release)
+	batch := <-done
+	if replaceErr != nil || checkErr != nil {
+		t.Fatal(replaceErr, checkErr)
+	}
+	c, _ := m.GetComponentHealth("sample")
+	ready := m.Readiness()
+	if c.Status != health.StatusHealthy || !ready.Ready || !ready.Components["sample"] {
+		t.Errorf("batch=%s/%q current=%s ready=%t components=%v", batch.Status, batch.Message, c.Status, ready.Ready, ready.Components)
+	}
+}

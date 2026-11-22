@@ -2004,3 +2004,78 @@ func TestGzipRangePreservesFramingOnLoopback(t *testing.T) {
 		t.Fatalf("status=%d headers=%v length=%d body=%q err=%v", resp.StatusCode, resp.Header, resp.ContentLength, body, err)
 	}
 }
+
+func TestGzipInheritsRepresentation(t *testing.T) {
+	var encoded bytes.Buffer
+	gz := gzip.NewWriter(&encoded)
+	_, _ = gz.Write([]byte("fixture"))
+	if err := gz.Close(); err != nil {
+		t.Fatal(err)
+	}
+	w := httptest.NewRecorder()
+	w.Header().Set("Content-Type", "text/plain")
+	w.Header().Set("Content-Encoding", "gzip")
+	w.Header().Set("X-Outer", "fixture")
+	r := httptest.NewRequest(http.MethodGet, "/", nil)
+	r.Header.Set("Accept-Encoding", "gzip")
+	seen := ""
+	Middleware(Config{})(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		seen = w.Header().Get("X-Outer")
+		w.Header().Set("Content-Type", "text/plain")
+		_, _ = w.Write(encoded.Bytes())
+	})).ServeHTTP(w, r)
+	if seen != "fixture" || !bytes.Equal(w.Body.Bytes(), encoded.Bytes()) {
+		t.Fatalf("outer field=%q, representation changed=%t", seen, !bytes.Equal(w.Body.Bytes(), encoded.Bytes()))
+	}
+}
+
+func TestGzipCommitsEditsToInheritedHeaders(t *testing.T) {
+	w := httptest.NewRecorder()
+	w.Header().Set("X-Remove", "outer")
+	w.Header().Add("Vary", "Origin")
+	r := httptest.NewRequest(http.MethodGet, "/", nil)
+	r.Header.Set("Accept-Encoding", "gzip")
+	handler := Middleware(Config{})(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Del("X-Remove")
+		w.Header().Add("Vary", "Accept-Language")
+		w.Header().Set("Trailer", "X-Result")
+		_, _ = io.WriteString(w, "fixture")
+		w.Header().Set("X-Result", "done")
+	}))
+	handler.ServeHTTP(w, r)
+	result := w.Result()
+	vary := strings.Join(result.Header.Values("Vary"), ",")
+	for _, token := range []string{"Origin", "Accept-Language", "Accept-Encoding"} {
+		if !strings.Contains(vary, token) {
+			t.Fatalf("Vary=%q, missing %s", vary, token)
+		}
+	}
+	if result.Header.Get("X-Remove") != "" || result.Trailer.Get("X-Result") != "done" {
+		t.Fatalf("headers=%v trailers=%v", result.Header, result.Trailer)
+	}
+}
+
+func TestGzipHeadOmitsIdentityLengthForCompressibleResponse(t *testing.T) {
+	for _, mediaType := range []string{"text/plain", "image/png"} {
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest(http.MethodHead, "/", nil)
+		r.Header.Set("Accept-Encoding", "gzip")
+		Middleware(Config{})(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", mediaType)
+			w.Header().Set("Content-Length", "280")
+			w.Header().Set("Etag", `"identity"`)
+			w.WriteHeader(http.StatusOK)
+		})).ServeHTTP(w, r)
+		got := w.Result()
+		if mediaType == "text/plain" {
+			if got.Header.Get("Content-Length") != "" || got.Header.Get("Etag") != "" {
+				t.Fatalf("identity representation was committed: %v", got.Header)
+			}
+		} else if got.Header.Get("Content-Length") != "280" || got.Header.Get("Etag") != `"identity"` {
+			t.Fatalf("uncompressed representation changed: %v", got.Header)
+		}
+		if w.Body.Len() > 0 || !strings.Contains(strings.Join(got.Header.Values("Vary"), ","), "Accept-Encoding") {
+			t.Fatalf("body=%q headers=%v", w.Body, got.Header)
+		}
+	}
+}

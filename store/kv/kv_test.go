@@ -911,12 +911,14 @@ func TestKVStoreSetContextRejectsCanceledContextAfterWaitingForLock(t *testing.T
 
 	store.mu.Lock()
 	ctx, cancel := context.WithCancel(t.Context())
+	signalRead := make(chan struct{})
+	observed := &contextSignalObserver{Context: ctx, signalRead: signalRead, store: store}
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- store.SetContext(ctx, "blocked", []byte("value"), 0)
+		errCh <- store.SetContext(observed, "blocked", []byte("value"), 0)
 	}()
 
-	time.Sleep(20 * time.Millisecond)
+	<-signalRead
 	cancel()
 	store.mu.Unlock()
 
@@ -928,9 +930,34 @@ func TestKVStoreSetContextRejectsCanceledContextAfterWaitingForLock(t *testing.T
 	case <-time.After(time.Second):
 		t.Fatal("SetContext did not return after lock was released")
 	}
+	if got := observed.errChecks; got != 2 {
+		t.Fatalf("context inspected %d times, want 2", got)
+	}
 	if mustExists(t, store, "blocked") {
 		t.Fatal("canceled SetContext should not store value")
 	}
+}
+
+type contextSignalObserver struct {
+	context.Context
+	signalRead chan struct{}
+	store      *KVStore
+	errChecks  int
+}
+
+func (ctx *contextSignalObserver) Done() <-chan struct{} {
+	close(ctx.signalRead)
+	return ctx.Context.Done()
+}
+
+func (ctx *contextSignalObserver) Err() error {
+	ctx.errChecks++
+	if ctx.Context.Err() != nil {
+		// A canceled operation must release the write lock before consulting
+		// the context's error. Reenter through the public read path.
+		_, _ = ctx.store.SizeContext(context.Background())
+	}
+	return ctx.Context.Err()
 }
 
 func TestKVStoreReadOnlyExpiredChecksDoNotMutate(t *testing.T) {

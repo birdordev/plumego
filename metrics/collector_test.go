@@ -241,26 +241,35 @@ func TestNewHTTPRecordOwnsLabelsForEachObservation(t *testing.T) {
 }
 
 func TestUnnamedRecordsCountWithoutCreatingSeries(t *testing.T) {
-	c := NewBaseMetricsCollector()
-	for _, record := range []MetricRecord{{}, {Name: "named"}, {Error: errors.New("fixture")}} {
-		c.Record(t.Context(), record)
-	}
-	stats := c.GetStats()
-	if stats.TotalRecords != 3 || stats.ErrorRecords != 1 || stats.ActiveSeries != 1 ||
-		len(stats.NameBreakdown) != 1 || stats.NameBreakdown["named"] != 1 {
-		t.Fatalf("mixed records = %+v", stats)
-	}
-	stats.NameBreakdown["invented"] = 2
-	if c.GetStats().NameBreakdown["invented"] != 0 {
-		t.Fatal("caller mutated collector statistics")
-	}
-	c.Clear()
-	if stats := c.GetStats(); stats.TotalRecords != 0 || stats.ErrorRecords != 0 || stats.ActiveSeries != 0 {
-		t.Fatalf("cleared records = %+v", stats)
+	for _, name := range []string{"named", MetricHTTPRequest} {
+		t.Run(name, func(t *testing.T) {
+			c := NewBaseMetricsCollector()
+			c.Record(t.Context(), MetricRecord{})
+			c.Record(t.Context(), MetricRecord{Error: errors.New("fixture")})
+			if name == MetricHTTPRequest {
+				c.ObserveHTTP(t.Context(), "GET", "/fixture", 204, 0, time.Second)
+			} else {
+				c.Record(t.Context(), MetricRecord{Name: name})
+			}
+			before := c.GetStats()
+			if before.TotalRecords != 3 || before.ErrorRecords != 1 || before.ActiveSeries != 1 ||
+				len(before.NameBreakdown) != 1 || before.NameBreakdown[name] != 1 {
+				t.Fatalf("stats=%+v", before)
+			}
+			before.NameBreakdown["invented"] = 2
+			if c.GetStats().NameBreakdown["invented"] != 0 {
+				t.Fatal("caller mutated collector statistics")
+			}
+			c.Clear()
+			if after := c.GetStats(); after.TotalRecords != 0 || after.ErrorRecords != 0 || after.ActiveSeries != 0 ||
+				len(after.NameBreakdown) != 0 || after.StartTime.Before(before.StartTime) {
+				t.Fatalf("before=%+v after=%+v", before, after)
+			}
+		})
 	}
 }
 
-func TestResetAtBoundedCardinalityKeepsPriorSnapshotIndependent(t *testing.T) {
+func TestResetAfterRecording256NamesKeepsPriorSnapshotIndependent(t *testing.T) {
 	c := NewBaseMetricsCollector()
 	for i := range 256 {
 		c.Record(t.Context(), MetricRecord{Name: strconv.Itoa(i)})
@@ -289,23 +298,6 @@ func TestHTTPRecordCombinesStatusAndExplicitErrorOnce(t *testing.T) {
 	}
 	if stats := collector.GetStats(); stats.TotalRecords != 5 || stats.ErrorRecords != 3 {
 		t.Fatalf("record counts=%+v", stats)
-	}
-}
-
-func TestNamelessRecordsCountWithoutCreatingSeries(t *testing.T) {
-	c := NewBaseMetricsCollector()
-	c.Record(t.Context(), MetricRecord{})
-	c.Record(t.Context(), MetricRecord{Error: errors.New("fixture")})
-	c.ObserveHTTP(t.Context(), "GET", "/fixture", 204, 0, time.Second)
-	before := c.GetStats()
-	if before.TotalRecords != 3 || before.ErrorRecords != 1 || before.ActiveSeries != 1 ||
-		len(before.NameBreakdown) != 1 || before.NameBreakdown[MetricHTTPRequest] != 1 {
-		t.Fatalf("stats=%+v", before)
-	}
-	c.Clear()
-	if after := c.GetStats(); after.TotalRecords != 0 || after.ErrorRecords != 0 || after.ActiveSeries != 0 ||
-		len(after.NameBreakdown) != 0 || after.StartTime.Before(before.StartTime) {
-		t.Fatalf("before=%+v after=%+v", before, after)
 	}
 }
 

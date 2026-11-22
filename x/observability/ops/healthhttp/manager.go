@@ -266,6 +266,8 @@ func (m *manager) checkComponent(ctx context.Context, name string, result *compo
 	}
 	m.checkVersions[name]++
 	checkVersion := m.checkVersions[name]
+	result.health = expectedHealth
+	result.version = checkVersion
 	m.mu.Unlock()
 
 	start := time.Now()
@@ -358,8 +360,10 @@ func (m *manager) checkBatch(ctx context.Context) (health.HealthStatus, []string
 	m.aggregateVersion++
 	version := m.aggregateVersion
 	components := make([]string, 0, len(m.components))
+	registrations := make(map[string]*health.ComponentHealth, len(m.components))
 	for name := range m.components {
 		components = append(components, name)
+		registrations[name] = m.health[name]
 	}
 	m.mu.Unlock()
 
@@ -367,12 +371,6 @@ func (m *manager) checkBatch(ctx context.Context) (health.HealthStatus, []string
 
 	start := time.Now()
 	results := m.checkAggregateComponents(ctx, components)
-	var failedComponents []string
-	for i, result := range results {
-		if !result.complete || result.err != nil {
-			failedComponents = append(failedComponents, components[i])
-		}
-	}
 	duration := time.Since(start)
 
 	done := ctx.Done()
@@ -396,6 +394,16 @@ func (m *manager) checkBatch(ctx context.Context) (health.HealthStatus, []string
 	}
 	if version != m.aggregateVersion {
 		return health.HealthStatus{Status: health.StatusUnhealthy, Message: "aggregate check was superseded", Timestamp: time.Now()}, components, results
+	}
+	var failedComponents []string
+	for i, result := range results {
+		name := components[i]
+		if m.health[name] != registrations[name] || (result.health != nil && !m.ownsComponentResult(name, result)) {
+			continue
+		}
+		if !result.complete || result.err != nil {
+			failedComponents = append(failedComponents, name)
+		}
 	}
 	status, message := calculateOverallStatus(m.health)
 	if len(components) == 0 && len(m.health) == 0 {
@@ -437,7 +445,7 @@ func (m *manager) checkBatch(ctx context.Context) (health.HealthStatus, []string
 	}
 	for i, result := range results {
 		if !result.attempted && (!result.complete || result.err != nil) {
-			if name := components[i]; m.health[name] != nil {
+			if name := components[i]; m.health[name] == registrations[name] && m.health[name] != nil && (result.health == nil || m.ownsComponentResult(name, result)) {
 				readiness.Components[name] = false
 			}
 		}
@@ -601,7 +609,14 @@ func sleepWithContext(ctx context.Context, delay time.Duration) bool {
 	}
 }
 
+// ownsComponentResult requires the manager lock.
+func (m *manager) ownsComponentResult(name string, result componentCheckResult) bool {
+	return m.health[name] == result.health && m.checkVersions[name] == result.version
+}
+
 type componentCheckResult struct {
+	health    *health.ComponentHealth
+	version   uint64
 	complete  bool
 	attempted bool
 	duration  time.Duration

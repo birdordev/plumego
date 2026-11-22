@@ -9,7 +9,8 @@ import (
 	"github.com/birdordev/plumego/router"
 )
 
-// registerRoute is the single implementation for all route registration.
+// registerRoute is the shared entry point for App route methods.
+// RouteGroup delegates through its own addRoute method to Router.AddRoute.
 func (a *App) registerRoute(method, path string, handler http.Handler, opts ...router.RouteOption) error {
 	params := map[string]any{"method": method, "path": path}
 

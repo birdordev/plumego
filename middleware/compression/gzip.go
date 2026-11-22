@@ -45,8 +45,10 @@ var compressedContentTypePrefixes = []string{
 // gzip output starts.
 //
 // Negotiated gzip and identity responses include Vary: Accept-Encoding and
-// preserve other Vary values. Responses compressed by the middleware have
-// Content-Encoding: gzip.
+// preserve other Vary values. The downstream handler can read and edit response
+// headers supplied by outer middleware before commitment. Compressed responses have
+// Content-Encoding: gzip. HEAD responses without a body may omit length
+// and validators when the representation depends on compressed output.
 //
 // Example:
 //
@@ -81,6 +83,7 @@ func Middleware(cfg Config) middleware.Middleware {
 			gw := &gzipResponseWriter{
 				ResponseWriter: variant,
 				cfg:            cfg,
+				headRequest:    r.Method == http.MethodHead,
 			}
 
 			returned := false
@@ -159,6 +162,7 @@ func positiveQualityWeight(value string) bool {
 type gzipResponseWriter struct {
 	http.ResponseWriter
 	cfg             Config
+	headRequest     bool
 	gz              *gzip.Writer
 	compressionUsed bool
 	wroteHeader     bool
@@ -191,6 +195,13 @@ func (w *gzipResponseWriter) finalize(aborted bool) {
 	if !w.wroteHeader && w.buffer != nil {
 		// Header-only handlers still own a final implicit 200 response.
 		w.WriteHeader(http.StatusOK)
+	}
+	if w.headRequest && w.buffer != nil && !w.headersFlushed && w.gz == nil && w.shouldCompress(w.buffer.StatusCode()) {
+		// A router can suppress the body before it reaches gzip. The identity
+		// length and validators do not describe the negotiated representation.
+		w.buffer.FinalHeader().Del("Content-Length")
+		removeUncompressedMetadata(w.buffer.FinalHeader())
+		removeUncompressedMetadata(w.buffer.Header())
 	}
 	if w.pendingCompress && (w.buffer == nil || w.buffer.Len() == 0) {
 		w.pendingCompress = false
@@ -242,7 +253,7 @@ func (w *gzipResponseWriter) WriteHeader(statusCode int) {
 		dst := w.ResponseWriter.Header()
 		original := dst.Clone()
 		defer internaltransport.ReplaceHeaders(dst, original)
-		internaltransport.CopyHeaders(dst, w.Header())
+		internaltransport.ReplaceHeaders(dst, w.Header())
 		w.ResponseWriter.WriteHeader(statusCode)
 		return
 	}
@@ -344,9 +355,6 @@ func (w *gzipResponseWriter) Write(p []byte) (int, error) {
 		removeUncompressedMetadata(header)
 		header.Del("Content-Length")
 		header.Set("Content-Encoding", "gzip")
-		dst := w.ResponseWriter.Header()
-		removeUncompressedMetadata(dst)
-		dst.Del("Content-Length")
 		w.flushHeaders()
 		w.gz = gzip.NewWriter(w.ResponseWriter)
 
@@ -453,6 +461,7 @@ func (w *gzipResponseWriter) shouldCompress(statusCode int) bool {
 func (w *gzipResponseWriter) ensureBuffer() {
 	if w.buffer == nil {
 		w.buffer = internaltransport.NewBufferedResponse(w.cfg.MaxBufferBytes)
+		internaltransport.CopyHeaders(w.buffer.Header(), w.ResponseWriter.Header())
 	}
 }
 
@@ -464,7 +473,10 @@ func (w *gzipResponseWriter) flushHeaders() {
 		return
 	}
 	w.buffer.WriteHeader(w.buffer.StatusCode())
-	internaltransport.CommitHeadersCopy(w.ResponseWriter, w.buffer.FinalHeader(), w.buffer.StatusCode())
+	header := w.ResponseWriter.Header()
+	internaltransport.ReplaceHeaders(header, w.buffer.FinalHeader())
+	internaltransport.EnsureNoSniff(header)
+	w.ResponseWriter.WriteHeader(w.buffer.StatusCode())
 	w.headersFlushed = true
 }
 
@@ -504,7 +516,7 @@ func (w *gzipResponseWriter) flushImplicitResponse() error {
 	dst := w.ResponseWriter.Header()
 	original := dst.Clone()
 	if w.buffer != nil {
-		internaltransport.CopyHeaders(dst, w.buffer.Header())
+		internaltransport.ReplaceHeaders(dst, w.buffer.Header())
 		internaltransport.EnsureNoSniff(dst)
 	}
 	err := http.NewResponseController(w.ResponseWriter).Flush()

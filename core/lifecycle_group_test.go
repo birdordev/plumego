@@ -749,7 +749,7 @@ func TestCanceledStartCheckLeavesLifecycleRegistrationOpen(t *testing.T) {
 			phaseLocked = true
 		}
 	}}
-	if err := g.Start(ctx); !errors.Is(err, context.Canceled) || !inspected || !phaseLocked {
+	if err := g.Start(ctx); !errors.Is(err, context.Canceled) || !inspected || phaseLocked {
 		t.Fatalf("Start=%v inspected=%t phaseLocked=%t", err, inspected, phaseLocked)
 	}
 	var started bool

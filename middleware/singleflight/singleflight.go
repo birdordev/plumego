@@ -7,7 +7,7 @@
 //
 // This is the HTTP middleware adaptation of the singleflight pattern: use it only
 // for bounded, safe, non-streaming responses whose variants are fully captured
-// by the coalesce key.
+// by the coalesce key. Protocol switches and hijacked connections are never replayed.
 //
 // Singleflight is not a cache and does not own business freshness policy. It only
 // shares the response for requests that are already in flight. The default key
@@ -317,6 +317,15 @@ func (c *Coalescer) executeRequest(w http.ResponseWriter, r *http.Request, key s
 	}()
 
 	recorder := newLimitedResponseRecorder(w, c.config.MaxResponseBytes)
+	defer func() {
+		trailers := recorder.trailers()
+		if len(trailers) != 0 {
+			internaltransport.CopyHeaders(w.Header(), trailers)
+		}
+		if inflight.response != nil {
+			inflight.response.trailers = trailers
+		}
+	}()
 	next.ServeHTTP(recorder, r)
 
 	if !recorder.wroteHeader {
@@ -326,13 +335,6 @@ func (c *Coalescer) executeRequest(w http.ResponseWriter, r *http.Request, key s
 		}
 		// A live handler can complete successfully without writing a body.
 		recorder.WriteHeader(http.StatusOK)
-	}
-	var trailers http.Header
-	if !recorder.hijacked {
-		trailers = internaltransport.CopyResponseTrailers(nil, recorder.committed, recorder.header)
-		if len(trailers) > 0 {
-			internaltransport.CopyHeaders(w.Header(), trailers)
-		}
 	}
 
 	if recorder.writeFailed {
@@ -350,7 +352,6 @@ func (c *Coalescer) executeRequest(w http.ResponseWriter, r *http.Request, key s
 
 	// Capture response
 	inflight.response = recorder.CapturedResponse()
-	inflight.response.trailers = trailers
 }
 
 func (c *Coalescer) finishRequest(key string, inflight *inFlightRequest) {
@@ -434,6 +435,13 @@ func newLimitedResponseRecorder(w http.ResponseWriter, maxBytes int) *limitedRes
 	}
 }
 
+func (r *limitedResponseRecorder) trailers() http.Header {
+	if !r.wroteHeader || r.hijacked {
+		return nil
+	}
+	return internaltransport.CopyResponseTrailers(nil, r.committed, r.header)
+}
+
 func (r *limitedResponseRecorder) Unwrap() http.ResponseWriter {
 	return r.ResponseWriter
 }
@@ -458,6 +466,9 @@ func (r *limitedResponseRecorder) WriteHeader(statusCode int) {
 		return
 	}
 	r.statusCode = statusCode
+	if statusCode == http.StatusSwitchingProtocols {
+		r.unreplayable = true
+	}
 	r.wroteHeader = true
 	r.committed = r.header.Clone()
 	dst := r.ResponseWriter.Header()

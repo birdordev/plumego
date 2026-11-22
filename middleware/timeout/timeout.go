@@ -3,6 +3,7 @@ package timeout
 import (
 	"context"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/birdordev/plumego/contract"
@@ -49,7 +50,8 @@ const (
 // without writing a response; an expired deadline returns 504. A request that
 // is already canceled does not invoke the downstream handler. Panics accepted
 // before cancellation are re-panicked on the request goroutine; configure
-// OnPanic to observe panics discarded because of cancellation.
+// OnPanic to observe panics discarded because of cancellation. Body writes
+// beyond the committed Content-Length return http.ErrContentLength.
 type Config struct {
 	// Timeout is the maximum duration for request processing
 	Timeout time.Duration
@@ -226,6 +228,7 @@ type timeoutResponseWriter struct {
 	ctx                 context.Context
 	cfg                 Config
 	buffer              *internaltransport.BufferedResponse
+	writtenBytes        int64
 	overflow            bool
 	replayLimitExceeded bool // Whether the response exceeded the replay budget.
 }
@@ -254,6 +257,14 @@ func (w *timeoutResponseWriter) Write(p []byte) (int, error) {
 
 	if w.overflow {
 		return 0, http.ErrBodyNotAllowed
+	}
+
+	// The first write fixes the final headers. Use their length for every
+	// subsequent write, including writes while replay has been abandoned.
+	w.buffer.WriteHeader(http.StatusOK)
+	w.writtenBytes += int64(len(p))
+	if length, err := strconv.ParseInt(w.buffer.FinalHeader().Get("Content-Length"), 10, 64); err == nil && length >= 0 && w.writtenBytes > length {
+		return 0, http.ErrContentLength
 	}
 
 	// If buffering was abandoned, discard later writes and let WriteTo emit the

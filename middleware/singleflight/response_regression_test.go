@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -906,6 +907,77 @@ func TestCoalescedNoContentDoesNotLeakIntoNextFlight(t *testing.T) {
 		h.ServeHTTP(next, httptest.NewRequest(http.MethodGet, "/", nil))
 		if calls != 2 || next.Code != http.StatusAccepted || next.Header().Get("X-Flight") != "" || next.Header().Get("X-Next") != "new" {
 			t.Fatalf("calls=%d status=%d headers=%v", calls, next.Code, next.Header())
+		}
+	})
+}
+
+func TestCoalescerCommittedTrailerAfterAbnormalExit(t *testing.T) {
+	for _, mode := range []string{"panic", "goexit"} {
+		t.Run(mode, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			c := New(Config{})
+			h := c.Middleware()(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Trailer", "X-Result")
+				w.WriteHeader(http.StatusCreated)
+				_, _ = io.WriteString(w, "fixture")
+				w.Header().Set("X-Result", "ready")
+				if mode == "goexit" {
+					runtime.Goexit()
+				}
+				panic("fixture")
+			}))
+			result := make(chan any, 1)
+			go func() {
+				defer func() { result <- recover() }()
+				h.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/", nil))
+				t.Error("handler unexpectedly returned")
+			}()
+			recovered := <-result
+			if (mode == "panic" && recovered != "fixture") || (mode == "goexit" && recovered != nil) {
+				t.Fatalf("unexpected panic: %v", recovered)
+			}
+			if got := w.Result().Trailer.Get("X-Result"); got != "ready" || w.Code != http.StatusCreated || c.Stats().InFlight != 0 {
+				t.Errorf("trailer=%q status=%d in flight=%d", got, w.Code, c.Stats().InFlight)
+			}
+		})
+	}
+}
+
+func TestProtocolSwitchIsNeverReplayed(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		for _, status := range []int{http.StatusSwitchingProtocols, http.StatusOK} {
+			coalescer := New(Config{})
+			entered, release, finished := make(chan struct{}), make(chan struct{}), make(chan struct{})
+			h := coalescer.Middleware()(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				close(entered)
+				<-release
+				if status == http.StatusOK {
+					w.WriteHeader(http.StatusEarlyHints)
+				}
+				w.WriteHeader(status)
+			}))
+			newRequest := func() *http.Request { return httptest.NewRequest(http.MethodGet, "/", nil) }
+			go func() {
+				defer close(finished)
+				h.ServeHTTP(httptest.NewRecorder(), newRequest())
+			}()
+			<-entered
+			waiter, waiterDone := httptest.NewRecorder(), make(chan struct{})
+			go func() {
+				defer close(waiterDone)
+				h.ServeHTTP(waiter, newRequest())
+			}()
+			synctest.Wait()
+			close(release)
+			<-finished
+			<-waiterDone
+			want := http.StatusOK
+			if status == http.StatusSwitchingProtocols {
+				want = http.StatusBadGateway
+			}
+			if waiter.Code != want || coalescer.Stats().InFlight != 0 {
+				t.Fatalf("leader status=%d waiter status=%d in flight=%d", status, waiter.Code, coalescer.Stats().InFlight)
+			}
 		}
 	})
 }
