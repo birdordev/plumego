@@ -194,3 +194,23 @@ preparation. The handler uses the normal HTTP middleware chain.
 
 Call `app.EnableStandardPathValues` before preparation if mounted handlers use
 `http.Request.PathValue`.
+
+## Scoped middleware and HTTP serving
+
+Call `group.Use` before registering the routes that it should wrap. A route
+keeps the middleware captured at registration. The execution order is
+application, ancestor groups, child group, then handler. Group middleware
+receives the matched request and can read route parameters. The application
+freezes registrations during preparation.
+
+`app.Mount(prefix, handler)` registers an independent handler at a non-root
+static prefix and on its descendants. It passes the original request path.
+Configure the child router's fallback and method policy explicitly. The outer
+route snapshot describes the mount. Pass the child's own route snapshot to
+tools that need its individual operations. Discard application assembly after
+a registration error.
+
+`app.RunContext(ctx, timeout)` owns the listening socket and waits for HTTP
+shutdown up to a positive timeout. It closes HTTP connections if that budget
+expires. Applications can supply a signal context and own dependency shutdown
+after this method returns.

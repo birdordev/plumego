@@ -283,7 +283,37 @@ func TestCLI_GeneratedCanonicalProjectStableWorkflow(t *testing.T) {
 	}
 	if runtime.GOOS != "windows" {
 		t.Setenv("APP_SHUTDOWN_TIMEOUT_MS", "1500")
-		exerciseGeneratedServer(t, binary, projectDir, spec.Paths)
+		exerciseGeneratedServer(t, binary, projectDir, "/api/v1/items", spec.Paths)
+	}
+}
+
+func TestCLI_GeneratedRESTProjectStrictWorkflow(t *testing.T) {
+	skipSlowCLISmoke(t)
+	dir := t.TempDir()
+	project := filepath.Join(dir, "rest-project")
+	run := func(args ...string) {
+		t.Helper()
+		stdout, stderr, err := runCLI(t, args, dir)
+		if err != nil {
+			t.Fatalf("CLI %v: %v\n%s\n%s", args, err, stdout, stderr)
+		}
+	}
+	root := detectLocalPlumegoRoot()
+	run("new", "--template", "rest-api", "--dir", project, "--module", "example.com/rest-project", "--plumego-dir", root, "--no-git", "rest-project")
+	binary := filepath.Join(project, "rest-server")
+	output := filepath.Join(project, "openapi.json")
+	run("generate", "spec", "--strict", "--dir", project, "--output", output)
+	run("build", "--dir", project, "--output", binary)
+	data, err := os.ReadFile(output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc struct{ Paths smokeSpecPaths }
+	if err = json.Unmarshal(data, &doc); err != nil {
+		t.Fatal(err)
+	}
+	if runtime.GOOS != "windows" {
+		exerciseGeneratedServer(t, binary, project, "/api/users", doc.Paths)
 	}
 }
 
@@ -404,10 +434,9 @@ type smokeSpecPaths map[string]map[string]struct {
 	Responses map[string]json.RawMessage `json:"responses"`
 }
 
-func exerciseGeneratedServer(t *testing.T, binary, dir string, paths smokeSpecPaths) {
+func exerciseGeneratedServer(t *testing.T, binary, dir, collection string, paths smokeSpecPaths) {
 	t.Helper()
-	const collection = "/api/v1/items"
-	const member = collection + "/{id}"
+	member := collection + "/{id}"
 	assertStatusDocumented := func(path, method string, status int) {
 		t.Helper()
 		if _, ok := paths[path][strings.ToLower(method)].Responses[strconv.Itoa(status)]; !ok {
@@ -479,10 +508,10 @@ func exerciseGeneratedServer(t *testing.T, binary, dir string, paths smokeSpecPa
 		}
 		assertStatusDocumented(member, step.method, resp.StatusCode)
 	}
-	verifyGeneratedRequestDrain(t, ctx, base, shutdown)
+	verifyGeneratedRequestDrain(t, ctx, base, collection, shutdown)
 }
 
-func verifyGeneratedRequestDrain(t *testing.T, ctx context.Context, base string, shutdown func(func())) {
+func verifyGeneratedRequestDrain(t *testing.T, ctx context.Context, base, collection string, shutdown func(func())) {
 	t.Helper()
 	address := strings.TrimPrefix(base, "http://")
 	conn, err := new(net.Dialer).DialContext(ctx, "tcp", address)
@@ -496,8 +525,8 @@ func verifyGeneratedRequestDrain(t *testing.T, ctx context.Context, base string,
 		}
 	}
 	const payload = `{"name":"drained"}`
-	if _, err := fmt.Fprintf(conn, "POST /api/v1/items HTTP/1.1\r\nHost: %s\r\n"+
-		"Content-Type: application/json\r\nContent-Length: %d\r\nExpect: 100-continue\r\n\r\n", address, len(payload)); err != nil {
+	if _, err := fmt.Fprintf(conn, "POST %s HTTP/1.1\r\nHost: %s\r\n"+
+		"Content-Type: application/json\r\nContent-Length: %d\r\nExpect: 100-continue\r\n\r\n", collection, address, len(payload)); err != nil {
 		t.Fatal(err)
 	}
 	wire := bufio.NewReader(conn)

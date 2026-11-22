@@ -1,8 +1,11 @@
 package app
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -13,6 +16,7 @@ import (
 	"time"
 
 	"github.com/birdordev/plumego/core"
+	plumelog "github.com/birdordev/plumego/log"
 	"github.com/birdordev/plumego/metrics"
 	"production-service/internal/config"
 )
@@ -86,11 +90,17 @@ func TestRuntimeDrainKeepsDependenciesUntilRequestReturns(t *testing.T) {
 	requestRelease := make(chan struct{})
 	defer closeIfOpen(requestRelease)
 	stopped := make(chan string, 2)
+	lifetime := make(chan context.Context, 1)
 	for _, name := range []string{"database", "worker"} {
-		a.components.Add(name, core.Component{OnStop: func(context.Context) error {
-			stopped <- name
-			return nil
-		}})
+		a.components.Add(name, core.Component{
+			OnStart: func(ctx context.Context) error {
+				if name == "worker" {
+					lifetime <- ctx
+				}
+				return nil
+			},
+			OnStop: func(context.Context) error { stopped <- name; return nil },
+		})
 	}
 	if err := a.Core.Get("/hold", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		close(requestEntered)
@@ -136,6 +146,9 @@ func TestRuntimeDrainKeepsDependenciesUntilRequestReturns(t *testing.T) {
 	}
 	ready := httptest.NewRecorder()
 	a.Core.ServeHTTP(ready, httptest.NewRequest("GET", "/readyz", nil))
+	if err := (<-lifetime).Err(); err != nil {
+		t.Fatalf("dependency canceled before HTTP drained: %v", err)
+	}
 	if ready.Code != http.StatusServiceUnavailable {
 		t.Fatalf("instance is still ready during drain: %d", ready.Code)
 	}
@@ -193,7 +206,8 @@ func TestHTTPMetricsIncludeEarlyRejectionsAndRecoveredPanics(t *testing.T) {
 	cfg.App.RequestTimeout = 300 * time.Millisecond
 	cfg.App.RateLimit = 1
 	cfg.App.RateBurst = 1
-	a, err := New(cfg)
+	var logs bytes.Buffer
+	a, err := newWithLogger(cfg, plumelog.NewLogger(plumelog.LoggerConfig{Format: plumelog.LoggerFormatJSON, Output: &logs, ErrorOutput: io.Discard}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -232,8 +246,57 @@ func TestHTTPMetricsIncludeEarlyRejectionsAndRecoveredPanics(t *testing.T) {
 			t.Fatalf("%s status=%d, want %d", tc.path, rec.Code, tc.status)
 		}
 	}
+	var statuses []int
+	for _, line := range bytes.Split(logs.Bytes(), []byte{'\n'}) {
+		var record struct {
+			Msg    string
+			Status int
+		}
+		if json.Unmarshal(line, &record) == nil && record.Msg == "request completed" {
+			statuses = append(statuses, record.Status)
+		}
+	}
+	if !slices.Equal(statuses, []int{413, 429, 500, 200, 504}) {
+		t.Fatalf("access log statuses = %v, logs = %s", statuses, logs.String())
+	}
+
 	stats := a.Metrics.GetStats()
 	if stats.NameBreakdown[metrics.MetricHTTPRequest] != 5 || stats.ErrorRecords != 4 {
 		t.Fatalf("request stats = %+v", stats)
+	}
+}
+
+func TestProbesUseAnIndependentAdmissionPolicy(t *testing.T) {
+	cfg := config.Defaults()
+	cfg.App.RateLimit = 0.001
+	cfg.App.RateBurst = 1
+	a, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(a.RateLimit.Stop)
+	if err := a.RegisterRoutes(); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.components.Start(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := a.components.Stop(context.Background()); err != nil {
+			t.Error(err)
+		}
+	})
+	a.ready.Store(true)
+	for _, test := range []struct {
+		path   string
+		status int
+	}{
+		{"/api/status", 200}, {"/api/status", 429}, {"/healthz", 200}, {"/readyz", 200},
+	} {
+		w := httptest.NewRecorder()
+		a.Core.ServeHTTP(w, httptest.NewRequest(http.MethodGet, test.path, nil))
+		if w.Code != test.status {
+			t.Errorf("%s = %d, want %d", test.path, w.Code, test.status)
+		}
 	}
 }

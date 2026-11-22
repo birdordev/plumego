@@ -14,7 +14,8 @@ import (
 
 // Generator builds OpenAPI documents from router route metadata.
 type Generator struct {
-	info Info
+	info       Info
+	components *Components
 }
 
 // New creates a generator with default document metadata.
@@ -24,6 +25,12 @@ func New() *Generator {
 
 func defaultInfo() Info {
 	return Info{Title: "Plumego API", Version: "0.0.0"}
+}
+
+// WithComponents sets the schemas and security schemes used by the generator.
+func (g *Generator) WithComponents(components *Components) *Generator {
+	g.components = cloneComponents(components)
+	return g
 }
 
 // Generate converts route metadata and optional operation hints into a document.
@@ -40,10 +47,19 @@ func (g *Generator) Generate(routes []router.RouteInfo, hints map[string]Op) Doc
 		Paths:   make(map[string]PathItem),
 	}
 
+	if g != nil {
+		doc.Components = cloneComponents(g.components)
+	}
 	for _, route := range routes {
 		path, parameterNames := routePathTemplate(route.Path)
 		item := doc.Paths[path]
 		op := operationFromHint(lookupHint(route, hints))
+		if op.OperationID == "" {
+			op.OperationID = route.Meta.Name
+		}
+		if len(op.Tags) == 0 {
+			op.Tags = slices.Clone(route.Meta.Tags)
+		}
 		op.Parameters = completePathParameters(op.Parameters, parameterNames)
 		if setOperation(&item, route.Method, op) {
 			doc.Paths[path] = item
@@ -57,6 +73,7 @@ func (g *Generator) GenerateStrict(routes []router.RouteInfo, hints map[string]O
 	var failures []error
 	operations := make(map[string]bool, len(routes))
 	templates := make(map[string]string, len(routes))
+	usedHints := make(map[string]bool, len(hints))
 	for _, route := range routes {
 		if !setOperation(&PathItem{}, route.Method, &Operation{}) {
 			continue
@@ -73,7 +90,12 @@ func (g *Generator) GenerateStrict(routes []router.RouteInfo, hints map[string]O
 		} else if prior != path {
 			failures = append(failures, fmt.Errorf("conflicting path templates %s and %s (%s)", prior, path, key))
 		}
-		hint := lookupHint(route, hints)
+		hintName := hintKey(route, hints)
+		var hint Op
+		if hintName != "" {
+			usedHints[hintName] = true
+			hint = hints[hintName]
+		}
 		pathParams := make(map[string]bool, len(names))
 		for _, param := range hint.Params {
 			if param.In != "path" {
@@ -104,10 +126,19 @@ func (g *Generator) GenerateStrict(routes []router.RouteInfo, hints map[string]O
 			}
 		}
 	}
+	for _, key := range slices.Sorted(maps.Keys(hints)) {
+		if !usedHints[key] {
+			failures = append(failures, fmt.Errorf("unmatched operation hint %q", key))
+		}
+	}
 	if err := errors.Join(failures...); err != nil {
 		return Document{}, err
 	}
-	return g.Generate(routes, hints), nil
+	doc := g.Generate(routes, hints)
+	if err := validateDocument(doc); err != nil {
+		return Document{}, err
+	}
+	return doc, nil
 }
 
 func pathTemplateShape(path string) string {

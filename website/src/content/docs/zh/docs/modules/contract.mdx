@@ -185,3 +185,5 @@ if page == "" {
 - [Router Primer](/zh/docs/modules/router)
 - [Middleware Primer](/zh/docs/modules/middleware)
 - [仓库边界](/zh/docs/concepts/repo-control-plane)
+
+严格 JSON 解码可通过 `contract.DecodeUniqueJSONRequest` 拒绝重复对象键。成功响应编码失败时，可用 `errors.As` 识别尚未提交响应头的 `*contract.ResponseEncodingError`。

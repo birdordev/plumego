@@ -37,7 +37,7 @@ func TestRegisterRoutesIncludesAPIAndFrontend(t *testing.T) {
 
 	hasAPI := false
 	for _, r := range routes {
-		if r.Path == "/api/*apiPath" {
+		if r.Method == "ANY" && strings.HasPrefix(r.Path, "/api/*") {
 			hasAPI = true
 		}
 	}

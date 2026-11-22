@@ -98,7 +98,7 @@ func normalizeList(values []string) []string {
 }
 
 func defaultAllowedMethods() []string {
-	return []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"}
+	return []string{"GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"}
 }
 
 func defaultAllowedHeaders() []string {

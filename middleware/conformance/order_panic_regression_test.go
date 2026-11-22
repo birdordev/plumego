@@ -4,9 +4,13 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"testing/synctest"
+	"time"
 
 	"github.com/birdordev/plumego/contract"
 	"github.com/birdordev/plumego/middleware"
+	"github.com/birdordev/plumego/middleware/concurrencylimit"
+	"github.com/birdordev/plumego/middleware/timeout"
 )
 
 func TestMiddlewareShortCircuitErrorPathOrder(t *testing.T) {
@@ -100,4 +104,29 @@ func TestRecoveryCatchesPanicFromDownstreamMiddlewareOrder(t *testing.T) {
 			t.Fatalf("unexpected execution order: got %v want %v", order, want)
 		}
 	}
+}
+
+func TestTimedOutHandlerKeepsItsConcurrencySlot(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		entered := make(chan struct{}, 2)
+		release := make(chan struct{})
+		defer close(release)
+		h := middleware.NewChain(
+			timeout.Middleware(timeout.Config{Timeout: time.Second}),
+			concurrencylimit.Middleware(concurrencylimit.Config{MaxConcurrent: 1}),
+		).Build(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			entered <- struct{}{}
+			<-release
+		}))
+		first := httptest.NewRecorder()
+		done := make(chan struct{})
+		go func() { defer close(done); h.ServeHTTP(first, httptest.NewRequest(http.MethodGet, "/fixture", nil)) }()
+		<-entered
+		<-done
+		second := httptest.NewRecorder()
+		h.ServeHTTP(second, httptest.NewRequest(http.MethodGet, "/fixture", nil))
+		if first.Code != 504 || second.Code != 503 || len(entered) != 0 {
+			t.Fatalf("first=%d second=%d unexpectedly entered=%d", first.Code, second.Code, len(entered))
+		}
+	})
 }

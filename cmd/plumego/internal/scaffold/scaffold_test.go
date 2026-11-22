@@ -250,9 +250,7 @@ func TestAPITemplate_UsesCanonicalBootstrapWithRestProfile(t *testing.T) {
 		`"github.com/birdordev/plumego/x/rest"`,
 		`rest.DefaultResourceSpec("users").WithPrefix("/api/users")`,
 		`rest.NewDBResource[resource.User](spec, resource.NewUserRepository())`,
-		`a.Core.Get(spec.Prefix, http.HandlerFunc(users.Index))`,
-		`a.Core.Get(spec.Prefix+"/:id", http.HandlerFunc(users.Show))`,
-		`a.Core.Post(spec.Prefix, http.HandlerFunc(users.Create))`,
+		`rest.RegisterResource(a.Core, spec.Prefix, users, rest.ResourceOperations{})`,
 	})
 }
 
@@ -261,8 +259,7 @@ func TestScenarioProfiles_GenerateRunnableRoutes(t *testing.T) {
 	assertContainsAll(t, restRoutes, []string{
 		`"github.com/birdordev/plumego/x/rest"`,
 		`rest.NewDBResource[resource.User](spec, resource.NewUserRepository())`,
-		`a.Core.Get(spec.Prefix, http.HandlerFunc(users.Index))`,
-		`a.Core.Post(spec.Prefix, http.HandlerFunc(users.Create))`,
+		`rest.RegisterResource(a.Core, spec.Prefix, users, rest.ResourceOperations{})`,
 	})
 
 	tenantRoutes := getTemplateContent("internal/app/routes.go", "myapp", "example.com/myapp", "tenant-api")
@@ -648,8 +645,14 @@ func TestScaffoldRegenerationPreservesCustomizedSpec(t *testing.T) {
 	if _, err := CreateProject(dir, "myapp", module, "api", false, options); err != nil {
 		t.Fatal(err)
 	}
+	if data, err := os.ReadFile(path); err != nil || string(data) != restSpecContent {
+		t.Fatalf("REST template switch did not install its spec: %v", err)
+	}
+	if _, err := CreateProject(dir, "myapp", module, "tenant-api", false, options); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
-		t.Fatalf("unchanged generated spec survived a template switch: %v", err)
+		t.Fatalf("generated REST spec survived a switch to a template without a spec: %v", err)
 	}
 	const custom = "info: {title: Custom API}\n"
 	if err := os.WriteFile(path, []byte(custom), 0644); err != nil {

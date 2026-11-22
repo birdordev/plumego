@@ -94,7 +94,7 @@ func New(cfg config.Config) (*App, error) {
 		}),
 		// httpmetrics records each request into the PrometheusCollector so the
 		// /metrics endpoint returns real counters and latency data immediately.
-		httpmetrics.Middleware(collector),
+		httpmetrics.MiddlewareWithRouteLabels(collector),
 		// tracing.Middleware creates an OpenTelemetry span per request.
 		// Spans are queryable at GET /api/v1/spans for development inspection.
 		// In production, replace OpenTelemetryTracer with an OTLP exporter.

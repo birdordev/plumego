@@ -32,6 +32,9 @@ public_entrypoints:
   - WithStrictJSON
   - ResourceSpec
   - RegisterResourceRoutes
+  - RegisterResource
+  - ResourceOperations
+  - SoftDeleteRepository
   - RegisterDBResource
   - pagination
   - query

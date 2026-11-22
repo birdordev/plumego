@@ -52,6 +52,7 @@ func GetTemplateFiles(template string) []string {
 			"internal/config/config.go",
 			"internal/resource/users.go",
 			"go.mod",
+			canonicalSpecFile,
 			"env.example",
 			".gitignore",
 			"README.md",
@@ -68,6 +69,7 @@ func GetTemplateFiles(template string) []string {
 			"internal/resource/users.go",
 			"internal/scenario/profile.go",
 			"go.mod",
+			canonicalSpecFile,
 			"env.example",
 			".gitignore",
 			"README.md",
@@ -220,14 +222,14 @@ func cleanKnownTemplateFiles(dir string) error {
 			continue
 		}
 		if file == canonicalSpecFile {
-			if !info.Mode().IsRegular() || info.Size() != int64(len(canonicalSpecContent)) {
+			if !info.Mode().IsRegular() || (info.Size() != int64(len(canonicalSpecContent)) && info.Size() != int64(len(restSpecContent))) {
 				continue
 			}
 			content, err := os.ReadFile(path)
 			if err != nil {
 				return fmt.Errorf("failed to read existing spec %s: %w", path, err)
 			}
-			if string(content) != canonicalSpecContent {
+			if string(content) != canonicalSpecContent && string(content) != restSpecContent {
 				continue
 			}
 		}

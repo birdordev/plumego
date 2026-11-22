@@ -21,6 +21,15 @@ func (e ValidationError) Unwrap() error {
 	return e.Err
 }
 
+// As exposes the safe transport error while preserving the validation cause.
+func (e ValidationError) As(target any) bool {
+	if dest, ok := target.(*contract.APIError); ok {
+		*dest = e.APIError
+		return true
+	}
+	return false
+}
+
 func newValidationError(err error) ValidationError {
 	return ValidationError{
 		APIError: contract.NewErrorBuilder().

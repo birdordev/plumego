@@ -1,6 +1,7 @@
 package app
 
 import (
+	"github.com/birdordev/plumego/x/rest"
 	"net/http"
 
 	"with-rest/internal/handler"
@@ -17,14 +18,11 @@ func (a *App) RegisterRoutes() error {
 	reg.get("/healthz", http.HandlerFunc(h.Live))
 	reg.get("/readyz", http.HandlerFunc(h.Ready))
 	reg.get("/api/hello", handler.HelloHandler{Logger: logger})
-	// x/rest resource: list, get, create, update, delete
-	reg.get("/api/users", http.HandlerFunc(a.Users.Index))
-	reg.get("/api/users/:id", http.HandlerFunc(a.Users.Show))
-	reg.post("/api/users", http.HandlerFunc(a.Users.Create))
 	reg.post("/api/items", a.Items)
-	reg.put("/api/users/:id", http.HandlerFunc(a.Users.Update))
-	reg.delete("/api/users/:id", http.HandlerFunc(a.Users.Delete))
-	return reg.err
+	if reg.err != nil {
+		return reg.err
+	}
+	return rest.RegisterResource(a.Core, a.Users.Spec.Prefix, a.Users, rest.ResourceOperations{})
 }
 
 // routeAdder is the minimal interface shared by *core.App and *core.RouteGroup.

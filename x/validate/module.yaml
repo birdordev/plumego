@@ -30,6 +30,8 @@ public_entrypoints:
   - Bind
   - BindStrict
   - BindJSON
+  - BindQuery
+  - BindForm
   - Validator
 
 allowed_imports:

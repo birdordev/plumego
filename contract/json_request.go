@@ -24,6 +24,16 @@ type JSONRequestOptions struct {
 // 解码失败可能已修改 dst。请求体仍由调用方管理。
 // 返回的 APIError 可交给 WriteError，原始错误保留供调用方分类。
 func DecodeJSONRequest(r *http.Request, dst any, opts JSONRequestOptions) error {
+	return decodeJSONRequest(r, dst, opts, false)
+}
+
+// DecodeUniqueJSONRequest decodes a strict JSON document and rejects repeated
+// keys in any object before modifying dst.
+func DecodeUniqueJSONRequest(r *http.Request, dst any, opts JSONRequestOptions) error {
+	return decodeJSONRequest(r, dst, opts, true)
+}
+
+func decodeJSONRequest(r *http.Request, dst any, opts JSONRequestOptions, unique bool) error {
 	if opts.MaxBytes < 0 {
 		return NewErrorBuilder().Type(TypeInternal).Message("invalid JSON body limit").Build()
 	}
@@ -58,6 +68,12 @@ func DecodeJSONRequest(r *http.Request, dst any, opts JSONRequestOptions) error 
 		return invalidJSONRequest(errors.New("JSON document is null"))
 	}
 
+	if unique {
+		if err := checkJSONDuplicateFields(raw); err != nil {
+			return invalidJSONRequest(err)
+		}
+	}
+
 	valueDecoder := json.NewDecoder(bytes.NewReader(raw))
 	if !opts.AllowUnknownFields {
 		valueDecoder.DisallowUnknownFields()
@@ -78,4 +94,47 @@ func invalidJSONRequest(err error) APIError {
 		return NewErrorBuilder().Type(TypePayloadTooLarge).Message("JSON request body too large").Wrap(err).Build()
 	}
 	return NewErrorBuilder().Type(TypeBadRequest).Message("invalid JSON request body").Wrap(err).Build()
+}
+
+func checkJSONDuplicateFields(raw []byte) error {
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.UseNumber()
+	type container struct {
+		keys     map[string]struct{}
+		wantsKey bool
+	}
+	var stack []container
+	for {
+		token, err := decoder.Token()
+		if err == io.EOF {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		delimiter, isDelimiter := token.(json.Delim)
+		if isDelimiter && (delimiter == '}' || delimiter == ']') {
+			stack = stack[:len(stack)-1]
+			continue
+		}
+		if len(stack) > 0 {
+			current := &stack[len(stack)-1]
+			if current.keys != nil {
+				if current.wantsKey {
+					key := token.(string)
+					if _, exists := current.keys[key]; exists {
+						return errors.New("duplicate JSON object key")
+					}
+					current.keys[key] = struct{}{}
+				}
+				current.wantsKey = !current.wantsKey
+			}
+		}
+		switch delimiter {
+		case '{':
+			stack = append(stack, container{keys: make(map[string]struct{}), wantsKey: true})
+		case '[':
+			stack = append(stack, container{})
+		}
+	}
 }

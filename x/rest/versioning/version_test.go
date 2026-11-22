@@ -726,3 +726,19 @@ func TestStrategyDiagnosticNames(t *testing.T) {
 		}
 	}
 }
+
+func TestCustomVersionHeaderVariesResponse(t *testing.T) {
+	h := Middleware(Config{Strategy: StrategyCustomHeader, HeaderName: "X-Widget-Version"})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Add("Vary", "Origin")
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	for _, version := range []string{"2", "3"} {
+		req := httptest.NewRequest(http.MethodGet, "/resource", nil)
+		req.Header.Set("X-Widget-Version", version)
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, req)
+		if got := w.Result().Header.Values("Vary"); !slices.Equal(got, []string{"Origin", "X-Widget-Version"}) || w.Header().Get("X-API-Version") != version {
+			t.Fatalf("Vary=%v version=%s", got, w.Header().Get("X-API-Version"))
+		}
+	}
+}

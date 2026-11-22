@@ -179,3 +179,5 @@ _ = app.Shutdown(shutdownCtx)
 - [Reference App](/docs/reference-app)
 - [Middleware Primer](/docs/modules/middleware)
 - [Repository Boundaries](/docs/concepts/repo-control-plane)
+
+`RouteGroup.Use` applies shared middleware to subsequently registered routes and their descendants. `App.Mount` delegates a static prefix and its descendants to an independent HTTP handler using the original request path. `App.RunContext` serves HTTP until cancellation and owns a bounded drain.

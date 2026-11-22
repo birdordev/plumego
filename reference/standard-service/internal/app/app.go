@@ -4,9 +4,7 @@ package app
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"net/http"
 	"time"
 
 	"github.com/birdordev/plumego/core"
@@ -61,8 +59,8 @@ func New(cfg config.Config) (*App, error) {
 	//   security   → security headers (X-Frame-Options, X-Content-Type-Options, …) on all responses
 	//   cors       → CORS preflight and headers; set APP_CORS_ALLOWED_ORIGINS to restrict
 	//               cross-origin access to known domains in production (see env.example)
+	//   accesslog  → observes the HTTP response written by recovery
 	//   recovery   → converts panics to 500 responses; inside cors/security so headers still apply
-	//   accesslog  → logs every request/response; after recovery so panics appear as 500
 	//   bodylimit  → rejects oversized bodies with 413; after accesslog so the 413 is logged
 	//   [abuseguard]→ optional: add middleware/abuseguard.NewAbuseGuard here (after bodylimit so
 	//               oversized bodies are rejected before a rate-limit token is consumed)
@@ -76,8 +74,8 @@ func New(cfg config.Config) (*App, error) {
 		requestid.Middleware(),
 		securityMw,
 		cors.Middleware(corsOpts),
-		recoveryMw,
 		accesslogMw,
+		recoveryMw,
 		bodylimit.Middleware(bodylimit.Config{
 			MaxBytes: cfg.App.MaxBodyBytes,
 			Logger:   app.Logger(),
@@ -104,46 +102,6 @@ func New(cfg config.Config) (*App, error) {
 // Start prepares the runtime and blocks while the HTTP server runs.
 // When ctx is canceled, it triggers a graceful shutdown.
 func (a *App) Start(ctx context.Context) error {
-	if err := a.Core.Prepare(); err != nil {
-		return fmt.Errorf("prepare server: %w", err)
-	}
-	srv, err := a.Core.Server()
-	if err != nil {
-		return fmt.Errorf("get server: %w", err)
-	}
-
-	a.Core.Logger().Info("starting server", plumelog.Fields{
-		"addr": a.Cfg.Core.Addr,
-		"tls":  a.Cfg.Core.TLS.Enabled,
-	})
-
-	serveDone := make(chan error, 1)
-	go func() {
-		if a.Cfg.Core.TLS.Enabled {
-			// Prepare 已将证书加载到 TLSConfig。
-			serveDone <- srv.ListenAndServeTLS("", "")
-			return
-		}
-		serveDone <- srv.ListenAndServe()
-	}()
-
-	select {
-	case err := <-serveDone:
-		if err != nil && !errors.Is(err, http.ErrServerClosed) {
-			return fmt.Errorf("server stopped: %w", err)
-		}
-		return nil
-	case <-ctx.Done():
-	}
-
-	shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 15*time.Second)
-	defer cancel()
-	shutdownErr := a.Core.Shutdown(shutdownCtx)
-	if shutdownErr != nil {
-		shutdownErr = fmt.Errorf("shutdown server: %w", errors.Join(shutdownErr, srv.Close()))
-	}
-	if err := <-serveDone; err != nil && !errors.Is(err, http.ErrServerClosed) {
-		return errors.Join(shutdownErr, fmt.Errorf("server stopped: %w", err))
-	}
-	return shutdownErr
+	a.Core.Logger().Info("starting server", plumelog.Fields{"addr": a.Cfg.Core.Addr})
+	return a.Core.RunContext(ctx, 15*time.Second)
 }

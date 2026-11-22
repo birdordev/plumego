@@ -207,9 +207,11 @@ func specHelperGoMod(appDir string, target specTarget, modules []goModuleInfo) s
 }
 
 func specHelperSource(target specTarget, strict bool) string {
-	generate := "doc := openapi.New().Generate(app.Core.Routes(), ops)"
+	generate := "doc = openapi.New().Generate(app.Core.Routes(), ops)"
+	before, after := generate, ""
 	if strict {
-		generate = `doc, err := openapi.New().GenerateStrict(app.Core.Routes(), ops)
+		before = ""
+		after = `doc, err = openapi.New().WithComponents(doc.Components).GenerateStrict(app.Core.Routes(), ops)
 	if err != nil {
 		fatalf("validate operation hints: %v", err)
 	}`
@@ -250,7 +252,8 @@ func main() {
 	if err != nil {
 		fatalf("load spec hints: %%v", err)
 	}
-	%s
+ var doc openapi.Document
+ %s
 	if len(components) != 0 {
 		metadata := append([]byte("{\"components\":"), components...)
 		metadata = append(metadata, '}')
@@ -359,23 +362,5 @@ func fatalf(format string, args ...any) {
 	fmt.Fprintf(os.Stderr, format+"\n", args...)
 	os.Exit(1)
 }
-`, target.AppImport, target.ConfigImport, generate, strictSecurityChecks(strict))
-}
-
-func strictSecurityChecks(strict bool) string {
-	if !strict {
-		return ""
-	}
-	return `for route, hint := range ops {
-		for _, requirement := range hint.Security {
-			for scheme := range requirement {
-				if doc.Components != nil {
-					if _, exists := doc.Components.SecuritySchemes[scheme]; exists {
-						continue
-					}
-				}
-				fatalf("%s refers to undefined security scheme %q", route, scheme)
-			}
-		}
-	}`
+`, target.AppImport, target.ConfigImport, before, after)
 }

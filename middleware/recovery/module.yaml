@@ -20,6 +20,7 @@ non_goals:
 
 public_entrypoints:
   - Middleware
+  - MiddlewareWithStreamAbort
 
 allowed_imports:
   - stdlib

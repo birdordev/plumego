@@ -1,7 +1,9 @@
 package recovery
 
 import (
+	"bufio"
 	"errors"
+	"net"
 	"net/http"
 	"reflect"
 
@@ -45,15 +47,25 @@ type Config struct {
 // Note: This middleware should be placed early in the middleware chain to ensure
 // it can catch panics from all downstream handlers.
 func Middleware(config Config) (middleware.Middleware, error) {
+	return newMiddleware(config, false)
+}
+
+// MiddlewareWithStreamAbort interrupts an already started HTTP response when
+// the downstream handler panics. A hijacked connection retains its owner.
+func MiddlewareWithStreamAbort(config Config) (middleware.Middleware, error) {
+	return newMiddleware(config, true)
+}
+
+func newMiddleware(config Config, abortCommitted bool) (middleware.Middleware, error) {
 	if config.Logger == nil {
 		return nil, ErrNilLogger
 	}
 	return func(next http.Handler) http.Handler {
-		return recoveryHandler(next, config.Logger)
+		return recoveryHandler(next, config.Logger, abortCommitted)
 	}, nil
 }
 
-func recoveryHandler(next http.Handler, logger log.StructuredLogger) http.Handler {
+func recoveryHandler(next http.Handler, logger log.StructuredLogger, abortCommitted bool) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		rw := &recoveryResponseWriter{BaseWrappedResponseWriter: internaltransport.BaseWrappedResponseWriter{ResponseWriter: w}}
 		defer func() {
@@ -67,6 +79,9 @@ func recoveryHandler(next http.Handler, logger log.StructuredLogger) http.Handle
 					logger.WithFields(log.Fields(internaltelemetry.RedactFields(fields))).Error("panic recovered")
 				})
 				if rw.Written() {
+					if abortCommitted && !rw.hijacked {
+						panic(http.ErrAbortHandler)
+					}
 					return
 				}
 				internaltransport.WriteTransportError(rw, r, http.StatusInternalServerError, contract.CodeInternalError, "internal server error", nil)
@@ -78,6 +93,13 @@ func recoveryHandler(next http.Handler, logger log.StructuredLogger) http.Handle
 
 type recoveryResponseWriter struct {
 	internaltransport.BaseWrappedResponseWriter
+	hijacked bool
+}
+
+func (w *recoveryResponseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	conn, rw, err := w.BaseWrappedResponseWriter.Hijack()
+	w.hijacked = w.hijacked || err == nil
+	return conn, rw, err
 }
 
 func panicType(rec any) string {

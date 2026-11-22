@@ -135,3 +135,29 @@ func assertRouteSet(t *testing.T, routes []router.RouteInfo, want []routeKey) {
 		}
 	}
 }
+
+func TestRegisterResourceAdvertisesSelectedMethods(t *testing.T) {
+	r := router.NewRouter(router.WithMethodNotAllowed(true))
+	c := NewBaseResourceController("items")
+	if err := RegisterResource(r.Group("/api"), "/items", c, ResourceOperations{BatchCreate: true, Options: true}); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		method, path string
+		status       int
+		allow        string
+	}{
+		{"OPTIONS", "/api/items", 204, "GET, HEAD, OPTIONS, POST"},
+		{"OPTIONS", "/api/items/one", 204, "DELETE, GET, HEAD, OPTIONS, PUT"},
+		{"OPTIONS", "/api/items/batch", 204, "OPTIONS, POST"},
+		{"DELETE", "/api/items/batch", 405, "OPTIONS, POST"},
+		{"TRACE", "/api/items/batch", 405, "OPTIONS, POST"},
+		{"PATCH", "/api/items/one", 405, "DELETE, GET, HEAD, OPTIONS, PUT"},
+	} {
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, httptest.NewRequest(tc.method, tc.path, nil))
+		if w.Code != tc.status || w.Header().Get("Allow") != tc.allow {
+			t.Errorf("%s %s: status=%d Allow=%q", tc.method, tc.path, w.Code, w.Header().Get("Allow"))
+		}
+	}
+}

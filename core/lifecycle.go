@@ -36,6 +36,59 @@ func (a *App) Run() error {
 	return normalizeRunError(err)
 }
 
+// RunContext serves until ctx is canceled or the listener fails. On
+// cancellation it drains HTTP requests for the supplied duration, then
+// closes connections if graceful shutdown failed. The caller owns signals
+// and any non-HTTP resources.
+func (a *App) RunContext(ctx context.Context, drainTimeout time.Duration) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if drainTimeout <= 0 {
+		return fmt.Errorf("shutdown timeout must be positive")
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if err := a.Prepare(); err != nil {
+		return err
+	}
+	server, err := a.Server()
+	if err != nil {
+		return err
+	}
+	listener, err := new(net.ListenConfig).Listen(ctx, "tcp", server.Addr)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = listener.Close() }()
+	done := make(chan error, 1)
+	go func() {
+		if a.config.TLS.Enabled {
+			done <- server.ServeTLS(listener, "", "")
+			return
+		}
+		done <- server.Serve(listener)
+	}()
+	var serveErr error
+	exited := false
+	select {
+	case serveErr = <-done:
+		exited = true
+	case <-ctx.Done():
+	}
+	drain, cancel := context.WithTimeout(context.WithoutCancel(ctx), drainTimeout)
+	defer cancel()
+	err = a.Shutdown(drain)
+	if err != nil {
+		err = errors.Join(err, server.Close())
+	}
+	if !exited {
+		serveErr = <-done
+	}
+	return errors.Join(normalizeRunError(serveErr), err)
+}
+
 func normalizeRunError(err error) error {
 	if errors.Is(err, http.ErrServerClosed) {
 		return nil

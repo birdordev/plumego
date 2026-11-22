@@ -149,7 +149,7 @@ func newApp(address, token string, repo repository) (*core.App, error) {
 	if err := app.EnableStandardPathValues(); err != nil {
 		return nil, err
 	}
-	authenticate, err := auth.Authenticate(authn.StaticToken(token))
+	authenticate, err := auth.Authenticate(authn.StaticToken(token), auth.WithAuthRealm("sql-api"))
 	if err != nil {
 		return nil, err
 	}

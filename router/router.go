@@ -55,6 +55,7 @@ type route struct {
 type routerState struct {
 	notFound             atomic.Pointer[notFoundHandler]
 	standardPathValues   atomic.Bool
+	escapedPathSegments  atomic.Bool
 	trees                map[string]*node
 	routes               map[string][]route
 	mu                   sync.RWMutex
@@ -95,6 +96,21 @@ type Router struct {
 
 // RouterOption defines a function type for router configuration options.
 type RouterOption func(*Router)
+
+// EnableEscapedPathSegments decodes escaped URL segments after splitting the
+// path. Call before Freeze to allow escaped slashes inside single parameters.
+func (r *Router) EnableEscapedPathSegments() error {
+	if !r.ready() {
+		return errors.New("router is uninitialized")
+	}
+	r.state.mu.Lock()
+	defer r.state.mu.Unlock()
+	if r.state.frozen.Load() {
+		return errors.New("router is frozen")
+	}
+	r.state.escapedPathSegments.Store(true)
+	return nil
+}
 
 // EnableStandardPathValues 让路由参数同时可从 http.Request.PathValue 和路由上下文读取。
 // 在 Freeze 前调用。此模式为匹配请求复制路径参数存储。
@@ -303,7 +319,7 @@ func (r *Router) Freeze() {
 			if slices.ContainsFunc(segments, func(s segment) bool { return s.isParam || s.isWild }) {
 				continue
 			}
-			r.state.frozenStatic[matchCacheKey{method, route.Path}] = r.matchRoute(method, route.Path)
+			r.state.frozenStatic[matchCacheKey{method: method, path: route.Path}] = r.matchRoute(method, route.Path)
 		}
 	}
 	sort.Strings(r.state.frozenMethods)

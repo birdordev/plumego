@@ -93,3 +93,5 @@ Request validation in Go web services drifts in two directions: either it disapp
 - [Contract Primer](/docs/modules/contract)
 - [Handle Errors Guide](/docs/guides/handle-errors)
 - [Build a REST Resource](/docs/guides/build-rest-resource)
+
+Use `BindQuery` or bounded `BindForm` to read an explicit source. Validation callbacks receive `url.Values` and can distinguish missing, empty, or repeated values.

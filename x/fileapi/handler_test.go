@@ -1465,6 +1465,8 @@ func TestUploadRejectsKnownOversizeBeforeReading(t *testing.T) {
 	}
 }
 
+type wrappedStageStorage struct{ *datafile.S3Storage }
+
 func TestLargeMultipartUploadReusesStageForS3(t *testing.T) {
 	const size = 9 << 20
 	backendDir := t.TempDir()
@@ -1508,7 +1510,7 @@ func TestLargeMultipartUploadReusesStageForS3(t *testing.T) {
 	req.Header.Set("Content-Type", form.FormDataContentType())
 	req = req.WithContext(tenantcore.WithTenantID(req.Context(), "fixture"))
 	w := httptest.NewRecorder()
-	NewHandler(store, nil).Upload(w, req)
+	NewHandler(wrappedStageStorage{store}, nil).Upload(w, req)
 	if w.Code != http.StatusOK {
 		t.Fatalf("upload status = %d", w.Code)
 	}

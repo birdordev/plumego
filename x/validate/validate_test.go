@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -367,5 +368,42 @@ func TestBindStrictValidatesOnlyOneCompleteJSONDocument(t *testing.T) {
 		if !ok || apiErr.Status() != tc.status {
 			t.Errorf("body %q: got %v, want HTTP error %d", tc.body, err, tc.status)
 		}
+	}
+}
+
+type repeatedFormValue struct{}
+
+func (repeatedFormValue) Error() string { return "repeated value" }
+func (repeatedFormValue) FieldViolations() []contract.FieldViolation {
+	return []contract.FieldViolation{{Source: "body", Field: "name", Code: "duplicate"}}
+}
+
+func TestBindFormKeepsSourcesSeparateAndPreservesFieldErrors(t *testing.T) {
+	body := "name=&name=second"
+	r := httptest.NewRequest(http.MethodPost, "/?name=query&unrelated=true", strings.NewReader(body))
+	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	err := BindForm(httptest.NewRecorder(), r, 64, func(values url.Values) error {
+		if names := values["name"]; len(names) != 2 || names[0] != "" || names[1] != "second" || values.Has("unrelated") {
+			t.Fatalf("body values = %v", values)
+		}
+		return repeatedFormValue{}
+	})
+	api, ok := contract.AsAPIError(err)
+	if !ok || api.Code() != contract.CodeValidationError || api.Details()["fields"] == nil {
+		t.Fatalf("validation error=%v", err)
+	}
+	if err := BindQuery(r, func(values url.Values) error {
+		if values.Get("name") != "query" {
+			t.Fatalf("query=%v", values)
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	r = httptest.NewRequest(http.MethodPost, "/", strings.NewReader(body))
+	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	r.ContentLength = -1
+	if api, ok := contract.AsAPIError(BindForm(httptest.NewRecorder(), r, 4, nil)); !ok || api.Status() != 413 {
+		t.Fatalf("oversize = %v", api)
 	}
 }

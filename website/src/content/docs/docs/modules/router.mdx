@@ -150,3 +150,5 @@ Route registration is the entry-point map for every request the service will eve
 - [Contract Primer](/docs/modules/contract)
 - [Reference App](/docs/reference-app)
 - [Repository Boundaries](/docs/concepts/repo-control-plane)
+
+Opt in to `EnableEscapedPathSegments` before freezing to decode paths segment by segment. Encoded separators can then be part of a path parameter. Enable standard path values separately when handlers need `r.PathValue`.

@@ -146,3 +146,5 @@ app.Use(middleware.Middleware(MyMiddleware))
 - [Store Primer](/docs/modules/store)
 - [x/rest Primer](/docs/modules/x-rest)
 - [x/messaging Primer](/docs/modules/x-messaging)
+
+Use `httpmetrics.MiddlewareWithRouteLabels` to bound fallback path labels for unmatched requests. For streaming routes, `recovery.MiddlewareWithStreamAbort` allows the client to detect an interrupted response. To hold a concurrency slot until work ends, place the concurrency limiter inside the buffering timeout middleware.

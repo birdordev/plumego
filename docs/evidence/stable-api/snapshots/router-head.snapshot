@@ -10,6 +10,7 @@ symbol	github.com/birdordev/plumego/router	func	WithNotFoundHandler	func WithNot
 symbol	github.com/birdordev/plumego/router	func	WithRouteName	func WithRouteNamefunc(name string) RouteOption
 symbol	github.com/birdordev/plumego/router	func	WithTags	func WithTagsfunc(tags ...string) RouteOption
 symbol	github.com/birdordev/plumego/router	method	Router.AddRoute	func (Router) AddRoutefunc(method, path string, handler http.Handler, opts ...RouteOption) error
+symbol	github.com/birdordev/plumego/router	method	Router.EnableEscapedPathSegments	func (Router) EnableEscapedPathSegmentsfunc() error
 symbol	github.com/birdordev/plumego/router	method	Router.EnableStandardPathValues	func (Router) EnableStandardPathValuesfunc() error
 symbol	github.com/birdordev/plumego/router	method	Router.Freeze	func (Router) Freezefunc()
 symbol	github.com/birdordev/plumego/router	method	Router.Group	func (Router) Groupfunc(prefix string) *Router

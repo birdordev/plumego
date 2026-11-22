@@ -6,7 +6,10 @@ import (
 	"sync"
 )
 
-type matchCacheKey struct{ method, path string }
+type matchCacheKey struct {
+	method, path string
+	escaped      bool
+}
 
 // matchCache is a read-optimized route-match cache backed by a ring buffer
 // for O(1) FIFO eviction. Get acquires only an RLock; promotion is

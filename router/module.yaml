@@ -60,6 +60,7 @@ public_entrypoints:
   - WithMethodNotAllowed
   - SetNotFoundHandler
   - EnableStandardPathValues
+  - EnableEscapedPathSegments
   - WithNotFoundHandler
   - Static
   - StaticFS

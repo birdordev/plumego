@@ -19,6 +19,7 @@ var (
 		"docs/start/getting-started.md",
 		"docs/reference/canonical-style-guide.md",
 		"docs/modules/core/README.md",
+		"docs/start/adoption-path.md",
 	}
 
 	packageMainPattern = regexp.MustCompile(`(?m)^package\s+main(\s|$)`)

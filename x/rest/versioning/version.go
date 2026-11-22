@@ -178,8 +178,15 @@ func Middleware(config Config) mw.Middleware {
 
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if cfg.Strategy == StrategyAcceptHeader {
-				variant := httputil.NewVaryWriter(w, "Accept")
+			var vary string
+			switch cfg.Strategy {
+			case StrategyAcceptHeader:
+				vary = "Accept"
+			case StrategyCustomHeader:
+				vary = cfg.HeaderName
+			}
+			if vary != "" {
+				variant := httputil.NewVaryWriter(w, vary)
 				defer variant.Prepare()
 				w = variant
 			}

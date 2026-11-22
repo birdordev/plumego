@@ -52,3 +52,18 @@ func TestOuterObservations(t *testing.T) {
 		}
 	}
 }
+
+func TestBoundedFallbackRouteLabels(t *testing.T) {
+	paths := make(chan string, 3)
+	r := router.NewRouter()
+	if err := r.AddRoute(http.MethodGet, "/items/:id", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) })); err != nil {
+		t.Fatal(err)
+	}
+	h := httpmetrics.MiddlewareWithRouteLabels(routeObserver{paths: paths})(r)
+	for _, tc := range []struct{ path, label string }{{"/wrong/one", "unmatched"}, {"/wrong/two", "unmatched"}, {"/items/one", "/items/:id"}} {
+		h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, tc.path, nil))
+		if got := <-paths; got != tc.label {
+			t.Fatalf("route label=%q, want %q", got, tc.label)
+		}
+	}
+}

@@ -38,6 +38,7 @@ public_entrypoints:
   - App
   - SetNotFoundHandler
   - EnableStandardPathValues
+  - EnableEscapedPathSegments
   - AppDependencies
   - DefaultConfig
   - AppConfig
@@ -61,8 +62,11 @@ public_entrypoints:
   - (*App).Prepare
   - (*App).Server
   - (*App).Shutdown
+  - (*App).RunContext
+  - (*App).Mount
   - RouteGroup
   - (*RouteGroup).Group
+  - (*RouteGroup).Use
   - (*RouteGroup).Get
   - (*RouteGroup).Post
   - (*RouteGroup).Put

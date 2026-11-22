@@ -108,3 +108,8 @@ readers. The S3 backend supports single byte ranges through a signed ranged
 read. It serves HEAD from object metadata and avoids opening an object body for
 304 and 416 responses. Multi-range S3 requests fall back to the full
 representation, as do range requests to sequential-only backends.
+
+For large multipart uploads, a storage backend implementing
+`PutStaged(context.Context, file.PutOptions, io.ReaderAt)` can reuse the
+already staged file. Backends can also handle uploads through the ordinary
+streaming `Put` method.

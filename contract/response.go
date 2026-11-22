@@ -19,6 +19,13 @@ type response struct {
 	RequestID string         `json:"request_id,omitempty"`
 }
 
+// ResponseEncodingError reports a success response that could not be encoded
+// before WriteResponse committed any bytes.
+type ResponseEncodingError struct{ cause error }
+
+func (e *ResponseEncodingError) Error() string { return e.cause.Error() }
+func (e *ResponseEncodingError) Unwrap() error { return e.cause }
+
 func writeJSON(w http.ResponseWriter, status int, payload any) error {
 	if w == nil {
 		return ErrResponseWriterNil
@@ -42,7 +49,7 @@ func writeJSON(w http.ResponseWriter, status int, payload any) error {
 	defer putJSONBuffer(buf)
 
 	if err := encodeJSON(json.NewEncoder(buf), payload, errResponseEncodingPanic); err != nil {
-		return err
+		return &ResponseEncodingError{cause: err}
 	}
 
 	return writeEncodedJSON(w, status, buf.Bytes())

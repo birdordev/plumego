@@ -1,6 +1,7 @@
 package rest
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -12,6 +13,12 @@ import (
 // Index handles GET /resource with database query, pagination, and transformation.
 func (c *DBResourceController[T]) Index(w http.ResponseWriter, r *http.Request) {
 	params := c.ParseQueryParams(r)
+	query := r.URL.Query()
+	if (query.Has("limit") || query.Has("offset")) && (query.Has("page") || query.Has("page_size")) {
+		_ = contract.WriteError(w, r, contract.NewErrorBuilder().Type(contract.TypeBadRequest).
+			Message("use one pagination mode").FieldViolations(invalidQueryField{field: "page", code: "conflicting_pagination_modes"}).Build())
+		return
+	}
 
 	if err := c.Hooks.BeforeList(r.Context(), params); err != nil {
 		_ = contract.WriteError(w, r, contract.NewErrorBuilder().
@@ -24,6 +31,11 @@ func (c *DBResourceController[T]) Index(w http.ResponseWriter, r *http.Request) 
 
 	results, total, err := c.repository.FindAll(r.Context(), params)
 	if err != nil {
+		if fieldErr, ok := errors.AsType[invalidQueryField](err); ok {
+			_ = contract.WriteError(w, r, contract.NewErrorBuilder().Type(contract.TypeBadRequest).
+				Message("unknown query field").FieldViolations(fieldErr).Build())
+			return
+		}
 		_ = contract.WriteError(w, r, contract.NewErrorBuilder().
 			Type(contract.TypeInternal).
 			Message("failed to fetch records").
@@ -48,9 +60,11 @@ func (c *DBResourceController[T]) Index(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	_ = contract.WriteResponse(w, r, http.StatusOK, transformedResults, map[string]any{
-		"pagination": NewPaginationMeta(params.Page, params.PageSize, total),
-	})
+	meta := map[string]any{"pagination": paginationForQuery(params, total)}
+	if query.Has("limit") || query.Has("offset") {
+		meta["limit"], meta["offset"] = params.Limit, params.Offset
+	}
+	c.handleResponseError(w, r, contract.WriteResponse(w, r, http.StatusOK, transformedResults, meta))
 }
 
 // Show handles GET /resource/:id.
@@ -88,7 +102,7 @@ func (c *DBResourceController[T]) Show(w http.ResponseWriter, r *http.Request) {
 			Build())
 		return
 	}
-	_ = contract.WriteResponse(w, r, http.StatusOK, transformedResult, nil)
+	c.handleResponseError(w, r, contract.WriteResponse(w, r, http.StatusOK, transformedResult, nil))
 }
 
 // Create handles POST /resource.
@@ -143,7 +157,7 @@ func (c *DBResourceController[T]) Create(w http.ResponseWriter, r *http.Request)
 			Build())
 		return
 	}
-	_ = contract.WriteResponse(w, r, http.StatusCreated, transformedResult, nil)
+	c.handleResponseError(w, r, contract.WriteResponse(w, r, http.StatusCreated, transformedResult, nil))
 }
 
 // Update handles PUT /resource/:id.
@@ -214,7 +228,7 @@ func (c *DBResourceController[T]) Update(w http.ResponseWriter, r *http.Request)
 			Build())
 		return
 	}
-	_ = contract.WriteResponse(w, r, http.StatusOK, transformedResult, nil)
+	c.handleResponseError(w, r, contract.WriteResponse(w, r, http.StatusOK, transformedResult, nil))
 }
 
 // Delete handles DELETE /resource/:id.
@@ -228,6 +242,22 @@ func (c *DBResourceController[T]) Delete(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	deleteRecord := c.repository.Delete
+	if c.Spec.Options != nil && c.Spec.Options.SoftDelete {
+		soft, ok := c.repository.(SoftDeleteRepository)
+		if !ok {
+			_ = contract.WriteError(w, r, contract.NewErrorBuilder().Type(contract.TypeInternal).
+				Message("soft delete is unavailable").Build())
+			return
+		}
+		field := c.Spec.Options.SoftDeleteField
+		if field == "" {
+			field = DefaultResourceOptions().SoftDeleteField
+		}
+		deleteRecord = func(ctx context.Context, id string) error {
+			return soft.SoftDelete(ctx, id, field)
+		}
+	}
 	if err := c.Hooks.BeforeDelete(r.Context(), id); err != nil {
 		_ = contract.WriteError(w, r, contract.NewErrorBuilder().
 			Type(contract.TypeValidation).
@@ -237,7 +267,7 @@ func (c *DBResourceController[T]) Delete(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	if err := c.repository.Delete(r.Context(), id); err != nil {
+	if err := deleteRecord(r.Context(), id); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			_ = contract.WriteError(w, r, contract.NewErrorBuilder().
 				Type(contract.TypeNotFound).
@@ -260,7 +290,7 @@ func (c *DBResourceController[T]) Delete(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	_ = contract.WriteResponse(w, r, http.StatusNoContent, nil, nil)
+	c.handleResponseError(w, r, contract.WriteResponse(w, r, http.StatusNoContent, nil, nil))
 }
 
 func (c *DBResourceController[T]) decodeWriteRequest(w http.ResponseWriter, r *http.Request, data *T) bool {
@@ -281,4 +311,30 @@ func (c *DBResourceController[T]) decodeWriteRequest(w http.ResponseWriter, r *h
 		Message("invalid request body").
 		Build())
 	return false
+}
+
+// Head reuses resource lookup and authorization behavior for HEAD requests.
+func (c *DBResourceController[T]) Head(w http.ResponseWriter, r *http.Request) {
+	if c.ParamExtractor.GetID(r) != "" {
+		c.Show(w, r)
+		return
+	}
+	c.Index(w, r)
+}
+
+func paginationForQuery(params *QueryParams, total int64) *PaginationMeta {
+	meta := NewPaginationMeta(params.Page, params.PageSize, total)
+	meta.HasPrev = params.Offset > 0
+	meta.HasNext = int64(params.Offset) < total-int64(params.Limit)
+	return meta
+}
+
+func (c *DBResourceController[T]) handleResponseError(w http.ResponseWriter, r *http.Request, err error) {
+	if _, ok := errors.AsType[*contract.ResponseEncodingError](err); ok {
+		err = contract.WriteError(w, r, contract.NewErrorBuilder().Type(contract.TypeInternal).
+			Message("failed to encode resource response").Build())
+	}
+	if err != nil && c.onResponseError != nil {
+		c.onResponseError(r.Context(), err)
+	}
 }

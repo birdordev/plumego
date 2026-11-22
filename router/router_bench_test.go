@@ -240,9 +240,9 @@ func BenchmarkOptNormalizePath(b *testing.B) {
 // BenchmarkOptCacheKey measures lookups with representative method/path pairs.
 func BenchmarkOptCacheKey(b *testing.B) {
 	keys := []matchCacheKey{
-		{http.MethodGet, "/users"},
-		{http.MethodPost, "/users/123"},
-		{http.MethodPut, "/api/v1/health"},
+		{method: http.MethodGet, path: "/users"},
+		{method: http.MethodPost, path: "/users/123"},
+		{method: http.MethodPut, path: "/api/v1/health"},
 	}
 	cache := newMatchCache(len(keys))
 	for _, key := range keys {

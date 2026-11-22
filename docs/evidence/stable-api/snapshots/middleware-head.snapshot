@@ -47,6 +47,7 @@ symbol	github.com/birdordev/plumego/middleware/debug	func	DefaultConfig	func Def
 symbol	github.com/birdordev/plumego/middleware/debug	func	Middleware	func Middlewarefunc(config Config) middleware.Middleware
 symbol	github.com/birdordev/plumego/middleware/debug	type	Config	type Config struct { IncludeRequest bool IncludeQuery bool IncludeBody bool MaxBodyBytes int NotFoundHint string }
 symbol	github.com/birdordev/plumego/middleware/httpmetrics	func	Middleware	func Middlewarefunc(collector Observer) middleware.Middleware
+symbol	github.com/birdordev/plumego/middleware/httpmetrics	func	MiddlewareWithRouteLabels	func MiddlewareWithRouteLabelsfunc(collector Observer) middleware.Middleware
 symbol	github.com/birdordev/plumego/middleware/httpmetrics	type	Observer	type Observer = metrics.HTTPObserver
 symbol	github.com/birdordev/plumego/middleware/internal/telemetry	const	SpanIDHeader	const SpanIDHeader = "X-Span-ID"
 symbol	github.com/birdordev/plumego/middleware/internal/telemetry	func	BeginTrace	func BeginTracefunc(w http.ResponseWriter, prepared PreparedRequest, start TraceStarter) (*http.Request, TraceSpan)
@@ -67,6 +68,7 @@ symbol	github.com/birdordev/plumego/middleware/internal/telemetry	type	ResponseR
 symbol	github.com/birdordev/plumego/middleware/internal/telemetry	type	TraceSpan	type TraceSpan interface { TraceID() string SpanID() string End(status, bytes int, requestID string) }
 symbol	github.com/birdordev/plumego/middleware/internal/telemetry	type	TraceStarter	type TraceStarter func(ctx context.Context, r *http.Request) (context.Context, TraceSpan)
 symbol	github.com/birdordev/plumego/middleware/recovery	func	Middleware	func Middlewarefunc(config Config) (middleware.Middleware, error)
+symbol	github.com/birdordev/plumego/middleware/recovery	func	MiddlewareWithStreamAbort	func MiddlewareWithStreamAbortfunc(config Config) (middleware.Middleware, error)
 symbol	github.com/birdordev/plumego/middleware/recovery	type	Config	type Config struct { Logger log.StructuredLogger }
 symbol	github.com/birdordev/plumego/middleware/recovery	var	ErrNilLogger	var ErrNilLogger = errors.New("recovery: logger cannot be nil")
 symbol	github.com/birdordev/plumego/middleware/requestid	func	AttachRequestID	func AttachRequestIDfunc(w http.ResponseWriter, r *http.Request, id string, includeInRequest bool) *http.Request

@@ -119,7 +119,7 @@ func RegisterRoutes(r *router.Router, repository rest.Repository[User]) {
 - `RegisterResourceRoutes` returns explicit errors for nil router or controller so app wiring mistakes are visible; empty prefixes normalize to the root route surface
 - `SQLBuilder` applies search to columns set with `WithColumns`. Without
   configured columns, it ignores search and still applies filters.
-- `x/rest` is not an ORM — `SQLBuilder` is a query helper, not an active-record layer; column-level SQL safety (filter-key interpolation) depends on `QueryBuilder.WithAllowedFilters` being configured; a `QueryBuilder` without an allowlist passes all filter keys through to SQL
+- `x/rest` is not an ORM — `SQLBuilder` is a query helper, not an active-record layer; the SQL builder uses configured columns or an explicit `WithQueryFields` mapping for filtering and sorting. Invalid fields yield an empty query from the builder and an error from the repository
 - `x/rest` is not a validation framework — `DBResourceController.WithValidator` accepts any `interface{ Validate(any) error }`; the validator's error message is never forwarded to the client; only the stable "validation failed" message is exposed
 - `x/rest` does not own route discovery or auto-registration; every resource must be wired explicitly by the calling package
 
@@ -176,3 +176,22 @@ failure in one of these hooks can return an error after the write committed.
 Use a repository transaction for effects that must commit with the write.
 The SQL reference demonstrates writing an outbox event in the same transaction
 and delivering it from a separate worker.
+
+Use `RegisterResource` with a router, app, or route group. Its optional
+PATCH, batch, and OPTIONS routes are configured with `ResourceOperations`.
+OPTIONS reports the methods for that path. Enabling a batch operation reserves
+the `/batch` resource path. HEAD can reuse the router's GET
+fallback. The legacy registration entrypoint still accepts its explicit
+HEAD and OPTIONS handlers.
+
+The repository-backed list accepts either `page`/`page_size` or
+`limit`/`offset`. Combining modes returns 400. Sorting and filtering
+with `BaseRepository` use the plain columns in `WithColumns` and the ID
+column by default. `WithQueryFields` supplies a separate mapping from
+public names to columns. Unmapped fields return a field-level 400.
+
+Set `SoftDelete` only with a repository implementing `SoftDeleteRepository`.
+The repository owns the tombstone and visibility rules. Missing or already
+deleted records return `sql.ErrNoRows`. Unsupported soft deletion is reported
+as a server configuration failure. Applications can supply
+`WithResponseErrorObserver` to report response delivery errors.

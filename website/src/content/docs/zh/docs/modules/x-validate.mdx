@@ -61,3 +61,5 @@ Go Web 服务中的请求验证倾向于向两个方向漂移：要么消失到�
 - [Contract Primer](/zh/docs/modules/contract)
 - [错误处理指南](/zh/docs/guides/handle-errors)
 - [构建 REST 资源](/zh/docs/guides/build-rest-resource)
+
+使用 `BindQuery` 或带大小上限的 `BindForm` 读取单一来源。校验回调接收 `url.Values`，可区别字段缺失、空值和重复值。

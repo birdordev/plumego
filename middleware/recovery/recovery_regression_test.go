@@ -110,3 +110,28 @@ func TestRecoveryAfterEarlyHintsWritesOneRedactedFinalResponse(t *testing.T) {
 		t.Fatalf("status=%d hints=%d body=%q diagnostics=%q err=%v", resp.StatusCode, hints, body, diagnostics.String(), err)
 	}
 }
+
+func TestRecoveryCanAbortCommittedStream(t *testing.T) {
+	mw, err := MiddlewareWithStreamAbort(Config{Logger: log.NewLogger(log.LoggerConfig{Format: log.LoggerFormatDiscard})})
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(mw(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(w, "first frame")
+		if err := http.NewResponseController(w).Flush(); err != nil {
+			t.Error(err)
+			return
+		}
+		panic("fixture")
+	})))
+	defer server.Close()
+	resp, err := server.Client().Get(server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err == nil || string(body) != "first frame" || resp.StatusCode != 200 {
+		t.Fatalf("response %d %q error=%v", resp.StatusCode, body, err)
+	}
+}

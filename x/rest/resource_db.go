@@ -18,6 +18,12 @@ type Repository[T any] interface {
 	Exists(ctx context.Context, id string) (bool, error)
 }
 
+// SoftDeleteRepository marks a record deleted. The repository owns visibility of
+// deleted records and returns sql.ErrNoRows for a missing or already deleted ID.
+type SoftDeleteRepository interface {
+	SoftDelete(ctx context.Context, id string, field string) error
+}
+
 // Validator validates a decoded request value before persistence.
 // This is the canonical type used by DBResourceController; any package-local
 // validator that satisfies Validate(any) error is accepted implicitly.
@@ -29,9 +35,10 @@ type Validator interface {
 // providing database-backed CRUD handlers out of the box.
 type DBResourceController[T any] struct {
 	*BaseContextResourceController
-	repository Repository[T]
-	validator  Validator
-	strictJSON *contract.JSONRequestOptions
+	repository      Repository[T]
+	validator       Validator
+	strictJSON      *contract.JSONRequestOptions
+	onResponseError func(context.Context, error)
 }
 
 // NewDBResourceController creates a new database resource controller.
@@ -52,6 +59,12 @@ func (c *DBResourceController[T]) WithValidator(v Validator) *DBResourceControll
 // 在路由注册前配置控制器。
 func (c *DBResourceController[T]) WithStrictJSON(options contract.JSONRequestOptions) *DBResourceController[T] {
 	c.strictJSON = &options
+	return c
+}
+
+// WithResponseErrorObserver configures a callback for response delivery failures.
+func (c *DBResourceController[T]) WithResponseErrorObserver(observe func(context.Context, error)) *DBResourceController[T] {
+	c.onResponseError = observe
 	return c
 }
 

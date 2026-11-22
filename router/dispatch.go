@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"sort"
 	"strconv"
 	"strings"
@@ -185,15 +186,20 @@ func (r *Router) serveHTTP(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	path := fastNormalizePath(req.URL.Path)
+	escaped := r.state.escapedPathSegments.Load()
+	path := req.URL.Path
+	if escaped {
+		path = req.URL.EscapedPath()
+	}
+	path = fastNormalizePath(path)
 	var parts *[]string
-	result := r.cachedMatchParts(req.Method, path, &parts)
+	result := r.cachedMatchParts(req.Method, path, &parts, escaped)
 	if parts != nil {
 		defer putPathParts(parts)
 	}
 	if result == nil {
 		if r.state.methodNotAllowed.Load() {
-			allowed := r.allowedMethods(path, parts)
+			allowed := r.allowedMethods(path, parts, escaped)
 			if len(allowed) > 0 {
 				w.Header().Set("Allow", strings.Join(allowed, ", "))
 				_ = contract.WriteError(w, req, contract.NewErrorBuilder().
@@ -219,14 +225,15 @@ func (r *Router) serveHTTP(w http.ResponseWriter, req *http.Request) {
 const maxCachedDynamicPathBytes = 1024
 
 func (r *Router) cachedMatch(method, path string) *matchResult {
-	return r.cachedMatchParts(method, path, nil)
+	return r.cachedMatchParts(method, path, nil, false)
 }
 
-func (r *Router) cachedMatchParts(method, path string, scratch **[]string) *matchResult {
+func (r *Router) cachedMatchParts(method, path string, scratch **[]string, escaped bool) *matchResult {
 	// Keep lookup and publication in the same read lock so registration cannot
 	// clear the cache between matching a route and publishing the result.
 	// Freeze publishes the immutable trie and cache pointer under the write lock.
-	key := matchCacheKey{method: method, path: path}
+	decodeSegments := escaped && strings.Contains(path, "%")
+	key := matchCacheKey{method: method, path: path, escaped: decodeSegments}
 	if r.state.frozen.Load() {
 		if result := r.state.frozenStatic[key]; result != nil {
 			return result
@@ -240,7 +247,7 @@ func (r *Router) cachedMatchParts(method, path string, scratch **[]string) *matc
 	if result, ok := cache.Get(key); ok {
 		return result
 	}
-	result := r.matchRouteParts(method, path, scratch)
+	result := r.matchRouteParts(method, path, scratch, decodeSegments)
 	if result != nil && (path == result.RoutePattern || len(path) <= maxCachedDynamicPathBytes) {
 		cache.storeMatch(key, result, r.state.frozen.Load() && path != result.RoutePattern)
 	}
@@ -249,10 +256,10 @@ func (r *Router) cachedMatchParts(method, path string, scratch **[]string) *matc
 
 // matchRoute reads the trie under the caller's read lock or after Freeze.
 func (r *Router) matchRoute(method, path string) *matchResult {
-	return r.matchRouteParts(method, path, nil)
+	return r.matchRouteParts(method, path, nil, false)
 }
 
-func (r *Router) matchRouteParts(method, path string, scratch **[]string) *matchResult {
+func (r *Router) matchRouteParts(method, path string, scratch **[]string, escaped bool) *matchResult {
 	if path == "/" {
 		if method != MethodAny {
 			tree := r.state.trees[method]
@@ -283,7 +290,7 @@ func (r *Router) matchRouteParts(method, path string, scratch **[]string) *match
 	if method != MethodAny {
 		tree := r.state.trees[method]
 		if tree != nil {
-			result := matchNode(tree, parts, path)
+			result := matchNode(tree, parts, path, escaped)
 			if result != nil {
 				result.RouteMethod = method
 				return result
@@ -294,7 +301,7 @@ func (r *Router) matchRouteParts(method, path string, scratch **[]string) *match
 	// RFC 7231 §4.3.2: fall back to GET handler for HEAD requests.
 	if method == http.MethodHead {
 		if getTree := r.state.trees[http.MethodGet]; getTree != nil {
-			result := matchNode(getTree, parts, path)
+			result := matchNode(getTree, parts, path, escaped)
 			if result != nil {
 				result.RouteMethod = http.MethodGet
 				return result
@@ -304,7 +311,7 @@ func (r *Router) matchRouteParts(method, path string, scratch **[]string) *match
 
 	// Fall back to ANY handler.
 	if anyTree := r.state.trees[MethodAny]; anyTree != nil {
-		result := matchNode(anyTree, parts, path)
+		result := matchNode(anyTree, parts, path, escaped)
 		if result != nil {
 			result.RouteMethod = MethodAny
 			return result
@@ -351,14 +358,14 @@ func clonePathValues(req *http.Request, ctx context.Context) *http.Request {
 	return cloned
 }
 
-func (r *Router) allowedMethods(path string, partsPtr *[]string) []string {
+func (r *Router) allowedMethods(path string, partsPtr *[]string, escaped bool) []string {
 	normalized := path
 	if normalized == "" {
 		normalized = "/"
 	}
 
 	if r.state.frozen.Load() {
-		return r.frozenAllowedMethods(normalized, partsPtr)
+		return r.frozenAllowedMethods(normalized, partsPtr, escaped)
 	}
 
 	r.state.mu.RLock()
@@ -383,7 +390,7 @@ func (r *Router) allowedMethods(path string, partsPtr *[]string) []string {
 			if method == MethodAny || tree == nil {
 				continue
 			}
-			if matchBranch(tree, parts, "", 0, nil) != nil {
+			if matchBranch(tree, parts, "", 0, nil, escaped) != nil {
 				allowed = append(allowed, method)
 			}
 		}
@@ -399,7 +406,7 @@ func (r *Router) allowedMethods(path string, partsPtr *[]string) []string {
 	return allowed
 }
 
-func (r *Router) frozenAllowedMethods(path string, parts *[]string) []string {
+func (r *Router) frozenAllowedMethods(path string, parts *[]string, escaped bool) []string {
 	if path != "/" && parts == nil {
 		parts = splitPathToParts(path)
 		defer putPathParts(parts)
@@ -407,7 +414,11 @@ func (r *Router) frozenAllowedMethods(path string, parts *[]string) []string {
 	var allowed []string
 	var prefixMethods map[string]struct{}
 	if parts != nil && len(*parts) > 0 {
-		prefixMethods = r.state.frozenMethodPrefixes[(*parts)[0]]
+		prefix := (*parts)[0]
+		if escaped {
+			prefix, _ = url.PathUnescape(prefix)
+		}
+		prefixMethods = r.state.frozenMethodPrefixes[prefix]
 	}
 	for _, method := range r.state.frozenMethods {
 		if path != "/" {
@@ -418,7 +429,7 @@ func (r *Router) frozenAllowedMethods(path string, parts *[]string) []string {
 			}
 		}
 		tree := r.state.trees[method]
-		if path == "/" && tree.handler != nil || path != "/" && matchBranch(tree, *parts, "", 0, nil) != nil {
+		if path == "/" && tree.handler != nil || path != "/" && matchBranch(tree, *parts, "", 0, nil, escaped) != nil {
 			if allowed == nil {
 				allowed = make([]string, 0, len(r.state.frozenMethods)+1)
 			}

@@ -214,3 +214,9 @@ if strings.TrimSpace(req.Name) == "" {
 
 Complex validation, domain policy, and service-specific error typing should
 remain in the owning stable module, extension module, or reference application.
+
+`ResponseEncodingError` identifies a failure before `WriteResponse`
+commits headers. A handler can test the error with `errors.As` before
+emitting a canonical 500. The cause remains available through `Unwrap`.
+`contract.DecodeUniqueJSONRequest` rejects repeated object keys
+at any depth before decoding into the destination.

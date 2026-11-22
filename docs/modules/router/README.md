@@ -261,3 +261,12 @@ Use `WithNotFoundHandler` or `SetNotFoundHandler` before freezing a router.
 An app exposes the same policy with `app.SetNotFoundHandler` before
 preparation. Standard-library 404 is the default. An enabled 405 and its
 `Allow` header take precedence over the custom fallback.
+
+### Escaped path segments
+
+Before freezing, `EnableEscapedPathSegments` opts into splitting the escaped
+path at literal separators and decoding each segment once for matching.
+A named single-segment parameter can then contain a slash. Reverse URL
+generation escapes it, and a terminal wildcard still captures the full suffix.
+Enable standard path values separately if handlers use `r.PathValue`.
+The default uses the decoded URL path.

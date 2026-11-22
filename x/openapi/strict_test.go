@@ -99,3 +99,31 @@ func TestStrictSpecRejectsConflictingTemplatesAndInvalidResponses(t *testing.T) 
 		t.Fatalf("同一路径模板可声明多个方法：%v", err)
 	}
 }
+
+func TestStrictValidatesComponentsAndUnusedHints(t *testing.T) {
+	routes := []router.RouteInfo{{Method: http.MethodGet, Path: "/items", Meta: router.RouteMeta{Name: "listItems"}}}
+	op := Op{Security: []SecurityRequirement{{"bearer": {}}}, Responses: map[string]Response{"200": {Description: "OK", Content: JSONContent(Schema{Ref: "#/components/schemas/Item"})}}}
+	hints := map[string]Op{"listItems": op, "stale": op}
+	g := New()
+	if _, err := g.GenerateStrict(routes, hints); err == nil || !strings.Contains(err.Error(), "unmatched operation hint") {
+		t.Fatalf("error=%v", err)
+	}
+	delete(hints, "stale")
+	if _, err := g.GenerateStrict(routes, hints); err == nil || !strings.Contains(err.Error(), "undefined security scheme") || !strings.Contains(err.Error(), "undefined schema") {
+		t.Fatalf("error=%v", err)
+	}
+	g.WithComponents(&Components{Schemas: map[string]Schema{"Item": String}, SecuritySchemes: map[string]SecurityScheme{"bearer": {Type: "http", Scheme: "bearer"}}})
+	doc, err := g.GenerateStrict(routes, hints)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if doc.Paths["/items"].Get.OperationID != "listItems" {
+		t.Fatalf("operation=%#v", doc.Paths["/items"].Get)
+	}
+	for _, marshal := range []func(Document) ([]byte, error){MarshalJSON, MarshalYAML} {
+		data, err := marshal(doc)
+		if err != nil || !strings.Contains(string(data), "#/components/schemas/Item") || !strings.Contains(string(data), "listItems") {
+			t.Fatalf("render %s %v", data, err)
+		}
+	}
+}

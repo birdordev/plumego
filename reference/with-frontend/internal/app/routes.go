@@ -34,10 +34,7 @@ func (a *App) RegisterRoutes() error {
 		return err
 	}
 	apiRouter.Freeze()
-	if err := a.Core.Any(apiPrefix, apiRouter); err != nil {
-		return err
-	}
-	if err := a.Core.Any(apiPrefix+"/*apiPath", apiRouter); err != nil {
+	if err := a.Core.Mount(apiPrefix, apiRouter); err != nil {
 		return err
 	}
 

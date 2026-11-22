@@ -1825,3 +1825,43 @@ func TestRegistrationReplacesHotAnyAndRefreshesAllow(t *testing.T) {
 		}
 	}
 }
+
+func TestEscapedSegmentsRoundTripAndAllow(t *testing.T) {
+	r := NewRouter(WithMethodNotAllowed(true))
+	if err := r.EnableEscapedPathSegments(); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.EnableStandardPathValues(); err != nil {
+		t.Fatal(err)
+	}
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if value := Param(r, "id"); value != r.PathValue("id") || value != "a/b" {
+			t.Errorf("parameter = %q, PathValue = %q", value, r.PathValue("id"))
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
+	if err := r.AddRoute(http.MethodGet, "/résumé/:id", handler, WithRouteName("encoded")); err != nil {
+		t.Fatal(err)
+	}
+	path, err := r.URL("encoded", "id", "a/b")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, frozen := range []bool{false, true} {
+		if frozen {
+			r.Freeze()
+		}
+		for range 2 {
+			for _, tc := range []struct {
+				method string
+				status int
+			}{{"GET", 204}, {"HEAD", 204}, {"POST", 405}} {
+				w := httptest.NewRecorder()
+				r.ServeHTTP(w, httptest.NewRequest(tc.method, path, nil))
+				if w.Code != tc.status || (tc.status == 405 && w.Header().Get("Allow") != "GET, HEAD") {
+					t.Fatalf("frozen=%v %s %s: %d, Allow=%q", frozen, tc.method, path, w.Code, w.Header().Get("Allow"))
+				}
+			}
+		}
+	}
+}

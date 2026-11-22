@@ -230,3 +230,8 @@ go vet ./x/validate/...
 Use `BindStrict` with `contract.JSONRequestOptions` to decode a bounded JSON
 document before validation. Validators can return typed field violations
 through the `contract.FieldViolation` contract.
+
+`BindQuery` and `BindForm` pass the selected source as `url.Values` to
+an explicit validation callback. `BindForm` accepts a bounded URL-encoded
+body. Both preserve repeated values for the callback to validate and adapt
+typed field errors through the canonical error envelope.

@@ -481,3 +481,19 @@ For a deployment behind reverse proxies, construct one resolver with
 uses the direct peer unless a configured CIDR trusts that peer. It walks
 `X-Forwarded-For` from the nearest hop and stops at the first untrusted address.
 With no trusted CIDRs, forwarding headers have no effect on this resolver.
+
+### Streaming failures and request labels
+
+`recovery.MiddlewareWithStreamAbort` interrupts an already committed HTTP
+response so a client can distinguish incomplete output from normal completion.
+It leaves connection ownership with handlers that have successfully hijacked
+the connection.
+
+`httpmetrics.MiddlewareWithRouteLabels` groups requests without a route
+under `unmatched` for 404/405 or `unclassified` for other statuses. Matched
+requests use their route patterns.
+
+To bound the number of active handler executions, place `concurrencylimit`
+inside `timeout`. A timed-out handler occupies its slot until it returns.
+Streaming handlers should use their own write and cancellation policy.
+Default CORS preflight includes HEAD.

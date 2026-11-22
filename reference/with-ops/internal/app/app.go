@@ -4,9 +4,7 @@ package app
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"net/http"
 	"time"
 
 	"github.com/birdordev/plumego/core"
@@ -54,29 +52,6 @@ func New(cfg config.Config) (*App, error) {
 // Start prepares the runtime and blocks while the HTTP server runs.
 // Shutdown is driven by ctx so the application owner controls process signals.
 func (a *App) Start(ctx context.Context) error {
-	if err := a.Core.Prepare(); err != nil {
-		return fmt.Errorf("prepare server: %w", err)
-	}
-	srv, err := a.Core.Server()
-	if err != nil {
-		return fmt.Errorf("get server: %w", err)
-	}
-	a.Core.Logger().Info("starting server", plumelog.Fields{
-		"addr": a.Cfg.Core.Addr,
-	})
-	shutdownErr := make(chan error, 1)
-	go func() {
-		<-ctx.Done()
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-		defer cancel()
-		shutdownErr <- a.Core.Shutdown(shutdownCtx)
-	}()
-
-	if serveErr := srv.ListenAndServe(); serveErr != nil && !errors.Is(serveErr, http.ErrServerClosed) {
-		return fmt.Errorf("server stopped: %w", serveErr)
-	}
-	if err := <-shutdownErr; err != nil {
-		return fmt.Errorf("shutdown server: %w", err)
-	}
-	return nil
+	a.Core.Logger().Info("starting server", plumelog.Fields{"addr": a.Cfg.Core.Addr})
+	return a.Core.RunContext(ctx, 15*time.Second)
 }

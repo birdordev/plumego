@@ -121,3 +121,5 @@ func (c *UserController) Create(w http.ResponseWriter, r *http.Request) {
 - [参考应用](/zh/docs/reference-app)
 - [Store Primer](/zh/docs/modules/store)
 - [仓库边界](/zh/docs/concepts/repo-control-plane)
+
+通过 `RegisterResource` 把仓储支持的资源注册到应用或路由组上，并显式选择 PATCH、批量操作和 OPTIONS。`WithQueryFields` 把公开排序和筛选字段映射到可信 SQL 列。启用软删除时，仓储需要实现 `SoftDeleteRepository`。

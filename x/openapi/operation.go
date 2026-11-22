@@ -13,18 +13,26 @@ import (
 const openAPIVersion = "3.1.0"
 
 func lookupHint(route router.RouteInfo, hints map[string]Op) Op {
-	if len(hints) == 0 {
-		return Op{}
-	}
-	if route.Meta.Name != "" {
-		if hint, ok := hints[route.Meta.Name]; ok {
-			return hint
-		}
-	}
-	if hint, ok := hints[route.Method+" "+route.Path]; ok {
-		return hint
+	if key := hintKey(route, hints); key != "" {
+		return hints[key]
 	}
 	return Op{}
+}
+
+func hintKey(route router.RouteInfo, hints map[string]Op) string {
+	if len(hints) == 0 {
+		return ""
+	}
+	if route.Meta.Name != "" {
+		if _, ok := hints[route.Meta.Name]; ok {
+			return route.Meta.Name
+		}
+	}
+	key := route.Method + " " + route.Path
+	if _, ok := hints[key]; ok {
+		return key
+	}
+	return ""
 }
 
 func operationFromHint(hint Op) *Operation {
@@ -59,6 +67,7 @@ func operationFromHint(hint Op) *Operation {
 		}
 	}
 	return &Operation{
+		OperationID: hint.OperationID,
 		Security:    security,
 		Summary:     hint.Summary,
 		Description: hint.Description,

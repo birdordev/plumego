@@ -8,17 +8,19 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/birdordev/plumego/contract"
 	"github.com/birdordev/plumego/store/db"
 )
 
 // SQLBuilder builds SQL queries from QueryParams.
 type SQLBuilder struct {
-	table      string
-	columns    []string
-	idColumn   string
-	scanFunc   func(*sql.Rows) (any, error)
-	insertFunc func(any) ([]any, error)
-	updateFunc func(any) ([]any, error)
+	table       string
+	columns     []string
+	queryFields map[string]string
+	idColumn    string
+	scanFunc    func(*sql.Rows) (any, error)
+	insertFunc  func(any) ([]any, error)
+	updateFunc  func(any) ([]any, error)
 }
 
 // NewSQLBuilder creates a new SQL query builder for the given table and ID column.
@@ -34,6 +36,55 @@ func NewSQLBuilder(table string, idColumn string) *SQLBuilder {
 func (b *SQLBuilder) WithColumns(columns ...string) *SQLBuilder {
 	b.columns = slices.Clone(columns)
 	return b
+}
+
+// WithQueryFields sets the API field to SQL column mapping. A nil map uses the
+// plain column names from WithColumns plus the configured ID column.
+func (b *SQLBuilder) WithQueryFields(fields map[string]string) *SQLBuilder {
+	b.queryFields = maps.Clone(fields)
+	return b
+}
+
+type invalidQueryField struct{ field, code string }
+
+func (e invalidQueryField) Error() string { return "undeclared SQL query field" }
+func (e invalidQueryField) FieldViolations() []contract.FieldViolation {
+	return []contract.FieldViolation{{Source: "query", Field: e.field, Code: e.code}}
+}
+
+func (b *SQLBuilder) queryColumn(field string) string {
+	column := field
+	if b.queryFields != nil {
+		column = b.queryFields[field]
+	} else if field != b.idColumn && !slices.Contains(b.columns, field) {
+		return ""
+	}
+	if column == "" {
+		return ""
+	}
+	for i, c := range column {
+		if c != '_' && (c < 'a' || c > 'z') && (c < 'A' || c > 'Z') && (i == 0 || c < '0' || c > '9') {
+			return ""
+		}
+	}
+	return column
+}
+
+func (b *SQLBuilder) validateFields(params *QueryParams) error {
+	if params == nil {
+		return nil
+	}
+	for _, sort := range params.Sort {
+		if b.queryColumn(sort.Field) == "" {
+			return invalidQueryField{field: "sort", code: "unknown_field"}
+		}
+	}
+	for field := range params.Filters {
+		if b.queryColumn(field) == "" {
+			return invalidQueryField{field: "filter", code: "unknown_field"}
+		}
+	}
+	return nil
 }
 
 // WithScanFunc sets the function to scan rows into a struct.
@@ -55,8 +106,11 @@ func (b *SQLBuilder) WithUpdateFunc(fn func(any) ([]any, error)) *SQLBuilder {
 }
 
 // BuildSelectQuery builds a SELECT query with pagination, sorting, and filtering.
-// Nil params are equivalent to an empty set of query options.
+// Nil params describe an unfiltered query. Undeclared columns return an empty SQL string.
 func (b *SQLBuilder) BuildSelectQuery(params *QueryParams) (string, []any) {
+	if b.validateFields(params) != nil {
+		return "", nil
+	}
 	var query strings.Builder
 	query.WriteString("SELECT ")
 	if len(b.columns) > 0 {
@@ -80,7 +134,7 @@ func (b *SQLBuilder) BuildSelectQuery(params *QueryParams) (string, []any) {
 			if sort.Desc {
 				direction = "DESC"
 			}
-			orders = append(orders, fmt.Sprintf("%s %s", sort.Field, direction))
+			orders = append(orders, fmt.Sprintf("%s %s", b.queryColumn(sort.Field), direction))
 		}
 		query.WriteString(strings.Join(orders, ", "))
 	}
@@ -98,7 +152,11 @@ func (b *SQLBuilder) BuildSelectQuery(params *QueryParams) (string, []any) {
 }
 
 // BuildCountQuery builds a COUNT query. Nil params select the unfiltered count.
+// Undeclared filter or sort columns return an empty SQL string.
 func (b *SQLBuilder) BuildCountQuery(params *QueryParams) (string, []any) {
+	if b.validateFields(params) != nil {
+		return "", nil
+	}
 	var query strings.Builder
 	query.WriteString("SELECT COUNT(*) FROM ")
 	query.WriteString(b.table)
@@ -126,7 +184,7 @@ func (b *SQLBuilder) writeWhere(query *strings.Builder, params *QueryParams) []a
 		conditions = append(conditions, "("+strings.Join(search, " OR ")+")")
 	}
 	for _, key := range slices.Sorted(maps.Keys(params.Filters)) {
-		conditions = append(conditions, key+" = ?")
+		conditions = append(conditions, b.queryColumn(key)+" = ?")
 		args = append(args, params.Filters[key])
 	}
 	if len(conditions) > 0 {
@@ -323,6 +381,9 @@ func (r *BaseRepository[T]) Delete(ctx context.Context, id string) error {
 
 // Count returns the number of records matching the query.
 func (r *BaseRepository[T]) Count(ctx context.Context, params *QueryParams) (int64, error) {
+	if err := r.builder.validateFields(params); err != nil {
+		return 0, err
+	}
 	query, args := r.builder.BuildCountQuery(params)
 	row, err := db.QueryRowContext(ctx, r.db, query, args...)
 	if err != nil {

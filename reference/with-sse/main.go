@@ -15,6 +15,7 @@ import (
 	"github.com/birdordev/plumego/contract"
 	"github.com/birdordev/plumego/core"
 	"github.com/birdordev/plumego/middleware/concurrencylimit"
+	"github.com/birdordev/plumego/middleware/recovery"
 	"github.com/birdordev/plumego/middleware/timeout"
 )
 
@@ -73,8 +74,12 @@ func register(app *core.App, stop context.Context, capacity int, heartbeat time.
 		return err
 	}
 	limitStreams := concurrencylimit.Middleware(concurrencylimit.Config{MaxConcurrent: capacity})
-	// 流式路由需要在处理器返回前刷新响应。
-	return app.Get("/events", limitStreams(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+	recoverStream, err := recovery.MiddlewareWithStreamAbort(recovery.Config{Logger: app.Logger()})
+	if err != nil {
+		return err
+	}
+	// Streaming responses flush before the handler returns.
+	return app.Get("/events", recoverStream(limitStreams(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		if stop.Err() != nil {
 			_ = contract.WriteError(w, req, contract.NewErrorBuilder().Type(contract.TypeUnavailable).Build())
 			return
@@ -103,7 +108,7 @@ func register(app *core.App, stop context.Context, capacity int, heartbeat time.
 				}
 			}
 		}
-	})))
+	}))))
 }
 
 // writeFrame 只限制当前帧的写入时间，心跳间隔不占用写入时限。

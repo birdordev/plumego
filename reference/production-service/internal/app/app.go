@@ -44,7 +44,10 @@ type App struct {
 
 // New constructs the production reference with explicit middleware wiring.
 func New(cfg config.Config) (*App, error) {
-	logger := plumelog.NewLogger()
+	return newWithLogger(cfg, plumelog.NewLogger())
+}
+
+func newWithLogger(cfg config.Config, logger plumelog.StructuredLogger) (*App, error) {
 	collector := metrics.NewBaseMetricsCollector()
 	profiles, err := tenant.NewStore(cfg.App.ProfileStorePath)
 	if err != nil {
@@ -59,7 +62,11 @@ func New(cfg config.Config) (*App, error) {
 		Rate:     cfg.App.RateLimit,
 		Capacity: cfg.App.RateBurst,
 		KeyFunc:  clientIP,
-		Logger:   app.Logger(),
+		Skip: func(r *http.Request) bool {
+			return r.URL != nil && (r.Method == http.MethodGet || r.Method == http.MethodHead) &&
+				(r.URL.Path == "/healthz" || r.URL.Path == "/readyz")
+		},
+		Logger: app.Logger(),
 	})
 	recoveryMw, err := recovery.Middleware(recovery.Config{Logger: app.Logger()})
 	if err != nil {
@@ -77,24 +84,15 @@ func New(cfg config.Config) (*App, error) {
 		return nil, fmt.Errorf("configure security middleware: %w", err)
 	}
 
-	// Middleware order — outermost to innermost (first registered runs first on inbound requests):
-	//   requestid    → stamps correlation ID before any logging or error handling
-	//   security     → sets security headers (X-Frame-Options, …) on all responses, including
-	//                  timed-out, rate-limited, and panicked ones
-	//   httpmetrics  → records final status, including early rejections and recovered panics
-	//   recovery     → converts panics to 500; inside security so headers are already set
-	//   accesslog    → logs all requests including 413 (body too large) and 429 (rate limited);
-	//                  must be outer to bodylimit and ratelimit to capture those rejections
-	//   bodylimit    → rejects oversized bodies with 413; after accesslog so the 413 is logged
-	//   abuseguard   → rejects abusive clients with 429; after accesslog so the 429 is logged
-	//   tracing      → records distributed trace spans; after rejection decisions
-	//   timeout      → per-request wall-clock limit; innermost so only handler time is counted
+	// Request identity and security headers precede observation. Recovery writes
+	// the final response before either observer completes. Business guards run
+	// inside both observers and probes use an independent admission policy.
 	if err := app.Use(
 		requestid.Middleware(),
 		securityMw,
 		httpmetrics.Middleware(collector),
-		recoveryMw,
 		accesslogMw,
+		recoveryMw,
 		bodylimit.Middleware(bodylimit.Config{MaxBytes: cfg.App.BodyLimitBytes, Logger: app.Logger()}),
 		rateLimitGuard.Middleware(),
 		tracing.Middleware(noopTracer{}),
@@ -142,6 +140,8 @@ func (a *App) start(ctx context.Context, listen func(context.Context, string) (n
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	lifetime, cancelLifetime := context.WithCancel(context.WithoutCancel(ctx))
+	defer cancelLifetime()
 	defer func() {
 		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 15*time.Second)
 		defer cancel()
@@ -149,10 +149,18 @@ func (a *App) start(ctx context.Context, listen func(context.Context, string) (n
 			result = errors.Join(result, fmt.Errorf("stop components: %w", err))
 		}
 	}()
-	if err := a.components.Start(ctx); err != nil {
+	// Cancel component startup if the signal arrives before startup finishes.
+	stopStartupCancellation := context.AfterFunc(ctx, cancelLifetime)
+	defer stopStartupCancellation()
+	err = a.components.Start(lifetime)
+	stopStartupCancellation()
+	if err != nil {
 		return fmt.Errorf("start components: %w", err)
 	}
 
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	listener, err := listen(ctx, srv.Addr)
 	if err != nil {
 		return fmt.Errorf("bind server: %w", err)

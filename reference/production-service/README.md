@@ -131,3 +131,10 @@ are ready. Shutdown marks the service unready, drains HTTP, and stops
 registered resources in reverse order. Public readiness failures report fixed
 status details. Trusted proxy CIDRs are used by both access logs and rate
 limiting.
+
+The health endpoints use a separate admission policy from business requests.
+Readiness probes are serialized and bounded by the request deadline. Request
+metrics and access logs observe the final status written by recovery.
+Shutdown stops accepting traffic before canceling the dependencies'
+runtime context. In-flight HTTP requests retain access to those dependencies
+until HTTP drain completes or its deadline expires.

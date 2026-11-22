@@ -254,6 +254,9 @@ func TestSQLBuilderSearchConditions(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			builder := NewSQLBuilder("items", "id").WithColumns(tc.columns...)
+			if tc.filters != nil {
+				builder.WithQueryFields(map[string]string{"state": "state"})
+			}
 			params := &QueryParams{Search: "sample", Filters: tc.filters}
 			selectSQL, selectArgs := builder.BuildSelectQuery(params)
 			countSQL, countArgs := builder.BuildCountQuery(params)
@@ -476,7 +479,7 @@ func TestRepositoryUpdateClassifiesRowsAffected(t *testing.T) {
 }
 
 func TestSQLBuilderUsesStableFilterOrdering(t *testing.T) {
-	builder := NewSQLBuilder("items", "id").WithColumns("name")
+	builder := NewSQLBuilder("items", "id").WithColumns("name").WithQueryFields(map[string]string{"active": "active", "category": "category"})
 	for i := range 20 {
 		filters := make(map[string]string)
 		if i%2 == 0 {
@@ -854,4 +857,94 @@ func TestStrictDBResourceWritesRejectBadBodiesBeforePersistence(t *testing.T) {
 		t.Fatalf("missing field error: %s", w.Body)
 	}
 	assertBodyOmits(t, w.Body.String(), "fixture private validation detail")
+}
+
+func TestRepositoryRejectsUnmappedQueryColumnsBeforeUsingDB(t *testing.T) {
+	builder := NewSQLBuilder("items", "id").WithQueryFields(map[string]string{"state": "status"})
+	repo := NewBaseRepository[dbResourceTestItem](nil, builder)
+	for _, p := range []*QueryParams{
+		{Filters: map[string]string{"unknown": "open"}},
+		{Sort: []SortField{{Field: "unknown"}}},
+	} {
+		if _, _, err := repo.FindAll(t.Context(), p); err == nil {
+			t.Fatal("unmapped query accepted")
+		}
+		if query, args := builder.BuildSelectQuery(p); query != "" || len(args) != 0 {
+			t.Fatal("unmapped query was generated")
+		}
+	}
+	w := httptest.NewRecorder()
+	c := NewDBResourceController("items", repo)
+	c.Index(w, httptest.NewRequest(http.MethodGet, "/items?unknown=open", nil))
+	if w.Code != 400 || !strings.Contains(w.Body.String(), "unknown_field") {
+		t.Fatalf("query response = %d %s", w.Code, w.Body.String())
+	}
+	sql, args := builder.BuildSelectQuery(&QueryParams{Filters: map[string]string{"state": "open"}, Sort: []SortField{{Field: "state"}}})
+	if !strings.Contains(sql, "WHERE status = ? ORDER BY status ASC") || !slices.Equal(args, []any{"open"}) {
+		t.Fatalf("mapped SQL = %s %v", sql, args)
+	}
+}
+
+type deletionFixture struct {
+	dbResourceTestRepo
+	hard, soft int
+}
+
+func (d *deletionFixture) Delete(context.Context, string) error { d.hard++; return nil }
+func (d *deletionFixture) SoftDelete(context.Context, string, string) error {
+	d.soft++
+	if d.soft > 1 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
+func TestResourceSoftDeleteAndImplicitHead(t *testing.T) {
+	repo := &deletionFixture{dbResourceTestRepo: dbResourceTestRepo{findByIDErr: sql.ErrNoRows}}
+	spec := DefaultResourceSpec("items")
+	spec.Options.SoftDelete = true
+	c := NewDBResource(spec, repo)
+	r := router.NewRouter(router.WithMethodNotAllowed(true))
+	if err := RegisterResourceRoutes(r, spec.Prefix, c, spec.Routes); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		method string
+		status int
+	}{{"HEAD", 404}, {"DELETE", 204}, {"DELETE", 404}} {
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, httptest.NewRequest(tc.method, "/items/item", nil))
+		if w.Code != tc.status || tc.method == "HEAD" && w.Body.Len() != 0 {
+			t.Fatalf("%s: %d %s", tc.method, w.Code, w.Body.String())
+		}
+	}
+	if repo.hard != 0 || repo.soft != 2 {
+		t.Fatalf("delete hard=%d soft=%d", repo.hard, repo.soft)
+	}
+	unsupported := router.NewRouter()
+	if err := RegisterResource(unsupported, spec.Prefix, NewDBResource(spec, dbResourceTestRepo{}), ResourceOperations{}); err != nil {
+		t.Fatal(err)
+	}
+	w := httptest.NewRecorder()
+	unsupported.ServeHTTP(w, httptest.NewRequest(http.MethodDelete, "/items/item", nil))
+	if w.Code != 500 {
+		t.Fatalf("unsupported soft-delete status=%d", w.Code)
+	}
+}
+
+type failingResourceEncoding struct{ IdentityTransformer }
+
+func (failingResourceEncoding) TransformCollection(context.Context, any) (any, error) {
+	return make(chan int), nil
+}
+
+func TestResourceEncodingFailureWritesOneInternalError(t *testing.T) {
+	spec := DefaultResourceSpec("items")
+	spec.Options.EnableTransformer = true
+	spec.Transformer = &failingResourceEncoding{}
+	w := httptest.NewRecorder()
+	NewDBResource(spec, dbResourceTestRepo{}).Index(w, httptest.NewRequest(http.MethodGet, "/items", nil))
+	if w.Code != 500 || !strings.Contains(w.Body.String(), "failed to encode resource response") {
+		t.Fatalf("response=%d %s", w.Code, w.Body.String())
+	}
 }

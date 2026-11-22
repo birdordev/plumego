@@ -9,6 +9,7 @@ var (
 
 // Op carries optional operation hints for one route.
 type Op struct {
+	OperationID string                `json:"operationId,omitempty"`
 	Summary     string                `json:"summary,omitempty"`
 	Description string                `json:"description,omitempty"`
 	Tags        []string              `json:"tags,omitempty"`
@@ -67,6 +68,7 @@ type SecurityRequirement map[string][]string
 
 // Components 保存接口操作引用的认证方案。
 type Components struct {
+	Schemas         map[string]Schema         `json:"schemas,omitempty"`
 	SecuritySchemes map[string]SecurityScheme `json:"securitySchemes,omitempty"`
 }
 
@@ -99,6 +101,7 @@ type PathItem struct {
 
 // Operation describes one OpenAPI operation.
 type Operation struct {
+	OperationID string                `json:"operationId,omitempty"`
 	Summary     string                `json:"summary,omitempty"`
 	Description string                `json:"description,omitempty"`
 	Tags        []string              `json:"tags,omitempty"`

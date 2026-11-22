@@ -130,3 +130,5 @@ r.StaticFS("/assets", http.FS(embeddedFS))    // 从 fs.FS 提供
 - [Contract Primer](/zh/docs/modules/contract)
 - [参考应用](/zh/docs/reference-app)
 - [仓库边界](/zh/docs/concepts/repo-control-plane)
+
+在冻结前调用 `EnableEscapedPathSegments` 可以启用逐段解码。经过转义的分隔符可以属于同一个路径参数。处理器需要读取 `r.PathValue` 时，请单独启用标准库路径参数。

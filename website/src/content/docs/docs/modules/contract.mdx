@@ -186,3 +186,5 @@ if page == "" {
 - [Router Primer](/docs/modules/router)
 - [Middleware Primer](/docs/modules/middleware)
 - [Repository Boundaries](/docs/concepts/repo-control-plane)
+
+Strict JSON decoding can reject repeated object keys with `contract.DecodeUniqueJSONRequest`. When a success response fails to encode, `errors.As` can identify `*contract.ResponseEncodingError` before the headers are committed.

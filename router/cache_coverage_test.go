@@ -38,12 +38,12 @@ func TestMatcherCacheClear(t *testing.T) {
 	}
 	for i, key := range cache.ring {
 		if key != (matchCacheKey{}) {
-			t.Errorf("stale key %q in ring slot %d after Clear", key, i)
+			t.Errorf("stale key %v in ring slot %d after Clear", key, i)
 		}
 	}
 	for _, key := range []string{"key-3", "key-12"} {
 		if _, found := cache.Get(matchCacheKey{path: key}); found {
-			t.Fatalf("stale key %q survived Clear", key)
+			t.Fatalf("stale key %v survived Clear", key)
 		}
 	}
 	for i := range cache.capacity + 1 {

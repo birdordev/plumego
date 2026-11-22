@@ -49,3 +49,22 @@ func TestDecodeJSONRequest(t *testing.T) {
 		})
 	}
 }
+
+func TestRejectDuplicateJSONFields(t *testing.T) {
+	for _, tc := range []struct {
+		body    string
+		invalid bool
+	}{
+		{`{"a":[{"x":1},{"x":2}],"b":{}}`, false},
+		{`{"a":{"x":1,"\u0078":2}}`, true},
+		{`[{"a":1,"a":2}]`, true},
+	} {
+		r := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(tc.body))
+		r.Header.Set("Content-Type", "application/json")
+		var value any
+		err := contract.DecodeUniqueJSONRequest(r, &value, contract.JSONRequestOptions{})
+		if (err != nil) != tc.invalid {
+			t.Errorf("%s: %v", tc.body, err)
+		}
+	}
+}

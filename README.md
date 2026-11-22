@@ -108,7 +108,7 @@ extensions explicitly at the application entry point.
 | Basic routing | `Handle` and `HandleFunc` accept method-qualified patterns such as `GET /users`. | `Get`/`Post`/`AddRoute` register a method, path, and handler. |
 | Path parameters | Match `/users/{id}` and read it with `r.PathValue("id")`. | Match `/users/:id` and read it with `plumego.Param(r, "id")`. |
 | Route groups | Register prefixed patterns or mount a sub-mux. | Groups apply a shared prefix. |
-| Per-group middleware | Caller composes handlers per subtree. | Groups carry shared middleware, keeping `http.Handler` shape. |
+| Scoped middleware | Assemble handlers per subtree. | Register common middleware with `Group.Use` before adding its routes. |
 | Named routes + reverse URL | Caller builds URLs manually. | Reverse URL generation via the app/router API. |
 | Route freeze | Registrations can be added after serving starts. | `Prepare` freezes routes before serving. Direct `ServeHTTP` freezes routes when it first prepares the handler. |
 | Structured errors | Caller defines every response shape. | `contract.WriteError` is the canonical error path. |

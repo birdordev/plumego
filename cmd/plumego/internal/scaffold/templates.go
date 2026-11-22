@@ -47,6 +47,9 @@ func getTemplateContent(file, name, module, template string) string {
 	case "go.mod":
 		return getGoModContent(module, ProjectOptions{})
 	case canonicalSpecFile:
+		if template == "api" || template == "rest-api" {
+			return restSpecContent
+		}
 		return canonicalSpecContent
 	case "env.example":
 		return getEnvExampleContent()
@@ -117,6 +120,55 @@ operations:
     responses:
       '204': {description: Item deleted}
       '404': {description: Item not found}
+`
+
+const restSpecContent = `# plumego generate spec --strict --output openapi.json
+operations:
+  'GET /':
+    responses:
+      '200': {description: Service information}
+  'GET /healthz':
+    responses:
+      '200': {description: Process is live}
+  'GET /readyz':
+    responses:
+      '200': {description: Dependencies are ready}
+      '503': {description: Dependency is unavailable}
+  'GET /api/hello':
+    responses:
+      '200': {description: Welcome message}
+  'GET /api/status':
+    responses:
+      '200': {description: Service status}
+  'GET /api/v1/greet':
+    responses:
+      '200': {description: Greeting}
+      '400': {description: Missing greeting name}
+  'GET /api/users':
+    responses:
+      '200': {description: Users}
+      '400': {description: Conflicting pagination modes}
+  'GET /api/users/:id':
+    responses:
+      '200': {description: User}
+      '404': {description: User not found}
+  'POST /api/users':
+    responses:
+      '201': {description: User created}
+      '400': {description: Invalid JSON body}
+      '413': {description: Body exceeds size limit}
+      '415': {description: JSON media type required}
+  'PUT /api/users/:id':
+    responses:
+      '200': {description: User replaced}
+      '400': {description: Invalid JSON body}
+      '404': {description: User not found}
+      '413': {description: Body exceeds size limit}
+      '415': {description: JSON media type required}
+  'DELETE /api/users/:id':
+    responses:
+      '204': {description: User deleted}
+      '404': {description: User not found}
 `
 
 func getCanonicalMainGoContent(module, name string) string {
@@ -202,8 +254,8 @@ func New(cfg config.Config) (*App, error) {
 	}
 	if err := a.Use(
 		requestid.Middleware(),
-		recoveryMw,
 		accesslogMw,
+		recoveryMw,
 	); err != nil {
 		return nil, fmt.Errorf("register middleware: %%w", err)
 	}
@@ -319,7 +371,8 @@ import (
 	"%s/internal/handler"
 	"%s/internal/resource"
 
-	"github.com/birdordev/plumego/x/rest"
+	"github.com/birdordev/plumego/contract"
+ "github.com/birdordev/plumego/x/rest"
 )
 
 // RegisterRoutes wires all HTTP routes for the application.
@@ -347,17 +400,9 @@ func (a *App) RegisterRoutes() error {
 	}
 
 	spec := rest.DefaultResourceSpec("users").WithPrefix("/api/users")
-	users := rest.NewDBResource[resource.User](spec, resource.NewUserRepository())
-	if err := a.Core.Get(spec.Prefix, http.HandlerFunc(users.Index)); err != nil {
-		return err
-	}
-	if err := a.Core.Get(spec.Prefix+"/:id", http.HandlerFunc(users.Show)); err != nil {
-		return err
-	}
-	if err := a.Core.Post(spec.Prefix, http.HandlerFunc(users.Create)); err != nil {
-		return err
-	}
-	return nil
+ users := rest.NewDBResource[resource.User](spec, resource.NewUserRepository()).
+  WithStrictJSON(contract.JSONRequestOptions{})
+ return rest.RegisterResource(a.Core, spec.Prefix, users, rest.ResourceOperations{})
 }
 `, module, module, name)
 }

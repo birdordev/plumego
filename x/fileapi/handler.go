@@ -8,6 +8,7 @@
 package fileapi
 
 import (
+	"context"
 	"crypto/sha256"
 	"errors"
 	"fmt"
@@ -110,6 +111,10 @@ func (h *Handler) loadAuthorizedFile(w http.ResponseWriter, r *http.Request) (*d
 	return fileMeta, fileID, true
 }
 
+type stagedUploadStorage interface {
+	PutStaged(context.Context, datafile.PutOptions, io.ReaderAt) (*datafile.File, error)
+}
+
 // Upload handles file upload via multipart form.
 // POST /files
 // Multipart form fields: file (required), generate_thumb, thumb_width, thumb_height.
@@ -189,7 +194,7 @@ func (h *Handler) Upload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var result *datafile.File
-	if store, ok := h.storage.(*datafile.S3Storage); ok && !formWasParsed && header.Size > multipartMemoryLimit {
+	if store, ok := h.storage.(stagedUploadStorage); ok && !formWasParsed && header.Size > multipartMemoryLimit {
 		opts.Size = header.Size
 		result, err = store.PutStaged(ctx, opts, f)
 	} else {

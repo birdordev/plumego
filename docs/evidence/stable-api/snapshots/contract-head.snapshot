@@ -73,6 +73,7 @@ symbol	github.com/birdordev/plumego/contract	const	TypeUnsupportedMediaType	cons
 symbol	github.com/birdordev/plumego/contract	const	TypeValidation	const TypeValidation ErrorType = "validation_failure"
 symbol	github.com/birdordev/plumego/contract	func	AsAPIError	func AsAPIErrorfunc(err error) (APIError, bool)
 symbol	github.com/birdordev/plumego/contract	func	DecodeJSONRequest	func DecodeJSONRequestfunc(r *http.Request, dst any, opts JSONRequestOptions) error
+symbol	github.com/birdordev/plumego/contract	func	DecodeUniqueJSONRequest	func DecodeUniqueJSONRequestfunc(r *http.Request, dst any, opts JSONRequestOptions) error
 symbol	github.com/birdordev/plumego/contract	func	GetRouteState	func GetRouteStatefunc() *RouteState
 symbol	github.com/birdordev/plumego/contract	func	NewErrorBuilder	func NewErrorBuilderfunc() *ErrorBuilder
 symbol	github.com/birdordev/plumego/contract	func	PutRouteState	func PutRouteStatefunc(rs *RouteState)
@@ -107,6 +108,8 @@ symbol	github.com/birdordev/plumego/contract	method	ErrorBuilder.RequestID	func 
 symbol	github.com/birdordev/plumego/contract	method	ErrorBuilder.Type	func (ErrorBuilder) Typefunc(errorType ErrorType) *ErrorBuilder
 symbol	github.com/birdordev/plumego/contract	method	ErrorBuilder.Wrap	func (ErrorBuilder) Wrapfunc(cause error) *ErrorBuilder
 symbol	github.com/birdordev/plumego/contract	method	ErrorType.Meta	func (ErrorType) Metafunc() ErrorTypeMeta
+symbol	github.com/birdordev/plumego/contract	method	ResponseEncodingError.Error	func (ResponseEncodingError) Errorfunc() string
+symbol	github.com/birdordev/plumego/contract	method	ResponseEncodingError.Unwrap	func (ResponseEncodingError) Unwrapfunc() error
 symbol	github.com/birdordev/plumego/contract	method	RouteState.AddParam	func (RouteState) AddParamfunc(key, val string)
 symbol	github.com/birdordev/plumego/contract	method	RouteState.Reset	func (RouteState) Resetfunc()
 symbol	github.com/birdordev/plumego/contract	method	RouteState.SetName	func (RouteState) SetNamefunc(n string)
@@ -123,6 +126,7 @@ symbol	github.com/birdordev/plumego/contract	type	ErrorTypeMeta	type ErrorTypeMe
 symbol	github.com/birdordev/plumego/contract	type	FieldViolation	type FieldViolation struct { Source string `json:"source"` Field string `json:"field"` Code string `json:"code"` }
 symbol	github.com/birdordev/plumego/contract	type	JSONRequestOptions	type JSONRequestOptions struct { MaxBytes int64 AllowUnknownFields bool }
 symbol	github.com/birdordev/plumego/contract	type	RequestContext	type RequestContext struct { Params map[string]string RoutePattern string RouteName string }
+symbol	github.com/birdordev/plumego/contract	type	ResponseEncodingError	type ResponseEncodingError struct{}
 symbol	github.com/birdordev/plumego/contract	type	RouteState	type RouteState struct { }
 symbol	github.com/birdordev/plumego/contract	type	TraceContext	type TraceContext struct { TraceID string `json:"trace_id"` SpanID string `json:"span_id"` ParentSpanID *string `json:"parent_span_id,omitempty"` Baggage map[string]string `json:"baggage,omitempty"` Flags uint8 `json:"flags"` }
 symbol	github.com/birdordev/plumego/contract	var	ErrHandlerNil	var ErrHandlerNil = errors.New("handler cannot be nil")

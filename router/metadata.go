@@ -118,7 +118,7 @@ func (r *Router) urlForNamedRoute(name string, params ...string) (string, string
 				if val == "" {
 					return "", fmt.Sprintf("named route %q has empty required param %q", name, paramName)
 				}
-				if strings.Contains(val, "/") {
+				if strings.Contains(val, "/") && !r.state.escapedPathSegments.Load() {
 					return "", fmt.Sprintf("named route %q has a slash in single-segment param %q", name, paramName)
 				}
 				result.WriteString(url.PathEscape(val))

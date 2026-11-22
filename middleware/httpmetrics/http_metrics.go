@@ -19,6 +19,16 @@ type Observer = metrics.HTTPObserver
 // wraps the response writer, measures duration, status, and bytes, and
 // forwards the observation to the collector after the handler completes.
 func Middleware(collector Observer) middleware.Middleware {
+	return observe(collector, false)
+}
+
+// MiddlewareWithRouteLabels uses bounded fallback labels for requests without a
+// known route. Matched paths use their route pattern when available.
+func MiddlewareWithRouteLabels(collector Observer) middleware.Middleware {
+	return observe(collector, true)
+}
+
+func observe(collector Observer, routeLabels bool) middleware.Middleware {
 	return func(next http.Handler) http.Handler {
 		if collector == nil {
 			return next
@@ -26,7 +36,19 @@ func Middleware(collector Observer) middleware.Middleware {
 
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			internaltelemetry.WithObserver(next, w, r, func(metricsData internaltelemetry.RequestMetrics, _ *internaltelemetry.ResponseRecorder, r *http.Request) {
-				collector.ObserveHTTP(r.Context(), metricsData.Method, metricsData.ObservedPath(), metricsData.Status, metricsData.Bytes, metricsData.Duration)
+				label := metricsData.ObservedPath()
+				if routeLabels && metricsData.Route == "" {
+					label = r.Pattern
+					if label == "" {
+						switch metricsData.Status {
+						case http.StatusNotFound, http.StatusMethodNotAllowed:
+							label = "unmatched"
+						default:
+							label = "unclassified"
+						}
+					}
+				}
+				collector.ObserveHTTP(r.Context(), metricsData.Method, label, metricsData.Status, metricsData.Bytes, metricsData.Duration)
 			})
 		})
 	}

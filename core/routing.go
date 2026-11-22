@@ -4,8 +4,10 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/birdordev/plumego/contract"
+	"github.com/birdordev/plumego/middleware"
 	"github.com/birdordev/plumego/router"
 )
 
@@ -60,6 +62,16 @@ func (a *App) EnableStandardPathValues() error {
 		return errors.New("router is uninitialized or app is prepared")
 	}
 	return a.router.EnableStandardPathValues()
+}
+
+// EnableEscapedPathSegments enables segment-wise decoding before preparation.
+func (a *App) EnableEscapedPathSegments() error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if !a.registrationMutable() || a.router == nil {
+		return errors.New("router is uninitialized or app is prepared")
+	}
+	return a.router.EnableEscapedPathSegments()
 }
 
 // URL resolves a named route against the owned app router.
@@ -130,14 +142,53 @@ func (a *App) Group(prefix string) *RouteGroup {
 // Create one with App.Group; use its methods to register routes without
 // repeating the prefix on every call.
 type RouteGroup struct {
-	app *App
-	r   *router.Router
+	app         *App
+	r           *router.Router
+	parent      *RouteGroup
+	middlewares []middleware.Middleware // guarded by app.mu
 }
 
 // Group returns a nested RouteGroup with an additional path prefix appended.
 // An empty prefix inherits the parent prefix. A non-empty prefix must begin with "/".
 func (g *RouteGroup) Group(prefix string) *RouteGroup {
-	return &RouteGroup{app: g.app, r: g.r.Group(prefix)}
+	return &RouteGroup{app: g.app, r: g.r.Group(prefix), parent: g}
+}
+
+// Use adds middleware for subsequent registrations on this group and its descendants.
+func (g *RouteGroup) Use(middlewares ...middleware.Middleware) error {
+	g.app.mu.Lock()
+	defer g.app.mu.Unlock()
+	if !g.app.registrationMutable() {
+		return immutableAppError(operationUseMiddleware, "add group middleware", nil)
+	}
+	for i, mw := range middlewares {
+		if mw == nil {
+			return wrapCoreError(fmt.Errorf("middleware cannot be nil"), operationUseMiddleware, map[string]any{"index": i})
+		}
+	}
+	g.middlewares = append(g.middlewares, middlewares...)
+	return nil
+}
+
+func (g *RouteGroup) middlewareSnapshot() []middleware.Middleware {
+	if g == nil {
+		return nil
+	}
+	return append(g.parent.middlewareSnapshot(), g.middlewares...)
+}
+
+// Mount assigns a path and its descendants to an independent handler.
+// The handler receives the original request path. A registration failure
+// should abort application assembly.
+func (a *App) Mount(prefix string, handler http.Handler) error {
+	prefix = strings.TrimRight(prefix, "/")
+	if prefix == "" || prefix[0] != '/' || strings.ContainsAny(prefix, ":*") {
+		return fmt.Errorf("mount requires a non-root static path prefix")
+	}
+	if err := a.Any(prefix, handler); err != nil {
+		return err
+	}
+	return a.Any(prefix+"/*mountPath", handler)
 }
 
 // Get registers a GET route on this group.
@@ -179,6 +230,10 @@ func (g *RouteGroup) addRoute(method, path string, handler http.Handler, opts ..
 
 	g.app.mu.RLock()
 	mutable := g.app.registrationMutable()
+	var chain []middleware.Middleware
+	if mutable {
+		chain = g.middlewareSnapshot()
+	}
 	g.app.mu.RUnlock()
 	if !mutable {
 		return immutableAppError(operationAddRoute, "register route", params)
@@ -188,6 +243,15 @@ func (g *RouteGroup) addRoute(method, path string, handler http.Handler, opts ..
 	}
 	if g.r == nil {
 		return wrapCoreError(fmt.Errorf("router not configured"), operationAddRoute, nil)
+	}
+	if fn, ok := handler.(http.HandlerFunc); ok && fn == nil {
+		return contract.ErrHandlerNil
+	}
+	if len(chain) > 0 {
+		handler = middleware.NewChain(chain...).Build(handler)
+		if handler == nil {
+			return wrapCoreError(contract.ErrHandlerNil, operationAddRoute, params)
+		}
 	}
 	return g.r.AddRoute(method, path, handler, opts...)
 }

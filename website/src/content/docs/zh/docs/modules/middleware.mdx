@@ -143,3 +143,5 @@ app.Use(middleware.Middleware(MyMiddleware))
 - [Store Primer](/zh/docs/modules/store)
 - [x/rest Primer](/zh/docs/modules/x-rest)
 - [x/messaging Primer](/zh/docs/modules/x-messaging)
+
+`httpmetrics.MiddlewareWithRouteLabels` 为未匹配请求使用固定的路径标签。流式路由可通过 `recovery.MiddlewareWithStreamAbort` 让客户端识别响应中断。如果要在后台处理真正结束前保留并发槽位，请把并发限制器放在缓冲型超时中间件的内层。

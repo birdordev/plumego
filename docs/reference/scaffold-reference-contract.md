@@ -65,3 +65,8 @@ reference-layout check:
 cd cmd/plumego && go test -timeout 20s ./internal/scaffold
 go run ./internal/checks/reference-layout
 ```
+
+The `api` and `rest-api` templates ship resource-specific OpenAPI hints.
+The REST smoke test generates a strict spec, builds and starts the application,
+checks real CRUD responses against the spec and waits for signal-driven HTTP
+drain.
