@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -21,36 +22,66 @@ import (
 	_ "modernc.org/sqlite"
 )
 
+const (
+	modeCombined = "combined"
+	modeAPI      = "api"
+	modeWorker   = "worker"
+	modeMigrate  = "migrate"
+)
+
 func main() {
 	address := flag.String("addr", "127.0.0.1:8090", "HTTP listen address")
 	path := flag.String("db", "items.db", "SQLite database path")
 	migrate := flag.Bool("migrate", false, "apply database migrations and exit")
+	mode := flag.String("mode", modeCombined, "serve the API and worker (combined), the API only (api), or the worker only (worker)")
 	flag.Parse()
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	if err := run(ctx, *address, *path, os.Getenv("SQL_API_TOKEN"), *migrate); err != nil {
+	if *migrate {
+		if *mode != modeCombined {
+			log.Fatal("-migrate cannot be combined with a serving mode")
+		}
+		*mode = modeMigrate
+	}
+	if err := run(ctx, *address, *path, os.Getenv("SQL_API_TOKEN"), *mode); err != nil {
 		log.Fatal(err)
 	}
 }
 
-func run(ctx context.Context, address, path, token string, migrate bool) error {
-	db, err := sql.Open("sqlite", path)
+func run(ctx context.Context, address, path, token, mode string) error {
+	switch mode {
+	case modeCombined, modeAPI, modeWorker, modeMigrate:
+	default:
+		return errors.New("invalid SQL service mode")
+	}
+	if path == "" {
+		return errors.New("-db requires a database path")
+	}
+	separator := "?"
+	if strings.Contains(path, "?") {
+		separator = "&"
+	}
+	db, err := sql.Open("sqlite", path+separator+"_pragma=busy_timeout(1000)")
 	if err != nil {
 		return err
 	}
 	defer func() { _ = db.Close() }()
 	db.SetMaxOpenConns(1)
 	repo := repository{db: db}
-	if migrate {
+	if mode == modeMigrate {
 		return repo.migrate(ctx)
 	}
 	version, err := repo.schemaVersion(ctx)
 	if err != nil {
 		return err
 	}
-	if version != 1 {
+	if version != currentSchemaVersion {
 		return fmt.Errorf("schema version %d: run the migration before serving", version)
+	}
+	if mode == modeWorker {
+		runOutbox(ctx, repo)
+		return nil
 	}
 	app, err := newApp(address, token, repo)
 	if err != nil {
@@ -68,29 +99,36 @@ func run(ctx context.Context, address, path, token string, migrate bool) error {
 		return err
 	}
 
-	workerCtx, cancelWorker := context.WithCancel(context.WithoutCancel(ctx))
-	workerDone := make(chan struct{})
-	go func() {
-		defer close(workerDone)
-		runOutbox(workerCtx, repo)
-	}()
-	defer func() { cancelWorker(); <-workerDone }()
+	if mode == modeCombined {
+		workerCtx, cancelWorker := context.WithCancel(context.WithoutCancel(ctx))
+		workerDone := make(chan struct{})
+		go func() {
+			defer close(workerDone)
+			runOutbox(workerCtx, repo)
+		}()
+		defer func() { cancelWorker(); <-workerDone }()
+	}
 
 	serveDone := make(chan error, 1)
 	go func() { serveDone <- server.Serve(listener) }()
 	log.Printf("listening on %s", listener.Addr())
+	var serveErr error
+	serving := true
 	select {
-	case err := <-serveDone:
-		return normalizeServeError(err)
+	case serveErr = <-serveDone:
+		serving = false
 	case <-ctx.Done():
-		drainCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
-		defer cancel()
-		err := app.Shutdown(drainCtx)
-		if err != nil {
-			err = errors.Join(err, server.Close())
-		}
-		return errors.Join(err, normalizeServeError(<-serveDone))
 	}
+	drainCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+	defer cancel()
+	drainErr := app.Shutdown(drainCtx)
+	if drainErr != nil {
+		drainErr = errors.Join(drainErr, server.Close())
+	}
+	if serving {
+		serveErr = <-serveDone
+	}
+	return errors.Join(drainErr, normalizeServeError(serveErr))
 }
 
 func normalizeServeError(err error) error {
@@ -142,31 +180,33 @@ func newApp(address, token string, repo repository) (*core.App, error) {
 func runOutbox(ctx context.Context, repo repository) {
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
-	publish := func(_ context.Context, event outboxEvent) error {
-		log.Printf("event=%d kind=%s item_id=%d", event.ID, event.Kind, event.ItemID)
-		return nil
-	}
 	for {
+		if ctx.Err() != nil {
+			return
+		}
+		if err := deliverOutboxBatch(ctx, repo); err != nil && ctx.Err() == nil {
+			log.Print("outbox processing failed; will retry")
+		}
 		select {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			// 限制每轮处理数量，避免持续到来的事件阻塞其他清理。
-			for range 16 {
-				found, err := repo.sendNext(ctx, publish)
-				if err != nil {
-					if ctx.Err() == nil {
-						log.Print("outbox delivery failed; will retry")
-					}
-					break
-				}
-				if !found {
-					break
-				}
-			}
-			if _, err := repo.db.ExecContext(ctx, "DELETE FROM create_receipts WHERE expires_at <= ?", time.Now().Unix()); err != nil && ctx.Err() == nil {
-				log.Print("receipt cleanup failed; will retry")
-			}
 		}
 	}
+}
+
+func deliverOutboxBatch(ctx context.Context, repo repository) error {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	var deliveryErr error
+	// 每轮限量处理，让过期收据的清理也能执行。
+	for range 16 {
+		sent, err := repo.sendNext(ctx, repo.recordDelivery)
+		if err != nil || !sent {
+			deliveryErr = err
+			break
+		}
+	}
+	_, cleanupErr := repo.db.ExecContext(ctx, "DELETE FROM create_receipts WHERE expires_at <= ?", time.Now().Unix())
+	return errors.Join(deliveryErr, cleanupErr)
 }

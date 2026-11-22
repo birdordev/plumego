@@ -1,22 +1,43 @@
 package app
 
 import (
+	"fmt"
 	"net/http"
+	"path"
+	"strings"
 	"testing/fstest"
 
+	"github.com/birdordev/plumego/contract"
+	"github.com/birdordev/plumego/router"
 	"github.com/birdordev/plumego/x/frontend"
 	"with-frontend/internal/handler"
 )
 
-// RegisterRoutes wires JSON API routes and mounts the static frontend.
-//
-// API routes are registered first so they take precedence over the frontend
-// catch-all. The frontend mount uses an embedded in-memory filesystem here so
-// the demo compiles and runs without a real build directory. In a real service,
-// replace fstest.MapFS with your framework's build output (embed.FS or a dir).
+// RegisterRoutes 把 JSON API 和静态前端挂载到独立的路由范围。
 func (a *App) RegisterRoutes() error {
+	apiPrefix := path.Clean(a.Cfg.APIPrefix)
+	uiPrefix := path.Clean(a.Cfg.UIPrefix)
+	if !strings.HasPrefix(apiPrefix, "/") || apiPrefix == "/" {
+		return fmt.Errorf("API_PREFIX must be an absolute path other than /")
+	}
+	if uiPrefix == apiPrefix || strings.HasPrefix(uiPrefix, apiPrefix+"/") {
+		return fmt.Errorf("UI_PREFIX cannot be inside API_PREFIX")
+	}
+
 	api := handler.APIHandler{Logger: a.Core.Logger()}
-	if err := a.Core.Get(a.Cfg.APIPrefix+"/status", http.HandlerFunc(api.Status)); err != nil {
+	apiRouter := router.NewRouter(router.WithMethodNotAllowed(true), router.WithNotFoundHandler(
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			_ = contract.WriteError(w, r, contract.NewErrorBuilder().Type(contract.TypeNotFound).Build())
+		}),
+	))
+	if err := apiRouter.AddRoute(http.MethodGet, apiPrefix+"/status", http.HandlerFunc(api.Status)); err != nil {
+		return err
+	}
+	apiRouter.Freeze()
+	if err := a.Core.Any(apiPrefix, apiRouter); err != nil {
+		return err
+	}
+	if err := a.Core.Any(apiPrefix+"/*apiPath", apiRouter); err != nil {
 		return err
 	}
 

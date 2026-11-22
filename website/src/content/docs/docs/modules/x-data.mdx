@@ -26,6 +26,8 @@ Open this page after [x/* Family](/docs/x-family) when the change is about high-
 
 Check [Release Posture](/docs/release-posture) before relying on any `x/data` subpackage in a stable production path.
 
+`S3Storage.GetRange` opens a single byte range and checks the returned interval and object size. The file API uses it for authorized S3 downloads.
+
 ## Start here when
 
 - you are implementing read-write splitting with primary/replica routing (`rw/`)

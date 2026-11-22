@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -23,6 +24,7 @@ type generateSpecOptions struct {
 
 type goModuleInfo struct {
 	Path    string        `json:"Path"`
+	Version string        `json:"Version"`
 	Dir     string        `json:"Dir"`
 	Main    bool          `json:"Main"`
 	Replace *goModuleInfo `json:"Replace"`
@@ -166,13 +168,22 @@ func runSpecHelperCommand(dir, name string, args ...string) error {
 
 func specHelperGoMod(appDir string, target specTarget, modules []goModuleInfo) string {
 	replaces := map[string]string{
-		target.ModulePath: appDir,
+		target.ModulePath: strconv.Quote(filepath.ToSlash(appDir)),
 	}
+	const plumegoModule = "github.com/birdordev/plumego"
+	plumegoVersion := "v0.0.0"
 	for _, module := range modules {
-		if module.Replace == nil || module.Replace.Dir == "" {
+		if module.Path == plumegoModule && module.Version != "" {
+			plumegoVersion = module.Version
+		}
+		if module.Replace == nil {
 			continue
 		}
-		replaces[module.Path] = module.Replace.Dir
+		if module.Replace.Version != "" {
+			replaces[module.Path] = module.Replace.Path + " " + module.Replace.Version
+		} else if module.Replace.Dir != "" {
+			replaces[module.Path] = strconv.Quote(filepath.ToSlash(module.Replace.Dir))
+		}
 	}
 
 	keys := make([]string, 0, len(replaces))
@@ -186,11 +197,11 @@ func specHelperGoMod(appDir string, target specTarget, modules []goModuleInfo) s
 	b.WriteString("go 1.26.0\n\n")
 	b.WriteString("require (\n")
 	fmt.Fprintf(&b, "\t%s v0.0.0\n", target.ModulePath)
-	b.WriteString("\tgithub.com/birdordev/plumego v0.0.0\n")
+	fmt.Fprintf(&b, "\t%s %s\n", plumegoModule, plumegoVersion)
 	b.WriteString("\tgopkg.in/yaml.v3 v3.0.1\n")
 	b.WriteString(")\n\n")
 	for _, key := range keys {
-		fmt.Fprintf(&b, "replace %s => %s\n", key, filepath.ToSlash(replaces[key]))
+		fmt.Fprintf(&b, "replace %s => %s\n", key, replaces[key])
 	}
 	return b.String()
 }

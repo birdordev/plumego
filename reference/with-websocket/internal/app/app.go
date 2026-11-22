@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"time"
 
@@ -78,6 +79,21 @@ func echoHandler(c *websocket.Conn, msg websocket.Message) error {
 // Start prepares the runtime and blocks while the HTTP server runs.
 // Shutdown is driven by ctx so the application owner controls process signals.
 func (a *App) Start(ctx context.Context) error {
+	return a.start(ctx, func(ctx context.Context, addr string) (net.Listener, error) {
+		return new(net.ListenConfig).Listen(ctx, "tcp", addr)
+	}, a.WS.Shutdown)
+}
+
+func (a *App) start(ctx context.Context, listen func(context.Context, string) (net.Listener, error), stopWS func(context.Context) error) (result error) {
+	// Hub 在构造应用时已启动，HTTP 准备或绑定失败也需要释放它。
+	listenerStarted := false
+	defer func() {
+		if !listenerStarted {
+			drain, cancel := context.WithTimeout(context.WithoutCancel(ctx), 15*time.Second)
+			defer cancel()
+			result = errors.Join(result, stopWS(drain))
+		}
+	}()
 	if err := a.Core.Prepare(); err != nil {
 		return fmt.Errorf("prepare server: %w", err)
 	}
@@ -85,30 +101,43 @@ func (a *App) Start(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("get server: %w", err)
 	}
+	listener, err := listen(ctx, srv.Addr)
+	if err != nil {
+		return fmt.Errorf("listen: %w", err)
+	}
+	listenerStarted = true
 	a.Core.Logger().Info("starting server", plumelog.Fields{
-		"addr": a.Cfg.Core.Addr,
+		"addr": listener.Addr().String(),
 		"tls":  a.Cfg.Core.TLS.Enabled,
 	})
-	shutdownErr := make(chan error, 1)
-	listenerDone := make(chan struct{})
-	go func() {
-		select {
-		case <-ctx.Done():
-		case <-listenerDone:
-		}
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-		defer cancel()
-		shutdownErr <- shutdownTransports(shutdownCtx, a.Core.Shutdown, a.WS.Shutdown)
-	}()
 
+	serveDone := make(chan error, 1)
+	go func() {
+		if a.Cfg.Core.TLS.Enabled {
+			serveDone <- srv.ServeTLS(listener, "", "")
+			return
+		}
+		serveDone <- srv.Serve(listener)
+	}()
 	var serveErr error
-	if a.Cfg.Core.TLS.Enabled {
-		serveErr = srv.ListenAndServeTLS("", "")
-	} else {
-		serveErr = srv.ListenAndServe()
+	serving := true
+	select {
+	case <-ctx.Done():
+	case serveErr = <-serveDone:
+		serving = false
 	}
-	close(listenerDone)
-	drainErr := <-shutdownErr
+
+	drain, cancel := context.WithTimeout(context.WithoutCancel(ctx), 15*time.Second)
+	defer cancel()
+	drainErr := shutdownTransports(drain, func(ctx context.Context) error {
+		if err := a.Core.Shutdown(ctx); err != nil {
+			return errors.Join(err, srv.Close())
+		}
+		return nil
+	}, stopWS)
+	if serving {
+		serveErr = <-serveDone
+	}
 	if errors.Is(serveErr, http.ErrServerClosed) {
 		serveErr = nil
 	}

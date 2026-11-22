@@ -86,16 +86,7 @@ func register(app *core.App, stop context.Context, capacity int, heartbeat time.
 			return
 		}
 		controller := http.NewResponseController(w)
-		frame := func(event string) error {
-			if err := controller.SetWriteDeadline(time.Now().Add(5 * time.Second)); err != nil {
-				return err
-			}
-			if _, err := fmt.Fprintf(w, "event: %s\ndata: {}\n\n", event); err != nil {
-				return err
-			}
-			return controller.Flush()
-		}
-		if err := frame("ready"); err != nil {
+		if err := writeFrame(w, controller, "ready"); err != nil {
 			return
 		}
 		ticker := time.NewTicker(heartbeat)
@@ -107,10 +98,24 @@ func register(app *core.App, stop context.Context, capacity int, heartbeat time.
 			case <-stop.Done():
 				return
 			case <-ticker.C:
-				if err := frame("heartbeat"); err != nil {
+				if err := writeFrame(w, controller, "heartbeat"); err != nil {
 					return
 				}
 			}
 		}
 	})))
+}
+
+// writeFrame 只限制当前帧的写入时间，心跳间隔不占用写入时限。
+func writeFrame(w http.ResponseWriter, controller *http.ResponseController, event string) error {
+	if err := controller.SetWriteDeadline(time.Now().Add(5 * time.Second)); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(w, "event: %s\ndata: {}\n\n", event); err != nil {
+		return err
+	}
+	if err := controller.Flush(); err != nil {
+		return err
+	}
+	return controller.SetWriteDeadline(time.Time{})
 }

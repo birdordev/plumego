@@ -44,6 +44,8 @@ operations:
       '201': {description: Item created}
       '400': {description: Invalid body}
       '401': {description: Write key required}
+      '413': {description: Body exceeds the size limit}
+      '415': {description: JSON media type required when APP_STRICT_JSON is enabled}
   'PUT /api/v1/items/:id':
     security:
       - writeKey: []
@@ -52,6 +54,8 @@ operations:
       '400': {description: Invalid body}
       '401': {description: Write key required}
       '404': {description: Item not found}
+      '413': {description: Body exceeds the size limit}
+      '415': {description: JSON media type required when APP_STRICT_JSON is enabled}
   'PATCH /api/v1/items/:id':
     security:
       - writeKey: []
@@ -60,6 +64,8 @@ operations:
       '400': {description: Invalid body}
       '401': {description: Write key required}
       '404': {description: Item not found}
+      '413': {description: Body exceeds the size limit}
+      '415': {description: JSON media type required when APP_STRICT_JSON is enabled}
   'DELETE /api/v1/items/:id':
     security:
       - writeKey: []

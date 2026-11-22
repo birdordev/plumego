@@ -104,6 +104,7 @@ file metadata persistence behind the stable `store/file` contracts.
 |---|---|
 | `LocalStorage` | Tenant-aware filesystem storage implementation |
 | `S3Storage` | S3-compatible storage implementation |
+| `S3Storage.GetRange` | Opens a single byte range and validates the returned interval and object size |
 | `DBMetadataManager` | PostgreSQL-backed metadata manager |
 | `NewDBMetadataManagerE` | Error-returning metadata manager constructor for dynamic wiring |
 | `WithMetadataClock` | Testable clock option for metadata mutation timestamps |

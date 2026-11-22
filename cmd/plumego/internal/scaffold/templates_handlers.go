@@ -193,11 +193,7 @@ func getCanonicalItemHandlerContent(module string) string {
 	return fmt.Sprintf(`package handler
 
 import (
-	"encoding/json"
-	"errors"
-	"io"
 	"net/http"
-	"strings"
 
 	"github.com/birdordev/plumego/contract"
 	"github.com/birdordev/plumego/router"
@@ -221,9 +217,7 @@ type createItemReq struct {
 	Name string `+"`json:\"name\"`"+`
 }
 
-// Create handles POST /api/v1/items.
-// Decoding is strict (decodeJSONStrict): unknown fields are rejected so a client
-// typo is reported instead of being silently dropped.
+// Create 处理 POST /api/v1/items。
 func (h ItemHandler) Create(w http.ResponseWriter, r *http.Request) {
 	name, ok := decodeItemName(w, r)
 	if !ok {
@@ -235,19 +229,9 @@ func (h ItemHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 func decodeItemName(w http.ResponseWriter, r *http.Request) (string, bool) {
 	var req createItemReq
-	if err := decodeJSONStrict(r, &req); err != nil {
-		if field := unknownFieldName(err); field != "" {
-			_ = contract.WriteError(w, r, contract.NewErrorBuilder().
-				Type(contract.TypeBadRequest).
-				Detail("field", field).
-				Message("request body contains an unknown field").
-				Build())
-			return "", false
-		}
-		_ = contract.WriteError(w, r, contract.NewErrorBuilder().
-			Type(contract.TypeBadRequest).
-			Message("request body must be valid JSON").
-			Build())
+	if err := contract.DecodeJSONRequest(r, &req, contract.JSONRequestOptions{}); err != nil {
+		apiErr, _ := contract.AsAPIError(err)
+		_ = contract.WriteError(w, r, apiErr)
 		return "", false
 	}
 	if req.Name == "" {
@@ -299,44 +283,6 @@ func (h ItemHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_ = contract.WriteResponse(w, r, http.StatusNoContent, nil, nil)
-}
-
-// decodeJSONStrict decodes the request body into dst and rejects unknown fields
-// so a client typo is reported instead of being silently dropped. Use the lenient
-// json.NewDecoder(r.Body).Decode(...) form only when the endpoint must tolerate
-// forward-compatible extra fields.
-func decodeJSONStrict(r *http.Request, dst any) error {
-	dec := json.NewDecoder(r.Body)
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(dst); err != nil {
-		return err
-	}
-	if _, err := dec.Token(); err != io.EOF {
-		if err != nil {
-			return err
-		}
-		return errors.New("additional JSON value")
-	}
-	return nil
-}
-
-// unknownFieldName returns the offending field name when err is the error
-// encoding/json reports for an unknown field (json: unknown field "x"), or ""
-// for any other error. The standard library has no typed error for this case.
-func unknownFieldName(err error) string {
-	const prefix = `+"`json: unknown field \"`"+`
-	if err == nil {
-		return ""
-	}
-	msg := err.Error()
-	if !strings.HasPrefix(msg, prefix) {
-		return ""
-	}
-	rest := msg[len(prefix):]
-	if i := strings.IndexByte(rest, '"'); i >= 0 {
-		return rest[:i]
-	}
-	return ""
 }
 `, module)
 }
@@ -469,11 +415,13 @@ import (
 	"time"
 
 	"github.com/birdordev/plumego/contract"
+	"github.com/birdordev/plumego/health"
 )
 
 // HealthHandler serves liveness and readiness endpoints.
 type HealthHandler struct {
 	ServiceName string
+	Checkers []health.ComponentChecker
 }
 
 type healthResponse struct {
@@ -500,6 +448,20 @@ func (h HealthHandler) Live(w http.ResponseWriter, r *http.Request) {
 
 // Ready reports that the application is ready to accept requests.
 func (h HealthHandler) Ready(w http.ResponseWriter, r *http.Request) {
+	failed := make(map[string]bool)
+	for _, checker := range h.Checkers {
+		if err := checker.Check(r.Context()); err != nil {
+			failed[checker.Name()] = false
+		}
+	}
+	if len(failed) != 0 {
+		_ = contract.WriteError(w, r, contract.NewErrorBuilder().
+			Type(contract.TypeUnavailable).
+			Message("one or more components are not ready").
+			Detail("components", failed).
+			Build())
+		return
+	}
 	service := h.ServiceName
 	if service == "" {
 		service = "plumego-reference"
@@ -524,7 +486,9 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/birdordev/plumego/core"
 )
@@ -537,8 +501,9 @@ type Config struct {
 
 // AppConfig holds app-local, non-kernel configuration.
 type AppConfig struct {
-	EnvFile string
-	Debug   bool
+	EnvFile         string
+	Debug           bool
+	ShutdownTimeout time.Duration
 }
 
 // Defaults returns safe configuration values for local development.
@@ -548,7 +513,8 @@ func Defaults() Config {
 	return Config{
 		Core: coreCfg,
 		App: AppConfig{
-			EnvFile: ".env",
+			EnvFile:         ".env",
+			ShutdownTimeout: 5 * time.Second,
 		},
 	}
 }
@@ -570,8 +536,15 @@ func load(args []string, lookupEnv func(string) (string, bool)) (Config, error) 
 		return cfg, err
 	}
 
-	applyEnvMap(&cfg, fileEnv)
-	applyEnv(&cfg, lookupEnv)
+	if err := applyEnv(&cfg, func(key string) (string, bool) {
+		value, ok := fileEnv[key]
+		return value, ok
+	}); err != nil {
+		return cfg, err
+	}
+	if err := applyEnv(&cfg, lookupEnv); err != nil {
+		return cfg, err
+	}
 	if err := applyFlags(&cfg, args); err != nil {
 		return cfg, err
 	}
@@ -584,10 +557,13 @@ func Validate(cfg Config) error {
 	if cfg.Core.Addr == "" {
 		return fmt.Errorf("addr is required")
 	}
+	if cfg.App.ShutdownTimeout <= 0 {
+		return fmt.Errorf("shutdown timeout must be positive")
+	}
 	return nil
 }
 
-func applyEnv(cfg *Config, lookupEnv func(string) (string, bool)) {
+func applyEnv(cfg *Config, lookupEnv func(string) (string, bool)) error {
 	if value, ok := lookupEnv("APP_ADDR"); ok && strings.TrimSpace(value) != "" {
 		cfg.Core.Addr = value
 	}
@@ -597,21 +573,14 @@ func applyEnv(cfg *Config, lookupEnv func(string) (string, bool)) {
 	if value, ok := lookupEnv("APP_DEBUG"); ok && strings.TrimSpace(value) != "" {
 		cfg.App.Debug = value == "true" || value == "1"
 	}
-}
-
-func applyEnvMap(cfg *Config, values map[string]string) {
-	if values == nil {
-		return
+	if value, ok := lookupEnv("APP_SHUTDOWN_TIMEOUT_MS"); ok {
+		ms, err := strconv.ParseInt(strings.TrimSpace(value), 10, 32)
+		if err != nil || ms <= 0 {
+			return fmt.Errorf("APP_SHUTDOWN_TIMEOUT_MS must be a positive integer")
+		}
+		cfg.App.ShutdownTimeout = time.Duration(ms) * time.Millisecond
 	}
-	if value := strings.TrimSpace(values["APP_ADDR"]); value != "" {
-		cfg.Core.Addr = value
-	}
-	if value := strings.TrimSpace(values["APP_ENV_FILE"]); value != "" {
-		cfg.App.EnvFile = value
-	}
-	if value := strings.TrimSpace(values["APP_DEBUG"]); value != "" {
-		cfg.App.Debug = value == "true" || value == "1"
-	}
+	return nil
 }
 
 func applyFlags(cfg *Config, args []string) error {

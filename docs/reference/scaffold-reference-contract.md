@@ -9,14 +9,25 @@ shape, but it is generated as a project-local layout.
 The canonical scaffold must preserve these properties:
 
 - `cmd/app/main.go` loads config, constructs the app, registers routes, and
-  starts the server with a signal-aware context.
+  starts the server with a signal-aware context. The generated serving path
+  closes the listener and waits for in-flight requests when it receives a
+  shutdown signal. `APP_SHUTDOWN_TIMEOUT_MS` defaults to 5000. If the deadline
+  expires, the app closes the remaining connections and reports the error.
 - `internal/app/app.go` owns app construction and middleware wiring.
 - `internal/app/routes.go` owns explicit route registration.
 - `internal/domain/item/item.go` owns the sample item model and repository.
 - The generated sample provides create, read, update, and delete routes. The
-  CLI smoke test builds it, exercises the routes and readiness over HTTP,
-  generates OpenAPI, and verifies signal-driven shutdown on Unix.
-- `internal/handler/*` owns HTTP handlers and local DTOs.
+  CLI smoke test builds it, generates OpenAPI with
+  `plumego generate spec --strict`, checks declared statuses against the
+  routes over HTTP, and verifies readiness and signal-driven shutdown on Unix.
+- The generated `plumego.spec.yaml` declares the HTTP responses. Regeneration
+  preserves a customized spec. Canonical item writes use
+  `contract.DecodeJSONRequest` and require a single non-null JSON object of up
+  to 1 MiB. They return 400 for invalid input, 413 for oversized bodies, and
+  415 for unsupported media types.
+- `internal/handler/*` owns HTTP handlers and local DTOs. Generated readiness
+  probes accept explicit component checkers and report a public 503 with
+  stable component status when a checker fails.
 - `internal/config/config.go` owns generated project config.
 - No `x/*` imports appear in the canonical template.
 - No hidden `init` registration, global providers, or service-locator context

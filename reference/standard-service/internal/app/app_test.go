@@ -51,6 +51,59 @@ func TestRegisterRoutesCanonicalShape(t *testing.T) {
 	}
 }
 
+func TestStrictJSONWriteRoutes(t *testing.T) {
+	for _, strict := range []bool{false, true} {
+		cfg := config.Defaults()
+		cfg.App.StrictJSON = strict
+		cfg.App.MaxBodyBytes = 64
+		a, err := New(cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := a.RegisterRoutes(); err != nil {
+			t.Fatal(err)
+		}
+		for _, route := range []struct{ method, path string }{
+			{http.MethodPost, "/api/v1/items"},
+			{http.MethodPut, "/api/v1/items/example"},
+			{http.MethodPatch, "/api/v1/items/example"},
+		} {
+			send := func(media, body string, stream bool) int {
+				req := httptest.NewRequest(route.method, route.path, strings.NewReader(body))
+				req.Header.Set("Content-Type", media)
+				if stream {
+					req.ContentLength = -1
+				}
+				rec := httptest.NewRecorder()
+				a.Core.ServeHTTP(rec, req)
+				return rec.Code
+			}
+			want := http.StatusUnsupportedMediaType
+			if !strict {
+				want = http.StatusCreated
+				if route.method != http.MethodPost {
+					want = http.StatusNotFound
+				}
+			}
+			if got := send("text/plain", `{"name":"item","description":"example"}`, false); got != want {
+				t.Errorf("strict=%t %s: media status %d, want %d", strict, route.method, got, want)
+			}
+			if strict {
+				for _, body := range []string{"", "null", `{} {}`, `{"extra":true}`} {
+					if got := send("application/json", body, false); got != http.StatusBadRequest {
+						t.Errorf("%s accepted invalid body: %d", route.method, got)
+					}
+				}
+				for _, stream := range []bool{false, true} {
+					if got := send("application/json", strings.Repeat(" ", 65), stream); got != http.StatusRequestEntityTooLarge {
+						t.Errorf("%s oversize stream=%t: %d", route.method, stream, got)
+					}
+				}
+			}
+		}
+	}
+}
+
 // TestHelloEndpointListMatchesRegisteredRoutes is a drift-detection test.
 // It validates that the explicit endpoint list in handler.APIHandler.Hello:
 //  1. Contains exactly the same Method+Path pairs as the routes registered in RegisterRoutes.

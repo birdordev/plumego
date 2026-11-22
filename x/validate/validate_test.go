@@ -329,3 +329,43 @@ func TestBindPreservesCustomUnmarshalError(t *testing.T) {
 		t.Fatal("validator ran after decoder failure")
 	}
 }
+
+func TestBindStrictValidatesOnlyOneCompleteJSONDocument(t *testing.T) {
+	for _, tc := range []struct {
+		body, media   string
+		status        int
+		wantValidator bool
+	}{
+		{`{"name":"widget"}`, "application/json", 200, true},
+		{`{"name":"widget"} {}`, "application/json", 400, false},
+		{`null`, "application/json", 400, false},
+		{`{"name":"widget"}`, "text/plain", 415, false},
+		{`{"name":"exceeds the configured byte limit"}`, "application/json", 413, false},
+		{`{}`, "application/json", 400, true},
+	} {
+		r := newJSONRequest(tc.body)
+		r.Header.Set("Content-Type", tc.media)
+		validator := &requestValidator{}
+		out, err := BindStrict[createItemRequest](r, validator, contract.JSONRequestOptions{MaxBytes: 32})
+		if validator.called != tc.wantValidator {
+			t.Errorf("validator called=%v for %q, want %v", validator.called, tc.body, tc.wantValidator)
+		}
+		if tc.status == 200 {
+			if err != nil || out.Name != "widget" {
+				t.Errorf("valid JSON: value=%+v err=%v", out, err)
+			}
+			continue
+		}
+		apiErr, ok := contract.AsAPIError(err)
+		if tc.wantValidator {
+			var validationErr ValidationError
+			if !errors.As(err, &validationErr) {
+				t.Errorf("validator error missing: %v", err)
+			}
+			apiErr, ok = validationErr.APIError, true
+		}
+		if !ok || apiErr.Status() != tc.status {
+			t.Errorf("body %q: got %v, want HTTP error %d", tc.body, err, tc.status)
+		}
+	}
+}

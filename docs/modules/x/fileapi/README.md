@@ -84,7 +84,7 @@ the default. The multipart request has a separate total limit of the file
 limit plus 1 MiB for form fields and framing. Exceeding either limit returns
 HTTP 413.
 
-Successful tenant-authorized downloads use `Cache-Control: private, no-store`.
+Download responses use `Cache-Control: private, no-store`, including authorization and range failures.
 
 `Handler.GetURL` returns the storage provider's URL as a JSON string.
 Decode the JSON response normally to obtain the full URL, including any
@@ -100,7 +100,11 @@ pending file coalesce, and a full queue drops new updates. The returned stop
 function cancels the worker and waits for it to exit. Metadata implementations
 must honor cancellation on the context passed to each update.
 
-Downloads return headers without a body for HEAD after the same tenant authorization used
-for GET. A storage reader that supports seeking also supports byte ranges and
-conditional requests. A stored content hash provides an ETag when available.
-Non-seekable readers continue to stream the full response on GET.
+HEAD returns headers without a body after the same tenant authorization as GET.
+A stored content hash provides an ETag when available, and the file modification
+time provides Last-Modified. Conditional requests work with seekable readers
+and sequential readers with a known size. GET supports byte ranges on seekable
+readers. The S3 backend supports single byte ranges through a signed ranged
+read. It serves HEAD from object metadata and avoids opening an object body for
+304 and 416 responses. Multi-range S3 requests fall back to the full
+representation, as do range requests to sequential-only backends.

@@ -14,11 +14,20 @@ import (
 )
 
 const (
-	loginCookie       = "plumego_login"
-	sessionCookie     = "plumego_session"
-	loginTTL          = 5 * time.Minute
-	sessionTTL        = time.Hour
-	maxBrowserEntries = 4096
+	loginCookie        = "plumego_login"
+	sessionCookie      = "plumego_session"
+	loginTTL           = 5 * time.Minute
+	sessionTTL         = time.Hour
+	maxSessionLifetime = 8 * time.Hour
+	maxBrowserEntries  = 4096
+)
+
+type sessionAction int
+
+const (
+	updateProfile sessionAction = iota
+	renewSession
+	endSession
 )
 
 type pendingLogin struct {
@@ -28,10 +37,11 @@ type pendingLogin struct {
 }
 
 type browserSession struct {
-	principal authn.Principal
-	csrf      string
-	name      string
-	expiry    time.Time
+	principal      authn.Principal
+	csrf           string
+	name           string
+	expiry         time.Time
+	absoluteExpiry time.Time
 }
 
 type sessionStore struct {
@@ -91,7 +101,10 @@ func (s *sessionStore) establish(principal authn.Principal, r *http.Request) (st
 		return "", false
 	}
 	key := rand.Text()
-	s.sessions[key] = browserSession{principal: principal, csrf: rand.Text(), expiry: now.Add(sessionTTL)}
+	s.sessions[key] = browserSession{
+		principal: principal, csrf: rand.Text(), expiry: now.Add(sessionTTL),
+		absoluteExpiry: now.Add(maxSessionLifetime),
+	}
 	return key, true
 }
 
@@ -110,20 +123,34 @@ func (s *sessionStore) get(r *http.Request) (string, browserSession, bool) {
 	return cookie.Value, session, true
 }
 
-func (s *sessionStore) update(key, csrf, name string, logout bool) bool {
+func (s *sessionStore) apply(key, csrf, name string, action sessionAction) (string, time.Duration, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	session, ok := s.sessions[key]
-	if !ok || !s.now().Before(session.expiry) || !equalToken(session.csrf, csrf) {
-		return false
+	now := s.now()
+	if !ok || !now.Before(session.expiry) || !equalToken(session.csrf, csrf) {
+		return "", 0, false
 	}
-	if logout {
+	switch action {
+	case endSession:
 		delete(s.sessions, key)
-	} else {
+	case updateProfile:
 		session.name = name
 		s.sessions[key] = session
+	case renewSession:
+		expiry := now.Add(sessionTTL)
+		if session.absoluteExpiry.Before(expiry) {
+			expiry = session.absoluteExpiry
+		}
+		session.expiry, session.csrf = expiry, rand.Text()
+		replacement := rand.Text()
+		delete(s.sessions, key)
+		s.sessions[replacement] = session
+		return replacement, expiry.Sub(now), true
+	default:
+		return "", 0, false
 	}
-	return true
+	return "", 0, true
 }
 
 func (s *sessionStore) Authenticate(r *http.Request) (*authn.Principal, error) {

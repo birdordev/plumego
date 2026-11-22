@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"html/template"
 	"net/http"
@@ -57,6 +58,7 @@ func newBrowser(address string, origin *url.URL, provider loginProvider, session
 		{http.MethodPost, "/login", h.login},
 		{http.MethodGet, "/auth/callback", h.callback},
 		{http.MethodPost, "/profile", h.profile},
+		{http.MethodPost, "/session/renew", h.renew},
 		{http.MethodPost, "/logout", h.logout},
 		{http.MethodGet, "/admin", h.admin},
 	} {
@@ -90,7 +92,16 @@ func (h browser) callback(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Login could not be verified", http.StatusUnauthorized)
 		return
 	}
-	principal, err := h.provider.identity(r.Context(), query.Get("code"), login.verifier, login.nonce)
+	verifyCtx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+	principal, err := h.provider.identity(verifyCtx, query.Get("code"), login.verifier, login.nonce)
+	if r.Context().Err() != nil {
+		return
+	}
+	if errors.Is(verifyCtx.Err(), context.DeadlineExceeded) {
+		http.Error(w, "Login verification timed out", http.StatusServiceUnavailable)
+		return
+	}
 	if err != nil {
 		http.Error(w, "Login could not be verified", http.StatusUnauthorized)
 		return
@@ -111,10 +122,19 @@ func (h browser) home(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (h browser) profile(w http.ResponseWriter, r *http.Request) { h.form(w, r, false) }
-func (h browser) logout(w http.ResponseWriter, r *http.Request)  { h.form(w, r, true) }
+func (h browser) profile(w http.ResponseWriter, r *http.Request) {
+	h.form(w, r, updateProfile)
+}
 
-func (h browser) form(w http.ResponseWriter, r *http.Request, logout bool) {
+func (h browser) renew(w http.ResponseWriter, r *http.Request) {
+	h.form(w, r, renewSession)
+}
+
+func (h browser) logout(w http.ResponseWriter, r *http.Request) {
+	h.form(w, r, endSession)
+}
+
+func (h browser) form(w http.ResponseWriter, r *http.Request, action sessionAction) {
 	key, session, ok := h.sessions.get(r)
 	if !ok {
 		http.Error(w, "Sign in required", http.StatusUnauthorized)
@@ -136,19 +156,23 @@ func (h browser) form(w http.ResponseWriter, r *http.Request, logout bool) {
 		return
 	}
 	name := strings.TrimSpace(r.PostForm.Get("name"))
-	if !logout && (name == "" || len(name) > 80) {
+	if action == updateProfile && (name == "" || len(name) > 80) {
 		h.render(w, http.StatusBadRequest, pageData{
 			Authenticated: true, Admin: slices.Contains(session.principal.Roles, "admin"),
 			CSRF: session.csrf, Name: name, Error: "Enter a display name up to 80 bytes.",
 		})
 		return
 	}
-	if !h.sessions.update(key, csrf, name, logout) {
+	replacement, ttl, ok := h.sessions.apply(key, csrf, name, action)
+	if !ok {
 		http.Error(w, "Sign in required", http.StatusUnauthorized)
 		return
 	}
-	if logout {
+	switch action {
+	case endSession:
 		h.cookie(w, sessionCookie, "", -1)
+	case renewSession:
+		h.cookie(w, sessionCookie, replacement, int((ttl+time.Second-1)/time.Second))
 	}
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
@@ -191,6 +215,10 @@ const pageHTML = `<!doctype html>
   <label for="name">Display name</label>
   <input type="text" id="name" name="name" value="{{.Name}}" maxlength="80" required>
   <button type="submit">Save</button>
+</form>
+<form method="post" action="/session/renew">
+  <input type="hidden" name="csrf" value="{{.CSRF}}">
+  <button type="submit">Extend session</button>
 </form>
 <form method="post" action="/logout">
   <input type="hidden" name="csrf" value="{{.CSRF}}">

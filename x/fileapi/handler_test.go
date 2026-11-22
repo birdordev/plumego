@@ -324,17 +324,24 @@ func TestHandler_Download_CrossTenant(t *testing.T) {
 			}, nil
 		},
 	}
-	h := NewHandler(&mockStorage{}, metadata)
+	storage := &mockStorage{getFunc: func(context.Context, string) (io.ReadCloser, error) {
+		t.Fatal("unauthorized range accessed content storage")
+		return nil, nil
+	}}
+	h := NewHandler(storage, metadata)
 
 	req := httptest.NewRequest(http.MethodGet, "/files/test-id", nil)
+	req.Header.Set("Range", "bytes=0-3")
+	req.Header.Set("If-None-Match", "fixture")
 	req = withRouteParam(req, "id", "test-id")
 	ctx := tenantcore.WithTenantID(req.Context(), "tenant-attacker")
 	req = req.WithContext(ctx)
 	w := httptest.NewRecorder()
 	h.Download(w, req)
 
-	if w.Code != http.StatusForbidden {
-		t.Errorf("Status = %d, want %d (cross-tenant access should be denied)", w.Code, http.StatusForbidden)
+	if w.Code != http.StatusForbidden || w.Header().Get("Cache-Control") != "private, no-store" ||
+		w.Header().Get("ETag") != "" || w.Header().Get("Content-Range") != "" {
+		t.Errorf("cross-tenant range response: status=%d headers=%v", w.Code, w.Header())
 	}
 }
 
@@ -1569,7 +1576,7 @@ func TestDownloadSeekableRangeHeadAndConditional(t *testing.T) {
 		h.Download(w, req)
 		return w
 	}
-	head := send(http.MethodHead, "", "")
+	head := send(http.MethodHead, "bytes=0-4", "")
 	tag := head.Header().Get("ETag")
 	if head.Code != http.StatusOK || head.Body.Len() != 0 || head.Header().Get("Content-Length") != "11" || tag == "" {
 		t.Fatalf("HEAD: %d %v %q", head.Code, head.Header(), head.Body)
@@ -1579,9 +1586,65 @@ func TestDownloadSeekableRangeHeadAndConditional(t *testing.T) {
 		ranged.Header().Get("Cache-Control") != "private, no-store" {
 		t.Fatalf("range: %d %v %q", ranged.Code, ranged.Header(), ranged.Body)
 	}
+	unsatisfiable := send(http.MethodGet, "bytes=128-256", "")
+	if unsatisfiable.Code != http.StatusRequestedRangeNotSatisfiable ||
+		unsatisfiable.Header().Get("Content-Range") != "bytes */11" ||
+		unsatisfiable.Header().Get("Cache-Control") != "private, no-store" {
+		t.Fatalf("unsatisfiable range: %d %v", unsatisfiable.Code, unsatisfiable.Header())
+	}
 	matched := send(http.MethodGet, "", tag)
 	if matched.Code != http.StatusNotModified || matched.Body.Len() != 0 {
 		t.Fatalf("conditional request: %d %q", matched.Code, matched.Body)
+	}
+}
+
+func TestDownloadStreamOnlyConditions(t *testing.T) {
+	modified := time.Date(2025, time.January, 1, 0, 0, 0, 0, time.UTC)
+	var reader *downloadTestReader
+	storage := &mockStorage{getFunc: func(context.Context, string) (io.ReadCloser, error) {
+		reader = &downloadTestReader{Reader: strings.NewReader("hello")}
+		return reader, nil
+	}}
+	metadata := &mockMetadataManager{getFunc: func(_ context.Context, tenantID, id string) (*datafile.File, error) {
+		return &datafile.File{
+			File: storefile.File{ID: id, Path: "item.txt", Name: "item.txt",
+				Size: 5, MimeType: "text/plain", Hash: "hash", UpdatedAt: modified},
+			TenantID: tenantID,
+		}, nil
+	}}
+	h := NewHandler(storage, metadata)
+	send := func(method string, headers http.Header) *httptest.ResponseRecorder {
+		req := withRouteParam(httptest.NewRequest(method, "/files/item", nil), "id", "item")
+		req = req.WithContext(tenantcore.WithTenantID(req.Context(), "tenant"))
+		req.Header = headers
+		w := httptest.NewRecorder()
+		h.Download(w, req)
+		if reader.closeCalls != 1 || w.Header().Get("Accept-Ranges") != "" ||
+			w.Header().Get("Cache-Control") != "private, no-store" {
+			t.Fatalf("无定位能力的下载响应：%v，关闭次数 %d", w.Header(), reader.closeCalls)
+		}
+		return w
+	}
+	head := send(http.MethodHead, http.Header{"Range": {"bytes=0-0"}})
+	tag := head.Header().Get("ETag")
+	if head.Code != http.StatusOK || head.Body.Len() != 0 || tag == "" ||
+		head.Header().Get("Content-Length") != "5" || head.Header().Get("Last-Modified") != modified.Format(http.TimeFormat) {
+		t.Fatalf("HEAD：%d %v %s", head.Code, head.Header(), head.Body)
+	}
+	for _, tc := range []struct {
+		headers http.Header
+		status  int
+		body    string
+	}{
+		{http.Header{"If-None-Match": {tag}}, http.StatusNotModified, ""},
+		{http.Header{"If-Modified-Since": {modified.Format(http.TimeFormat)}}, http.StatusNotModified, ""},
+		{http.Header{"If-Match": {`"old"`}}, http.StatusPreconditionFailed, ""},
+		{http.Header{"Range": {"bytes=1-2"}, "If-Range": {tag}}, http.StatusOK, "hello"},
+	} {
+		got := send(http.MethodGet, tc.headers)
+		if got.Code != tc.status || got.Body.String() != tc.body || got.Header().Get("Content-Range") != "" {
+			t.Errorf("请求头 %v：%d %v %q", tc.headers, got.Code, got.Header(), got.Body)
+		}
 	}
 }
 

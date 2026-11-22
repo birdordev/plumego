@@ -11,11 +11,11 @@ SPA catch-all so clean-URL routing works without a separate server.
 ## What It Demonstrates
 
 - JSON API endpoint (`GET /api/status`) and SPA catch-all coexisting in one process
-- API routes registered before the frontend mount so they take precedence
+- Dedicated API router mounted at `API_PREFIX` before the frontend mount
 - In-memory `fstest.MapFS` as a self-contained demo asset source; replace with
   `embed.FS` or `frontend.RegisterFromDir()` for real builds
 - Cache-control headers: `immutable` for versioned assets, `no-cache` for `index.html`
-- SPA fallback routing: unknown paths return `index.html` instead of 404
+- SPA fallback for browser routes outside the API prefix. The API router returns JSON 404 or 405 even when the client accepts HTML.
 - `API_PREFIX`, `UI_PREFIX`, and `ASSETS_DIR` configurable via environment variables
 
 ## Routes
@@ -38,7 +38,7 @@ Then open `http://localhost:8088` in a browser to see the embedded SPA, and
 | Variable | Default | Notes |
 |----------|---------|-------|
 | `APP_ADDR` | `:8088` | Listen address |
-| `API_PREFIX` | `/api` | URL prefix for JSON API routes |
+| `API_PREFIX` | `/api` | Non-root URL prefix reserved for JSON API routes |
 | `UI_PREFIX` | `/` | URL prefix for static assets |
 | `ASSETS_DIR` | `./assets` | Asset directory (used with `RegisterFromDir`) |
 

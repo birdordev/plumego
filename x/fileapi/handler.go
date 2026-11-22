@@ -213,6 +213,7 @@ func writeUploadTooLarge(w http.ResponseWriter, r *http.Request) {
 // Download streams file content. Updating the access time is best effort.
 // GET /files/{id}
 func (h *Handler) Download(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", privateDownloadCacheControl)
 	ctx := r.Context()
 	fileMeta, fileID, ok := h.loadAuthorizedFile(w, r)
 	if !ok {
@@ -225,6 +226,12 @@ func (h *Handler) Download(w http.ResponseWriter, r *http.Request) {
 		_ = h.metadata.UpdateAccessTime(ctx, fileMeta.TenantID, fileID)
 	}
 
+	ranged, supportsRanges := h.storage.(downloadRangeStorage)
+	if supportsRanges && needsDownloadMetadata(r) {
+		h.downloadWithRanges(w, r, fileMeta, ranged)
+		return
+	}
+
 	reader, err := h.storage.Get(ctx, fileMeta.Path)
 	if err != nil {
 		writeFileInternalError(w, r, "failed to read file")
@@ -232,24 +239,82 @@ func (h *Handler) Download(w http.ResponseWriter, r *http.Request) {
 	}
 	defer func() { _ = reader.Close() }()
 
-	w.Header().Set("Content-Type", fileMeta.MimeType)
-	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", fileMeta.Name))
-	w.Header().Set("Cache-Control", "private, no-store")
-	if content, ok := reader.(io.ReadSeeker); ok {
-		if hash := fileMeta.Hash; hash != "" {
-			// 将文件哈希编码为符合语法的实体标签。
-			tag := sha256.Sum256([]byte(hash))
-			w.Header().Set("ETag", fmt.Sprintf(`"%x"`, tag))
+	content, seekable := reader.(io.ReadSeeker)
+	setDownloadHeaders(w.Header(), fileMeta, seekable || fileMeta.Size >= 0)
+	if seekable {
+		if r.Method != http.MethodGet {
+			r = withoutDownloadRange(r)
 		}
-		http.ServeContent(w, r, fileMeta.Name, fileMeta.UpdatedAt, content)
+		http.ServeContent(privateDownloadWriter{ResponseWriter: w}, r, fileMeta.Name, fileMeta.UpdatedAt, content)
 		return
 	}
-	w.Header().Set("Content-Length", fmt.Sprintf("%d", fileMeta.Size))
+	if fileMeta.Size >= 0 {
+		http.ServeContent(privateDownloadWriter{ResponseWriter: w, streamOnly: !supportsRanges},
+			withoutDownloadRange(r), fileMeta.Name, fileMeta.UpdatedAt, forwardDownload{reader, fileMeta.Size})
+		return
+	}
 	w.WriteHeader(http.StatusOK)
 	if r.Method == http.MethodHead {
 		return
 	}
 	_, _ = io.Copy(w, reader)
+}
+
+func setDownloadHeaders(header http.Header, fileMeta *datafile.File, validators bool) {
+	header.Set("Content-Type", fileMeta.MimeType)
+	header.Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", fileMeta.Name))
+	if hash := fileMeta.Hash; validators && hash != "" {
+		// 将文件哈希编码为符合语法的实体标签。
+		tag := sha256.Sum256([]byte(hash))
+		header.Set("ETag", fmt.Sprintf(`"%x"`, tag))
+	}
+}
+
+const privateDownloadCacheControl = "private, no-store"
+
+func withoutDownloadRange(r *http.Request) *http.Request {
+	if r.Header.Get("Range") == "" {
+		return r
+	}
+	withoutRange := r.WithContext(r.Context())
+	withoutRange.Header = r.Header.Clone()
+	withoutRange.Header.Del("Range")
+	return withoutRange
+}
+
+// forwardDownload 只处理 ServeContent 在顺序读取前执行的长度查询。
+type forwardDownload struct {
+	io.Reader
+	size int64
+}
+
+func (c forwardDownload) Seek(offset int64, whence int) (int64, error) {
+	switch {
+	case offset == 0 && whence == io.SeekEnd:
+		return c.size, nil
+	case offset == 0 && whence == io.SeekStart:
+		return 0, nil
+	default:
+		return 0, errors.ErrUnsupported
+	}
+}
+
+type privateDownloadWriter struct {
+	http.ResponseWriter
+	streamOnly bool
+}
+
+func (w privateDownloadWriter) WriteHeader(status int) {
+	// ServeContent 在若干错误路径上清理缓存头，私有下载仍须禁止缓存。
+	w.Header().Set("Cache-Control", privateDownloadCacheControl)
+	if w.streamOnly {
+		w.Header().Del("Accept-Ranges")
+	}
+	w.ResponseWriter.WriteHeader(status)
+}
+
+func (w privateDownloadWriter) ReadFrom(r io.Reader) (int64, error) {
+	return io.Copy(w.ResponseWriter, r)
 }
 
 // GetInfo returns file metadata.

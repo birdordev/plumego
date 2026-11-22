@@ -125,6 +125,11 @@ rather than legacy `internal/httpapp`, frontend, or container scaffolds.
 When `plumego new` runs from a Plumego source checkout, generated `go.mod` files
 include a local `replace github.com/birdordev/plumego => <checkout>` directive so
 pre-release source workflows can build against the checked-out framework.
+If the CLI cannot find a checkout from the working directory or executable
+location, use `plumego new myapp --plumego-dir /path/to/plumego` to choose
+the source checkout. To pin a version without a local replacement, use
+`plumego new myapp --plumego-version <version>` with a module version that
+provides the generated template's APIs.
 
 The `api` template starts from the same canonical bootstrap and adds a minimal
 `x/rest` users resource profile under `internal/resource`. It keeps resource

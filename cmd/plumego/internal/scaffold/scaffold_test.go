@@ -222,10 +222,11 @@ func TestCanonicalAppTemplate_HandlesStartupErrorsExplicitly(t *testing.T) {
 		`"net/http"`,
 		`if err := a.Use(`,
 		`return nil, fmt.Errorf("register middleware: %w", err)`,
-		`func (a *App) Start(ctx context.Context) (err error)`,
-		`shutdownErr := make(chan error, 1)`,
+		`func (a *App) Start(ctx context.Context) error`,
+		`serveDone := make(chan error, 1)`,
 		`errors.Is(err, http.ErrServerClosed)`,
-		`return fmt.Errorf("shutdown server: %w", err)`,
+		`shutdownErr := a.Core.Shutdown(shutdownCtx)`,
+		`errors.Join(shutdownErr, srv.Close())`,
 	})
 }
 
@@ -457,6 +458,7 @@ func TestCanonicalTemplate_FileSetMatchesReferenceContract(t *testing.T) {
 		"internal/handler/items.go",
 		"internal/config/config.go",
 		"go.mod",
+		"plumego.spec.yaml",
 		"env.example",
 		".gitignore",
 		"README.md",
@@ -632,6 +634,32 @@ func TestCreateProjectCleanExistingRemovesStaleTemplateFiles(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(dir, "internal", "handler", "api.go")); err != nil {
 		t.Fatalf("expected canonical handler file to exist: %v", err)
+	}
+}
+
+func TestScaffoldRegenerationPreservesCustomizedSpec(t *testing.T) {
+	dir := t.TempDir()
+	const module = "example.com/myapp"
+	if _, err := CreateProject(dir, "myapp", module, "canonical", false); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "plumego.spec.yaml")
+	options := ProjectOptions{CleanExisting: true}
+	if _, err := CreateProject(dir, "myapp", module, "api", false, options); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("unchanged generated spec survived a template switch: %v", err)
+	}
+	const custom = "info: {title: Custom API}\n"
+	if err := os.WriteFile(path, []byte(custom), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := CreateProject(dir, "myapp", module, "canonical", false, options); err != nil {
+		t.Fatal(err)
+	}
+	if data, err := os.ReadFile(path); err != nil || string(data) != custom {
+		t.Fatalf("custom specification was replaced: %v", err)
 	}
 }
 

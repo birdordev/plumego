@@ -46,6 +46,9 @@ func (a *App) RegisterRoutes() error {
 		Service: item.NewItemService(item.NewMemoryStore()),
 		Logger:  a.Core.Logger(),
 	}
+	if a.Cfg.App.StrictJSON {
+		items.StrictJSON = &contract.JSONRequestOptions{MaxBytes: a.Cfg.App.MaxBodyBytes}
+	}
 
 	// RequireWriteKey is a per-route middleware that gates mutating operations.
 	// When APP_WRITE_KEY is empty (the default) the guard is a no-op, so the

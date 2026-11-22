@@ -280,36 +280,66 @@ func (s *S3Storage) limitUploadReader(r io.Reader) io.Reader {
 
 // Get retrieves a file from S3 storage.
 func (s *S3Storage) Get(ctx context.Context, p string) (io.ReadCloser, error) {
+	return s.get(ctx, p, "Get", "", "", 0)
+}
+
+// GetRange 打开指定对象的一段内容。offset 从零开始，size 为对象总字节数。
+// 调用方负责关闭返回的流。
+func (s *S3Storage) GetRange(ctx context.Context, p string, offset, length, size int64) (io.ReadCloser, error) {
+	if offset < 0 || length <= 0 || size < length || offset > size-length {
+		return nil, &storefile.Error{Op: "GetRange", Path: p, Err: storefile.ErrInvalidSize}
+	}
+	last := offset + length - 1
+	return s.get(ctx, p, "GetRange", fmt.Sprintf("bytes=%d-%d", offset, last),
+		fmt.Sprintf("bytes %d-%d/%d", offset, last, size), length)
+}
+
+func (s *S3Storage) get(ctx context.Context, p, op, rangeRequest, contentRange string, length int64) (io.ReadCloser, error) {
 	if !isPathSafe(p) {
-		return nil, &storefile.Error{Op: "Get", Path: p, Err: storefile.ErrInvalidPath}
+		return nil, &storefile.Error{Op: op, Path: p, Err: storefile.ErrInvalidPath}
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, s.buildURL(p), nil)
 	if err != nil {
 		return nil, err
 	}
 
+	expected := http.StatusOK
+	if rangeRequest != "" {
+		expected = http.StatusPartialContent
+		req.Header.Set("Range", rangeRequest)
+		req.Header.Set("Accept-Encoding", "identity")
+	}
 	if err := s.signer.SignRequest(req, ""); err != nil {
 		return nil, err
 	}
 
 	resp, err := s.client.Do(req)
 	if err != nil {
-		return nil, &storefile.Error{Op: "Get", Path: p, Err: err}
+		return nil, &storefile.Error{Op: op, Path: p, Err: err}
 	}
 
 	if resp.StatusCode == http.StatusNotFound {
 		_ = resp.Body.Close()
-		return nil, &storefile.Error{Op: "Get", Path: p, Err: storefile.ErrNotFound}
+		return nil, &storefile.Error{Op: op, Path: p, Err: storefile.ErrNotFound}
 	}
 
-	if resp.StatusCode != http.StatusOK {
+	if resp.StatusCode != expected {
+		if rangeRequest != "" {
+			_ = resp.Body.Close()
+			return nil, &storefile.Error{Op: op, Path: p, Err: fmt.Errorf("unexpected S3 range status %d", resp.StatusCode)}
+		}
 		body := readS3ErrorBody(resp.Body)
 		_ = resp.Body.Close()
 		return nil, &storefile.Error{
-			Op:   "Get",
+			Op:   op,
 			Path: p,
 			Err:  fmt.Errorf("s3: status %d: %s", resp.StatusCode, body),
 		}
+	}
+	if rangeRequest != "" && (resp.Header.Get("Content-Range") != contentRange ||
+		resp.ContentLength >= 0 && resp.ContentLength != length) {
+		_ = resp.Body.Close()
+		return nil, &storefile.Error{Op: op, Path: p, Err: errors.New("unexpected S3 content range")}
 	}
 
 	return resp.Body, nil

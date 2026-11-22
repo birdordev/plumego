@@ -145,6 +145,11 @@ The full stack is wired once in `New()` and applies to every route.
 - `recovery` converts panics to 500 responses
 - `accesslog` logs every request/response after recovery so panics appear as 500
 - `bodylimit` rejects oversized bodies with 413 (default: 1 MiB)
+- Set `APP_STRICT_JSON=true` to enforce the shared JSON contract on item POST,
+  PUT, and PATCH. It returns 415 for an unsupported media type, 400 for an
+  empty, null, malformed, or trailing JSON value, and 413 for an oversized
+  body. It uses `APP_MAX_BODY_BYTES` when positive and the shared 1 MiB limit
+  otherwise. The default item decoding keeps its existing error codes.
 - `timeout` imposes a per-request wall-clock limit (default: 30 s), innermost so it covers only handler time
 
 Production services extend this stack with rate limiting, auth adapters, and tracing as

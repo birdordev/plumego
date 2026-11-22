@@ -138,7 +138,6 @@ func getEnvExampleContent() string {
 	return `APP_ADDR=:8080
 APP_DEBUG=false
 APP_SHUTDOWN_TIMEOUT_MS=5000
-APP_MAX_BODY_BYTES=10485760
 `
 }
 

@@ -72,6 +72,8 @@ type ItemService interface {
 type ItemHandler struct {
 	Service ItemService
 	Logger  plumelog.StructuredLogger
+	// StrictJSON 为 nil 时保留参考服务原有的正文错误契约。
+	StrictJSON *contract.JSONRequestOptions
 }
 
 // itemWriteReq is the shared request body for create, update, and patch operations.
@@ -122,6 +124,13 @@ func decodeJSONStrict(r *http.Request, dst any) error {
 		return errors.New("additional JSON value")
 	}
 	return nil
+}
+
+func (h ItemHandler) decodeWriteJSON(r *http.Request, dst *itemWriteReq) error {
+	if h.StrictJSON != nil {
+		return contract.DecodeJSONRequest(r, dst, *h.StrictJSON)
+	}
+	return decodeJSONStrict(r, dst)
 }
 
 // unknownFieldName returns the offending field name when err is the error
@@ -181,7 +190,11 @@ func unknownFieldName(err error) string {
 //	POST /api/v1/items {"name":"widget"}                           → 400 TypeRequired  detail: description
 func (h ItemHandler) Create(w http.ResponseWriter, r *http.Request) {
 	var req itemWriteReq
-	if err := decodeJSONStrict(r, &req); err != nil {
+	if err := h.decodeWriteJSON(r, &req); err != nil {
+		if apiErr, ok := contract.AsAPIError(err); ok {
+			logWriteErr(h.Logger, contract.WriteError(w, r, apiErr))
+			return
+		}
 		if errors.Is(err, io.EOF) {
 			logWriteErr(h.Logger, contract.WriteError(w, r, contract.NewErrorBuilder().
 				Type(contract.TypeRequired).
@@ -358,7 +371,11 @@ func (h ItemHandler) Update(w http.ResponseWriter, r *http.Request) {
 	id := router.Param(r, "id")
 
 	var req itemWriteReq
-	if err := decodeJSONStrict(r, &req); err != nil {
+	if err := h.decodeWriteJSON(r, &req); err != nil {
+		if apiErr, ok := contract.AsAPIError(err); ok {
+			logWriteErr(h.Logger, contract.WriteError(w, r, apiErr))
+			return
+		}
 		if errors.Is(err, io.EOF) {
 			logWriteErr(h.Logger, contract.WriteError(w, r, contract.NewErrorBuilder().
 				Type(contract.TypeRequired).
@@ -440,7 +457,11 @@ func (h ItemHandler) Patch(w http.ResponseWriter, r *http.Request) {
 	id := router.Param(r, "id")
 
 	var req itemWriteReq
-	if err := decodeJSONStrict(r, &req); err != nil {
+	if err := h.decodeWriteJSON(r, &req); err != nil {
+		if apiErr, ok := contract.AsAPIError(err); ok {
+			logWriteErr(h.Logger, contract.WriteError(w, r, apiErr))
+			return
+		}
 		if errors.Is(err, io.EOF) {
 			logWriteErr(h.Logger, contract.WriteError(w, r, contract.NewErrorBuilder().
 				Type(contract.TypeRequired).

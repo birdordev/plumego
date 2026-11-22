@@ -93,6 +93,8 @@ func (c *NewCmd) Help() CommandHelp {
 			{"--template <name>", "canonical (default), minimal, api, fullstack, microservice, rest-api, tenant-api, gateway, realtime, ai-service, ops-service"},
 			{"--module <path>", "Go module path (default: project name)"},
 			{"--dir <path>", "Output directory (default: ./<project-name>)"},
+			{"--plumego-dir <path>", "Use an explicit local Plumego module checkout"},
+			{"--plumego-version <version>", "Require a specified Plumego module version"},
 			{"--force", "Overwrite existing directory"},
 			{"--no-git", "Skip git initialization"},
 			{"--dry-run", "Preview files without creating"},

@@ -3,6 +3,7 @@ package app
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"with-frontend/internal/config"
@@ -10,6 +11,8 @@ import (
 
 func newTestApp(t *testing.T) *App {
 	t.Helper()
+	t.Setenv("API_PREFIX", "/api")
+	t.Setenv("UI_PREFIX", "/")
 	cfg, err := config.Load()
 	if err != nil {
 		t.Fatalf("load config: %v", err)
@@ -34,12 +37,12 @@ func TestRegisterRoutesIncludesAPIAndFrontend(t *testing.T) {
 
 	hasAPI := false
 	for _, r := range routes {
-		if r.Method == http.MethodGet && r.Path == "/api/status" {
+		if r.Path == "/api/*apiPath" {
 			hasAPI = true
 		}
 	}
 	if !hasAPI {
-		t.Errorf("route GET /api/status not found; routes = %v", routes)
+		t.Errorf("API namespace mount not found; routes = %v", routes)
 	}
 }
 
@@ -81,5 +84,28 @@ func TestFrontendIndexServed(t *testing.T) {
 	}
 	if body := rec.Body.String(); body == "" {
 		t.Error("expected non-empty HTML response for /")
+	}
+}
+
+func TestAPINamespaceKeepsErrorsSeparateFromSPAFallback(t *testing.T) {
+	a := newTestApp(t)
+	for _, tc := range []struct {
+		method, path, contentType, allow string
+		status                           int
+	}{
+		{http.MethodGet, "/api", "application/json", "", 404},
+		{http.MethodGet, "/api/unknown", "application/json", "", 404},
+		{http.MethodHead, "/api/unknown", "application/json", "", 404},
+		{http.MethodPost, "/api/status", "application/json", "GET, HEAD", 405},
+		{http.MethodGet, "/apiary/page", "text/html", "", 200},
+	} {
+		r := httptest.NewRequest(tc.method, tc.path, nil)
+		r.Header.Set("Accept", "text/html")
+		w := httptest.NewRecorder()
+		a.Core.ServeHTTP(w, r)
+		if w.Code != tc.status || !strings.HasPrefix(w.Header().Get("Content-Type"), tc.contentType) ||
+			w.Header().Get("Allow") != tc.allow || (tc.method == http.MethodHead && w.Body.Len() != 0) {
+			t.Errorf("%s %s: status=%d headers=%v body=%q", tc.method, tc.path, w.Code, w.Header(), w.Body)
+		}
 	}
 }

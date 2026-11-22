@@ -13,6 +13,8 @@ var (
 	errPrecondition        = errors.New("item version changed")
 )
 
+const currentSchemaVersion = 2
+
 type item struct {
 	ID      int64  `json:"id"`
 	Name    string `json:"name"`
@@ -42,22 +44,30 @@ func (r repository) migrate(ctx context.Context) error {
 	if err := tx.QueryRowContext(ctx, "PRAGMA user_version").Scan(&version); err != nil {
 		return err
 	}
-	if version == 1 {
+	if version == currentSchemaVersion {
 		return nil
 	}
-	if version != 0 {
+	if version < 0 || version > currentSchemaVersion {
 		return fmt.Errorf("unsupported schema version %d", version)
 	}
-	for _, statement := range []string{
-		`CREATE TABLE items (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, version INTEGER NOT NULL)`,
-		`CREATE TABLE create_receipts (key TEXT PRIMARY KEY, fingerprint TEXT NOT NULL, item_id INTEGER NOT NULL, name TEXT NOT NULL, expires_at INTEGER NOT NULL)`,
-		`CREATE INDEX receipt_expiry ON create_receipts(expires_at)`,
-		`CREATE TABLE outbox (id INTEGER PRIMARY KEY AUTOINCREMENT, item_id INTEGER NOT NULL, kind TEXT NOT NULL)`,
-		"PRAGMA user_version = 1",
-	} {
-		if _, err := tx.ExecContext(ctx, statement); err != nil {
-			return err
+	if version == 0 {
+		for _, statement := range []string{
+			`CREATE TABLE items (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, version INTEGER NOT NULL)`,
+			`CREATE TABLE create_receipts (key TEXT PRIMARY KEY, fingerprint TEXT NOT NULL, item_id INTEGER NOT NULL, name TEXT NOT NULL, expires_at INTEGER NOT NULL)`,
+			`CREATE INDEX receipt_expiry ON create_receipts(expires_at)`,
+			`CREATE TABLE outbox (id INTEGER PRIMARY KEY AUTOINCREMENT, item_id INTEGER NOT NULL, kind TEXT NOT NULL)`,
+		} {
+			if _, err := tx.ExecContext(ctx, statement); err != nil {
+				return err
+			}
 		}
+	}
+	if _, err := tx.ExecContext(ctx, `CREATE TABLE delivered_events (
+		event_id INTEGER PRIMARY KEY, item_id INTEGER NOT NULL, kind TEXT NOT NULL)`); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, fmt.Sprintf("PRAGMA user_version = %d", currentSchemaVersion)); err != nil {
+		return err
 	}
 	return tx.Commit()
 }
@@ -131,6 +141,13 @@ type outboxEvent struct {
 	ID     int64
 	ItemID int64
 	Kind   string
+}
+
+// recordDelivery 将副作用与去重记录合并为一次持久写入。
+func (r repository) recordDelivery(ctx context.Context, event outboxEvent) error {
+	_, err := r.db.ExecContext(ctx, `INSERT INTO delivered_events (event_id, item_id, kind)
+		VALUES (?, ?, ?) ON CONFLICT(event_id) DO NOTHING`, event.ID, event.ItemID, event.Kind)
+	return err
 }
 
 func (r repository) sendNext(ctx context.Context, publish func(context.Context, outboxEvent) error) (bool, error) {

@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/birdordev/plumego/cmd/plumego/internal/scaffold"
@@ -41,6 +42,8 @@ func (c *NewCmd) Run(ctx *Context, args []string) error {
 	force := fs.Bool("force", false, "Overwrite existing directory")
 	noGit := fs.Bool("no-git", false, "Skip git initialization")
 	dryRun := fs.Bool("dry-run", false, "Preview without creating")
+	plumegoDir := fs.String("plumego-dir", "", "Path to a Plumego source checkout")
+	plumegoVersion := fs.String("plumego-version", "", "Plumego module version")
 
 	positionals, err := parseInterspersedFlags(fs, args)
 	if err != nil {
@@ -86,6 +89,10 @@ func (c *NewCmd) Run(ctx *Context, args []string) error {
 		return ctx.Out.Error(fmt.Sprintf("invalid template: %s (valid: %s)", template, strings.Join(newProjectTemplates, ", ")), 3)
 	}
 
+	projectOptions, err := scaffoldDependency(*plumegoDir, *plumegoVersion)
+	if err != nil {
+		return ctx.Out.Error(err.Error(), 1)
+	}
 	if *dryRun {
 		files := scaffold.GetTemplateFiles(template)
 		return ctx.Out.Success("Project creation preview", map[string]any{
@@ -97,11 +104,11 @@ func (c *NewCmd) Run(ctx *Context, args []string) error {
 			"files_created": files,
 		})
 	}
-
-	projectOptions := scaffold.ProjectOptions{
-		PlumegoReplace: detectLocalPlumegoRoot(),
-		CleanExisting:  *force,
+	if projectOptions.PlumegoReplace == "" && projectOptions.PlumegoVersion == "" {
+		return ctx.Out.Error("Plumego source checkout not found; use --plumego-dir or --plumego-version", 1)
 	}
+
+	projectOptions.CleanExisting = *force
 	files, err := scaffold.CreateProject(dir, projectName, module, template, !*noGit, projectOptions)
 	if err != nil {
 		return ctx.Out.Error(fmt.Sprintf("failed to create project: %v", err), 1)
@@ -119,6 +126,30 @@ func (c *NewCmd) Run(ctx *Context, args []string) error {
 			"plumego dev",
 		},
 	})
+}
+
+func scaffoldDependency(source, version string) (scaffold.ProjectOptions, error) {
+	switch {
+	case source != "" && version != "":
+		return scaffold.ProjectOptions{}, fmt.Errorf("choose either --plumego-dir or --plumego-version")
+	case source != "":
+		path, err := filepath.Abs(source)
+		if err != nil {
+			return scaffold.ProjectOptions{}, err
+		}
+		if findPlumegoModuleRoot(path) != path {
+			return scaffold.ProjectOptions{}, fmt.Errorf("--plumego-dir must point to the Plumego module root")
+		}
+		return scaffold.ProjectOptions{PlumegoReplace: path}, nil
+	case version != "":
+		valid, err := regexp.MatchString(`^v[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.+-]+)?$`, version)
+		if err != nil || !valid {
+			return scaffold.ProjectOptions{}, fmt.Errorf("--plumego-version must be a Go module version such as v1.2.3")
+		}
+		return scaffold.ProjectOptions{PlumegoVersion: version}, nil
+	default:
+		return scaffold.ProjectOptions{PlumegoReplace: detectLocalPlumegoRoot()}, nil
+	}
 }
 
 func detectLocalPlumegoRoot() string {
@@ -144,8 +175,11 @@ func findPlumegoModuleRoot(start string) string {
 	for {
 		goMod := filepath.Join(dir, "go.mod")
 		if data, err := os.ReadFile(goMod); err == nil {
-			if strings.Contains(string(data), "module github.com/birdordev/plumego\n") {
-				return dir
+			for line := range strings.SplitSeq(string(data), "\n") {
+				fields := strings.Fields(line)
+				if len(fields) >= 2 && fields[0] == "module" && strings.Trim(fields[1], `"`) == "github.com/birdordev/plumego" {
+					return dir
+				}
 			}
 		}
 		parent := filepath.Dir(dir)

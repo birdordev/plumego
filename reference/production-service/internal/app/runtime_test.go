@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -75,17 +76,22 @@ func TestRuntimeDrainKeepsDependenciesUntilRequestReturns(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if err := a.RegisterRoutes(); err != nil {
+		t.Fatal(err)
+	}
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
 	requestEntered := make(chan struct{})
 	requestRelease := make(chan struct{})
 	defer closeIfOpen(requestRelease)
-	stopped := make(chan struct{})
-	a.components.Add("dependency", core.Component{OnStop: func(context.Context) error {
-		close(stopped)
-		return nil
-	}})
+	stopped := make(chan string, 2)
+	for _, name := range []string{"database", "worker"} {
+		a.components.Add(name, core.Component{OnStop: func(context.Context) error {
+			stopped <- name
+			return nil
+		}})
+	}
 	if err := a.Core.Get("/hold", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		close(requestEntered)
 		select {
@@ -101,9 +107,10 @@ func TestRuntimeDrainKeepsDependenciesUntilRequestReturns(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = listener.Close() }()
+	observed := &shutdownListener{Listener: listener, closed: make(chan struct{})}
 	done := make(chan error, 1)
 	go func() {
-		done <- a.start(ctx, func(context.Context, string) (net.Listener, error) { return listener, nil })
+		done <- a.start(ctx, func(context.Context, string) (net.Listener, error) { return observed, nil })
 	}()
 	client := &http.Client{Timeout: 4 * time.Second}
 	response := make(chan int, 1)
@@ -123,6 +130,16 @@ func TestRuntimeDrainKeepsDependenciesUntilRequestReturns(t *testing.T) {
 	}
 	cancel()
 	select {
+	case <-observed.closed:
+	case <-time.After(4 * time.Second):
+		t.Fatal("listener did not stop accepting requests")
+	}
+	ready := httptest.NewRecorder()
+	a.Core.ServeHTTP(ready, httptest.NewRequest("GET", "/readyz", nil))
+	if ready.Code != http.StatusServiceUnavailable {
+		t.Fatalf("instance is still ready during drain: %d", ready.Code)
+	}
+	select {
 	case <-stopped:
 		t.Fatal("dependency stopped before in-flight request finished")
 	default:
@@ -139,9 +156,27 @@ func TestRuntimeDrainKeepsDependenciesUntilRequestReturns(t *testing.T) {
 	case <-time.After(4 * time.Second):
 		t.Fatal("server did not stop")
 	}
+	if len(stopped) != 2 {
+		t.Fatalf("expected both dependencies to stop, got %d", len(stopped))
+	}
+	if first, second := <-stopped, <-stopped; first != "worker" || second != "database" {
+		t.Fatalf("component stop order: %s, %s", first, second)
+	}
 	if a.ready.Load() {
 		t.Fatal("app is ready after shutdown")
 	}
+}
+
+type shutdownListener struct {
+	net.Listener
+	closed chan struct{}
+	once   sync.Once
+}
+
+func (l *shutdownListener) Close() error {
+	err := l.Listener.Close()
+	l.once.Do(func() { close(l.closed) })
+	return err
 }
 
 func closeIfOpen(signal chan struct{}) {

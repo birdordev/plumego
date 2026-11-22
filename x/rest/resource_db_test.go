@@ -782,3 +782,76 @@ func TestBaseRepositoryExposesInjectedDB(t *testing.T) {
 		t.Errorf("custom query = %q, %v, calls=%d", id, err, calls)
 	}
 }
+
+type strictWriteRepo struct {
+	dbResourceTestRepo
+	writes int
+}
+
+func (r *strictWriteRepo) Create(context.Context, *dbResourceTestItem) error {
+	r.writes++
+	return nil
+}
+
+func (r *strictWriteRepo) Update(context.Context, string, *dbResourceTestItem) error {
+	r.writes++
+	return nil
+}
+
+type rejectedWriteField struct{}
+
+func (rejectedWriteField) Error() string { return "fixture private validation detail" }
+func (rejectedWriteField) FieldViolations() []contract.FieldViolation {
+	return []contract.FieldViolation{{Source: "body", Field: "name", Code: "REQUIRED"}}
+}
+
+func TestStrictDBResourceWritesRejectBadBodiesBeforePersistence(t *testing.T) {
+	repo := &strictWriteRepo{}
+	validator := &dbResourceTestValidator{}
+	controller := NewDBResourceController("items", repo).
+		WithStrictJSON(contract.JSONRequestOptions{MaxBytes: 24}).
+		WithValidator(validator)
+	r := router.NewRouter()
+	if err := r.AddRoute(http.MethodPost, "/items", http.HandlerFunc(controller.Create)); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.AddRoute(http.MethodPut, "/items/:id", http.HandlerFunc(controller.Update)); err != nil {
+		t.Fatal(err)
+	}
+
+	send := func(method, path, media, body string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(method, path, strings.NewReader(body))
+		req.Header.Set("Content-Type", media)
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+		return w
+	}
+	for _, tc := range []struct {
+		method, path, media, body string
+		status                    int
+	}{
+		{http.MethodPost, "/items", "text/plain", `{"name":"ok"}`, 415},
+		{http.MethodPost, "/items", "application/json", `{} {}`, 400},
+		{http.MethodPut, "/items/1", "application/json", `null`, 400},
+		{http.MethodPut, "/items/1", "application/json", `{"name":"abcdefghijklmnopqrstuvwxyz"}`, 413},
+		{http.MethodPut, "/items/1", "application/json", `{"extra":true}`, 400},
+	} {
+		w := send(tc.method, tc.path, tc.media, tc.body)
+		if w.Code != tc.status || repo.writes != 0 {
+			t.Fatalf("%s %s: status=%d writes=%d body=%s", tc.method, tc.path, w.Code, repo.writes, w.Body)
+		}
+	}
+	if w := send(http.MethodPost, "/items", "application/json", `{"name":"ok"}`); w.Code != 201 || repo.writes != 1 {
+		t.Fatalf("valid create: status=%d writes=%d", w.Code, repo.writes)
+	}
+
+	validator.err = rejectedWriteField{}
+	w := send(http.MethodPut, "/items/1", "application/json", `{}`)
+	if w.Code != 422 || repo.writes != 1 {
+		t.Fatalf("validator rejection: status=%d writes=%d", w.Code, repo.writes)
+	}
+	if !strings.Contains(w.Body.String(), `"fields":[{"source":"body","field":"name","code":"REQUIRED"}]`) {
+		t.Fatalf("missing field error: %s", w.Body)
+	}
+	assertBodyOmits(t, w.Body.String(), "fixture private validation detail")
+}

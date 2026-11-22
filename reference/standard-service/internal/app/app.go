@@ -117,31 +117,33 @@ func (a *App) Start(ctx context.Context) error {
 		"tls":  a.Cfg.Core.TLS.Enabled,
 	})
 
-	shutdownErr := make(chan error, 1)
+	serveDone := make(chan error, 1)
 	go func() {
-		<-ctx.Done()
-		// Allow up to 15 s for in-flight requests to complete before forcing close.
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-		defer cancel()
-		shutdownErr <- a.Core.Shutdown(shutdownCtx)
+		if a.Cfg.Core.TLS.Enabled {
+			// Prepare 已将证书加载到 TLSConfig。
+			serveDone <- srv.ListenAndServeTLS("", "")
+			return
+		}
+		serveDone <- srv.ListenAndServe()
 	}()
 
-	var serveErr error
-	if a.Cfg.Core.TLS.Enabled {
-		// Empty cert/key paths are valid here: core.Prepare() already loaded
-		// cfg.Core.TLS.CertFile and cfg.Core.TLS.KeyFile into srv.TLSConfig.
-		// Both paths are validated at startup by config.Validate before reaching here.
-		serveErr = srv.ListenAndServeTLS("", "")
-	} else {
-		serveErr = srv.ListenAndServe()
+	select {
+	case err := <-serveDone:
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
+			return fmt.Errorf("server stopped: %w", err)
+		}
+		return nil
+	case <-ctx.Done():
 	}
-	if serveErr != nil && !errors.Is(serveErr, http.ErrServerClosed) {
-		return fmt.Errorf("server stopped: %w", serveErr)
+
+	shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 15*time.Second)
+	defer cancel()
+	shutdownErr := a.Core.Shutdown(shutdownCtx)
+	if shutdownErr != nil {
+		shutdownErr = fmt.Errorf("shutdown server: %w", errors.Join(shutdownErr, srv.Close()))
 	}
-	// Always drain the shutdown channel so the goroutine is not leaked and
-	// shutdown errors are not silently discarded.
-	if err := <-shutdownErr; err != nil {
-		return fmt.Errorf("shutdown server: %w", err)
+	if err := <-serveDone; err != nil && !errors.Is(err, http.ErrServerClosed) {
+		return errors.Join(shutdownErr, fmt.Errorf("server stopped: %w", err))
 	}
-	return nil
+	return shutdownErr
 }

@@ -24,7 +24,9 @@ plumego generate spec
 
 The command locates `./internal/app` as the application package, calls
 `app.RegisterRoutes()` to collect `router.RouteInfo` values, and then runs
-`openapi.New().Generate(routes, hints)` to produce the document.
+`openapi.New().Generate(routes, hints)` to produce the document. The temporary
+generator uses the target project's selected Plumego version and module
+replacements.
 
 ---
 
@@ -230,7 +232,10 @@ go vet ./x/openapi/...
 ## Strict generation
 
 `plumego generate spec --strict` calls `GenerateStrict` and requires a response
-hint for every supported operation before writing the output. The CLI can
+hint for every supported operation before writing the output. Strict mode
+rejects equivalent path templates with different parameter names, duplicate or
+unmatched path parameter hints, and content on responses that cannot carry a
+body, including HEAD and HTTP 204. The CLI can
 load `components.securitySchemes` and per-operation `security` from the hints
 file. Strict generation needs a target application using a library checkout or
 release that provides `GenerateStrict`. The standard-service

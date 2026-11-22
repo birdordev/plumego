@@ -2,9 +2,11 @@ package scaffold
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 	"unicode"
@@ -22,6 +24,7 @@ var scenarioProfiles = map[string]struct{}{
 }
 
 const defaultPlumegoVersion = "v0.0.0"
+const canonicalSpecFile = "plumego.spec.yaml"
 
 // ProjectOptions configures project-level scaffold output.
 type ProjectOptions struct {
@@ -101,6 +104,7 @@ func canonicalTemplateFiles() []string {
 		"internal/handler/items.go",
 		"internal/config/config.go",
 		"go.mod",
+		canonicalSpecFile,
 		"env.example",
 		".gitignore",
 		"README.md",
@@ -158,7 +162,13 @@ func CreateProject(dir, name, module, template string, initGit bool, options ...
 			content = getGoModContent(module, projectOptions)
 		}
 
-		if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		if file == canonicalSpecFile {
+			if err := writeNewSpecFile(path, content); os.IsExist(err) {
+				continue
+			} else if err != nil {
+				return created, fmt.Errorf("failed to write file %s: %w", path, err)
+			}
+		} else if err := os.WriteFile(path, []byte(content), 0644); err != nil {
 			return created, fmt.Errorf("failed to write file %s: %w", path, err)
 		}
 
@@ -187,6 +197,15 @@ func CreateProject(dir, name, module, template string, initGit bool, options ...
 	return created, nil
 }
 
+func writeNewSpecFile(path, content string) error {
+	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0644)
+	if err != nil {
+		return err
+	}
+	_, writeErr := file.WriteString(content)
+	return errors.Join(writeErr, file.Close())
+}
+
 func cleanKnownTemplateFiles(dir string) error {
 	for _, file := range allTemplateFiles() {
 		path := filepath.Join(dir, file)
@@ -199,6 +218,18 @@ func cleanKnownTemplateFiles(dir string) error {
 		}
 		if info.IsDir() {
 			continue
+		}
+		if file == canonicalSpecFile {
+			if !info.Mode().IsRegular() || info.Size() != int64(len(canonicalSpecContent)) {
+				continue
+			}
+			content, err := os.ReadFile(path)
+			if err != nil {
+				return fmt.Errorf("failed to read existing spec %s: %w", path, err)
+			}
+			if string(content) != canonicalSpecContent {
+				continue
+			}
 		}
 		if err := os.Remove(path); err != nil {
 			return fmt.Errorf("failed to remove stale template file %s: %w", path, err)
@@ -294,7 +325,11 @@ func getGoModContent(module string, opts ProjectOptions) string {
 	opts = resolveProjectOptions([]ProjectOptions{opts})
 	content := fmt.Sprintf("module %s\n\ngo 1.26.0\n\nrequire github.com/birdordev/plumego %s\n", module, opts.PlumegoVersion)
 	if opts.PlumegoReplace != "" {
-		content += fmt.Sprintf("\nreplace github.com/birdordev/plumego => %s\n", filepath.ToSlash(opts.PlumegoReplace))
+		dir := filepath.ToSlash(opts.PlumegoReplace)
+		if strings.ContainsAny(dir, " \t\r\n\"\\") {
+			dir = strconv.Quote(dir)
+		}
+		content += fmt.Sprintf("\nreplace github.com/birdordev/plumego => %s\n", dir)
 	}
 	return content
 }

@@ -25,6 +25,7 @@ type AppConfig struct {
 	EnvFile            string
 	ServiceName        string   // APP_SERVICE_NAME; used as the service identity in health and API responses.
 	MaxBodyBytes       int64    // APP_MAX_BODY_BYTES; maximum request body size. 0 disables the limit.
+	StrictJSON         bool     // APP_STRICT_JSON; 显式启用标准 JSON 正文契约。
 	WriteKey           string   // APP_WRITE_KEY; when non-empty, POST/PUT/DELETE /api/v1/items require X-Write-Key header. Empty disables the guard.
 	Version            string   // Build version injected via -ldflags "-X main.version=…" in main.go; defaults to "dev".
 	CORSAllowedOrigins []string // APP_CORS_ALLOWED_ORIGINS; comma-separated list of allowed origins. Empty defaults to ["*"] (allow all). Always restrict in production.
@@ -133,6 +134,7 @@ func applyEnv(cfg *Config, lookupEnv func(string) (string, bool)) {
 	str("APP_ENV_FILE", &cfg.App.EnvFile)
 	str("APP_SERVICE_NAME", &cfg.App.ServiceName)
 	int64f("APP_MAX_BODY_BYTES", &cfg.App.MaxBodyBytes)
+	boolf("APP_STRICT_JSON", &cfg.App.StrictJSON)
 	clearable("APP_WRITE_KEY", &cfg.App.WriteKey)
 	boolf("APP_TLS_ENABLED", &cfg.Core.TLS.Enabled)
 	str("APP_TLS_CERT_FILE", &cfg.Core.TLS.CertFile)

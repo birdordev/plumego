@@ -50,3 +50,52 @@ func TestStrictSpecMatchesRegisteredHandlers(t *testing.T) {
 		}
 	}
 }
+
+func TestStrictSpecRejectsConflictingTemplatesAndInvalidResponses(t *testing.T) {
+	routes := []router.RouteInfo{
+		{Method: http.MethodGet, Path: "/items/:id"},
+		{Method: http.MethodDelete, Path: "/items/:name"},
+		{Method: http.MethodHead, Path: "/items/:id"},
+	}
+	body := JSONContent(Schema{Type: "object"})
+	hints := map[string]Op{
+		"GET /items/:id": {
+			Params: []Param{PathParam("id", String), PathParam("id", String), PathParam("missing", String)},
+			Responses: map[string]Response{
+				"200": {Description: "Item", Content: body},
+				"304": {Description: "Unchanged", Content: body},
+			},
+		},
+		"DELETE /items/:name": {Responses: map[string]Response{"204": {Description: "Deleted", Content: body}}},
+		"HEAD /items/:id":     {Responses: map[string]Response{"200": {Description: "Metadata", Content: body}}},
+	}
+	generator := New()
+	if doc := generator.Generate(routes, hints); len(doc.Paths) != 2 {
+		t.Fatal("普通模式应保留兼容行为")
+	}
+	_, err := generator.GenerateStrict(routes, hints)
+	if err == nil {
+		t.Fatal("严格模式接受了无效合同")
+	}
+	for _, want := range []string{
+		"conflicting path templates /items/{id} and /items/{name}",
+		`invalid path parameter "id"`, `invalid path parameter "missing"`,
+		`response "304" for GET /items/{id}`,
+		`response "204" for DELETE /items/{name}`,
+		`response "200" for HEAD /items/{id}`,
+	} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("缺少 %q：%v", want, err)
+		}
+	}
+
+	delete(hints, "DELETE /items/:name")
+	routes[1].Path = "/items/:id"
+	hints["DELETE /items/:id"] = Op{Responses: map[string]Response{"204": {Description: "Deleted"}}}
+	hints["HEAD /items/:id"] = Op{Responses: map[string]Response{"200": {Description: "Metadata"}}}
+	hints["GET /items/:id"] = Op{Responses: map[string]Response{"200": {Description: "Item", Content: body}}}
+	doc, err := generator.GenerateStrict(routes, hints)
+	if err != nil || len(doc.Paths) != 1 {
+		t.Fatalf("同一路径模板可声明多个方法：%v", err)
+	}
+}

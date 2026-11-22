@@ -46,6 +46,8 @@ func getTemplateContent(file, name, module, template string) string {
 		return getScenarioProfileContent(template)
 	case "go.mod":
 		return getGoModContent(module, ProjectOptions{})
+	case canonicalSpecFile:
+		return canonicalSpecContent
 	case "env.example":
 		return getEnvExampleContent()
 	case ".gitignore":
@@ -64,6 +66,58 @@ func getTemplateContent(file, name, module, template string) string {
 		return ""
 	}
 }
+
+const canonicalSpecContent = `# plumego generate spec --strict --output openapi.json
+operations:
+  'GET /':
+    responses:
+      '200': {description: Service information}
+  'GET /healthz':
+    responses:
+      '200': {description: Process is live}
+  'GET /readyz':
+    responses:
+      '200': {description: Dependencies are ready}
+      '503': {description: Dependency is unavailable}
+  'GET /api/hello':
+    responses:
+      '200': {description: Welcome message}
+  'GET /api/status':
+    responses:
+      '200': {description: Service status}
+  'GET /api/v1/greet':
+    responses:
+      '200': {description: Greeting}
+      '400': {description: Missing greeting name}
+  'POST /api/v1/items':
+    requestBody: &itemBody
+      description: Supply a non-empty name in a single JSON object of at most 1 MiB.
+      required: true
+      content:
+        application/json:
+          schema: {type: object, properties: {name: {type: string}}}
+    responses:
+      '201': {description: Item created}
+      '400': {description: Invalid body}
+      '413': {description: Body exceeds the size limit}
+      '415': {description: JSON media type required}
+  'GET /api/v1/items/:id':
+    responses:
+      '200': {description: Item}
+      '404': {description: Item not found}
+  'PUT /api/v1/items/:id':
+    requestBody: *itemBody
+    responses:
+      '200': {description: Item replaced}
+      '400': {description: Invalid body}
+      '404': {description: Item not found}
+      '413': {description: Body exceeds the size limit}
+      '415': {description: JSON media type required}
+  'DELETE /api/v1/items/:id':
+    responses:
+      '204': {description: Item deleted}
+      '404': {description: Item not found}
+`
 
 func getCanonicalMainGoContent(module, name string) string {
 	return fmt.Sprintf(`package main
@@ -159,7 +213,7 @@ func New(cfg config.Config) (*App, error) {
 
 // Start prepares the runtime and blocks while the HTTP server runs.
 // When ctx is canceled, it triggers a graceful shutdown.
-func (a *App) Start(ctx context.Context) (err error) {
+func (a *App) Start(ctx context.Context) error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -172,29 +226,35 @@ func (a *App) Start(ctx context.Context) (err error) {
 		return fmt.Errorf("get server: %%w", err)
 	}
 
-	shutdownErr := make(chan error, 1)
+	serveDone := make(chan error, 1)
 	go func() {
-		<-ctx.Done()
-		shutdownErr <- a.Core.Shutdown(context.Background())
+		if a.Cfg.Core.TLS.Enabled {
+			// Prepare 已将证书加载到 TLSConfig。
+			serveDone <- srv.ListenAndServeTLS("", "")
+			return
+		}
+		serveDone <- srv.ListenAndServe()
 	}()
 
-	if a.Cfg.Core.TLS.Enabled {
-		if err := srv.ListenAndServeTLS("", ""); err != nil && !errors.Is(err, http.ErrServerClosed) {
+	select {
+	case err := <-serveDone:
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
 			return fmt.Errorf("server stopped: %%w", err)
 		}
 		return nil
+	case <-ctx.Done():
 	}
-	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-		return fmt.Errorf("server stopped: %%w", err)
+
+	shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), a.Cfg.App.ShutdownTimeout)
+	defer cancel()
+	shutdownErr := a.Core.Shutdown(shutdownCtx)
+	if shutdownErr != nil {
+		shutdownErr = fmt.Errorf("shutdown server: %%w", errors.Join(shutdownErr, srv.Close()))
 	}
-	select {
-	case err := <-shutdownErr:
-		if err != nil {
-			return fmt.Errorf("shutdown server: %%w", err)
-		}
-	default:
+	if err := <-serveDone; err != nil && !errors.Is(err, http.ErrServerClosed) {
+		return errors.Join(shutdownErr, fmt.Errorf("server stopped: %%w", err))
 	}
-	return nil
+	return shutdownErr
 }
 `, module)
 }
