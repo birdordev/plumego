@@ -168,7 +168,9 @@ Generated handlers default to `internal/handler`, middleware defaults to
 `plumego generate spec` uses a temporary helper process so the CLI module does
 not import optional OpenAPI generation packages directly. By default it follows
 the canonical app layout under `internal/app` and reads optional operation hints
-from `plumego.spec.yaml` in the project root.
+from `plumego.spec.yaml` in the project root. Use `--strict` to require explicit
+responses for each supported route with a Plumego version that provides
+`GenerateStrict`.
 
 ### Development Server
 

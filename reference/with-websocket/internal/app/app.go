@@ -90,15 +90,15 @@ func (a *App) Start(ctx context.Context) error {
 		"tls":  a.Cfg.Core.TLS.Enabled,
 	})
 	shutdownErr := make(chan error, 1)
+	listenerDone := make(chan struct{})
 	go func() {
-		<-ctx.Done()
+		select {
+		case <-ctx.Done():
+		case <-listenerDone:
+		}
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
-		if err := a.WS.Shutdown(shutdownCtx); err != nil {
-			shutdownErr <- fmt.Errorf("shutdown websocket: %w", err)
-			return
-		}
-		shutdownErr <- a.Core.Shutdown(shutdownCtx)
+		shutdownErr <- shutdownTransports(shutdownCtx, a.Core.Shutdown, a.WS.Shutdown)
 	}()
 
 	var serveErr error
@@ -107,11 +107,26 @@ func (a *App) Start(ctx context.Context) error {
 	} else {
 		serveErr = srv.ListenAndServe()
 	}
-	if serveErr != nil && !errors.Is(serveErr, http.ErrServerClosed) {
-		return fmt.Errorf("server stopped: %w", serveErr)
+	close(listenerDone)
+	drainErr := <-shutdownErr
+	if errors.Is(serveErr, http.ErrServerClosed) {
+		serveErr = nil
 	}
-	if err := <-shutdownErr; err != nil {
-		return fmt.Errorf("shutdown server: %w", err)
+	return errors.Join(serveErr, drainErr)
+}
+
+// shutdownTransports 在同一时限内独立关闭 HTTP 和 WebSocket。
+// 两个步骤并行，任一传输的排空不会推迟另一传输停止接受请求。
+func shutdownTransports(ctx context.Context, stopHTTP, stopWebSocket func(context.Context) error) error {
+	webSocketErr := make(chan error, 1)
+	go func() { webSocketErr <- stopWebSocket(ctx) }()
+	httpErr := stopHTTP(ctx)
+	wsErr := <-webSocketErr
+	if httpErr != nil {
+		httpErr = fmt.Errorf("shutdown HTTP: %w", httpErr)
 	}
-	return nil
+	if wsErr != nil {
+		wsErr = fmt.Errorf("shutdown websocket: %w", wsErr)
+	}
+	return errors.Join(httpErr, wsErr)
 }

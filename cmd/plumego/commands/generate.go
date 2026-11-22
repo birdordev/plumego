@@ -29,6 +29,7 @@ func (c *GenerateCmd) Run(ctx *Context, args []string) error {
 	outputPath := fs.String("output", "", "Output file path")
 	dir := fs.String("dir", ".", "Project directory")
 	format := fs.String("format", "json", "Spec output format: json or yaml")
+	strictSpec := fs.Bool("strict", false, "Require explicit OpenAPI responses")
 	appPath := fs.String("app", ".", "Application package path to introspect")
 	packageName := fs.String("package", "", "Package name")
 	methods := fs.String("methods", "GET", "HTTP methods (comma-separated)")
@@ -46,6 +47,9 @@ func (c *GenerateCmd) Run(ctx *Context, args []string) error {
 	}
 
 	genType := positionals[0]
+	if *strictSpec && genType != "spec" {
+		return ctx.Out.Error("--strict is only supported by generate spec", 1)
+	}
 
 	// Types that do not require a name argument.
 	if noNameGenerateTypes[genType] {
@@ -62,6 +66,7 @@ func (c *GenerateCmd) Run(ctx *Context, args []string) error {
 				OutputPath: *outputPath,
 				Format:     *format,
 				AppPath:    *appPath,
+				Strict:     *strictSpec,
 			})
 		}
 		// health-handler, metrics-middleware: name is empty, generators use defaults.

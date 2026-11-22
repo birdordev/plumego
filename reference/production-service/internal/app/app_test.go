@@ -40,7 +40,7 @@ func TestProductionServiceSmoke(t *testing.T) {
 	}
 
 	assertStatus(t, production, http.MethodGet, "/healthz", nil, http.StatusOK)
-	assertStatus(t, production, http.MethodGet, "/readyz", nil, http.StatusOK)
+	assertStatus(t, production, http.MethodGet, "/readyz", nil, http.StatusServiceUnavailable)
 
 	statusRec := assertStatus(t, production, http.MethodGet, "/api/status", nil, http.StatusOK)
 	status := decodeData[handler.StatusResponse](t, statusRec)

@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+
+	"github.com/birdordev/plumego/contract"
 )
 
 // BindJSON decodes one JSON value into T without validation or an EOF check.
@@ -36,6 +38,21 @@ func Bind[T any](r *http.Request, v Validator) (T, error) {
 	}
 	if err := v.Validate(out); err != nil {
 		return out, newValidationError(err)
+	}
+	return out, nil
+}
+
+// BindStrict 解码单个有大小上限的 JSON 请求，再调用可选校验器。
+// 解码失败返回传输层 API 错误。
+func BindStrict[T any](r *http.Request, v Validator, opts contract.JSONRequestOptions) (T, error) {
+	var out T
+	if err := contract.DecodeJSONRequest(r, &out, opts); err != nil {
+		return out, err
+	}
+	if v != nil {
+		if err := v.Validate(out); err != nil {
+			return out, newValidationError(err)
+		}
 	}
 	return out, nil
 }

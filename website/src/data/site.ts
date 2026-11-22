@@ -999,7 +999,7 @@ export const EXAMPLES_COPY = {
     ],
     referenceMatrixTitle: 'All capability reference apps',
     referenceMatrixBody:
-      'Each app adds one x/* family to the standard-service baseline. Read the canonical reference app first, then open the one that matches your capability.',
+      'Choose the canonical reference app to learn the baseline, then use a scenario reference for the capability you need.',
     referenceMatrix: [
       { name: 'reference/standard-service', kicker: 'stable roots', description: 'Canonical service shape — stable-root-only wiring, the default starting layout', href: '/docs/reference-app', maturity: 'Canonical' },
       { name: 'reference/benchmark', kicker: 'stable roots', description: 'Router benchmark harness — compares Plumego\'s router against ServeMux, chi, and gin', href: '/docs/reference-app', maturity: 'Supported reference' },
@@ -1015,8 +1015,11 @@ export const EXAMPLES_COPY = {
       { name: 'reference/with-webhook', kicker: 'x/messaging/webhook', description: 'Webhook receiver with signature verification', href: '/docs/modules/x/messaging/webhook', maturity: 'Experimental' },
       { name: 'reference/with-observability', kicker: 'x/observability', description: 'Prometheus metrics and OpenTelemetry distributed tracing', href: '/docs/modules/x/observability', maturity: 'Beta' },
       { name: 'reference/with-ops', kicker: 'x/observability/ops', description: 'Protected admin and operations surfaces', href: '/docs/modules/x/observability/ops', maturity: 'Experimental' },
+      { name: 'reference/with-sql', kicker: 'SQL', description: 'SQLite migrations, retry-safe writes, and a transactional outbox', href: 'https://github.com/birdordev/plumego/tree/main/reference/with-sql', maturity: 'Supported reference' },
+      { name: 'reference/with-browser', kicker: 'HTML + OIDC', description: 'HTML forms, browser sessions, CSRF, and enterprise login', href: 'https://github.com/birdordev/plumego/tree/main/reference/with-browser', maturity: 'Supported reference' },
+      { name: 'reference/with-sse', kicker: 'net/http', description: 'Server-sent events with explicit throttling and shutdown', href: 'https://github.com/birdordev/plumego/tree/main/reference/with-sse', maturity: 'Supported reference' },
       { name: 'reference/with-frontend', kicker: 'x/frontend', description: 'Static and embedded SPA serving with cache headers, SPA fallback, and API co-location', href: '/docs/modules/x/frontend', maturity: 'Beta' },
-      { name: 'reference/production-service', kicker: 'stable roots', description: 'Production-hardened variant with full lifecycle, TLS, and tests', href: '/docs/reference-app', maturity: 'Supported reference' },
+      { name: 'reference/production-service', kicker: 'stable roots + x/tenant', description: 'Production-hardened variant with full lifecycle, TLS, and tests', href: '/docs/reference-app', maturity: 'Supported reference' },
     ],
     workerfleetTitle: 'Depth-oriented use case: use-cases/workerfleet',
     workerfleetBody:
@@ -1135,7 +1138,7 @@ export const EXAMPLES_COPY = {
     ],
     referenceMatrixTitle: '所有能力参考应用',
     referenceMatrixBody:
-      '每个参考应用都在 standard-service 的基础上加入一个 x/* 家族。先读 canonical 参考应用，再按你需要评估的能力选择进入。',
+      '从规范参考应用了解基础装配，再按场景选择所需能力。',
     referenceMatrix: [
       { name: 'reference/standard-service', kicker: 'stable roots', description: 'canonical 服务形态 — 仅使用稳定根 wiring，默认起步布局', href: '/zh/docs/reference-app', maturity: 'canonical' },
       { name: 'reference/benchmark', kicker: 'stable roots', description: '路由器基准测试 — 与 ServeMux、chi、gin 的对比', href: '/zh/docs/reference-app', maturity: '受支持参考' },
@@ -1151,8 +1154,11 @@ export const EXAMPLES_COPY = {
       { name: 'reference/with-webhook', kicker: 'x/messaging/webhook', description: '带签名校验的 Webhook 接收器', href: '/zh/docs/modules/x/messaging/webhook', maturity: '实验性' },
       { name: 'reference/with-observability', kicker: 'x/observability', description: 'Prometheus 指标与 OpenTelemetry 分布式追踪', href: '/zh/docs/modules/x/observability', maturity: 'Beta' },
       { name: 'reference/with-ops', kicker: 'x/observability/ops', description: '受保护的管理与运维表面', href: '/zh/docs/modules/x/observability/ops', maturity: '实验性' },
+      { name: 'reference/with-sql', kicker: 'SQL', description: 'SQLite 迁移、幂等写入及事务发件箱', href: 'https://github.com/birdordev/plumego/tree/main/reference/with-sql', maturity: '参考示例' },
+      { name: 'reference/with-browser', kicker: 'HTML + OIDC', description: 'HTML 表单、浏览器会话、CSRF 防护与企业登录', href: 'https://github.com/birdordev/plumego/tree/main/reference/with-browser', maturity: '参考示例' },
+      { name: 'reference/with-sse', kicker: 'net/http', description: '支持显式限流和优雅停机的服务器推送事件', href: 'https://github.com/birdordev/plumego/tree/main/reference/with-sse', maturity: '参考示例' },
       { name: 'reference/with-frontend', kicker: 'x/frontend', description: '静态与内嵌 SPA 服务，支持缓存头、SPA fallback 与 API 同挂载', href: '/zh/docs/modules/x/frontend', maturity: 'Beta' },
-      { name: 'reference/production-service', kicker: 'stable roots', description: '带完整生命周期、TLS 和测试的生产级加固变体', href: '/zh/docs/reference-app', maturity: '受支持参考' },
+      { name: 'reference/production-service', kicker: 'stable roots + x/tenant', description: '带完整生命周期、TLS 和测试的生产级加固变体', href: '/zh/docs/reference-app', maturity: '受支持参考' },
     ],
     workerfleetTitle: '深度参考用例：use-cases/workerfleet',
     workerfleetBody:

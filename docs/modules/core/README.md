@@ -188,3 +188,9 @@ the first panic is propagated with its original value.
 
 Focused regression coverage lives in `core/freeze_test.go`,
 `core/lifecycle_test.go`, `core/app_test.go`, and `core/routing_test.go`.
+
+A caller can install a route-miss handler with `app.SetNotFoundHandler` before
+preparation. The handler uses the normal HTTP middleware chain.
+
+Call `app.EnableStandardPathValues` before preparation if mounted handlers use
+`http.Request.PathValue`.

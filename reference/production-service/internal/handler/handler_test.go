@@ -215,8 +215,8 @@ func TestServiceHandlerReadyWithCheckers(t *testing.T) {
 			t.Fatalf("status = %d, want %d", rec.Code, http.StatusServiceUnavailable)
 		}
 		details := decodeErrorDetails(t, rec)
-		if details["database"] != "connection refused" {
-			t.Fatalf("error detail database = %v, want connection refused; all details: %v", details["database"], details)
+		if details["database"] != "unhealthy" {
+			t.Fatalf("error detail database = %v, want unhealthy; all details: %v", details["database"], details)
 		}
 	})
 
@@ -238,8 +238,8 @@ func TestServiceHandlerReadyWithCheckers(t *testing.T) {
 			t.Fatalf("status = %d, want %d", rec.Code, http.StatusServiceUnavailable)
 		}
 		details := decodeErrorDetails(t, rec)
-		if details["cache"] != "cache offline" {
-			t.Fatalf("error detail cache = %v, want cache offline; all details: %v", details["cache"], details)
+		if details["cache"] != "unhealthy" {
+			t.Fatalf("error detail cache = %v, want unhealthy; all details: %v", details["cache"], details)
 		}
 	})
 
@@ -263,11 +263,11 @@ func TestServiceHandlerReadyWithCheckers(t *testing.T) {
 			t.Fatalf("status = %d, want %d", rec.Code, http.StatusServiceUnavailable)
 		}
 		details := decodeErrorDetails(t, rec)
-		if details["database"] != "connection refused" {
-			t.Fatalf("error detail database = %v, want connection refused; all details: %v", details["database"], details)
+		if details["database"] != "unhealthy" {
+			t.Fatalf("error detail database = %v, want unhealthy; all details: %v", details["database"], details)
 		}
-		if details["cache"] != "cache offline" {
-			t.Fatalf("error detail cache = %v, want cache offline; all details: %v", details["cache"], details)
+		if details["cache"] != "unhealthy" {
+			t.Fatalf("error detail cache = %v, want unhealthy; all details: %v", details["cache"], details)
 		}
 	})
 

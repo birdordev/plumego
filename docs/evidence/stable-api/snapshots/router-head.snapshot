@@ -6,9 +6,11 @@ symbol	github.com/birdordev/plumego/router	func	NewRouter	func NewRouterfunc(opt
 symbol	github.com/birdordev/plumego/router	func	Param	func Paramfunc(r *http.Request, name string) string
 symbol	github.com/birdordev/plumego/router	func	WithCacheCapacity	func WithCacheCapacityfunc(n int) RouterOption
 symbol	github.com/birdordev/plumego/router	func	WithMethodNotAllowed	func WithMethodNotAllowedfunc(enabled bool) RouterOption
+symbol	github.com/birdordev/plumego/router	func	WithNotFoundHandler	func WithNotFoundHandlerfunc(handler http.Handler) RouterOption
 symbol	github.com/birdordev/plumego/router	func	WithRouteName	func WithRouteNamefunc(name string) RouteOption
 symbol	github.com/birdordev/plumego/router	func	WithTags	func WithTagsfunc(tags ...string) RouteOption
 symbol	github.com/birdordev/plumego/router	method	Router.AddRoute	func (Router) AddRoutefunc(method, path string, handler http.Handler, opts ...RouteOption) error
+symbol	github.com/birdordev/plumego/router	method	Router.EnableStandardPathValues	func (Router) EnableStandardPathValuesfunc() error
 symbol	github.com/birdordev/plumego/router	method	Router.Freeze	func (Router) Freezefunc()
 symbol	github.com/birdordev/plumego/router	method	Router.Group	func (Router) Groupfunc(prefix string) *Router
 symbol	github.com/birdordev/plumego/router	method	Router.HasRoute	func (Router) HasRoutefunc(name string) bool
@@ -18,6 +20,7 @@ symbol	github.com/birdordev/plumego/router	method	Router.Print	func (Router) Pri
 symbol	github.com/birdordev/plumego/router	method	Router.Routes	func (Router) Routesfunc() []RouteInfo
 symbol	github.com/birdordev/plumego/router	method	Router.ServeHTTP	func (Router) ServeHTTPfunc(w http.ResponseWriter, req *http.Request)
 symbol	github.com/birdordev/plumego/router	method	Router.SetMethodNotAllowed	func (Router) SetMethodNotAllowedfunc(enabled bool)
+symbol	github.com/birdordev/plumego/router	method	Router.SetNotFoundHandler	func (Router) SetNotFoundHandlerfunc(handler http.Handler) error
 symbol	github.com/birdordev/plumego/router	method	Router.Static	func (Router) Staticfunc(prefix, dir string) error
 symbol	github.com/birdordev/plumego/router	method	Router.StaticFS	func (Router) StaticFSfunc(prefix string, fs http.FileSystem) error
 symbol	github.com/birdordev/plumego/router	method	Router.URL	func (Router) URLfunc(name string, params ...string) (string, error)

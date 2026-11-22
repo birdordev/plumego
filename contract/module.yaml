@@ -25,6 +25,7 @@ responsibilities:
   - Response helpers
   - Request context helpers
   - Trace and request metadata carriers
+  - Bounded decoding of a single explicit JSON request body
 
 non_goals:
   - Route matching
@@ -58,6 +59,10 @@ public_entrypoints:
   - Code* transport error constants
   - WriteError
   - WriteResponse
+  - DecodeJSONRequest
+  - JSONRequestOptions
+  - FieldViolation
+  - ErrorBuilder.FieldViolations
   - RequestContext
   - WithRequestContext
   - RequestContextFromContext
@@ -103,6 +108,10 @@ public_surface_stability:
     - Code* transport error constants
     - WriteError
     - WriteResponse
+    - DecodeJSONRequest
+    - JSONRequestOptions
+    - FieldViolation
+    - ErrorBuilder.FieldViolations
     - WithRequestID
     - RequestIDFromContext
     - RequestContext

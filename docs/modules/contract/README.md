@@ -20,7 +20,7 @@ trace metadata carriers.
 
 ## Do not use this module for
 
-- request body binding
+- implicit or multi-source request binding
 - query binding
 - validation frameworks or `validate` tag processing
 - protocol gateway families
@@ -60,6 +60,8 @@ trace metadata carriers.
 - `Code*` transport error constants
 - `WriteError`
 - `WriteResponse`
+- `DecodeJSONRequest` and `JSONRequestOptions`
+- `FieldViolation` and `ErrorBuilder.FieldViolations`
 - `RequestContext`
 - `WithRequestContext`
 - `RequestContextFromContext`
@@ -137,6 +139,21 @@ extension-owned refinements.
   stored or echoed by `WriteResponse` or `WriteError`.
 - `contract` does not own request-id generation policy; middleware or
   application wiring owns generation and header intake.
+
+## Strict JSON request bodies
+
+Use `DecodeJSONRequest` at a handler that explicitly accepts JSON. The decoder
+requires one non-null JSON value, rejects unknown struct fields by default, and
+counts trailing whitespace against the body limit. It accepts `application/json`
+and `application/*+json`. The zero size limit means 1 MiB. Errors can be written
+with `WriteError` after classification through `AsAPIError`. Invalid documents
+return 400, oversized bodies 413, unsupported media types 415, and invalid
+decoder configuration 500. The caller still owns the body.
+
+A validator can declare `FieldViolations() []contract.FieldViolation` on its
+error type. The builder writes these as `error.details.fields`, using input
+source, field name, and code. Keep these labels developer-owned and place
+private values only in the underlying error.
 
 ## Context Metadata
 

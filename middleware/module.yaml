@@ -33,6 +33,7 @@ non_goals:
   - Authentication token verification logic (belongs in injected Authenticator implementations)
 
 public_entrypoints:
+  - TrustedProxyClientIP
   - Middleware
   - Chain
 

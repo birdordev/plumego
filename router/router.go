@@ -1,6 +1,7 @@
 package router
 
 import (
+	"errors"
 	"net/http"
 	"slices"
 	"sort"
@@ -52,6 +53,8 @@ type route struct {
 // It excludes application-layer concerns so the router stays a pure
 // route-structure primitive.
 type routerState struct {
+	notFound             atomic.Pointer[notFoundHandler]
+	standardPathValues   atomic.Bool
 	trees                map[string]*node
 	routes               map[string][]route
 	mu                   sync.RWMutex
@@ -92,6 +95,59 @@ type Router struct {
 
 // RouterOption defines a function type for router configuration options.
 type RouterOption func(*Router)
+
+// EnableStandardPathValues 让路由参数同时可从 http.Request.PathValue 和路由上下文读取。
+// 在 Freeze 前调用。此模式为匹配请求复制路径参数存储。
+func (r *Router) EnableStandardPathValues() error {
+	if !r.ready() {
+		return errors.New("router is uninitialized")
+	}
+	r.state.mu.Lock()
+	defer r.state.mu.Unlock()
+	if r.state.frozen.Load() {
+		return errors.New("router is frozen")
+	}
+	r.state.standardPathValues.Store(true)
+	return nil
+}
+
+type notFoundHandler struct {
+	handler http.Handler
+}
+
+// WithNotFoundHandler 设置路径或方法未匹配时的处理器。
+// 启用方法检查后，自动生成的 405 响应优先。
+func WithNotFoundHandler(handler http.Handler) RouterOption {
+	return func(r *Router) {
+		r.setNotFoundHandler(handler)
+	}
+}
+
+// SetNotFoundHandler 在 Freeze 前设置未匹配请求的处理器。
+// 传入 nil 恢复标准库的 404 响应。
+func (r *Router) SetNotFoundHandler(handler http.Handler) error {
+	if !r.setNotFoundHandler(handler) {
+		return errors.New("router is uninitialized or frozen")
+	}
+	return nil
+}
+
+func (r *Router) setNotFoundHandler(handler http.Handler) bool {
+	if !r.ready() {
+		return false
+	}
+	r.state.mu.Lock()
+	defer r.state.mu.Unlock()
+	if r.state.frozen.Load() {
+		return false
+	}
+	if handler == nil {
+		r.state.notFound.Store(nil)
+	} else {
+		r.state.notFound.Store(&notFoundHandler{handler: handler})
+	}
+	return true
+}
 
 // RouteOption defines an option for route metadata.
 type RouteOption func(*RouteMeta)

@@ -51,7 +51,15 @@ func operationFromHint(hint Op) *Operation {
 		response.Content = cloner.cloneContent(response.Content)
 		responses[code] = response
 	}
+	security := slices.Clone(hint.Security)
+	for i, requirement := range security {
+		security[i] = make(SecurityRequirement, len(requirement))
+		for scheme, scopes := range requirement {
+			security[i][scheme] = append([]string{}, scopes...)
+		}
+	}
 	return &Operation{
+		Security:    security,
 		Summary:     hint.Summary,
 		Description: hint.Description,
 		Tags:        slices.Clone(hint.Tags),

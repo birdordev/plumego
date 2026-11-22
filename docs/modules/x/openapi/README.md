@@ -226,3 +226,12 @@ go vet ./x/openapi/...
 - `cmd/plumego/commands/generate.go` — `plumego generate spec` CLI subcommand
 - `reference/standard-service` — canonical app layout with `app.Core.Routes()` wiring
 - `router.RouteInfo` — the metadata type driving document generation
+
+## Strict generation
+
+`plumego generate spec --strict` calls `GenerateStrict` and requires a response
+hint for every supported operation before writing the output. The CLI can
+load `components.securitySchemes` and per-operation `security` from the hints
+file. Strict generation needs a target application using a library checkout or
+release that provides `GenerateStrict`. The standard-service
+`plumego.spec.yaml` describes the protected write profile.

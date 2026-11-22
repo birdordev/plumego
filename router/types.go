@@ -11,6 +11,7 @@ type matchResult struct {
 	Handler      http.Handler
 	RoutePattern string
 	RouteMethod  string
+	paramKeys    []string
 	RouteName    string
 }
 

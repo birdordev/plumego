@@ -1,0 +1,69 @@
+info:
+  title: Plumego Standard Service
+  version: 1.0.0
+components:
+  securitySchemes:
+    writeKey:
+      type: apiKey
+      in: header
+      name: X-Write-Key
+operations:
+  'GET /':
+    responses:
+      '200': {description: Service information}
+  'GET /healthz':
+    responses:
+      '200': {description: Process is live}
+  'GET /readyz':
+    responses:
+      '200': {description: Dependencies are ready}
+      '503': {description: Dependency is unavailable}
+  'GET /api/hello':
+    responses:
+      '200': {description: Service description and endpoints}
+  'GET /api/info':
+    responses:
+      '200': {description: Version and feature information}
+  'GET /api/v1/greet':
+    responses:
+      '200': {description: Greeting}
+      '400': {description: Missing greeting name}
+  'GET /api/v1/items':
+    responses:
+      '200': {description: Item list}
+      '400': {description: Invalid query parameters}
+  'GET /api/v1/items/:id':
+    responses:
+      '200': {description: Item}
+      '404': {description: Item not found}
+  'POST /api/v1/items':
+    description: Set the write key when APP_WRITE_KEY is configured.
+    security:
+      - writeKey: []
+    responses:
+      '201': {description: Item created}
+      '400': {description: Invalid body}
+      '401': {description: Write key required}
+  'PUT /api/v1/items/:id':
+    security:
+      - writeKey: []
+    responses:
+      '200': {description: Item replaced}
+      '400': {description: Invalid body}
+      '401': {description: Write key required}
+      '404': {description: Item not found}
+  'PATCH /api/v1/items/:id':
+    security:
+      - writeKey: []
+    responses:
+      '200': {description: Item updated}
+      '400': {description: Invalid body}
+      '401': {description: Write key required}
+      '404': {description: Item not found}
+  'DELETE /api/v1/items/:id':
+    security:
+      - writeKey: []
+    responses:
+      '204': {description: Item deleted}
+      '401': {description: Write key required}
+      '404': {description: Item not found}

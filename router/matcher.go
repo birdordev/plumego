@@ -23,7 +23,7 @@ func matchNode(root *node, parts []string, rawPath string) *matchResult {
 
 func newMatchResult(matched *node, pattern, method string, params []string) *matchResult {
 	result := &matchResult{
-		Handler: matched.handler, RoutePattern: pattern, RouteName: matched.routeName, RouteMethod: method,
+		Handler: matched.handler, RoutePattern: pattern, RouteName: matched.routeName, RouteMethod: method, paramKeys: matched.paramKeys,
 	}
 	result.routeState.SetPattern(pattern)
 	result.routeState.SetName(matched.routeName)

@@ -37,9 +37,11 @@ const (
 	CodeInvalidRequest   = "INVALID_REQUEST"
 
 	// Request parsing codes
-	CodeRequestBodyTooLarge = "REQUEST_BODY_TOO_LARGE"
-	CodeInvalidJSON         = "INVALID_JSON"
-	CodeInvalidQuery        = "INVALID_QUERY"
+	CodeRequestBodyTooLarge  = "REQUEST_BODY_TOO_LARGE"
+	CodeUnsupportedMediaType = "UNSUPPORTED_MEDIA_TYPE"
+	CodePreconditionFailed   = "PRECONDITION_FAILED"
+	CodeInvalidJSON          = "INVALID_JSON"
+	CodeInvalidQuery         = "INVALID_QUERY"
 
 	// Transport-layer codes used by infrastructure middleware (concurrencylimit,
 	// singleflight). Values intentionally match the historical string shape for

@@ -99,3 +99,8 @@ move best-effort access tracking to a bounded queue. Repeated updates for a
 pending file coalesce, and a full queue drops new updates. The returned stop
 function cancels the worker and waits for it to exit. Metadata implementations
 must honor cancellation on the context passed to each update.
+
+Downloads return headers without a body for HEAD after the same tenant authorization used
+for GET. A storage reader that supports seeking also supports byte ranges and
+conditional requests. A stored content hash provides an ETag when available.
+Non-seekable readers continue to stream the full response on GET.

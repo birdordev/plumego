@@ -166,3 +166,13 @@ records two release refs, matching API snapshots, no exported API changes, and
 - If the task is "bootstrap a service", start in `reference/standard-service`
 - If the task is "domain validation or business rules", keep that logic outside `x/rest`
 - If the task is "wire CRUD + request validation + OpenAPI docs together", see `docs/concepts/rest-api-composition.md`
+
+`DBResourceController.WithStrictJSON` opts create and update into bounded
+single-document decoding. Validator failures may include typed field
+violations. Opaque validator errors produce a generic response.
+
+After-create and after-update hooks run after the repository mutation. A
+failure in one of these hooks can return an error after the write committed.
+Use a repository transaction for effects that must commit with the write.
+The SQL reference demonstrates writing an outbox event in the same transaction
+and delivering it from a separate worker.

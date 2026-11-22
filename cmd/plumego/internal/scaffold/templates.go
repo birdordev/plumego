@@ -239,6 +239,12 @@ func (a *App) RegisterRoutes() error {
 	if err := a.Core.Get("/api/v1/items/:id", http.HandlerFunc(items.GetByID)); err != nil {
 		return err
 	}
+	if err := a.Core.Put("/api/v1/items/:id", http.HandlerFunc(items.Update)); err != nil {
+		return err
+	}
+	if err := a.Core.Delete("/api/v1/items/:id", http.HandlerFunc(items.Delete)); err != nil {
+		return err
+	}
 	return nil
 }
 `, module, module, name)

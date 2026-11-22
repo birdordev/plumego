@@ -1,12 +1,19 @@
 package commands
 
 import (
+	"context"
 	"encoding/json"
+	"io"
+	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
+	"syscall"
 	"testing"
+	"time"
 
 	"github.com/birdordev/plumego/cmd/plumego/internal/output"
 )
@@ -236,7 +243,8 @@ func TestCLI_GeneratedCanonicalProjectStableWorkflow(t *testing.T) {
 
 	runGoCommand(t, projectDir, "mod", "tidy")
 
-	if stdout, _, err := runCLI(t, []string{"--format", "json", "build", "--dir", projectDir, "--output", filepath.Join(projectDir, "bin", "app")}, ""); err != nil {
+	binary := filepath.Join(projectDir, "bin", "app")
+	if stdout, _, err := runCLI(t, []string{"--format", "json", "build", "--dir", projectDir, "--output", binary}, ""); err != nil {
 		t.Fatalf("build generated project failed: %v\noutput: %s", err, stdout)
 	}
 	if stdout, _, err := runCLI(t, []string{"--format", "json", "test", "--dir", projectDir}, ""); err != nil {
@@ -244,6 +252,16 @@ func TestCLI_GeneratedCanonicalProjectStableWorkflow(t *testing.T) {
 	}
 	if stdout, _, err := runCLI(t, []string{"--format", "json", "check"}, projectDir); err != nil {
 		t.Fatalf("check generated project failed: %v\noutput: %s", err, stdout)
+	}
+	specPath := filepath.Join(projectDir, "openapi.json")
+	if stdout, _, err := runCLI(t, []string{"generate", "spec", "--dir", projectDir, "--output", specPath}, ""); err != nil {
+		t.Fatalf("generate project spec failed: %v\n%s", err, stdout)
+	}
+	if spec, err := os.ReadFile(specPath); err != nil || !strings.Contains(string(spec), "/api/v1/items") {
+		t.Fatalf("generated project spec missing item route: %v", err)
+	}
+	if runtime.GOOS != "windows" {
+		exerciseGeneratedServer(t, binary, projectDir)
 	}
 }
 
@@ -342,5 +360,104 @@ func TestCLI_NewWritesLocalPlumegoReplaceWhenRunFromCheckout(t *testing.T) {
 	want := "replace github.com/birdordev/plumego => " + filepath.ToSlash(root)
 	if !strings.Contains(string(data), want) {
 		t.Fatalf("generated go.mod missing local replace %q:\n%s", want, string(data))
+	}
+}
+
+func exerciseGeneratedServer(t *testing.T, binary, dir string) {
+	t.Helper()
+	bind, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	address := bind.Addr().String()
+	if err := bind.Close(); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, binary, "-addr", address)
+	cmd.Dir = dir
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() { done <- cmd.Wait() }()
+	defer func() {
+		cancel()
+		if done != nil {
+			<-done
+		}
+	}()
+	client := &http.Client{Timeout: time.Second}
+	base := "http://" + address
+	for {
+		response, err := client.Get(base + "/readyz")
+		if err == nil {
+			_ = response.Body.Close()
+			if response.StatusCode != http.StatusOK {
+				t.Fatalf("generated app readiness = %d", response.StatusCode)
+			}
+			break
+		}
+		select {
+		case err := <-done:
+			done = nil
+			t.Fatalf("generated server exited early: %v", err)
+		case <-ctx.Done():
+			t.Fatal(ctx.Err())
+		case <-time.After(20 * time.Millisecond):
+		}
+	}
+	response, err := client.Post(base+"/api/v1/items", "application/json", strings.NewReader(`{"name":"smoke"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := io.ReadAll(response.Body)
+	_ = response.Body.Close()
+	if err != nil || response.StatusCode != http.StatusCreated || !strings.Contains(string(body), "smoke") {
+		t.Fatalf("generated endpoint: status=%d body=%q error=%v", response.StatusCode, body, err)
+	}
+	var created struct {
+		Data struct{ ID string }
+	}
+	if err := json.Unmarshal(body, &created); err != nil || created.Data.ID == "" {
+		t.Fatalf("generated item id: %v", err)
+	}
+	itemURL := base + "/api/v1/items/" + created.Data.ID
+	for _, step := range []struct {
+		method, input, bodyContains string
+		status                      int
+	}{
+		{http.MethodGet, "", "smoke", 200},
+		{http.MethodPut, `{"name":"changed"}`, "changed", 200},
+		{http.MethodDelete, "", "", 204},
+		{http.MethodGet, "", "", 404},
+	} {
+		req, err := http.NewRequestWithContext(ctx, step.method, itemURL, strings.NewReader(step.input))
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := client.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		data, err := io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
+		if err != nil || resp.StatusCode != step.status || !strings.Contains(string(data), step.bodyContains) {
+			t.Fatalf("generated %s: status=%d body=%q error=%v", step.method, resp.StatusCode, data, err)
+		}
+	}
+	if err := cmd.Process.Signal(syscall.SIGTERM); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-done:
+		done = nil
+		if err != nil {
+			t.Fatalf("generated app failed graceful shutdown: %v", err)
+		}
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
 	}
 }

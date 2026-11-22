@@ -69,11 +69,11 @@ func (h ServiceHandler) Live(w http.ResponseWriter, r *http.Request) {
 // On success the response body is a health.ReadinessStatus with a per-component
 // map so load balancers and dashboards can see which dependencies passed.
 // On failure a 503 TypeUnavailable error carries each failing component name
-// as a detail key and its error message as the value.
+// as a detail key and a fixed public status as the value.
 //
 //	GET /readyz (all pass)       → 200 health.ReadinessStatus{Ready:true, Components:{db:true,cache:true}}
-//	GET /readyz (db fails)       → 503 TypeUnavailable detail.database="connection refused"
-//	GET /readyz (db+cache fail)  → 503 TypeUnavailable detail.database="…" detail.cache="…"
+//	GET /readyz (db fails)       → 503 TypeUnavailable detail.database="unhealthy"
+//	GET /readyz (db+cache fail)  → 503 TypeUnavailable detail.database="unhealthy" detail.cache="unhealthy"
 func (h ServiceHandler) Ready(w http.ResponseWriter, r *http.Request) {
 	components := make(map[string]bool, len(h.Checkers))
 	eb := contract.NewErrorBuilder().
@@ -84,7 +84,7 @@ func (h ServiceHandler) Ready(w http.ResponseWriter, r *http.Request) {
 	for _, checker := range h.Checkers {
 		if err := checker.Check(r.Context()); err != nil {
 			components[checker.Name()] = false
-			eb = eb.Detail(checker.Name(), err.Error())
+			eb = eb.Detail(checker.Name(), "unhealthy")
 			anyFailed = true
 		} else {
 			components[checker.Name()] = true

@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 
+	"github.com/birdordev/plumego/contract"
 	"github.com/birdordev/plumego/health"
 	"standard-service/internal/domain/item"
 	"standard-service/internal/handler"
@@ -14,6 +15,12 @@ import (
 // Routes that share a common path prefix are registered through a RouteGroup
 // so the prefix is declared once and not repeated on every line.
 func (a *App) RegisterRoutes() error {
+	if err := a.Core.SetNotFoundHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = contract.WriteError(w, r, contract.NewErrorBuilder().Type(contract.TypeNotFound).Build())
+	})); err != nil {
+		return err
+	}
+
 	// HealthHandler receives one ComponentChecker per dependency so /readyz reflects
 	// the real readiness of each backing resource. storeChecker adapts the in-memory
 	// item store; it always passes because MemoryStore is process-local — its role

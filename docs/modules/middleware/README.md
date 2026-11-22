@@ -474,3 +474,10 @@ Observation and recovery wrappers forward `http.ResponseController.Flush` throug
 Request ID middleware clones incoming request headers when it writes the
 selected ID into downstream headers. The original header map remains intact.
 Tracing publishes a span header only for a valid trace identity.
+
+For a deployment behind reverse proxies, construct one resolver with
+`middleware.TrustedProxyClientIP` and pass it to both
+`accesslog.MiddlewareWithClientIP` and `AbuseGuardConfig.KeyFunc`. The resolver
+uses the direct peer unless a configured CIDR trusts that peer. It walks
+`X-Forwarded-For` from the nearest hop and stops at the first untrusted address.
+With no trusted CIDRs, forwarding headers have no effect on this resolver.

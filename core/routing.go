@@ -40,6 +40,28 @@ func (a *App) AddRoute(method, path string, handler http.Handler, opts ...router
 	return a.registerRoute(method, path, handler, opts...)
 }
 
+// SetNotFoundHandler 在应用准备前设置未匹配请求的处理器。
+// 传入 nil 恢复标准库的 404 响应。
+func (a *App) SetNotFoundHandler(handler http.Handler) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if !a.registrationMutable() || a.router == nil {
+		return errors.New("router is uninitialized or app is prepared")
+	}
+	return a.router.SetNotFoundHandler(handler)
+}
+
+// EnableStandardPathValues 让匹配到的路由参数可通过 http.Request.PathValue 读取。
+// 在应用准备前调用。
+func (a *App) EnableStandardPathValues() error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if !a.registrationMutable() || a.router == nil {
+		return errors.New("router is uninitialized or app is prepared")
+	}
+	return a.router.EnableStandardPathValues()
+}
+
 // URL resolves a named route against the owned app router.
 // It uses the name and parameter validation of [router.Router.URL] and also
 // returns an error when the app has no router configured.

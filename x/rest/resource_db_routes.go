@@ -94,12 +94,7 @@ func (c *DBResourceController[T]) Show(w http.ResponseWriter, r *http.Request) {
 // Create handles POST /resource.
 func (c *DBResourceController[T]) Create(w http.ResponseWriter, r *http.Request) {
 	var data T
-	if err := json.NewDecoder(r.Body).Decode(&data); err != nil {
-		_ = contract.WriteError(w, r, contract.NewErrorBuilder().
-			Type(contract.TypeValidation).
-			Code(contract.CodeInvalidRequest).
-			Message("invalid request body").
-			Build())
+	if !c.decodeWriteRequest(w, r, &data) {
 		return
 	}
 
@@ -109,7 +104,7 @@ func (c *DBResourceController[T]) Create(w http.ResponseWriter, r *http.Request)
 				Type(contract.TypeInvalidRequest).
 				Code(contract.CodeValidationError).
 				Message("validation failed").
-				Detail("details", err).
+				FieldViolations(err).
 				Build())
 			return
 		}
@@ -163,12 +158,7 @@ func (c *DBResourceController[T]) Update(w http.ResponseWriter, r *http.Request)
 	}
 
 	var data T
-	if err := json.NewDecoder(r.Body).Decode(&data); err != nil {
-		_ = contract.WriteError(w, r, contract.NewErrorBuilder().
-			Type(contract.TypeValidation).
-			Code(contract.CodeInvalidRequest).
-			Message("invalid request body").
-			Build())
+	if !c.decodeWriteRequest(w, r, &data) {
 		return
 	}
 
@@ -178,7 +168,7 @@ func (c *DBResourceController[T]) Update(w http.ResponseWriter, r *http.Request)
 				Type(contract.TypeInvalidRequest).
 				Code(contract.CodeValidationError).
 				Message("validation failed").
-				Detail("details", err).
+				FieldViolations(err).
 				Build())
 			return
 		}
@@ -271,4 +261,24 @@ func (c *DBResourceController[T]) Delete(w http.ResponseWriter, r *http.Request)
 	}
 
 	_ = contract.WriteResponse(w, r, http.StatusNoContent, nil, nil)
+}
+
+func (c *DBResourceController[T]) decodeWriteRequest(w http.ResponseWriter, r *http.Request, data *T) bool {
+	if c.strictJSON != nil {
+		if err := contract.DecodeJSONRequest(r, data, *c.strictJSON); err != nil {
+			apiErr, _ := contract.AsAPIError(err)
+			_ = contract.WriteError(w, r, apiErr)
+			return false
+		}
+		return true
+	}
+	if r.Body != nil && json.NewDecoder(r.Body).Decode(data) == nil {
+		return true
+	}
+	_ = contract.WriteError(w, r, contract.NewErrorBuilder().
+		Type(contract.TypeValidation).
+		Code(contract.CodeInvalidRequest).
+		Message("invalid request body").
+		Build())
+	return false
 }

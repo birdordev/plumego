@@ -167,6 +167,25 @@ func (s *MemoryStore) Get(id string) (Item, bool) {
 	item, ok := s.items[id]
 	return item, ok
 }
+
+func (s *MemoryStore) Update(id, name string) (Item, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	item, ok := s.items[id]
+	if ok {
+		item.Name = name
+		s.items[id] = item
+	}
+	return item, ok
+}
+
+func (s *MemoryStore) Delete(id string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	_, ok := s.items[id]
+	delete(s.items, id)
+	return ok
+}
 `
 }
 
@@ -175,6 +194,8 @@ func getCanonicalItemHandlerContent(module string) string {
 
 import (
 	"encoding/json"
+	"errors"
+	"io"
 	"net/http"
 	"strings"
 
@@ -187,6 +208,8 @@ import (
 type ItemRepository interface {
 	Create(name string) item.Item
 	Get(id string) (item.Item, bool)
+	Update(id, name string) (item.Item, bool)
+	Delete(id string) bool
 }
 
 // ItemHandler demonstrates constructor injection for a domain repository.
@@ -202,6 +225,15 @@ type createItemReq struct {
 // Decoding is strict (decodeJSONStrict): unknown fields are rejected so a client
 // typo is reported instead of being silently dropped.
 func (h ItemHandler) Create(w http.ResponseWriter, r *http.Request) {
+	name, ok := decodeItemName(w, r)
+	if !ok {
+		return
+	}
+	item := h.Repo.Create(name)
+	_ = contract.WriteResponse(w, r, http.StatusCreated, item, nil)
+}
+
+func decodeItemName(w http.ResponseWriter, r *http.Request) (string, bool) {
 	var req createItemReq
 	if err := decodeJSONStrict(r, &req); err != nil {
 		if field := unknownFieldName(err); field != "" {
@@ -210,13 +242,13 @@ func (h ItemHandler) Create(w http.ResponseWriter, r *http.Request) {
 				Detail("field", field).
 				Message("request body contains an unknown field").
 				Build())
-			return
+			return "", false
 		}
 		_ = contract.WriteError(w, r, contract.NewErrorBuilder().
 			Type(contract.TypeBadRequest).
 			Message("request body must be valid JSON").
 			Build())
-		return
+		return "", false
 	}
 	if req.Name == "" {
 		_ = contract.WriteError(w, r, contract.NewErrorBuilder().
@@ -224,10 +256,9 @@ func (h ItemHandler) Create(w http.ResponseWriter, r *http.Request) {
 			Detail("field", "name").
 			Message("name is required").
 			Build())
-		return
+		return "", false
 	}
-	item := h.Repo.Create(req.Name)
-	_ = contract.WriteResponse(w, r, http.StatusCreated, item, nil)
+	return req.Name, true
 }
 
 // GetByID handles GET /api/v1/items/:id.
@@ -245,6 +276,31 @@ func (h ItemHandler) GetByID(w http.ResponseWriter, r *http.Request) {
 	_ = contract.WriteResponse(w, r, http.StatusOK, item, nil)
 }
 
+// Update 替换条目的名称。
+func (h ItemHandler) Update(w http.ResponseWriter, r *http.Request) {
+	name, ok := decodeItemName(w, r)
+	if !ok {
+		return
+	}
+	item, ok := h.Repo.Update(router.Param(r, "id"), name)
+	if !ok {
+		_ = contract.WriteError(w, r, contract.NewErrorBuilder().
+			Type(contract.TypeNotFound).Message("item not found").Build())
+		return
+	}
+	_ = contract.WriteResponse(w, r, http.StatusOK, item, nil)
+}
+
+// Delete 删除指定条目。
+func (h ItemHandler) Delete(w http.ResponseWriter, r *http.Request) {
+	if !h.Repo.Delete(router.Param(r, "id")) {
+		_ = contract.WriteError(w, r, contract.NewErrorBuilder().
+			Type(contract.TypeNotFound).Message("item not found").Build())
+		return
+	}
+	_ = contract.WriteResponse(w, r, http.StatusNoContent, nil, nil)
+}
+
 // decodeJSONStrict decodes the request body into dst and rejects unknown fields
 // so a client typo is reported instead of being silently dropped. Use the lenient
 // json.NewDecoder(r.Body).Decode(...) form only when the endpoint must tolerate
@@ -252,7 +308,16 @@ func (h ItemHandler) GetByID(w http.ResponseWriter, r *http.Request) {
 func decodeJSONStrict(r *http.Request, dst any) error {
 	dec := json.NewDecoder(r.Body)
 	dec.DisallowUnknownFields()
-	return dec.Decode(dst)
+	if err := dec.Decode(dst); err != nil {
+		return err
+	}
+	if _, err := dec.Token(); err != io.EOF {
+		if err != nil {
+			return err
+		}
+		return errors.New("additional JSON value")
+	}
+	return nil
 }
 
 // unknownFieldName returns the offending field name when err is the error

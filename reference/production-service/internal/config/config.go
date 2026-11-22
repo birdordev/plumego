@@ -29,6 +29,7 @@ type AppConfig struct {
 	RequestTimeout   time.Duration
 	RateLimit        float64
 	RateBurst        int
+	TrustedProxies   string
 }
 
 // Defaults returns conservative local defaults for the production reference.
@@ -156,6 +157,7 @@ func applyEnv(cfg *Config, lookupEnv func(string) (string, bool)) {
 	durf("APP_REQUEST_TIMEOUT", &cfg.App.RequestTimeout)
 	floatf("APP_RATE_LIMIT", &cfg.App.RateLimit)
 	intf("APP_RATE_BURST", &cfg.App.RateBurst)
+	str("APP_TRUSTED_PROXIES", &cfg.App.TrustedProxies)
 	boolf("APP_TLS_ENABLED", &cfg.Core.TLS.Enabled)
 	str("APP_TLS_CERT_FILE", &cfg.Core.TLS.CertFile)
 	str("APP_TLS_KEY_FILE", &cfg.Core.TLS.KeyFile)
@@ -173,6 +175,7 @@ func applyFlags(cfg *Config, args []string) error {
 	fs.DurationVar(&cfg.App.RequestTimeout, "request-timeout", cfg.App.RequestTimeout, "request timeout")
 	fs.Float64Var(&cfg.App.RateLimit, "rate-limit", cfg.App.RateLimit, "requests per second per client")
 	fs.IntVar(&cfg.App.RateBurst, "rate-burst", cfg.App.RateBurst, "rate-limit burst capacity")
+	fs.StringVar(&cfg.App.TrustedProxies, "trusted-proxies", cfg.App.TrustedProxies, "comma-separated trusted proxy CIDRs")
 	if len(args) == 0 {
 		return fs.Parse(nil)
 	}

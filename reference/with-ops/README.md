@@ -5,8 +5,9 @@
 It shows how to mount protected `x/observability/ops` routes and stable request-observability
 middleware without treating debug tools as production defaults.
 
-`x/observability/ops` and `x/observability` remain experimental until promotion evidence is
-complete.
+The `x/observability/ops` package is experimental. The parent `x/observability`
+family has beta entry points. See the [extension maturity dashboard](../../docs/concepts/extension-maturity.md)
+for the status of each import path.
 
 ## What It Demonstrates
 

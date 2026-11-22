@@ -21,6 +21,15 @@ type Config struct {
 
 // Middleware is the canonical access-log middleware constructor.
 func Middleware(config Config) (middleware.Middleware, error) {
+	return MiddlewareWithClientIP(config, internaltransport.ClientIP)
+}
+
+// MiddlewareWithClientIP 使用显式解析器生成 client_ip 日志字段。
+// 解析器为 nil 时取直连对端地址。
+func MiddlewareWithClientIP(config Config, resolve func(*http.Request) string) (middleware.Middleware, error) {
+	if resolve == nil {
+		resolve = internaltransport.DirectClientIP
+	}
 	if config.Logger == nil {
 		return nil, ErrNilLogger
 	}
@@ -32,7 +41,7 @@ func Middleware(config Config) (middleware.Middleware, error) {
 				fields := internaltelemetry.MiddlewareLogFields(r, metricsData.Status, metricsData.Duration)
 				fields["bytes"] = metricsData.Bytes
 				fields["user_agent"] = metricsData.UserAgent
-				fields["client_ip"] = internaltransport.ClientIP(r)
+				fields["client_ip"] = resolve(r)
 				if metricsData.Route != "" {
 					fields["route"] = metricsData.Route
 				}

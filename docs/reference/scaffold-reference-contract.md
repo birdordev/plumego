@@ -13,6 +13,9 @@ The canonical scaffold must preserve these properties:
 - `internal/app/app.go` owns app construction and middleware wiring.
 - `internal/app/routes.go` owns explicit route registration.
 - `internal/domain/item/item.go` owns the sample item model and repository.
+- The generated sample provides create, read, update, and delete routes. The
+  CLI smoke test builds it, exercises the routes and readiness over HTTP,
+  generates OpenAPI, and verifies signal-driven shutdown on Unix.
 - `internal/handler/*` owns HTTP handlers and local DTOs.
 - `internal/config/config.go` owns generated project config.
 - No `x/*` imports appear in the canonical template.

@@ -26,6 +26,9 @@ route decision is visible and intentional.
 | Build a tenant administration plane | [`with-tenant-admin`](#with-tenant-admin) |
 | Receive inbound webhooks (GitHub, Stripe) | [`with-webhook`](#with-webhook) |
 | Add a WebSocket hub | [`with-websocket`](#with-websocket) |
+| Build a transactional SQL API | [`with-sql`](./with-sql) |
+| Serve HTML with browser sessions and OIDC | [`with-browser`](./with-browser) |
+| Mount a streaming SSE endpoint | [`with-sse`](./with-sse) |
 | Measure framework HTTP overhead | [`benchmark`](#benchmark) |
 
 ---
@@ -59,9 +62,10 @@ baseline before adding `x/*` capabilities.
 
 ## Feature scenario references
 
-Each `with-*` app starts from `standard-service` and adds exactly one
-capability. They are non-canonical: they import `x/*` and exist to show
-integration patterns, not to be used as a baseline.
+Scenario apps demonstrate a focused capability or an integration across
+related capabilities. The canonical application layout remains
+`standard-service`; individual scenarios wire their optional dependencies
+explicitly.
 
 ### with-observability
 

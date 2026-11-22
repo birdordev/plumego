@@ -18,35 +18,12 @@ Plumego 是一个基于 Go 标准库构建的小型 HTTP 工具包，把 `net/ht
 
 ## 为什么选择 Plumego
 
-适合需要比原生 `http.ServeMux` 更多结构、但又不想引入大型框架模型的 Go 服务。
-
-**选择 Plumego 如果你：**
-- 希望理解 HTTP 服务器装配的每一行代码
-- 更喜欢标准库的设计思路和模式
-- 期望你的服务能稳定维护多年
-- 使用代码代理（Claude、Codex）辅助开发
-- 看重小型、可测试、易重构的代码而非便利性
-
-**Plumego 不是：**
-- 「Gin/Echo 替代品」（我们互补于标准库，而非与框架竞争）
-- 最快的选项（Fiber 追求原始吞吐量；我们优化清晰性）
-- 「电池内置」框架（标准库优先是我们的设计）
-- 面向零装配代码的框架（如果你想 `plumego.Handlers{ "POST /users": createUser }`，你需要其他框架）
-
-| 工具包 | 定位 | 最佳用途 |
-|--------|------|---------|
-| `http.ServeMux` | 最小路由 | 学习、微小服务 |
-| **Plumego** | **标准库之上的薄层** | **可维护的生产服务** |
-| Chi | 轻量路由 | 函数构造器风格 |
-| Gin | 快速 + 便利 | 快速原型开发 |
-| Echo | 功能丰富 | 全功能应用 |
-| Fiber | 高性能 | 最大吞吐量 |
-
-详见 [`docs/start/POSITIONING.md`](./docs/start/POSITIONING.md) 了解设计哲学和何时选择 Plumego。
+当 `net/http` 服务需要路由分组、统一的 JSON 响应与错误格式，以及显式的服务生命周期时，
+可以使用 Plumego。主 Go 模块没有第三方依赖。可选能力由应用入口显式装配。
 
 ## 快速开始
 
-`main.go`：
+需要 Go 1.26 或更高版本。将下面的示例保存为 `main.go`。
 
 ```go
 package main
@@ -61,9 +38,13 @@ import (
 
 func main() {
 	app := plumego.New()
-	app.Get("/ping", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_ = contract.WriteResponse(w, r, http.StatusOK, map[string]string{"message": "pong"}, nil)
-	}))
+	if err := app.Get("/ping", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := contract.WriteResponse(w, r, http.StatusOK, map[string]string{"message": "pong"}, nil); err != nil {
+			log.Printf("write ping response: %v", err)
+		}
+	})); err != nil {
+		log.Fatal(err)
+	}
 	log.Fatal(http.ListenAndServe(":8080", app))
 }
 ```
@@ -76,19 +57,14 @@ go get github.com/birdordev/plumego@latest
 go run main.go
 ```
 
-打开 `http://localhost:8080/ping`。完成示例后，再阅读
-[`reference/standard-service`](./reference/standard-service) 查看生产风格的规范应用结构。
+在另一个终端运行 `curl -fsS http://localhost:8080/ping`，JSON 响应的
+`data` 中会包含 `"message":"pong"`。
 
-如需自定义地址、超时或 TLS：
-
-```go
-cfg := plumego.DefaultConfig()
-cfg.Addr = ":9090"
-app := plumego.NewWithConfig(cfg)
-```
-
-如需注入日志器或进行完整生产装配，直接使用 `core.New` —— 参见
-[`docs/start/getting-started.md`](./docs/start/getting-started.md)。
+示例中的监听器由 `http.ListenAndServe` 管理，`app` 在首个请求到来时准备处理器。
+如需让 `AppConfig` 中的地址、超时和 TLS 配置作用于服务器，使用
+`plumego.NewWithConfig` 创建应用，注册路由后调用 `app.Run()`。
+如需显式控制生命周期，使用 `Prepare`、`Server` 和 `Shutdown`。
+如需注入依赖，使用 `core.New`。完整示例见[入门指南](./docs/start/getting-started.md)。
 
 ## 选择你的起点
 
@@ -96,43 +72,40 @@ app := plumego.NewWithConfig(cfg)
 - **标准应用** · [标准服务](./reference/standard-service)及其 [CRUD 教程](./reference/standard-service/TUTORIAL.md)。
 - **功能集成** · [参考应用目录](./reference/README.md#feature-scenario-references)。
 
-| 我想构建… | 从这里开始 | 成熟度 |
+| 我想构建… | 从这里开始 | 包成熟度 |
 | --- | --- | --- |
-| 普通 JSON API | `reference/standard-service` → 仅使用稳定根包 | **GA** |
-| 带 CRUD 约定的 REST 资源 | `reference/with-rest` → `x/rest` | beta |
-| 多租户 SaaS API | `reference/with-tenant` → `x/tenant` | beta |
-| API 网关或反向代理 | `reference/with-gateway` → `x/gateway` | beta |
-| 实时 WebSocket 功能 | `reference/with-websocket` → `x/websocket` | beta |
-| AI 驱动的服务 | `reference/with-ai` → `x/ai/provider` | experimental |
-| 带消息队列/Webhook 的服务 | `reference/with-messaging` → `x/messaging` | beta |
-| gRPC + HTTP 混合服务 | `reference/with-rpc` → `x/rpc` | experimental |
-| 可观测性（Prometheus / OpenTelemetry） | `reference/with-observability` → `x/observability` | beta |
-| 租户管理控制台 | `reference/with-tenant-admin` → `x/tenant` | beta |
+| 普通 JSON API | [标准服务](./reference/standard-service) → 仅使用稳定根包 | **GA** |
+| 认证接口和请求指标 | [生产参考服务](./reference/production-service) → 稳定根包，租户资料接口使用 `x/tenant` | GA + beta |
+| 带 CRUD 约定的 REST 资源 | [`with-rest`](./reference/with-rest) → `x/rest` | beta |
+| 多租户 SaaS API | [`with-tenant`](./reference/with-tenant) → `x/tenant` | beta |
+| API 网关或反向代理 | [`with-gateway`](./reference/with-gateway) → `x/gateway` | beta |
+| 实时 WebSocket 功能 | [`with-websocket`](./reference/with-websocket) → `x/websocket` | beta |
+| AI 驱动的服务 | [`with-ai`](./reference/with-ai) → `x/ai/provider`、`session`、`streaming`、`tool` | 子包 beta |
+| 应用消息服务 | [`with-messaging`](./reference/with-messaging) → `x/messaging` | beta |
+| 事件与发布订阅 | [`with-events`](./reference/with-events) → `x/messaging/pubsub` | experimental |
+| 前端与静态资源 | [`with-frontend`](./reference/with-frontend) → `x/frontend` | beta |
+| 受保护的运维与管理路由 | [`with-ops`](./reference/with-ops) → `x/observability/ops` | experimental |
+| gRPC + HTTP 混合服务 | [`with-rpc`](./reference/with-rpc) → `x/rpc` | experimental |
+| 可观测性（Prometheus / OpenTelemetry） | [`with-observability`](./reference/with-observability) → `x/observability` | beta |
+| 租户管理控制台 | [`with-tenant-admin`](./reference/with-tenant-admin) → `x/tenant` | beta |
+| Webhook 接收与投递 | [`with-webhook`](./reference/with-webhook) → `x/messaging/webhook` | experimental |
+| HTTP 文件上传与下载 | [文件 API 导读](./docs/modules/x/fileapi/README.md) → `x/fileapi` | experimental |
+| SQL 写入、迁移与事务发件箱 | [SQL 示例](./reference/with-sql) | 独立示例 |
+| 浏览器表单、会话与 OIDC | [浏览器示例](./reference/with-browser) | 独立示例 |
+| SSE 推送 | [SSE 示例](./reference/with-sse) | 独立示例 |
 
-所有路径都以 `reference/standard-service` 为基础结构；扩展包是显式增量，而不是另一套启动框架。
-
-## 为什么选择 plumego
-
-适合需要比原生 `http.ServeMux` 更多结构、但又不想引入大型框架模型的 Go 服务。
-
-| 原则 | plumego 的做法 |
-| --- | --- |
-| 标准库优先 | 普通 handler、中间件、request、response writer 和 `*http.Server`。 |
-| 显式装配 | 路由、中间件、依赖和生命周期都能在构造位置直接看到。 |
-| 小型稳定表面 | 稳定根包职责清晰，不是功能目录。 |
-| 便于代理维护 | `specs/`、`tasks/` 和每模块 `module.yaml` 让范围与验证方式可发现。 |
-| 可选能力 | 产品功能和协议适配放在稳定学习路径之外。 |
+参考应用以 `reference/standard-service` 的装配方式为基础，扩展包在应用入口显式接入。
 
 ## 标准库对比
 
 | 能力 | `http.ServeMux` | plumego |
 | --- | --- | --- |
-| 基础路由 | 方法处理由调用方自行判断。 | `Get`/`Post`/`AddRoute` 注册一个方法、路径、处理器。 |
-| `{param}` 路径提取 | 调用方手动解析路径段。 | 路由器匹配参数，从请求上下文读取。 |
-| 路由分组 | 调用方手动重复前缀。 | 分组应用统一前缀。 |
+| 基础路由 | `Handle` 和 `HandleFunc` 支持 `GET /users` 等带方法的模式。 | `Get`/`Post`/`AddRoute` 注册方法、路径和处理器。 |
+| 路径参数 | 匹配 `/users/{id}`，用 `r.PathValue("id")` 读取。 | 匹配 `/users/:id`，用 `plumego.Param(r, "id")` 读取。 |
+| 路由分组 | 注册带前缀的模式，或挂载子路由器。 | 分组应用统一前缀。 |
 | 分组中间件 | 调用方按子树手动组合。 | 分组携带共享中间件，保持 `http.Handler` 形状。 |
 | 命名路由与反向 URL | 调用方手动拼接 URL。 | 通过 app/router API 生成反向 URL。 |
-| 路由冻结 | 改装配代码路由就可能变化。 | `Prepare` 在启动前冻结路由。 |
+| 路由冻结 | 开始提供服务后仍可注册路由。 | `Prepare` 可在启动前冻结路由。直接调用 `ServeHTTP` 时，首次准备处理器也会冻结路由。 |
 | 结构化错误 | 调用方定义每种响应形状。 | `contract.WriteError` 提供规范错误路径。 |
 | Request ID 传递 | 调用方自选并传播约定。 | 显式上下文访问器 + 中间件支持。 |
 | 优雅生命周期 | 调用方自行组织启动与关闭。 | `Prepare`、`Server`、`Shutdown` 让生命周期显式且可复用。 |
@@ -144,31 +117,46 @@ app := plumego.NewWithConfig(cfg)
 | `core` | 应用构造、路由注册、中间件挂载、服务生命周期。 |
 | `router` | 路由匹配、路径参数、分组、元数据、反向 URL 生成。 |
 | `contract` | 响应写入、结构化错误构造、请求元数据、传输绑定。 |
-| `middleware` | 传输层中间件组合和一方中间件包。 |
+| `middleware` | 传输层中间件组合及框架提供的中间件。 |
 | `security` | 认证、JWT、密码、安全头、输入安全、防滥用。 |
-| `store` | 稳定存储契约与内存原语（缓存、KV、文件、数据库、幂等）。 |
+| `store` | 文件和幂等契约、数据库辅助工具、内存缓存以及小型嵌入式 KV 存储。 |
 | `health` | 面向应用与依赖状态的健康/就绪模型。 |
 | `log` | 最小日志接口和默认日志器。 |
 | `metrics` | 最小指标契约（计数器、仪表、耗时、收集器）。 |
 
-可选能力族位于 `x/*` —— 稳定根路径上的显式增量，而不是另一套结构。
+可选能力位于 `x/*`，由应用根据需要显式装配。
+
+## 性能与 I/O
+
+- 应用复用已准备好的处理器链，冻结后的路由器直接查找静态路由。详见[路由器导读](./docs/modules/router/README.md)。
+- 文件型 `store/kv` 的并发写入可共用一次快照替换及同步。每次提交仍写入全量数据。详见 [KV 边界](./docs/modules/store/README.md#kv-boundary)。
+- 网关会与支持 HTTP/2 的 HTTPS 上游协商协议，并随上游数据到达逐步刷新 SSE 响应。详见[网关导读](./docs/modules/x/gateway/README.md)。
+
+运行当前检出版本的路由和应用微基准。
+
+```bash
+go test ./router ./core -run '^$' -bench 'Benchmark(Opt|AppServeHTTP)' -benchmem -count=3 -cpu=1,4,8
+```
+
+[v1.1.0 对比结果](./docs/evidence/benchmarks/results-v1.1.0.md)对应已打标签的版本。
+高并发下的端到端延迟应通过业务负载测试测量。
 
 ## 当前状态
 
-上表中的九个包是**稳定根包**，具备完整的 `v1` 兼容性保证：接口签名、包名称和行为在
-`v1.x` 发布系列内不会发生破坏性变更。
+上表中的九个包是**稳定根包**，公开 API 和已记录的行为享有 `v1.x` 兼容性保证。
 
-七个 `x/*` 扩展族处于 **beta** 状态——在已引用的发布 ref 范围内 API 稳定，适合生产使用，
-但边缘情况可能仍不完善：`x/frontend`、`x/gateway`、`x/messaging`、`x/observability`、
-`x/rest`、`x/tenant` 和 `x/websocket`。
+七个 `x/*` 扩展族的入口为 **beta**，并在所列发布版本间有兼容性证据。它们是
+`x/frontend`、`x/gateway`、`x/messaging`、`x/observability`、`x/rest`、
+`x/tenant` 和 `x/websocket`。
 
-其余所有 `x/*` 扩展均为 **experimental**：API 可能在任意次要版本中变更，无需事先通知。
-未经显式的项目级稳定化处理，请勿在生产服务中依赖这些扩展。
+`x/ai` 和 `x/data` 等实验性扩展族中有已达 beta 的子包，部分 beta 扩展族中也有
+实验性子包。请按实际导入路径查看[扩展成熟度清单](./docs/concepts/extension-maturity.md)。
+实验性 API 可能在次要版本中变更。
 
-完整兼容性详见 [`STABILITY.md`](./docs/release/STABILITY.md)、版本升级路径见 [`COMPATIBILITY.md`](./docs/release/COMPATIBILITY.md)，
-晋级标准见 [`docs/reference/extension-stability-policy.md`](./docs/reference/extension-stability-policy.md)。
+完整保证见[稳定性承诺](./docs/release/STABILITY.md)，升级路径见[兼容性指南](./docs/release/COMPATIBILITY.md)，
+晋级条件见[扩展稳定性政策](./docs/reference/extension-stability-policy.md)。
 
-## Agent-First Design
+## 面向代码代理的设计
 
 Plumego 使用 agent-first 控制面维护仓库：`docs/` 解释架构，`specs/`
 记录可机器检查的边界，`tasks/` 定义可审查的执行单元，`reference/`
@@ -180,28 +168,30 @@ Plumego 使用 agent-first 控制面维护仓库：`docs/` 解释架构，`specs
 ## 获取帮助
 
 **初次使用？**
+
 - [`docs/start/POSITIONING.md`](./docs/start/POSITIONING.md) —— 为什么选择 Plumego 以及何时使用
 - [`docs/start/getting-started.md`](./docs/start/getting-started.md) —— 最小可运行教程
 - [`docs/start/adoption-path.md`](./docs/start/adoption-path.md) —— 5 分钟、30 分钟、1 天的采用路径
 
 **构建应用？**
+
 - [`reference/standard-service`](./reference/standard-service) —— 规范应用结构
 - [`docs/reference/canonical-style-guide.md`](./docs/reference/canonical-style-guide.md) —— 处理器、中间件、路由约定
 - [`docs/reference/reference-apps.md`](./docs/reference/reference-apps.md) —— 参考应用选择指南
 
 **选择技术？**
+
 - [`STABILITY.md`](./docs/release/STABILITY.md) —— 哪些内容在 v1 中稳定
 - [`COMPATIBILITY.md`](./docs/release/COMPATIBILITY.md) —— 版本升级和迁移路径
 - [`docs/modules`](./docs/modules) —— 各包模块导读
 
 **遇到问题？**
-- [`docs/start/troubleshooting.md`](./docs/start/troubleshooting.md) —— 常见问题和解决方案
-- [`docs/evidence/benchmarks/README.md`](./docs/evidence/benchmarks/README.md) —— 与 Chi、Gin、Echo 的性能对比
-- [`docs/start/adoption-path.md`](./docs/start/adoption-path.md) —— 5 分钟、30 分钟、1 天采用路径。
-- [`docs/start/troubleshooting.md`](./docs/start/troubleshooting.md) —— 路由冻结、中间件顺序、JWT 错误、生命周期问题。
-- [`docs/evidence/benchmarks/README.md`](./docs/evidence/benchmarks/README.md) —— 与 Chi、Gin、Echo 的性能对比。
+
+- [排障指南](./docs/start/troubleshooting.md)涵盖路由冻结、中间件顺序、JWT 错误和生命周期问题。
+- [性能基准](./docs/evidence/benchmarks/README.md)记录了发布版对比结果及复现方式。
 
 **参与贡献？**
+
 - [`CONTRIBUTING.md`](./CONTRIBUTING.md) —— 开发环境、验证门禁与 PR 流程
 - [`SECURITY.md`](./SECURITY.md) —— 支持版本与漏洞私密报告渠道
 - [`CHANGELOG.md`](./CHANGELOG.md) —— 版本发布历史

@@ -35,13 +35,15 @@ import (
 func main() {
 	app := plumego.New()
 
-	app.Get("/ping", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	if err := app.Get("/ping", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if err := contract.WriteResponse(w, r, http.StatusOK, map[string]string{
 			"message": "pong",
 		}, nil); err != nil {
-			http.Error(w, "write response", http.StatusInternalServerError)
+			log.Printf("write ping response: %v", err)
 		}
-	}))
+	})); err != nil {
+		log.Fatal(err)
+	}
 
 	log.Println("server started at :8080")
 	log.Fatal(http.ListenAndServe(":8080", app))
@@ -54,10 +56,20 @@ Run it:
 go run main.go
 ```
 
-Open `http://localhost:8080/ping`.
+Run `curl -fsS http://localhost:8080/ping` from another terminal. The response
+contains `"message":"pong"` under `data`.
 
-`plumego.New()` uses `DefaultConfig` (`:8080`, 30 s timeouts, HTTP/2 on).
-For a non-default address or TLS, use `plumego.NewWithConfig`:
+In this example, `http.ListenAndServe` owns the HTTP server configuration.
+The app prepares its handler on the first request. To apply settings from
+`AppConfig` to the HTTP server, pair `plumego.NewWithConfig` with `app.Run()`
+or with the explicit lifecycle shown below.
+
+The defaults for a Plumego-managed server are address `:8080`, 5 seconds to
+read headers, 30 seconds to read a request or write a response, and 60 seconds
+of idle time. TLS is disabled by default. Prepared TLS servers allow HTTP/2
+by default.
+
+This example changes the listening address to `:9090`.
 
 ```go
 package main
@@ -74,14 +86,23 @@ func main() {
 	cfg := plumego.DefaultConfig()
 	cfg.Addr = ":9090"
 	app := plumego.NewWithConfig(cfg)
-	app.Get("/ping", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_ = contract.WriteResponse(w, r, 200, map[string]string{"status": "ok"}, nil)
-	}))
-	log.Fatal(http.ListenAndServe(cfg.Addr, app))
+	if err := app.Get("/ping", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := contract.WriteResponse(w, r, http.StatusOK, map[string]string{"message": "pong"}, nil); err != nil {
+			log.Printf("write ping response: %v", err)
+		}
+	})); err != nil {
+		log.Fatal(err)
+	}
+	if err := app.Run(); err != nil {
+		log.Fatal(err)
+	}
 }
 ```
 
-For explicit lifecycle control — `Prepare`, `Server`, `Shutdown` — use `core.New` directly (see the production example below).
+For TLS, set `cfg.TLS.Enabled`, `cfg.TLS.CertFile`, and `cfg.TLS.KeyFile`.
+`app.Run()` serves TLS using the certificate loaded during preparation.
+`Prepare`, `Server`, and `Shutdown` are also available on the app returned by
+`plumego.NewWithConfig`. Use `core.New` when injecting dependencies.
 
 ## Production-Style Canonical Example
 

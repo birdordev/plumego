@@ -58,6 +58,9 @@ public_entrypoints:
   - URLMust
   - WithRouteName
   - WithMethodNotAllowed
+  - SetNotFoundHandler
+  - EnableStandardPathValues
+  - WithNotFoundHandler
   - Static
   - StaticFS
 

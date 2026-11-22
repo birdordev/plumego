@@ -3,6 +3,8 @@ package rest
 import (
 	"context"
 	"time"
+
+	"github.com/birdordev/plumego/contract"
 )
 
 // Repository defines the interface for database CRUD operations on a typed resource T.
@@ -29,6 +31,7 @@ type DBResourceController[T any] struct {
 	*BaseContextResourceController
 	repository Repository[T]
 	validator  Validator
+	strictJSON *contract.JSONRequestOptions
 }
 
 // NewDBResourceController creates a new database resource controller.
@@ -42,6 +45,13 @@ func NewDBResourceController[T any](resourceName string, repository Repository[T
 // WithValidator sets the validator used by Create and Update handlers.
 func (c *DBResourceController[T]) WithValidator(v Validator) *DBResourceController[T] {
 	c.validator = v
+	return c
+}
+
+// WithStrictJSON 为创建和更新启用有大小上限的单文档 JSON 解码。
+// 在路由注册前配置控制器。
+func (c *DBResourceController[T]) WithStrictJSON(options contract.JSONRequestOptions) *DBResourceController[T] {
+	c.strictJSON = &options
 	return c
 }
 

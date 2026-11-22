@@ -9,12 +9,13 @@ var (
 
 // Op carries optional operation hints for one route.
 type Op struct {
-	Summary     string              `json:"summary,omitempty"`
-	Description string              `json:"description,omitempty"`
-	Tags        []string            `json:"tags,omitempty"`
-	Params      []Param             `json:"parameters,omitempty"`
-	Body        *RequestBody        `json:"requestBody,omitempty"`
-	Responses   map[string]Response `json:"responses,omitempty"`
+	Summary     string                `json:"summary,omitempty"`
+	Description string                `json:"description,omitempty"`
+	Tags        []string              `json:"tags,omitempty"`
+	Params      []Param               `json:"parameters,omitempty"`
+	Body        *RequestBody          `json:"requestBody,omitempty"`
+	Responses   map[string]Response   `json:"responses,omitempty"`
+	Security    []SecurityRequirement `json:"security,omitempty"`
 }
 
 // Param describes an OpenAPI operation parameter.
@@ -55,9 +56,27 @@ type MediaType struct {
 
 // Document is the root OpenAPI document.
 type Document struct {
-	OpenAPI string              `json:"openapi"`
-	Info    Info                `json:"info"`
-	Paths   map[string]PathItem `json:"paths"`
+	OpenAPI    string              `json:"openapi"`
+	Info       Info                `json:"info"`
+	Paths      map[string]PathItem `json:"paths"`
+	Components *Components         `json:"components,omitempty"`
+}
+
+// SecurityRequirement 记录一种认证选择涉及的方案及可选 OAuth 权限范围。
+type SecurityRequirement map[string][]string
+
+// Components 保存接口操作引用的认证方案。
+type Components struct {
+	SecuritySchemes map[string]SecurityScheme `json:"securitySchemes,omitempty"`
+}
+
+// SecurityScheme 声明 API 密钥或 HTTP 认证方案。
+type SecurityScheme struct {
+	Type         string `json:"type"`
+	Name         string `json:"name,omitempty"`
+	In           string `json:"in,omitempty"`
+	Scheme       string `json:"scheme,omitempty"`
+	BearerFormat string `json:"bearerFormat,omitempty"`
 }
 
 // Info describes OpenAPI document metadata.
@@ -80,10 +99,11 @@ type PathItem struct {
 
 // Operation describes one OpenAPI operation.
 type Operation struct {
-	Summary     string              `json:"summary,omitempty"`
-	Description string              `json:"description,omitempty"`
-	Tags        []string            `json:"tags,omitempty"`
-	Parameters  []Param             `json:"parameters,omitempty"`
-	RequestBody *RequestBody        `json:"requestBody,omitempty"`
-	Responses   map[string]Response `json:"responses"`
+	Summary     string                `json:"summary,omitempty"`
+	Description string                `json:"description,omitempty"`
+	Tags        []string              `json:"tags,omitempty"`
+	Parameters  []Param               `json:"parameters,omitempty"`
+	RequestBody *RequestBody          `json:"requestBody,omitempty"`
+	Responses   map[string]Response   `json:"responses"`
+	Security    []SecurityRequirement `json:"security,omitempty"`
 }

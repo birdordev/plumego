@@ -39,6 +39,7 @@ func TestCLI_GenerateSpecWritesJSONAndYAML(t *testing.T) {
 		"--dir", appDir,
 		"--output", yamlPath,
 		"--format", "yaml",
+		"--strict",
 	}, "")
 	if err != nil {
 		t.Fatalf("generate yaml spec failed: %v\noutput: %s", err, stdout)
@@ -48,7 +49,8 @@ func TestCLI_GenerateSpecWritesJSONAndYAML(t *testing.T) {
 		t.Fatalf("read yaml spec: %v", err)
 	}
 	yamlOut := string(yamlData)
-	if !strings.Contains(yamlOut, `openapi: "3.1.0"`) || !strings.Contains(yamlOut, "/api/hello:") {
+	if !strings.Contains(yamlOut, `openapi: "3.1.0"`) || !strings.Contains(yamlOut, "/api/hello:") ||
+		!strings.Contains(yamlOut, "securitySchemes:") || !strings.Contains(yamlOut, "Item deleted") {
 		t.Fatalf("generated spec is not expected YAML: %s", yamlOut)
 	}
 }

@@ -44,12 +44,14 @@ const (
 	TypeExpiredToken ErrorType = "expired_token"
 
 	// Resource errors
-	TypeNotFound        ErrorType = "resource_not_found"
-	TypeConflict        ErrorType = "resource_conflict"
-	TypeAlreadyExists   ErrorType = "resource_already_exists"
-	TypeGone            ErrorType = "resource_gone"
-	TypeNotAcceptable   ErrorType = "not_acceptable"
-	TypePayloadTooLarge ErrorType = "payload_too_large"
+	TypeNotFound             ErrorType = "resource_not_found"
+	TypeConflict             ErrorType = "resource_conflict"
+	TypeAlreadyExists        ErrorType = "resource_already_exists"
+	TypeGone                 ErrorType = "resource_gone"
+	TypeNotAcceptable        ErrorType = "not_acceptable"
+	TypePreconditionFailed   ErrorType = "precondition_failed"
+	TypeUnsupportedMediaType ErrorType = "unsupported_media_type"
+	TypePayloadTooLarge      ErrorType = "payload_too_large"
 
 	// System errors
 	TypeInternal         ErrorType = "internal_error"
@@ -88,12 +90,14 @@ var errorTypeLookup = map[ErrorType]ErrorTypeMeta{
 	TypeInvalidToken: {CategoryAuth, CodeInvalidToken, http.StatusUnauthorized},
 	TypeExpiredToken: {CategoryAuth, CodeExpiredToken, http.StatusUnauthorized},
 	// Resource
-	TypeNotFound:        {CategoryClient, CodeResourceNotFound, http.StatusNotFound},
-	TypeConflict:        {CategoryClient, CodeConflict, http.StatusConflict},
-	TypeAlreadyExists:   {CategoryClient, CodeAlreadyExists, http.StatusConflict},
-	TypeGone:            {CategoryClient, CodeGone, http.StatusGone},
-	TypeNotAcceptable:   {CategoryClient, CodeNotAcceptable, http.StatusNotAcceptable},
-	TypePayloadTooLarge: {CategoryClient, CodeRequestBodyTooLarge, http.StatusRequestEntityTooLarge},
+	TypeNotFound:             {CategoryClient, CodeResourceNotFound, http.StatusNotFound},
+	TypeConflict:             {CategoryClient, CodeConflict, http.StatusConflict},
+	TypeAlreadyExists:        {CategoryClient, CodeAlreadyExists, http.StatusConflict},
+	TypeGone:                 {CategoryClient, CodeGone, http.StatusGone},
+	TypeNotAcceptable:        {CategoryClient, CodeNotAcceptable, http.StatusNotAcceptable},
+	TypePayloadTooLarge:      {CategoryClient, CodeRequestBodyTooLarge, http.StatusRequestEntityTooLarge},
+	TypeUnsupportedMediaType: {CategoryClient, CodeUnsupportedMediaType, http.StatusUnsupportedMediaType},
+	TypePreconditionFailed:   {CategoryClient, CodePreconditionFailed, http.StatusPreconditionFailed},
 	// System
 	TypeInternal:         {CategoryServer, CodeInternalError, http.StatusInternalServerError},
 	TypeUnavailable:      {CategoryServer, CodeUnavailable, http.StatusServiceUnavailable},

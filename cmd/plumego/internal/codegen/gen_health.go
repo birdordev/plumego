@@ -100,18 +100,22 @@ func HandleHealth(checkers ...health.ComponentChecker) http.HandlerFunc {
 			cr := componentResult{Status: health.StatusHealthy}
 			if err := c.Check(r.Context()); err != nil {
 				cr.Status = health.StatusUnhealthy
-				cr.Message = err.Error()
+				cr.Message = "unhealthy"
 				aggregate = health.StatusUnhealthy
 			}
 			components[c.Name()] = cr
 		}
 
-		httpStatus := http.StatusOK
 		if aggregate == health.StatusUnhealthy {
-			httpStatus = http.StatusServiceUnavailable
+			_ = contract.WriteError(w, r, contract.NewErrorBuilder().
+				Type(contract.TypeUnavailable).
+				Message("one or more components are not ready").
+				Detail("components", components).
+				Build())
+			return
 		}
 
-		_ = contract.WriteResponse(w, r, httpStatus, healthResponse{
+		_ = contract.WriteResponse(w, r, http.StatusOK, healthResponse{
 			Status:     aggregate,
 			Timestamp:  time.Now(),
 			Components: components,

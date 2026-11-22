@@ -226,3 +226,7 @@ HTTP 400 Bad Request
 go test -race -timeout 60s ./x/validate/...
 go vet ./x/validate/...
 ```
+
+Use `BindStrict` with `contract.JSONRequestOptions` to decode a bounded JSON
+document before validation. Validators can return typed field violations
+through the `contract.FieldViolation` contract.

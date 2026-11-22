@@ -6,11 +6,11 @@ front of you instead of scanning every file.
 
 ## Quick Path
 
-1. `start/getting-started.md`
-2. `start/why-plumego.md`
-3. `start/adoption-path.md`
-4. `../reference/standard-service/README.md`
-5. `reference/canonical-style-guide.md`
+1. [Getting started](./start/getting-started.md)
+2. [Why Plumego](./start/why-plumego.md)
+3. [Adoption path](./start/adoption-path.md)
+4. [Standard service](../reference/standard-service/README.md)
+5. [Canonical style guide](./reference/canonical-style-guide.md)
 
 Use `specs/*` and `tasks/*` only when you need machine-readable routing,
 quality gates, or execution surfaces.
@@ -73,7 +73,7 @@ Related execution surfaces live outside `docs/`:
 - `../reference/with-tenant-admin/README.md` — explicit tenant administration console mounting pattern
 - `../reference/with-gateway/README.md` — explicit `x/gateway` reverse-proxy mounting pattern
 - `../reference/with-websocket/README.md` — explicit `x/websocket` mounting pattern
-- `../reference/with-ai/README.md` — explicit stable-tier `x/ai` mounting pattern
+- `../reference/with-ai/README.md` — wiring for the beta surfaces of `x/ai`
 - `../reference/with-ops/README.md` — explicit observability and protected admin surface mounting pattern
 - `../reference/with-observability/README.md` — explicit observability stack (tracing, metrics export) mounting pattern
 - `../reference/with-messaging/README.md` — explicit app-facing messaging mounting pattern
@@ -82,6 +82,10 @@ Related execution surfaces live outside `docs/`:
 - `../reference/with-frontend/README.md` — explicit embedded static-asset mounting pattern
 - `../reference/with-rpc/README.md` — explicit `x/rpc` gRPC transport mounting pattern
 - `../reference/benchmark/README.md` — benchmarking harness comparing Plumego against other routers
+
+Use the [extension maturity dashboard](./concepts/extension-maturity.md) to
+check maturity by import path. The [benchmark evidence](./evidence/benchmarks/README.md)
+records release measurements and the commands to reproduce them.
 
 ## Authority Order
 

@@ -2,6 +2,7 @@
 module	github.com/birdordev/plumego
 pattern	./middleware/...
 symbol	github.com/birdordev/plumego/middleware	func	NewChain	func NewChainfunc(middlewares ...Middleware) *Chain
+symbol	github.com/birdordev/plumego/middleware	func	TrustedProxyClientIP	func TrustedProxyClientIPfunc(trusted ...netip.Prefix) (func(*http.Request) string, error)
 symbol	github.com/birdordev/plumego/middleware	method	Chain.Build	func (Chain) Buildfunc(h http.Handler) http.Handler
 symbol	github.com/birdordev/plumego/middleware	method	Chain.Len	func (Chain) Lenfunc() int
 symbol	github.com/birdordev/plumego/middleware	method	Chain.Snapshot	func (Chain) Snapshotfunc() []Middleware
@@ -15,6 +16,7 @@ symbol	github.com/birdordev/plumego/middleware/abuseguard	method	AbuseGuardMiddl
 symbol	github.com/birdordev/plumego/middleware/abuseguard	type	AbuseGuardConfig	type AbuseGuardConfig struct { Rate float64 Capacity int MaxEntries int CleanupInterval time.Duration MaxIdle time.Duration Shards int Limiter *abuse.Limiter KeyFunc func(*http.Request) string Skip func(*http.Request) bool IncludeHeaders *bool Logger log.StructuredLogger }
 symbol	github.com/birdordev/plumego/middleware/abuseguard	type	AbuseGuardMiddleware	type AbuseGuardMiddleware struct { }
 symbol	github.com/birdordev/plumego/middleware/accesslog	func	Middleware	func Middlewarefunc(config Config) (middleware.Middleware, error)
+symbol	github.com/birdordev/plumego/middleware/accesslog	func	MiddlewareWithClientIP	func MiddlewareWithClientIPfunc(config Config, resolve func(*http.Request) string) (middleware.Middleware, error)
 symbol	github.com/birdordev/plumego/middleware/accesslog	type	Config	type Config struct { Logger log.StructuredLogger }
 symbol	github.com/birdordev/plumego/middleware/accesslog	var	ErrNilLogger	var ErrNilLogger = errors.New("accesslog: logger cannot be nil")
 symbol	github.com/birdordev/plumego/middleware/auth	func	Authenticate	func Authenticatefunc(authenticator authn.Authenticator, opts ...AuthOption) (middleware.Middleware, error)

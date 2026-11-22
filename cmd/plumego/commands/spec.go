@@ -18,6 +18,7 @@ type generateSpecOptions struct {
 	OutputPath string
 	Format     string
 	AppPath    string
+	Strict     bool
 }
 
 type goModuleInfo struct {
@@ -53,7 +54,7 @@ func runGenerateSpec(ctx *Context, opts generateSpecOptions) error {
 		return ctx.Out.Error(err.Error(), 1)
 	}
 
-	if err := runSpecHelper(opts.Dir, target, modules, outputPath, format); err != nil {
+	if err := runSpecHelper(opts.Dir, target, modules, outputPath, format, opts.Strict); err != nil {
 		return ctx.Out.Error(fmt.Sprintf("spec generation failed: %v", err), 1)
 	}
 	if outputPath == "-" {
@@ -136,7 +137,7 @@ func listGoModules(dir string) ([]goModuleInfo, error) {
 	return modules, nil
 }
 
-func runSpecHelper(appDir string, target specTarget, modules []goModuleInfo, outputPath, format string) error {
+func runSpecHelper(appDir string, target specTarget, modules []goModuleInfo, outputPath, format string, strict bool) error {
 	tmpDir, err := os.MkdirTemp("", "plumego-spec-*")
 	if err != nil {
 		return err
@@ -146,7 +147,7 @@ func runSpecHelper(appDir string, target specTarget, modules []goModuleInfo, out
 	if err := os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte(specHelperGoMod(appDir, target, modules)), 0644); err != nil {
 		return err
 	}
-	if err := os.WriteFile(filepath.Join(tmpDir, "main.go"), []byte(specHelperSource(target)), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(tmpDir, "main.go"), []byte(specHelperSource(target, strict)), 0644); err != nil {
 		return err
 	}
 
@@ -194,7 +195,14 @@ func specHelperGoMod(appDir string, target specTarget, modules []goModuleInfo) s
 	return b.String()
 }
 
-func specHelperSource(target specTarget) string {
+func specHelperSource(target specTarget, strict bool) string {
+	generate := "doc := openapi.New().Generate(app.Core.Routes(), ops)"
+	if strict {
+		generate = `doc, err := openapi.New().GenerateStrict(app.Core.Routes(), ops)
+	if err != nil {
+		fatalf("validate operation hints: %v", err)
+	}`
+	}
 	return fmt.Sprintf(`package main
 
 import (
@@ -227,11 +235,19 @@ func main() {
 		fatalf("register routes: %%v", err)
 	}
 
-	info, ops, err := loadSpecFile(*hints)
+	info, ops, components, err := loadSpecFile(*hints)
 	if err != nil {
 		fatalf("load spec hints: %%v", err)
 	}
-	doc := openapi.New().Generate(app.Core.Routes(), ops)
+	%s
+	if len(components) != 0 {
+		metadata := append([]byte("{\"components\":"), components...)
+		metadata = append(metadata, '}')
+		if err := json.Unmarshal(metadata, &doc); err != nil {
+			fatalf("load components: %%v", err)
+		}
+	}
+	%s
 	if info.Title != "" {
 		doc.Info.Title = info.Title
 	}
@@ -262,31 +278,31 @@ func main() {
 	}
 }
 
-func loadSpecFile(path string) (openapi.Info, map[string]openapi.Op, error) {
+func loadSpecFile(path string) (openapi.Info, map[string]openapi.Op, json.RawMessage, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return openapi.Info{}, nil, nil
+			return openapi.Info{}, nil, nil, nil
 		}
-		return openapi.Info{}, nil, err
+		return openapi.Info{}, nil, nil, err
 	}
 	var raw any
 	if err := yaml.Unmarshal(data, &raw); err != nil {
-		return openapi.Info{}, nil, err
+		return openapi.Info{}, nil, nil, err
 	}
 	jsonData, err := json.Marshal(normalizeYAML(raw))
 	if err != nil {
-		return openapi.Info{}, nil, err
+		return openapi.Info{}, nil, nil, err
 	}
 	var fields map[string]json.RawMessage
 	if err := json.Unmarshal(jsonData, &fields); err != nil {
-		return openapi.Info{}, nil, err
+		return openapi.Info{}, nil, nil, err
 	}
 
 	var info openapi.Info
 	if rawInfo := fields["info"]; len(rawInfo) > 0 {
 		if err := json.Unmarshal(rawInfo, &info); err != nil {
-			return openapi.Info{}, nil, err
+			return openapi.Info{}, nil, nil, err
 		}
 	}
 
@@ -297,10 +313,10 @@ func loadSpecFile(path string) (openapi.Info, map[string]openapi.Op, error) {
 	}
 	if len(rawOps) > 0 {
 		if err := json.Unmarshal(rawOps, &ops); err != nil {
-			return openapi.Info{}, nil, err
+			return openapi.Info{}, nil, nil, err
 		}
 	}
-	return info, ops, nil
+	return info, ops, fields["components"], nil
 }
 
 func normalizeYAML(value any) any {
@@ -332,5 +348,23 @@ func fatalf(format string, args ...any) {
 	fmt.Fprintf(os.Stderr, format+"\n", args...)
 	os.Exit(1)
 }
-`, target.AppImport, target.ConfigImport)
+`, target.AppImport, target.ConfigImport, generate, strictSecurityChecks(strict))
+}
+
+func strictSecurityChecks(strict bool) string {
+	if !strict {
+		return ""
+	}
+	return `for route, hint := range ops {
+		for _, requirement := range hint.Security {
+			for scheme := range requirement {
+				if doc.Components != nil {
+					if _, exists := doc.Components.SecuritySchemes[scheme]; exists {
+						continue
+					}
+				}
+				fatalf("%s refers to undefined security scheme %q", route, scheme)
+			}
+		}
+	}`
 }

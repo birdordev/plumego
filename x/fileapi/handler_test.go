@@ -1547,3 +1547,44 @@ func TestDeferredAccessUpdatesCoalesceAndStop(t *testing.T) {
 		}
 	})
 }
+
+func TestDownloadSeekableRangeHeadAndConditional(t *testing.T) {
+	storage := &mockStorage{getFunc: func(context.Context, string) (io.ReadCloser, error) {
+		return seekableFixture{strings.NewReader("hello world")}, nil
+	}}
+	metadata := &mockMetadataManager{getFunc: func(context.Context, string, string) (*datafile.File, error) {
+		return &datafile.File{
+			File:     storefile.File{ID: "test-id", Path: "test/file", Name: "test.txt", Size: 11, MimeType: "text/plain", Hash: "stable-content-hash"},
+			TenantID: "tenant-123",
+		}, nil
+	}}
+	h := NewHandler(storage, metadata)
+	send := func(method, rangeHeader, tag string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(method, "/files/test-id", nil)
+		req = withRouteParam(req, "id", "test-id")
+		req = req.WithContext(tenantcore.WithTenantID(req.Context(), "tenant-123"))
+		req.Header.Set("Range", rangeHeader)
+		req.Header.Set("If-None-Match", tag)
+		w := httptest.NewRecorder()
+		h.Download(w, req)
+		return w
+	}
+	head := send(http.MethodHead, "", "")
+	tag := head.Header().Get("ETag")
+	if head.Code != http.StatusOK || head.Body.Len() != 0 || head.Header().Get("Content-Length") != "11" || tag == "" {
+		t.Fatalf("HEAD: %d %v %q", head.Code, head.Header(), head.Body)
+	}
+	ranged := send(http.MethodGet, "bytes=0-4", "")
+	if ranged.Code != http.StatusPartialContent || ranged.Body.String() != "hello" ||
+		ranged.Header().Get("Cache-Control") != "private, no-store" {
+		t.Fatalf("range: %d %v %q", ranged.Code, ranged.Header(), ranged.Body)
+	}
+	matched := send(http.MethodGet, "", tag)
+	if matched.Code != http.StatusNotModified || matched.Body.Len() != 0 {
+		t.Fatalf("conditional request: %d %q", matched.Code, matched.Body)
+	}
+}
+
+type seekableFixture struct{ *strings.Reader }
+
+func (seekableFixture) Close() error { return nil }

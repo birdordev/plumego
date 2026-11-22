@@ -10,6 +10,7 @@ symbol	github.com/birdordev/plumego/core	func	NewLifecycleGroup	func NewLifecycl
 symbol	github.com/birdordev/plumego/core	method	App.AddRoute	func (App) AddRoutefunc(method, path string, handler http.Handler, opts ...router.RouteOption) error
 symbol	github.com/birdordev/plumego/core	method	App.Any	func (App) Anyfunc(path string, handler http.Handler, opts ...router.RouteOption) error
 symbol	github.com/birdordev/plumego/core	method	App.Delete	func (App) Deletefunc(path string, handler http.Handler) error
+symbol	github.com/birdordev/plumego/core	method	App.EnableStandardPathValues	func (App) EnableStandardPathValuesfunc() error
 symbol	github.com/birdordev/plumego/core	method	App.Get	func (App) Getfunc(path string, handler http.Handler) error
 symbol	github.com/birdordev/plumego/core	method	App.Group	func (App) Groupfunc(prefix string) *RouteGroup
 symbol	github.com/birdordev/plumego/core	method	App.Logger	func (App) Loggerfunc() log.StructuredLogger
@@ -22,6 +23,7 @@ symbol	github.com/birdordev/plumego/core	method	App.Routes	func (App) Routesfunc
 symbol	github.com/birdordev/plumego/core	method	App.Run	func (App) Runfunc() error
 symbol	github.com/birdordev/plumego/core	method	App.ServeHTTP	func (App) ServeHTTPfunc(w http.ResponseWriter, r *http.Request)
 symbol	github.com/birdordev/plumego/core	method	App.Server	func (App) Serverfunc() (*http.Server, error)
+symbol	github.com/birdordev/plumego/core	method	App.SetNotFoundHandler	func (App) SetNotFoundHandlerfunc(handler http.Handler) error
 symbol	github.com/birdordev/plumego/core	method	App.Shutdown	func (App) Shutdownfunc(ctx context.Context) error
 symbol	github.com/birdordev/plumego/core	method	App.URL	func (App) URLfunc(name string, params ...string) (string, error)
 symbol	github.com/birdordev/plumego/core	method	App.Use	func (App) Usefunc(middlewares ...middleware.Middleware) error

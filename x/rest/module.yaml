@@ -29,6 +29,7 @@ non_goals:
   - Business repository ownership
 
 public_entrypoints:
+  - WithStrictJSON
   - ResourceSpec
   - RegisterResourceRoutes
   - RegisterDBResource

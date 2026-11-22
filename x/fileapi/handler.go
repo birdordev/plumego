@@ -8,6 +8,7 @@
 package fileapi
 
 import (
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"io"
@@ -232,10 +233,22 @@ func (h *Handler) Download(w http.ResponseWriter, r *http.Request) {
 	defer func() { _ = reader.Close() }()
 
 	w.Header().Set("Content-Type", fileMeta.MimeType)
-	w.Header().Set("Content-Length", fmt.Sprintf("%d", fileMeta.Size))
 	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", fileMeta.Name))
 	w.Header().Set("Cache-Control", "private, no-store")
+	if content, ok := reader.(io.ReadSeeker); ok {
+		if hash := fileMeta.Hash; hash != "" {
+			// 将文件哈希编码为符合语法的实体标签。
+			tag := sha256.Sum256([]byte(hash))
+			w.Header().Set("ETag", fmt.Sprintf(`"%x"`, tag))
+		}
+		http.ServeContent(w, r, fileMeta.Name, fileMeta.UpdatedAt, content)
+		return
+	}
+	w.Header().Set("Content-Length", fmt.Sprintf("%d", fileMeta.Size))
 	w.WriteHeader(http.StatusOK)
+	if r.Method == http.MethodHead {
+		return
+	}
 	_, _ = io.Copy(w, reader)
 }
 

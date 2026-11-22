@@ -29,6 +29,7 @@ non_goals:
 
 public_entrypoints:
   - Generator
+  - Generator.GenerateStrict
   - Document
 
 allowed_imports:

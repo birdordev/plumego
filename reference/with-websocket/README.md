@@ -393,3 +393,7 @@ defaulting to `"default"`).
 - `reference/standard-service` — canonical layout this extends
 - `x/websocket` — module docs and API reference (`docs/modules/x/websocket/README.md`)
 - `reference/with-gateway` — reverse proxy and upstream routing
+
+On shutdown, the HTTP server and the WebSocket hub both attempt to release
+their resources. An error from either transport is returned alongside any
+error from the other transport.

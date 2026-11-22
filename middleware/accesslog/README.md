@@ -34,3 +34,6 @@ app.Use(mw)
 
 - The middleware uses `internaltelemetry` for efficient response tracking without allocating per-request wrappers in the hot path.
 - Access logs are written in the log format determined by the provided `StructuredLogger` (text or JSON).
+
+Use `MiddlewareWithClientIP` to share an explicit resolver with rate limiting.
+Passing nil uses only the directly connected peer address.

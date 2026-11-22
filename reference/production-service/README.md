@@ -18,8 +18,8 @@ hidden production bundle.
 - request IDs, recovery, body limits, timeout, security headers, abuse guard,
   tracing hook, HTTP metrics, and access logs
 - explicit abuse guard limiter lifecycle ownership with shutdown cleanup
-- stable-root-only production baseline; optional `x/*` capabilities remain
-  explicit add-ons
+- stable roots for the HTTP server, middleware, and protected metrics route
+- explicit `x/tenant/resolve` and `x/tenant/core` wiring for the profile route
 
 ## Routes
 
@@ -66,6 +66,7 @@ Useful environment variables:
 - `APP_REQUEST_TIMEOUT`
 - `APP_RATE_LIMIT`
 - `APP_RATE_BURST`
+- `APP_TRUSTED_PROXIES` (comma-separated CIDRs, empty by default)
 - `OPS_TOKEN`
 
 Example protected metrics request:
@@ -124,3 +125,9 @@ APP_API_TOKEN=local-api-token \
 OPS_TOKEN=local-admin-token \
 go run .
 ```
+
+`/readyz` indicates whether startup completed and the registered dependencies
+are ready. Shutdown marks the service unready, drains HTTP, and stops
+registered resources in reverse order. Public readiness failures report fixed
+status details. Trusted proxy CIDRs are used by both access logs and rate
+limiting.

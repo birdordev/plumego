@@ -1,9 +1,11 @@
 package app
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 
+	"github.com/birdordev/plumego/health"
 	"github.com/birdordev/plumego/middleware"
 	"github.com/birdordev/plumego/middleware/auth"
 	"github.com/birdordev/plumego/security/authn"
@@ -27,9 +29,7 @@ func (a *App) RegisterRoutes() error {
 			"protected_tenant_api",
 			"no_default_devtools",
 		},
-		// Checkers: nil — no external dependencies to probe in this reference.
-		// Wire real health.ComponentChecker implementations here (e.g. database ping)
-		// when this template is used as the base for a production service.
+		Checkers: []health.ComponentChecker{runtimeChecker{app: a}},
 	}
 
 	statusHandler := handler.StatusHandler{
@@ -76,7 +76,7 @@ func (a *App) RegisterRoutes() error {
 // withTenantAPIAuth wraps a handler with bearer-token auth and tenant-ID resolution.
 // Returns an error at construction time so configuration problems surface at startup
 // rather than silently degrading to 500 on every request.
-// When token is empty, StaticToken accepts all calls; set APP_API_TOKEN in production.
+// APP_API_TOKEN 为空时，请求不能访问受保护的路由。
 func withTenantAPIAuth(token string, next http.Handler) (http.Handler, error) {
 	authMw, err := auth.Authenticate(
 		authn.StaticToken(token),
@@ -132,4 +132,24 @@ func (r *routeReg) record(err error) {
 	if r.err == nil {
 		r.err = err
 	}
+}
+
+type runtimeChecker struct{ app *App }
+
+func (runtimeChecker) Name() string { return "runtime" }
+
+func (r runtimeChecker) Check(ctx context.Context) error {
+	if !r.app.ready.Load() {
+		return errRuntimeNotReady
+	}
+	select {
+	case r.app.probe <- struct{}{}:
+		defer func() { <-r.app.probe }()
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	if !r.app.ready.Load() {
+		return errRuntimeNotReady
+	}
+	return r.app.components.Ready(ctx)
 }

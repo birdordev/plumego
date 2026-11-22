@@ -248,3 +248,16 @@ for this fallback. A recognized file extension supplies the media type when no
 `Content-Type` was set. HEAD sends the headers without reading the body.
 
 Successful matches publish immutable route identity to optional response observers through Unwrap-compatible wrappers. The router does not mutate the incoming request; downstream contexts retain their matched metadata.
+
+## Standard request metadata and unmatched routes
+
+A matched handler receives the registered pattern in `r.Pattern`. Call
+`EnableStandardPathValues` before freeze to make dynamic parameters available
+through `r.PathValue` as well as `router.Param`. The app exposes
+`app.EnableStandardPathValues` before preparation. Dynamic routes allocate
+private path-value storage in this mode so the input request remains unchanged.
+
+Use `WithNotFoundHandler` or `SetNotFoundHandler` before freezing a router.
+An app exposes the same policy with `app.SetNotFoundHandler` before
+preparation. Standard-library 404 is the default. An enabled 405 and its
+`Allow` header take precedence over the custom fallback.

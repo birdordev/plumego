@@ -176,8 +176,8 @@ func TestHealthHandlerReadyWithCheckers(t *testing.T) {
 		// The failing component name is the detail key; its error message is the value.
 		// This lets operators see exactly which component failed without inspecting logs.
 		ef := decodeErrorPayload(t, rec)
-		if ef.Details["database"] != "connection refused" {
-			t.Fatalf("error detail database = %v, want connection refused", ef.Details["database"])
+		if ef.Details["database"] != "unhealthy" {
+			t.Fatalf("error detail database = %v, want unhealthy", ef.Details["database"])
 		}
 	})
 
@@ -199,8 +199,8 @@ func TestHealthHandlerReadyWithCheckers(t *testing.T) {
 		}
 		ef := decodeErrorPayload(t, rec)
 		// "cache" failed — its detail must appear.
-		if ef.Details["cache"] != "cache offline" {
-			t.Fatalf("error detail cache = %v, want cache offline", ef.Details["cache"])
+		if ef.Details["cache"] != "unhealthy" {
+			t.Fatalf("error detail cache = %v, want unhealthy", ef.Details["cache"])
 		}
 		// "database" passed — it must not appear as a failure detail.
 		if _, ok := ef.Details["database"]; ok {
@@ -227,11 +227,11 @@ func TestHealthHandlerReadyWithCheckers(t *testing.T) {
 			t.Fatalf("status = %d, want %d", rec.Code, http.StatusServiceUnavailable)
 		}
 		ef := decodeErrorPayload(t, rec)
-		if ef.Details["database"] != "connection refused" {
-			t.Fatalf("error detail database = %v, want connection refused", ef.Details["database"])
+		if ef.Details["database"] != "unhealthy" {
+			t.Fatalf("error detail database = %v, want unhealthy", ef.Details["database"])
 		}
-		if ef.Details["cache"] != "cache offline" {
-			t.Fatalf("error detail cache = %v, want cache offline", ef.Details["cache"])
+		if ef.Details["cache"] != "unhealthy" {
+			t.Fatalf("error detail cache = %v, want unhealthy", ef.Details["cache"])
 		}
 	})
 

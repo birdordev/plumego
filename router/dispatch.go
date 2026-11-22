@@ -203,7 +203,11 @@ func (r *Router) serveHTTP(w http.ResponseWriter, req *http.Request) {
 				return
 			}
 		}
-		http.NotFound(w, req)
+		if fallback := r.state.notFound.Load(); fallback != nil {
+			fallback.handler.ServeHTTP(w, req)
+		} else {
+			http.NotFound(w, req)
+		}
 		return
 	}
 
@@ -318,7 +322,33 @@ func (r *Router) attachRouteContextAndServe(w http.ResponseWriter, req *http.Req
 	}
 	ctx := contract.WithRouteState(req.Context(), &result.routeState)
 	publishRouteContext(w, ctx, result.RoutePattern, result.RouteName)
-	result.Handler.ServeHTTP(w, req.WithContext(ctx))
+	var matchedRequest *http.Request
+	if len(result.paramKeys) != 0 && r.state.standardPathValues.Load() {
+		matchedRequest = clonePathValues(req, ctx)
+		for _, key := range result.paramKeys {
+			matchedRequest.SetPathValue(key, contract.RequestParamFromContext(ctx, key))
+		}
+	} else {
+		matchedRequest = req.WithContext(ctx)
+	}
+	matchedRequest.Pattern = result.RoutePattern
+	result.Handler.ServeHTTP(w, matchedRequest)
+}
+
+// Clone 会同时复制私有路径参数存储和公开字段。这里保留公开字段的
+// 引用关系，尤其是传输层会在请求体读完后更新的 Trailer。
+func clonePathValues(req *http.Request, ctx context.Context) *http.Request {
+	shallow := *req
+	shallow.URL = nil
+	shallow.Header, shallow.Trailer = nil, nil
+	shallow.TransferEncoding = nil
+	shallow.Form, shallow.PostForm, shallow.MultipartForm = nil, nil, nil
+	cloned := shallow.Clone(ctx)
+	cloned.URL = req.URL
+	cloned.Header, cloned.Trailer = req.Header, req.Trailer
+	cloned.TransferEncoding = req.TransferEncoding
+	cloned.Form, cloned.PostForm, cloned.MultipartForm = req.Form, req.PostForm, req.MultipartForm
+	return cloned
 }
 
 func (r *Router) allowedMethods(path string, partsPtr *[]string) []string {

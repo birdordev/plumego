@@ -112,7 +112,16 @@ func requireItemFields(eb *contract.ErrorBuilder, name, description string) (*co
 func decodeJSONStrict(r *http.Request, dst any) error {
 	dec := json.NewDecoder(r.Body)
 	dec.DisallowUnknownFields()
-	return dec.Decode(dst)
+	if err := dec.Decode(dst); err != nil {
+		return err
+	}
+	if _, err := dec.Token(); err != io.EOF {
+		if err != nil {
+			return err
+		}
+		return errors.New("additional JSON value")
+	}
+	return nil
 }
 
 // unknownFieldName returns the offending field name when err is the error

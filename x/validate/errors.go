@@ -27,6 +27,7 @@ func newValidationError(err error) ValidationError {
 			Type(contract.TypeBadRequest).
 			Code(contract.CodeValidationError).
 			Message("validation failed").
+			FieldViolations(err).
 			Build(),
 		Err: err,
 	}
