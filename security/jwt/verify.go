@@ -79,7 +79,7 @@ func (m *JWTManager) parseAndVerify(token string) (*TokenClaims, error) {
 		return nil, ErrInvalidToken
 	}
 
-	if err := verifySignature(key, parts[0], parts[1], parts[2]); err != nil {
+	if err := verifySignature(key, token[:len(parts[0])+1+len(parts[1])], parts[2]); err != nil {
 		return nil, err
 	}
 

@@ -8,12 +8,12 @@ import (
 	"encoding/json"
 )
 
-func verifySignature(key JWTSigningKey, header, payload, sigPart string) error {
-	signature, err := base64.RawURLEncoding.DecodeString(sigPart)
+func verifySignature(key JWTSigningKey, signed, sigPart string) error {
+	var scratch [ed25519.SignatureSize]byte
+	signature, err := base64.RawURLEncoding.AppendDecode(scratch[:0], []byte(sigPart))
 	if err != nil {
 		return ErrInvalidToken
 	}
-	signed := header + "." + payload
 	switch key.Algorithm {
 	case AlgorithmHS256:
 		mac := hmac.New(sha256.New, key.Secret)

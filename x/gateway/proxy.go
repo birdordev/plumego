@@ -36,7 +36,9 @@ package gateway
 
 import (
 	"context"
+	"errors"
 	"io"
+	"mime"
 	"net/http"
 	"net/url"
 	"strings"
@@ -55,6 +57,7 @@ type Proxy struct {
 	discoveryCancel context.CancelFunc
 	discoveryWG     sync.WaitGroup
 	closeOnce       sync.Once
+	copyBuffers     chan []byte
 
 	// For least-connections balancer
 	lcBalancer *LeastConnectionsBalancer
@@ -83,10 +86,11 @@ func New(config Config) (*Proxy, error) {
 	transportPool := NewTransportPool(cfg.Transport)
 
 	proxy := &Proxy{
-		config:    cfg,
-		pool:      pool,
-		transport: transportPool,
-		balancer:  cfg.LoadBalancer,
+		config:      cfg,
+		pool:        pool,
+		transport:   transportPool,
+		balancer:    cfg.LoadBalancer,
+		copyBuffers: make(chan []byte, 4),
 	}
 
 	if lcb, ok := cfg.LoadBalancer.(*LeastConnectionsBalancer); ok {
@@ -253,9 +257,18 @@ func (p *Proxy) proxyRequest(w http.ResponseWriter, r *http.Request, backend *Ba
 	w.WriteHeader(resp.StatusCode)
 	committed := true
 
-	// Copy response body
+	// Copy response body.
 	if resp.Body != nil {
-		_, err = p.copyResponse(w, resp.Body)
+		var dst io.Writer = w
+		if mediaType, _, _ := mime.ParseMediaType(resp.Header.Get("Content-Type")); mediaType == "text/event-stream" {
+			flush := http.NewResponseController(w).Flush
+			if err := flush(); err == nil {
+				dst = eventStreamWriter{Writer: w, flush: flush}
+			} else if !errors.Is(err, http.ErrNotSupported) {
+				return proxyRequestResult{committed: committed, err: err}
+			}
+		}
+		_, err = p.copyResponse(dst, resp.Body)
 		if err != nil {
 			return proxyRequestResult{committed: committed, err: err}
 		}
@@ -317,6 +330,19 @@ func (p *Proxy) applyRequestModifications(r *http.Request) error {
 	return nil
 }
 
+type eventStreamWriter struct {
+	io.Writer
+	flush func() error
+}
+
+func (w eventStreamWriter) Write(p []byte) (int, error) {
+	n, err := w.Writer.Write(p)
+	if n > 0 && err == nil {
+		err = w.flush()
+	}
+	return n, err
+}
+
 // copyResponse copies the response body
 func (p *Proxy) copyResponse(w io.Writer, src io.Reader) (int64, error) {
 	if p.config.BufferPool != nil {
@@ -326,8 +352,27 @@ func (p *Proxy) copyResponse(w io.Writer, src io.Reader) (int64, error) {
 		return io.CopyBuffer(w, src, buf)
 	}
 
-	// Standard copy
-	return io.Copy(w, src)
+	// Prefer the same specialized interfaces as io.Copy.
+	if _, ok := src.(io.WriterTo); ok {
+		return io.Copy(w, src)
+	}
+	if _, ok := w.(io.ReaderFrom); ok {
+		return io.Copy(w, src)
+	}
+
+	var buf []byte
+	select {
+	case buf = <-p.copyBuffers:
+	default:
+		buf = make([]byte, 32<<10)
+	}
+	defer func() {
+		select {
+		case p.copyBuffers <- buf:
+		default:
+		}
+	}()
+	return io.CopyBuffer(w, src, buf)
 }
 
 // isWebSocketRequest checks if the request is a WebSocket upgrade request

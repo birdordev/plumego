@@ -114,13 +114,6 @@ func contains(slice []string, s string) bool {
 	return false
 }
 
-func joinOrDefault(slice []string, def string) string {
-	if len(slice) == 0 {
-		return def
-	}
-	return strings.Join(slice, ", ")
-}
-
 func containsFold(slice []string, s string) bool {
 	for _, v := range slice {
 		if strings.EqualFold(v, s) {
@@ -133,7 +126,25 @@ func containsFold(slice []string, s string) bool {
 // Middleware provides configurable CORS support.
 func Middleware(opts CORSOptions) middleware.Middleware {
 	opts = opts.withDefaults()
-	allowAllOrigins := contains(opts.AllowedOrigins, "*")
+	origins := make(map[string]struct{}, len(opts.AllowedOrigins))
+	for _, origin := range opts.AllowedOrigins {
+		origins[origin] = struct{}{}
+	}
+	methods := make(map[string]struct{}, len(opts.AllowedMethods))
+	for _, method := range opts.AllowedMethods {
+		methods[method] = struct{}{}
+	}
+	policy := corsPolicy{
+		CORSOptions: opts, origins: origins, methods: methods,
+		allowAllOrigins: contains(opts.AllowedOrigins, "*"),
+		allowAllHeaders: contains(opts.AllowedHeaders, "*"),
+		allowMethods:    strings.Join(opts.AllowedMethods, ", "),
+		allowHeaders:    strings.Join(opts.AllowedHeaders, ", "),
+		exposeHeaders:   strings.Join(opts.ExposeHeaders, ", "),
+	}
+	if opts.MaxAge > 0 {
+		policy.maxAge = strconv.FormatInt(int64(opts.MaxAge/time.Second), 10)
+	}
 
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -142,13 +153,20 @@ func Middleware(opts CORSOptions) middleware.Middleware {
 				fields = append(fields, "Access-Control-Request-Method", "Access-Control-Request-Headers")
 			}
 			variant := internaltransport.NewVaryWriter(w, fields...)
-			serveCORS(variant, r, next, opts, allowAllOrigins)
+			policy.serve(variant, r, next)
 			variant.Prepare()
 		})
 	}
 }
 
-func serveCORS(w http.ResponseWriter, r *http.Request, next http.Handler, opts CORSOptions, allowAllOrigins bool) {
+type corsPolicy struct {
+	CORSOptions
+	origins, methods                                  map[string]struct{}
+	allowAllOrigins, allowAllHeaders                  bool
+	allowMethods, allowHeaders, exposeHeaders, maxAge string
+}
+
+func (opts corsPolicy) serve(w http.ResponseWriter, r *http.Request, next http.Handler) {
 	origin := r.Header.Get("Origin")
 	if origin == "" {
 		next.ServeHTTP(w, r)
@@ -156,13 +174,13 @@ func serveCORS(w http.ResponseWriter, r *http.Request, next http.Handler, opts C
 	}
 
 	var allowOriginValue string
-	if allowAllOrigins {
+	if opts.allowAllOrigins {
 		if opts.AllowCredentials {
 			allowOriginValue = origin
 		} else {
 			allowOriginValue = "*"
 		}
-	} else if contains(opts.AllowedOrigins, origin) {
+	} else if _, allowed := opts.origins[origin]; allowed {
 		allowOriginValue = origin
 	} else {
 		next.ServeHTTP(w, r)
@@ -171,7 +189,7 @@ func serveCORS(w http.ResponseWriter, r *http.Request, next http.Handler, opts C
 
 	if r.Method == http.MethodOptions && r.Header.Get("Access-Control-Request-Method") != "" {
 		requestMethod := strings.TrimSpace(r.Header.Get("Access-Control-Request-Method"))
-		if !contains(opts.AllowedMethods, requestMethod) {
+		if _, allowed := opts.methods[requestMethod]; !allowed {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -179,7 +197,7 @@ func serveCORS(w http.ResponseWriter, r *http.Request, next http.Handler, opts C
 		var allowHeadersValue string
 		reqHeaders := strings.Join(r.Header.Values("Access-Control-Request-Headers"), ",")
 		if reqHeaders != "" {
-			if contains(opts.AllowedHeaders, "*") {
+			if opts.allowAllHeaders {
 				allowed, ok := normalizeRequestedHeaders(reqHeaders)
 				if !ok {
 					next.ServeHTTP(w, r)
@@ -195,20 +213,20 @@ func serveCORS(w http.ResponseWriter, r *http.Request, next http.Handler, opts C
 				allowHeadersValue = strings.Join(allowed, ", ")
 			}
 		} else {
-			allowHeadersValue = joinOrDefault(opts.AllowedHeaders, "")
+			allowHeadersValue = opts.allowHeaders
 		}
 
 		w.Header().Set("Access-Control-Allow-Origin", allowOriginValue)
 		if opts.AllowCredentials {
 			w.Header().Set("Access-Control-Allow-Credentials", "true")
 		}
-		w.Header().Set("Access-Control-Allow-Methods", joinOrDefault(opts.AllowedMethods, "GET, POST, OPTIONS"))
+		w.Header().Set("Access-Control-Allow-Methods", opts.allowMethods)
 		if allowHeadersValue != "" {
 			w.Header().Set("Access-Control-Allow-Headers", allowHeadersValue)
 		}
 
-		if opts.MaxAge > 0 {
-			w.Header().Set("Access-Control-Max-Age", strconv.FormatInt(int64(opts.MaxAge/time.Second), 10))
+		if opts.maxAge != "" {
+			w.Header().Set("Access-Control-Max-Age", opts.maxAge)
 		}
 
 		w.WriteHeader(http.StatusNoContent)
@@ -219,8 +237,8 @@ func serveCORS(w http.ResponseWriter, r *http.Request, next http.Handler, opts C
 	if opts.AllowCredentials {
 		w.Header().Set("Access-Control-Allow-Credentials", "true")
 	}
-	if len(opts.ExposeHeaders) > 0 {
-		w.Header().Set("Access-Control-Expose-Headers", joinOrDefault(opts.ExposeHeaders, ""))
+	if opts.exposeHeaders != "" {
+		w.Header().Set("Access-Control-Expose-Headers", opts.exposeHeaders)
 	}
 
 	next.ServeHTTP(w, r)

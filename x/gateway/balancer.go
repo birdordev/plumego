@@ -35,7 +35,8 @@ func NewRoundRobinBalancer() *RoundRobinBalancer {
 
 // Next returns the next backend using round-robin strategy
 func (b *RoundRobinBalancer) Next(pool *BackendPool) (*Backend, error) {
-	backends := pool.HealthyBackends()
+	var local [32]*Backend
+	backends := pool.healthyBackendsInto(local[:0])
 	if len(backends) == 0 {
 		return nil, ErrNoHealthyBackends
 	}
@@ -69,7 +70,8 @@ func NewRandomBalancer() *RandomBalancer {
 
 // Next returns a random healthy backend
 func (b *RandomBalancer) Next(pool *BackendPool) (*Backend, error) {
-	backends := pool.HealthyBackends()
+	var local [32]*Backend
+	backends := pool.healthyBackendsInto(local[:0])
 	if len(backends) == 0 {
 		return nil, ErrNoHealthyBackends
 	}

@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"math"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -412,12 +413,12 @@ func NewParamExtractor() *ParamExtractor { return &ParamExtractor{} }
 
 // GetID returns the ":id" path parameter from the request context.
 func (pe *ParamExtractor) GetID(r *http.Request) string {
-	return contract.RequestContextFromContext(r.Context()).Params["id"]
+	return contract.RequestParamFromContext(r.Context(), "id")
 }
 
 // GetParam returns a named path parameter from the request context.
 func (pe *ParamExtractor) GetParam(r *http.Request, name string) string {
-	return contract.RequestContextFromContext(r.Context()).Params[name]
+	return contract.RequestParamFromContext(r.Context(), name)
 }
 
 // GetQueryParam returns a query parameter value.
@@ -489,7 +490,7 @@ func (c *BaseContextResourceController) ParseQueryParams(r *http.Request) *Query
 	}
 
 	params := builder.Parse(r)
-	return NormalizeQueryParams(params, c.Spec.Options)
+	return normalizeQueryParams(params, c.Spec.Options, true)
 }
 
 // ================================================
@@ -525,6 +526,9 @@ func DefaultResourceOptions() *ResourceOptions {
 // NormalizeQueryParams applies resource-level defaults and allowlists to parsed
 // query params. A recalculated offset saturates at the largest int.
 func NormalizeQueryParams(params *QueryParams, opts *ResourceOptions) *QueryParams {
+	return normalizeQueryParams(params, opts, false)
+}
+func normalizeQueryParams(params *QueryParams, opts *ResourceOptions, owned bool) *QueryParams {
 	if params == nil {
 		params = &QueryParams{}
 	}
@@ -546,7 +550,13 @@ func NormalizeQueryParams(params *QueryParams, opts *ResourceOptions) *QueryPara
 		params.Offset = pageOffset(params.Page, params.PageSize)
 	}
 
-	if len(opts.AllowedFilters) > 0 && len(params.Filters) > 0 {
+	if owned && len(opts.AllowedFilters) > 0 && len(opts.AllowedFilters) <= 8 {
+		for key := range params.Filters {
+			if !slices.Contains(opts.AllowedFilters, key) {
+				delete(params.Filters, key)
+			}
+		}
+	} else if len(opts.AllowedFilters) > 0 && len(params.Filters) > 0 {
 		allowed := make(map[string]struct{}, len(opts.AllowedFilters))
 		for _, name := range opts.AllowedFilters {
 			allowed[name] = struct{}{}
@@ -561,7 +571,9 @@ func NormalizeQueryParams(params *QueryParams, opts *ResourceOptions) *QueryPara
 		params.Filters = filtered
 	}
 
-	if len(opts.AllowedSorts) > 0 && len(params.Sort) > 0 {
+	if owned && len(opts.AllowedSorts) > 0 && len(opts.AllowedSorts) <= 8 {
+		params.Sort = slices.DeleteFunc(params.Sort, func(field SortField) bool { return !slices.Contains(opts.AllowedSorts, field.Field) })
+	} else if len(opts.AllowedSorts) > 0 && len(params.Sort) > 0 {
 		allowed := make(map[string]struct{}, len(opts.AllowedSorts))
 		for _, name := range opts.AllowedSorts {
 			allowed[name] = struct{}{}

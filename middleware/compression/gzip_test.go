@@ -16,7 +16,6 @@ import (
 	"testing"
 	"time"
 
-	internaltransport "github.com/birdordev/plumego/internal/httputil"
 	"github.com/birdordev/plumego/log"
 	"github.com/birdordev/plumego/middleware/recovery"
 )
@@ -1339,31 +1338,6 @@ func TestGzip_WriteBufferedBodyChunked(t *testing.T) {
 	}
 }
 
-// TestGzip_WriteBufferErrorPath covers the `w.buffer.Write` error
-// path (line 325-328) via a unit-level injection.
-func TestGzip_WriteBufferErrorPath(t *testing.T) {
-	// To hit `w.buffer.Write` error we need:
-	//   - compressionUsed=true, gz=nil
-	//   - cfg.MaxBufferBytes = 0 (disables the overflow bypass check)
-	//   - buffer.maxBytes = 1 so Write returns an error immediately
-	rr := httptest.NewRecorder()
-	gw := &gzipResponseWriter{
-		ResponseWriter:  rr,
-		cfg:             Config{MaxBufferBytes: 0},
-		compressionUsed: true,
-		wroteHeader:     true,
-		headersFlushed:  true,
-	}
-	// Create a buffer with maxBytes=1 so that Write("hello") overflows.
-	gw.buffer = internaltransport.NewBufferedResponse(1)
-	gw.buffer.WriteHeader(http.StatusOK)
-	gw.buffer.Header().Set("Content-Type", "text/plain")
-	_, err := gw.Write([]byte("hello"))
-	if err == nil {
-		t.Fatal("expected error from buffer.Write overflow")
-	}
-}
-
 // TestGzip_FinalizeWithPendingCompressAndNotCompressed covers the finalize branch
 // where compressionUsed=false AND pendingCompress=true (deferred decision, no write).
 // Two sub-cases: headersFlushed=true (line 200) and headersFlushed=false (line 202).
@@ -2076,6 +2050,34 @@ func TestGzipHeadOmitsIdentityLengthForCompressibleResponse(t *testing.T) {
 		}
 		if w.Body.Len() > 0 || !strings.Contains(strings.Join(got.Header.Values("Vary"), ","), "Accept-Encoding") {
 			t.Fatalf("body=%q headers=%v", w.Body, got.Header)
+		}
+	}
+}
+
+func TestGzipReuseKeepsResponsesIndependent(t *testing.T) {
+	handler := Middleware(DefaultConfig())(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain")
+		_, _ = io.WriteString(w, r.URL.Path)
+	}))
+
+	for _, path := range []string{"/first", "/second", "/third"} {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req.Header.Set("Accept-Encoding", "gzip")
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		reader, err := gzip.NewReader(rec.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, err := io.ReadAll(reader)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := reader.Close(); err != nil {
+			t.Fatal(err)
+		}
+		if string(got) != path {
+			t.Fatalf("body = %q, want %q", got, path)
 		}
 	}
 }

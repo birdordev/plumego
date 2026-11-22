@@ -215,6 +215,8 @@ func normalizeJSONFieldValueAt(value any, depth int, remaining *int) any {
 		return "[truncated]"
 	}
 	switch v := value.(type) {
+	case nil, string, bool, int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64, uintptr:
+		return v
 	case Fields:
 		return normalizeJSONFieldMap(map[string]any(v), depth, remaining)
 	case map[string]any:

@@ -122,8 +122,9 @@ type CollectorStats struct {
 
 // BaseMetricsCollector provides a base implementation for metrics collectors
 type BaseMetricsCollector struct {
-	mu    sync.RWMutex
-	stats CollectorStats
+	mu          sync.RWMutex
+	stats       CollectorStats
+	httpRecords int64
 }
 
 // NewBaseMetricsCollector creates a base metrics collector with counters that
@@ -148,7 +149,9 @@ func (b *BaseMetricsCollector) record(name string, isError bool) {
 	b.ensureInitializedLocked()
 
 	b.stats.TotalRecords = addCounterSaturated(b.stats.TotalRecords, 1, math.MaxInt64)
-	if name != "" {
+	if name == MetricHTTPRequest {
+		b.httpRecords = addCounterSaturated(b.httpRecords, 1, math.MaxInt64)
+	} else if name != "" {
 		b.stats.NameBreakdown[name] = addCounterSaturated(b.stats.NameBreakdown[name], 1, math.MaxInt64)
 	}
 
@@ -178,6 +181,9 @@ func (b *BaseMetricsCollector) GetStats() CollectorStats {
 
 	stats := b.stats
 	stats.NameBreakdown = cloneBreakdown(stats.NameBreakdown)
+	if b.httpRecords != 0 {
+		stats.NameBreakdown[MetricHTTPRequest] = b.httpRecords
+	}
 	stats.ActiveSeries = normalizedActiveSeries(stats)
 	return stats
 }
@@ -191,6 +197,7 @@ func (b *BaseMetricsCollector) Clear() {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.stats = newCollectorStats(time.Now())
+	b.httpRecords = 0
 }
 
 func (b *BaseMetricsCollector) ensureInitializedLocked() {

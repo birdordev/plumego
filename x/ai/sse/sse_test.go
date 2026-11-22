@@ -390,7 +390,7 @@ func TestStream_SendDataMultilineWriteError(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer stream.Close()
-	if err := stream.SendData("a\nb"); !errors.Is(err, writeErr) {
+	if err := stream.SendData("a\n" + strings.Repeat("b", 1024)); !errors.Is(err, writeErr) {
 		t.Fatalf("SendData error = %v", err)
 	}
 	if w.Flushed || w.Body.String() != "data: a\n" {

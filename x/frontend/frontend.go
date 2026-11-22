@@ -110,7 +110,8 @@ func (h *handler) serveAsset(w http.ResponseWriter, r *http.Request, filePath st
 	}
 	filePath = cleaned
 
-	if preFile, preStat, encoding := h.tryPlannedPrecompressed(r, filePath); preFile != nil {
+	pref := acceptedEncodings(r)
+	if preFile, preStat, encoding := h.tryPlannedPrecompressed(pref, filePath); preFile != nil {
 		defer func() { _ = preFile.Close() }()
 		h.applyFileHeaders(w, filePath, includeAssetCache)
 		w.Header().Set("Content-Encoding", encoding)
@@ -141,7 +142,7 @@ func (h *handler) serveAsset(w http.ResponseWriter, r *http.Request, filePath st
 	}
 	defer func() { _ = f.Close() }()
 
-	if preFile, preStat, encoding := h.tryLazyPrecompressed(r, filePath); preFile != nil {
+	if preFile, preStat, encoding := h.tryLazyPrecompressed(pref, filePath); preFile != nil {
 		defer func() { _ = preFile.Close() }()
 		h.applyFileHeaders(w, filePath, includeAssetCache)
 		w.Header().Set("Content-Encoding", encoding)
@@ -149,7 +150,7 @@ func (h *handler) serveAsset(w http.ResponseWriter, r *http.Request, filePath st
 		http.ServeContent(w, serveContentRequest(r, includeAssetCache), path.Base(filePath), preStat.ModTime(), preFile)
 		return true, nil
 	}
-	if !identityEncodingAcceptable(r) {
+	if !pref.identityAcceptable() {
 		if !includeAssetCache {
 			w.Header().Add("Vary", "Accept-Encoding")
 			return false, nil
@@ -169,18 +170,21 @@ func serveContentRequest(r *http.Request, includeAssetCache bool) *http.Request 
 	if includeAssetCache {
 		return r
 	}
-	copied := r.Clone(r.Context())
-	for _, key := range []string{
-		"Range",
-		"If-Range",
-		"If-Match",
-		"If-None-Match",
-		"If-Modified-Since",
-		"If-Unmodified-Since",
-	} {
-		copied.Header.Del(key)
+	keys := [...]string{
+		"Range", "If-Range", "If-Match", "If-None-Match", "If-Modified-Since", "If-Unmodified-Since",
 	}
-	return copied
+	for _, key := range keys {
+		if _, ok := r.Header[key]; !ok {
+			continue
+		}
+		copied := *r
+		copied.Header = r.Header.Clone()
+		for _, key := range keys {
+			copied.Header.Del(key)
+		}
+		return &copied
+	}
+	return r
 }
 
 // applyFileHeaders sets response headers common to file responses:

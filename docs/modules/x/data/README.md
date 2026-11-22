@@ -453,3 +453,10 @@ Application
 ```
 
 Build each shard as an `rw.Cluster`, then pass the slice to `sharding.NewRouter`.
+
+The S3 file backend stages small uploads in memory and uses temporary files for
+larger generic readers. `S3Storage.PutStaged` can borrow an immutable file for
+the duration of the call. With `CrossShardFirstSuccess`,
+`WithMaxParallelShardQueries` or `ClusterConfig.MaxParallelShardQueries` limits
+concurrent upstream queries when positive. Zero uses the existing
+all-candidate fan-out.

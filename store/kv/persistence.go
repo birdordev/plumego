@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"maps"
 	"math"
 	"os"
 	"path/filepath"
@@ -42,7 +41,7 @@ func (kv *KVStore) load() error {
 	if state.Entries == nil {
 		return fmt.Errorf("%w: state requires an entries object", ErrCorruptState)
 	}
-	if err := checkSnapshotObject(json.NewDecoder(bytes.NewReader(raw)), raw, snapshotRoot); err != nil {
+	if err := (&snapshotMembers{raw: raw}).checkObject(snapshotRoot); err != nil {
 		return fmt.Errorf("%w: %w", ErrCorruptState, err)
 	}
 	for key, item := range state.Entries {
@@ -54,8 +53,8 @@ func (kv *KVStore) load() error {
 		}
 		// The decoded entry and its value are owned by this load.
 		item.Size = entrySize(key, item.Value)
-		kv.data[key] = item
 	}
+	kv.data = state.Entries
 	return nil
 }
 
@@ -114,49 +113,112 @@ const (
 	snapshotEntry
 )
 
-// The typed decode already validates JSON syntax and schema types. A second
-// pass sees member order and raw key spellings that the typed decode loses.
-func checkSnapshotObject(dec *json.Decoder, raw []byte, object snapshotObject) error {
-	start, err := dec.Token()
-	if err != nil || start == nil {
-		return err
-	}
-	if start != json.Delim('{') {
+// The typed decode validates syntax first. This scan checks member names and
+// skips values without decoding payloads a second time.
+type snapshotMembers struct {
+	raw []byte
+	pos int
+}
+
+func (s *snapshotMembers) checkObject(object snapshotObject) error {
+	s.space()
+	if s.raw[s.pos] != '{' {
 		return errors.New("expected snapshot object")
 	}
+	s.pos++
 	seen := make(map[string]struct{})
-	var value json.RawMessage
-	for dec.More() {
-		offset := dec.InputOffset()
-		token, err := dec.Token()
-		if err != nil {
-			return err
+	for {
+		s.space()
+		if s.raw[s.pos] == '}' {
+			s.pos++
+			return nil
 		}
-		if object == snapshotEntries {
-			key := bytes.TrimLeft(raw[offset:dec.InputOffset()], ", \t\r\n")
-			if !snapshotKeyHasPairedSurrogates(key) {
-				return errors.New("snapshot key contains an unpaired Unicode surrogate")
+		start := s.pos
+		s.skipString()
+		key := s.raw[start:s.pos]
+		if object == snapshotEntries && !snapshotKeyHasPairedSurrogates(key) {
+			return errors.New("snapshot key contains an unpaired Unicode surrogate")
+		}
+		// A name containing escapes needs the same unquoting as encoding/json.
+		name := string(key[1 : len(key)-1])
+		if bytes.IndexByte(key, '\\') >= 0 {
+			if err := json.Unmarshal(key, &name); err != nil {
+				return err
 			}
 		}
-		name := snapshotMemberName(object, token.(string))
+		name = snapshotMemberName(object, name)
 		if _, exists := seen[name]; exists {
 			return errors.New("snapshot contains a duplicate member")
 		}
 		seen[name] = struct{}{}
+		s.space()
+		s.pos++ // ':' between member name and value.
 		switch {
 		case object == snapshotRoot && name == "entries":
-			err = checkSnapshotObject(dec, raw, snapshotEntries)
+			if err := s.checkObject(snapshotEntries); err != nil {
+				return err
+			}
 		case object == snapshotEntries:
-			err = checkSnapshotObject(dec, raw, snapshotEntry)
+			if err := s.checkObject(snapshotEntry); err != nil {
+				return err
+			}
 		default:
-			err = dec.Decode(&value)
+			s.skipValue()
 		}
-		if err != nil {
-			return err
+		s.space()
+		if s.raw[s.pos] == ',' {
+			s.pos++
 		}
 	}
-	_, err = dec.Token()
-	return err
+}
+
+func (s *snapshotMembers) space() {
+	for s.pos < len(s.raw) {
+		switch s.raw[s.pos] {
+		case ' ', '\t', '\r', '\n':
+			s.pos++
+		default:
+			return
+		}
+	}
+}
+
+func (s *snapshotMembers) skipString() {
+	s.pos++ // Opening quote.
+	for {
+		c := s.raw[s.pos]
+		s.pos++
+		if c == '"' {
+			return
+		}
+		if c == '\\' {
+			s.pos++
+		}
+	}
+}
+
+func (s *snapshotMembers) skipValue() {
+	s.space()
+	depth := 0
+	for {
+		switch s.raw[s.pos] {
+		case '"':
+			s.skipString()
+			continue
+		case '{', '[':
+			depth++
+		case '}', ']':
+			if depth == 0 {
+				return
+			}
+			depth--
+		case ',':
+			if depth == 0 {
+				return
+			}
+		}
+		s.pos++
+	}
 }
 
 // key is a syntactically valid JSON string, including quotes. The JSON decoder
@@ -209,14 +271,15 @@ func snapshotMemberName(object snapshotObject, name string) string {
 
 // persistLocked atomically replaces the backing file. The bool reports whether
 // replacement succeeded, even if the subsequent directory sync fails.
-// The write lock protects the borrowed entry map during synchronous encoding
-// and must remain held through replacement and state reconciliation.
-func (kv *KVStore) persistLocked() (bool, error) {
-	raw, err := json.Marshal(diskState{Entries: kv.data})
+func encodeSnapshot(data map[string]*entry) ([]byte, error) {
+	raw, err := json.Marshal(diskState{Entries: data})
 	if err != nil {
-		return false, fmt.Errorf("encode state: %w", err)
+		return nil, fmt.Errorf("encode state: %w", err)
 	}
+	return raw, nil
+}
 
+func (kv *KVStore) persistSnapshot(raw []byte, onReplace func()) (bool, error) {
 	path := filepath.Join(kv.opts.DataDir, stateFileName)
 	tmp, err := os.CreateTemp(kv.opts.DataDir, stateFileName+".*.tmp")
 	if err != nil {
@@ -225,6 +288,7 @@ func (kv *KVStore) persistLocked() (bool, error) {
 	if err := replaceSnapshot(tmp, path, raw); err != nil {
 		return false, err
 	}
+	onReplace()
 	syncDirectory := kv.syncStateDir
 	if syncDirectory == nil {
 		syncDirectory = syncDir
@@ -298,9 +362,4 @@ func syncAndCloseDirectory(f interface {
 
 func isUnsupportedDirSync(err error) bool {
 	return errors.Is(err, os.ErrInvalid) || errors.Is(err, syscall.EINVAL)
-}
-
-func (kv *KVStore) cloneDataLocked() map[string]*entry {
-	// Published entries are immutable. Mutations only replace or delete map entries.
-	return maps.Clone(kv.data)
 }

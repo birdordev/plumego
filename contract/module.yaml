@@ -67,6 +67,8 @@ public_entrypoints:
   - RequestIDHeader
   - WithTraceContext
   - TraceContextFromContext
+  - TraceSpanIDFromContext
+  - TraceIDsFromContext
   - TraceContext
   - TraceContext.IsSampled
   - TraceContext.HasTraceID
@@ -109,6 +111,8 @@ public_surface_stability:
     - RequestParamFromContext
     - WithTraceContext
     - TraceContextFromContext
+    - TraceSpanIDFromContext
+    - TraceIDsFromContext
     - TraceContext
     - TraceContext.IsSampled
     - TraceContext.HasTraceID

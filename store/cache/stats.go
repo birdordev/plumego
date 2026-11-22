@@ -23,6 +23,6 @@ func (mc *MemoryCache) Stats() Stats {
 	return Stats{
 		Entries:     mc.size,
 		MemoryUsage: mc.memory,
-		Closed:      mc.closed || mc.stopChan == nil,
+		Closed:      mc.closed.Load() || mc.stopChan == nil,
 	}
 }

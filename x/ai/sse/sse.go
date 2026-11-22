@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -32,11 +33,12 @@ type Event struct {
 
 // Stream represents an active SSE connection.
 type Stream struct {
-	w       http.ResponseWriter
-	flusher http.Flusher
-	ctx     context.Context
-	mu      sync.Mutex
-	closed  bool
+	w            http.ResponseWriter
+	flusher      http.Flusher
+	ctx          context.Context
+	mu           sync.Mutex
+	closed       bool
+	eventScratch []byte
 
 	// Configuration
 	keepAliveInterval time.Duration
@@ -135,6 +137,7 @@ func (s *Stream) Close() error {
 	}
 
 	s.closed = true
+	s.eventScratch = nil
 	close(s.done)
 
 	if s.keepAliveTicker != nil {
@@ -174,6 +177,56 @@ func (s *Stream) SetKeepAliveInterval(interval time.Duration) {
 
 // writeEvent writes an event to the response writer.
 func (s *Stream) writeEvent(event *Event) error {
+	const smallEvent = 1024
+	if len(event.Comment) <= smallEvent && len(event.ID) <= smallEvent && len(event.Event) <= smallEvent && len(event.Data) <= smallEvent &&
+		len(event.Comment)+len(event.ID)+len(event.Event)+len(event.Data) <= smallEvent {
+		buf := s.eventScratch[:0]
+		if event.Comment != "" {
+			buf = appendEventLine(buf, ": ", event.Comment)
+		}
+		if event.ID != "" {
+			buf = appendEventLine(buf, "id: ", event.ID)
+		}
+		if event.Event != "" {
+			buf = appendEventLine(buf, "event: ", event.Event)
+		}
+		if event.Retry > 0 {
+			buf = append(buf, "retry: "...)
+			buf = append(strconv.AppendInt(buf, int64(event.Retry), 10), '\n')
+		}
+		if event.Data != "" {
+			data := event.Data
+			for {
+				i := strings.IndexAny(data, "\r\n")
+				if i < 0 {
+					buf = appendEventLine(buf, "data: ", data)
+					break
+				}
+				buf = appendEventLine(buf, "data: ", data[:i])
+				if data[i] == '\r' && i+1 < len(data) && data[i+1] == '\n' {
+					i++
+				}
+				data = data[i+1:]
+			}
+		}
+		buf = append(buf, '\n')
+		s.eventScratch = buf[:0]
+		n, err := s.w.Write(buf)
+		if err == nil && n != len(buf) {
+			return io.ErrShortWrite
+		}
+		return err
+	}
+	return s.writeLargeEvent(event)
+}
+
+func appendEventLine(buf []byte, prefix, value string) []byte {
+	buf = append(buf, prefix...)
+	buf = append(buf, value...)
+	return append(buf, '\n')
+}
+
+func (s *Stream) writeLargeEvent(event *Event) error {
 	// Write comment
 	if event.Comment != "" {
 		if _, err := fmt.Fprintf(s.w, ": %s\n", event.Comment); err != nil {

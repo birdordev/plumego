@@ -9,8 +9,6 @@ import (
 type matchResult struct {
 	routeState   contract.RouteState // Immutable after cache publication; contexts retain it.
 	Handler      http.Handler
-	ParamValues  []string
-	ParamKeys    []string
 	RoutePattern string
 	RouteMethod  string
 	RouteName    string

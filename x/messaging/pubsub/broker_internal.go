@@ -28,7 +28,7 @@ func (b *InProcBroker) doPublish(ctx context.Context, topic string, msg Message)
 	}
 
 	if hasPatternSubs {
-		b.deliverToPatterns(ctx, b.shards.getAllPatterns(), topic, msg)
+		b.deliverToPatterns(ctx, b.shards.getPatternCandidates(topic), topic, msg)
 	}
 
 	if hasMQTTSubs {
@@ -107,7 +107,7 @@ func (b *InProcBroker) HasSubscribers(topic string) bool {
 		return true
 	}
 	if b.shards.hasAnyPatterns() {
-		for _, entry := range b.shards.getAllPatterns() {
+		for _, entry := range b.shards.getPatternCandidates(topic) {
 			if entry.isGlob {
 				if matched, err := path.Match(entry.pattern, topic); err == nil && matched {
 					return true

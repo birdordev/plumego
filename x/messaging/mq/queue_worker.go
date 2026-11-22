@@ -35,15 +35,16 @@ type Worker struct {
 	mu       sync.RWMutex
 	handlers map[string]TaskHandler
 
-	tasksCh    chan Task
-	runCtx     context.Context
-	runCancel  context.CancelFunc
-	pollCtx    context.Context
-	pollCancel context.CancelFunc
-	wg         sync.WaitGroup
-	startMu    sync.Mutex
-	started    bool
-	inflight   atomic.Int64
+	tasksCh           chan Task
+	capacityAvailable chan struct{}
+	runCtx            context.Context
+	runCancel         context.CancelFunc
+	pollCtx           context.Context
+	pollCancel        context.CancelFunc
+	wg                sync.WaitGroup
+	startMu           sync.Mutex
+	started           bool
+	inflight          atomic.Int64
 
 	inflightMu    sync.Mutex
 	inflightTasks map[string]Task
@@ -53,9 +54,10 @@ type Worker struct {
 
 func NewWorker(q *TaskQueue, cfg WorkerConfig) *Worker {
 	return &Worker{
-		queue:    q,
-		config:   cfg,
-		handlers: make(map[string]TaskHandler),
+		queue:             q,
+		config:            cfg,
+		handlers:          make(map[string]TaskHandler),
+		capacityAvailable: make(chan struct{}, 1),
 	}
 }
 
@@ -177,8 +179,10 @@ func (w *Worker) pollLoop() {
 
 		available := w.config.MaxInflight - int(w.inflight.Load())
 		if available <= 0 {
-			if !sleepWithContext(w.pollCtx, w.config.PollInterval) {
+			select {
+			case <-w.pollCtx.Done():
 				return
+			case <-w.capacityAvailable:
 			}
 			continue
 		}
@@ -201,9 +205,15 @@ func (w *Worker) pollLoop() {
 			continue
 		}
 		if len(tasks) == 0 {
-			if !sleepWithContext(w.pollCtx, w.config.PollInterval) {
+			timer := time.NewTimer(w.config.PollInterval)
+			select {
+			case <-w.pollCtx.Done():
+				timer.Stop()
 				return
+			case <-w.queue.ready:
+			case <-timer.C:
 			}
+			timer.Stop()
 			continue
 		}
 
@@ -238,7 +248,13 @@ func (w *Worker) workerLoop() {
 }
 
 func (w *Worker) handleTask(task Task) {
-	defer w.inflight.Add(-1)
+	defer func() {
+		w.inflight.Add(-1)
+		select {
+		case w.capacityAvailable <- struct{}{}:
+		default:
+		}
+	}()
 	defer func() {
 		// Leave shutdown cleanup ownership intact when the operation was
 		// canceled by the worker lifecycle.

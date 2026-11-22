@@ -122,3 +122,6 @@ Use a dedicated file-log directory for each concurrently active instance of
 the same program. Retention considers archives belonging to the program in
 that directory, including archives from earlier runs. It excludes the current
 writers and files still referenced by the program's published active links.
+
+File rotation switches the active writer before scanning the archive
+directory. Other records can be written while that scan runs.

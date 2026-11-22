@@ -116,7 +116,7 @@ func WriteError(w http.ResponseWriter, r *http.Request, err APIError) error {
 		return ErrResponseWriterNil
 	}
 
-	err = normalizeAPIError(err)
+	err = normalizeAPIErrorWithDetails(err, !err.isNormalized || !scalarErrorDetails(err.details))
 
 	if err.requestID == "" && r != nil {
 		if requestID := RequestIDFromContext(r.Context()); requestID != "" {
@@ -155,6 +155,18 @@ func encodeJSON(encoder *json.Encoder, payload any, panicErr error) (err error) 
 		}
 	}()
 	return encoder.Encode(payload)
+}
+
+// Only builtin scalar values are safe to encode directly from a shared snapshot.
+func scalarErrorDetails(details map[string]any) bool {
+	for _, value := range details {
+		switch value.(type) {
+		case nil, string, bool, int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64, float32, float64:
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 func errorPayloadFrom(err APIError) errorPayload {

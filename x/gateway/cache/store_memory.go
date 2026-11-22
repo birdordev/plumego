@@ -43,6 +43,15 @@ func NewMemoryStore(capacity int) *MemoryStore {
 
 // Get retrieves an independent copy of a cached response.
 func (s *MemoryStore) Get(key string) (*CachedResponse, bool) {
+	response, found := s.getImmutable(key)
+	if !found {
+		return nil, false
+	}
+	return cloneCachedResponse(response), true
+}
+
+// getImmutable returns the store-owned snapshot for internal read-only use.
+func (s *MemoryStore) getImmutable(key string) (*CachedResponse, bool) {
 	s.mu.Lock()
 
 	elem, found := s.items[key]
@@ -72,13 +81,16 @@ func (s *MemoryStore) Get(key string) (*CachedResponse, bool) {
 	s.mu.Unlock()
 
 	// Stored responses are immutable; replacement installs a new pointer.
-	return cloneCachedResponse(response), true
+	return response, true
 }
 
 // Set stores an independent copy of the response. A positive TTL sets the
 // expiry when resp.ExpiresAt is zero.
 func (s *MemoryStore) Set(key string, resp *CachedResponse, ttl time.Duration) {
-	resp = cloneCachedResponse(resp)
+	s.setOwned(key, cloneCachedResponse(resp), ttl)
+}
+
+func (s *MemoryStore) setOwned(key string, resp *CachedResponse, ttl time.Duration) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 

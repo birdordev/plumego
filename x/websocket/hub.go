@@ -117,8 +117,13 @@ func (h *Hub) getConnList() *[]*Conn {
 	return h.connListPool.Get().(*[]*Conn)
 }
 
+const maxPooledConnections = 4096
+
 // putConnList returns a connection list to the pool after clearing it
 func (h *Hub) putConnList(conns *[]*Conn) {
+	if cap(*conns) > maxPooledConnections {
+		return
+	}
 	// Drop connection references while retaining the backing array.
 	clear(*conns)
 	*conns = (*conns)[:0]
@@ -402,11 +407,11 @@ func (h *Hub) startWorkers() {
 
 func (h *Hub) writeJob(j hubJob) error {
 	if j.conn.sendBehavior != SendBlock || j.conn.sendTimeout > 0 {
-		return j.conn.WriteMessage(j.op, j.data)
+		return j.conn.writeMessage(j.op, j.data, true)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), hubWorkerDefaultSendTimeout)
 	defer cancel()
-	return j.conn.WriteMessageContext(ctx, j.op, j.data)
+	return j.conn.enqueueMessage(ctx, j.op, j.data, true, 0)
 }
 
 // startSecurityMonitor processes security events

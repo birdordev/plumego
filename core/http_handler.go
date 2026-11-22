@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"sync"
 
 	"github.com/birdordev/plumego/contract"
 )
@@ -90,7 +91,12 @@ func (a *App) ensureServerPrepared() (bool, error) {
 		return false, wrapCoreError(err, operationPrepareServer, nil)
 	}
 
-	tlsConfig, err := prepareTLSConfig(config.TLS)
+	var tlsConfig *tls.Config
+	if config.TLS.Enabled {
+		preparation := a.acquireTLSPreparation()
+		defer a.releaseTLSPreparation(preparation)
+		tlsConfig, err = preparation.load(config.TLS)
+	}
 	if err != nil {
 		return false, wrapCoreError(err, operationPrepareServer, nil)
 	}
@@ -164,6 +170,37 @@ func (a *App) installHTTPServer(config AppConfig, tlsConfig *tls.Config, handler
 	}
 }
 
+type tlsPreparation struct {
+	once   sync.Once
+	config *tls.Config
+	err    error
+	users  int // Guarded by App.mu.
+}
+
+func (p *tlsPreparation) load(cfg TLSConfig) (*tls.Config, error) {
+	p.once.Do(func() { p.config, p.err = prepareTLSConfig(cfg) })
+	return p.config, p.err
+}
+
+func (a *App) acquireTLSPreparation() *tlsPreparation {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.tlsPreparation == nil {
+		a.tlsPreparation = &tlsPreparation{}
+	}
+	a.tlsPreparation.users++
+	return a.tlsPreparation
+}
+
+func (a *App) releaseTLSPreparation(preparation *tlsPreparation) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	preparation.users--
+	if preparation.users == 0 {
+		a.tlsPreparation = nil
+	}
+}
+
 func prepareTLSConfig(cfg TLSConfig) (*tls.Config, error) {
 	if !cfg.Enabled {
 		return nil, nil
@@ -182,6 +219,10 @@ func prepareTLSConfig(cfg TLSConfig) (*tls.Config, error) {
 
 // ServeHTTP allows App to be used directly with net/http servers.
 func (a *App) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if ref := a.handlerFast.Load(); ref != nil {
+		ref.h.ServeHTTP(w, r)
+		return
+	}
 	if warnNoRoutes, _ := a.ensureHandlerPrepared(); warnNoRoutes {
 		a.warnNoRoutes()
 	}

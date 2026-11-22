@@ -776,7 +776,7 @@ func TestQueryResolvedShardsValidatesPlanBeforeFanout(t *testing.T) {
 	_, err := router.queryResolvedShards(t.Context(), "SELECT * FROM users WHERE user_id IN (?, ?)", []any{1, 99}, []*ResolvedShard{
 		{ShardIndex: 1},
 		{ShardIndex: 99},
-	})
+	}, nil)
 	if !errors.Is(err, ErrShardNotFound) {
 		t.Fatalf("queryResolvedShards error = %v, want ErrShardNotFound", err)
 	}
@@ -943,5 +943,25 @@ func TestQueryRowContextResolvedCrossShardPolicies(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestCrossShardLimitSkipsQueuedQueriesAfterSuccess(t *testing.T) {
+	router, _ := createTestRouter(t, 4, CrossShardFirstSuccess)
+	defer router.Close()
+	WithMaxParallelShardQueries(1)(router)
+	rows, err := router.QueryContext(t.Context(), "SELECT * FROM users WHERE name = ?", "Alice")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := rows.Close(); err != nil {
+		t.Fatal(err)
+	}
+	var starts uint64
+	for _, count := range router.Metrics().ShardQueryCounts {
+		starts += count
+	}
+	if starts != 1 {
+		t.Fatalf("started %d shard queries, want 1", starts)
 	}
 }

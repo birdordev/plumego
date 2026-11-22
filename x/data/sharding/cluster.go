@@ -32,6 +32,9 @@ type ClusterConfig struct {
 	// CrossShardPolicy determines how to handle cross-shard queries
 	CrossShardPolicy CrossShardPolicy
 
+	// MaxParallelShardQueries limits the first-success policy when positive.
+	MaxParallelShardQueries int
+
 	// DefaultShardIndex is used when no shard can be determined (-1 to disable)
 	DefaultShardIndex int
 
@@ -226,6 +229,7 @@ func New(config ClusterConfig) (_ *ClusterDB, err error) {
 	// Create router
 	routerOpts := []RouterOption{
 		WithCrossShardPolicy(config.CrossShardPolicy),
+		WithMaxParallelShardQueries(config.MaxParallelShardQueries),
 		WithMetrics(config.EnableMetrics),
 	}
 	if config.DefaultShardIndex >= 0 {

@@ -3,6 +3,7 @@ package router
 import (
 	"net/http"
 	"slices"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -51,13 +52,18 @@ type route struct {
 // It excludes application-layer concerns so the router stays a pure
 // route-structure primitive.
 type routerState struct {
-	trees            map[string]*node
-	routes           map[string][]route
-	mu               sync.RWMutex
-	matchCache       *matchCache
-	namedRoutes      map[string]*NamedRoute
-	methodNotAllowed atomic.Bool
-	frozen           atomic.Bool
+	trees                map[string]*node
+	routes               map[string][]route
+	mu                   sync.RWMutex
+	matchCache           *matchCache
+	namedRoutes          map[string]*compiledNamedRoute
+	frozenRoutes         []route
+	methodNotAllowed     atomic.Bool
+	frozenStatic         map[matchCacheKey]*matchResult
+	frozenMethods        []string
+	frozenMethodPrefixes map[string]map[string]struct{}
+	frozenAnyPrefix      map[string]struct{}
+	frozen               atomic.Bool
 }
 
 // Router represents an HTTP router with path-based routing.
@@ -122,6 +128,8 @@ func WithTags(tags ...string) RouteOption {
 // WithCacheCapacity sets the maximum number of distinct method:path pairs to
 // cache per router. The FIFO cache stores only successful route matches and
 // evicts its oldest entry when a new match is inserted into a full cache.
+// Large dynamic paths bypass admission. Once a frozen cache is full, a new
+// dynamic path must be observed again before it can displace a cached match.
 // The option has no effect after Freeze.
 //
 // The default of 100 works well for services whose hot paths are mostly static
@@ -163,7 +171,7 @@ func NewRouter(opts ...RouterOption) *Router {
 		state: &routerState{
 			trees:       make(map[string]*node),
 			routes:      make(map[string][]route),
-			namedRoutes: make(map[string]*NamedRoute),
+			namedRoutes: make(map[string]*compiledNamedRoute),
 			matchCache:  newMatchCache(defaultCacheCapacity),
 		},
 	}
@@ -210,8 +218,41 @@ func (r *Router) Freeze() {
 		return
 	}
 	r.state.mu.Lock()
+	defer r.state.mu.Unlock()
+	if r.state.frozen.Load() {
+		return
+	}
+	r.state.frozenStatic = make(map[matchCacheKey]*matchResult)
+	r.state.frozenMethodPrefixes = make(map[string]map[string]struct{})
+	r.state.frozenAnyPrefix = make(map[string]struct{})
+	for method, routes := range r.state.routes {
+		if r.state.methodNotAllowed.Load() && method != MethodAny {
+			r.state.frozenMethods = append(r.state.frozenMethods, method)
+		}
+		for _, route := range routes {
+			segments := compilePathSegments(route.Path)
+			if r.state.methodNotAllowed.Load() && method != MethodAny && len(segments) != 0 {
+				first := segments[0]
+				if first.isParam || first.isWild {
+					r.state.frozenAnyPrefix[method] = struct{}{}
+				} else {
+					methods := r.state.frozenMethodPrefixes[first.raw]
+					if methods == nil {
+						methods = make(map[string]struct{})
+						r.state.frozenMethodPrefixes[first.raw] = methods
+					}
+					methods[method] = struct{}{}
+				}
+			}
+			if slices.ContainsFunc(segments, func(s segment) bool { return s.isParam || s.isWild }) {
+				continue
+			}
+			r.state.frozenStatic[matchCacheKey{method, route.Path}] = r.matchRoute(method, route.Path)
+		}
+	}
+	sort.Strings(r.state.frozenMethods)
+	r.state.frozenRoutes = r.sortedRoutesLocked()
 	r.state.frozen.Store(true)
-	r.state.mu.Unlock()
 }
 
 func findStaticChild(parent *node, path string) *node {

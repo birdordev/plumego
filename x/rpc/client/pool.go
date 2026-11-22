@@ -32,6 +32,8 @@ type Pool struct {
 	dial       Dialer
 	defaultOps []DialOption
 	conns      map[string]Conn
+	dialing    map[string]chan struct{}
+	done       chan struct{}
 	closed     bool
 }
 
@@ -40,6 +42,8 @@ func New(dial Dialer, defaultOpts ...DialOption) *Pool {
 		dial:       dial,
 		defaultOps: append([]DialOption(nil), defaultOpts...),
 		conns:      make(map[string]Conn),
+		dialing:    make(map[string]chan struct{}),
+		done:       make(chan struct{}),
 	}
 }
 
@@ -49,6 +53,7 @@ func New(dial Dialer, defaultOpts ...DialOption) *Pool {
 // cached a connection, Dial reuses it after closing the redundant connection.
 // A cleanup failure returns an error and leaves the cached connection available.
 func (p *Pool) Dial(ctx context.Context, target string, opts ...DialOption) (Conn, error) {
+retry:
 	p.mu.Lock()
 	if p.closed {
 		p.mu.Unlock()
@@ -61,6 +66,30 @@ func (p *Pool) Dial(ctx context.Context, target string, opts ...DialOption) (Con
 	if conn, ok := p.conns[target]; ok {
 		p.mu.Unlock()
 		return conn, nil
+	}
+	if len(opts) == 0 {
+		if active := p.dialing[target]; active != nil {
+			p.mu.Unlock()
+			select {
+			case <-active:
+				if err := ctx.Err(); err != nil {
+					return nil, err
+				}
+				goto retry
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-p.done:
+				return nil, ErrPoolClosed
+			}
+		}
+		active := make(chan struct{})
+		p.dialing[target] = active
+		defer func() {
+			p.mu.Lock()
+			delete(p.dialing, target)
+			close(active)
+			p.mu.Unlock()
+		}()
 	}
 	dial := p.dial
 	dialOpts := append([]DialOption(nil), p.defaultOps...)
@@ -115,6 +144,9 @@ func (p *Pool) Close() error {
 		return nil
 	}
 	p.closed = true
+	if p.done != nil {
+		close(p.done)
+	}
 	conns := make([]Conn, 0, len(p.conns))
 	for target, conn := range p.conns {
 		conns = append(conns, conn)

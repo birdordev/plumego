@@ -24,6 +24,7 @@ type slidingWindow struct {
 	mu           sync.RWMutex
 	requestTimes []time.Time // sorted list of request timestamps (oldest first)
 	tokenUsage   []tokenUsage
+	totalTokens  int64
 }
 
 // tokenUsage tracks token consumption with timestamp.
@@ -84,10 +85,7 @@ func (m *SlidingWindowQuotaManager) Allow(ctx context.Context, tenantID string, 
 	window.cleanup(cutoff)
 
 	currentRequests := int64(len(window.requestTimes))
-	var currentTokens int64
-	for _, u := range window.tokenUsage {
-		currentTokens += u.tokens
-	}
+	currentTokens := window.totalTokens
 
 	if reqLimit > 0 && currentRequests+req.Requests > reqLimit {
 		needed := int(currentRequests + req.Requests - reqLimit)
@@ -115,6 +113,7 @@ func (m *SlidingWindowQuotaManager) Allow(ctx context.Context, tenantID string, 
 		window.requestTimes = append(window.requestTimes, req.Now)
 	}
 	if req.Tokens > 0 {
+		window.totalTokens += req.Tokens
 		window.tokenUsage = append(window.tokenUsage, tokenUsage{
 			time:   req.Now,
 			tokens: req.Tokens,
@@ -143,6 +142,9 @@ func (w *slidingWindow) cleanup(cutoff time.Time) {
 		return w.tokenUsage[i].time.After(cutoff)
 	})
 	if tidx > 0 {
+		for _, usage := range w.tokenUsage[:tidx] {
+			w.totalTokens -= usage.tokens
+		}
 		w.tokenUsage = w.tokenUsage[tidx:]
 	}
 }

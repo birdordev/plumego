@@ -79,7 +79,7 @@ func BenchmarkKVWriteSnapshotScale(b *testing.B) {
 			payload := make([]byte, 128)
 			for i := range size {
 				key := fmt.Sprint(i)
-				kv.data[key] = &entry{Value: payload, Size: entrySize(key, payload)}
+				kv.replaceEntry(key, &entry{Value: payload, Size: entrySize(key, payload)})
 			}
 			b.ReportAllocs()
 			for b.Loop() {

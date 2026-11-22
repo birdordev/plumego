@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"hash/crc32"
 	"os"
 	"path/filepath"
 	"sort"
@@ -2941,5 +2942,19 @@ func TestFailedSetPreservesCapacityAndWAL(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestLargeWALCRCMatchesHistoricalEncoding(t *testing.T) {
+	var kv KVStore
+	for _, size := range []int{0, 4095, 4096, 4097, 1 << 20} {
+		e := WALEntry{
+			Op: opSet, Key: "k\x00é", Value: bytes.Repeat([]byte{0xa8}, size),
+			ExpireAt: time.Unix(-1, 1), Version: 17,
+		}
+		historical := fmt.Sprintf("%d\x00%s\x00%x\x00%d\x00%d", e.Op, e.Key, e.Value, e.ExpireAt.UnixNano(), e.Version)
+		if got, want := kv.calculateCRC(e), crc32.ChecksumIEEE([]byte(historical)); got != want {
+			t.Fatalf("size %d CRC = %x, want %x", size, got, want)
+		}
 	}
 }

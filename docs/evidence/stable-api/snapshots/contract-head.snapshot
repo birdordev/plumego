@@ -75,6 +75,8 @@ symbol	github.com/birdordev/plumego/contract	func	RequestContextFromContext	func
 symbol	github.com/birdordev/plumego/contract	func	RequestIDFromContext	func RequestIDFromContextfunc(ctx context.Context) string
 symbol	github.com/birdordev/plumego/contract	func	RequestParamFromContext	func RequestParamFromContextfunc(ctx context.Context, name string) string
 symbol	github.com/birdordev/plumego/contract	func	TraceContextFromContext	func TraceContextFromContextfunc(ctx context.Context) (TraceContext, bool)
+symbol	github.com/birdordev/plumego/contract	func	TraceIDsFromContext	func TraceIDsFromContextfunc(ctx context.Context) (traceID, spanID string)
+symbol	github.com/birdordev/plumego/contract	func	TraceSpanIDFromContext	func TraceSpanIDFromContextfunc(ctx context.Context) string
 symbol	github.com/birdordev/plumego/contract	func	WithRequestContext	func WithRequestContextfunc(ctx context.Context, rc RequestContext) context.Context
 symbol	github.com/birdordev/plumego/contract	func	WithRequestID	func WithRequestIDfunc(ctx context.Context, id string) context.Context
 symbol	github.com/birdordev/plumego/contract	func	WithRouteState	func WithRouteStatefunc(ctx context.Context, rs *RouteState) context.Context

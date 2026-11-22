@@ -76,6 +76,28 @@ func TraceContextFromContext(ctx context.Context) (TraceContext, bool) {
 	return TraceContext{}, false
 }
 
+// TraceSpanIDFromContext returns the valid span ID from the stored trace
+// context, or the empty string when absent or invalid.
+func TraceSpanIDFromContext(ctx context.Context) string {
+	if ctx != nil {
+		if tc, ok := ctx.Value(traceContextKey{}).(*TraceContext); ok && tc.HasSpanID() {
+			return tc.SpanID
+		}
+	}
+	return ""
+}
+
+// TraceIDsFromContext returns the stored trace and span IDs when both are
+// valid. Absent or incomplete trace metadata returns two empty strings.
+func TraceIDsFromContext(ctx context.Context) (traceID, spanID string) {
+	if ctx != nil {
+		if tc, ok := ctx.Value(traceContextKey{}).(*TraceContext); ok && tc.Valid() {
+			return tc.TraceID, tc.SpanID
+		}
+	}
+	return "", ""
+}
+
 func cloneTraceContext(traceContext TraceContext) TraceContext {
 	if traceContext.ParentSpanID != nil {
 		parentSpanID := *traceContext.ParentSpanID

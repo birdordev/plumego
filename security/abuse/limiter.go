@@ -213,6 +213,7 @@ type requestCleanup struct {
 type limiterShard struct {
 	mu      sync.RWMutex
 	buckets map[string]*bucket
+	oldest  string // Empty until a scan establishes the oldest candidate.
 }
 
 type bucket struct {
@@ -383,6 +384,9 @@ func (l *Limiter) Allow(key string) Decision {
 				shard.mu.Lock()
 			}
 			b = &bucket{tokens: l.capacity, lastRefill: now, lastAccess: now}
+			if shard.oldest != "" && now.Before(shard.buckets[shard.oldest].lastAccess) {
+				shard.oldest = key
+			}
 			shard.buckets[key] = b
 			l.bucketCount.Add(1)
 		}
@@ -403,6 +407,9 @@ func (l *Limiter) Allow(key string) Decision {
 	b.lastRefill = now
 	if now.After(b.lastAccess) {
 		b.lastAccess = now
+		if shard.oldest == key {
+			shard.oldest = ""
+		}
 	}
 	shard.mu.Unlock()
 	// --- end critical section ---
@@ -512,7 +519,7 @@ func (l *Limiter) cleanup(now time.Time) {
 		shard.mu.Lock()
 		for key, b := range shard.buckets {
 			if now.Sub(b.lastAccess) > l.maxIdle {
-				delete(shard.buckets, key)
+				shard.remove(key)
 				l.bucketCount.Add(-1)
 				l.metrics.Evictions.Add(1)
 			}
@@ -542,13 +549,12 @@ func (l *Limiter) evictOldestGlobal() {
 	for i := range l.shards {
 		shard := &l.shards[i]
 		shard.mu.Lock()
-		for key, b := range shard.buckets {
-			if first || b.lastAccess.Before(oldestTime) {
-				oldestKey = key
-				oldestTime = b.lastAccess
-				oldestShard = shard
-				first = false
-			}
+		key, b := shard.oldestBucket()
+		if b != nil && (first || b.lastAccess.Before(oldestTime)) {
+			oldestKey = key
+			oldestTime = b.lastAccess
+			oldestShard = shard
+			first = false
 		}
 		shard.mu.Unlock()
 	}
@@ -562,11 +568,32 @@ func (l *Limiter) evictOldestGlobal() {
 	// must still free a slot. New-key admissions are serialized by admissionMu.
 	oldestShard.mu.Lock()
 	if _, exists := oldestShard.buckets[oldestKey]; exists {
-		delete(oldestShard.buckets, oldestKey)
+		oldestShard.remove(oldestKey)
 		l.bucketCount.Add(-1)
 		l.metrics.Evictions.Add(1)
 	}
 	oldestShard.mu.Unlock()
+}
+
+// oldestBucket reuses a candidate until access or removal invalidates it.
+func (s *limiterShard) oldestBucket() (string, *bucket) {
+	if s.oldest != "" {
+		return s.oldest, s.buckets[s.oldest]
+	}
+	var oldest *bucket
+	for key, b := range s.buckets {
+		if oldest == nil || b.lastAccess.Before(oldest.lastAccess) {
+			s.oldest, oldest = key, b
+		}
+	}
+	return s.oldest, oldest
+}
+
+func (s *limiterShard) remove(key string) {
+	delete(s.buckets, key)
+	if s.oldest == key {
+		s.oldest = ""
+	}
 }
 
 // Metrics returns monitoring counters sampled independently with atomic loads.

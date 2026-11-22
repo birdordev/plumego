@@ -142,9 +142,8 @@ func (g *RequestIDGenerator) ensureInitialized() {
 func (g *RequestIDGenerator) randomValue() int {
 	g.ensureInitialized()
 
-	g.poolMu.RLock()
+	// Initialization publishes the slice length; refresh only replaces elements.
 	poolSize := len(g.randomPool)
-	g.poolMu.RUnlock()
 	if poolSize == 0 {
 		return g.randomFallback()
 	}

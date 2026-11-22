@@ -89,3 +89,13 @@ Successful tenant-authorized downloads use `Cache-Control: private, no-store`.
 `Handler.GetURL` returns the storage provider's URL as a JSON string.
 Decode the JSON response normally to obtain the full URL, including any
 query separators.
+
+For large multipart uploads parsed by the handler, the S3 backend can borrow
+the validated multipart file. It hashes and sends that file without a second
+disk staging pass. The handler owns cleanup of the multipart form.
+
+`Handler.EnableDeferredAccessUpdates` can be configured before serving to
+move best-effort access tracking to a bounded queue. Repeated updates for a
+pending file coalesce, and a full queue drops new updates. The returned stop
+function cancels the worker and waits for it to exit. Metadata implementations
+must honor cancellation on the context passed to each update.

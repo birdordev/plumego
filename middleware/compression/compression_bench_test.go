@@ -8,7 +8,7 @@ import (
 )
 
 func BenchmarkCompressionDisabled(b *testing.B) {
-	mw := Middleware(Config{MaxBufferBytes: 0})
+	mw := Middleware(DefaultConfig())
 	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{"status":"ok"}`))
@@ -16,12 +16,13 @@ func BenchmarkCompressionDisabled(b *testing.B) {
 	handler := mw(inner)
 
 	req := httptest.NewRequest("GET", "/test", nil)
-	req.Header.Set("Accept-Encoding", "gzip")
+	req.Header.Set("Accept-Encoding", "identity")
 	w := httptest.NewRecorder()
 
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
+		*w = httptest.ResponseRecorder{Body: w.Body}
 		w.Body.Reset()
 		handler.ServeHTTP(w, req)
 	}
@@ -43,8 +44,12 @@ func BenchmarkCompressionEnabled(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
+		*w = httptest.ResponseRecorder{Body: w.Body}
 		w.Body.Reset()
 		handler.ServeHTTP(w, req)
+		if w.Header().Get("Content-Encoding") != "gzip" {
+			b.Fatal("expected gzip response")
+		}
 	}
 }
 
@@ -64,6 +69,7 @@ func BenchmarkCompressionSkipBinary(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
+		*w = httptest.ResponseRecorder{Body: w.Body}
 		w.Body.Reset()
 		handler.ServeHTTP(w, req)
 	}
@@ -86,7 +92,11 @@ func BenchmarkCompressionLargePayload(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
+		*w = httptest.ResponseRecorder{Body: w.Body}
 		w.Body.Reset()
 		handler.ServeHTTP(w, req)
+		if w.Header().Get("Content-Encoding") != "gzip" {
+			b.Fatal("expected gzip response")
+		}
 	}
 }

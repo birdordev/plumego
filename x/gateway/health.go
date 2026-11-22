@@ -2,8 +2,10 @@ package gateway
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -89,13 +91,19 @@ func (h *HealthChecker) checkAll(ctx context.Context) {
 	}
 	backends := h.pool.Backends()
 
+	const maxConcurrent = 32
+	var next atomic.Uint64
 	var wg sync.WaitGroup
-	for _, backend := range backends {
-		wg.Add(1)
-		go func(b *Backend) {
-			defer wg.Done()
-			h.checkBackend(ctx, b)
-		}(backend)
+	for range min(maxConcurrent, len(backends)) {
+		wg.Go(func() {
+			for ctx.Err() == nil {
+				i := next.Add(1) - 1
+				if i >= uint64(len(backends)) {
+					return
+				}
+				h.checkBackend(ctx, backends[i])
+			}
+		})
 	}
 
 	wg.Wait()
@@ -128,6 +136,12 @@ func (h *HealthChecker) checkBackend(parent context.Context, backend *Backend) {
 	// Check status code
 	healthy := resp.StatusCode == h.config.ExpectedStatus
 	h.updateHealth(parent, backend, sequence, healthy)
+
+	// Reading through EOF allows HTTP/1.1 to reuse short probe responses.
+	const maxDrain = 4 << 10
+	if resp.ContentLength <= maxDrain && resp.Body != http.NoBody {
+		_, _ = io.CopyN(io.Discard, resp.Body, maxDrain+1)
+	}
 }
 
 // updateHealth updates the health status of a backend

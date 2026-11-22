@@ -36,7 +36,7 @@ func (b *InProcBroker) PublishBatch(topic string, msgs []Message) error {
 	subs := b.shards.getTopicSubscribersIfAny(topic)
 	var patterns []patternSnapshot
 	if b.shards.hasAnyPatterns() {
-		patterns = b.shards.getAllPatterns()
+		patterns = b.shards.getPatternCandidates(topic)
 	}
 	var mqttSubs []*subscriber
 	if b.shards.hasAnyMQTTPatterns() {

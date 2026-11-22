@@ -438,3 +438,5 @@ func (c *unixClient) Close() error {
 	}
 	return nil
 }
+
+func (*unixClient) nativeFraming() {}

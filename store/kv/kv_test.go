@@ -498,7 +498,11 @@ func TestPersistLockedPreservesLegacySnapshotEncoding(t *testing.T) {
 			}
 
 			store.mu.Lock()
-			committed, err := store.persistLocked()
+			raw, err := encodeSnapshot(store.data)
+			if err != nil {
+				t.Fatal(err)
+			}
+			committed, err := store.persistSnapshot(raw, func() {})
 			store.mu.Unlock()
 			if err != nil || !committed {
 				t.Fatalf("persistLocked = %t, %v; want true, nil", committed, err)

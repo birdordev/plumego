@@ -11,11 +11,9 @@ import (
 
 	"github.com/birdordev/plumego/core"
 	plumelog "github.com/birdordev/plumego/log"
-	"github.com/birdordev/plumego/metrics"
 	"github.com/birdordev/plumego/middleware/accesslog"
 	"github.com/birdordev/plumego/middleware/bodylimit"
 	"github.com/birdordev/plumego/middleware/cors"
-	"github.com/birdordev/plumego/middleware/httpmetrics"
 	"github.com/birdordev/plumego/middleware/recovery"
 	"github.com/birdordev/plumego/middleware/requestid"
 	"github.com/birdordev/plumego/middleware/securityheaders"
@@ -69,7 +67,7 @@ func New(cfg config.Config) (*App, error) {
 	//   [abuseguard]→ optional: add middleware/abuseguard.NewAbuseGuard here (after bodylimit so
 	//               oversized bodies are rejected before a rate-limit token is consumed)
 	//               See middleware/abuseguard.AbuseGuardConfig for token-bucket defaults.
-	//   httpmetrics→ measures handler latency and status; swap NewNoopCollector for
+	//   [httpmetrics] → optionally measure handler latency and status with
 	//               observability.NewPrometheusCollector (from x/observability) in production,
 	//               then register GET /metrics with observability.NewPrometheusExporter.
 	//               See reference/with-ops for a complete wiring example.
@@ -84,7 +82,6 @@ func New(cfg config.Config) (*App, error) {
 			MaxBytes: cfg.App.MaxBodyBytes,
 			Logger:   app.Logger(),
 		}),
-		httpmetrics.Middleware(metrics.NewNoopCollector()),
 		timeoutMw,
 	); err != nil {
 		return nil, fmt.Errorf("register middleware: %w", err)

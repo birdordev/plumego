@@ -76,6 +76,7 @@ func (kv *KVStore) putEntry(entry *Entry, maxMemory int64) {
 	}
 
 	shard.data[entry.Key] = entry
+	shard.expiring.add(entry)
 	kv.moveToFront(shard, entry)
 
 	atomic.AddInt64(&kv.entries, 1)

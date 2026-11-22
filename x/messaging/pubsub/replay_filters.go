@@ -20,6 +20,13 @@ func (rs *ReplayStore) Query(query ReplayQuery) ([]*ReplayMessage, error) {
 		}
 	}
 
+	if !query.IncludeArchived && query.SortBy != "topic" && query.SortBy != "size" {
+		results := rs.queryTimeIndex(query)
+		for _, msg := range results {
+			copyReplayPayload(msg)
+		}
+		return results, nil
+	}
 	results := make([]*ReplayMessage, 0)
 
 	// Query in-memory messages
@@ -64,6 +71,41 @@ func (rs *ReplayStore) Query(query ReplayQuery) ([]*ReplayMessage, error) {
 		copyReplayPayload(msg)
 	}
 	return results, nil
+}
+
+func (rs *ReplayStore) queryTimeIndex(query ReplayQuery) []*ReplayMessage {
+	rs.messagesMu.RLock()
+	defer rs.messagesMu.RUnlock()
+	index := rs.timeIndex
+	if !query.StartTime.IsZero() {
+		start := sort.Search(len(index), func(i int) bool { return !index[i].Timestamp.Before(query.StartTime) })
+		index = index[start:]
+	}
+	if !query.EndTime.IsZero() {
+		end := sort.Search(len(index), func(i int) bool { return index[i].Timestamp.After(query.EndTime) })
+		index = index[:end]
+	}
+	results := make([]*ReplayMessage, 0)
+	skipped := 0
+	for i := range index {
+		if !query.Ascending {
+			i = len(index) - 1 - i
+		}
+		msg := index[i]
+		if !rs.matchesQuery(msg, query) {
+			continue
+		}
+		if skipped < query.Offset {
+			skipped++
+			continue
+		}
+		snapshot := *msg
+		results = append(results, &snapshot)
+		if query.Limit > 0 && len(results) >= query.Limit {
+			break
+		}
+	}
+	return results
 }
 
 // matchesQuery checks if a message matches the query filters.

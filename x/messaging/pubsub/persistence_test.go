@@ -785,3 +785,24 @@ func TestAsyncWALFlushTracksResultAndLatchesFailure(t *testing.T) {
 		})
 	}
 }
+
+func TestWALRangeHintRequiresMatchingFinalizedSegment(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "wal-0000000000000000.log")
+	if err := os.WriteFile(path, []byte("sealed record"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeWALSeal(path, info, 10)
+	if !sealedWALBefore(path, 11) || sealedWALBefore(path, 10) {
+		t.Fatal("incorrect range cutoff")
+	}
+	if err := os.WriteFile(path, []byte("replaced with a different size"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if sealedWALBefore(path, 11) {
+		t.Fatal("stale range was trusted")
+	}
+}

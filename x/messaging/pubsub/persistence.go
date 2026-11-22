@@ -12,6 +12,8 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -91,6 +93,7 @@ type PersistentPubSub struct {
 	walFile     *os.File
 	walWriter   *bufio.Writer
 	walMu       sync.Mutex
+	walSynced   uint64 // Last sequence covered by a successful file sync.
 	walSequence atomic.Uint64
 	walSize     atomic.Int64
 	rotationErr error // protected by walMu
@@ -284,6 +287,9 @@ func (pps *PersistentPubSub) findLatestSnapshot() (*snapshotData, error) {
 	}
 	snapshots := make([]candidate, 0, len(files))
 	for _, path := range files {
+		if strings.HasSuffix(path, "-marker.json") {
+			continue
+		}
 		if stat, err := os.Stat(path); err == nil {
 			snapshots = append(snapshots, candidate{path, stat.ModTime()})
 		}
@@ -348,6 +354,9 @@ func (pps *PersistentPubSub) replayWAL(startSeq uint64) error {
 	}
 
 	for _, walPath := range files {
+		if startSeq > 0 && sealedWALBefore(walPath, startSeq) {
+			continue
+		}
 		if err := pps.replayWALFile(walPath, startSeq); err != nil {
 			return fmt.Errorf("failed to replay %s: %w", walPath, err)
 		}
@@ -479,17 +488,26 @@ func (pps *PersistentPubSub) writeWAL(topic string, msg Message, durability Dura
 		return nil
 	}
 
+	seq, err := pps.appendWAL(topic, msg)
+	if err != nil || durability != DurabilitySync {
+		return err
+	}
+	// Other publishers can append before this sync, sharing the same commit.
+	return pps.syncThrough(seq)
+}
+
+func (pps *PersistentPubSub) appendWAL(topic string, msg Message) (uint64, error) {
 	pps.walMu.Lock()
 	defer pps.walMu.Unlock()
 	if pps.closed.Load() {
-		return ErrPersistenceClosed
+		return 0, ErrPersistenceClosed
 	}
 
 	if pps.walFlushErr != nil {
-		return pps.walFlushErr
+		return 0, pps.walFlushErr
 	}
 	if pps.walUnusable {
-		return pps.rotationErr
+		return 0, pps.rotationErr
 	}
 
 	// Create entry
@@ -501,54 +519,24 @@ func (pps *PersistentPubSub) writeWAL(topic string, msg Message, durability Dura
 		Message:   msg,
 	}
 
-	// Compute CRC
-	data, _ := json.Marshal(struct {
-		Sequence  uint64
-		Timestamp time.Time
-		Topic     string
-		Message   Message
-	}{
-		Sequence:  entry.Sequence,
-		Timestamp: entry.Timestamp,
-		Topic:     entry.Topic,
-		Message:   entry.Message,
-	})
-	entry.CRC = crc32.ChecksumIEEE(data)
-
-	// Marshal entry
-	entryData, err := json.Marshal(entry)
+	entryData, err := encodeWALRecord(entry)
 	if err != nil {
-		return err
+		return 0, err
 	}
 
-	// Write length prefix
-	length := uint32(len(entryData))
-	if err := binary.Write(pps.walWriter, binary.LittleEndian, length); err != nil {
-		return err
+	var prefix [4]byte
+	binary.LittleEndian.PutUint32(prefix[:], uint32(len(entryData)))
+	if _, err := pps.walWriter.Write(prefix[:]); err != nil {
+		return 0, err
 	}
 
 	// Write entry
 	if _, err := pps.walWriter.Write(entryData); err != nil {
-		return err
+		return 0, err
 	}
 
 	pps.walWrites.Add(1)
 	pps.walBytesWrite.Add(int64(4 + len(entryData)))
-
-	// Handle durability
-	switch durability {
-	case DurabilitySync:
-		if err := pps.walWriter.Flush(); err != nil {
-			return err
-		}
-		if err := pps.walFile.Sync(); err != nil {
-			return err
-		}
-		pps.walFlushes.Add(1)
-
-	case DurabilityAsync:
-		// Will be flushed by background worker
-	}
 
 	// Check if rotation needed; use CAS to ensure at most one goroutine rotates.
 	pps.walSize.Add(int64(4 + len(entryData)))
@@ -561,6 +549,73 @@ func (pps *PersistentPubSub) writeWAL(topic string, msg Message, durability Dura
 		}
 	}
 
+	return seq, nil
+}
+
+// encodeWALRecord reuses the encoded message, timestamp and topic for
+// the historical CRC envelope and the persisted record.
+func encodeWALRecord(entry walEntry) ([]byte, error) {
+	message, err := json.Marshal(entry.Message)
+	if err != nil {
+		return nil, err
+	}
+	stamp, err := entry.Timestamp.MarshalJSON()
+	if err != nil {
+		return nil, err
+	}
+	topic, err := json.Marshal(entry.Topic)
+	if err != nil {
+		return nil, err
+	}
+
+	prefix := make([]byte, 0, len(topic)+len(stamp)+80)
+	prefix = append(prefix, `{"Sequence":`...)
+	prefix = strconv.AppendUint(prefix, entry.Sequence, 10)
+	prefix = append(prefix, `,"Timestamp":`...)
+	prefix = append(prefix, stamp...)
+	prefix = append(prefix, `,"Topic":`...)
+	prefix = append(prefix, topic...)
+	prefix = append(prefix, `,"Message":`...)
+	crc := crc32.Update(crc32.ChecksumIEEE(prefix), crc32.IEEETable, message)
+	crc = crc32.Update(crc, crc32.IEEETable, []byte{'}'})
+
+	record := make([]byte, 0, len(topic)+len(stamp)+len(message)+80)
+	record = append(record, `{"seq":`...)
+	record = strconv.AppendUint(record, entry.Sequence, 10)
+	record = append(record, `,"ts":`...)
+	record = append(record, stamp...)
+	record = append(record, `,"topic":`...)
+	record = append(record, topic...)
+	record = append(record, `,"msg":`...)
+	record = append(record, message...)
+	record = append(record, `,"crc":`...)
+	record = strconv.AppendUint(record, uint64(crc), 10)
+	return append(record, '}'), nil
+}
+
+func (pps *PersistentPubSub) syncThrough(sequence uint64) error {
+	pps.walMu.Lock()
+	defer pps.walMu.Unlock()
+	if sequence <= pps.walSynced {
+		return nil
+	}
+	if pps.walFlushErr != nil {
+		return pps.walFlushErr
+	}
+	if pps.walUnusable {
+		return pps.rotationErr
+	}
+	if pps.walWriter == nil {
+		return ErrPersistenceClosed
+	}
+	if err := pps.walWriter.Flush(); err != nil {
+		return err
+	}
+	if err := pps.walFile.Sync(); err != nil {
+		return err
+	}
+	pps.walSynced = pps.walSequence.Load()
+	pps.walFlushes.Add(1)
 	return nil
 }
 
@@ -591,14 +646,20 @@ func (pps *PersistentPubSub) rotateWALLocked() error {
 		return fmt.Errorf("rotate WAL: sync old segment: %w", err)
 	}
 
-	next := pps.walSequence.Load() + 1
+	pps.walSynced = pps.walSequence.Load()
+	next := pps.walSynced + 1
 	file, size, err := pps.openWAL(next)
 	if err != nil {
 		return fmt.Errorf("rotate WAL: %w", err)
 	}
+	sealedPath := pps.walFile.Name()
+	sealedInfo, statErr := pps.walFile.Stat()
 	if err := pps.walFile.Close(); err != nil {
 		pps.walUnusable = true
 		return errors.Join(fmt.Errorf("rotate WAL: close old segment: %w", err), file.Close())
+	}
+	if statErr == nil {
+		writeWALSeal(sealedPath, sealedInfo, pps.walSynced)
 	}
 	pps.walSequence.Store(next)
 	pps.setWAL(file, size)
@@ -629,7 +690,7 @@ func (pps *PersistentPubSub) snapshotLocked() error {
 	// Write snapshot
 	snapPath := filepath.Join(
 		pps.config.DataDir,
-		fmt.Sprintf("snapshot-%d.json", snap.Timestamp.UnixNano()),
+		fmt.Sprintf("snapshot-%d-marker.json", snap.Timestamp.UnixNano()),
 	)
 
 	data, err := json.MarshalIndent(snap, "", "  ")
@@ -756,6 +817,8 @@ func (pps *PersistentPubSub) Close() error {
 	if pps.walFile != nil {
 		if err := pps.walFile.Sync(); err != nil {
 			errs = append(errs, fmt.Errorf("sync WAL: %w", err))
+		} else if pps.walFlushErr == nil && len(errs) == 0 {
+			pps.walSynced = pps.walSequence.Load()
 		}
 		if err := pps.walFile.Close(); err != nil {
 			errs = append(errs, fmt.Errorf("close WAL: %w", err))

@@ -42,11 +42,16 @@ type entry struct {
 
 // KVStore is a small embedded persistent key-value store.
 type KVStore struct {
-	mu     sync.RWMutex
-	opts   Options
-	data   map[string]*entry
-	closed bool
+	mu        sync.RWMutex
+	writeMu   sync.Mutex // Serializes mutations and directory lock release.
+	mutations mutationQueue
+	opts      Options
+	data      map[string]*entry
+	closed    bool
 
+	capacityBytes int64 // Physical entries, including any expired entries.
+	oldest        orderedEntries
+	expiring      orderedEntries
 	directoryLock *os.File
 	syncStateDir  func(string) error
 
@@ -93,6 +98,7 @@ func NewKVStore(opts Options) (*KVStore, error) {
 
 	store := &KVStore{
 		opts:          opts,
+		mutations:     mutationQueue{slots: make(chan struct{}, 64)},
 		data:          make(map[string]*entry),
 		directoryLock: lock,
 		syncStateDir:  syncDir,
@@ -101,6 +107,10 @@ func NewKVStore(opts Options) (*KVStore, error) {
 		return nil, errors.Join(err, store.Close())
 	}
 	store.evictIfNeededLocked("")
+	store.expiring.byDeadline = true
+	for key, item := range store.data {
+		store.indexEntry(key, item)
+	}
 	return store, nil
 }
 
@@ -117,24 +127,16 @@ func (kv *KVStore) SetContext(ctx context.Context, key string, value []byte, ttl
 	if kv == nil {
 		return ErrStoreClosed
 	}
-	err := kv.setWithCancellation(contextDone(ctx), key, value, ttl)
+	err := kv.submitMutation(contextDone(ctx), func() (mutationChange, error) { return kv.stageSet(key, value, ttl) })
 	if err == errMutationCanceled {
 		return ctx.Err()
 	}
 	return err
 }
 
-func (kv *KVStore) setWithCancellation(done <-chan struct{}, key string, value []byte, ttl time.Duration) error {
-	kv.mu.Lock()
-	defer kv.mu.Unlock()
-	if cancellationSignaled(done) {
-		return errMutationCanceled
-	}
-	if kv.closed || kv.data == nil {
-		return ErrStoreClosed
-	}
+func (kv *KVStore) stageSet(key string, value []byte, ttl time.Duration) (mutationChange, error) {
 	if err := validateKey(key); err != nil {
-		return err
+		return mutationChange{}, err
 	}
 
 	now := time.Now()
@@ -144,17 +146,57 @@ func (kv *KVStore) setWithCancellation(done <-chan struct{}, key string, value [
 	}
 	size := entrySize(key, value)
 	if size > kv.maxMemoryBytes() {
-		return fmt.Errorf("%w: size %d limit %d", ErrValueTooLarge, size, kv.maxMemoryBytes())
+		return mutationChange{}, fmt.Errorf("%w: size %d limit %d", ErrValueTooLarge, size, kv.maxMemoryBytes())
 	}
-	before := kv.cloneDataLocked()
-	kv.data[key] = &entry{
+	prior := kv.data[key]
+	kv.replaceEntry(key, &entry{
 		Value:     cloneBytes(value),
 		ExpireAt:  expireAt,
 		UpdatedAt: now,
 		Size:      size,
+	})
+	var removed []evictionCandidate
+	remove := func(candidate evictionCandidate) {
+		if candidate.key != key {
+			removed = append(removed, candidate)
+		}
+		kv.replaceEntry(candidate.key, nil)
 	}
-	kv.evictIfNeededLocked(key)
-	return kv.persistMutationLocked(done, func() { kv.data = before })
+	cleanAt := time.Now()
+	for kv.expiring.Len() != 0 {
+		candidate := kv.expiring.entries[0]
+		if !kv.isExpired(candidate.item, cleanAt) {
+			break
+		}
+		remove(candidate)
+	}
+	for len(kv.data) > kv.opts.MaxEntries || kv.capacityBytes > kv.maxMemoryBytes() {
+		i := 0
+		if kv.oldest.entries[0].key == key {
+			// The children of the heap root contain the next oldest item.
+			i = 1
+			if kv.oldest.Len() > 2 && kv.oldest.Less(2, 1) {
+				i = 2
+			}
+		}
+		remove(kv.oldest.entries[i])
+	}
+
+	next := kv.data[key]
+	return mutationChange{
+		rollback: func() {
+			kv.replaceEntry(key, prior)
+			for _, candidate := range removed {
+				kv.replaceEntry(candidate.key, candidate.item)
+			}
+		},
+		publish: func() {
+			kv.replaceEntry(key, next)
+			for _, candidate := range removed {
+				kv.replaceEntry(candidate.key, nil)
+			}
+		},
+	}, nil
 }
 
 // Get returns a defensive copy of a value.
@@ -212,31 +254,26 @@ func (kv *KVStore) DeleteContext(ctx context.Context, key string) error {
 	if kv == nil {
 		return ErrStoreClosed
 	}
-	err := kv.deleteWithCancellation(contextDone(ctx), key)
+	err := kv.submitMutation(contextDone(ctx), func() (mutationChange, error) { return kv.stageDelete(key) })
 	if err == errMutationCanceled {
 		return ctx.Err()
 	}
 	return err
 }
 
-func (kv *KVStore) deleteWithCancellation(done <-chan struct{}, key string) error {
-	kv.mu.Lock()
-	defer kv.mu.Unlock()
-	if cancellationSignaled(done) {
-		return errMutationCanceled
-	}
-	if kv.closed || kv.data == nil {
-		return ErrStoreClosed
-	}
+func (kv *KVStore) stageDelete(key string) (mutationChange, error) {
 	if err := validateKey(key); err != nil {
-		return err
+		return mutationChange{}, err
 	}
 	item, ok := kv.data[key]
 	if !ok {
-		return ErrKeyNotFound
+		return mutationChange{}, ErrKeyNotFound
 	}
-	delete(kv.data, key)
-	return kv.persistMutationLocked(done, func() { kv.data[key] = item })
+	kv.replaceEntry(key, nil)
+	return mutationChange{
+		rollback: func() { kv.replaceEntry(key, item) },
+		publish:  func() { kv.replaceEntry(key, nil) },
+	}, nil
 }
 
 // ExistsContext reports whether a non-expired key exists using the caller-provided context.
@@ -408,6 +445,8 @@ func (kv *KVStore) Close() error {
 	if kv == nil {
 		return nil
 	}
+	kv.writeMu.Lock()
+	defer kv.writeMu.Unlock()
 	kv.mu.Lock()
 	defer kv.mu.Unlock()
 
@@ -416,6 +455,9 @@ func (kv *KVStore) Close() error {
 	}
 	kv.closed = true
 	kv.data = nil
+	kv.oldest = orderedEntries{}
+	kv.expiring = orderedEntries{}
+	kv.capacityBytes = 0
 	if kv.directoryLock != nil {
 		err := kv.directoryLock.Close()
 		kv.directoryLock = nil
@@ -455,12 +497,22 @@ func cloneBytes(in []byte) []byte {
 }
 
 func (kv *KVStore) evictIfNeededLocked(writtenKey string) {
+	kv.evictLocked(writtenKey, nil)
+}
+
+func (kv *KVStore) evictLocked(writtenKey string, recordRemoval func(string, *entry)) {
+	remove := func(key string, item *entry) {
+		if recordRemoval != nil && key != writtenKey {
+			recordRemoval(key, item)
+		}
+		delete(kv.data, key)
+	}
 	now := time.Now()
 	var memoryUsage int64
 	var oldest evictionCandidate
 	for key, item := range kv.data {
 		if kv.isExpired(item, now) {
-			delete(kv.data, key)
+			remove(key, item)
 			continue
 		}
 		memoryUsage += item.Size
@@ -481,7 +533,7 @@ func (kv *KVStore) evictIfNeededLocked(writtenKey string) {
 	}
 
 	// Removing the oldest entry first avoids sorting for a single eviction.
-	delete(kv.data, oldest.key)
+	remove(oldest.key, oldest.item)
 	memoryUsage -= oldest.item.Size
 	if len(kv.data) <= kv.opts.MaxEntries && memoryUsage <= maxMemory {
 		return
@@ -496,7 +548,7 @@ func (kv *KVStore) evictIfNeededLocked(writtenKey string) {
 	slices.SortFunc(candidates, compareEvictionCandidates)
 
 	for _, candidate := range candidates {
-		delete(kv.data, candidate.key)
+		remove(candidate.key, candidate.item)
 		memoryUsage -= candidate.item.Size
 		if len(kv.data) <= kv.opts.MaxEntries && memoryUsage <= maxMemory {
 			return
@@ -557,14 +609,28 @@ func cancellationSignaled(done <-chan struct{}) bool {
 // consulting the caller's context for the concrete cancellation reason.
 var errMutationCanceled = errors.New("kv: mutation canceled before persistence")
 
-func (kv *KVStore) persistMutationLocked(done <-chan struct{}, rollback func()) error {
-	if cancellationSignaled(done) {
+func (kv *KVStore) persistMutationLocked(canceled func() bool, rollback, publish func()) error {
+	if canceled() {
 		rollback()
 		return errMutationCanceled
 	}
-	committed, err := kv.persistLocked()
-	if err != nil && !committed {
-		rollback()
+
+	raw, err := encodeSnapshot(kv.data)
+	rollback()
+	if err != nil {
+		return err
 	}
+	if canceled() {
+		return errMutationCanceled
+	}
+	// Readers use the previous committed state while the replacement is prepared.
+	// writeMu keeps Close and later mutations behind this persistence attempt.
+	kv.mu.Unlock()
+	defer kv.mu.Lock()
+	_, err = kv.persistSnapshot(raw, func() {
+		kv.mu.Lock()
+		defer kv.mu.Unlock()
+		publish()
+	})
 	return err
 }

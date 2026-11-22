@@ -92,18 +92,12 @@ func (s *LocalStorage) Put(ctx context.Context, opts PutOptions) (*File, error) 
 	}
 	tmpPath := tmpFile.Name()
 	defer func() { _ = os.Remove(tmpPath) }()
+	defer func() { _ = tmpFile.Close() }()
 
 	hash := sha256.New()
 	size, err := io.Copy(io.MultiWriter(tmpFile, hash), localUploadReader{ctx, opts.Reader})
 	if err != nil {
 		_ = tmpFile.Close()
-		return nil, &storefile.Error{Op: "Put", Path: fullPath, Err: err}
-	}
-	if err := tmpFile.Sync(); err != nil {
-		_ = tmpFile.Close()
-		return nil, &storefile.Error{Op: "Put", Path: fullPath, Err: err}
-	}
-	if err := tmpFile.Close(); err != nil {
 		return nil, &storefile.Error{Op: "Put", Path: fullPath, Err: err}
 	}
 
@@ -122,6 +116,14 @@ func (s *LocalStorage) Put(ctx context.Context, opts PutOptions) (*File, error) 
 	}
 	if existing != nil {
 		return existing, nil
+	}
+
+	if err := tmpFile.Sync(); err != nil {
+		_ = tmpFile.Close()
+		return nil, &storefile.Error{Op: "Put", Path: fullPath, Err: err}
+	}
+	if err := tmpFile.Close(); err != nil {
+		return nil, &storefile.Error{Op: "Put", Path: fullPath, Err: err}
 	}
 
 	if err := os.Rename(tmpPath, fullPath); err != nil {

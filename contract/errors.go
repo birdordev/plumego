@@ -409,7 +409,11 @@ func findAPIErrorValue(err error, pointer **APIError) (APIError, bool) {
 }
 
 func normalizeAPIError(err APIError) APIError {
-	err, invalidStatus := normalizeAPIErrorBase(err)
+	return normalizeAPIErrorWithDetails(err, true)
+}
+
+func normalizeAPIErrorWithDetails(err APIError, copyDetails bool) APIError {
+	err, invalidStatus := normalizeAPIErrorBase(err, copyDetails)
 	err, typed := normalizeTypedAPIError(err)
 	if !typed {
 		normalizeUntypedAPIError(&err, invalidStatus)
@@ -419,10 +423,12 @@ func normalizeAPIError(err APIError) APIError {
 	return err
 }
 
-func normalizeAPIErrorBase(err APIError) (APIError, bool) {
+func normalizeAPIErrorBase(err APIError, copyDetails bool) (APIError, bool) {
 	status, invalid := normalizeErrorHTTPStatus(err.status)
 	err.status = status
-	err.details = cloneAnyMap(err.details)
+	if copyDetails {
+		err.details = cloneAnyMap(err.details)
+	}
 	err.requestID = normalizeRequestIDOrEmpty(err.requestID)
 	return err, invalid
 }

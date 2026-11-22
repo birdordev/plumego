@@ -172,7 +172,10 @@ func TestMiddlewareWithConfigReadBodyErrorUsesOnTransformError(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	})
 
+	registry := gatewayproto.NewRegistry()
+	registry.Register(&stubAdapter{})
 	cfg := Config{
+		Registry: registry,
 		OnTransformError: func(w http.ResponseWriter, _ *http.Request, err error) {
 			onTransformCalled = true
 			if err == nil || err.Error() != "read body failed" {
@@ -232,7 +235,9 @@ func TestMiddlewareReadBodyErrorUsesGatewayProtocolTransformCode(t *testing.T) {
 	req.Body = errReadCloser{}
 
 	rec := httptest.NewRecorder()
-	MiddlewareWithConfig(Config{})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	registry := gatewayproto.NewRegistry()
+	registry.Register(&stubAdapter{})
+	MiddlewareWithConfig(Config{Registry: registry})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})).ServeHTTP(rec, req)
 
@@ -326,4 +331,28 @@ func assertBodyOmits(t *testing.T, body, value string) {
 	if bytes.Contains([]byte(body), []byte(value)) {
 		t.Fatalf("response body leaked %q: %s", value, body)
 	}
+}
+
+func TestMiddlewareBodyBudgetOnlyAppliesWithAdapters(t *testing.T) {
+	registry := gatewayproto.NewRegistry()
+	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		n, err := io.Copy(io.Discard, r.Body)
+		if err != nil || n != 5 {
+			t.Fatalf("fallback body = %d, %v", n, err)
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
+	h := MiddlewareWithConfig(Config{Registry: registry, MaxBodyBytes: 4})(next)
+	run := func(body string, want int) {
+		t.Helper()
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/proto", bytes.NewBufferString(body)))
+		if w.Code != want {
+			t.Fatalf("status = %d, want %d", w.Code, want)
+		}
+	}
+	run("hello", http.StatusNoContent)
+	registry.Register(&stubAdapter{})
+	run("hell", http.StatusCreated)
+	run("hello", http.StatusRequestEntityTooLarge)
 }

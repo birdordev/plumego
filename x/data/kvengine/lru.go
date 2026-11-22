@@ -51,6 +51,7 @@ func (kv *KVStore) evictOneLRUSkip(skipKey string) {
 func (kv *KVStore) deleteFromShard(shard *Shard, key string, entry *Entry) {
 	// Remove from map
 	delete(shard.data, key)
+	shard.expiring.remove(entry)
 
 	// Remove from LRU
 	if prev := shard.prev[entry]; prev != nil {

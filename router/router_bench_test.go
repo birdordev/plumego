@@ -237,17 +237,24 @@ func BenchmarkOptNormalizePath(b *testing.B) {
 	}
 }
 
-// BenchmarkOptCacheKey benchmarks the inlined cache key construction used in ServeHTTP.
+// BenchmarkOptCacheKey measures lookups with representative method/path pairs.
 func BenchmarkOptCacheKey(b *testing.B) {
-	methods := []string{"GET", "POST", "PUT"}
-	paths := []string{"/users", "/users/123", "/api/v1/health"}
-
+	keys := []matchCacheKey{
+		{http.MethodGet, "/users"},
+		{http.MethodPost, "/users/123"},
+		{http.MethodPut, "/api/v1/health"},
+	}
+	cache := newMatchCache(len(keys))
+	for _, key := range keys {
+		cache.Set(key, new(matchResult))
+	}
 	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		m := methods[i%len(methods)]
-		p := paths[i%len(paths)]
-		_ = m + ":" + p
+	i := 0
+	for b.Loop() {
+		if _, ok := cache.Get(keys[i%len(keys)]); !ok {
+			b.Fatal("expected cached match")
+		}
+		i++
 	}
 }
 
@@ -326,10 +333,10 @@ func BenchmarkOptFrozenVsUnfrozen(b *testing.B) {
 
 	b.Run("unfrozen", func(b *testing.B) {
 		r := newRouter()
-		w := httptest.NewRecorder()
 		b.ReportAllocs()
 		b.ResetTimer()
 		b.RunParallel(func(pb *testing.PB) {
+			w := httptest.NewRecorder()
 			i := 0
 			for pb.Next() {
 				w.Body.Reset()
@@ -342,10 +349,10 @@ func BenchmarkOptFrozenVsUnfrozen(b *testing.B) {
 	b.Run("frozen", func(b *testing.B) {
 		r := newRouter()
 		r.Freeze()
-		w := httptest.NewRecorder()
 		b.ReportAllocs()
 		b.ResetTimer()
 		b.RunParallel(func(pb *testing.PB) {
+			w := httptest.NewRecorder()
 			i := 0
 			for pb.Next() {
 				w.Body.Reset()
@@ -476,5 +483,43 @@ func BenchmarkRoutePathPoolBoundary(b *testing.B) {
 				}
 			})
 		}
+	}
+}
+
+func TestLargeDynamicPathsDoNotDisplaceHotRoute(t *testing.T) {
+	r := NewRouter(withCacheCapacity(1))
+	mustAddRoute(r, http.MethodGet, "/items/:id", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(Param(r, "id")))
+	}))
+	r.Freeze()
+	hot := r.cachedMatch(http.MethodGet, "/items/hot")
+	for _, lead := range []string{"a", "b", "c"} {
+		id := strings.Repeat(lead, maxCachedDynamicPathBytes)
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/items/"+id, nil))
+		if rec.Code != http.StatusOK || rec.Body.String() != id {
+			t.Fatal("large identifier changed routing or parameters")
+		}
+	}
+	if r.cachedMatch(http.MethodGet, "/items/hot") != hot {
+		t.Fatal("large dynamic paths displaced the hot match")
+	}
+}
+
+func TestFrozenCacheKeepsHotRouteOnFirstUseChurn(t *testing.T) {
+	r := NewRouter(WithCacheCapacity(1))
+	if err := r.AddRoute(http.MethodGet, "/items/:id", http.NotFoundHandler()); err != nil {
+		t.Fatal(err)
+	}
+	r.Freeze()
+	const hot = "/items/hot"
+	initial := r.cachedMatch(http.MethodGet, hot)
+	for i := range 512 {
+		if r.cachedMatch(http.MethodGet, fmt.Sprintf("/items/cold-%d", i)) == nil {
+			t.Fatal("cold path must match")
+		}
+	}
+	if r.cachedMatch(http.MethodGet, hot) != initial {
+		t.Fatal("cold paths displaced the cached match")
 	}
 }

@@ -9,10 +9,11 @@ import (
 // shard represents a partition of topics/patterns.
 // Each shard has its own lock to reduce contention.
 type shard struct {
-	mu           sync.RWMutex
-	topics       map[string]map[uint64]*subscriber
-	patterns     map[string]map[uint64]*subscriber
-	mqttPatterns *mqttPatternSubscribers
+	mu             sync.RWMutex
+	topics         map[string]map[uint64]*subscriber
+	patterns       map[string]map[uint64]*subscriber
+	patternBuckets map[string]map[string]map[uint64]*subscriber
+	mqttPatterns   *mqttPatternSubscribers
 }
 
 // shardedMap manages multiple shards for reduced lock contention.
@@ -39,9 +40,10 @@ func newShardedMap(shardCount int) *shardedMap {
 	shards := make([]*shard, shardCount)
 	for i := 0; i < shardCount; i++ {
 		shards[i] = &shard{
-			topics:       make(map[string]map[uint64]*subscriber),
-			patterns:     make(map[string]map[uint64]*subscriber),
-			mqttPatterns: newMQTTPatternSubscribers(),
+			topics:         make(map[string]map[uint64]*subscriber),
+			patterns:       make(map[string]map[uint64]*subscriber),
+			patternBuckets: make(map[string]map[string]map[uint64]*subscriber),
+			mqttPatterns:   newMQTTPatternSubscribers(),
 		}
 	}
 
@@ -110,6 +112,11 @@ func (sm *shardedMap) addPattern(pattern string, id uint64, sub *subscriber) {
 	isNew := s.patterns[pattern] == nil
 	if isNew {
 		s.patterns[pattern] = make(map[uint64]*subscriber)
+		prefix := patternPrefix(pattern)
+		if s.patternBuckets[prefix] == nil {
+			s.patternBuckets[prefix] = make(map[string]map[uint64]*subscriber)
+		}
+		s.patternBuckets[prefix][pattern] = s.patterns[pattern]
 	}
 	s.patterns[pattern][id] = sub
 	s.mu.Unlock()
@@ -157,6 +164,11 @@ func (sm *shardedMap) removePattern(pattern string, id uint64) bool {
 	isEmpty := len(subs) == 0
 	if isEmpty {
 		delete(s.patterns, pattern)
+		prefix := patternPrefix(pattern)
+		delete(s.patternBuckets[prefix], pattern)
+		if len(s.patternBuckets[prefix]) == 0 {
+			delete(s.patternBuckets, prefix)
+		}
 	}
 	s.mu.Unlock()
 
@@ -254,31 +266,36 @@ func (sm *shardedMap) getPatternSubscriberCount(pattern string) int {
 	return len(s.patterns[pattern])
 }
 
-// getAllPatterns returns all patterns and their subscribers across all shards.
-// This requires locking all shards, so use sparingly.
-func (sm *shardedMap) getAllPatterns() []patternSnapshot {
-	// Collect from all shards
-	var result []patternSnapshot
+// patternPrefix indexes literal first path segments. A wildcard or escape
+// in that segment requires the general bucket.
+func patternPrefix(pattern string) string {
+	first, _, _ := strings.Cut(pattern, "/")
+	if strings.ContainsAny(first, "*?[]\\") {
+		return ""
+	}
+	return first
+}
 
+func (sm *shardedMap) getPatternCandidates(topic string) []patternSnapshot {
+	first, _, _ := strings.Cut(topic, "/")
+	prefixes := [2]string{first, ""}
+	var result []patternSnapshot
 	for _, s := range sm.shards {
 		s.mu.RLock()
-		for pattern, subs := range s.patterns {
-			if len(subs) == 0 {
-				continue
+		for i, prefix := range prefixes {
+			if i == 1 && first == "" {
+				break
 			}
-			snapshot := make([]*subscriber, 0, len(subs))
-			for _, sub := range subs {
-				snapshot = append(snapshot, sub)
+			for pattern, subs := range s.patternBuckets[prefix] {
+				snapshot := make([]*subscriber, 0, len(subs))
+				for _, sub := range subs {
+					snapshot = append(snapshot, sub)
+				}
+				result = append(result, patternSnapshot{pattern: pattern, isGlob: strings.ContainsAny(pattern, "*?[]\\"), subs: snapshot})
 			}
-			result = append(result, patternSnapshot{
-				pattern: pattern,
-				isGlob:  strings.ContainsAny(pattern, "*?[]\\"),
-				subs:    snapshot,
-			})
 		}
 		s.mu.RUnlock()
 	}
-
 	return result
 }
 
@@ -333,6 +350,7 @@ func (sm *shardedMap) collectAllSubscribers() []*subscriber {
 		// Clear maps
 		s.topics = make(map[string]map[uint64]*subscriber)
 		s.patterns = make(map[string]map[uint64]*subscriber)
+		clear(s.patternBuckets)
 		s.mqttPatterns.Clear()
 		s.mu.Unlock()
 	}

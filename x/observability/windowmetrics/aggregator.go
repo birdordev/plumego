@@ -39,12 +39,13 @@ type Aggregator struct {
 const maxIdleRemovalsPerRecord = 8
 
 type bucket struct {
-	name             string
-	activity         *list.Element
-	samples          []sample
-	maxLen           int
-	sortedCache      []float64
-	sortedCacheValid bool
+	name        string
+	activity    *list.Element
+	samples     []sample
+	maxLen      int
+	sortedCache []float64
+	statsValid  bool
+	stats       AggregatorStats
 }
 
 type sample struct {
@@ -126,12 +127,11 @@ func (a *Aggregator) Record(name string, value float64) {
 
 	b.evictExpired(a.window, now)
 	b.samples = append(b.samples, sample{value: value, observedAt: now})
-	b.sortedCacheValid = false
+	b.statsValid = false
 
 	if len(b.samples) > b.maxLen {
 		overflow := len(b.samples) - b.maxLen
 		b.samples = b.samples[overflow:]
-		b.sortedCacheValid = false
 	}
 }
 
@@ -174,8 +174,11 @@ func (b *bucket) buildStats() AggregatorStats {
 		return AggregatorStats{}
 	}
 
+	if b.statsValid {
+		return b.stats
+	}
 	stats := AggregatorStats{Min: samples[0].value, Max: samples[0].value}
-	sortedValues := b.getSortedValues()
+	sortedValues := b.sortValues()
 
 	for _, s := range samples {
 		stats.Count++
@@ -193,21 +196,21 @@ func (b *bucket) buildStats() AggregatorStats {
 	stats.P50 = percentileSorted(sortedValues, 0.50)
 	stats.P95 = percentileSorted(sortedValues, 0.95)
 	stats.P99 = percentileSorted(sortedValues, 0.99)
+	b.stats = stats
+	b.statsValid = true
 
 	return stats
 }
 
-func (b *bucket) getSortedValues() []float64 {
-	if b.sortedCacheValid {
-		return b.sortedCache
+func (b *bucket) sortValues() []float64 {
+	if cap(b.sortedCache) < len(b.samples) {
+		b.sortedCache = make([]float64, len(b.samples))
 	}
-
-	b.sortedCache = make([]float64, len(b.samples))
+	b.sortedCache = b.sortedCache[:len(b.samples)]
 	for i, s := range b.samples {
 		b.sortedCache[i] = s.value
 	}
 	sort.Float64s(b.sortedCache)
-	b.sortedCacheValid = true
 
 	return b.sortedCache
 }
@@ -225,7 +228,7 @@ func (b *bucket) evictExpired(window time.Duration, now time.Time) {
 
 	if firstValid > 0 {
 		b.samples = b.samples[firstValid:]
-		b.sortedCacheValid = false
+		b.statsValid = false
 	}
 }
 

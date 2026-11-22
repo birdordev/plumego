@@ -201,7 +201,12 @@ func (l *gLogger) logInternal(level Level, calldepth int, messageBuilder func() 
 	logLine = append(logLine, '\n')
 
 	l.writeMu.Lock()
-	defer l.writeMu.Unlock()
+	locked := true
+	defer func() {
+		if locked {
+			l.writeMu.Unlock()
+		}
+	}()
 
 	// Snapshot writer state under writeMu so Close cannot close files between
 	// selecting a writer and writing through it.
@@ -229,14 +234,34 @@ func (l *gLogger) logInternal(level Level, calldepth int, messageBuilder func() 
 	}
 
 	// Rotate only after the entire record has used the current writer.
+	var cleanupDir, cleanupProgram string
+	var cleanupConfig rotationConfig
 	for _, file := range destinations.files {
 		if size := fileBytes[file.level]; size > 0 {
-			if err := l.checkLogRotation(file.level, size); err != nil {
+			dir, program, config, _, rotated, err := l.rotateIfNeeded(file.level, size)
+			if rotated {
+				cleanupDir, cleanupProgram, cleanupConfig = dir, program, config
+			}
+			if err != nil {
 				l.rotationErrOnce.Do(func() {
 					_, _ = os.Stderr.WriteString("glog: failed to rotate log file\n")
 				})
 			}
 		}
+	}
+
+	locked = false
+	l.writeMu.Unlock()
+
+	if cleanupDir != "" {
+		l.cleanupMu.Lock()
+		l.mu.RLock()
+		current := currentLogFiles(l.logFiles)
+		l.mu.RUnlock()
+		if len(current) != 0 {
+			cleanupOldLogs(cleanupDir, cleanupProgram, cleanupConfig, current)
+		}
+		l.cleanupMu.Unlock()
 	}
 
 	// Handle fatal errors

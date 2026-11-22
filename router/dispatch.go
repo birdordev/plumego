@@ -186,10 +186,14 @@ func (r *Router) serveHTTP(w http.ResponseWriter, req *http.Request) {
 	}
 
 	path := fastNormalizePath(req.URL.Path)
-	result := r.cachedMatch(req.Method, path)
+	var parts *[]string
+	result := r.cachedMatchParts(req.Method, path, &parts)
+	if parts != nil {
+		defer putPathParts(parts)
+	}
 	if result == nil {
 		if r.state.methodNotAllowed.Load() {
-			allowed := r.allowedMethods(path)
+			allowed := r.allowedMethods(path, parts)
 			if len(allowed) > 0 {
 				w.Header().Set("Allow", strings.Join(allowed, ", "))
 				_ = contract.WriteError(w, req, contract.NewErrorBuilder().
@@ -206,75 +210,71 @@ func (r *Router) serveHTTP(w http.ResponseWriter, req *http.Request) {
 	r.attachRouteContextAndServe(w, req, result)
 }
 
+// Bound path storage independently of the route count. Large identifiers
+// still match normally without displacing frequently accessed results.
+const maxCachedDynamicPathBytes = 1024
+
 func (r *Router) cachedMatch(method, path string) *matchResult {
+	return r.cachedMatchParts(method, path, nil)
+}
+
+func (r *Router) cachedMatchParts(method, path string, scratch **[]string) *matchResult {
 	// Keep lookup and publication in the same read lock so registration cannot
 	// clear the cache between matching a route and publishing the result.
 	// Freeze publishes the immutable trie and cache pointer under the write lock.
-	if !r.state.frozen.Load() {
+	key := matchCacheKey{method: method, path: path}
+	if r.state.frozen.Load() {
+		if result := r.state.frozenStatic[key]; result != nil {
+			return result
+		}
+	} else {
 		r.state.mu.RLock()
 		defer r.state.mu.RUnlock()
 	}
 
 	cache := r.state.matchCache
-	key := method + ":" + path
 	if result, ok := cache.Get(key); ok {
 		return result
 	}
-	result := r.matchRoute(method, path)
-	if result != nil {
-		// Build metadata before publication. Contexts retain this immutable
-		// match even after eviction, including workers behind inner timeouts.
-		result.routeState.SetPattern(result.RoutePattern)
-		result.routeState.SetName(result.RouteName)
-		for i, key := range result.ParamKeys {
-			if i < len(result.ParamValues) {
-				result.routeState.AddParam(key, result.ParamValues[i])
-			}
-		}
-		cache.Set(key, result)
+	result := r.matchRouteParts(method, path, scratch)
+	if result != nil && (path == result.RoutePattern || len(path) <= maxCachedDynamicPathBytes) {
+		cache.storeMatch(key, result, r.state.frozen.Load() && path != result.RoutePattern)
 	}
 	return result
 }
 
 // matchRoute reads the trie under the caller's read lock or after Freeze.
 func (r *Router) matchRoute(method, path string) *matchResult {
+	return r.matchRouteParts(method, path, nil)
+}
+
+func (r *Router) matchRouteParts(method, path string, scratch **[]string) *matchResult {
 	if path == "/" {
 		if method != MethodAny {
 			tree := r.state.trees[method]
 			if tree != nil && tree.handler != nil {
-				return &matchResult{
-					Handler:      tree.handler,
-					RoutePattern: "/",
-					RouteMethod:  method,
-					RouteName:    tree.routeName,
-				}
+				return newMatchResult(tree, "/", method, nil)
 			}
 		}
 		// RFC 7231 §4.3.2: HEAD is identical to GET except no body.
 		if method == http.MethodHead {
 			if getTree := r.state.trees[http.MethodGet]; getTree != nil && getTree.handler != nil {
-				return &matchResult{
-					Handler:      getTree.handler,
-					RoutePattern: "/",
-					RouteMethod:  http.MethodGet,
-					RouteName:    getTree.routeName,
-				}
+				return newMatchResult(getTree, "/", http.MethodGet, nil)
 			}
 		}
 		if anyTree := r.state.trees[MethodAny]; anyTree != nil && anyTree.handler != nil {
-			return &matchResult{
-				Handler:      anyTree.handler,
-				RoutePattern: "/",
-				RouteMethod:  MethodAny,
-				RouteName:    anyTree.routeName,
-			}
+			return newMatchResult(anyTree, "/", MethodAny, nil)
 		}
 		return nil
 	}
 
 	partsPtr := splitPathToParts(path)
 	parts := *partsPtr
-	defer putPathParts(partsPtr)
+	if scratch != nil && r.state.methodNotAllowed.Load() {
+		*scratch = partsPtr
+	} else {
+		defer putPathParts(partsPtr)
+	}
 
 	if method != MethodAny {
 		tree := r.state.trees[method]
@@ -317,18 +317,21 @@ func (r *Router) attachRouteContextAndServe(w http.ResponseWriter, req *http.Req
 		return
 	}
 	ctx := contract.WithRouteState(req.Context(), &result.routeState)
-	publishRouteContext(w, ctx)
+	publishRouteContext(w, ctx, result.RoutePattern, result.RouteName)
 	result.Handler.ServeHTTP(w, req.WithContext(ctx))
 }
 
-func (r *Router) allowedMethods(path string) []string {
+func (r *Router) allowedMethods(path string, partsPtr *[]string) []string {
 	normalized := path
 	if normalized == "" {
 		normalized = "/"
 	}
 
-	r.state.mu.RLock()
+	if r.state.frozen.Load() {
+		return r.frozenAllowedMethods(normalized, partsPtr)
+	}
 
+	r.state.mu.RLock()
 	allowed := make([]string, 0, len(r.state.trees))
 	if normalized == "/" {
 		for method, tree := range r.state.trees {
@@ -340,7 +343,10 @@ func (r *Router) allowedMethods(path string) []string {
 			}
 		}
 	} else {
-		partsPtr := splitPathToParts(normalized)
+		if partsPtr == nil {
+			partsPtr = splitPathToParts(normalized)
+			defer putPathParts(partsPtr)
+		}
 		parts := *partsPtr
 
 		for method, tree := range r.state.trees {
@@ -352,7 +358,6 @@ func (r *Router) allowedMethods(path string) []string {
 			}
 		}
 
-		putPathParts(partsPtr)
 	}
 
 	r.state.mu.RUnlock()
@@ -362,6 +367,41 @@ func (r *Router) allowedMethods(path string) []string {
 		sort.Strings(allowed)
 	}
 	return allowed
+}
+
+func (r *Router) frozenAllowedMethods(path string, parts *[]string) []string {
+	if path != "/" && parts == nil {
+		parts = splitPathToParts(path)
+		defer putPathParts(parts)
+	}
+	var allowed []string
+	var prefixMethods map[string]struct{}
+	if parts != nil && len(*parts) > 0 {
+		prefixMethods = r.state.frozenMethodPrefixes[(*parts)[0]]
+	}
+	for _, method := range r.state.frozenMethods {
+		if path != "/" {
+			_, literal := prefixMethods[method]
+			_, dynamic := r.state.frozenAnyPrefix[method]
+			if !literal && !dynamic {
+				continue
+			}
+		}
+		tree := r.state.trees[method]
+		if path == "/" && tree.handler != nil || path != "/" && matchBranch(tree, *parts, "", 0, nil) != nil {
+			if allowed == nil {
+				allowed = make([]string, 0, len(r.state.frozenMethods)+1)
+			}
+			allowed = append(allowed, method)
+		}
+	}
+	withHead := appendImplicitHeadMethod(allowed)
+	if len(withHead) != len(allowed) {
+		index := sort.SearchStrings(allowed, http.MethodHead)
+		copy(withHead[index+1:], allowed[index:])
+		withHead[index] = http.MethodHead
+	}
+	return withHead
 }
 
 func appendImplicitHeadMethod(methods []string) []string {
@@ -382,8 +422,14 @@ func appendImplicitHeadMethod(methods []string) []string {
 }
 
 // publishRouteContext notifies optional observers without changing request ownership.
-func publishRouteContext(w http.ResponseWriter, ctx context.Context) {
+func publishRouteContext(w http.ResponseWriter, ctx context.Context, pattern, name string) {
 	for w != nil {
+		if receiver, ok := w.(interface {
+			SetRouteIdentity(context.Context, string, string)
+		}); ok {
+			receiver.SetRouteIdentity(ctx, pattern, name)
+			return
+		}
 		if receiver, ok := w.(interface{ SetRouteContext(context.Context) }); ok {
 			receiver.SetRouteContext(ctx)
 			return

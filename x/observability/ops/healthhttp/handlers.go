@@ -155,16 +155,25 @@ func ComponentsListHandler(manager Manager) http.Handler {
 			return
 		}
 
-		allHealth := manager.GetAllHealth()
-		names := make([]string, 0, len(allHealth))
-		for name := range allHealth {
-			names = append(names, name)
-		}
-
-		slices.Sort(names)
+		names := listComponentNames(manager)
 		_ = contract.WriteResponse(w, r, http.StatusOK, ComponentsListResponse{
 			Components: names,
 			Count:      len(names),
 		}, nil)
 	})
+}
+
+func listComponentNames(source Manager) []string {
+	if native, ok := source.(*manager); ok {
+		native.mu.RLock()
+		defer native.mu.RUnlock()
+		return native.componentNames()
+	}
+	allHealth := source.GetAllHealth()
+	names := make([]string, 0, len(allHealth))
+	for name := range allHealth {
+		names = append(names, name)
+	}
+	slices.Sort(names)
+	return names
 }

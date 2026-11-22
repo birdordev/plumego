@@ -92,6 +92,10 @@ func newRewriteCache(maxSize int) *rewriteCache {
 //	rewritten, err := rewriter.Rewrite("SELECT * FROM users WHERE id = ?", 0)
 //	// Returns: "SELECT * FROM users_0 WHERE id = ?"
 func (r *SQLRewriter) Rewrite(query string, shardIndex int) (string, error) {
+	return r.rewriteParsed(query, shardIndex, nil)
+}
+
+func (r *SQLRewriter) rewriteParsed(query string, shardIndex int, parsed *ParsedSQL) (string, error) {
 	// Check cache first
 	if cached := r.cache.get(query, shardIndex); cached != "" {
 		return cached, nil
@@ -101,9 +105,12 @@ func (r *SQLRewriter) Rewrite(query string, shardIndex int) (string, error) {
 	}
 
 	// Parse the SQL query
-	parsed, err := r.parser.Parse(query)
-	if err != nil {
-		return "", fmt.Errorf("failed to parse SQL: %w", err)
+	if parsed == nil {
+		var err error
+		parsed, err = r.parser.Parse(query)
+		if err != nil {
+			return "", fmt.Errorf("failed to parse SQL: %w", err)
+		}
 	}
 
 	// Get the sharding rule for this table

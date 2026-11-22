@@ -264,8 +264,38 @@ func (p Policy) ApplyChecked(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
+// CompileApplier validates a snapshot and returns a function that applies it
+// to each response. The function is safe for concurrent use with separate writers.
+func (p Policy) CompileApplier() (func(http.ResponseWriter, *http.Request), error) {
+	p = p.Compile()
+	if err := p.Validate(); err != nil {
+		return nil, err
+	}
+	plain := make(http.Header)
+	p.applyHeaders(plain, false)
+	var secure http.Header
+	if p.compiledHSTS != "" {
+		secure = make(http.Header)
+		p.applyHeaders(secure, true)
+	}
+	return func(w http.ResponseWriter, r *http.Request) {
+		values := plain
+		if secure != nil && isHTTPSRequest(r) {
+			values = secure
+		}
+		dst := w.Header()
+		for name, value := range values {
+			dst.Set(name, value[0])
+		}
+	}, nil
+}
+
 func (p Policy) apply(w http.ResponseWriter, r *http.Request) {
-	headers := w.Header()
+	https := p.StrictTransportSecurity != nil && p.StrictTransportSecurity.MaxAge > 0 && isHTTPSRequest(r)
+	p.applyHeaders(w.Header(), https)
+}
+
+func (p Policy) applyHeaders(headers http.Header, https bool) {
 	setEnumHeader(headers, "X-Frame-Options", p.FrameOptions, allowedFrameOptions)
 	setEnumHeader(headers, "X-Content-Type-Options", p.ContentTypeOptions, allowedContentTypeOptions)
 	setEnumHeader(headers, "Referrer-Policy", p.ReferrerPolicy, allowedReferrerPolicies)
@@ -275,7 +305,7 @@ func (p Policy) apply(w http.ResponseWriter, r *http.Request) {
 	setEnumHeader(headers, "Cross-Origin-Resource-Policy", p.CrossOriginResourcePolicy, allowedCrossOriginResourcePolicies)
 	setEnumHeader(headers, "Cross-Origin-Embedder-Policy", p.CrossOriginEmbedderPolicy, allowedCrossOriginEmbedderPolicies)
 
-	if p.StrictTransportSecurity != nil && p.StrictTransportSecurity.MaxAge > 0 && isHTTPSRequest(r) {
+	if https {
 		hsts := p.compiledHSTS
 		if hsts == "" {
 			hsts = formatHSTS(*p.StrictTransportSecurity)

@@ -147,14 +147,8 @@ func (h *Hub) TryBroadcastAll(op byte, data []byte) BroadcastResult {
 	}
 
 	// Multi-room path: deduplicate connections that span multiple rooms.
-	estimatedSize := 0
-	for _, rs := range h.rooms {
-		estimatedSize += len(rs)
-	}
-	if cap(*connsList) < estimatedSize {
-		*connsList = make([]*Conn, 0, estimatedSize)
-	}
-	seen := make(map[*Conn]struct{}, estimatedSize)
+	hint := min(h.roomRegistrations.Load(), maxPooledConnections)
+	seen := make(map[*Conn]struct{}, int(hint))
 	for _, rs := range h.rooms {
 		for c := range rs {
 			if _, dup := seen[c]; !dup {

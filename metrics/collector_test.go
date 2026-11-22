@@ -316,7 +316,7 @@ func TestHTTPRecordOwnsLabelsAndRetainsSubsecondDuration(t *testing.T) {
 func TestBaseHTTPStatusCountersAtSaturation(t *testing.T) {
 	c := NewBaseMetricsCollector()
 	c.stats.TotalRecords = 1<<63 - 1
-	c.stats.NameBreakdown[MetricHTTPRequest] = 1<<63 - 1
+	c.httpRecords = 1<<63 - 1
 	c.ObserveHTTP(t.Context(), "GET", "/", 399, 0, 0)
 	if got := c.GetStats().ErrorRecords; got != 0 {
 		t.Fatalf("399 errors=%d", got)

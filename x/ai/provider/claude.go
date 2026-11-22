@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strings"
 
 	"github.com/birdordev/plumego/x/ai/tokenizer"
 )
@@ -415,25 +414,25 @@ type claudeStreamParser struct {
 // Parse implements StreamParser.
 func (p *claudeStreamParser) Parse() (*StreamChunk, error) {
 	for p.scanner.Scan() {
-		line := p.scanner.Text()
+		line := p.scanner.Bytes()
 
 		// Skip empty lines and comments
-		if line == "" || strings.HasPrefix(line, ":") {
+		if len(line) == 0 || bytes.HasPrefix(line, []byte(":")) {
 			continue
 		}
 
 		// Parse SSE event
-		if strings.HasPrefix(line, "event: ") {
+		if bytes.HasPrefix(line, []byte("event: ")) {
 			// Read next line for data
 			if !p.scanner.Scan() {
 				break
 			}
-			dataLine := p.scanner.Text()
-			if !strings.HasPrefix(dataLine, "data: ") {
+			dataLine := p.scanner.Bytes()
+			if !bytes.HasPrefix(dataLine, []byte("data: ")) {
 				continue
 			}
 
-			data := strings.TrimPrefix(dataLine, "data: ")
+			data := bytes.TrimPrefix(dataLine, []byte("data: "))
 			return p.parseEvent(data)
 		}
 	}
@@ -446,9 +445,9 @@ func (p *claudeStreamParser) Parse() (*StreamChunk, error) {
 }
 
 // parseEvent parses a streaming event.
-func (p *claudeStreamParser) parseEvent(data string) (*StreamChunk, error) {
+func (p *claudeStreamParser) parseEvent(data []byte) (*StreamChunk, error) {
 	var event map[string]any
-	if err := json.Unmarshal([]byte(data), &event); err != nil {
+	if err := json.Unmarshal(data, &event); err != nil {
 		return nil, err
 	}
 

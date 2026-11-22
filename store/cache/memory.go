@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -17,16 +18,18 @@ const (
 
 // MemoryCache is an in-memory cache implementation using sync.Map.
 type MemoryCache struct {
-	store     sync.Map
-	config    Config
-	writeMu   sync.Mutex
-	stateMu   sync.RWMutex
-	size      int
-	memory    uint64
-	closed    bool
-	stopChan  chan struct{}
-	closeOnce sync.Once
-	wg        sync.WaitGroup
+	store           sync.Map
+	expirations     expirationQueue
+	expirationByKey map[string]*cacheExpiration
+	config          Config
+	writeMu         sync.Mutex
+	stateMu         sync.RWMutex
+	size            int
+	memory          uint64
+	closed          atomic.Bool
+	stopChan        chan struct{}
+	closeOnce       sync.Once
+	wg              sync.WaitGroup
 }
 
 type cacheItem struct {
@@ -52,8 +55,9 @@ func NewMemoryCacheWithConfig(config Config) (*MemoryCache, error) {
 	}
 
 	cache := &MemoryCache{
-		config:   config,
-		stopChan: make(chan struct{}),
+		config:          config,
+		stopChan:        make(chan struct{}),
+		expirationByKey: make(map[string]*cacheExpiration),
 	}
 
 	if config.CleanupInterval > 0 {
@@ -85,8 +89,8 @@ func (mc *MemoryCache) startCleanup() {
 
 // removeExpiredItem removes an expired item and updates internal state.
 // Returns true if the item was removed.
-func (mc *MemoryCache) removeExpiredItem(key any, item cacheItem) bool {
-	if !expired(item.expiration) {
+func (mc *MemoryCache) removeExpiredItem(key string, item cacheItem, now time.Time) bool {
+	if !expiredAt(item.expiration, now) {
 		return false
 	}
 
@@ -104,7 +108,7 @@ func (mc *MemoryCache) tryRemoveExpiredItem(key string, item cacheItem) {
 	mc.removeExpiredItemLocked(key, item)
 }
 
-func (mc *MemoryCache) removeExpiredItemLocked(key any, item cacheItem) bool {
+func (mc *MemoryCache) removeExpiredItemLocked(key string, item cacheItem) bool {
 	if !expired(item.expiration) {
 		return false
 	}
@@ -117,7 +121,7 @@ func (mc *MemoryCache) removeExpiredItemLocked(key any, item cacheItem) bool {
 		return false
 	}
 
-	mc.store.Delete(key)
+	mc.deleteStoredKeyLocked(key)
 	mc.adjustStoredValue(-1, -int64(len(item.value)))
 	return true
 }
@@ -128,11 +132,17 @@ func (mc *MemoryCache) cleanupExpired() {
 		return
 	}
 
-	mc.store.Range(func(key, value any) bool {
-		item := value.(cacheItem)
-		mc.removeExpiredItem(key, item)
-		return true
-	})
+	mc.writeMu.Lock()
+	defer mc.writeMu.Unlock()
+	now := time.Now()
+	for len(mc.expirations) > 0 && expiredAt(mc.expirations[0].at, now) {
+		key := mc.expirations[0].key
+		stored, ok := mc.store.Load(key)
+		mc.deleteStoredKeyLocked(key)
+		if ok {
+			mc.adjustStoredValue(-1, -int64(len(stored.(cacheItem).value)))
+		}
+	}
 }
 
 // validateKey checks if a key is valid for stable in-process cache storage.
@@ -161,7 +171,8 @@ func (mc *MemoryCache) checkMemoryLimit(valueSize, existingSize uint64) error {
 		return nil
 	}
 
-	currentMemory := mc.currentMemoryUsage()
+	// The write lock protects the quota check until publication.
+	currentMemory := mc.memory
 	if currentMemory >= existingSize {
 		currentMemory -= existingSize
 	}
@@ -245,6 +256,7 @@ func (mc *MemoryCache) setLockedWithExpiration(key string, value []byte, exp tim
 
 // storeValueLocked publishes an owned value after capacity has been checked.
 func (mc *MemoryCache) storeValueLocked(key string, value []byte, exp time.Time, existingSize uint64, existingFound bool) {
+	mc.indexExpirationLocked(key, exp)
 	mc.store.Store(key, cacheItem{value: value, expiration: exp})
 	deltaSize := 0
 	if !existingFound {
@@ -279,7 +291,7 @@ func (mc *MemoryCache) Delete(ctx context.Context, key string) error {
 	defer mc.writeMu.Unlock()
 	if existing, ok := mc.store.Load(key); ok {
 		item := existing.(cacheItem)
-		mc.store.Delete(key)
+		mc.deleteStoredKeyLocked(key)
 		mc.adjustStoredValue(-1, -int64(len(item.value)))
 	}
 
@@ -323,6 +335,8 @@ func (mc *MemoryCache) Clear(ctx context.Context) error {
 	defer mc.writeMu.Unlock()
 	mc.stateMu.Lock()
 	mc.store.Clear()
+	mc.expirations = nil
+	clear(mc.expirationByKey)
 	mc.size = 0
 	mc.memory = 0
 	mc.stateMu.Unlock()
@@ -448,9 +462,7 @@ func (mc *MemoryCache) Close() error {
 		return nil
 	}
 	mc.closeOnce.Do(func() {
-		mc.stateMu.Lock()
-		mc.closed = true
-		mc.stateMu.Unlock()
+		mc.closed.Store(true)
 
 		if mc.stopChan != nil {
 			close(mc.stopChan)
@@ -485,19 +497,10 @@ func (mc *MemoryCache) operationErr(ctx context.Context) error {
 	if mc == nil {
 		return ErrCacheClosed
 	}
-	mc.stateMu.RLock()
-	closed := mc.closed || mc.stopChan == nil
-	mc.stateMu.RUnlock()
-	if closed {
+	if mc.closed.Load() || mc.stopChan == nil {
 		return ErrCacheClosed
 	}
 	return nil
-}
-
-func (mc *MemoryCache) currentMemoryUsage() uint64 {
-	mc.stateMu.RLock()
-	defer mc.stateMu.RUnlock()
-	return mc.memory
 }
 
 func (mc *MemoryCache) adjustStoredValue(deltaSize int, deltaMemory int64) {
@@ -523,7 +526,7 @@ func (mc *MemoryCache) adjustStoredValue(deltaSize int, deltaMemory int64) {
 }
 
 func expired(exp time.Time) bool {
-	return expiredAt(exp, time.Now())
+	return !exp.IsZero() && expiredAt(exp, time.Now())
 }
 
 func expiredAt(exp, now time.Time) bool {

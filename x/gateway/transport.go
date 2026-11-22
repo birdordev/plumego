@@ -4,6 +4,7 @@ import (
 	"crypto/tls"
 	"net"
 	"net/http"
+	"slices"
 	"sync"
 	"time"
 )
@@ -133,6 +134,8 @@ func (p *TransportPool) Get(backendURL string) *http.Transport {
 
 // createTransport creates a new HTTP transport with the configured settings
 func (p *TransportPool) createTransport() *http.Transport {
+	config := p.config.TLSClientConfig.Clone()
+	http2 := config == nil || len(config.NextProtos) == 0 || slices.Contains(config.NextProtos, "h2")
 	return &http.Transport{
 		Proxy: http.ProxyFromEnvironment,
 		DialContext: (&net.Dialer{
@@ -148,7 +151,8 @@ func (p *TransportPool) createTransport() *http.Transport {
 		ResponseHeaderTimeout: p.config.ResponseHeaderTimeout,
 		DisableKeepAlives:     p.config.DisableKeepAlives,
 		DisableCompression:    p.config.DisableCompression,
-		TLSClientConfig:       p.config.TLSClientConfig,
+		TLSClientConfig:       config,
+		ForceAttemptHTTP2:     http2,
 	}
 }
 

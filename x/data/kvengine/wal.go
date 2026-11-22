@@ -2,12 +2,14 @@ package kvengine
 
 import (
 	"bufio"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"hash/crc32"
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"sync/atomic"
 	"time"
 )
@@ -78,6 +80,7 @@ func (kv *KVStore) writeWALEntry(entry WALEntry) error {
 	}
 
 	n, err := kv.walWriter.Write(data)
+	kv.walDirty = kv.walDirty || n > 0
 	if err != nil {
 		return err
 	}
@@ -102,11 +105,12 @@ func (kv *KVStore) flushWALLocked() error {
 		if err := kv.walWriter.Flush(); err != nil {
 			return err
 		}
-		if kv.walFile != nil {
+		if kv.walDirty && kv.walFile != nil {
 			if err := kv.walFile.Sync(); err != nil {
 				return err
 			}
 		}
+		kv.walDirty = false
 	}
 	return nil
 }
@@ -230,8 +234,26 @@ func (kv *KVStore) encodeWALEntry(entry WALEntry) ([]byte, error) {
 }
 
 func (kv *KVStore) calculateCRC(entry WALEntry) uint32 {
-	data := fmt.Sprintf("%d\x00%s\x00%x\x00%d\x00%d", entry.Op, entry.Key, entry.Value, entry.ExpireAt.UnixNano(), entry.Version)
-	return crc32.ChecksumIEEE([]byte(data))
+	// The CRC covers the historical decimal/hex representation.
+	if len(entry.Value) < 4<<10 {
+		data := fmt.Sprintf("%d\x00%s\x00%x\x00%d\x00%d", entry.Op, entry.Key, entry.Value, entry.ExpireAt.UnixNano(), entry.Version)
+		return crc32.ChecksumIEEE([]byte(data))
+	}
+	var numbers [48]byte
+	head := append(strconv.AppendUint(numbers[:0], uint64(entry.Op), 10), 0)
+	crc := crc32.Update(0, crc32.IEEETable, head)
+	crc = crc32.Update(crc, crc32.IEEETable, []byte(entry.Key))
+	crc = crc32.Update(crc, crc32.IEEETable, []byte{0})
+	var chunk [4096]byte
+	for rest := entry.Value; len(rest) != 0; {
+		n := min(len(rest), len(chunk)/2)
+		encoded := hex.Encode(chunk[:], rest[:n])
+		crc = crc32.Update(crc, crc32.IEEETable, chunk[:encoded])
+		rest = rest[n:]
+	}
+	tail := strconv.AppendInt(append(numbers[:0], 0), entry.ExpireAt.UnixNano(), 10)
+	tail = strconv.AppendInt(append(tail, 0), entry.Version, 10)
+	return crc32.Update(crc, crc32.IEEETable, tail)
 }
 
 func (kv *KVStore) validateWALEntry(entry WALEntry) bool {

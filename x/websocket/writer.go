@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"slices"
 	"time"
 )
 
@@ -14,13 +15,11 @@ import (
 // Use WriteMessageContext when you need explicit cancellation or a custom
 // deadline beyond the configured sendTimeout.
 func (c *Conn) WriteMessage(op byte, data []byte) error {
-	ctx := context.Background()
-	if c.sendTimeout > 0 {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, c.sendTimeout)
-		defer cancel()
-	}
-	return c.WriteMessageContext(ctx, op, data)
+	return c.writeMessage(op, data, false)
+}
+
+func (c *Conn) writeMessage(op byte, data []byte, owned bool) error {
+	return c.enqueueMessage(context.Background(), op, data, owned, c.sendTimeout)
 }
 
 // WriteMessageContext enqueues message to sendQueue with context support.
@@ -34,17 +33,24 @@ func (c *Conn) WriteMessage(op byte, data []byte) error {
 //	defer cancel()
 //	err := conn.WriteMessageContext(ctx, websocket.OpcodeText, []byte("hello"))
 func (c *Conn) WriteMessageContext(ctx context.Context, op byte, data []byte) error {
+	return c.enqueueMessage(ctx, op, data, false, 0)
+}
+
+// Owned messages contain immutable bytes already copied by the hub or encoded here.
+func (c *Conn) enqueueMessage(ctx context.Context, op byte, data []byte, owned bool, wait time.Duration) error {
 	if !isApplicationWriteOpcode(op) {
 		return ErrInvalidOpcode
 	}
 	if ctx != nil && ctx.Err() != nil {
 		return ctx.Err()
 	}
-	owned := make([]byte, len(data))
-	copy(owned, data)
-	out := Outbound{Op: op, Data: owned}
+	if !owned && (c.sendBehavior == SendBlock || cap(c.sendQueue) == 0 || len(c.sendQueue) < cap(c.sendQueue)) {
+		data = slices.Clone(data)
+		owned = true
+	}
+	out := Outbound{Op: op, Data: data}
 
-	if err := c.tryEnqueue(ctx, out); err == nil {
+	if err := c.tryEnqueueOwned(ctx, out, owned); err == nil {
 		return nil
 	} else if !errors.Is(err, ErrQueueFull) {
 		return err
@@ -53,6 +59,11 @@ func (c *Conn) WriteMessageContext(ctx context.Context, op byte, data []byte) er
 	// Queue is full, handle according to behavior.
 	switch c.sendBehavior {
 	case SendBlock:
+		if wait > 0 {
+			var cancel context.CancelFunc
+			ctx, cancel = context.WithTimeout(context.Background(), wait)
+			defer cancel()
+		}
 		return c.enqueueBlocking(ctx, out)
 	case SendDrop:
 		return ErrQueueFull
@@ -68,7 +79,7 @@ func isApplicationWriteOpcode(op byte) bool {
 	return op == OpcodeText || op == OpcodeBinary
 }
 
-func (c *Conn) tryEnqueue(ctx context.Context, out Outbound) error {
+func (c *Conn) tryEnqueueOwned(ctx context.Context, out Outbound, owned bool) error {
 	c.stateMu.RLock()
 	defer c.stateMu.RUnlock()
 	if ctx != nil && ctx.Err() != nil {
@@ -76,6 +87,12 @@ func (c *Conn) tryEnqueue(ctx context.Context, out Outbound) error {
 	}
 	if c.IsClosed() {
 		return ErrConnClosed
+	}
+	if !owned {
+		if len(c.sendQueue) == cap(c.sendQueue) {
+			return ErrQueueFull
+		}
+		out.Data = slices.Clone(out.Data)
 	}
 	select {
 	case c.sendQueue <- out:
@@ -138,7 +155,7 @@ func (c *Conn) WriteJSON(v any) error {
 	if err != nil {
 		return err
 	}
-	return c.WriteMessage(OpcodeText, data)
+	return c.writeMessage(OpcodeText, data, true)
 }
 
 // writerPump consumes sendQueue and writes frames to client. It fragments large messages.

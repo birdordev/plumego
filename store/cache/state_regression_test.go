@@ -316,7 +316,7 @@ func TestStaleCleanupScanPreservesReplacementAndAccounting(t *testing.T) {
 			item, _ := cache.store.Load(key)
 			close(captured)
 			<-replaceDone
-			cache.removeExpiredItem(key, item.(cacheItem))
+			cache.removeExpiredItem(key, item.(cacheItem), time.Now())
 			close(cleaned)
 		}()
 		<-captured

@@ -28,10 +28,11 @@ type App struct {
 	handlerBuilding    bool
 
 	// Server components
-	httpServer  *http.Server               // HTTP server instance
-	connTracker *connectionTracker         // Open HTTP connection tracker
-	handler     http.Handler               // Combined handler with middleware applied; guarded by mu
-	handlerFast atomic.Pointer[handlerRef] // Published once after successful assembly
+	tlsPreparation *tlsPreparation            // Shared by concurrent server preparations.
+	httpServer     *http.Server               // HTTP server instance
+	connTracker    *connectionTracker         // Open HTTP connection tracker
+	handler        http.Handler               // Combined handler with middleware applied; guarded by mu
+	handlerFast    atomic.Pointer[handlerRef] // Published once after successful assembly
 }
 
 // New creates an App from a value-copied config and explicit dependencies.

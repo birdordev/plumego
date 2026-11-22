@@ -180,10 +180,16 @@ func (p *BackendPool) Backends() []*Backend {
 
 // HealthyBackends returns only healthy backends
 func (p *BackendPool) HealthyBackends() []*Backend {
+	return p.healthyBackendsInto([]*Backend{})
+}
+
+func (p *BackendPool) healthyBackendsInto(result []*Backend) []*Backend {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 
-	result := make([]*Backend, 0, len(p.backends))
+	if cap(result) < len(p.backends) {
+		result = make([]*Backend, 0, len(p.backends))
+	}
 	for _, backend := range p.backends {
 		if backend.IsHealthy() {
 			result = append(result, backend)

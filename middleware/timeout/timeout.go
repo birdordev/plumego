@@ -122,12 +122,15 @@ func Middleware(cfg Config) mw.Middleware {
 			}
 
 			tw := newTimeoutResponseWriter(ctx, cfg)
-			tw.publishRoute = func(ctx context.Context) { internaltransport.PublishRouteContext(w, ctx) }
+			tw.routeDestination = w
 			// Clone the outer headers so downstream edits remain private until replay.
 			internaltransport.CopyHeaders(tw.Header(), w.Header())
 			done := make(chan timeoutHandlerResult)
-			responseDone := make(chan struct{})
-			defer close(responseDone)
+			var responseDone chan struct{}
+			if cfg.OnPanic != nil {
+				responseDone = make(chan struct{})
+				defer close(responseDone)
+			}
 
 			go func() {
 				result := timeoutHandlerResult{}
@@ -224,11 +227,13 @@ func newTimeoutResponseWriter(ctx context.Context, cfg Config) *timeoutResponseW
 }
 
 type timeoutResponseWriter struct {
-	publishRoute        func(context.Context)
+	routeDestination    http.ResponseWriter
 	ctx                 context.Context
 	cfg                 Config
 	buffer              *internaltransport.BufferedResponse
 	writtenBytes        int64
+	contentLength       int64
+	lengthParsed        bool
 	overflow            bool
 	replayLimitExceeded bool // Whether the response exceeded the replay budget.
 }
@@ -263,7 +268,16 @@ func (w *timeoutResponseWriter) Write(p []byte) (int, error) {
 	// subsequent write, including writes while replay has been abandoned.
 	w.buffer.WriteHeader(http.StatusOK)
 	w.writtenBytes += int64(len(p))
-	if length, err := strconv.ParseInt(w.buffer.FinalHeader().Get("Content-Length"), 10, 64); err == nil && length >= 0 && w.writtenBytes > length {
+	if !w.lengthParsed {
+		w.lengthParsed = true
+		w.contentLength = -1
+		if raw := w.buffer.FinalHeader().Get("Content-Length"); raw != "" {
+			if length, err := strconv.ParseInt(raw, 10, 64); err == nil {
+				w.contentLength = length
+			}
+		}
+	}
+	if w.contentLength >= 0 && w.writtenBytes > w.contentLength {
 		return 0, http.ErrContentLength
 	}
 
@@ -303,7 +317,10 @@ func (w *timeoutResponseWriter) Overflowed() bool {
 
 // SetRouteContext forwards immutable metadata only, never response operations.
 func (w *timeoutResponseWriter) SetRouteContext(ctx context.Context) {
-	if w.publishRoute != nil {
-		w.publishRoute(ctx)
-	}
+	internaltransport.PublishRouteContext(w.routeDestination, ctx)
+}
+
+// SetRouteIdentity forwards metadata without touching the response.
+func (w *timeoutResponseWriter) SetRouteIdentity(ctx context.Context, pattern, name string) {
+	internaltransport.PublishRouteIdentity(w.routeDestination, ctx, pattern, name)
 }

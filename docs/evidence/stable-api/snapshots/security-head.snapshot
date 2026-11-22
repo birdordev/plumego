@@ -60,6 +60,7 @@ symbol	github.com/birdordev/plumego/security/headers	method	CSPBuilder.WorkerSrc
 symbol	github.com/birdordev/plumego/security/headers	method	Policy.Apply	func (Policy) Applyfunc(w http.ResponseWriter, r *http.Request)
 symbol	github.com/birdordev/plumego/security/headers	method	Policy.ApplyChecked	func (Policy) ApplyCheckedfunc(w http.ResponseWriter, r *http.Request) error
 symbol	github.com/birdordev/plumego/security/headers	method	Policy.Compile	func (Policy) Compilefunc() Policy
+symbol	github.com/birdordev/plumego/security/headers	method	Policy.CompileApplier	func (Policy) CompileApplierfunc() (func(http.ResponseWriter, *http.Request), error)
 symbol	github.com/birdordev/plumego/security/headers	method	Policy.Validate	func (Policy) Validatefunc() error
 symbol	github.com/birdordev/plumego/security/headers	type	CSPBuilder	type CSPBuilder struct { }
 symbol	github.com/birdordev/plumego/security/headers	type	HSTSOptions	type HSTSOptions struct { MaxAge time.Duration IncludeSubDomains bool Preload bool }

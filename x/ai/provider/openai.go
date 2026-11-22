@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strings"
 
 	"github.com/birdordev/plumego/x/ai/tokenizer"
 )
@@ -385,19 +384,19 @@ type openaiStreamParser struct {
 // Parse implements StreamParser.
 func (p *openaiStreamParser) Parse() (*StreamChunk, error) {
 	for p.scanner.Scan() {
-		line := p.scanner.Text()
+		line := p.scanner.Bytes()
 
 		// Skip empty lines
-		if line == "" {
+		if len(line) == 0 {
 			continue
 		}
 
 		// Parse SSE data
-		if strings.HasPrefix(line, "data: ") {
-			data := strings.TrimPrefix(line, "data: ")
+		if bytes.HasPrefix(line, []byte("data: ")) {
+			data := bytes.TrimPrefix(line, []byte("data: "))
 
 			// Check for [DONE]
-			if data == "[DONE]" {
+			if bytes.Equal(data, []byte("[DONE]")) {
 				return nil, io.EOF
 			}
 
@@ -413,7 +412,7 @@ func (p *openaiStreamParser) Parse() (*StreamChunk, error) {
 }
 
 // parseChunk parses a streaming chunk.
-func (p *openaiStreamParser) parseChunk(data string) (*StreamChunk, error) {
+func (p *openaiStreamParser) parseChunk(data []byte) (*StreamChunk, error) {
 	var streamResp struct {
 		ID      string `json:"id"`
 		Choices []struct {
@@ -424,7 +423,7 @@ func (p *openaiStreamParser) parseChunk(data string) (*StreamChunk, error) {
 		} `json:"choices"`
 	}
 
-	if err := json.Unmarshal([]byte(data), &streamResp); err != nil {
+	if err := json.Unmarshal(data, &streamResp); err != nil {
 		return nil, err
 	}
 

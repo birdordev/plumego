@@ -1,6 +1,7 @@
 package pubsub
 
 import (
+	"container/heap"
 	"context"
 	"sync"
 	"sync/atomic"
@@ -45,6 +46,10 @@ type ackableSubscriber struct {
 
 	mu         sync.Mutex
 	pending    map[string]*pendingMessage // msgID -> pending message
+	deadlines  ackDeadlines
+	timer      *time.Timer
+	timerDue   time.Time
+	canceled   bool
 	ackTimeout time.Duration
 	maxRetries int
 	deadLetter *InProcBroker
@@ -58,7 +63,7 @@ type pendingMessage struct {
 	msg       Message
 	deliverAt time.Time
 	retries   int
-	timer     *time.Timer
+	index     int
 }
 
 // AckOptions configures ackable subscription behavior.
@@ -169,39 +174,48 @@ func (as *ackableSubscriber) trackMessage(msg Message) {
 		retries:   0,
 	}
 
-	// Set ack timeout timer
-	pm.timer = time.AfterFunc(as.ackTimeout, func() {
-		as.handleTimeout(msgID)
-	})
-
+	if as.canceled || as.closed.Load() {
+		return
+	}
+	if previous := as.pending[msgID]; previous != nil {
+		heap.Remove(&as.deadlines, previous.index)
+	}
 	as.pending[msgID] = pm
+	heap.Push(&as.deadlines, pm)
+	as.armTimerLocked()
 }
 
 // handleTimeout handles ack timeout for a message.
-func (as *ackableSubscriber) handleTimeout(msgID string) {
+func (as *ackableSubscriber) handleTimeout() {
 	as.mu.Lock()
-	pm, ok := as.pending[msgID]
-	if !ok {
+	as.timerDue = time.Time{}
+	if as.closed.Load() {
+		clear(as.pending)
+		as.deadlines = nil
+	}
+	if len(as.deadlines) == 0 || time.Since(as.deadlines[0].deliverAt) < as.ackTimeout {
+		as.armTimerLocked()
 		as.mu.Unlock()
 		return
 	}
-
+	pm := heap.Pop(&as.deadlines).(*pendingMessage)
+	msgID := pm.msg.ID
 	pm.retries++
 
 	if pm.retries >= as.maxRetries {
 		// Send to dead letter queue
 		delete(as.pending, msgID)
+		as.armTimerLocked()
 		as.mu.Unlock()
 
 		as.sendToDeadLetter(pm.msg, "max_retries_exceeded")
 		return
 	}
 
-	// Redeliver
+	// Redeliver.
 	pm.deliverAt = time.Now()
-	pm.timer = time.AfterFunc(as.ackTimeout, func() {
-		as.handleTimeout(msgID)
-	})
+	heap.Push(&as.deadlines, pm)
+	as.armTimerLocked()
 	msg := pm.msg
 	as.mu.Unlock()
 
@@ -228,10 +242,9 @@ func (as *ackableSubscriber) Ack(msgID string) error {
 		return newErr(ErrCodeNotFound, "ack", "", "message not found in pending", nil)
 	}
 
-	if pm.timer != nil {
-		pm.timer.Stop()
-	}
+	heap.Remove(&as.deadlines, pm.index)
 	delete(as.pending, msgID)
+	as.armTimerLocked()
 
 	return nil
 }
@@ -245,13 +258,12 @@ func (as *ackableSubscriber) Nack(msgID string, requeue bool) error {
 		return newErr(ErrCodeNotFound, "ack", "", "message not found in pending", nil)
 	}
 
-	if pm.timer != nil {
-		pm.timer.Stop()
-	}
+	heap.Remove(&as.deadlines, pm.index)
 
 	if !requeue {
 		// Don't requeue, send to dead letter
 		delete(as.pending, msgID)
+		as.armTimerLocked()
 		as.mu.Unlock()
 
 		as.sendToDeadLetter(pm.msg, "nack_no_requeue")
@@ -262,6 +274,7 @@ func (as *ackableSubscriber) Nack(msgID string, requeue bool) error {
 	pm.retries++
 	if pm.retries >= as.maxRetries {
 		delete(as.pending, msgID)
+		as.armTimerLocked()
 		as.mu.Unlock()
 
 		as.sendToDeadLetter(pm.msg, "max_retries_exceeded")
@@ -269,9 +282,8 @@ func (as *ackableSubscriber) Nack(msgID string, requeue bool) error {
 	}
 
 	pm.deliverAt = time.Now()
-	pm.timer = time.AfterFunc(as.ackTimeout, func() {
-		as.handleTimeout(msgID)
-	})
+	heap.Push(&as.deadlines, pm)
+	as.armTimerLocked()
 	msg := pm.msg
 	as.mu.Unlock()
 
@@ -299,15 +311,54 @@ func (as *ackableSubscriber) PendingCount() int {
 // Cancel cancels the subscription and cleans up.
 func (as *ackableSubscriber) Cancel() {
 	as.mu.Lock()
-	for _, pm := range as.pending {
-		if pm.timer != nil {
-			pm.timer.Stop()
-		}
-	}
-	as.pending = make(map[string]*pendingMessage)
+	as.canceled = true
+	clear(as.pending)
+	as.deadlines = nil
+	as.armTimerLocked()
 	as.mu.Unlock()
 
 	as.subscriber.Cancel()
+}
+
+func (as *ackableSubscriber) armTimerLocked() {
+	if len(as.deadlines) == 0 {
+		if as.timer != nil {
+			as.timer.Stop()
+		}
+		as.timerDue = time.Time{}
+		return
+	}
+	due := as.deadlines[0].deliverAt.Add(as.ackTimeout)
+	if due.Equal(as.timerDue) {
+		return
+	}
+	as.timerDue = due
+	if as.timer == nil {
+		as.timer = time.AfterFunc(time.Until(due), as.handleTimeout)
+	} else {
+		as.timer.Reset(time.Until(due))
+	}
+}
+
+type ackDeadlines []*pendingMessage
+
+func (h ackDeadlines) Len() int           { return len(h) }
+func (h ackDeadlines) Less(i, j int) bool { return h[i].deliverAt.Before(h[j].deliverAt) }
+func (h ackDeadlines) Swap(i, j int) {
+	h[i], h[j] = h[j], h[i]
+	h[i].index, h[j].index = i, j
+}
+func (h *ackDeadlines) Push(value any) {
+	pm := value.(*pendingMessage)
+	pm.index = len(*h)
+	*h = append(*h, pm)
+}
+func (h *ackDeadlines) Pop() any {
+	last := len(*h) - 1
+	pm := (*h)[last]
+	(*h)[last] = nil
+	*h = (*h)[:last]
+	return pm
 }
 
 // sendToDeadLetter sends a message to the dead letter queue.

@@ -22,8 +22,10 @@ import (
 //	store := jwt.NewInMemoryKeyStore()
 //	manager, err := jwt.NewJWTManager(store, jwt.DefaultJWTConfig())
 type InMemoryKeyStore struct {
-	mu      sync.RWMutex
-	entries map[string]memEntry
+	mu           sync.RWMutex
+	entries      map[string]memEntry
+	keys         []string
+	keysExpireAt time.Time
 }
 
 type memEntry struct {
@@ -83,6 +85,7 @@ func (s *InMemoryKeyStore) SetContext(ctx context.Context, key string, value []b
 	if s.entries == nil {
 		s.entries = make(map[string]memEntry)
 	}
+	s.keys = nil
 	s.entries[key] = memEntry{value: append([]byte(nil), value...), expiry: expiry}
 	return nil
 }
@@ -96,11 +99,31 @@ func (s *InMemoryKeyStore) KeysContext(ctx context.Context) ([]string, error) {
 		return nil, err
 	}
 	s.mu.RLock()
-	defer s.mu.RUnlock()
+	if err := contextErr(ctx); err != nil {
+		s.mu.RUnlock()
+		return nil, err
+	}
+	now := time.Now()
+	if s.keys != nil && (s.keysExpireAt.IsZero() || now.Before(s.keysExpireAt)) {
+		keys := s.keys
+		s.mu.RUnlock()
+		return append([]string{}, keys...), nil
+	}
+	s.mu.RUnlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.refreshKeysLocked(ctx)
+}
+
+func (s *InMemoryKeyStore) refreshKeysLocked(ctx context.Context) ([]string, error) {
 	if err := contextErr(ctx); err != nil {
 		return nil, err
 	}
 	now := time.Now()
+	if s.keys != nil && (s.keysExpireAt.IsZero() || now.Before(s.keysExpireAt)) {
+		return append([]string{}, s.keys...), nil
+	}
+	var earliest time.Time
 	// Buffer small live sets without reserving space for expired entries.
 	var small [32]string
 	var keys []string
@@ -109,6 +132,9 @@ func (s *InMemoryKeyStore) KeysContext(ctx context.Context) ([]string, error) {
 		if e.expiredAt(now) {
 			expired++
 			continue
+		}
+		if !e.expiry.IsZero() && (earliest.IsZero() || e.expiry.Before(earliest)) {
+			earliest = e.expiry
 		}
 		if keys == nil {
 			if count < len(small) {
@@ -122,8 +148,9 @@ func (s *InMemoryKeyStore) KeysContext(ctx context.Context) ([]string, error) {
 		}
 		keys = append(keys, k)
 	}
-	if keys != nil {
-		return keys, nil
+	if keys == nil {
+		keys = append([]string{}, small[:count]...)
 	}
-	return append([]string{}, small[:count]...), nil
+	s.keys, s.keysExpireAt = keys, earliest
+	return append([]string{}, keys...), nil
 }

@@ -11,6 +11,7 @@ type TaskQueue struct {
 	store   TaskStore
 	now     func() time.Time
 	metrics MetricsObserver
+	ready   chan struct{}
 }
 
 type TaskQueueOption func(*TaskQueue)
@@ -28,7 +29,7 @@ func WithQueueMetricsObserver(observer MetricsObserver) TaskQueueOption {
 }
 
 func NewTaskQueue(store TaskStore, opts ...TaskQueueOption) *TaskQueue {
-	q := &TaskQueue{store: store, now: time.Now}
+	q := &TaskQueue{store: store, now: time.Now, ready: make(chan struct{}, 1)}
 	for _, opt := range opts {
 		opt(q)
 	}
@@ -87,6 +88,12 @@ func (q *TaskQueue) Enqueue(ctx context.Context, task Task, opts EnqueueOptions)
 
 	start := time.Now()
 	err := q.store.Insert(ctx, task)
+	if err == nil && !task.AvailableAt.After(now) {
+		select {
+		case q.ready <- struct{}{}:
+		default:
+		}
+	}
 	q.observe(ctx, "queue_enqueue", task.Topic, start, err)
 	return err
 }

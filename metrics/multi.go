@@ -54,7 +54,12 @@ func (m *MultiCollector) Record(ctx context.Context, record MetricRecord) {
 			continue
 		}
 		childRecord := record
-		childRecord.Labels = maps.Clone(record.Labels)
+		switch c.(type) {
+		case *BaseMetricsCollector, *NoopCollector:
+			// Built-in collectors read the labels synchronously.
+		default:
+			childRecord.Labels = maps.Clone(record.Labels)
+		}
 		c.Record(ctx, childRecord)
 	}
 }

@@ -20,6 +20,8 @@ func (l *gLogger) SetRotationConfig(config rotationConfig) {
 
 // Close closes all log files and releases resources
 func (l *gLogger) Close() {
+	l.cleanupMu.Lock()
+	defer l.cleanupMu.Unlock()
 	l.writeMu.Lock()
 	defer l.writeMu.Unlock()
 

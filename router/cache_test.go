@@ -9,7 +9,7 @@ import (
 func TestMatcherCacheConcurrentAccess(t *testing.T) {
 	cache := newMatchCache(64)
 	for i := 0; i < 64; i++ {
-		cache.Set(fmt.Sprintf("key-%d", i), &matchResult{})
+		cache.Set(matchCacheKey{path: fmt.Sprintf("key-%d", i)}, &matchResult{})
 	}
 
 	var wg sync.WaitGroup
@@ -20,7 +20,7 @@ func TestMatcherCacheConcurrentAccess(t *testing.T) {
 			defer wg.Done()
 			for j := 0; j < 1000; j++ {
 				key := fmt.Sprintf("key-%d", (id+j)%128)
-				cache.Get(key)
+				cache.Get(matchCacheKey{path: key})
 			}
 		}(i)
 	}
@@ -31,7 +31,7 @@ func TestMatcherCacheConcurrentAccess(t *testing.T) {
 			defer wg.Done()
 			for j := 0; j < 500; j++ {
 				key := fmt.Sprintf("key-%d", (id*500+j)%128)
-				cache.Set(key, &matchResult{})
+				cache.Set(matchCacheKey{path: key}, &matchResult{})
 			}
 		}(i)
 	}

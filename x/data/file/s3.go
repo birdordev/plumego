@@ -1,6 +1,7 @@
 package file
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -78,6 +79,22 @@ func NewS3Storage(config S3Config, metadata MetadataManager) (*S3Storage, error)
 
 // Put uploads a file to S3 storage under the tenant's key prefix.
 func (s *S3Storage) Put(ctx context.Context, opts PutOptions) (*File, error) {
+	return s.put(ctx, opts, nil)
+}
+
+// PutStaged borrows an already validated, immutable file of opts.Size bytes.
+// The caller owns the reader and must keep it readable until PutStaged returns.
+func (s *S3Storage) PutStaged(ctx context.Context, opts PutOptions, source io.ReaderAt) (*File, error) {
+	if source == nil || opts.Size < 0 {
+		return nil, &storefile.Error{Op: "Put", Err: storefile.ErrInvalidSize}
+	}
+	return s.put(ctx, opts, source)
+}
+
+func (s *S3Storage) put(ctx context.Context, opts PutOptions, staged io.ReaderAt) (*File, error) {
+	if ctx == nil {
+		return nil, &storefile.Error{Op: "Put", Err: errors.New("missing context")}
+	}
 	tenantID, err := cleanTenantID(opts.TenantID)
 	if err != nil {
 		return nil, &storefile.Error{Op: "Put", Path: opts.TenantID, Err: err}
@@ -105,27 +122,28 @@ func (s *S3Storage) Put(ctx context.Context, opts PutOptions) (*File, error) {
 		return nil, err
 	}
 
-	tmpFile, err := os.CreateTemp(s.tempDir, "plumego-s3-upload-*")
-	if err != nil {
-		return nil, &storefile.Error{Op: "Put", Path: objectKey, Err: err}
+	var body io.Reader
+	var size int64
+	var hashString string
+	if staged != nil {
+		hash := sha256.New()
+		size, err = io.Copy(hash, localUploadReader{ctx, io.NewSectionReader(staged, 0, opts.Size)})
+		if err != nil {
+			return nil, err
+		}
+		if size != opts.Size {
+			return nil, &storefile.Error{Op: "Put", Path: objectKey, Err: storefile.ErrInvalidSize}
+		}
+		hashString = hex.EncodeToString(hash.Sum(nil))
+		body = io.NewSectionReader(staged, 0, size)
+	} else {
+		var cleanup func()
+		body, size, hashString, cleanup, err = s.stageUpload(ctx, opts.Reader, objectKey)
+		if err != nil {
+			return nil, err
+		}
+		defer cleanup()
 	}
-	tmpPath := tmpFile.Name()
-	defer func() { _ = os.Remove(tmpPath) }()
-	defer func() { _ = tmpFile.Close() }()
-
-	hash := sha256.New()
-	size, err := io.Copy(io.MultiWriter(tmpFile, hash), s.limitUploadReader(opts.Reader))
-	if err != nil {
-		return nil, err
-	}
-	if err := s.validateS3PutSize(size, objectKey); err != nil {
-		return nil, err
-	}
-	if _, err := tmpFile.Seek(0, io.SeekStart); err != nil {
-		return nil, &storefile.Error{Op: "Put", Path: objectKey, Err: err}
-	}
-
-	hashString := hex.EncodeToString(hash.Sum(nil))
 
 	if s.metadata != nil {
 		existing, err := s.metadata.GetByHash(ctx, tenantID, hashString)
@@ -135,7 +153,7 @@ func (s *S3Storage) Put(ctx context.Context, opts PutOptions) (*File, error) {
 	}
 
 	reqURL := s.buildURL(objectKey)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPut, reqURL, tmpFile)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, reqURL, body)
 	if err != nil {
 		return nil, err
 	}
@@ -193,6 +211,50 @@ func (s *S3Storage) Put(ctx context.Context, opts PutOptions) (*File, error) {
 	}
 
 	return file, nil
+}
+
+// stageUpload signs and sends the same private bytes. The prefix bounds memory
+// for unknown-size input and doubles as the start of the disk staging file.
+func (s *S3Storage) stageUpload(ctx context.Context, src io.Reader, key string) (io.Reader, int64, string, func(), error) {
+	const memoryLimit = 128 << 10
+	source := s.limitUploadReader(localUploadReader{ctx, src})
+	prefix, err := io.ReadAll(io.LimitReader(source, memoryLimit+1))
+	if err != nil {
+		return nil, 0, "", nil, err
+	}
+	if len(prefix) <= memoryLimit {
+		size := int64(len(prefix))
+		if err := s.validateS3PutSize(size, key); err != nil {
+			return nil, 0, "", nil, err
+		}
+		sum := sha256.Sum256(prefix)
+		return bytes.NewReader(prefix), size, hex.EncodeToString(sum[:]), func() {}, nil
+	}
+	tmp, err := os.CreateTemp(s.tempDir, "plumego-s3-upload-*")
+	if err != nil {
+		return nil, 0, "", nil, &storefile.Error{Op: "Put", Path: key, Err: err}
+	}
+	name := tmp.Name()
+	cleanup := func() {
+		_ = tmp.Close()
+		_ = os.Remove(name)
+	}
+	hash := sha256.New()
+	size, err := io.Copy(io.MultiWriter(tmp, hash), io.MultiReader(bytes.NewReader(prefix), source))
+	if err == nil {
+		err = s.validateS3PutSize(size, key)
+	}
+	if err == nil {
+		if _, seekErr := tmp.Seek(0, io.SeekStart); seekErr != nil {
+			err = &storefile.Error{Op: "Put", Path: key, Err: seekErr}
+		}
+	}
+	if err != nil {
+		cleanup()
+		return nil, 0, "", nil, err
+	}
+	// The request borrows the file until cleanup, including on transport errors.
+	return struct{ io.Reader }{tmp}, size, hex.EncodeToString(hash.Sum(nil)), cleanup, nil
 }
 
 func (s *S3Storage) validateS3PutSize(size int64, objectKey string) error {

@@ -31,9 +31,10 @@ const (
 
 // Handler provides HTTP endpoints for file operations.
 type Handler struct {
-	storage  datafile.Storage
-	metadata datafile.MetadataManager
-	maxSize  int64
+	storage       datafile.Storage
+	metadata      datafile.MetadataManager
+	maxSize       int64
+	accessUpdates *accessUpdates
 }
 
 type deleteResponse struct {
@@ -186,7 +187,13 @@ func (h *Handler) Upload(w http.ResponseWriter, r *http.Request) {
 		Metadata:      make(map[string]any),
 	}
 
-	result, err := h.storage.Put(ctx, opts)
+	var result *datafile.File
+	if store, ok := h.storage.(*datafile.S3Storage); ok && !formWasParsed && header.Size > multipartMemoryLimit {
+		opts.Size = header.Size
+		result, err = store.PutStaged(ctx, opts, f)
+	} else {
+		result, err = h.storage.Put(ctx, opts)
+	}
 	if err != nil {
 		writeFileInternalError(w, r, "upload failed")
 		return
@@ -211,7 +218,11 @@ func (h *Handler) Download(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_ = h.metadata.UpdateAccessTime(ctx, fileMeta.TenantID, fileID)
+	if updates := h.accessUpdates; updates != nil {
+		updates.enqueue(accessKey{tenant: fileMeta.TenantID, file: fileID})
+	} else {
+		_ = h.metadata.UpdateAccessTime(ctx, fileMeta.TenantID, fileID)
+	}
 
 	reader, err := h.storage.Get(ctx, fileMeta.Path)
 	if err != nil {

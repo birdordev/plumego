@@ -379,9 +379,9 @@ func TestPrometheusCollectorRetainsExistingSeriesAtCapacity(t *testing.T) {
 		}
 	}
 	collector.ObserveHTTP(t.Context(), http.MethodGet, "/new", http.StatusOK, 0, time.Second)
-	requests, durations, _, _ := collector.snapshot()
-	if len(requests) != 1 || len(durations) != 1 || requests[labelKey{method: "GET", path: "/new", status: "200"}] != 1 {
-		t.Fatalf("requests = %v; durations = %v", requests, durations)
+	series, _, _ := collector.snapshot()
+	if len(series) != 1 || series[0].key != (labelKey{method: "GET", path: "/new", status: "200"}) || series[0].count != 1 {
+		t.Fatalf("series = %v", series)
 	}
 }
 
@@ -400,14 +400,9 @@ func TestPrometheusLimitCanChangeWhileRecording(t *testing.T) {
 	})
 	wg.Wait()
 	p.WithMaxMemory(1)
-	requests, durations, _, _ := p.snapshot()
-	if len(requests) != 1 || len(durations) != 1 {
-		t.Fatalf("series after shrink: %v, %v", requests, durations)
-	}
-	for k, count := range requests {
-		if count != durations[k].count {
-			t.Fatalf("series mismatch for %v", k)
-		}
+	series, _, _ := p.snapshot()
+	if len(series) != 1 || series[0].count != series[0].duration.count {
+		t.Fatalf("series after shrink: %v", series)
 	}
 }
 

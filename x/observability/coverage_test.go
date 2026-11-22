@@ -3,6 +3,7 @@ package observability
 import (
 	"net/http"
 	"net/http/httptest"
+	"sort"
 	"strconv"
 	"testing"
 	"time"
@@ -362,4 +363,21 @@ func TestPrometheusEvictionLeastUsed(t *testing.T) {
 	if stats.ActiveSeries > 3 {
 		t.Fatalf("expected at most 3 series, got %d", stats.ActiveSeries)
 	}
+}
+
+func sortedKeys[T any](input map[labelKey]T) []labelKey {
+	keys := make([]labelKey, 0, len(input))
+	for key := range input {
+		keys = append(keys, key)
+	}
+	sort.Slice(keys, func(i, j int) bool {
+		if keys[i].method != keys[j].method {
+			return keys[i].method < keys[j].method
+		}
+		if keys[i].path != keys[j].path {
+			return keys[i].path < keys[j].path
+		}
+		return keys[i].status < keys[j].status
+	})
+	return keys
 }

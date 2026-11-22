@@ -56,10 +56,13 @@ func SafeWrite(w http.ResponseWriter, body []byte) (int, error) {
 type ResponseRecorder struct {
 	route atomic.Pointer[contract.RequestContext]
 	http.ResponseWriter
-	statusCode   int
-	body         *bytes.Buffer
-	bytesWritten int
-	written      bool
+	statusCode      int
+	body            *bytes.Buffer
+	captureLimit    int64
+	boundedCapture  bool
+	captureExceeded bool
+	bytesWritten    int
+	written         bool
 }
 
 // NewResponseRecorder creates a response recorder with sane defaults.
@@ -70,6 +73,21 @@ func NewResponseRecorder(w http.ResponseWriter) *ResponseRecorder {
 		body:           &bytes.Buffer{},
 	}
 }
+
+// NewBoundedResponseRecorder captures at most limit bytes while forwarding the response.
+func NewBoundedResponseRecorder(w http.ResponseWriter, limit int64) *ResponseRecorder {
+	r := NewResponseRecorder(w)
+	r.boundedCapture = true
+	r.captureLimit = limit
+	r.captureExceeded = limit < 0
+	if r.captureExceeded {
+		r.body = nil
+	}
+	return r
+}
+
+// CaptureExceeded reports whether the response exceeded its capture limit.
+func (r *ResponseRecorder) CaptureExceeded() bool { return r.captureExceeded }
 
 // NewObservationRecorder counts status and bytes without retaining body data.
 // Capture users continue to use NewResponseRecorder.
@@ -116,7 +134,21 @@ func (r *ResponseRecorder) Write(b []byte) (int, error) {
 	}
 
 	if r.body != nil {
-		r.body.Write(b)
+		if r.boundedCapture && int64(len(b)) > r.captureLimit-int64(r.body.Len()) {
+			r.body = nil
+			r.captureExceeded = true
+		} else {
+			if needed := r.body.Len() + len(b); r.boundedCapture && needed > r.body.Cap() {
+				capacity := max(int64(needed), min(int64(r.body.Cap()), r.captureLimit-int64(r.body.Cap()))+int64(r.body.Cap()))
+				if capacity > int64(int(^uint(0)>>1)) {
+					capacity = int64(needed)
+				}
+				data := make([]byte, r.body.Len(), int(capacity))
+				copy(data, r.body.Bytes())
+				*r.body = *bytes.NewBuffer(data)
+			}
+			r.body.Write(b)
+		}
 	}
 	n, err := SafeWrite(r.ResponseWriter, b)
 	r.bytesWritten += n
@@ -137,6 +169,13 @@ func (r *ResponseRecorder) Body() []byte {
 		return nil
 	}
 	return r.body.Bytes()
+}
+
+// TakeBody transfers the capture to its next owner and stops capturing writes.
+func (r *ResponseRecorder) TakeBody() []byte {
+	body := r.Body()
+	r.body = nil
+	return body
 }
 
 // BytesWritten returns the number of body bytes successfully written through.
@@ -320,6 +359,34 @@ func PublishRouteContext(w http.ResponseWriter, ctx context.Context) {
 		}
 		w = wrapper.Unwrap()
 	}
+}
+
+// PublishRouteIdentity forwards scalar route identity, falling back to context
+// publication for wrappers that implement only the original receiver.
+func PublishRouteIdentity(w http.ResponseWriter, ctx context.Context, pattern, name string) {
+	for w != nil {
+		if receiver, ok := w.(interface {
+			SetRouteIdentity(context.Context, string, string)
+		}); ok {
+			receiver.SetRouteIdentity(ctx, pattern, name)
+			return
+		}
+		if receiver, ok := w.(interface{ SetRouteContext(context.Context) }); ok {
+			receiver.SetRouteContext(ctx)
+			return
+		}
+		wrapper, ok := w.(interface{ Unwrap() http.ResponseWriter })
+		if !ok {
+			return
+		}
+		w = wrapper.Unwrap()
+	}
+}
+
+// SetRouteIdentity records scalar route metadata without copying route parameters.
+func (r *ResponseRecorder) SetRouteIdentity(ctx context.Context, pattern, name string) {
+	r.route.Store(&contract.RequestContext{RoutePattern: pattern, RouteName: name})
+	PublishRouteIdentity(r.ResponseWriter, ctx, pattern, name)
 }
 
 // SetRouteContext publishes only immutable route identity, including after a timeout.

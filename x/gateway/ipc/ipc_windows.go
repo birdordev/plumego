@@ -720,3 +720,5 @@ func (c *winClient) Close() error {
 
 	return err
 }
+
+func (*winClient) nativeFraming() {}

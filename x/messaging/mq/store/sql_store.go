@@ -82,44 +82,29 @@ func (s *SQLStore) Reserve(ctx context.Context, opts mq.ReserveOptions) ([]mq.Ta
 	}
 
 	selectQuery, selectArgs := s.buildReserveSelect(opts, now)
-	rows, err := tx.QueryContext(ctx, selectQuery, selectArgs...)
+	var rows *sql.Rows
+	var capacity int
+	if s.cfg.Dialect == DialectPostgres {
+		const columns = "id, topic, tenant_id, payload, meta, priority, dedupe_key, available_at, expires_at, attempts, max_attempts, lease_owner, lease_until, created_at, updated_at"
+		i := len(selectArgs) + 1
+		query := fmt.Sprintf("WITH eligible AS (%s) UPDATE %s SET status = %s, lease_owner = %s, lease_until = %s, attempts = attempts + 1, updated_at = %s WHERE id IN (SELECT id FROM eligible) RETURNING %s",
+			selectQuery, s.cfg.Table, s.placeholder(i), s.placeholder(i+1), s.placeholder(i+2), s.placeholder(i+3), columns)
+		selectArgs = append(selectArgs, mq.TaskStatusLeased, opts.ConsumerID, leaseUntil, now)
+		rows, err = tx.QueryContext(ctx, query, selectArgs...)
+		capacity = min(opts.Limit, 64)
+	} else {
+		rows, capacity, err = s.reserveAndRead(ctx, tx, selectQuery, selectArgs, opts, now, leaseUntil)
+	}
 	if err != nil {
 		return nil, err
 	}
 
-	ids := make([]string, 0, opts.Limit)
-	for rows.Next() {
-		var id string
-		if scanErr := rows.Scan(&id); scanErr != nil {
-			_ = rows.Close()
-			return nil, scanErr
-		}
-		ids = append(ids, id)
-	}
-	if err = rows.Err(); err != nil {
-		_ = rows.Close()
-		return nil, err
-	}
-	_ = rows.Close()
-
-	if len(ids) == 0 {
-		err = tx.Commit()
-		return nil, err
-	}
-
-	updateQuery, updateArgs := s.buildReserveUpdate(ids, opts.ConsumerID, leaseUntil, now)
-	if _, err = tx.ExecContext(ctx, updateQuery, updateArgs...); err != nil {
-		return nil, err
-	}
-
-	selectTasksQuery, selectTasksArgs := s.buildSelectTasks(ids)
-	rows, err = tx.QueryContext(ctx, selectTasksQuery, selectTasksArgs...)
-	if err != nil {
-		return nil, err
+	if rows == nil {
+		return nil, tx.Commit()
 	}
 	defer func() { _ = rows.Close() }()
 
-	tasks := make([]mq.Task, 0, len(ids))
+	tasks := make([]mq.Task, 0, capacity)
 	for rows.Next() {
 		task, scanErr := scanTask(rows)
 		if scanErr != nil {
@@ -131,12 +116,57 @@ func (s *SQLStore) Reserve(ctx context.Context, opts mq.ReserveOptions) ([]mq.Ta
 		return nil, err
 	}
 
+	if len(tasks) == 0 {
+		return nil, tx.Commit()
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
 	if s.attemptLogEnabled() {
 		s.insertAttemptsBestEffort(ctx, tx, tasks, now)
 	}
 
 	err = tx.Commit()
 	return tasks, err
+}
+
+// reserveAndRead uses separate statements for dialects without UPDATE RETURNING.
+func (s *SQLStore) reserveAndRead(ctx context.Context, tx *sql.Tx, query string, args []any, opts mq.ReserveOptions, now, leaseUntil time.Time) (*sql.Rows, int, error) {
+	rows, err := tx.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	ids := make([]string, 0, min(opts.Limit, 64))
+	for rows.Next() {
+		var id string
+		if scanErr := rows.Scan(&id); scanErr != nil {
+			_ = rows.Close()
+			return nil, 0, scanErr
+		}
+		ids = append(ids, id)
+	}
+	if err = rows.Err(); err != nil {
+		_ = rows.Close()
+		return nil, 0, err
+	}
+	_ = rows.Close()
+
+	if len(ids) == 0 {
+		return nil, 0, nil
+	}
+
+	updateQuery, updateArgs := s.buildReserveUpdate(ids, opts.ConsumerID, leaseUntil, now)
+	if _, err = tx.ExecContext(ctx, updateQuery, updateArgs...); err != nil {
+		return nil, 0, err
+	}
+
+	selectTasksQuery, selectTasksArgs := s.buildSelectTasks(ids)
+	rows, err = tx.QueryContext(ctx, selectTasksQuery, selectTasksArgs...)
+	if err != nil {
+		return nil, 0, err
+	}
+	return rows, len(ids), nil
 }
 
 // Ack rolls back any open transaction before returning a lease error.
@@ -639,6 +669,9 @@ func (s *SQLStore) insertAttemptsBestEffort(ctx context.Context, tx *sql.Tx, tas
 	if !s.attemptLogEnabled() || tx == nil {
 		return
 	}
+	if len(tasks) >= 2 && len(tasks) <= 1024 && s.insertAttemptBatch(ctx, tx, tasks, now) {
+		return
+	}
 	for i, task := range tasks {
 		attemptNo := task.Attempts
 		name := fmt.Sprintf("attempt_log_%d", i)
@@ -648,6 +681,34 @@ func (s *SQLStore) insertAttemptsBestEffort(ctx context.Context, tx *sql.Tx, tas
 			return err
 		})
 	}
+}
+
+// insertAttemptBatch rolls back to a savepoint before allowing a per-row retry.
+func (s *SQLStore) insertAttemptBatch(ctx context.Context, tx *sql.Tx, tasks []mq.Task, now time.Time) bool {
+	const name = "attempt_batch"
+	if _, err := tx.ExecContext(ctx, "SAVEPOINT "+name); err != nil {
+		return false
+	}
+	var query strings.Builder
+	fmt.Fprintf(&query, "INSERT INTO %s (task_id, attempt_no, reason, started_at, finished_at, success) VALUES ", s.cfg.AttemptsTable)
+	args := make([]any, 0, 3*len(tasks))
+	for i, task := range tasks {
+		if i != 0 {
+			query.WriteString(", ")
+		}
+		n := len(args) + 1
+		fmt.Fprintf(&query, "(%s, %s, NULL, %s, NULL, FALSE)", s.placeholder(n), s.placeholder(n+1), s.placeholder(n+2))
+		args = append(args, task.ID, task.Attempts, now)
+	}
+	_, err := tx.ExecContext(ctx, query.String(), args...)
+	if err != nil {
+		_, _ = tx.ExecContext(ctx, "ROLLBACK TO SAVEPOINT "+name)
+	}
+	_, releaseErr := tx.ExecContext(ctx, "RELEASE SAVEPOINT "+name)
+	if releaseErr != nil {
+		s.logAttemptError(ctx, "attempt.batch.release", "", 0, releaseErr)
+	}
+	return err == nil
 }
 
 func (s *SQLStore) finishAttemptBestEffort(ctx context.Context, tx *sql.Tx, taskID string, success bool, reason string, now time.Time) {

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"image"
+	"image/color"
 	"image/gif"
 	"image/jpeg"
 	"image/png"
@@ -152,10 +153,22 @@ func resizeImage(src image.Image, width, height int) image.Image {
 	dst := image.NewRGBA(image.Rect(0, 0, width, height))
 
 	for y := 0; y < height; y++ {
+		srcY := y*srcH/height + srcBounds.Min.Y
 		for x := 0; x < width; x++ {
-			srcX := x * srcW / width
-			srcY := y * srcH / height
-			dst.Set(x, y, src.At(srcX+srcBounds.Min.X, srcY+srcBounds.Min.Y))
+			srcX := x*srcW/width + srcBounds.Min.X
+			switch img := src.(type) {
+			case *image.YCbCr:
+				c := img.YCbCrAt(srcX, srcY)
+				r, g, b := color.YCbCrToRGB(c.Y, c.Cb, c.Cr)
+				dst.SetRGBA(x, y, color.RGBA{R: r, G: g, B: b, A: 255})
+			case *image.RGBA:
+				dst.SetRGBA(x, y, img.RGBAAt(srcX, srcY))
+			case *image.NRGBA:
+				r, g, b, a := img.NRGBAAt(srcX, srcY).RGBA()
+				dst.SetRGBA(x, y, color.RGBA{R: uint8(r >> 8), G: uint8(g >> 8), B: uint8(b >> 8), A: uint8(a >> 8)})
+			default:
+				dst.Set(x, y, src.At(srcX, srcY))
+			}
 		}
 	}
 

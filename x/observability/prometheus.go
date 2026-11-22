@@ -1,9 +1,9 @@
 package observability
 
 import (
+	"container/heap"
 	"context"
 	"net/http"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -138,21 +138,21 @@ func (p *PrometheusCollector) Clear() {
 	p.base.Clear()
 }
 
-func (p *PrometheusCollector) snapshot() (map[labelKey]uint64, map[labelKey]latencyStats, uint64, time.Duration) {
+type prometheusSeries struct {
+	key      labelKey
+	count    uint64
+	duration latencyStats
+}
+
+func (p *PrometheusCollector) snapshot() ([]prometheusSeries, uint64, time.Duration) {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 
-	reqCopy := make(map[labelKey]uint64, len(p.requests))
-	for k, v := range p.requests {
-		reqCopy[k] = v
+	series := make([]prometheusSeries, 0, len(p.requests))
+	for key, count := range p.requests {
+		series = append(series, prometheusSeries{key, count, p.durations[key]})
 	}
-
-	durCopy := make(map[labelKey]latencyStats, len(p.durations))
-	for k, v := range p.durations {
-		durCopy[k] = v
-	}
-
-	return reqCopy, durCopy, p.totalRequests, time.Since(p.startTime)
+	return series, p.totalRequests, time.Since(p.startTime)
 }
 
 func (p *PrometheusCollector) recordHTTP(method, path string, status int, duration time.Duration) {
@@ -185,34 +185,56 @@ func (p *PrometheusCollector) evictLeastUsed() {
 	p.evictSeries(max(1, len(p.requests)/10))
 }
 
-func (p *PrometheusCollector) evictSeries(evictCount int) {
-	keys := sortedKeys(p.requests)
-
-	sort.SliceStable(keys, func(i, j int) bool {
-		return p.requests[keys[i]] < p.requests[keys[j]]
-	})
-
-	for i := 0; i < evictCount && i < len(keys); i++ {
-		delete(p.requests, keys[i])
-		delete(p.durations, keys[i])
+func (p *PrometheusCollector) evictSeries(count int) {
+	if count >= len(p.requests) {
+		clear(p.requests)
+		clear(p.durations)
+		return
+	}
+	candidates := seriesEvictions{keys: make([]labelKey, 0, count), requests: p.requests}
+	for key := range p.requests {
+		if len(candidates.keys) < count {
+			heap.Push(&candidates, key)
+			continue
+		}
+		if candidates.before(key, candidates.keys[0]) {
+			candidates.keys[0] = key
+			heap.Fix(&candidates, 0)
+		}
+	}
+	for _, key := range candidates.keys {
+		delete(p.requests, key)
+		delete(p.durations, key)
 	}
 }
 
-func sortedKeys[T any](input map[labelKey]T) []labelKey {
-	keys := make([]labelKey, 0, len(input))
-	for key := range input {
-		keys = append(keys, key)
+type seriesEvictions struct {
+	keys     []labelKey
+	requests map[labelKey]uint64
+}
+
+func (s seriesEvictions) before(a, b labelKey) bool {
+	if s.requests[a] != s.requests[b] {
+		return s.requests[a] < s.requests[b]
 	}
-	sort.Slice(keys, func(i, j int) bool {
-		if keys[i].method != keys[j].method {
-			return keys[i].method < keys[j].method
-		}
-		if keys[i].path != keys[j].path {
-			return keys[i].path < keys[j].path
-		}
-		return keys[i].status < keys[j].status
-	})
-	return keys
+	if a.method != b.method {
+		return a.method < b.method
+	}
+	if a.path != b.path {
+		return a.path < b.path
+	}
+	return a.status < b.status
+}
+func (s seriesEvictions) Len() int           { return len(s.keys) }
+func (s seriesEvictions) Less(i, j int) bool { return s.before(s.keys[j], s.keys[i]) }
+func (s seriesEvictions) Swap(i, j int)      { s.keys[i], s.keys[j] = s.keys[j], s.keys[i] }
+func (s *seriesEvictions) Push(value any)    { s.keys = append(s.keys, value.(labelKey)) }
+func (s *seriesEvictions) Pop() any {
+	last := len(s.keys) - 1
+	key := s.keys[last]
+	s.keys[last] = labelKey{}
+	s.keys = s.keys[:last]
+	return key
 }
 
 func escapeLabelValue(value string) string {

@@ -2,6 +2,7 @@ package protocolmw
 
 import (
 	"bytes"
+	"errors"
 	"io"
 	"net/http"
 
@@ -75,6 +76,8 @@ func writeProtocolError(w http.ResponseWriter, r *http.Request, status int, code
 
 func protocolErrorType(status int) contract.ErrorType {
 	switch status {
+	case http.StatusRequestEntityTooLarge:
+		return contract.TypePayloadTooLarge
 	case http.StatusBadGateway:
 		return contract.TypeBadGateway
 	case http.StatusGatewayTimeout:
@@ -136,6 +139,7 @@ func convertHeaders(h http.Header) map[string][]string {
 // Config holds protocol middleware configuration.
 type Config struct {
 	Registry          *gatewayproto.Registry
+	MaxBodyBytes      int64 // Positive values bound reads when adapters are registered.
 	OnAdapterNotFound func(w http.ResponseWriter, r *http.Request)
 	OnTransformError  func(w http.ResponseWriter, r *http.Request, err error)
 	OnExecuteError    func(w http.ResponseWriter, r *http.Request, err error)
@@ -146,14 +150,30 @@ type Config struct {
 func MiddlewareWithConfig(config Config) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			fallback := config.OnAdapterNotFound
+			if fallback == nil {
+				fallback = next.ServeHTTP
+			}
+			if config.Registry == nil || config.Registry.Count() == 0 {
+				fallback(w, r)
+				return
+			}
 			bodyReader := r.Body
 			if bodyReader == nil {
 				bodyReader = http.NoBody
+			}
+			if config.MaxBodyBytes > 0 {
+				bodyReader = http.MaxBytesReader(w, bodyReader, config.MaxBodyBytes)
 			}
 			body, err := io.ReadAll(bodyReader)
 			if err != nil {
 				if config.OnTransformError != nil {
 					config.OnTransformError(w, r, err)
+					return
+				}
+				var tooLarge *http.MaxBytesError
+				if errors.As(err, &tooLarge) {
+					writeProtocolError(w, r, http.StatusRequestEntityTooLarge, CodeProtocolTransformFail, "protocol request body is too large", contract.CategoryClient, "read")
 					return
 				}
 				writeProtocolError(w, r, http.StatusBadRequest, CodeProtocolTransformFail, "protocol request read failed", contract.CategoryClient, "read")
@@ -171,11 +191,7 @@ func MiddlewareWithConfig(config Config) func(http.Handler) http.Handler {
 
 			adapter := findAdapter(config.Registry, httpReq)
 			if adapter == nil {
-				if config.OnAdapterNotFound != nil {
-					config.OnAdapterNotFound(w, r)
-					return
-				}
-				next.ServeHTTP(w, r)
+				fallback(w, r)
 				return
 			}
 

@@ -350,16 +350,25 @@ func (c *Coalescer) executeRequest(w http.ResponseWriter, r *http.Request, key s
 		return
 	}
 
-	// Capture response
-	inflight.response = recorder.CapturedResponse()
+	// Close admission to this batch before deciding whether anyone needs a replay.
+	c.detachRequest(key, inflight)
+	if inflight.waiters.Load() != 0 {
+		inflight.response = recorder.CapturedResponse()
+	}
 }
 
 func (c *Coalescer) finishRequest(key string, inflight *inFlightRequest) {
-	c.mu.Lock()
-	delete(c.inFlight, key)
-	c.mu.Unlock()
+	c.detachRequest(key, inflight)
 	inflight.finishedAt = time.Now()
 	close(inflight.done)
+}
+
+func (c *Coalescer) detachRequest(key string, inflight *inFlightRequest) {
+	c.mu.Lock()
+	if c.inFlight[key] == inflight {
+		delete(c.inFlight, key)
+	}
+	c.mu.Unlock()
 }
 
 // isSafeMethod checks if the HTTP method is safe to coalesce

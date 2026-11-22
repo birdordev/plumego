@@ -58,6 +58,10 @@ func (p CrossShardPolicy) String() string {
 
 // RouterConfig holds configuration for the router
 type RouterConfig struct {
+	// MaxParallelShardQueries bounds in-flight database calls for CrossShardFirstSuccess.
+	// A non-positive value starts every candidate concurrently.
+	MaxParallelShardQueries int
+
 	// CrossShardPolicy determines how to handle cross-shard queries
 	CrossShardPolicy CrossShardPolicy
 
@@ -114,6 +118,14 @@ type RouterOption func(*Router)
 func WithCrossShardPolicy(policy CrossShardPolicy) RouterOption {
 	return func(r *Router) {
 		r.config.CrossShardPolicy = policy
+	}
+}
+
+// WithMaxParallelShardQueries limits concurrent queries in the first-success policy.
+// A non-positive limit uses all candidate shards concurrently.
+func WithMaxParallelShardQueries(limit int) RouterOption {
+	return func(r *Router) {
+		r.config.MaxParallelShardQueries = limit
 	}
 }
 
@@ -179,7 +191,7 @@ func NewRouter(shards []*rw.Cluster, registry *ShardingRuleRegistry, opts ...Rou
 func (r *Router) ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error) {
 	r.recordQuery()
 
-	resolvedShards, err := r.resolver.ResolveMultiple(query, args)
+	resolvedShards, parsed, err := r.resolver.resolvePlan(query, args)
 	if err != nil {
 		r.recordRoutingError()
 		return nil, fmt.Errorf("failed to resolve shard: %w", err)
@@ -200,7 +212,7 @@ func (r *Router) ExecContext(ctx context.Context, query string, args ...any) (sq
 	r.recordShardQuery(resolved.ShardIndex)
 
 	// Rewrite SQL if needed (for physical table names)
-	rewrittenQuery, err := r.rewriter.Rewrite(query, resolved.ShardIndex)
+	rewrittenQuery, err := r.rewriter.rewriteParsed(query, resolved.ShardIndex, parsed)
 	if err != nil {
 		r.recordRoutingError()
 		return nil, fmt.Errorf("failed to rewrite SQL: %w", err)
@@ -217,7 +229,7 @@ func (r *Router) QueryContext(ctx context.Context, query string, args ...any) (*
 	r.recordQuery()
 
 	// Check if we can resolve to a single shard
-	canResolve, err := r.resolver.CanResolve(query)
+	parsed, canResolve, err := r.resolver.parseResolvable(query)
 	if err != nil {
 		r.recordRoutingError()
 		return nil, fmt.Errorf("failed to check resolvability: %w", err)
@@ -225,19 +237,19 @@ func (r *Router) QueryContext(ctx context.Context, query string, args ...any) (*
 
 	if !canResolve {
 		if r.config.DefaultShardIndex >= 0 {
-			return r.queryOneResolvedShard(ctx, query, args, &ResolvedShard{ShardIndex: r.config.DefaultShardIndex})
+			return r.queryOneResolvedShard(ctx, query, args, &ResolvedShard{ShardIndex: r.config.DefaultShardIndex}, parsed)
 		}
 		// Cannot resolve to a shard - handle according to cross-shard policy.
-		return r.handleCrossShardQuery(ctx, query, args)
+		return r.handleCrossShardQuery(ctx, query, args, parsed)
 	}
 
-	resolvedShards, err := r.resolver.ResolveMultiple(query, args)
+	resolvedShards, err := r.resolver.resolveMultipleParsed(query, args, parsed)
 	if err != nil {
 		r.recordRoutingError()
 		return nil, fmt.Errorf("failed to resolve shard: %w", err)
 	}
 	if len(resolvedShards) != 1 {
-		return r.handleResolvedShardsQuery(ctx, query, args, resolvedShards)
+		return r.handleResolvedShardsQuery(ctx, query, args, resolvedShards, parsed)
 	}
 	resolved := resolvedShards[0]
 
@@ -251,7 +263,7 @@ func (r *Router) QueryContext(ctx context.Context, query string, args ...any) (*
 	r.recordShardQuery(resolved.ShardIndex)
 
 	// Rewrite SQL if needed (for physical table names)
-	rewrittenQuery, err := r.rewriter.Rewrite(query, resolved.ShardIndex)
+	rewrittenQuery, err := r.rewriter.rewriteParsed(query, resolved.ShardIndex, parsed)
 	if err != nil {
 		r.recordRoutingError()
 		return nil, fmt.Errorf("failed to rewrite SQL: %w", err)
@@ -269,7 +281,7 @@ func (r *Router) QueryContext(ctx context.Context, query string, args ...any) (*
 func (r *Router) QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row {
 	r.recordQuery()
 
-	canResolve, err := r.resolver.CanResolve(query)
+	parsed, canResolve, err := r.resolver.parseResolvable(query)
 	if err != nil {
 		r.recordRoutingError()
 		return queryRowError(fmt.Errorf("failed to check resolvability: %w", err))
@@ -278,7 +290,7 @@ func (r *Router) QueryRowContext(ctx context.Context, query string, args ...any)
 	if !canResolve {
 		r.recordCrossShardQuery()
 		if r.config.DefaultShardIndex >= 0 {
-			return r.queryRowOneResolvedShard(ctx, query, args, &ResolvedShard{ShardIndex: r.config.DefaultShardIndex})
+			return r.queryRowOneResolvedShard(ctx, query, args, &ResolvedShard{ShardIndex: r.config.DefaultShardIndex}, parsed)
 		}
 		switch r.config.CrossShardPolicy {
 		case CrossShardDeny:
@@ -292,13 +304,13 @@ func (r *Router) QueryRowContext(ctx context.Context, query string, args ...any)
 		}
 	}
 
-	resolvedShards, err := r.resolver.ResolveMultiple(query, args)
+	resolvedShards, err := r.resolver.resolveMultipleParsed(query, args, parsed)
 	if err != nil {
 		r.recordRoutingError()
 		return queryRowError(fmt.Errorf("failed to resolve shard: %w", err))
 	}
 	if len(resolvedShards) != 1 {
-		return r.queryRowResolvedShards(ctx, query, args, resolvedShards)
+		return r.queryRowResolvedShards(ctx, query, args, resolvedShards, parsed)
 	}
 	resolved := resolvedShards[0]
 
@@ -312,7 +324,7 @@ func (r *Router) QueryRowContext(ctx context.Context, query string, args ...any)
 	r.recordShardQuery(resolved.ShardIndex)
 
 	// Rewrite SQL if needed (for physical table names).
-	rewrittenQuery, err := r.rewriter.Rewrite(query, resolved.ShardIndex)
+	rewrittenQuery, err := r.rewriter.rewriteParsed(query, resolved.ShardIndex, parsed)
 	if err != nil {
 		r.recordRoutingError()
 		return queryRowError(fmt.Errorf("failed to rewrite SQL: %w", err))

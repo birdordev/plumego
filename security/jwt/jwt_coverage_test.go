@@ -798,7 +798,7 @@ func TestVerifySignature_UnsupportedAlgorithm(t *testing.T) {
 		Secret:    make([]byte, 32),
 		CreatedAt: time.Now().UTC(),
 	}
-	err := verifySignature(key, "header", "payload", "c2lnbmF0dXJl")
+	err := verifySignature(key, "header.payload", "c2lnbmF0dXJl")
 	if err == nil {
 		t.Fatal("expected error for unsupported algorithm in verifySignature")
 	}
@@ -816,7 +816,7 @@ func TestVerifySignature_InvalidBase64Signature(t *testing.T) {
 	mgr.mu.RUnlock()
 
 	// Pass an invalid base64 string as the signature part.
-	err = verifySignature(key, "header", "payload", "!invalid!base64!")
+	err = verifySignature(key, "header.payload", "!invalid!base64!")
 	if err == nil {
 		t.Fatal("expected error for invalid base64 signature")
 	}

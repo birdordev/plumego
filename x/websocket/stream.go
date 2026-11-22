@@ -2,7 +2,6 @@ package websocket
 
 import (
 	"bytes"
-	"errors"
 	"io"
 	"sync"
 	"time"
@@ -170,76 +169,94 @@ func resetStreamReader(sr *streamReader) {
 // the parent connection and reports any connection close error. Release the
 // reader with Close and do not use it again.
 func (c *Conn) ReadMessageReader() (byte, io.ReadCloser, error) {
-	if c.IsClosed() {
-		return 0, nil, ErrConnClosed
+	op, fin, payload, err := c.readInitialDataFrame()
+	if err != nil {
+		return 0, nil, err
 	}
-	// read first frame - must be text/binary or control
+	reader, err := c.newMessageReader(op, fin, payload)
+	if err != nil {
+		return 0, nil, err
+	}
+	return op, reader, nil
+}
+
+func (c *Conn) readInitialDataFrame() (byte, bool, []byte, error) {
+	if c.IsClosed() {
+		return 0, false, nil, ErrConnClosed
+	}
 	for {
 		op, fin, payload, err := c.readFrame()
 		if err != nil {
-			return 0, nil, err
+			return 0, false, nil, err
 		}
 		switch op {
 		case OpcodeText, OpcodeBinary:
-			// Get a pooled reader and reset all fields from any prior use.
-			sr := streamReaderPool.Get().(*streamReader)
-			sr.parent = c
-			sr.op = 0
-			sr.done = false
-			sr.readErr = nil
-			sr.readBytes = 0
-			sr.buf.Reset() // keeps the backing array; avoids re-allocation
-
-			if err := sr.appendPayload(c, payload); err != nil {
-				sr.parent = nil
-				streamReaderPool.Put(sr)
-				return 0, nil, err
-			}
-			if fin {
-				sr.done = true
-			} else {
-				// not finished; set op marker and let subsequent continuation frames be read by Read
-				sr.op = op
-			}
-			return op, sr, nil
+			return op, fin, payload, nil
 		case opcodePing:
 			_ = c.writeFrame(opcodePong, true, payload)
-			continue
 		case opcodePong:
 			c.lastPong.Store(time.Now().UnixNano())
-			continue
 		case opcodeClose:
 			_ = c.writeFrame(opcodeClose, true, payload)
-			return 0, nil, io.EOF
-		case opcodeContinuation:
-			return 0, nil, ErrProtocolError
+			return 0, false, nil, io.EOF
 		default:
-			return 0, nil, ErrProtocolError
+			return 0, false, nil, ErrProtocolError
 		}
 	}
+}
+
+func (c *Conn) newMessageReader(op byte, fin bool, payload []byte) (*streamReader, error) {
+	sr := streamReaderPool.Get().(*streamReader)
+	resetStreamReader(sr)
+	sr.parent = c
+	if err := sr.appendPayload(c, payload); err != nil {
+		resetStreamReader(sr)
+		streamReaderPool.Put(sr)
+		return nil, err
+	}
+	sr.done = fin
+	if !fin {
+		sr.op = op
+	}
+	return sr, nil
 }
 
 // ReadMessage reads a complete message into memory and returns an owned copy of
 // the message payload.
 func (c *Conn) ReadMessage() (byte, []byte, error) {
-	op, stream, err := c.ReadMessageReader()
+	op, fin, payload, err := c.readInitialDataFrame()
 	if err != nil {
 		return 0, nil, err
 	}
-
-	buf := msgBufPool.Get().(*bytes.Buffer)
-	buf.Reset()
-	_, err = io.Copy(buf, stream)
-	if closeErr := stream.Close(); closeErr != nil {
-		err = errors.Join(err, closeErr)
+	if fin {
+		if limit := c.readLimit.Load(); limit >= 0 && int64(len(payload)) > limit {
+			return 0, nil, ErrPayloadTooLarge
+		}
+		return op, payload, nil
 	}
-	if err != nil {
-		putMessageBuffer(buf)
-		return 0, nil, err
+	data := payload
+	for !fin {
+		nextOp, last, part, err := c.readFrameInto(data)
+		if err == io.EOF {
+			return op, data, nil
+		}
+		if err != nil {
+			return 0, nil, err
+		}
+		switch nextOp {
+		case opcodePing:
+			_ = c.writeFrame(opcodePong, true, part)
+		case opcodePong:
+			c.lastPong.Store(time.Now().UnixNano())
+		case opcodeClose:
+			_ = c.writeFrame(opcodeClose, true, part)
+			return op, data, nil
+		case opcodeContinuation:
+			data = part
+			fin = last
+		default:
+			return 0, nil, ErrProtocolError
+		}
 	}
-	// Copy data before returning buf to pool; callers expect to own the slice.
-	data := make([]byte, buf.Len())
-	copy(data, buf.Bytes())
-	putMessageBuffer(buf)
 	return op, data, nil
 }

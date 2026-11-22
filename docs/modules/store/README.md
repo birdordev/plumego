@@ -130,7 +130,7 @@
 - `store/kv` keeps the key being written when evicting for capacity. It evicts
   the oldest of the other keys first, breaking timestamp ties in lexical order.
   When trimming a snapshot at startup, all keys are eligible for eviction.
-- `store/kv` persists the full in-memory state as JSON on each write, fsyncs the temporary state file, atomically replaces the state file, and syncs the parent directory when the platform supports it; it is intended for small embedded datasets rather than high-throughput durable-engine workloads.
+- `store/kv` persists the full in-memory state as JSON, fsyncs the temporary state file, atomically replaces the state file, and syncs the parent directory when the platform supports it. Concurrent mutations can share one snapshot replacement and sync. Reads use committed data while a replacement is prepared; it is intended for small embedded datasets rather than high-throughput durable-engine workloads.
 - `store/kv` does not rewrite the state file during startup normalization; expired or over-capacity records can be pruned from memory without mutating disk until the next caller-initiated write.
 - `store/kv` read operations do not persist expired-key cleanup as a side effect.
 - Each KV data directory is owned by one open store across processes. The

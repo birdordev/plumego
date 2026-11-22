@@ -34,6 +34,7 @@ import (
 	"bufio"
 	"compress/gzip"
 	"context"
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"hash/crc32"
@@ -108,12 +109,13 @@ type Options struct {
 
 // Shard represents a single data shard with optimized locking
 type Shard struct {
-	mu      sync.RWMutex
-	data    map[string]*Entry
-	lruHead *Entry
-	lruTail *Entry
-	next    map[*Entry]*Entry // LRU next pointers
-	prev    map[*Entry]*Entry // LRU prev pointers
+	expiring expiryQueue // Guarded by mu.
+	mu       sync.RWMutex
+	data     map[string]*Entry
+	lruHead  *Entry
+	lruTail  *Entry
+	next     map[*Entry]*Entry // LRU next pointers
+	prev     map[*Entry]*Entry // LRU prev pointers
 }
 
 // MetricsObserver captures KV-specific observations without depending on the
@@ -133,10 +135,12 @@ type KVStore struct {
 	shardMask uint32
 
 	// WAL
-	walFile   *os.File
-	walWriter *bufio.Writer
-	walMutex  sync.Mutex
-	opsMu     sync.Mutex
+	walFile    *os.File
+	walWriter  *bufio.Writer
+	walMutex   sync.Mutex
+	walDirty   bool // Guarded by walMutex.
+	opsMu      sync.Mutex
+	snapshotMu sync.Mutex
 
 	// Background workers
 	ctx    context.Context
@@ -314,60 +318,20 @@ func (kv *KVStore) cleaner() {
 
 func (kv *KVStore) cleanExpired() {
 	now := time.Now()
-	// Sample size per shard per cycle
-	// We use a randomized sampling strategy similar to Redis to avoid O(N) scans
-	const sampleSize = 20
-
+	const maxPerShard = 128
 	for _, shard := range kv.shards {
-		// Loop until the percentage of expired keys is low
-		for {
-			var expired []string
-			checkedCount := 0
-			expiredCount := 0
-
-			shard.mu.RLock()
-			for key, entry := range shard.data {
-				if !entry.ExpireAt.IsZero() {
-					if now.After(entry.ExpireAt) {
-						expired = append(expired, key)
-						expiredCount++
-					}
-					checkedCount++
-					if checkedCount >= sampleSize {
-						break
-					}
-				}
-			}
-			shard.mu.RUnlock()
-
-			if len(expired) > 0 {
-				shard.mu.Lock()
-				for _, key := range expired {
-					if entry, exists := shard.data[key]; exists {
-						// Double check expiration under write lock
-						if !entry.ExpireAt.IsZero() && now.After(entry.ExpireAt) {
-							kv.deleteFromShard(shard, key, entry)
-							// No need to log to WAL - expired entries are handled during recovery
-						}
-					}
-				}
-				shard.mu.Unlock()
-			}
-
-			// If we didn't check enough keys (shard is small or has few items with TTL), stop
-			if checkedCount < sampleSize {
+		shard.mu.Lock()
+		for range maxPerShard {
+			if len(shard.expiring.entries) == 0 {
 				break
 			}
-
-			// If less than 25% of checked keys were expired, we assume the shard is mostly clean
-			// and move to the next shard.
-			if float64(expiredCount)/float64(checkedCount) < 0.25 {
+			entry := shard.expiring.entries[0]
+			if !now.After(entry.ExpireAt) {
 				break
 			}
-
-			// Add a yield to prevent starving other goroutines during heavy cleanup
-			// runtime.Gosched() could be used, or just relying on the lock release/acquire cycle
+			kv.deleteFromShard(shard, entry.Key, entry)
 		}
+		shard.mu.Unlock()
 	}
 }
 
@@ -377,11 +341,16 @@ func (kv *KVStore) Snapshot() error {
 		return ErrStoreClosed
 	}
 
+	kv.snapshotMu.Lock()
+	defer kv.snapshotMu.Unlock()
 	kv.opsMu.Lock()
-	defer kv.opsMu.Unlock()
 	if kv.isClosed() {
+		kv.opsMu.Unlock()
 		return ErrStoreClosed
 	}
+	version := atomic.LoadInt64(&kv.version)
+	entries := kv.snapshotEntries()
+	kv.opsMu.Unlock()
 
 	// Use format-specific extension
 	ext := ".bin"
@@ -389,11 +358,63 @@ func (kv *KVStore) Snapshot() error {
 		ext = ".json"
 	}
 	snapshotPath := filepath.Join(kv.opts.DataDir, "snapshot"+ext)
-	tempPath := snapshotPath + ".tmp"
-
-	file, err := os.Create(tempPath)
+	tempPath, err := kv.writeSnapshotFile(entries)
 	if err != nil {
-		return fmt.Errorf("failed to create snapshot: %w", err)
+		return err
+	}
+	defer func() { _ = os.Remove(tempPath) }()
+	kv.opsMu.Lock()
+	defer kv.opsMu.Unlock()
+	if kv.isClosed() {
+		return ErrStoreClosed
+	}
+	if atomic.LoadInt64(&kv.version) != version {
+		if err := os.Remove(tempPath); err != nil {
+			return err
+		}
+		tempPath, err = kv.writeSnapshotFile(kv.snapshotEntries())
+		if err != nil {
+			return err
+		}
+	}
+
+	// Atomic replace
+	if err := os.Rename(tempPath, snapshotPath); err != nil {
+		return fmt.Errorf("failed to rename snapshot: %w", err)
+	}
+	if err := syncDataDir(kv.opts.DataDir); err != nil {
+		return fmt.Errorf("sync snapshot directory: %w", err)
+	}
+
+	// Reset WAL
+	if err := kv.resetWAL(); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// snapshotEntries borrows immutable entries while opsMu excludes writers.
+func (kv *KVStore) snapshotEntries() []*Entry {
+	entries := make([]*Entry, 0)
+	now := time.Now()
+	for _, shard := range kv.shards {
+		shard.mu.RLock()
+		for _, entry := range shard.data {
+			if entry.ExpireAt.IsZero() || now.Before(entry.ExpireAt) {
+				entries = append(entries, entry)
+			}
+		}
+		shard.mu.RUnlock()
+	}
+	return entries
+}
+
+func (kv *KVStore) writeSnapshotFile(entries []*Entry) (string, error) {
+	tempPath := filepath.Join(kv.opts.DataDir, ".snapshot-"+rand.Text())
+	file, err := os.OpenFile(tempPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0666)
+	if err != nil {
+		return "", fmt.Errorf("failed to create snapshot: %w", err)
 	}
 	cleanup := func() {
 		_ = file.Close()
@@ -412,67 +433,44 @@ func (kv *KVStore) Snapshot() error {
 	// Write header using serializer
 	if err := kv.serializer.WriteSnapshotHeader(bufWriter); err != nil {
 		cleanup()
-		return err
+		return "", err
 	}
 
-	// Write all entries
-	now := time.Now()
-	for _, shard := range kv.shards {
-		shard.mu.RLock()
-		for _, entry := range shard.data {
-			if entry.ExpireAt.IsZero() || now.Before(entry.ExpireAt) {
-				data, err := kv.serializer.EncodeEntry(entry)
-				if err != nil {
-					shard.mu.RUnlock()
-					cleanup()
-					return err
-				}
-				if _, err := bufWriter.Write(data); err != nil {
-					shard.mu.RUnlock()
-					cleanup()
-					return err
-				}
-			}
+	for _, entry := range entries {
+		data, err := kv.serializer.EncodeEntry(entry)
+		if err != nil {
+			cleanup()
+			return "", err
 		}
-		shard.mu.RUnlock()
+		if _, err := bufWriter.Write(data); err != nil {
+			cleanup()
+			return "", err
+		}
 	}
 
 	if err := bufWriter.Flush(); err != nil {
 		cleanup()
-		return err
+		return "", err
 	}
 
 	if gzWriter != nil {
 		if err := gzWriter.Close(); err != nil {
 			cleanup()
-			return err
+			return "", err
 		}
 	}
 
 	if err := file.Sync(); err != nil {
 		cleanup()
-		return err
+		return "", err
 	}
 
 	if err := file.Close(); err != nil {
 		_ = os.Remove(tempPath)
-		return err
+		return "", err
 	}
 
-	// Atomic replace
-	if err := os.Rename(tempPath, snapshotPath); err != nil {
-		return fmt.Errorf("failed to rename snapshot: %w", err)
-	}
-	if err := syncDataDir(kv.opts.DataDir); err != nil {
-		return fmt.Errorf("sync snapshot directory: %w", err)
-	}
-
-	// Reset WAL
-	if err := kv.resetWAL(); err != nil {
-		return err
-	}
-
-	return nil
+	return tempPath, nil
 }
 
 func syncDataDir(dir string) error {
@@ -592,6 +590,8 @@ func (kv *KVStore) close() error {
 		kv.closeErr = ErrCloseTimeout
 	}
 
+	kv.opsMu.Lock()
+	defer kv.opsMu.Unlock()
 	if err := kv.closeWAL(); err != nil {
 		kv.closeErr = errors.Join(kv.closeErr, err)
 	}

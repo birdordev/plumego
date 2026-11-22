@@ -94,8 +94,7 @@ func (b *TokenBucket) WaitN(ctx context.Context, n int64) error {
 	if n <= 0 {
 		return nil
 	}
-	timer := time.NewTimer(time.Millisecond)
-	defer timer.Stop()
+	var timer *time.Timer
 	for {
 		b.mu.Lock()
 		if err := ctx.Err(); err != nil {
@@ -107,13 +106,12 @@ func (b *TokenBucket) WaitN(ctx context.Context, n int64) error {
 		if available {
 			return nil
 		}
-		if !timer.Stop() {
-			select {
-			case <-timer.C:
-			default:
-			}
+		if timer == nil {
+			timer = time.NewTimer(time.Millisecond)
+			defer timer.Stop()
+		} else {
+			timer.Reset(time.Millisecond)
 		}
-		timer.Reset(time.Millisecond)
 		select {
 		case <-ctx.Done():
 			return ctx.Err()

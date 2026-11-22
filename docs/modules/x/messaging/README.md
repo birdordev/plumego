@@ -176,3 +176,13 @@ Validate narrow webhook work with:
 ## Webhook publish failure diagnostics
 
 Inbound GitHub and Stripe publish failures return the canonical generic internal error. Logs retain the error type, topic, and event ID, but exclude the publisher's error text, which may contain backend credentials or payload data. Custom logging backends must safely encode these original field values according to the `log.StructuredLogger` contract.
+
+Concurrent synchronous PubSub publications can share a WAL file sync. They
+return success only after the sync covers their record. PostgreSQL task
+reservation selects and leases eligible rows in the same statement, within
+the transaction that expires queued tasks. Attempt logging groups successful
+inserts in a savepoint and falls back to individual attempts on insert failure.
+Sealed WAL segments can carry a range hint. Recovery uses a valid hint to
+skip a segment only when the loaded snapshot covers that segment. A missing
+or stale hint falls back to normal replay. Checkpoint markers leave retained
+messages in the WAL.

@@ -69,6 +69,8 @@ trace metadata carriers.
 - `RequestIDHeader`
 - `WithTraceContext`
 - `TraceContextFromContext`
+- `TraceSpanIDFromContext` reads a valid span ID without copying baggage.
+- `TraceIDsFromContext` reads a complete and valid ID pair without copying baggage.
 - `TraceContext`
 - `TraceContext.IsSampled`
 - `TraceContext.HasTraceID`

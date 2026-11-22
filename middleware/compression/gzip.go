@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"compress/gzip"
 	"errors"
+	"io"
 	"net"
 	"net/http"
 	"strings"
@@ -61,6 +62,7 @@ func Middleware(cfg Config) middleware.Middleware {
 		cfg.MaxBufferBytes = DefaultConfig().MaxBufferBytes
 	}
 
+	compressors := make(chan *gzipStream, 4)
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			// Skip WebSocket upgrades
@@ -84,6 +86,7 @@ func Middleware(cfg Config) middleware.Middleware {
 				ResponseWriter: variant,
 				cfg:            cfg,
 				headRequest:    r.Method == http.MethodHead,
+				compressors:    compressors,
 			}
 
 			returned := false
@@ -159,11 +162,42 @@ func positiveQualityWeight(value string) bool {
 	return positive
 }
 
+// gzipStream lets an idle compressor release its request writer without
+// resetting the compressor until its next use.
+type gzipStream struct {
+	*gzip.Writer
+	output gzipOutput
+}
+
+type gzipOutput struct{ dst io.Writer }
+
+func (o *gzipOutput) Write(p []byte) (int, error) { return o.dst.Write(p) }
+
+func (w *gzipResponseWriter) startGzip() {
+	select {
+	case w.gz = <-w.compressors:
+		w.gz.output.dst = w.ResponseWriter
+		w.gz.Reset(&w.gz.output)
+	default:
+		w.gz = &gzipStream{output: gzipOutput{dst: w.ResponseWriter}}
+		w.gz.Writer = gzip.NewWriter(&w.gz.output)
+	}
+}
+
+func (w *gzipResponseWriter) releaseGzip() {
+	w.gz.output.dst = nil
+	select {
+	case w.compressors <- w.gz:
+	default:
+	}
+}
+
 type gzipResponseWriter struct {
 	http.ResponseWriter
 	cfg             Config
 	headRequest     bool
-	gz              *gzip.Writer
+	gz              *gzipStream
+	compressors     chan *gzipStream
 	compressionUsed bool
 	wroteHeader     bool
 	buffer          *internaltransport.BufferedResponse
@@ -223,6 +257,7 @@ func (w *gzipResponseWriter) finalize(aborted bool) {
 		// response is already committed at this point, so a write failure cannot
 		// be retried or surfaced to the caller; discard it the same way the
 		// SafeWrite paths above do.
+		defer w.releaseGzip()
 		_ = w.gz.Close()
 		return
 	}
@@ -304,71 +339,27 @@ func (w *gzipResponseWriter) Write(p []byte) (int, error) {
 		return internaltransport.SafeWrite(w.ResponseWriter, p)
 	}
 
-	// Buffer the data
-	w.ensureBuffer()
-
-	// Once gzip output has started, continue writing through the gzip stream.
-	// Switching back to an uncompressed response after headers were flushed
-	// would produce a corrupt response.
 	if w.gz != nil {
 		return w.gz.Write(p)
 	}
-
-	// If buffer exceeds max, switch to bypass mode
-	if w.cfg.MaxBufferBytes > 0 && w.buffer.Len()+len(p) > w.cfg.MaxBufferBytes {
-		// Write buffered data as-is (no compression)
+	if len(p) > w.cfg.MaxBufferBytes {
 		w.compressionUsed = false
-
 		w.flushHeaders()
-
-		// Write buffered data in chunks to avoid memory spikes
-		const chunkSize = 8192 // 8KB chunks
-		totalWritten := 0
-		body := w.buffer.Body()
-		for totalWritten < len(body) {
-			end := totalWritten + chunkSize
-			if end > len(body) {
-				end = len(body)
-			}
-			n, err := internaltransport.SafeWrite(w.ResponseWriter, body[totalWritten:end])
-			if err != nil {
-				w.buffer.ClearBody()
-				return totalWritten, err
-			}
-			totalWritten += n
-		}
-
-		w.buffer.ClearBody()
-		n, err := internaltransport.SafeWrite(w.ResponseWriter, p)
-		return totalWritten + n, err
+		return internaltransport.SafeWrite(w.ResponseWriter, p)
+	}
+	if len(p) == 0 {
+		return 0, nil
 	}
 
-	_, err := w.buffer.Write(p)
-	if err != nil {
+	header := w.buffer.FinalHeader()
+	removeUncompressedMetadata(header)
+	header.Del("Content-Length")
+	header.Set("Content-Encoding", "gzip")
+	w.flushHeaders()
+	w.startGzip()
+	if _, err := w.gz.Write(p); err != nil {
 		return 0, err
 	}
-
-	// If we have enough data, start compressing
-	if w.gz == nil && w.buffer.Len() > 0 {
-		// Update headers for compression
-		header := w.buffer.FinalHeader()
-		removeUncompressedMetadata(header)
-		header.Del("Content-Length")
-		header.Set("Content-Encoding", "gzip")
-		w.flushHeaders()
-		w.gz = gzip.NewWriter(w.ResponseWriter)
-
-		// Write buffered data
-		if _, err := w.gz.Write(w.buffer.Body()); err != nil {
-			w.buffer.ClearBody()
-			return 0, err
-		}
-
-		// Clear buffer
-		w.buffer.ClearBody()
-		return len(p), nil
-	}
-
 	return len(p), nil
 }
 

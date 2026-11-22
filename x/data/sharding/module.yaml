@@ -45,6 +45,7 @@ public_entrypoints:
   - DefaultRouterConfig
   - RouterOption
   - WithCrossShardPolicy
+  - WithMaxParallelShardQueries
   - WithDefaultShard
   - WithMetrics
   - CrossShardPolicy

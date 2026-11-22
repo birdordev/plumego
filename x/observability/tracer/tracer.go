@@ -283,6 +283,34 @@ func (c *SimpleTraceCollector) Collect(trace *Trace) {
 	c.pruneLocked(time.Now())
 }
 
+// updateSpan publishes a new snapshot while sharing unchanged internal data.
+func (c *SimpleTraceCollector) updateSpan(span *Span, maxSpans int, endTime *time.Time) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	now := time.Now()
+	c.pruneLocked(now)
+	trace, ok := c.traces[span.TraceID]
+	if !ok {
+		return
+	}
+	updated := mergeSpanIntoTrace(trace, span, maxSpans)
+	if endTime != nil && span.ID == trace.RootSpanID {
+		snapshot := *updated
+		snapshot.EndTime = endTime
+		updated = &snapshot
+	}
+	if c.maxAge > 0 {
+		timestamp := updated.StartTime
+		if updated.EndTime != nil {
+			timestamp = *updated.EndTime
+		}
+		if timestamp.Before(now.Add(-c.maxAge)) {
+			return
+		}
+	}
+	c.traces[span.TraceID] = updated
+}
+
 // GetTrace retrieves a trace by ID.
 func (c *SimpleTraceCollector) GetTrace(traceID TraceID) (*Trace, bool) {
 	c.mu.Lock()
@@ -551,6 +579,10 @@ func (t *Tracer) EndSpan(span *Span, options ...SpanOption) {
 
 	delete(t.activeSpans, span.ID)
 
+	if collector, ok := t.collector.(*SimpleTraceCollector); ok {
+		collector.updateSpan(span, t.config.MaxSpansPerTrace, &now)
+		return
+	}
 	if trace, exists := t.collector.GetTrace(span.TraceID); exists {
 		trace = mergeSpanIntoTrace(trace, span, t.config.MaxSpansPerTrace)
 		if span.ID == trace.RootSpanID {
@@ -563,13 +595,13 @@ func (t *Tracer) EndSpan(span *Span, options ...SpanOption) {
 
 // GetActiveSpan returns the active span from the context.
 func (t *Tracer) GetActiveSpan(ctx context.Context) *Span {
-	spanCtx, ok := contract.TraceContextFromContext(ctx)
-	if !ok || !spanCtx.HasSpanID() {
+	id := contract.TraceSpanIDFromContext(ctx)
+	if id == "" {
 		return nil
 	}
 	t.mu.RLock()
 	defer t.mu.RUnlock()
-	return t.activeSpans[SpanID(spanCtx.SpanID)]
+	return t.activeSpans[SpanID(id)]
 }
 
 // RecordSpanEvent records a named event on the given span.
@@ -733,6 +765,10 @@ func WithErrorAttributes(attrs map[string]any) ErrorOption {
 
 func (t *Tracer) updateCollectedSpan(span *Span) {
 	if span == nil {
+		return
+	}
+	if collector, ok := t.collector.(*SimpleTraceCollector); ok {
+		collector.updateSpan(span, t.config.MaxSpansPerTrace, nil)
 		return
 	}
 	trace, exists := t.collector.GetTrace(span.TraceID)

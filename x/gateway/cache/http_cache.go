@@ -115,7 +115,7 @@ type Config struct {
 	// Default: 5 minutes
 	DefaultTTL time.Duration
 
-	// MaxSize is the maximum cacheable response size in bytes
+	// MaxSize limits response body capture in bytes.
 	// Responses larger than this will not be cached
 	// Default: 1MB
 	MaxSize int64
@@ -185,6 +185,14 @@ func (c *Config) WithDefaults() *Config {
 // Middleware creates a caching middleware
 func Middleware(config Config) func(http.Handler) http.Handler {
 	cfg := config.WithDefaults()
+	get := cfg.Store.Get
+	storeResponse := cfg.Store.Set
+	if store, ok := cfg.Store.(*MemoryStore); ok {
+		storeResponse = store.setOwned
+		if cfg.OnCacheHit == nil {
+			get = store.getImmutable
+		}
+	}
 
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -208,7 +216,7 @@ func Middleware(config Config) func(http.Handler) http.Handler {
 			}
 
 			// Try to get from cache
-			cached, found := cfg.Store.Get(key)
+			cached, found := get(key)
 			if found && !cached.IsExpired() {
 				// Check conditional request
 				if cfg.EnableConditionalRequests && cached.ETag != "" {
@@ -235,7 +243,7 @@ func Middleware(config Config) func(http.Handler) http.Handler {
 			}
 
 			// Create response recorder
-			recorder := httputil.NewResponseRecorder(w)
+			recorder := httputil.NewBoundedResponseRecorder(w, cfg.MaxSize)
 
 			// Execute next handler
 			next.ServeHTTP(recorder, r)
@@ -247,7 +255,7 @@ func Middleware(config Config) func(http.Handler) http.Handler {
 
 			// Check response size
 			bodySize := int64(len(recorder.Body()))
-			if bodySize > cfg.MaxSize {
+			if recorder.CaptureExceeded() {
 				return
 			}
 
@@ -272,7 +280,7 @@ func Middleware(config Config) func(http.Handler) http.Handler {
 			cached = &CachedResponse{
 				StatusCode: recorder.StatusCode(),
 				Header:     recorder.Header().Clone(),
-				Body:       recorder.Body(),
+				Body:       recorder.TakeBody(),
 				CachedAt:   time.Now(),
 				ExpiresAt:  time.Now().Add(ttl),
 				ETag:       etag,
@@ -285,7 +293,7 @@ func Middleware(config Config) func(http.Handler) http.Handler {
 			}
 
 			// Store in cache
-			cfg.Store.Set(key, cached, ttl)
+			storeResponse(key, cached, ttl)
 		})
 	}
 }

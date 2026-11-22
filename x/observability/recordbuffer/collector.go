@@ -3,6 +3,7 @@ package recordbuffer
 import (
 	"context"
 	"maps"
+	"slices"
 	"sync"
 	"time"
 
@@ -18,6 +19,7 @@ type Collector struct {
 	mu         sync.RWMutex
 	records    []metrics.MetricRecord
 	maxRecords int
+	oldest     int
 }
 
 // NewCollector creates a buffered record collector for observability-owned record inspection.
@@ -35,6 +37,10 @@ func (c *Collector) WithMaxRecords(max int) *Collector {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
+	if c.oldest != 0 {
+		rotateRecords(c.records, c.oldest)
+		c.oldest = 0
+	}
 	if max <= 0 {
 		c.maxRecords = 0
 		return c
@@ -47,6 +53,12 @@ func (c *Collector) WithMaxRecords(max int) *Collector {
 		c.records = c.records[cutoff:]
 	}
 	return c
+}
+
+func rotateRecords(records []metrics.MetricRecord, oldest int) {
+	slices.Reverse(records[:oldest])
+	slices.Reverse(records[oldest:])
+	slices.Reverse(records)
 }
 
 // Record implements metrics.AggregateCollector.
@@ -65,8 +77,9 @@ func (c *Collector) Record(ctx context.Context, record metrics.MetricRecord) {
 
 	c.base.Record(ctx, record)
 	if c.maxRecords > 0 && len(c.records) >= c.maxRecords {
-		c.records[0] = metrics.MetricRecord{}
-		c.records = c.records[1:]
+		c.records[c.oldest] = record
+		c.oldest = (c.oldest + 1) % len(c.records)
+		return
 	}
 	c.records = append(c.records, record)
 }
@@ -99,6 +112,7 @@ func (c *Collector) Clear() {
 	c.base.Clear()
 	clear(c.records)
 	c.records = c.records[:0]
+	c.oldest = 0
 }
 
 // GetRecords returns a copy of buffered metric records.
@@ -111,7 +125,8 @@ func (c *Collector) GetRecords() []metrics.MetricRecord {
 	defer c.mu.RUnlock()
 
 	out := make([]metrics.MetricRecord, len(c.records))
-	for i, record := range c.records {
+	for i := range out {
+		record := c.records[(c.oldest+i)%len(c.records)]
 		record.Labels = maps.Clone(record.Labels)
 		out[i] = record
 	}

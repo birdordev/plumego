@@ -53,6 +53,10 @@ func (r *ShardKeyResolver) Resolve(query string, args []any) (*ResolvedShard, er
 		return nil, fmt.Errorf("failed to parse SQL: %w", err)
 	}
 
+	return r.resolveParsed(query, args, parsed)
+}
+
+func (r *ShardKeyResolver) resolveParsed(query string, args []any, parsed *ParsedSQL) (*ResolvedShard, error) {
 	// Get sharding rule for the table
 	rule, err := r.registry.Get(parsed.TableName)
 	if err != nil {
@@ -100,11 +104,20 @@ func (r *ShardKeyResolver) Resolve(query string, args []any) (*ResolvedShard, er
 
 // ResolveMultiple resolves multiple possible shards (for range queries, IN clauses, etc.)
 func (r *ShardKeyResolver) ResolveMultiple(query string, args []any) ([]*ResolvedShard, error) {
+	resolved, _, err := r.resolvePlan(query, args)
+	return resolved, err
+}
+
+func (r *ShardKeyResolver) resolvePlan(query string, args []any) ([]*ResolvedShard, *ParsedSQL, error) {
 	parsed, err := r.parser.Parse(query)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse SQL: %w", err)
+		return nil, nil, fmt.Errorf("failed to parse SQL: %w", err)
 	}
+	resolved, err := r.resolveMultipleParsed(query, args, parsed)
+	return resolved, parsed, err
+}
 
+func (r *ShardKeyResolver) resolveMultipleParsed(query string, args []any, parsed *ParsedSQL) ([]*ResolvedShard, error) {
 	rule, err := r.registry.Get(parsed.TableName)
 	if err != nil {
 		return nil, err
@@ -112,7 +125,7 @@ func (r *ShardKeyResolver) ResolveMultiple(query string, args []any) ([]*Resolve
 
 	switch parsed.Type {
 	case SQLTypeInsert:
-		resolved, err := r.Resolve(query, args)
+		resolved, err := r.resolveParsed(query, args, parsed)
 		if err != nil {
 			return nil, err
 		}
@@ -137,6 +150,19 @@ func (r *ShardKeyResolver) CanResolve(query string) (bool, error) {
 		return false, err
 	}
 
+	return r.canResolveParsed(parsed)
+}
+
+func (r *ShardKeyResolver) parseResolvable(query string) (*ParsedSQL, bool, error) {
+	parsed, err := r.parser.Parse(query)
+	if err != nil {
+		return nil, false, err
+	}
+	canResolve, err := r.canResolveParsed(parsed)
+	return parsed, canResolve, err
+}
+
+func (r *ShardKeyResolver) canResolveParsed(parsed *ParsedSQL) (bool, error) {
 	rule, err := r.registry.Get(parsed.TableName)
 	if err != nil {
 		return false, err

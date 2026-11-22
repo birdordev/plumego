@@ -1,6 +1,7 @@
 package vectorstore
 
 import (
+	"container/heap"
 	"context"
 	"fmt"
 	"maps"
@@ -17,6 +18,7 @@ import (
 // Write timestamps are applied to the stored copy.
 type MemoryBackend struct {
 	entries    map[string]*Entry
+	norms      map[string]float64
 	mu         sync.RWMutex
 	dimensions int
 	maxSize    int
@@ -33,6 +35,7 @@ type MemoryConfig struct {
 func NewMemoryBackend(config MemoryConfig) *MemoryBackend {
 	return &MemoryBackend{
 		entries:    make(map[string]*Entry),
+		norms:      make(map[string]float64),
 		dimensions: config.Dimensions,
 		maxSize:    config.MaxSize,
 		stats: &BackendStats{
@@ -92,6 +95,7 @@ func (m *MemoryBackend) Add(ctx context.Context, entry *Entry) error {
 	entry.UpdatedAt = now
 
 	m.entries[entry.ID] = entry
+	m.norms[entry.ID] = vectorNorm(entry.Vector)
 	m.stats.TotalEntries = int64(len(m.entries))
 
 	return nil
@@ -116,40 +120,82 @@ func (m *MemoryBackend) Search(ctx context.Context, query []float64, topK int, t
 		return nil, fmt.Errorf("query dimension mismatch: got %d, want %d", len(query), m.dimensions)
 	}
 
-	// Compute similarities for all entries
-	results := make([]*SearchResult, 0, len(m.entries))
-	for _, entry := range m.entries {
-		similarity, err := cosineSimilarity(query, entry.Vector)
-		if err != nil {
+	limit := len(m.entries)
+	bounded := topK > 0 && topK < limit
+	if bounded {
+		limit = topK
+	}
+	candidates := vectorCandidates(make([]vectorCandidate, 0, limit))
+	queryNorm := vectorNorm(query)
+	for id, entry := range m.entries {
+		if len(query) != len(entry.Vector) {
 			continue
 		}
-
-		if similarity >= threshold {
-			// Compute distance (1 - similarity for cosine)
-			distance := 1.0 - similarity
-
-			results = append(results, &SearchResult{
-				Entry:      entry,
-				Similarity: similarity,
-				Distance:   distance,
-			})
+		var similarity float64
+		if entryNorm := m.norms[id]; entryNorm != 0 && queryNorm != 0 {
+			var dot float64
+			for i, value := range query {
+				dot += value * entry.Vector[i]
+			}
+			similarity = dot / (queryNorm * entryNorm)
+		}
+		if !(similarity >= threshold) {
+			continue
+		}
+		candidate := vectorCandidate{entry: entry, similarity: similarity}
+		switch {
+		case !bounded:
+			candidates = append(candidates, candidate)
+		case len(candidates) < limit:
+			candidates = append(candidates, candidate)
+			if len(candidates) == limit {
+				heap.Init(&candidates)
+			}
+		case similarity > candidates[0].similarity:
+			candidates[0] = candidate
+			heap.Fix(&candidates, 0)
 		}
 	}
 
-	// Sort by similarity (descending)
-	sort.Slice(results, func(i, j int) bool {
-		return results[i].Similarity > results[j].Similarity
+	sort.Slice(candidates, func(i, j int) bool {
+		return candidates[i].similarity > candidates[j].similarity
 	})
-
-	// Return top K
-	if topK > 0 && topK < len(results) {
-		results = results[:topK]
+	results := make([]*SearchResult, len(candidates))
+	for i, candidate := range candidates {
+		results[i] = &SearchResult{
+			Entry:      cloneMemoryEntry(candidate.entry),
+			Similarity: candidate.similarity,
+			Distance:   1 - candidate.similarity,
+		}
 	}
-	for _, result := range results {
-		result.Entry = cloneMemoryEntry(result.Entry)
-	}
-
 	return results, nil
+}
+
+type vectorCandidate struct {
+	entry      *Entry
+	similarity float64
+}
+
+type vectorCandidates []vectorCandidate
+
+func (c vectorCandidates) Len() int           { return len(c) }
+func (c vectorCandidates) Less(i, j int) bool { return c[i].similarity < c[j].similarity }
+func (c vectorCandidates) Swap(i, j int)      { c[i], c[j] = c[j], c[i] }
+func (c *vectorCandidates) Push(v any)        { *c = append(*c, v.(vectorCandidate)) }
+func (c *vectorCandidates) Pop() any {
+	last := len(*c) - 1
+	v := (*c)[last]
+	(*c)[last] = vectorCandidate{}
+	*c = (*c)[:last]
+	return v
+}
+
+func vectorNorm(vector []float64) float64 {
+	var squared float64
+	for _, value := range vector {
+		squared += value * value
+	}
+	return math.Sqrt(squared)
 }
 
 // Get retrieves an entry by ID.
@@ -173,6 +219,7 @@ func (m *MemoryBackend) Delete(ctx context.Context, id string) error {
 	defer m.mu.Unlock()
 
 	delete(m.entries, id)
+	delete(m.norms, id)
 	m.stats.TotalEntries = int64(len(m.entries))
 
 	return nil
@@ -185,6 +232,7 @@ func (m *MemoryBackend) DeleteBatch(ctx context.Context, ids []string) error {
 
 	for _, id := range ids {
 		delete(m.entries, id)
+		delete(m.norms, id)
 	}
 
 	m.stats.TotalEntries = int64(len(m.entries))
@@ -208,6 +256,7 @@ func (m *MemoryBackend) Update(ctx context.Context, entry *Entry) error {
 	entry = cloneMemoryEntry(entry)
 	entry.UpdatedAt = time.Now()
 	m.entries[entry.ID] = entry
+	m.norms[entry.ID] = vectorNorm(entry.Vector)
 
 	return nil
 }
@@ -226,6 +275,7 @@ func (m *MemoryBackend) Clear(ctx context.Context) error {
 	defer m.mu.Unlock()
 
 	m.entries = make(map[string]*Entry)
+	m.norms = make(map[string]float64)
 	m.stats.TotalEntries = 0
 
 	return nil
@@ -284,25 +334,6 @@ func (m *MemoryBackend) evictOldest() error {
 	}
 
 	delete(m.entries, oldestID)
+	delete(m.norms, oldestID)
 	return nil
-}
-
-// cosineSimilarity computes cosine similarity between two vectors.
-func cosineSimilarity(a, b []float64) (float64, error) {
-	if len(a) != len(b) {
-		return 0, fmt.Errorf("vector dimensions mismatch: %d != %d", len(a), len(b))
-	}
-
-	var dotProduct, normA, normB float64
-	for i := 0; i < len(a); i++ {
-		dotProduct += a[i] * b[i]
-		normA += a[i] * a[i]
-		normB += b[i] * b[i]
-	}
-
-	if normA == 0 || normB == 0 {
-		return 0, nil
-	}
-
-	return dotProduct / (math.Sqrt(normA) * math.Sqrt(normB)), nil
 }

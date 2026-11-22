@@ -40,6 +40,7 @@ type vmodulePattern struct {
 type gLogger struct {
 	mu              sync.RWMutex
 	writeMu         sync.Mutex
+	cleanupMu       sync.Mutex
 	level           Level
 	output          io.Writer
 	errorOutput     io.Writer

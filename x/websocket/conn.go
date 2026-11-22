@@ -364,6 +364,12 @@ func (c *Conn) WriteClose(code uint16, reason string) error {
 // ---------------- low-level frame IO ----------------
 
 func (c *Conn) readFrame() (byte, bool, []byte, error) {
+	return c.readFrameInto(nil)
+}
+
+// readFrameInto appends a continuation directly to an owned message buffer.
+// Control frames always return their own payload.
+func (c *Conn) readFrameInto(message []byte) (byte, bool, []byte, error) {
 	var h [2]byte
 	if _, err := io.ReadFull(c.br, h[:]); err != nil {
 		return 0, false, nil, err
@@ -422,7 +428,13 @@ func (c *Conn) readFrame() (byte, bool, []byte, error) {
 
 	// Reject oversized frames before reading the mask key so we avoid
 	// a 4-byte network round-trip for frames we will reject anyway.
-	if payloadLen > c.readLimit.Load() {
+	limit := min(c.readLimit.Load(), int64(^uint(0)>>1))
+	continuation := message != nil && op == opcodeContinuation
+	start := 0
+	if continuation {
+		start = len(message)
+	}
+	if payloadLen > limit-int64(start) {
 		return 0, false, nil, ErrPayloadTooLarge
 	}
 
@@ -432,13 +444,25 @@ func (c *Conn) readFrame() (byte, bool, []byte, error) {
 			return 0, false, nil, err
 		}
 	}
-	payload := make([]byte, payloadLen)
+	size := start + int(payloadLen)
+	var payload []byte
+	switch {
+	case !continuation:
+		payload = make([]byte, size)
+	case size <= cap(message):
+		payload = message[:size]
+	default:
+		growLimit := int(limit) - cap(message)
+		capacity := max(size, cap(message)+min(cap(message), growLimit))
+		payload = make([]byte, size, capacity)
+		copy(payload, message)
+	}
 	if payloadLen > 0 {
-		if _, err := io.ReadFull(c.br, payload); err != nil {
+		if _, err := io.ReadFull(c.br, payload[start:]); err != nil {
 			return 0, false, nil, err
 		}
 		if mask {
-			applyMask(payload, maskKey)
+			applyMask(payload[start:], maskKey)
 		}
 	}
 
@@ -553,13 +577,16 @@ func (c *Conn) writeFrame(op byte, fin bool, payload []byte) error {
 	}
 	if n > 0 {
 		if c.client {
-			// Mask in place on a private copy so the caller's slice is not
-			// mutated; this also keeps message-pool buffers reusable.
-			masked := make([]byte, n)
-			copy(masked, payload)
-			applyMask(masked, maskKey)
-			if _, err := c.bw.Write(masked); err != nil {
-				return err
+			// A multiple of four keeps the key aligned across chunks.
+			var scratch [4096]byte
+			for len(payload) > 0 {
+				size := copy(scratch[:], payload)
+				masked := scratch[:size]
+				applyMask(masked, maskKey)
+				if _, err := c.bw.Write(masked); err != nil {
+					return err
+				}
+				payload = payload[size:]
 			}
 		} else {
 			if _, err := c.bw.Write(payload); err != nil {

@@ -57,6 +57,7 @@ func NewStreamClient(client Client, cfg *StreamConfig) StreamClient {
 
 func (sc *streamClient) WriteStream(r io.Reader) (int64, error) {
 	var totalWritten int64
+	var sizeBytes [4]byte
 	buf := make([]byte, sc.config.ChunkSize)
 
 	for {
@@ -64,13 +65,12 @@ func (sc *streamClient) WriteStream(r io.Reader) (int64, error) {
 		n, readErr := r.Read(buf)
 		if n > 0 {
 			// Write chunk size (4 bytes, big-endian)
-			sizeBytes := make([]byte, 4)
 			sizeBytes[0] = byte(n >> 24)
 			sizeBytes[1] = byte(n >> 16)
 			sizeBytes[2] = byte(n >> 8)
 			sizeBytes[3] = byte(n)
 
-			if _, err := sc.client.WriteWithTimeout(sizeBytes, sc.config.Timeout); err != nil {
+			if _, err := sc.client.WriteWithTimeout(sizeBytes[:], sc.config.Timeout); err != nil {
 				return totalWritten, fmt.Errorf("failed to write chunk size: %w", err)
 			}
 
@@ -119,11 +119,12 @@ func (sc *streamClient) ReadStream(w io.Writer) (int64, error) {
 		reader = timedStreamReader{client: sc.client, timeout: sc.config.Timeout}
 	}
 	var totalRead int64
+	var sizeBytes [4]byte
+	var buf []byte
 
 	for {
 		// Read chunk size (4 bytes)
-		sizeBytes := make([]byte, 4)
-		if _, err := io.ReadFull(reader, sizeBytes); err != nil {
+		if _, err := io.ReadFull(reader, sizeBytes[:]); err != nil {
 			return totalRead, fmt.Errorf("failed to read chunk size: %w", err)
 		}
 
@@ -142,7 +143,10 @@ func (sc *streamClient) ReadStream(w io.Writer) (int64, error) {
 		}
 
 		// Read chunk data
-		buf := make([]byte, chunkSize)
+		if cap(buf) < chunkSize {
+			buf = make([]byte, chunkSize)
+		}
+		buf = buf[:chunkSize]
 		if _, err := io.ReadFull(reader, buf); err != nil {
 			return totalRead, fmt.Errorf("failed to read chunk data: %w", err)
 		}

@@ -312,6 +312,16 @@ func (c CronSpec) Next(after time.Time) time.Time {
 			dayMatch = domMatch || dowMatch
 		}
 		if !dayMatch {
+			if !c.domStar && c.dowStar {
+				day, carry := nextAllowed(next.Day(), c.dom)
+				end := time.Date(next.Year(), next.Month()+1, 0, 12, 0, 0, 0, time.UTC).Day()
+				if carry || day > end {
+					next = time.Date(next.Year(), next.Month()+1, 1, 0, 0, 0, 0, loc)
+				} else {
+					next = time.Date(next.Year(), next.Month(), day, 0, 0, 0, 0, loc)
+				}
+				continue
+			}
 			next = time.Date(next.Year(), next.Month(), next.Day(), 0, 0, 0, 0, next.Location()).AddDate(0, 0, 1)
 			continue
 		}

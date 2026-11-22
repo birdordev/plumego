@@ -62,6 +62,7 @@ type Manager interface {
 type manager struct {
 	mu                sync.RWMutex
 	components        map[string]health.ComponentChecker
+	sortedNames       []string
 	health            map[string]*health.ComponentHealth
 	checkVersions     map[string]uint64
 	aggregateVersion  uint64
@@ -170,6 +171,7 @@ func (m *manager) RegisterComponent(checker health.ComponentChecker) error {
 	}
 
 	m.components[name] = checker
+	m.refreshComponentNames()
 	m.health[name] = &health.ComponentHealth{
 		HealthStatus: health.HealthStatus{
 			Status:    health.StatusUnhealthy,
@@ -193,6 +195,7 @@ func (m *manager) UnregisterComponent(name string) error {
 	}
 
 	delete(m.components, name)
+	m.refreshComponentNames()
 	delete(m.health, name)
 	delete(m.checkVersions, name)
 	return nil
@@ -359,15 +362,12 @@ func (m *manager) checkBatch(ctx context.Context) (health.HealthStatus, []string
 	}
 	m.aggregateVersion++
 	version := m.aggregateVersion
-	components := make([]string, 0, len(m.components))
+	components := m.sortedNames
 	registrations := make(map[string]*health.ComponentHealth, len(m.components))
-	for name := range m.components {
-		components = append(components, name)
+	for _, name := range components {
 		registrations[name] = m.health[name]
 	}
 	m.mu.Unlock()
-
-	sort.Strings(components)
 
 	start := time.Now()
 	results := m.checkAggregateComponents(ctx, components)
@@ -463,7 +463,7 @@ func (m *manager) checkBatch(ctx context.Context) (health.HealthStatus, []string
 		Timestamp:    timestamp,
 		Details:      map[string]any{},
 		Duration:     duration,
-		Dependencies: components,
+		Dependencies: slices.Clone(components),
 	}, components, results
 }
 
@@ -512,12 +512,16 @@ func (m *manager) overallHealthLocked(names []string) health.HealthStatus {
 }
 
 func (m *manager) componentNames() []string {
+	return append(make([]string, 0, len(m.sortedNames)), m.sortedNames...)
+}
+
+func (m *manager) refreshComponentNames() {
 	names := make([]string, 0, len(m.components))
 	for name := range m.components {
 		names = append(names, name)
 	}
 	sort.Strings(names)
-	return names
+	m.sortedNames = names
 }
 
 func (m *manager) SetConfig(config Config) error {

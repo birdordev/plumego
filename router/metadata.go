@@ -24,7 +24,7 @@ var errDuplicateRouteName = errors.New("duplicate route name")
 
 func (r *Router) registerNamedRoute(name, method, pattern string, paramKeys []string) {
 	if r.state.namedRoutes == nil {
-		r.state.namedRoutes = make(map[string]*NamedRoute)
+		r.state.namedRoutes = make(map[string]*compiledNamedRoute)
 	}
 
 	paramPos := make(map[string]int, len(paramKeys))
@@ -32,11 +32,33 @@ func (r *Router) registerNamedRoute(name, method, pattern string, paramKeys []st
 		paramPos[key] = pos
 	}
 
-	r.state.namedRoutes[name] = &NamedRoute{
+	compiled := &compiledNamedRoute{NamedRoute: NamedRoute{
 		Method:   method,
 		Pattern:  pattern,
 		ParamPos: paramPos,
+	}}
+	var static strings.Builder
+	for _, part := range compilePathSegments(pattern) {
+		if !part.isParam && !part.isWild {
+			part.raw = url.PathEscape(part.raw)
+		}
+		compiled.parts = append(compiled.parts, part)
+		static.WriteByte('/')
+		static.WriteString(part.raw)
 	}
+	if len(paramKeys) == 0 {
+		compiled.staticURL = static.String()
+		if compiled.staticURL == "" {
+			compiled.staticURL = "/"
+		}
+	}
+	r.state.namedRoutes[name] = compiled
+}
+
+type compiledNamedRoute struct {
+	NamedRoute
+	parts     []segment
+	staticURL string
 }
 
 // URL generates a URL for a named route with the given parameters.
@@ -70,6 +92,9 @@ func (r *Router) urlForNamedRoute(name string, params ...string) (string, string
 		return "", fmt.Sprintf("named route %q has unpaired URL param key %q", name, params[len(params)-1])
 	}
 
+	if len(params) == 0 && namedRoute.staticURL != "" {
+		return namedRoute.staticURL, ""
+	}
 	paramMap := make(map[string]string, len(params)/2)
 	for i := 0; i < len(params); i += 2 {
 		key := params[i]
@@ -85,10 +110,10 @@ func (r *Router) urlForNamedRoute(name string, params ...string) (string, string
 	var result strings.Builder
 	result.Grow(len(namedRoute.Pattern))
 
-	for part := range strings.SplitSeq(strings.Trim(namedRoute.Pattern, "/"), "/") {
+	for _, part := range namedRoute.parts {
 		result.WriteByte('/')
-		if strings.HasPrefix(part, ":") {
-			paramName := part[1:]
+		if part.isParam {
+			paramName := part.paramName
 			if val, ok := paramMap[paramName]; ok {
 				if val == "" {
 					return "", fmt.Sprintf("named route %q has empty required param %q", name, paramName)
@@ -100,8 +125,8 @@ func (r *Router) urlForNamedRoute(name string, params ...string) (string, string
 			} else {
 				return "", fmt.Sprintf("named route %q missing required param %q", name, paramName)
 			}
-		} else if strings.HasPrefix(part, "*") {
-			paramName := part[1:]
+		} else if part.isWild {
+			paramName := part.paramName
 			if val, ok := paramMap[paramName]; ok {
 				if val == "" {
 					return "", fmt.Sprintf("named route %q has empty required param %q", name, paramName)
@@ -121,7 +146,7 @@ func (r *Router) urlForNamedRoute(name string, params ...string) (string, string
 				return "", fmt.Sprintf("named route %q missing required param %q", name, paramName)
 			}
 		} else {
-			result.WriteString(url.PathEscape(part))
+			result.WriteString(part.raw)
 		}
 	}
 
@@ -176,25 +201,13 @@ func (r *Router) Routes() []RouteInfo {
 	if !r.ready() {
 		return []RouteInfo{}
 	}
-	r.state.mu.RLock()
-
-	infos := make([]RouteInfo, 0, r.routeCountLocked())
-	for _, routes := range r.state.routes {
-		for _, entry := range routes {
-			info := RouteInfo(entry)
-			info.Meta.Tags = append([]string(nil), entry.Meta.Tags...)
-			infos = append(infos, info)
-		}
+	routes := r.printRoutesSnapshot()
+	infos := make([]RouteInfo, 0, len(routes))
+	for _, entry := range routes {
+		info := RouteInfo(entry)
+		info.Meta.Tags = append([]string(nil), entry.Meta.Tags...)
+		infos = append(infos, info)
 	}
-	r.state.mu.RUnlock()
-
-	sort.Slice(infos, func(i, j int) bool {
-		if infos[i].Method == infos[j].Method {
-			return infos[i].Path < infos[j].Path
-		}
-		return infos[i].Method < infos[j].Method
-	})
-
 	return infos
 }
 
@@ -223,12 +236,19 @@ func (r *Router) Print(w io.Writer) {
 }
 
 func (r *Router) printRoutesSnapshot() []route {
+	if r.state.frozen.Load() {
+		return r.state.frozenRoutes
+	}
 	r.state.mu.RLock()
+	defer r.state.mu.RUnlock()
+	return r.sortedRoutesLocked()
+}
+
+func (r *Router) sortedRoutesLocked() []route {
 	routes := make([]route, 0, r.routeCountLocked())
 	for _, byMethod := range r.state.routes {
 		routes = append(routes, byMethod...)
 	}
-	r.state.mu.RUnlock()
 
 	sort.Slice(routes, func(i, j int) bool {
 		if routes[i].Method == routes[j].Method {

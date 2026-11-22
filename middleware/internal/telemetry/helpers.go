@@ -36,8 +36,16 @@ type PreparedRequest struct {
 // middleware still stamps a request ID so logging, metrics, and tracing share
 // the same correlation surface.
 func PrepareRequest(w http.ResponseWriter, r *http.Request) PreparedRequest {
-	requestID := requestid.EnsureRequestID(r, nil)
-	r = requestid.AttachRequestID(w, r, requestID, false)
+	requestID := ""
+	if r != nil {
+		requestID = contract.RequestIDFromContext(r.Context())
+	}
+	if requestID == "" {
+		requestID = requestid.EnsureRequestID(r, nil)
+		r = requestid.AttachRequestID(w, r, requestID, false)
+	} else if w != nil {
+		w.Header().Set(contract.RequestIDHeader, requestID)
+	}
 	return PreparedRequest{
 		Request:   r,
 		Recorder:  internaltransport.NewObservationRecorder(w),
@@ -100,17 +108,19 @@ func BeginTrace(w http.ResponseWriter, prepared PreparedRequest, start TraceStar
 		// normal best-effort finalizer still ends it exactly once.
 		return r, span
 	}
-	trace, _ := contract.TraceContextFromContext(ctx)
-	if !trace.Valid() {
+	_, observedSpanID := contract.TraceIDsFromContext(ctx)
+	if observedSpanID == "" {
 		candidate := contract.TraceContext{TraceID: traceID, SpanID: spanID}
 		if candidate.Valid() {
-			trace.TraceID, trace.SpanID = candidate.TraceID, candidate.SpanID
+			trace, _ := contract.TraceContextFromContext(ctx)
+			trace.TraceID, trace.SpanID = traceID, spanID
 			ctx = contract.WithTraceContext(ctx, trace)
+			observedSpanID = spanID
 		}
 	}
 	r = r.WithContext(ctx)
-	if trace.Valid() && w != nil {
-		w.Header().Set(SpanIDHeader, trace.SpanID)
+	if observedSpanID != "" && w != nil {
+		w.Header().Set(SpanIDHeader, observedSpanID)
 	}
 	return r, span
 }

@@ -193,12 +193,16 @@ func (l *defaultLogger) formatFields(fields Fields) string {
 	}
 	sort.Strings(keys)
 
-	parts := make([]string, 0, len(keys))
-	for _, k := range keys {
-		parts = append(parts, formatTextFieldKey(k)+"="+formatTextFieldValue(fields[k]))
+	var output strings.Builder
+	for i, key := range keys {
+		if i > 0 {
+			output.WriteByte(' ')
+		}
+		output.WriteString(formatTextFieldKey(key))
+		output.WriteByte('=')
+		output.WriteString(formatTextFieldValue(fields[key]))
 	}
-
-	return strings.Join(parts, " ")
+	return output.String()
 }
 
 func formatTextFieldKey(key string) string {

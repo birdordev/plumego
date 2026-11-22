@@ -57,7 +57,7 @@ Use `security/*` for reviewable primitives and policies:
   The security headers middleware uses this snapshot for its lifetime.
 - `security/headers.Policy.Validate` reports unsafe configured header names and values before runtime; `Policy.Apply` fails closed without writing headers when policy validation fails, and `Policy.ApplyChecked` also returns the validation error.
 - Production-facing examples should prefer `middleware/securityheaders.Middleware(security.Config{...})` or direct `Policy.ApplyChecked` when error handling is required.
-- `middleware/securityheaders.Middleware` validates custom policies during construction instead of applying a partially invalid policy at runtime.
+- `Policy.CompileApplier` validates a detached policy once and precomputes its HTTP and HTTPS headers. The security headers middleware uses this path.
 - `security/headers` treats requests as HTTPS only for direct TLS, an all-HTTPS `X-Forwarded-Proto` chain, or an all-HTTPS RFC `Forwarded` proto chain; `X-Forwarded-Ssl` alone is ignored. Deployments using forwarded protocol information must strip untrusted forwarding headers and set them at the trusted ingress.
 - `security/headers.CSPBuilder` rejects unsafe directive values so caller-provided semicolons or controls cannot create extra directives; `Build` returns an empty header on invalid sources, while `BuildChecked` or `Validate` return the error.
 - `security/input` owns input-safety checks and rejects unsafe HTTP header names or values before they reach transport adapters.

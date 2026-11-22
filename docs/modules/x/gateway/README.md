@@ -162,3 +162,12 @@ Validate narrow IPC work with:
 - `go test -race -timeout 60s ./x/gateway/ipc/...`
 - `go test -timeout 20s ./x/gateway/ipc/...`
 - `go vet ./x/gateway/ipc/...`
+
+The HTTP cache forwards responses as they are written. When the body exceeds
+`MaxSize`, it releases the captured body and skips cache insertion.
+
+Outbound HTTPS connections negotiate HTTP/2 when the upstream supports it.
+The proxy flushes server-sent event responses as upstream data arrives.
+Protocol middleware bypasses body buffering when the adapter registry is empty.
+When adapters are registered, `protocolmw.Config.MaxBodyBytes` can set a
+positive limit on the buffered request body.

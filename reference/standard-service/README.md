@@ -133,7 +133,7 @@ Add a config field by:
 ## Middleware stack
 
 ```
-requestid → security → cors → recovery → accesslog → bodylimit → httpmetrics → timeout
+requestid → security → cors → recovery → accesslog → bodylimit → timeout
 ```
 
 Order matters. The comment block in `internal/app/app.go` explains each position.
@@ -145,7 +145,6 @@ The full stack is wired once in `New()` and applies to every route.
 - `recovery` converts panics to 500 responses
 - `accesslog` logs every request/response after recovery so panics appear as 500
 - `bodylimit` rejects oversized bodies with 413 (default: 1 MiB)
-- `httpmetrics` measures handler latency; swap `NewNoopCollector` for a real collector
 - `timeout` imposes a per-request wall-clock limit (default: 30 s), innermost so it covers only handler time
 
 Production services extend this stack with rate limiting, auth adapters, and tracing as
@@ -419,7 +418,7 @@ See `PRODUCTION_CHECKLIST.md` before promoting to production. Key items:
 - Set `APP_CORS_ALLOWED_ORIGINS` — empty means wildcard `*` (a startup WARN is emitted)
 - Tighten `core.ReadTimeout`, `core.WriteTimeout`, `core.IdleTimeout` from their permissive defaults
 - Add rate limiting (`middleware/abuseguard`) on public endpoints
-- Swap `metrics.NewNoopCollector()` for a real collector if you need HTTP metrics
+- Register `httpmetrics.Middleware` before timeout with a real collector when enabling HTTP metrics
 
 ## Canonical next reads
 

@@ -200,3 +200,16 @@ func TestClearAndRecordAgreeAfterConcurrentWrites(t *testing.T) {
 		c.Clear()
 	}
 }
+
+func TestResizeAfterBufferWrap(t *testing.T) {
+	c := recordbuffer.NewCollector().WithMaxRecords(3)
+	for i := range 7 {
+		c.Record(t.Context(), metrics.MetricRecord{Value: float64(i)})
+	}
+	c.WithMaxRecords(2).WithMaxRecords(0)
+	c.Record(t.Context(), metrics.MetricRecord{Value: 7})
+	got := c.GetRecords()
+	if len(got) != 3 || got[0].Value != 5 || got[1].Value != 6 || got[2].Value != 7 {
+		t.Fatalf("records after resize: %+v", got)
+	}
+}

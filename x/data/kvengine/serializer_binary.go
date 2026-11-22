@@ -100,7 +100,8 @@ func (s *BinarySerializer) EncodeWALEntry(entry WALEntry) ([]byte, error) {
 // DecodeWALEntry decodes a WAL entry from binary format
 func (s *BinarySerializer) DecodeWALEntry(reader *bufio.Reader) (*WALEntry, error) {
 	// Read magic number
-	magicBuf := make([]byte, 4)
+	var scratch [8]byte
+	magicBuf := scratch[:4]
 	if _, err := io.ReadFull(reader, magicBuf); err != nil {
 		return nil, err
 	}
@@ -110,14 +111,14 @@ func (s *BinarySerializer) DecodeWALEntry(reader *bufio.Reader) (*WALEntry, erro
 	}
 
 	// Read op
-	opBuf := make([]byte, 1)
+	opBuf := scratch[:1]
 	if _, err := io.ReadFull(reader, opBuf); err != nil {
 		return nil, err
 	}
 	op := opBuf[0]
 
 	// Read key length
-	keyLenBuf := make([]byte, 4)
+	keyLenBuf := scratch[:4]
 	if _, err := io.ReadFull(reader, keyLenBuf); err != nil {
 		return nil, err
 	}
@@ -136,7 +137,7 @@ func (s *BinarySerializer) DecodeWALEntry(reader *bufio.Reader) (*WALEntry, erro
 	key := string(keyBuf)
 
 	// Read value length
-	valueLenBuf := make([]byte, 4)
+	valueLenBuf := scratch[:4]
 	if _, err := io.ReadFull(reader, valueLenBuf); err != nil {
 		return nil, err
 	}
@@ -154,7 +155,7 @@ func (s *BinarySerializer) DecodeWALEntry(reader *bufio.Reader) (*WALEntry, erro
 	}
 
 	// Read expire time
-	expireBuf := make([]byte, 8)
+	expireBuf := scratch[:8]
 	if _, err := io.ReadFull(reader, expireBuf); err != nil {
 		return nil, err
 	}
@@ -165,14 +166,14 @@ func (s *BinarySerializer) DecodeWALEntry(reader *bufio.Reader) (*WALEntry, erro
 	}
 
 	// Read version
-	versionBuf := make([]byte, 8)
+	versionBuf := scratch[:8]
 	if _, err := io.ReadFull(reader, versionBuf); err != nil {
 		return nil, err
 	}
 	version := int64(binary.BigEndian.Uint64(versionBuf))
 
 	// Read CRC
-	crcBuf := make([]byte, 4)
+	crcBuf := scratch[:4]
 	if _, err := io.ReadFull(reader, crcBuf); err != nil {
 		return nil, err
 	}

@@ -69,12 +69,12 @@ func (p encodingPreference) identityAcceptable() bool {
 // tryLazyPrecompressed attempts to serve a precompressed variant from a custom
 // filesystem. Directory-backed mounts use tryPlannedPrecompressed instead so a
 // missing planned variant is not retried after the original asset is opened.
-func (h *handler) tryLazyPrecompressed(r *http.Request, filePath string) (http.File, os.FileInfo, string) {
+func (h *handler) tryLazyPrecompressed(pref encodingPreference, filePath string) (http.File, os.FileInfo, string) {
 	if !h.cfg.EnablePrecompressed || h.variants.known {
 		return nil, nil, ""
 	}
 
-	for _, encoding := range preferredPrecompressedEncodings(r) {
+	for _, encoding := range preferredPrecompressedEncodings(pref) {
 		if f, stat := h.tryOpenPrecompressedVariant(filePath, encoding, false); f != nil {
 			return f, stat, encoding
 		}
@@ -86,20 +86,24 @@ func (h *handler) tryLazyPrecompressed(r *http.Request, filePath string) (http.F
 // tryPlannedPrecompressed serves construction-time indexed variants before the
 // original file is opened. It is only used for directory-backed filesystems,
 // where the plan proves the original existed during mount construction.
-func (h *handler) tryPlannedPrecompressed(r *http.Request, filePath string) (http.File, os.FileInfo, string) {
+func (h *handler) tryPlannedPrecompressed(pref encodingPreference, filePath string) (http.File, os.FileInfo, string) {
 	if !h.cfg.EnablePrecompressed || !h.variants.known {
-		return nil, nil, ""
-	}
-	if h.variants.requireLocalOriginal && !h.localFileExists(filePath) {
 		return nil, nil, ""
 	}
 	variants := h.variants.variants[filePath]
 	if !variants.any() {
 		return nil, nil, ""
 	}
-	for _, encoding := range preferredPrecompressedEncodings(r) {
+	checkOriginal := h.variants.requireLocalOriginal
+	for _, encoding := range preferredPrecompressedEncodings(pref) {
 		if !variants.has(encoding) {
 			continue
+		}
+		if checkOriginal {
+			if !h.localFileExists(filePath) {
+				return nil, nil, ""
+			}
+			checkOriginal = false
 		}
 		if f, stat := h.tryOpenPrecompressedVariant(filePath, encoding, true); f != nil {
 			return f, stat, encoding
@@ -125,8 +129,7 @@ func (h *handler) localFileExists(filePath string) bool {
 	return true
 }
 
-func preferredPrecompressedEncodings(r *http.Request) []string {
-	pref := acceptedEncodings(r)
+func preferredPrecompressedEncodings(pref encodingPreference) []string {
 	brQ := pref.quality("br")
 	gzipQ := pref.quality("gzip")
 	switch {
@@ -151,10 +154,6 @@ func preferredPrecompressedEncodings(r *http.Request) []string {
 		}
 		return out
 	}
-}
-
-func identityEncodingAcceptable(r *http.Request) bool {
-	return acceptedEncodings(r).identityAcceptable()
 }
 
 func (v PrecompressedVariants) has(encoding string) bool {

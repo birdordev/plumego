@@ -1,6 +1,7 @@
 package store
 
 import (
+	"container/heap"
 	"context"
 	"maps"
 	"slices"
@@ -12,10 +13,14 @@ import (
 )
 
 type MemStore struct {
-	mu      sync.RWMutex
-	tasks   map[string]*memRecord
-	dedupe  map[string]string
-	nowFunc func() time.Time
+	mu         sync.RWMutex
+	tasks      map[string]*memRecord
+	queued     map[string]*taskDeadlines
+	spareQueue *taskDeadlines
+	leased     taskDeadlines
+	expires    taskDeadlines
+	dedupe     map[string]string
+	nowFunc    func() time.Time
 }
 
 type memRecord struct {
@@ -31,6 +36,9 @@ func NewMemory(cfg MemConfig) *MemStore {
 	}
 	return &MemStore{
 		tasks:   make(map[string]*memRecord),
+		queued:  make(map[string]*taskDeadlines),
+		leased:  taskDeadlines{kind: leaseDeadline},
+		expires: taskDeadlines{kind: expiryDeadline},
 		dedupe:  make(map[string]string),
 		nowFunc: cfg.Now,
 	}
@@ -54,7 +62,9 @@ func (m *MemStore) Insert(_ context.Context, task mq.Task) error {
 		m.dedupe[key] = task.ID
 	}
 
-	m.tasks[task.ID] = &memRecord{task: cloneTask(task), status: mq.TaskStatusQueued}
+	rec := &memRecord{task: cloneTask(task), status: mq.TaskStatusQueued}
+	m.tasks[task.ID] = rec
+	m.queueRecord(rec)
 	return nil
 }
 
@@ -73,32 +83,58 @@ func (m *MemStore) Reserve(_ context.Context, opts mq.ReserveOptions) ([]mq.Task
 		opts.Lease = mq.DefaultLeaseDuration
 	}
 
-	candidates := make([]*memRecord, 0)
-	for _, rec := range m.tasks {
-		leaseExpired := rec.status == mq.TaskStatusLeased &&
-			!rec.task.LeaseUntil.IsZero() && rec.task.LeaseUntil.Before(opts.Now)
-		if rec.status != mq.TaskStatusQueued && !leaseExpired {
-			continue
-		}
-		if !rec.task.ExpiresAt.IsZero() && !rec.task.ExpiresAt.After(opts.Now) {
-			rec.status = mq.TaskStatusExpired
-			continue
-		}
-		if rec.task.AvailableAt.After(opts.Now) {
-			continue
-		}
-		if len(opts.Topics) > 0 && !topicAllowed(rec.task.Topic, opts.Topics) {
-			continue
-		}
-		candidates = append(candidates, rec)
+	var candidates reserveCandidates
+	bounded := opts.Limit <= 64
+	for m.expires.Len() != 0 && !m.expires.deadline(m.expires.entries[0]).After(opts.Now) {
+		rec := m.expires.entries[0]
+		m.unqueueRecord(rec)
+		rec.status = mq.TaskStatusExpired
 	}
 
-	sort.Slice(candidates, func(i, j int) bool {
-		if candidates[i].task.Priority == candidates[j].task.Priority {
-			return candidates[i].task.CreatedAt.Before(candidates[j].task.CreatedAt)
+	consider := func(rec *memRecord) {
+		if !bounded {
+			candidates = append(candidates, rec)
+		} else if len(candidates) < opts.Limit {
+			heap.Push(&candidates, rec)
+		} else if compareReserveCandidates(rec, candidates[0]) < 0 {
+			candidates[0] = rec
+			if opts.Limit > 1 {
+				heap.Fix(&candidates, 0)
+			}
 		}
-		return candidates[i].task.Priority > candidates[j].task.Priority
+	}
+	if len(opts.Topics) == 0 {
+		for _, queue := range m.queued {
+			queue.visit(0, opts.Now, consider)
+		}
+	} else {
+		for i, topic := range opts.Topics {
+			if slices.Contains(opts.Topics[:i], topic) {
+				continue
+			}
+			if queue := m.queued[topic]; queue != nil {
+				queue.visit(0, opts.Now, consider)
+			}
+		}
+	}
+	var expiredLeases []*memRecord
+	m.leased.visit(0, opts.Now, func(rec *memRecord) {
+		if rec.task.LeaseUntil.IsZero() || !rec.task.LeaseUntil.Before(opts.Now) {
+			return
+		}
+		if !rec.task.ExpiresAt.IsZero() && !rec.task.ExpiresAt.After(opts.Now) {
+			expiredLeases = append(expiredLeases, rec)
+			return
+		}
+		if !rec.task.AvailableAt.After(opts.Now) && (len(opts.Topics) == 0 || topicAllowed(rec.task.Topic, opts.Topics)) {
+			consider(rec)
+		}
 	})
+	for _, rec := range expiredLeases {
+		m.leased.remove(rec)
+		rec.status = mq.TaskStatusExpired
+	}
+	slices.SortFunc(candidates, compareReserveCandidates)
 
 	limit := opts.Limit
 	if limit > len(candidates) {
@@ -108,15 +144,44 @@ func (m *MemStore) Reserve(_ context.Context, opts mq.ReserveOptions) ([]mq.Task
 	selected := make([]mq.Task, 0, limit)
 	for i := 0; i < limit; i++ {
 		rec := candidates[i]
+		if rec.status == mq.TaskStatusQueued {
+			m.unqueueRecord(rec)
+			m.leased.push(rec)
+		}
 		rec.status = mq.TaskStatusLeased
 		rec.task.LeaseOwner = opts.ConsumerID
 		rec.task.LeaseUntil = opts.Now.Add(opts.Lease)
+		m.leased.fix(rec)
 		rec.task.Attempts++
 		rec.task.UpdatedAt = opts.Now
 		selected = append(selected, cloneTask(rec.task))
 	}
 
 	return selected, nil
+}
+
+func compareReserveCandidates(a, b *memRecord) int {
+	if a.task.Priority > b.task.Priority {
+		return -1
+	}
+	if a.task.Priority < b.task.Priority {
+		return 1
+	}
+	return a.task.CreatedAt.Compare(b.task.CreatedAt)
+}
+
+type reserveCandidates []*memRecord
+
+func (c reserveCandidates) Len() int           { return len(c) }
+func (c reserveCandidates) Less(i, j int) bool { return compareReserveCandidates(c[i], c[j]) > 0 }
+func (c reserveCandidates) Swap(i, j int)      { c[i], c[j] = c[j], c[i] }
+func (c *reserveCandidates) Push(value any)    { *c = append(*c, value.(*memRecord)) }
+func (c *reserveCandidates) Pop() any {
+	last := len(*c) - 1
+	value := (*c)[last]
+	(*c)[last] = nil
+	*c = (*c)[:last]
+	return value
 }
 
 func cloneTask(task mq.Task) mq.Task {
@@ -138,6 +203,7 @@ func (m *MemStore) Ack(_ context.Context, taskID, consumerID string, now time.Ti
 	}
 
 	rec.status = mq.TaskStatusDone
+	m.leased.remove(rec)
 	rec.task.LeaseOwner = ""
 	rec.task.LeaseUntil = time.Time{}
 	rec.task.UpdatedAt = now
@@ -156,10 +222,12 @@ func (m *MemStore) Release(_ context.Context, taskID, consumerID string, opts mq
 		return mq.ErrLeaseLost
 	}
 
+	m.leased.remove(rec)
 	rec.status = mq.TaskStatusQueued
 	rec.task.LeaseOwner = ""
 	rec.task.LeaseUntil = time.Time{}
 	rec.task.AvailableAt = opts.RetryAt
+	m.queueRecord(rec)
 	rec.task.UpdatedAt = opts.Now
 	rec.lastError = opts.Reason
 	rec.lastErrorAt = opts.Now
@@ -179,6 +247,7 @@ func (m *MemStore) MoveToDLQ(_ context.Context, taskID, consumerID, reason strin
 	}
 
 	rec.status = mq.TaskStatusDead
+	m.leased.remove(rec)
 	rec.task.LeaseOwner = ""
 	rec.task.LeaseUntil = time.Time{}
 	rec.task.UpdatedAt = now
@@ -203,6 +272,7 @@ func (m *MemStore) ExtendLease(_ context.Context, taskID, consumerID string, lea
 		lease = mq.DefaultLeaseDuration
 	}
 	rec.task.LeaseUntil = now.Add(lease)
+	m.leased.fix(rec)
 	rec.task.UpdatedAt = now
 	return nil
 }
@@ -271,6 +341,7 @@ func (m *MemStore) ReplayDLQ(_ context.Context, opts ReplayOptions) (ReplayResul
 		rec.task.LeaseOwner = ""
 		rec.task.LeaseUntil = time.Time{}
 		rec.task.AvailableAt = availableAt
+		m.queueRecord(rec)
 		rec.task.UpdatedAt = now
 		if opts.ResetAttempts {
 			rec.task.Attempts = 0

@@ -1,6 +1,7 @@
 package core
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -13,12 +14,24 @@ func handlerOK() http.Handler {
 }
 
 func BenchmarkAppRouteRegistration(b *testing.B) {
-	app := New(DefaultConfig(), AppDependencies{})
-	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		_ = app.Get("/bench", handlerOK())
+	const batchSize = 100
+	var paths [batchSize]string
+	for i := range paths {
+		paths[i] = fmt.Sprintf("/bench/%d", i)
 	}
+	handler := handlerOK()
+	b.ReportAllocs()
+	for b.Loop() {
+		b.StopTimer()
+		app := New(DefaultConfig(), AppDependencies{})
+		b.StartTimer()
+		for _, path := range paths {
+			if err := app.Get(path, handler); err != nil {
+				b.Fatal(err)
+			}
+		}
+	}
+	b.ReportMetric(batchSize, "routes/op")
 }
 
 func BenchmarkAppServeHTTPStatic(b *testing.B) {

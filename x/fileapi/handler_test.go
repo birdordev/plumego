@@ -1457,3 +1457,93 @@ func TestUploadRejectsKnownOversizeBeforeReading(t *testing.T) {
 		t.Errorf("status=%d reads=%d storage=%d", rec.Code, body.reads, calls)
 	}
 }
+
+func TestLargeMultipartUploadReusesStageForS3(t *testing.T) {
+	const size = 9 << 20
+	backendDir := t.TempDir()
+	received := make(chan int64, 1)
+	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		files, err := os.ReadDir(backendDir)
+		if err != nil || len(files) != 0 {
+			t.Errorf("additional S3 staging files = %v, %v", files, err)
+		}
+		n, err := io.Copy(io.Discard, r.Body)
+		if err != nil {
+			t.Errorf("read uploaded object: %v", err)
+		}
+		received <- n
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer origin.Close()
+	store, err := datafile.NewS3Storage(datafile.S3Config{
+		Endpoint: strings.TrimPrefix(origin.URL, "http://"),
+		Bucket:   "fixture", PathStyle: true, TempDir: backendDir,
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var body bytes.Buffer
+	form := multipart.NewWriter(&body)
+	part, err := form.CreateFormFile("file", "fixture.dat")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = part.Write(make([]byte, size)); err != nil {
+		t.Fatal(err)
+	}
+	if err := form.WriteField("generate_thumb", "true"); err != nil {
+		t.Fatal(err)
+	}
+	if err := form.Close(); err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/upload", &body)
+	req.Header.Set("Content-Type", form.FormDataContentType())
+	req = req.WithContext(tenantcore.WithTenantID(req.Context(), "fixture"))
+	w := httptest.NewRecorder()
+	NewHandler(store, nil).Upload(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("upload status = %d", w.Code)
+	}
+	select {
+	case n := <-received:
+		if n != size {
+			t.Fatalf("received %d bytes, want %d", n, size)
+		}
+	default:
+		t.Fatal("S3 did not receive the upload")
+	}
+}
+
+func TestDeferredAccessUpdatesCoalesceAndStop(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		updates := make(chan accessKey, 2)
+		metadata := &mockMetadataManager{updateAccessTimeFunc: func(ctx context.Context, tenant, file string) error {
+			updates <- accessKey{tenant: tenant, file: file}
+			<-ctx.Done()
+			return ctx.Err()
+		}}
+		h := NewHandler(&mockStorage{}, metadata)
+		stop, err := h.EnableDeferredAccessUpdates(t.Context(), 1, time.Hour)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer stop()
+		first := accessKey{tenant: "a", file: "common"}
+		h.accessUpdates.enqueue(first)
+		if got := <-updates; got != first {
+			t.Fatalf("update = %+v, want %+v", got, first)
+		}
+		h.accessUpdates.enqueue(first)
+		h.accessUpdates.enqueue(accessKey{tenant: "b", file: "common"})
+		h.accessUpdates.enqueue(accessKey{tenant: "a", file: "overflow"})
+		synctest.Wait()
+		if len(h.accessUpdates.queue) != 1 {
+			t.Fatal("expected one pending access update")
+		}
+		stop()
+		if len(h.accessUpdates.queue) != 0 || len(updates) != 0 {
+			t.Fatal("shutdown did not discard pending access updates")
+		}
+	})
+}

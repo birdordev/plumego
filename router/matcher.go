@@ -18,13 +18,19 @@ func matchNode(root *node, parts []string, rawPath string) *matchResult {
 		return nil
 	}
 
-	return &matchResult{
-		Handler:      matched.handler,
-		ParamValues:  append([]string(nil), (*params)...),
-		ParamKeys:    matched.paramKeys,
-		RoutePattern: matched.fullPath,
-		RouteName:    matched.routeName,
+	return newMatchResult(matched, matched.fullPath, "", *params)
+}
+
+func newMatchResult(matched *node, pattern, method string, params []string) *matchResult {
+	result := &matchResult{
+		Handler: matched.handler, RoutePattern: pattern, RouteName: matched.routeName, RouteMethod: method,
 	}
+	result.routeState.SetPattern(pattern)
+	result.routeState.SetName(matched.routeName)
+	for i, value := range params {
+		result.routeState.AddParam(matched.paramKeys[i], value)
+	}
+	return result
 }
 
 // matchBranch tries static, parameter, and wildcard children in that order.

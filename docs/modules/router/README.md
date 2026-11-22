@@ -196,6 +196,7 @@ Focused regression coverage lives in `router/freeze_test.go`,
 normalization and reverse routing lives in `router/fuzz_test.go` and runs under
 normal `go test`.
 
+A full frozen match cache admits a new dynamic path after repeated use.
 Router pool and match-cache helpers are internal hot-path details. Before
 simplifying or expanding them, rerun the targeted benchmark set:
 `go test -run '^$' -bench 'BenchmarkOpt(StaticRoute|ParamRoute|ParallelStatic)' -benchmem ./router`.

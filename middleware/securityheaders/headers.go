@@ -60,16 +60,16 @@ func Middleware(config Config) (middleware.Middleware, error) {
 	effective := headers.DefaultPolicy()
 	if config.Policy != nil {
 		effective = *config.Policy
-		if err := effective.Validate(); err != nil {
-			return nil, err
-		}
 	}
 
-	effective = effective.Compile()
+	apply, err := effective.CompileApplier()
+	if err != nil {
+		return nil, err
+	}
 
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			effective.Apply(w, r)
+			apply(w, r)
 			next.ServeHTTP(w, r)
 		})
 	}, nil

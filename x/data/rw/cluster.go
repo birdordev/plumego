@@ -84,15 +84,17 @@ type Cluster struct {
 	primary  *sql.DB
 	replicas []*sql.DB
 
-	lb            LoadBalancer
-	policy        RoutingPolicy
-	health        *HealthChecker
-	healthConfig  HealthCheckConfig
-	fallback      bool
-	replicaHealth []bool
-	mu            sync.RWMutex
-	closeOnce     sync.Once
-	closeErr      error
+	lb               LoadBalancer
+	policy           RoutingPolicy
+	health           *HealthChecker
+	healthConfig     HealthCheckConfig
+	fallback         bool
+	replicaHealth    []bool
+	replicaSnapshot  []Replica
+	readOnlyBalancer bool
+	mu               sync.RWMutex
+	closeOnce        sync.Once
+	closeErr         error
 
 	// Metrics
 	metrics ClusterMetrics
@@ -175,6 +177,12 @@ func New(config Config) (*Cluster, error) {
 	for i := range c.replicaHealth {
 		c.replicaHealth[i] = true
 	}
+
+	switch c.lb.(type) {
+	case *RoundRobinBalancer, *RandomBalancer, *LeastConnBalancer, *WeightedBalancer:
+		c.readOnlyBalancer = true
+	}
+	c.refreshReplicaSnapshotLocked()
 
 	// Start health checker if enabled
 	if config.HealthCheck.Enabled && len(replicas) > 0 {
@@ -346,6 +354,13 @@ func (c *Cluster) getReplicasForBalancer() []Replica {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
+	if c.readOnlyBalancer {
+		return c.replicaSnapshot
+	}
+	return append([]Replica(nil), c.replicaSnapshot...)
+}
+
+func (c *Cluster) refreshReplicaSnapshotLocked() {
 	replicas := make([]Replica, len(c.replicas))
 	for i, db := range c.replicas {
 		replicas[i] = Replica{
@@ -356,7 +371,7 @@ func (c *Cluster) getReplicasForBalancer() []Replica {
 		}
 	}
 
-	return replicas
+	c.replicaSnapshot = replicas
 }
 
 // markReplicaHealth updates the health status of a replica
@@ -364,8 +379,9 @@ func (c *Cluster) markReplicaHealth(idx int, healthy bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	if idx >= 0 && idx < len(c.replicaHealth) {
+	if idx >= 0 && idx < len(c.replicaHealth) && c.replicaHealth[idx] != healthy {
 		c.replicaHealth[idx] = healthy
+		c.refreshReplicaSnapshotLocked()
 	}
 }
 

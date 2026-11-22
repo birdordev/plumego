@@ -218,7 +218,7 @@ func TestPoolClosesDiscardedDialsOutsideLock(t *testing.T) {
 				if err := p.Close(); err != nil {
 					t.Fatal(err)
 				}
-			} else if c, err := p.Dial(t.Context(), "same"); err != nil || c != winner {
+			} else if c, err := p.Dial(t.Context(), "same", "explicit option"); err != nil || c != winner {
 				t.Fatalf("winner = %v, %v", c, err)
 			}
 			close(allowFirstDial)
@@ -426,7 +426,7 @@ func TestPoolReportsRedundantDialCloseError(t *testing.T) {
 		result <- dialResult{conn, err}
 	}()
 	<-entered
-	conn, err := pool.Dial(t.Context(), "sample")
+	conn, err := pool.Dial(t.Context(), "sample", "explicit option")
 	close(release)
 	if err != nil || conn != winner {
 		t.Fatalf("winning Dial = %v, %v", conn, err)

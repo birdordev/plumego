@@ -33,6 +33,15 @@ func MiddlewareLogFields(r *http.Request, status int, duration time.Duration) ma
 }
 
 func RedactFields(fields map[string]any, extraSensitiveKeys ...string) map[string]any {
+	return redactFields(fields, false, extraSensitiveKeys)
+}
+
+// RedactOwnedFields redacts an exclusively owned top-level map.
+func RedactOwnedFields(fields map[string]any) map[string]any {
+	return redactFields(fields, true, nil)
+}
+
+func redactFields(fields map[string]any, owned bool, extraSensitiveKeys []string) map[string]any {
 	if fields == nil {
 		return nil
 	}
@@ -51,7 +60,10 @@ func RedactFields(fields map[string]any, extraSensitiveKeys ...string) map[strin
 		sensitiveKeys[key] = struct{}{}
 	}
 
-	out := make(map[string]any, len(fields))
+	out := fields
+	if !owned {
+		out = make(map[string]any, len(fields))
+	}
 	for k, v := range fields {
 		if isSensitiveKey(k, sensitiveKeys) {
 			out[k] = sensitiveFieldMask

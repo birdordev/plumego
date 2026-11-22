@@ -16,7 +16,7 @@ func queryRowError(err error) *sql.Row {
 }
 
 // handleCrossShardQuery handles queries that span multiple shards
-func (r *Router) handleCrossShardQuery(ctx context.Context, query string, args []any) (*sql.Rows, error) {
+func (r *Router) handleCrossShardQuery(ctx context.Context, query string, args []any, parsed *ParsedSQL) (*sql.Rows, error) {
 	r.recordCrossShardQuery()
 
 	switch r.config.CrossShardPolicy {
@@ -31,14 +31,14 @@ func (r *Router) handleCrossShardQuery(ctx context.Context, query string, args [
 		for i := range r.shards {
 			resolved = append(resolved, &ResolvedShard{ShardIndex: i})
 		}
-		return r.queryResolvedShards(ctx, query, args, resolved)
+		return r.queryResolvedShards(ctx, query, args, resolved, parsed)
 
 	default:
 		return nil, fmt.Errorf("unknown cross-shard policy: %v", r.config.CrossShardPolicy)
 	}
 }
 
-func (r *Router) handleResolvedShardsQuery(ctx context.Context, query string, args []any, resolved []*ResolvedShard) (*sql.Rows, error) {
+func (r *Router) handleResolvedShardsQuery(ctx context.Context, query string, args []any, resolved []*ResolvedShard, parsed *ParsedSQL) (*sql.Rows, error) {
 	r.recordCrossShardQuery()
 
 	switch r.config.CrossShardPolicy {
@@ -48,15 +48,15 @@ func (r *Router) handleResolvedShardsQuery(ctx context.Context, query string, ar
 		if len(resolved) == 0 {
 			return nil, ErrNoShards
 		}
-		return r.queryOneResolvedShard(ctx, query, args, resolved[0])
+		return r.queryOneResolvedShard(ctx, query, args, resolved[0], parsed)
 	case CrossShardFirstSuccess:
-		return r.queryResolvedShards(ctx, query, args, resolved)
+		return r.queryResolvedShards(ctx, query, args, resolved, parsed)
 	default:
 		return nil, fmt.Errorf("unknown cross-shard policy: %v", r.config.CrossShardPolicy)
 	}
 }
 
-func (r *Router) queryRowResolvedShards(ctx context.Context, query string, args []any, resolved []*ResolvedShard) *sql.Row {
+func (r *Router) queryRowResolvedShards(ctx context.Context, query string, args []any, resolved []*ResolvedShard, parsed *ParsedSQL) *sql.Row {
 	r.recordCrossShardQuery()
 
 	switch r.config.CrossShardPolicy {
@@ -66,7 +66,7 @@ func (r *Router) queryRowResolvedShards(ctx context.Context, query string, args 
 		if len(resolved) == 0 {
 			return queryRowError(ErrNoShards)
 		}
-		return r.queryRowOneResolvedShard(ctx, query, args, resolved[0])
+		return r.queryRowOneResolvedShard(ctx, query, args, resolved[0], parsed)
 	case CrossShardFirstSuccess:
 		return queryRowError(errors.New("sharding: QueryRowContext does not support CrossShardFirstSuccess"))
 	default:
@@ -74,13 +74,13 @@ func (r *Router) queryRowResolvedShards(ctx context.Context, query string, args 
 	}
 }
 
-func (r *Router) queryOneResolvedShard(ctx context.Context, query string, args []any, resolved *ResolvedShard) (*sql.Rows, error) {
+func (r *Router) queryOneResolvedShard(ctx context.Context, query string, args []any, resolved *ResolvedShard, parsed *ParsedSQL) (*sql.Rows, error) {
 	if resolved.ShardIndex < 0 || resolved.ShardIndex >= len(r.shards) {
 		r.recordRoutingError()
 		return nil, fmt.Errorf("%w: index %d", ErrShardNotFound, resolved.ShardIndex)
 	}
 	r.recordShardQuery(resolved.ShardIndex)
-	rewrittenQuery, err := r.rewriter.Rewrite(query, resolved.ShardIndex)
+	rewrittenQuery, err := r.rewriter.rewriteParsed(query, resolved.ShardIndex, parsed)
 	if err != nil {
 		r.recordRoutingError()
 		return nil, fmt.Errorf("failed to rewrite SQL: %w", err)
@@ -88,13 +88,13 @@ func (r *Router) queryOneResolvedShard(ctx context.Context, query string, args [
 	return r.shards[resolved.ShardIndex].QueryContext(ctx, rewrittenQuery, args...)
 }
 
-func (r *Router) queryRowOneResolvedShard(ctx context.Context, query string, args []any, resolved *ResolvedShard) *sql.Row {
+func (r *Router) queryRowOneResolvedShard(ctx context.Context, query string, args []any, resolved *ResolvedShard, parsed *ParsedSQL) *sql.Row {
 	if resolved.ShardIndex < 0 || resolved.ShardIndex >= len(r.shards) {
 		r.recordRoutingError()
 		return queryRowError(fmt.Errorf("%w: index %d", ErrShardNotFound, resolved.ShardIndex))
 	}
 	r.recordShardQuery(resolved.ShardIndex)
-	rewrittenQuery, err := r.rewriter.Rewrite(query, resolved.ShardIndex)
+	rewrittenQuery, err := r.rewriter.rewriteParsed(query, resolved.ShardIndex, parsed)
 	if err != nil {
 		r.recordRoutingError()
 		return queryRowError(fmt.Errorf("failed to rewrite SQL: %w", err))
@@ -113,7 +113,7 @@ type crossShardQueryResult struct {
 // It returns the first successful *sql.Rows and closes all other result sets.
 // This implements the CrossShardFirstSuccess policy; note that it does NOT
 // merge rows from multiple shards — callers receive data from exactly one shard.
-func (r *Router) queryResolvedShards(ctx context.Context, query string, args []any, resolved []*ResolvedShard) (*sql.Rows, error) {
+func (r *Router) queryResolvedShards(ctx context.Context, query string, args []any, resolved []*ResolvedShard, parsed *ParsedSQL) (*sql.Rows, error) {
 	for _, item := range resolved {
 		if item.ShardIndex < 0 || item.ShardIndex >= len(r.shards) {
 			r.recordRoutingError()
@@ -122,6 +122,14 @@ func (r *Router) queryResolvedShards(ctx context.Context, query string, args []a
 	}
 
 	results := make(chan crossShardQueryResult, len(resolved))
+	limit := r.config.MaxParallelShardQueries
+	var slots chan struct{}
+	var chosen chan struct{}
+	var choose sync.Once
+	if limit > 0 && limit < len(resolved) {
+		slots = make(chan struct{}, limit)
+		chosen = make(chan struct{})
+	}
 	cancels := make(map[int]context.CancelFunc, len(resolved))
 	var wg sync.WaitGroup
 
@@ -132,13 +140,34 @@ func (r *Router) queryResolvedShards(ctx context.Context, query string, args []a
 		wg.Add(1)
 		go func(ctx context.Context, idx int, s *rw.Cluster, done context.CancelFunc) {
 			defer wg.Done()
-			rewrittenQuery, err := r.rewriter.Rewrite(query, idx)
+			if slots != nil {
+				select {
+				case <-chosen:
+					done()
+					return
+				case <-ctx.Done():
+					results <- crossShardQueryResult{err: ctx.Err(), shard: idx, done: done}
+					return
+				case slots <- struct{}{}:
+					defer func() { <-slots }()
+				}
+				select {
+				case <-chosen:
+					done()
+					return
+				default:
+				}
+			}
+			rewrittenQuery, err := r.rewriter.rewriteParsed(query, idx, parsed)
 			if err != nil {
 				results <- crossShardQueryResult{err: fmt.Errorf("rewrite shard %d: %w", idx, err), shard: idx, done: done}
 				return
 			}
 			r.recordShardExecution(idx)
 			rows, err := s.QueryContext(ctx, rewrittenQuery, args...)
+			if err == nil && chosen != nil {
+				choose.Do(func() { close(chosen) })
+			}
 			results <- crossShardQueryResult{rows: rows, err: err, shard: idx, done: done}
 		}(shardCtx, item.ShardIndex, r.shards[item.ShardIndex], cancel)
 	}

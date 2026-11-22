@@ -210,3 +210,7 @@ go vet ./x/rpc/...
 - `reference/with-rpc/README.md` — canonical in-process gRPC + HTTP wiring example
 - `docs/modules/x/observability/README.md` — tracing primitives used by `TracingInterceptor`
 - `x/gateway/discovery` — dynamic backend lookup for client-side load balancing
+
+Concurrent first dials for the same target share one connection attempt when
+they use the pool's default options. A waiting caller can cancel its own wait.
+Explicit per-call dial options can open a separate connection on a cold target.

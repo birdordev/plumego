@@ -423,3 +423,30 @@ func TestEmptyCacheKeyBypassesStore(t *testing.T) {
 		t.Errorf("ordinary key: handler=%d gets=%d sets=%d hits=%d misses=%d", calls, store.gets, store.sets, hits, misses)
 	}
 }
+
+func TestCacheCaptureLimitAcrossWrites(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		last  string
+		items int
+	}{
+		{name: "exact", last: "cd", items: 1},
+		{name: "oversize", last: "cde", items: 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			store := NewMemoryStore(2)
+			h := Middleware(Config{Store: store, MaxSize: 4})(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				_, _ = w.Write([]byte("ab"))
+				if err := http.NewResponseController(w).Flush(); err != nil {
+					t.Fatal(err)
+				}
+				_, _ = w.Write([]byte(tc.last))
+			}))
+			w := httptest.NewRecorder()
+			h.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/", nil))
+			if got := w.Body.String(); got != "ab"+tc.last || !w.Flushed || store.Stats().Items != tc.items {
+				t.Fatalf("body=%q flushed=%v cache=%+v", got, w.Flushed, store.Stats())
+			}
+		})
+	}
+}

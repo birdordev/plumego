@@ -1,6 +1,7 @@
 package ipc
 
 import (
+	"encoding/binary"
 	"fmt"
 	"io"
 	"net"
@@ -55,6 +56,23 @@ func (fc *framedClient) WriteMessageWithTimeout(msg []byte, timeout time.Duratio
 
 	fc.writeMu.Lock()
 	defer fc.writeMu.Unlock()
+
+	if _, ok := fc.client.(interface{ nativeFraming() }); ok && len(msg) <= 4096 {
+		var scratch [frameLenSize + 4096]byte
+		binary.BigEndian.PutUint32(scratch[:], uint32(len(msg)))
+		frame := scratch[:frameLenSize+copy(scratch[frameLenSize:], msg)]
+		var n int
+		var err error
+		if timeout > 0 {
+			n, err = fc.client.WriteWithTimeout(frame, timeout)
+		} else {
+			n, err = fc.client.Write(frame)
+		}
+		if err == nil && n != len(frame) {
+			return io.ErrShortWrite
+		}
+		return err
+	}
 
 	// Encode length prefix (4 bytes, big-endian)
 	lengthPrefix := make([]byte, frameLenSize)

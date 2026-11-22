@@ -40,6 +40,19 @@ func (dc *DistributedCache) setSyncReplicas(ctx context.Context, nodes []CacheNo
 		return nil
 	}
 
+	if len(nodes) == 2 {
+		var err error
+		if replica := nodes[1]; replica.IsHealthy() {
+			err = replica.Cache().Set(ctx, key, cloneBytes(value), ttl)
+		} else {
+			err = ErrNodeUnhealthy
+		}
+		if err != nil {
+			dc.recordReplicationFailure()
+		}
+		dc.recordReplicationLag(start)
+		return err
+	}
 	errChan := make(chan error, len(nodes)-1)
 	healthyNodes := make([]CacheNode, 0, len(nodes)-1)
 	var firstErr error

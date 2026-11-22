@@ -296,10 +296,10 @@ func TestCanceledStagedMutationRestoresMemoryAndDisk(t *testing.T) {
 				store.data["replacement"] = &entry{Value: []byte("new")}
 			}
 			cancel()
-			err = store.persistMutationLocked(ctx.Done(), func() {
+			err = store.persistMutationLocked(func() bool { return ctx.Err() != nil }, func() {
 				delete(store.data, "replacement")
 				store.data["original"] = original
-			})
+			}, func() { t.Fatal("canceled mutation committed") })
 			store.mu.Unlock()
 			if err != errMutationCanceled {
 				t.Fatalf("staged mutation error = %v", err)
@@ -1142,4 +1142,85 @@ func TestExpiryReadCountersAreLocalAndDoNotPersist(t *testing.T) {
 			t.Fatalf("stats=%+v err=%v read=%v disk changed=%t", again, err, readErr, !bytes.Equal(before, after))
 		}
 	})
+}
+
+func TestMutationBatchSharesSnapshotAndRestoresOnFailure(t *testing.T) {
+	dir := t.TempDir()
+	kv, err := NewKVStore(Options{DataDir: dir, MaxEntries: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer kv.Close()
+	syncs := 0
+	kv.syncStateDir = func(dir string) error {
+		syncs++
+		return syncDir(dir)
+	}
+	request := func(key string) mutationRequest {
+		return mutationRequest{result: make(chan error, 1), stage: func() (mutationChange, error) {
+			return kv.stageSet(key, []byte(key), 0)
+		}}
+	}
+	run := func(keys ...string) []error {
+		reqs := make([]mutationRequest, len(keys))
+		errs := make([]error, len(keys))
+		for i, key := range keys {
+			reqs[i] = request(key)
+		}
+		kv.commitMutations(reqs)
+		for i, req := range reqs {
+			errs[i] = <-req.result
+		}
+		return errs
+	}
+	for _, err := range run("a", "b") {
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	if syncs != 1 {
+		t.Fatalf("sync calls = %d, want 1", syncs)
+	}
+	disk, err := os.ReadFile(filepath.Join(dir, stateFileName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	blockStatePath(t, dir)
+	for _, err := range run("c", "d") {
+		if err == nil {
+			t.Fatal("expected failure before rename")
+		}
+	}
+	if err := os.Remove(filepath.Join(dir, stateFileName)); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, stateFileName), disk, 0600); err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []string{"a", "b"} {
+		if value, err := kv.Get(key); err != nil || string(value) != key {
+			t.Fatalf("key %q after rollback = %q, %v", key, value, err)
+		}
+	}
+	for _, err := range run("c", "d") {
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	if syncs != 2 {
+		t.Fatalf("sync calls = %d, want 2", syncs)
+	}
+	if err := kv.Close(); err != nil {
+		t.Fatal(err)
+	}
+	restored, err := NewKVStore(Options{DataDir: dir, MaxEntries: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer restored.Close()
+	for _, key := range []string{"c", "d"} {
+		if value, err := restored.Get(key); err != nil || string(value) != key {
+			t.Fatalf("key %q after reopen = %q, %v", key, value, err)
+		}
+	}
 }

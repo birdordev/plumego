@@ -255,7 +255,7 @@ func TestS3Storage_PutRejectsUnknownSizeAboveSinglePutLimit(t *testing.T) {
 
 func TestS3Storage_Put_UsesConfiguredTempDir(t *testing.T) {
 	tempDir := t.TempDir()
-	content := []byte("spooled in configured temp dir")
+	content := bytes.Repeat([]byte("x"), 256<<10)
 	seenSpool := make(chan bool, 1)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

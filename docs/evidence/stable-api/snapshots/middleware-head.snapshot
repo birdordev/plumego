@@ -54,6 +54,7 @@ symbol	github.com/birdordev/plumego/middleware/internal/telemetry	func	FinishPre
 symbol	github.com/birdordev/plumego/middleware/internal/telemetry	func	MiddlewareLogFields	func MiddlewareLogFieldsfunc(r *http.Request, status int, duration time.Duration) map[string]any
 symbol	github.com/birdordev/plumego/middleware/internal/telemetry	func	PrepareRequest	func PrepareRequestfunc(w http.ResponseWriter, r *http.Request) PreparedRequest
 symbol	github.com/birdordev/plumego/middleware/internal/telemetry	func	RedactFields	func RedactFieldsfunc(fields map[string]any, extraSensitiveKeys ...string) map[string]any
+symbol	github.com/birdordev/plumego/middleware/internal/telemetry	func	RedactOwnedFields	func RedactOwnedFieldsfunc(fields map[string]any) map[string]any
 symbol	github.com/birdordev/plumego/middleware/internal/telemetry	func	RunSafeFinalizer	func RunSafeFinalizerfunc(finalize func())
 symbol	github.com/birdordev/plumego/middleware/internal/telemetry	func	WithObserver	func WithObserverfunc(next http.Handler, w http.ResponseWriter, r *http.Request, observe func(metrics RequestMetrics, recorder *ResponseRecorder, r *http.Request))
 symbol	github.com/birdordev/plumego/middleware/internal/telemetry	method	PreparedRequest.Complete	func (PreparedRequest) Completefunc(r *http.Request) RequestMetrics
