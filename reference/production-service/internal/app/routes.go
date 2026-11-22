@@ -151,5 +151,11 @@ func (r runtimeChecker) Check(ctx context.Context) error {
 	if !r.app.ready.Load() {
 		return errRuntimeNotReady
 	}
-	return r.app.components.Ready(ctx)
+	if err := r.app.components.Ready(ctx); err != nil {
+		return err
+	}
+	if !r.app.ready.Load() {
+		return errRuntimeNotReady
+	}
+	return nil
 }

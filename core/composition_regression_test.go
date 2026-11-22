@@ -72,3 +72,64 @@ func TestRunContextReportsBindErrorAndHonorsCancellation(t *testing.T) {
 		t.Fatalf("error=%v", err)
 	}
 }
+
+func TestMountOwnsPrefixAcrossMethodsAndFallbacks(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Router.MethodNotAllowed = true
+	app := New(cfg, AppDependencies{})
+	child := router.NewRouter(router.WithMethodNotAllowed(true))
+	if err := child.AddRoute(http.MethodPost, "/api/items", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusCreated)
+	})); err != nil {
+		t.Fatal(err)
+	}
+	child.Freeze()
+	if err := app.Get("/*page", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte("frontend"))
+	})); err != nil {
+		t.Fatal(err)
+	}
+	if err := app.Mount("/api", child); err != nil {
+		t.Fatal(err)
+	}
+	if err := app.Mount("/api/v2", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v2/items" {
+			t.Errorf("child path = %q", r.URL.Path)
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		method, path, allow string
+		status              int
+	}{
+		{"GET", "/api/missing", "", 404},
+		{"GET", "/api/items", "POST", 405},
+		{"HEAD", "/api/items", "POST", 405},
+		{"POST", "/api/items", "", 201},
+		{"GET", "/api/v2/items", "", 204},
+		{"GET", "/api-legacy", "", 200},
+	} {
+		rec := httptest.NewRecorder()
+		app.ServeHTTP(rec, httptest.NewRequest(tc.method, tc.path, nil))
+		if rec.Code != tc.status || rec.Header().Get("Allow") != tc.allow || tc.method == "HEAD" && rec.Body.Len() != 0 {
+			t.Errorf("%s %s: status=%d, Allow=%q, body=%q", tc.method, tc.path, rec.Code, rec.Header().Get("Allow"), rec.Body.String())
+		}
+	}
+}
+
+func TestMountFailureDoesNotPublishHalfAMount(t *testing.T) {
+	app := New(DefaultConfig(), AppDependencies{})
+	handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) })
+	if err := app.Any("/api/*existing", handler); err != nil {
+		t.Fatal(err)
+	}
+	if err := app.Mount("/api", handler); err == nil {
+		t.Fatal("conflicting mount was accepted")
+	}
+	routes := app.Routes()
+	if len(routes) != 1 || routes[0].Path != "/api/*existing" {
+		t.Fatalf("routes after failed mount = %+v", routes)
+	}
+}

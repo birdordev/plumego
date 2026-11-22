@@ -128,9 +128,10 @@ go run .
 
 `/readyz` indicates whether startup completed and the registered dependencies
 are ready. Shutdown marks the service unready, drains HTTP, and stops
-registered resources in reverse order. Public readiness failures report fixed
-status details. Trusted proxy CIDRs are used by both access logs and rate
-limiting.
+registered resources in reverse order. A dependency check that reports success
+after the service becomes unready still yields a 503. Public readiness failures
+report fixed status details. Trusted proxy CIDRs are used by both access logs
+and rate limiting.
 
 The health endpoints use a separate admission policy from business requests.
 Readiness probes are serialized and bounded by the request deadline. Request

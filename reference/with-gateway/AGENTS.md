@@ -43,8 +43,8 @@ Hard rules:
 - `main.go`: process entrypoint only.
 - `internal/config`: config loading, defaults, flags, environment (GATEWAY_BACKEND,
   APP_DEBUG, APP_ENV_FILE).
-- `internal/app/app.go`: middleware chain (requestid → security → recovery →
-  accesslog → bodylimit → timeout), graceful shutdown.
+- `internal/app/app.go`: middleware chain (requestid → security → accesslog →
+  recovery → bodylimit → timeout), graceful shutdown.
 - `internal/app/routes.go`: health routes, then the proxy catch-all.
 - `internal/handler`: HealthHandler (liveness/readiness probes for the proxy itself).
 

@@ -9,7 +9,8 @@ shape, but it is generated as a project-local layout.
 The canonical scaffold must preserve these properties:
 
 - `cmd/app/main.go` loads config, constructs the app, registers routes, and
-  starts the server with a signal-aware context. The generated serving path
+  starts the server with a signal-aware context and `core.App.RunContext`.
+  The generated serving path
   closes the listener and waits for in-flight requests when it receives a
   shutdown signal. `APP_SHUTDOWN_TIMEOUT_MS` defaults to 5000. If the deadline
   expires, the app closes the remaining connections and reports the error.
@@ -68,5 +69,7 @@ go run ./internal/checks/reference-layout
 
 The `api` and `rest-api` templates ship resource-specific OpenAPI hints.
 The REST smoke test generates a strict spec, builds and starts the application,
-checks real CRUD responses against the spec and waits for signal-driven HTTP
-drain.
+checks real CRUD and list responses against the spec, and waits for
+signal-driven HTTP drain. The generated in-memory repository returns stable
+ID-ordered pages for offset or page-number queries and reports the full item
+count in pagination metadata.

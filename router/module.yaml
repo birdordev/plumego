@@ -44,6 +44,7 @@ public_entrypoints:
   - RouteInfo
   - NamedRoute
   - AddRoute
+  - Mount
   - Freeze
   - Group
   - HasRoute

@@ -70,22 +70,22 @@ func New(cfg config.Config) (*App, error) {
 	//   security   → security headers on all responses
 	//   cors       → CORS preflight and headers; set APP_CORS_ALLOWED_ORIGINS to restrict
 	//               cross-origin access to known domains in production (see env.example)
+	//   httpmetrics→ observes final responses; uses a noop collector by default
+	//   accesslog  → logs final responses, including body-limit and recovery errors
 	//   recovery   → converts panics to 500 responses
-	//   accesslog  → logs all requests including 413; outer to bodylimit so rejections are logged
 	//   bodylimit  → rejects oversized bodies with 413
-	//   httpmetrics→ noop collector; swap for observability.NewPrometheusCollector in production
 	//   timeout    → per-request wall-clock limit; innermost so only handler time is counted
 	if err := app.Use(
 		requestid.Middleware(),
 		securityMw,
 		cors.Middleware(corsOpts),
-		recoveryMw,
+		httpmetrics.Middleware(metrics.NewNoopCollector()),
 		accesslogMw,
+		recoveryMw,
 		bodylimit.Middleware(bodylimit.Config{
 			MaxBytes: 1 << 20, // 1 MiB default; make configurable via AppConfig if needed
 			Logger:   app.Logger(),
 		}),
-		httpmetrics.Middleware(metrics.NewNoopCollector()),
 		timeout.Middleware(timeout.Config{Timeout: 30 * time.Second}),
 	); err != nil {
 		return nil, fmt.Errorf("register middleware: %w", err)

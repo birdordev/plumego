@@ -98,4 +98,4 @@ Most OpenAPI generation tools require struct tags, reflection over handler param
 - [Reference App](/docs/reference-app)
 - [Repository Control Plane](/docs/concepts/repo-control-plane)
 
-Strict generation validates unused operation hints, authentication schemes, local schema references, and unique operation IDs. Pass shared schemas and security schemes through `WithComponents` or in the CLI hint file.
+Strict generation validates unused operation hints, authentication schemes, local schema references, and unique operation IDs. Local references can point to nested properties and use percent-encoding and JSON Pointer escapes. Pass shared schemas and security schemes through `WithComponents` or in the CLI hint file.

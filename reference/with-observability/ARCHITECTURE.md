@@ -53,16 +53,17 @@ tracer := observability.NewOpenTelemetryTracer(cfg.App.ServiceName)
 ## Middleware order
 
 ```
-requestid → security → cors → recovery → accesslog → bodylimit → httpmetrics → tracing → timeout
+requestid → security → httpmetrics → tracing → accesslog → cors → recovery → bodylimit → timeout
 ```
 
 Relative to `standard-service`, two changes:
 
 - `httpmetrics.Middleware(collector)` receives the real `PrometheusCollector`
   instead of the noop collector.
-- `mwtracing.Middleware(tracer)` is inserted after `httpmetrics` and before
-  `timeout` so that each span measures only handler time (not timeout overhead)
-  and every span carries the request ID stamped by `requestid`.
+- `mwtracing.Middleware(tracer)` runs after `httpmetrics` and carries the
+  request ID stamped by `requestid`.
+- Metrics, tracing, and access logs observe the final status, including CORS
+  responses, body-limit rejections, timeouts, and recovered panics.
 
 `timeout` remains innermost so the 504 response is served from within the
 timeout boundary.

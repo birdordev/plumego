@@ -39,9 +39,9 @@ func New(cfg config.Config) (*App, error) {
 	}
 	if err := app.Use(
 		requestid.Middleware(),
-		recoveryMw,
 		httpmetrics.Middleware(collector),
 		accesslogMw,
+		recoveryMw,
 	); err != nil {
 		return nil, fmt.Errorf("register middleware: %w", err)
 	}

@@ -287,6 +287,13 @@ func (r *Router) matchRouteParts(method, path string, scratch **[]string, escape
 		defer putPathParts(partsPtr)
 	}
 
+	if r.state.mounts != nil {
+		if result := matchNode(r.state.mounts, parts, path, escaped); result != nil {
+			result.RouteMethod = MethodAny
+			return result
+		}
+	}
+
 	if method != MethodAny {
 		tree := r.state.trees[method]
 		if tree != nil {

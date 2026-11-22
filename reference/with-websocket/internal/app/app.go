@@ -40,8 +40,8 @@ func New(cfg config.Config) (*App, error) {
 	}
 	if err := a.Use(
 		requestid.Middleware(),
-		recoveryMw,
 		accesslogMw,
+		recoveryMw,
 	); err != nil {
 		return nil, fmt.Errorf("register middleware: %w", err)
 	}

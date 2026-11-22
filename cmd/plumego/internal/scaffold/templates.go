@@ -223,9 +223,7 @@ package app
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"net/http"
 
 	"github.com/birdordev/plumego/core"
 	plumelog "github.com/birdordev/plumego/log"
@@ -266,47 +264,7 @@ func New(cfg config.Config) (*App, error) {
 // Start prepares the runtime and blocks while the HTTP server runs.
 // When ctx is canceled, it triggers a graceful shutdown.
 func (a *App) Start(ctx context.Context) error {
-	if ctx == nil {
-		ctx = context.Background()
-	}
-
-	if err := a.Core.Prepare(); err != nil {
-		return fmt.Errorf("prepare server: %%w", err)
-	}
-	srv, err := a.Core.Server()
-	if err != nil {
-		return fmt.Errorf("get server: %%w", err)
-	}
-
-	serveDone := make(chan error, 1)
-	go func() {
-		if a.Cfg.Core.TLS.Enabled {
-			// Prepare 已将证书加载到 TLSConfig。
-			serveDone <- srv.ListenAndServeTLS("", "")
-			return
-		}
-		serveDone <- srv.ListenAndServe()
-	}()
-
-	select {
-	case err := <-serveDone:
-		if err != nil && !errors.Is(err, http.ErrServerClosed) {
-			return fmt.Errorf("server stopped: %%w", err)
-		}
-		return nil
-	case <-ctx.Done():
-	}
-
-	shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), a.Cfg.App.ShutdownTimeout)
-	defer cancel()
-	shutdownErr := a.Core.Shutdown(shutdownCtx)
-	if shutdownErr != nil {
-		shutdownErr = fmt.Errorf("shutdown server: %%w", errors.Join(shutdownErr, srv.Close()))
-	}
-	if err := <-serveDone; err != nil && !errors.Is(err, http.ErrServerClosed) {
-		return errors.Join(shutdownErr, fmt.Errorf("server stopped: %%w", err))
-	}
-	return shutdownErr
+	return a.Core.RunContext(ctx, a.Cfg.App.ShutdownTimeout)
 }
 `, module)
 }

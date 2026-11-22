@@ -29,7 +29,7 @@ from Plumego's canonical application shape.
 - Authentication or authorization
 - Tenant isolation
 - OpenAPI generation (the `make spec` target is a placeholder)
-- Pagination limits or cursor-based pagination
+- Cursor-based pagination
 - Frontend, background jobs, messaging, or RPC
 - Non-canonical response shapes
 
@@ -46,6 +46,10 @@ from Plumego's canonical application shape.
 | `PUT` | `/api/users/:id` | Replace user |
 | `DELETE` | `/api/users/:id` | Delete user |
 | `POST` | `/api/items` | Create item (plain handler with x/validate.Bind[T]) |
+
+`GET /api/users` supports either `page` and `page_size` or `limit` and `offset`.
+The repository returns a stable ID-ordered page and reports the full item
+count in pagination metadata. Requests that mix the two modes return 400.
 
 ## Run
 

@@ -148,6 +148,10 @@ directly.
   URL generation error with the
   specific reverse-routing failure reason. Literal path segments are URL-escaped
   so reserved characters round-trip through request parsing.
+- `Router.Mount` atomically delegates a non-root static prefix and its
+  descendants to an HTTP handler. The most specific mount wins before
+  ordinary routes for every method. The handler receives the original path.
+  The exact and wildcard registrations appear as ANY entries in snapshots.
 - `router.Static` and `router.StaticFS` are primitive GET mounts. Cache headers, SPA fallback, precompressed files, custom headers, and MIME policy belong to `x/frontend`.
 - Static request paths are cleaned with slash-based URL semantics before local
   directory serving converts them to platform filesystem paths.

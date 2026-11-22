@@ -42,7 +42,7 @@ Hard rules:
 
 - `main.go`: process entrypoint only.
 - `internal/config`: config loading, defaults, and environment (APP_ADDR, APP_DEBUG).
-- `internal/app/app.go`: middleware chain (requestid → recovery → accesslog),
+- `internal/app/app.go`: middleware chain (requestid → accesslog → recovery),
   graceful shutdown.
 - `internal/app/routes.go`: GET /healthz (inline), POST /events/publish.
 - `internal/handler`: MessagingHandler with Publish() method.

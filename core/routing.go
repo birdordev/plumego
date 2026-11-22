@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"strings"
 
 	"github.com/birdordev/plumego/contract"
 	"github.com/birdordev/plumego/middleware"
@@ -177,18 +176,22 @@ func (g *RouteGroup) middlewareSnapshot() []middleware.Middleware {
 	return append(g.parent.middlewareSnapshot(), g.middlewares...)
 }
 
-// Mount assigns a path and its descendants to an independent handler.
-// The handler receives the original request path. A registration failure
-// should abort application assembly.
+// Mount delegates a static path prefix and its descendants to an independent
+// HTTP handler. The handler receives the original URL, including the prefix.
 func (a *App) Mount(prefix string, handler http.Handler) error {
-	prefix = strings.TrimRight(prefix, "/")
-	if prefix == "" || prefix[0] != '/' || strings.ContainsAny(prefix, ":*") {
-		return fmt.Errorf("mount requires a non-root static path prefix")
+	a.mu.RLock()
+	mutable, routes := a.registrationMutable(), a.router
+	a.mu.RUnlock()
+	if !mutable {
+		return immutableAppError(operationAddRoute, "mount handler", map[string]any{"path": prefix})
 	}
-	if err := a.Any(prefix, handler); err != nil {
-		return err
+	if handler == nil {
+		return wrapCoreError(contract.ErrHandlerNil, operationAddRoute, map[string]any{"method": router.MethodAny, "path": prefix})
 	}
-	return a.Any(prefix+"/*mountPath", handler)
+	if routes == nil {
+		return wrapCoreError(fmt.Errorf("router not configured"), operationAddRoute, nil)
+	}
+	return routes.Mount(prefix, handler)
 }
 
 // Get registers a GET route on this group.

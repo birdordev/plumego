@@ -242,7 +242,9 @@ release that provides `GenerateStrict`. The standard-service
 `plumego.spec.yaml` describes the protected write profile.
 
 `GenerateStrict` reports unused route hints, missing authentication schemes,
-duplicate operation IDs, and missing local schema references. Configure
+duplicate operation IDs, and unresolved local schema references. Fragment
+pointers can refer to nested properties and use percent-encoding and JSON
+Pointer escapes. External references are preserved without resolution. Configure
 `components.schemas` and `components.securitySchemes` via
 `WithComponents` in Go or the hint file in the CLI. Operation hints can
 supply `operationId`. A named route provides the default operation ID.

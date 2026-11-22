@@ -291,9 +291,11 @@ func getAPIUsersResourceContent() string {
 	return `package resource
 
 import (
+	"cmp"
 	"context"
 	"database/sql"
 	"fmt"
+	"slices"
 	"sync"
 
 	"github.com/birdordev/plumego/x/rest"
@@ -320,16 +322,28 @@ func NewUserRepository() *UserRepository {
 	return repo
 }
 
-// FindAll returns all users.
-func (r *UserRepository) FindAll(_ context.Context, _ *rest.QueryParams) ([]User, int64, error) {
+// FindAll returns a page of users ordered by ID and the total count.
+func (r *UserRepository) FindAll(ctx context.Context, params *rest.QueryParams) ([]User, int64, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, 0, err
+	}
 	r.mu.Lock()
-	defer r.mu.Unlock()
-
 	users := make([]User, 0, len(r.items))
 	for _, user := range r.items {
 		users = append(users, user)
 	}
-	return users, int64(len(users)), nil
+	r.mu.Unlock()
+
+	slices.SortFunc(users, func(a, b User) int { return cmp.Compare(a.ID, b.ID) })
+	total := len(users)
+	if params == nil {
+		return users, int64(total), nil
+	}
+	start, end := min(max(params.Offset, 0), total), total
+	if params.Limit > 0 && params.Limit < end-start {
+		end = start + params.Limit
+	}
+	return users[start:end], int64(total), nil
 }
 
 // FindByID returns one user by ID.

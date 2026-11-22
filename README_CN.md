@@ -102,13 +102,13 @@ go run main.go
 | --- | --- | --- |
 | 基础路由 | `Handle` 和 `HandleFunc` 支持 `GET /users` 等带方法的模式。 | `Get`/`Post`/`AddRoute` 注册方法、路径和处理器。 |
 | 路径参数 | 匹配 `/users/{id}`，用 `r.PathValue("id")` 读取。 | 匹配 `/users/:id`，用 `plumego.Param(r, "id")` 读取。 |
-| 路由分组 | 注册带前缀的模式，或挂载子路由器。 | 分组应用统一前缀。 |
+| 路由分组 | 注册带前缀的模式，或挂载子路由器。 | 分组应用统一前缀。`App.Mount` 将前缀及其子路径交给指定处理器。 |
 | 分组中间件 | 调用方按子树手动组合。 | 通过 `Group.Use` 在注册路由前装配组内共享中间件。 |
 | 命名路由与反向 URL | 调用方手动拼接 URL。 | 通过 app/router API 生成反向 URL。 |
 | 路由冻结 | 开始提供服务后仍可注册路由。 | `Prepare` 可在启动前冻结路由。直接调用 `ServeHTTP` 时，首次准备处理器也会冻结路由。 |
 | 结构化错误 | 调用方定义每种响应形状。 | `contract.WriteError` 提供规范错误路径。 |
 | Request ID 传递 | 调用方自选并传播约定。 | 显式上下文访问器 + 中间件支持。 |
-| 优雅生命周期 | 调用方自行组织启动与关闭。 | `Prepare`、`Server`、`Shutdown` 让生命周期显式且可复用。 |
+| 优雅生命周期 | 调用方自行组织启动与关闭。 | `RunContext` 启动 HTTP 并排空在途请求。`Prepare`、`Server` 和 `Shutdown` 支持调用方管理监听器。 |
 
 ## 包导览
 

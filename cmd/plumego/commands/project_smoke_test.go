@@ -481,6 +481,55 @@ func exerciseGeneratedServer(t *testing.T, binary, dir, collection string, paths
 	if err := json.Unmarshal(body, &created); err != nil || created.Data.ID == "" {
 		t.Fatalf("generated item id: %v", err)
 	}
+	if _, hasList := paths[collection]["get"]; hasList {
+		for _, page := range []struct {
+			query, name string
+			status      int
+			offset      *int
+		}{
+			{"?limit=1&offset=1", "smoke", http.StatusOK, new(1)},
+			{"?limit=1&offset=99", "", http.StatusOK, new(99)},
+			{"?page=1&page_size=1", "Ada", http.StatusOK, nil},
+			{"?limit=1&page=1", "", http.StatusBadRequest, nil},
+		} {
+			resp, err := client.Get(base + collection + page.query)
+			if err != nil {
+				t.Fatal(err)
+			}
+			data, err := io.ReadAll(resp.Body)
+			_ = resp.Body.Close()
+			if err != nil || resp.StatusCode != page.status {
+				t.Fatalf("list %s: status=%d body=%q error=%v", page.query, resp.StatusCode, data, err)
+			}
+			if page.status == http.StatusOK {
+				var payload struct {
+					Data []struct{ Name string }
+					Meta struct {
+						Limit      int
+						Offset     *int
+						Pagination struct {
+							TotalItems int `json:"total_items"`
+							PageSize   int `json:"page_size"`
+						}
+					}
+				}
+				if err := json.Unmarshal(data, &payload); err != nil ||
+					payload.Meta.Pagination.TotalItems != 2 || payload.Meta.Pagination.PageSize != 1 {
+					t.Fatalf("list %s: unexpected page %s, error=%v", page.query, data, err)
+				}
+				if page.name == "" && len(payload.Data) != 0 ||
+					page.name != "" && (len(payload.Data) != 1 || payload.Data[0].Name != page.name) {
+					t.Fatalf("list %s: unexpected items %s", page.query, data)
+				}
+				if page.offset != nil && (payload.Meta.Limit != 1 || payload.Meta.Offset == nil || *payload.Meta.Offset != *page.offset) ||
+					page.offset == nil && payload.Meta.Offset != nil {
+					t.Fatalf("list %s: unexpected offset metadata %s", page.query, data)
+				}
+			}
+			assertStatusDocumented(collection, http.MethodGet, resp.StatusCode)
+		}
+	}
+
 	itemURL := base + collection + "/" + created.Data.ID
 	for _, step := range []struct {
 		method, input, bodyContains string

@@ -16,6 +16,7 @@ symbol	github.com/birdordev/plumego/router	method	Router.Freeze	func (Router) Fr
 symbol	github.com/birdordev/plumego/router	method	Router.Group	func (Router) Groupfunc(prefix string) *Router
 symbol	github.com/birdordev/plumego/router	method	Router.HasRoute	func (Router) HasRoutefunc(name string) bool
 symbol	github.com/birdordev/plumego/router	method	Router.MethodNotAllowedEnabled	func (Router) MethodNotAllowedEnabledfunc() bool
+symbol	github.com/birdordev/plumego/router	method	Router.Mount	func (Router) Mountfunc(prefix string, handler http.Handler) error
 symbol	github.com/birdordev/plumego/router	method	Router.NamedRoutes	func (Router) NamedRoutesfunc() map[string]*NamedRoute
 symbol	github.com/birdordev/plumego/router	method	Router.Print	func (Router) Printfunc(w io.Writer)
 symbol	github.com/birdordev/plumego/router	method	Router.Routes	func (Router) Routesfunc() []RouteInfo

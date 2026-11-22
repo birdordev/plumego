@@ -57,6 +57,7 @@ type routerState struct {
 	standardPathValues   atomic.Bool
 	escapedPathSegments  atomic.Bool
 	trees                map[string]*node
+	mounts               *node
 	routes               map[string][]route
 	mu                   sync.RWMutex
 	matchCache           *matchCache

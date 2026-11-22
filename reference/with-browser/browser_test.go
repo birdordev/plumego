@@ -88,6 +88,24 @@ func TestBrowserLoginProfileAndLogout(t *testing.T) {
 		t.Fatalf("invalid form was not shown safely: %d %s", w.Code, w.Body)
 	}
 	form := url.Values{"csrf": {session.csrf}, "name": {"<example>"}}.Encode()
+	queryToken := "/profile?csrf=" + url.QueryEscape(session.csrf)
+	if w := request("POST", queryToken, "name=query-token", cookie, "https://app.example"); w.Code != http.StatusForbidden {
+		t.Fatalf("query supplied the form token: %d", w.Code)
+	}
+	if w := request("POST", "/profile", "name="+strings.Repeat("a", 4096), cookie, "https://app.example"); w.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("oversized form: %d", w.Code)
+	}
+	if w := request("POST", "/profile", "name=%", cookie, "https://app.example"); w.Code != http.StatusBadRequest {
+		t.Fatalf("malformed form: %d", w.Code)
+	}
+	wrongMedia := httptest.NewRequest(http.MethodPost, "https://app.example/profile", strings.NewReader(form))
+	wrongMedia.Header.Set("Content-Type", "text/plain")
+	wrongMedia.AddCookie(cookie)
+	rejected := httptest.NewRecorder()
+	app.ServeHTTP(rejected, wrongMedia)
+	if rejected.Code != http.StatusUnsupportedMediaType {
+		t.Fatalf("unsupported form media type: %d", rejected.Code)
+	}
 	for _, denied := range []struct{ body, origin string }{
 		{"name=no-token", "https://app.example"},
 		{form, "https://other.example"},
@@ -96,7 +114,7 @@ func TestBrowserLoginProfileAndLogout(t *testing.T) {
 			t.Fatalf("allowed rejected form: %d", w.Code)
 		}
 	}
-	if w := request("POST", "/profile", form, cookie, "https://app.example"); w.Code != 303 {
+	if w := request("POST", "/profile?csrf=%&name=ignored", form, cookie, "https://app.example"); w.Code != 303 {
 		t.Fatalf("form did not redirect: %d", w.Code)
 	}
 	if w := request("GET", "/", "", cookie, ""); !strings.Contains(w.Body.String(), "&lt;example&gt;") {

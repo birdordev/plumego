@@ -116,6 +116,11 @@ func (r *Router) AddRoute(method, path string, handler http.Handler, opts ...Rou
 	if err := validateRouteSegments(fullPath, segments); err != nil {
 		return fmt.Errorf("router add_route %s %s: %w", method, fullPath, err)
 	}
+	if method == MethodAny && r.state.mounts != nil {
+		if mounted := mountRouteNode(r.state.mounts, segments); mounted != nil && mounted.handler != nil {
+			return fmt.Errorf("router add_route %s %s: conflicts with an existing mount", method, fullPath)
+		}
+	}
 	paramKeys := make([]string, 0, len(segments))
 
 	for _, seg := range segments {

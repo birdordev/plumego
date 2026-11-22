@@ -4,8 +4,6 @@ import (
 	"context"
 	"errors"
 	"log"
-	"net"
-	"net/http"
 	"net/netip"
 	"net/url"
 	"os"
@@ -48,34 +46,7 @@ func run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if err := app.Prepare(); err != nil {
-		return err
-	}
-	server, err := app.Server()
-	if err != nil {
-		return err
-	}
-	listener, err := new(net.ListenConfig).Listen(ctx, "tcp", address)
-	if err != nil {
-		return err
-	}
-	serveDone := make(chan error, 1)
-	go func() { serveDone <- server.Serve(listener) }()
-	select {
-	case err := <-serveDone:
-		return err
-	case <-ctx.Done():
-		drain, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
-		defer cancel()
-		err := app.Shutdown(drain)
-		if err != nil {
-			err = errors.Join(err, server.Close())
-		}
-		if serveErr := <-serveDone; !errors.Is(serveErr, http.ErrServerClosed) {
-			err = errors.Join(err, serveErr)
-		}
-		return err
-	}
+	return app.RunContext(ctx, 10*time.Second)
 }
 
 func secureURL(value string) (*url.URL, error) {

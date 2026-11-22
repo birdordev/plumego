@@ -127,3 +127,26 @@ func TestStrictValidatesComponentsAndUnusedHints(t *testing.T) {
 		}
 	}
 }
+
+func TestStrictResolvesNestedLocalSchemaPointers(t *testing.T) {
+	g := New().WithComponents(&Components{Schemas: map[string]Schema{
+		"List": {Type: "array", Items: &Schema{Type: "object", Properties: map[string]Schema{"a/b~c": String}}},
+	}})
+	routes := []router.RouteInfo{{Method: http.MethodGet, Path: "/items"}}
+	for _, tc := range []struct {
+		ref string
+		ok  bool
+	}{
+		{"#/components/schemas/L%69st/items/properties/a~1b~0c", true},
+		{"#/components/schemas/List/items/properties/unknown", false},
+		{"#/%6dissing", false},
+		{"models.json#/components/schemas/External", true},
+	} {
+		_, err := g.GenerateStrict(routes, map[string]Op{"GET /items": {
+			Responses: map[string]Response{"200": {Description: "OK", Content: JSONContent(Schema{Ref: tc.ref})}},
+		}})
+		if (err == nil) != tc.ok {
+			t.Errorf("ref %q returned %v, want success=%v", tc.ref, err, tc.ok)
+		}
+	}
+}

@@ -1,12 +1,16 @@
 package openapi
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"maps"
+	"net/url"
 	"reflect"
 	"slices"
+	"strconv"
 	"strings"
+	"sync"
 )
 
 func cloneComponents(components *Components) *Components {
@@ -28,16 +32,30 @@ func validateDocument(doc Document) error {
 	}
 	var failures []error
 	seenRefs := make(map[string]bool)
+	loadDocument := sync.OnceValues(func() (any, error) {
+		data, err := json.Marshal(doc)
+		if err != nil {
+			return nil, err
+		}
+		var value any
+		err = json.Unmarshal(data, &value)
+		return value, err
+	})
 	checkSchema := func(where string, schema Schema) {
 		for _, ref := range schemaReferences(schema) {
-			name, local := strings.CutPrefix(ref, "#/components/schemas/")
+			fragment, local := strings.CutPrefix(ref, "#")
 			if !local || seenRefs[ref] {
 				continue
 			}
 			seenRefs[ref] = true
-			name = strings.NewReplacer("~1", "/", "~0", "~").Replace(name)
-			if _, ok := components.Schemas[name]; !ok {
-				failures = append(failures, fmt.Errorf("%s refers to undefined schema %q", where, name))
+			root, err := loadDocument()
+			if err != nil {
+				failures = append(failures, fmt.Errorf("%s cannot resolve a local schema reference: %w", where, err))
+				continue
+			}
+			pointer, err := url.PathUnescape(fragment)
+			if err != nil || !jsonPointerExists(root, pointer) {
+				failures = append(failures, fmt.Errorf("%s refers to undefined schema reference %q", where, ref))
 			}
 		}
 	}
@@ -86,6 +104,58 @@ func validateDocument(doc Document) error {
 		}
 	}
 	return errors.Join(failures...)
+}
+
+func jsonPointerExists(value any, pointer string) bool {
+	if pointer == "" {
+		return true
+	}
+	parts, ok := strings.CutPrefix(pointer, "/")
+	if !ok {
+		return false
+	}
+	for token := range strings.SplitSeq(parts, "/") {
+		token, ok = unescapePointerToken(token)
+		if !ok {
+			return false
+		}
+		switch current := value.(type) {
+		case map[string]any:
+			value, ok = current[token]
+			if !ok {
+				return false
+			}
+		case []any:
+			index, err := strconv.ParseUint(token, 10, strconv.IntSize)
+			if err != nil || index >= uint64(len(current)) || strconv.FormatUint(index, 10) != token {
+				return false
+			}
+			value = current[int(index)]
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+func unescapePointerToken(token string) (string, bool) {
+	var decoded strings.Builder
+	for {
+		before, after, found := strings.Cut(token, "~")
+		decoded.WriteString(before)
+		if !found {
+			return decoded.String(), true
+		}
+		if after == "" || (after[0] != '0' && after[0] != '1') {
+			return "", false
+		}
+		if after[0] == '0' {
+			decoded.WriteByte('~')
+		} else {
+			decoded.WriteByte('/')
+		}
+		token = after[1:]
+	}
 }
 
 func schemaReferences(schema Schema) []string {

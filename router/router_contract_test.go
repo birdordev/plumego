@@ -34,6 +34,41 @@ func TestWithTagsSnapshotsReusableOption(t *testing.T) {
 	}
 }
 
+func TestMountReplacesCachedRouteAndRejectsConflictingRegistration(t *testing.T) {
+	r := NewRouter()
+	plain := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusAccepted)
+	})
+	if err := r.AddRoute(http.MethodGet, "/root/*page", plain); err != nil {
+		t.Fatal(err)
+	}
+	if w := serveRouter(r, http.MethodGet, "/root/api/item"); w.Code != http.StatusAccepted {
+		t.Fatalf("before mount: %d", w.Code)
+	}
+	if err := r.Group("/root").Mount("/api", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		if req.URL.Path != "/root/api/item" || Param(req, "mountPath") != "item" {
+			t.Errorf("mounted URL = %q, param = %q", req.URL.Path, Param(req, "mountPath"))
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.AddRoute(MethodAny, "/root/api/*other", plain); err == nil {
+		t.Fatal("accepted an ANY route with the mount's wildcard shape")
+	}
+	for _, frozen := range []bool{false, true} {
+		if frozen {
+			r.Freeze()
+		}
+		if w := serveRouter(r, http.MethodGet, "/root/api/item"); w.Code != http.StatusNoContent {
+			t.Errorf("frozen=%t, mounted status = %d", frozen, w.Code)
+		}
+		if w := serveRouter(r, http.MethodGet, "/root/api-v2"); w.Code != http.StatusAccepted {
+			t.Errorf("frozen=%t, sibling status = %d", frozen, w.Code)
+		}
+	}
+}
+
 func TestMethodMismatchReturnsNotFound(t *testing.T) {
 	r := NewRouter()
 	mustAddRoute(r, http.MethodGet, "/only", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

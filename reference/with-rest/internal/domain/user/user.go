@@ -2,9 +2,11 @@
 package user
 
 import (
+	"cmp"
 	"context"
 	"database/sql"
 	"fmt"
+	"slices"
 	"sync"
 
 	"github.com/birdordev/plumego/x/rest"
@@ -33,15 +35,27 @@ func NewRepository() *Repository {
 	}
 }
 
-func (r *Repository) FindAll(_ context.Context, _ *rest.QueryParams) ([]User, int64, error) {
+func (r *Repository) FindAll(ctx context.Context, params *rest.QueryParams) ([]User, int64, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, 0, err
+	}
 	r.mu.RLock()
-	defer r.mu.RUnlock()
-
 	users := make([]User, 0, len(r.users))
 	for _, item := range r.users {
 		users = append(users, item)
 	}
-	return users, int64(len(users)), nil
+	r.mu.RUnlock()
+
+	slices.SortFunc(users, func(a, b User) int { return cmp.Compare(a.ID, b.ID) })
+	total := len(users)
+	if params == nil {
+		return users, int64(total), nil
+	}
+	start, end := min(max(params.Offset, 0), total), total
+	if params.Limit > 0 && params.Limit < end-start {
+		end = start + params.Limit
+	}
+	return users[start:end], int64(total), nil
 }
 
 func (r *Repository) FindByID(_ context.Context, id string) (*User, error) {
@@ -90,9 +104,13 @@ func (r *Repository) Delete(_ context.Context, id string) error {
 	return nil
 }
 
-func (r *Repository) Count(_ context.Context, params *rest.QueryParams) (int64, error) {
-	_, total, err := r.FindAll(context.Background(), params)
-	return total, err
+func (r *Repository) Count(ctx context.Context, _ *rest.QueryParams) (int64, error) {
+	if err := ctx.Err(); err != nil {
+		return 0, err
+	}
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return int64(len(r.users)), nil
 }
 
 func (r *Repository) Exists(_ context.Context, id string) (bool, error) {

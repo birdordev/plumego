@@ -203,12 +203,12 @@ application, ancestor groups, child group, then handler. Group middleware
 receives the matched request and can read route parameters. The application
 freezes registrations during preparation.
 
-`app.Mount(prefix, handler)` registers an independent handler at a non-root
-static prefix and on its descendants. It passes the original request path.
-Configure the child router's fallback and method policy explicitly. The outer
-route snapshot describes the mount. Pass the child's own route snapshot to
-tools that need its individual operations. Discard application assembly after
-a registration error.
+`app.Mount(prefix, handler)` atomically registers an independent handler at a
+non-root static prefix and on its descendants. The most specific mount takes
+precedence over ordinary routes for every method. The handler receives the
+original request path and controls its own fallback and method policy. The
+outer route snapshot describes the mount. Tools that need the child's
+individual operations can use the child router's snapshot.
 
 `app.RunContext(ctx, timeout)` owns the listening socket and waits for HTTP
 shutdown up to a positive timeout. It closes HTTP connections if that budget

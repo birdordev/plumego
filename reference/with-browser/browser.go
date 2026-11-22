@@ -11,7 +11,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/birdordev/plumego/contract"
 	"github.com/birdordev/plumego/core"
+	"github.com/birdordev/plumego/x/validate"
 )
 
 type browser struct {
@@ -140,22 +142,23 @@ func (h browser) form(w http.ResponseWriter, r *http.Request, action sessionActi
 		http.Error(w, "Sign in required", http.StatusUnauthorized)
 		return
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, 4096)
-	if err := r.ParseForm(); err != nil {
-		var limit *http.MaxBytesError
-		if errors.As(err, &limit) {
-			http.Error(w, "Form is too large", http.StatusRequestEntityTooLarge)
-		} else {
-			http.Error(w, "Invalid form", http.StatusBadRequest)
+	var csrf, name string
+	if err := validate.BindForm(w, r, 4096, func(values url.Values) error {
+		csrf = values.Get("csrf")
+		name = strings.TrimSpace(values.Get("name"))
+		return nil
+	}); err != nil {
+		status := http.StatusBadRequest
+		if apiErr, ok := contract.AsAPIError(err); ok {
+			status = apiErr.Status()
 		}
+		http.Error(w, http.StatusText(status), status)
 		return
 	}
-	csrf := r.PostForm.Get("csrf")
 	if !equalToken(session.csrf, csrf) {
 		http.Error(w, "Invalid form token", http.StatusForbidden)
 		return
 	}
-	name := strings.TrimSpace(r.PostForm.Get("name"))
 	if action == updateProfile && (name == "" || len(name) > 80) {
 		h.render(w, http.StatusBadRequest, pageData{
 			Authenticated: true, Admin: slices.Contains(session.principal.Roles, "admin"),

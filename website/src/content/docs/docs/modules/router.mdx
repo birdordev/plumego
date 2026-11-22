@@ -152,3 +152,5 @@ Route registration is the entry-point map for every request the service will eve
 - [Repository Boundaries](/docs/concepts/repo-control-plane)
 
 Opt in to `EnableEscapedPathSegments` before freezing to decode paths segment by segment. Encoded separators can then be part of a path parameter. Enable standard path values separately when handlers need `r.PathValue`.
+
+`Router.Mount` registers a non-root static prefix and its descendants atomically. The most specific mount receives the request before ordinary routes for any method. Its handler receives the original URL.

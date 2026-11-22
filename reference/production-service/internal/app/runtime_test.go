@@ -291,12 +291,61 @@ func TestProbesUseAnIndependentAdmissionPolicy(t *testing.T) {
 		path   string
 		status int
 	}{
-		{"/api/status", 200}, {"/api/status", 429}, {"/healthz", 200}, {"/readyz", 200},
+		{"/api/status", 200}, {"/api/status", 429}, {"/healthz", 200}, {"/readyz", 200}, {"/healthz/", 200}, {"//readyz//", 200},
 	} {
 		w := httptest.NewRecorder()
 		a.Core.ServeHTTP(w, httptest.NewRequest(http.MethodGet, test.path, nil))
 		if w.Code != test.status {
 			t.Errorf("%s = %d, want %d", test.path, w.Code, test.status)
 		}
+	}
+}
+
+func TestReadinessRejectsResultCompletedDuringDrain(t *testing.T) {
+	a, err := newWithLogger(config.Defaults(), plumelog.NewLogger(plumelog.LoggerConfig{Format: plumelog.LoggerFormatDiscard}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(a.RateLimit.Stop)
+	started, release := make(chan struct{}), make(chan struct{})
+	a.components.Add("probe", core.Component{OnReady: func(ctx context.Context) error {
+		close(started)
+		select {
+		case <-release:
+			return nil
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}})
+	if err := a.RegisterRoutes(); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.components.Start(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	a.ready.Store(true)
+	result := make(chan int, 1)
+	go func() {
+		w := httptest.NewRecorder()
+		a.Core.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/readyz", nil).WithContext(t.Context()))
+		result <- w.Code
+	}()
+	select {
+	case <-started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("readiness check did not enter")
+	}
+	a.ready.Store(false)
+	close(release)
+	select {
+	case status := <-result:
+		if status != http.StatusServiceUnavailable {
+			t.Errorf("completed probe after drain returned %d, want 503", status)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("readiness check did not finish")
+	}
+	if err := a.components.Stop(t.Context()); err != nil {
+		t.Fatal(err)
 	}
 }

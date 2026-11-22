@@ -44,7 +44,7 @@ Hard rules:
 - `main.go`: process entrypoint only.
 - `internal/config`: config loading, defaults, and environment (APP_ADDR, WS_SECRET,
   APP_DEBUG, APP_ENV_FILE).
-- `internal/app/app.go`: middleware chain (requestid → recovery → accesslog),
+- `internal/app/app.go`: middleware chain (requestid → accesslog → recovery),
   graceful shutdown (includes WS.Shutdown()).
 - `internal/app/routes.go`: GET /healthz (inline), WebSocket route registration.
 

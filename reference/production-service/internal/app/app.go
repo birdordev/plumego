@@ -63,8 +63,11 @@ func newWithLogger(cfg config.Config, logger plumelog.StructuredLogger) (*App, e
 		Capacity: cfg.App.RateBurst,
 		KeyFunc:  clientIP,
 		Skip: func(r *http.Request) bool {
-			return r.URL != nil && (r.Method == http.MethodGet || r.Method == http.MethodHead) &&
-				(r.URL.Path == "/healthz" || r.URL.Path == "/readyz")
+			if r.URL == nil || (r.Method != http.MethodGet && r.Method != http.MethodHead) {
+				return false
+			}
+			path := strings.Trim(r.URL.Path, "/")
+			return path == "healthz" || path == "readyz"
 		},
 		Logger: app.Logger(),
 	})

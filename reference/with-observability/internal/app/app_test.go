@@ -2,6 +2,7 @@ package app
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -169,6 +170,55 @@ func TestTracingMiddlewareRecordsSpans(t *testing.T) {
 		if s.Attributes["http.method"] == "" {
 			t.Errorf("span %q: missing http.method attribute", s.Name)
 		}
+	}
+}
+
+func TestObserversSeeFinalStatuses(t *testing.T) {
+	cfg := config.Defaults()
+	cfg.App.MaxBodyBytes = 1
+	a, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := a.Core.Get("/panic", http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		panic("recovery fixture")
+	})); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.Core.Post("/upload", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if _, err := io.Copy(io.Discard, r.Body); err == nil {
+			w.WriteHeader(http.StatusNoContent)
+		}
+	})); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.Core.Prepare(); err != nil {
+		t.Fatal(err)
+	}
+	server, err := a.Core.Server()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		request *http.Request
+		status  int
+	}{
+		{httptest.NewRequest(http.MethodPost, "/upload", strings.NewReader("ab")), http.StatusRequestEntityTooLarge},
+		{httptest.NewRequest(http.MethodGet, "/panic", nil), http.StatusInternalServerError},
+	} {
+		rec := httptest.NewRecorder()
+		server.Handler.ServeHTTP(rec, tc.request)
+		if rec.Code != tc.status {
+			t.Errorf("%s: status = %d, want %d", tc.request.URL, rec.Code, tc.status)
+		}
+	}
+	stats := a.Collector.GetStats()
+	if stats.TotalRecords != 2 || stats.ErrorRecords != 2 {
+		t.Errorf("metric records = %d, errors = %d, want 2 each", stats.TotalRecords, stats.ErrorRecords)
+	}
+	spans := a.Tracer.Spans()
+	if len(spans) != 2 || spans[0].Attributes["http.status_code"] != "413" || spans[1].Attributes["http.status_code"] != "500" {
+		t.Errorf("unexpected spans: %+v", spans)
 	}
 }
 

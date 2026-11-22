@@ -107,13 +107,13 @@ extensions explicitly at the application entry point.
 | --- | --- | --- |
 | Basic routing | `Handle` and `HandleFunc` accept method-qualified patterns such as `GET /users`. | `Get`/`Post`/`AddRoute` register a method, path, and handler. |
 | Path parameters | Match `/users/{id}` and read it with `r.PathValue("id")`. | Match `/users/:id` and read it with `plumego.Param(r, "id")`. |
-| Route groups | Register prefixed patterns or mount a sub-mux. | Groups apply a shared prefix. |
+| Route groups | Register prefixed patterns or mount a sub-mux. | Groups apply a shared prefix. `App.Mount` delegates a prefix and its descendants to a handler. |
 | Scoped middleware | Assemble handlers per subtree. | Register common middleware with `Group.Use` before adding its routes. |
 | Named routes + reverse URL | Caller builds URLs manually. | Reverse URL generation via the app/router API. |
 | Route freeze | Registrations can be added after serving starts. | `Prepare` freezes routes before serving. Direct `ServeHTTP` freezes routes when it first prepares the handler. |
 | Structured errors | Caller defines every response shape. | `contract.WriteError` is the canonical error path. |
 | Request ID carriage | Caller picks and propagates a convention. | Explicit context accessors + middleware support. |
-| Graceful lifecycle | Caller builds setup and shutdown policy. | `Prepare`, `Server`, `Shutdown` keep it explicit and reusable. |
+| Graceful lifecycle | Caller builds setup and shutdown policy. | `RunContext` serves and drains HTTP. `Prepare`, `Server`, and `Shutdown` support caller-owned listeners. |
 
 ## Package overview
 

@@ -176,4 +176,4 @@ _ = app.Shutdown(shutdownCtx)
 - [Middleware Primer](/zh/docs/modules/middleware)
 - [仓库边界](/zh/docs/concepts/repo-control-plane)
 
-`RouteGroup.Use` 为随后注册的路由和下级分组应用共享中间件。`App.Mount` 将静态前缀及其下的请求交给独立 HTTP 处理器，并传递原始请求路径。`App.RunContext` 在上下文取消时关闭监听器，并在指定时限内排空 HTTP 请求。
+`RouteGroup.Use` 为随后注册的路由和下级分组应用共享中间件。`App.Mount` 原子注册静态前缀及其子路径，并将原始请求交给独立 HTTP 处理器。各请求方法均优先匹配最具体的挂载，再匹配普通路由。`App.RunContext` 在上下文取消时关闭监听器，并在指定时限内排空 HTTP 请求。

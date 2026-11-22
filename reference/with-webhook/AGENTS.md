@@ -36,15 +36,15 @@ Hard rules:
   this is the intended pattern, not a violation of explicit routing.
 - Use `contract.WriteResponse` / `contract.WriteError` for any directly-served
   responses (health, error pages).
-- Graceful shutdown must call `a.WS.Shutdown()` to drain in-flight webhook deliveries.
+- Pass the caller's signal context to the shared HTTP runtime to drain inbound requests.
 
 ## 3. Package Ownership
 
 - `main.go`: process entrypoint only.
 - `internal/config`: config loading, defaults, and environment (APP_ADDR, APP_DEBUG,
   APP_ENV_FILE).
-- `internal/app/app.go`: middleware chain (requestid → recovery → accesslog),
-  graceful shutdown (includes WS.Shutdown()).
+- `internal/app/app.go`: middleware chain (requestid → accesslog → recovery),
+  HTTP serving and graceful shutdown.
 - `internal/app/routes.go`: GET /healthz (inline), webhook route registration.
 
 Dependency direction:
@@ -94,7 +94,7 @@ When reviewing or optimizing this service, check:
 - `x/messaging/webhook` and `x/messaging/pubsub` only — no other `x/*` packages.
 - Webhook secret validation: `AllowUnauthenticated: true` is acceptable for the demo
   but must be replaced with real secret validation before production use.
-- Graceful shutdown drains in-flight deliveries via `WS.Shutdown()`.
+- Graceful shutdown lets in-flight inbound HTTP requests finish within the drain budget.
 - No webhook payload is logged in full — avoid logging credentials or PII from
   third-party webhooks.
 - Response envelope uses `contract.WriteResponse` / `contract.WriteError` for
