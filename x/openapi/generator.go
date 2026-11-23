@@ -96,16 +96,7 @@ func (g *Generator) GenerateStrict(routes []router.RouteInfo, hints map[string]O
 			usedHints[hintName] = true
 			hint = hints[hintName]
 		}
-		pathParams := make(map[string]bool, len(names))
-		for _, param := range hint.Params {
-			if param.In != "path" {
-				continue
-			}
-			if pathParams[param.Name] || !slices.Contains(names, param.Name) {
-				failures = append(failures, fmt.Errorf("invalid path parameter %q for %s", param.Name, key))
-			}
-			pathParams[param.Name] = true
-		}
+		failures = append(failures, validateParameters(key, names, hint.Params)...)
 		if len(hint.Responses) == 0 {
 			failures = append(failures, fmt.Errorf("missing explicit responses for %s", key))
 			continue

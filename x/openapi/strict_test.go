@@ -128,6 +128,70 @@ func TestStrictValidatesComponentsAndUnusedHints(t *testing.T) {
 	}
 }
 
+func TestStrictValidatesSecuritySchemeDefinitions(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		scheme SecurityScheme
+		want   string
+	}{
+		{"missing type", SecurityScheme{}, "invalid security scheme type"},
+		{"missing HTTP scheme", SecurityScheme{Type: "http"}, "valid scheme token"},
+		{"invalid HTTP scheme", SecurityScheme{Type: "http", Scheme: "Bearer token"}, "valid scheme token"},
+		{"missing API key name", SecurityScheme{Type: "apiKey", In: "header"}, "requires a name"},
+		{"invalid API key location", SecurityScheme{Type: "apiKey", In: "body", Name: "key"}, "location must be"},
+		{"OAuth2", SecurityScheme{Type: "oauth2"}, "outside the supported security scheme model"},
+		{"OpenID Connect", SecurityScheme{Type: "openIdConnect"}, "outside the supported security scheme model"},
+		{"Bearer", SecurityScheme{Type: "http", Scheme: "bearer"}, ""},
+		{"custom HTTP token", SecurityScheme{Type: "http", Scheme: "Example-Auth+v1"}, ""},
+		{"API key in header", SecurityScheme{Type: "apiKey", In: "header", Name: "X-API-Key"}, ""},
+		{"API key in query", SecurityScheme{Type: "apiKey", In: "query", Name: "key"}, ""},
+		{"API key in cookie", SecurityScheme{Type: "apiKey", In: "cookie", Name: "key"}, ""},
+		{"mutual TLS", SecurityScheme{Type: "mutualTLS"}, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			g := New().WithComponents(&Components{SecuritySchemes: map[string]SecurityScheme{"testScheme": tc.scheme}})
+			routes := []router.RouteInfo{{Method: http.MethodGet, Path: "/items"}}
+			hints := map[string]Op{"GET /items": {
+				Security:  []SecurityRequirement{{"testScheme": {}}},
+				Responses: map[string]Response{"200": {Description: "OK"}},
+			}}
+			if got := g.Generate(routes, hints).Components.SecuritySchemes["testScheme"]; got != tc.scheme {
+				t.Fatalf("permissive mode changed input: %+v", got)
+			}
+			_, err := g.GenerateStrict(routes, hints)
+			if tc.want == "" {
+				if err != nil {
+					t.Fatal(err)
+				}
+			} else if err == nil || !strings.Contains(err.Error(), `security scheme "testScheme"`) || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("error = %v, want %q", err, tc.want)
+			}
+		})
+	}
+}
+
+func TestStrictValidatesParameterLocations(t *testing.T) {
+	routes := []router.RouteInfo{{Method: http.MethodGet, Path: "/items/:id"}}
+	const operation = "GET /items/:id"
+	idParams := []Param{PathParam("id", String), QueryParam("id", String), HeaderParam("id", String), {In: "cookie", Name: "id", Schema: String}}
+	op := Op{Params: idParams, Responses: map[string]Response{"200": {Description: "OK"}}}
+	if _, err := New().GenerateStrict(routes, map[string]Op{operation: op}); err != nil {
+		t.Fatalf("same name across locations: %v", err)
+	}
+	op.Params = append(op.Params, QueryParam("id", String), HeaderParam("id", String),
+		Param{In: "cookie", Name: "id"}, Param{In: "query", Name: " "}, Param{In: "form", Name: "name"})
+	_, err := New().GenerateStrict(routes, map[string]Op{operation: op})
+	if err == nil {
+		t.Fatal("strict generation accepted invalid parameters")
+	}
+	for _, want := range []string{`duplicate query parameter "id"`, `duplicate header parameter "id"`,
+		`duplicate cookie parameter "id"`, "missing name for query parameter", `invalid location "form"`, "GET /items/{id}"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("missing %q in %v", want, err)
+		}
+	}
+}
+
 func TestStrictResolvesNestedLocalSchemaPointers(t *testing.T) {
 	g := New().WithComponents(&Components{Schemas: map[string]Schema{
 		"List": {Type: "array", Items: &Schema{Type: "object", Properties: map[string]Schema{"a/b~c": String}}},

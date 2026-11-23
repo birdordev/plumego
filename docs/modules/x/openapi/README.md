@@ -233,17 +233,21 @@ go vet ./x/openapi/...
 
 `plumego generate spec --strict` calls `GenerateStrict` and requires a response
 hint for every supported operation before writing the output. Strict mode
-rejects equivalent path templates with different parameter names, duplicate or
-unmatched path parameter hints, and content on responses that cannot carry a
+rejects equivalent path templates with different parameter names, duplicate
+parameters within the same location, invalid parameter locations, unmatched
+path parameter hints, and content on responses that cannot carry a
 body, including HEAD and HTTP 204. The CLI can
 load `components.securitySchemes` and per-operation `security` from the hints
 file. Strict generation needs a target application using a library checkout or
 release that provides `GenerateStrict`. The standard-service
 `plumego.spec.yaml` describes the protected write profile.
 
-`GenerateStrict` reports unused route hints, missing authentication schemes,
-duplicate operation IDs, and unresolved local schema references. Fragment
-pointers can refer to nested properties and use percent-encoding and JSON
+`GenerateStrict` reports unused route hints, missing or invalid authentication
+schemes, duplicate operation IDs, and unresolved local schema references.
+Strict mode supports HTTP authentication with a scheme token, API keys with a
+name and a `header`, `query`, or `cookie` location, and mutual TLS. OAuth 2.0 and
+OpenID Connect definitions require fields outside the current scheme model.
+Fragment pointers can refer to nested properties and use percent-encoding and JSON
 Pointer escapes. External references are preserved without resolution. Configure
 `components.schemas` and `components.securitySchemes` via
 `WithComponents` in Go or the hint file in the CLI. Operation hints can

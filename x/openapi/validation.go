@@ -25,12 +25,69 @@ func cloneComponents(components *Components) *Components {
 	return copy
 }
 
+func validateParameters(operation string, pathNames []string, params []Param) []error {
+	type parameterKey struct{ in, name string }
+	seen := make(map[parameterKey]bool, len(params))
+	var failures []error
+	for _, param := range params {
+		key := parameterKey{in: param.In, name: param.Name}
+		switch param.In {
+		case "path":
+			if seen[key] || !slices.Contains(pathNames, param.Name) {
+				failures = append(failures, fmt.Errorf("invalid path parameter %q for %s", param.Name, operation))
+			}
+		case "query", "header", "cookie":
+			if strings.TrimSpace(param.Name) == "" {
+				failures = append(failures, fmt.Errorf("missing name for %s parameter in %s", param.In, operation))
+			} else if seen[key] {
+				failures = append(failures, fmt.Errorf("duplicate %s parameter %q for %s", param.In, param.Name, operation))
+			}
+		default:
+			failures = append(failures, fmt.Errorf("invalid location %q for parameter %q in %s", param.In, param.Name, operation))
+		}
+		seen[key] = true
+	}
+	return failures
+}
+
+func validateSecurityScheme(scheme SecurityScheme) error {
+	switch scheme.Type {
+	case "http":
+		if scheme.Scheme == "" || strings.ContainsFunc(scheme.Scheme, func(c rune) bool {
+			isASCIIAlphanumeric := 'a' <= c && c <= 'z' || 'A' <= c && c <= 'Z' || '0' <= c && c <= '9'
+			return !isASCIIAlphanumeric && !strings.ContainsRune("!#$%&'*+-.^_`|~", c)
+		}) {
+			return errors.New("HTTP authentication requires a valid scheme token")
+		}
+	case "apiKey":
+		if strings.TrimSpace(scheme.Name) == "" {
+			return errors.New("API key requires a name")
+		}
+		switch scheme.In {
+		case "header", "query", "cookie":
+		default:
+			return errors.New("API key location must be header, query, or cookie")
+		}
+	case "mutualTLS":
+	case "oauth2", "openIdConnect":
+		return fmt.Errorf("type %q requires fields outside the supported security scheme model", scheme.Type)
+	default:
+		return fmt.Errorf("invalid security scheme type %q", scheme.Type)
+	}
+	return nil
+}
+
 func validateDocument(doc Document) error {
 	components := doc.Components
 	if components == nil {
 		components = &Components{}
 	}
 	var failures []error
+	for _, name := range slices.Sorted(maps.Keys(components.SecuritySchemes)) {
+		if err := validateSecurityScheme(components.SecuritySchemes[name]); err != nil {
+			failures = append(failures, fmt.Errorf("security scheme %q: %w", name, err))
+		}
+	}
 	seenRefs := make(map[string]bool)
 	loadDocument := sync.OnceValues(func() (any, error) {
 		data, err := json.Marshal(doc)
