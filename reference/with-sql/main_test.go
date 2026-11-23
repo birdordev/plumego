@@ -32,44 +32,47 @@ func TestItemLifecycleAndTransactionalOutbox(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	send := func(method, path, body, version string, authenticated bool) *httptest.ResponseRecorder {
+	send := func(method, path, body, version, credentials string) *httptest.ResponseRecorder {
 		req := httptest.NewRequest(method, path, strings.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("Idempotency-Key", "case-1")
 		req.Header.Set("If-Match", version)
-		if authenticated {
-			req.Header.Set("Authorization", "Bearer test-key")
+		if credentials != "" {
+			req.Header.Set("Authorization", credentials)
 		}
 		rec := httptest.NewRecorder()
 		app.ServeHTTP(rec, req)
 		return rec
 	}
-	if got := send("POST", "/items", `{"name":"one"}`, "", false); got.Code != 401 {
-		t.Fatalf("unauthorized status = %d", got.Code)
+	for _, credentials := range []string{"", "Bearer invalid-token"} {
+		w := send("POST", "/items", `{"name":"one"}`, "", credentials)
+		if got := w.Header().Get("WWW-Authenticate"); w.Code != http.StatusUnauthorized || got != `Bearer realm="sql-api"` {
+			t.Fatalf("credentials supplied=%t: status=%d challenge=%q", credentials != "", w.Code, got)
+		}
 	}
 
-	created := send("POST", "/items", `{"name":"one"}`, "", true)
+	created := send("POST", "/items", `{"name":"one"}`, "", "Bearer test-key")
 	if created.Code != 201 {
 		t.Fatalf("create: %d %s", created.Code, created.Body)
 	}
 	location, originalTag := created.Header().Get("Location"), created.Header().Get("ETag")
-	updated := send("PUT", location, `{"name":"two"}`, originalTag, true)
+	updated := send("PUT", location, `{"name":"two"}`, originalTag, "Bearer test-key")
 	if updated.Code != 200 || updated.Header().Get("ETag") == originalTag {
 		t.Fatalf("update: %d %s", updated.Code, updated.Body)
 	}
-	stale := send("PUT", location, `{"name":"stale"}`, originalTag, true)
+	stale := send("PUT", location, `{"name":"stale"}`, originalTag, "Bearer test-key")
 	if stale.Code != 412 {
 		t.Fatalf("stale write: %d %s", stale.Code, stale.Body)
 	}
-	replay := send("POST", "/items", `{"name":"one"}`, "", true)
+	replay := send("POST", "/items", `{"name":"one"}`, "", "Bearer test-key")
 	if replay.Code != 201 || replay.Header().Get("Idempotency-Replayed") != "true" ||
 		replay.Header().Get("Location") != location || replay.Body.String() != created.Body.String() {
 		t.Fatalf("replay did not preserve the original response: %d %s", replay.Code, replay.Body)
 	}
-	if got := send("POST", "/items", `{"name":"different"}`, "", true); got.Code != 409 {
+	if got := send("POST", "/items", `{"name":"different"}`, "", "Bearer test-key"); got.Code != 409 {
 		t.Fatalf("conflicting key = %d", got.Code)
 	}
-	read := send("GET", location, "", "", true)
+	read := send("GET", location, "", "", "Bearer test-key")
 	var current struct{ Data item }
 	if read.Code != 200 || json.Unmarshal(read.Body.Bytes(), &current) != nil || current.Data.Name != "two" {
 		t.Fatalf("read after update: %d %s", read.Code, read.Body)
@@ -98,11 +101,11 @@ func TestItemLifecycleAndTransactionalOutbox(t *testing.T) {
 		t.Fatalf("extra event: sent=%v err=%v", sent, err)
 	}
 
-	deleted := send("DELETE", location, "", read.Header().Get("ETag"), true)
+	deleted := send("DELETE", location, "", read.Header().Get("ETag"), "Bearer test-key")
 	if deleted.Code != 204 || deleted.Body.Len() != 0 {
 		t.Fatalf("delete: %d %s", deleted.Code, deleted.Body)
 	}
-	if got := send("GET", location, "", "", true); got.Code != 404 {
+	if got := send("GET", location, "", "", "Bearer test-key"); got.Code != 404 {
 		t.Fatalf("read deleted item = %d", got.Code)
 	}
 }

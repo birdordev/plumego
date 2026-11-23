@@ -1878,6 +1878,14 @@ func TestEscapedSegmentsRoundTripAndAllow(t *testing.T) {
 	if err := r.AddRoute(http.MethodGet, "/résumé/:id", handler, WithRouteName("encoded")); err != nil {
 		t.Fatal(err)
 	}
+	if err := r.AddRoute(http.MethodGet, "/résumé/archive/*tail", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		if got := Param(req, "tail"); got != "a/b/c%2Fd" || got != req.PathValue("tail") {
+			t.Errorf("wildcard = %q, PathValue = %q", got, req.PathValue("tail"))
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})); err != nil {
+		t.Fatal(err)
+	}
 	path, err := r.URL("encoded", "id", "a/b")
 	if err != nil {
 		t.Fatal(err)
@@ -1886,15 +1894,17 @@ func TestEscapedSegmentsRoundTripAndAllow(t *testing.T) {
 		if frozen {
 			r.Freeze()
 		}
-		for range 2 {
-			for _, tc := range []struct {
-				method string
-				status int
-			}{{"GET", 204}, {"HEAD", 204}, {"POST", 405}} {
-				w := httptest.NewRecorder()
-				r.ServeHTTP(w, httptest.NewRequest(tc.method, path, nil))
-				if w.Code != tc.status || (tc.status == 405 && w.Header().Get("Allow") != "GET, HEAD") {
-					t.Fatalf("frozen=%v %s %s: %d, Allow=%q", frozen, tc.method, path, w.Code, w.Header().Get("Allow"))
+		for _, target := range []string{path, "/r%C3%A9sum%C3%A9/archive/a%2Fb/c%252Fd"} {
+			for range 2 {
+				for _, tc := range []struct {
+					method string
+					status int
+				}{{"GET", 204}, {"HEAD", 204}, {"POST", 405}} {
+					w := httptest.NewRecorder()
+					r.ServeHTTP(w, httptest.NewRequest(tc.method, target, nil))
+					if w.Code != tc.status || (tc.status == 405 && w.Header().Get("Allow") != "GET, HEAD") {
+						t.Fatalf("frozen=%v %s %s: %d, Allow=%q", frozen, tc.method, target, w.Code, w.Header().Get("Allow"))
+					}
 				}
 			}
 		}

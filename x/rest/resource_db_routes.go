@@ -67,14 +67,19 @@ func (c *DBResourceController[T]) Index(w http.ResponseWriter, r *http.Request) 
 	c.handleResponseError(w, r, contract.WriteResponse(w, r, http.StatusOK, transformedResults, meta))
 }
 
+func writeRequiredResourceID(w http.ResponseWriter, r *http.Request) {
+	_ = contract.WriteError(w, r, contract.NewErrorBuilder().
+		Type(contract.TypeRequired).
+		Message("id is required").
+		Detail("fields", []contract.FieldViolation{{Source: "path", Field: "id", Code: "REQUIRED"}}).
+		Build())
+}
+
 // Show handles GET /resource/:id.
 func (c *DBResourceController[T]) Show(w http.ResponseWriter, r *http.Request) {
 	id := c.ParamExtractor.GetID(r)
 	if id == "" {
-		_ = contract.WriteError(w, r, contract.NewErrorBuilder().
-			Type(contract.TypeRequired).
-			Message("id is required").
-			Build())
+		writeRequiredResourceID(w, r)
 		return
 	}
 
@@ -164,10 +169,7 @@ func (c *DBResourceController[T]) Create(w http.ResponseWriter, r *http.Request)
 func (c *DBResourceController[T]) Update(w http.ResponseWriter, r *http.Request) {
 	id := c.ParamExtractor.GetID(r)
 	if id == "" {
-		_ = contract.WriteError(w, r, contract.NewErrorBuilder().
-			Type(contract.TypeRequired).
-			Message("id is required").
-			Build())
+		writeRequiredResourceID(w, r)
 		return
 	}
 
@@ -235,10 +237,7 @@ func (c *DBResourceController[T]) Update(w http.ResponseWriter, r *http.Request)
 func (c *DBResourceController[T]) Delete(w http.ResponseWriter, r *http.Request) {
 	id := c.ParamExtractor.GetID(r)
 	if id == "" {
-		_ = contract.WriteError(w, r, contract.NewErrorBuilder().
-			Type(contract.TypeRequired).
-			Message("id is required").
-			Build())
+		writeRequiredResourceID(w, r)
 		return
 	}
 

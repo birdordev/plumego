@@ -612,6 +612,44 @@ func TestCORSVaryIncludesFallbackResponses(t *testing.T) {
 	}
 }
 
+func TestHeadPreflightWithAuthorization(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		methods []string
+		status  int
+	}{
+		{"default", nil, http.StatusNoContent},
+		{"custom without HEAD", []string{http.MethodGet}, http.StatusMethodNotAllowed},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			const origin = "https://example.test"
+			h := Middleware(CORSOptions{AllowedOrigins: []string{origin}, AllowedMethods: tc.methods})(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(http.StatusMethodNotAllowed)
+			}))
+			r := httptest.NewRequest(http.MethodOptions, "/items", nil)
+			r.Header.Set("Origin", origin)
+			r.Header.Set("Access-Control-Request-Method", http.MethodHead)
+			r.Header.Set("Access-Control-Request-Headers", "Authorization")
+			w := httptest.NewRecorder()
+			w.Header().Set("Vary", "Origin, Accept-Encoding")
+			h.ServeHTTP(w, r)
+			if w.Code != tc.status {
+				t.Fatalf("status=%d, want %d", w.Code, tc.status)
+			}
+			headers := w.Result().Header
+			if tc.status == http.StatusNoContent && (!headerValuesContain(headers.Values("Access-Control-Allow-Methods"), "HEAD") ||
+				headers.Get("Access-Control-Allow-Headers") != "Authorization" || headers.Get("Access-Control-Allow-Origin") != origin) {
+				t.Fatalf("preflight headers=%v", headers)
+			}
+			for _, field := range []string{"Origin", "Accept-Encoding", "Access-Control-Request-Method", "Access-Control-Request-Headers"} {
+				if countHeaderToken(headers.Values("Vary"), field) != 1 {
+					t.Errorf("Vary=%v, want %q once", headers.Values("Vary"), field)
+				}
+			}
+		})
+	}
+}
+
 func TestPreflightUsesExactMethodName(t *testing.T) {
 	handler := Middleware(CORSOptions{AllowedOrigins: []string{"https://example.test"}, AllowedMethods: []string{"GET", "CUSTOM"}})(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusAccepted)

@@ -4,15 +4,17 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"github.com/birdordev/plumego/core"
-	"github.com/birdordev/plumego/log"
-	"github.com/birdordev/plumego/middleware/accesslog"
-	"github.com/birdordev/plumego/middleware/httpmetrics"
-	"github.com/birdordev/plumego/router"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
+
+	"github.com/birdordev/plumego/core"
+	"github.com/birdordev/plumego/log"
+	"github.com/birdordev/plumego/middleware/abuseguard"
+	"github.com/birdordev/plumego/middleware/accesslog"
+	"github.com/birdordev/plumego/middleware/httpmetrics"
+	"github.com/birdordev/plumego/router"
 )
 
 type routeObserver struct{ paths chan string }
@@ -54,14 +56,33 @@ func TestOuterObservations(t *testing.T) {
 }
 
 func TestBoundedFallbackRouteLabels(t *testing.T) {
-	paths := make(chan string, 3)
-	r := router.NewRouter()
+	paths := make(chan string, 1)
+	r := router.NewRouter(router.WithMethodNotAllowed(true))
 	if err := r.AddRoute(http.MethodGet, "/items/:id", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) })); err != nil {
 		t.Fatal(err)
 	}
-	h := httpmetrics.MiddlewareWithRouteLabels(routeObserver{paths: paths})(r)
-	for _, tc := range []struct{ path, label string }{{"/wrong/one", "unmatched"}, {"/wrong/two", "unmatched"}, {"/items/one", "/items/:id"}} {
-		h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, tc.path, nil))
+	guard := abuseguard.NewAbuseGuard(abuseguard.AbuseGuardConfig{Rate: 0.001, Capacity: 1})
+	t.Cleanup(guard.Stop)
+	h := httpmetrics.MiddlewareWithRouteLabels(routeObserver{paths: paths})(guard.Middleware()(r))
+	for _, tc := range []struct {
+		method, path, peer, label string
+		status                    int
+	}{
+		{http.MethodGet, "/wrong/one", "192.0.2.1:80", "unmatched", 404},
+		{http.MethodGet, "/wrong/two", "192.0.2.2:80", "unmatched", 404},
+		{http.MethodPost, "/items/one", "192.0.2.3:80", "unmatched", 405},
+		{http.MethodGet, "/items/one", "192.0.2.1:80", "unclassified", 429},
+		{http.MethodGet, "/items/two", "192.0.2.1:80", "unclassified", 429},
+		{http.MethodGet, "/items/one", "192.0.2.4:80", "/items/:id", 204},
+		{http.MethodGet, "/items/two", "192.0.2.5:80", "/items/:id", 204},
+	} {
+		w := httptest.NewRecorder()
+		req := httptest.NewRequest(tc.method, tc.path, nil)
+		req.RemoteAddr = tc.peer
+		h.ServeHTTP(w, req)
+		if w.Code != tc.status {
+			t.Fatalf("%s %s: status=%d, want %d", tc.method, tc.path, w.Code, tc.status)
+		}
 		if got := <-paths; got != tc.label {
 			t.Fatalf("route label=%q, want %q", got, tc.label)
 		}

@@ -93,7 +93,7 @@ func newWithLogger(cfg config.Config, logger plumelog.StructuredLogger) (*App, e
 	if err := app.Use(
 		requestid.Middleware(),
 		securityMw,
-		httpmetrics.Middleware(collector),
+		httpmetrics.MiddlewareWithRouteLabels(collector),
 		accesslogMw,
 		recoveryMw,
 		bodylimit.Middleware(bodylimit.Config{MaxBytes: cfg.App.BodyLimitBytes, Logger: app.Logger()}),

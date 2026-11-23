@@ -108,25 +108,47 @@ func TestRecoveryCatchesPanicFromDownstreamMiddlewareOrder(t *testing.T) {
 
 func TestTimedOutHandlerKeepsItsConcurrencySlot(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		entered := make(chan struct{}, 2)
+		entered := make(chan struct{})
+		canceled := make(chan struct{})
 		release := make(chan struct{})
-		defer close(release)
+		defer func() {
+			select {
+			case <-release:
+			default:
+				close(release)
+			}
+		}()
+		calls := 0
 		h := middleware.NewChain(
 			timeout.Middleware(timeout.Config{Timeout: time.Second}),
 			concurrencylimit.Middleware(concurrencylimit.Config{MaxConcurrent: 1}),
-		).Build(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			entered <- struct{}{}
-			<-release
+		).Build(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			calls++
+			if calls == 1 {
+				close(entered)
+				<-r.Context().Done()
+				close(canceled)
+				<-release
+			}
+			w.WriteHeader(http.StatusNoContent)
 		}))
 		first := httptest.NewRecorder()
 		done := make(chan struct{})
 		go func() { defer close(done); h.ServeHTTP(first, httptest.NewRequest(http.MethodGet, "/fixture", nil)) }()
 		<-entered
 		<-done
+		<-canceled
 		second := httptest.NewRecorder()
 		h.ServeHTTP(second, httptest.NewRequest(http.MethodGet, "/fixture", nil))
-		if first.Code != 504 || second.Code != 503 || len(entered) != 0 {
-			t.Fatalf("first=%d second=%d unexpectedly entered=%d", first.Code, second.Code, len(entered))
+		if first.Code != 504 || second.Code != 503 || calls != 1 {
+			t.Fatalf("first=%d second=%d calls=%d", first.Code, second.Code, calls)
+		}
+		close(release)
+		synctest.Wait()
+		third := httptest.NewRecorder()
+		h.ServeHTTP(third, httptest.NewRequest(http.MethodGet, "/fixture", nil))
+		if third.Code != http.StatusNoContent || calls != 2 {
+			t.Fatalf("third=%d calls=%d", third.Code, calls)
 		}
 	})
 }

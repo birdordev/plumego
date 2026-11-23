@@ -490,16 +490,18 @@ func (c *BaseContextResourceController) ParseQueryParams(r *http.Request) *Query
 	}
 
 	params := builder.Parse(r)
-	limit, offset := params.Limit, params.Offset
-	params = normalizeQueryParams(params, c.Spec.Options, true)
 	query := r.URL.Query()
 	if !query.Has("page") && !query.Has("page_size") && (query.Has("limit") || query.Has("offset")) {
-		params.Limit, params.PageSize, params.Offset = limit, limit, offset
-		if limit > 0 {
-			params.Page = pageOffsetForOffset(offset, limit)
+		offset := params.Offset
+		params.PageSize = params.Limit
+		params = normalizeQueryParams(params, c.Spec.Options, true)
+		params.Offset = offset
+		if params.Limit > 0 {
+			params.Page = pageOffsetForOffset(offset, params.Limit)
 		}
+		return params
 	}
-	return params
+	return normalizeQueryParams(params, c.Spec.Options, true)
 }
 
 // ================================================

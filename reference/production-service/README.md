@@ -136,6 +136,10 @@ and rate limiting.
 The health endpoints use a separate admission policy from business requests.
 Readiness probes are serialized and bounded by the request deadline. Request
 metrics and access logs observe the final status written by recovery.
+The HTTP metrics middleware uses route patterns for matched requests and fixed
+`unmatched` or `unclassified` labels when no route pattern is available. The
+reference collector exposes aggregate counts. The same middleware can pass
+bounded path labels to a route-aware collector.
 Shutdown stops accepting traffic before canceling the dependencies'
 runtime context. In-flight HTTP requests retain access to those dependencies
 until HTTP drain completes or its deadline expires.

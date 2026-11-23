@@ -72,6 +72,46 @@ type dbResourceTestHooks struct {
 	afterListErr  error
 }
 
+type paginationRepository struct {
+	dbResourceTestRepo
+	params *QueryParams
+}
+
+func (r *paginationRepository) FindAll(_ context.Context, params *QueryParams) ([]dbResourceTestItem, int64, error) {
+	r.params = params
+	return []dbResourceTestItem{}, 11, nil
+}
+
+func TestResourceOffsetPaginationRespectsResourceMaximum(t *testing.T) {
+	for _, query := range []string{"offset=7", "offset=7&limit=99"} {
+		t.Run(query, func(t *testing.T) {
+			spec := DefaultResourceSpec("items")
+			spec.Options.MaxPageSize = 4
+			spec.QueryBuilder = NewQueryBuilder().WithPageSize(20, 100)
+			repo := &paginationRepository{}
+			w := httptest.NewRecorder()
+			NewDBResource(spec, repo).Index(w, httptest.NewRequest(http.MethodGet, "/items?"+query, nil))
+
+			var response struct {
+				Meta struct {
+					Limit, Offset int
+					Pagination    PaginationMeta
+				}
+			}
+			if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil || w.Code != http.StatusOK {
+				t.Fatalf("status=%d body=%s error=%v", w.Code, w.Body, err)
+			}
+			if p := repo.params; p == nil || p.Limit != 4 || p.PageSize != 4 || p.Offset != 7 || p.Page != 2 {
+				t.Fatalf("repository pagination = %+v", p)
+			}
+			meta := response.Meta
+			if p := meta.Pagination; meta.Limit != 4 || meta.Offset != 7 || p.Page != 2 || p.PageSize != 4 || !p.HasPrev || p.HasNext {
+				t.Fatalf("response pagination = %+v", meta)
+			}
+		})
+	}
+}
+
 func (h dbResourceTestHooks) BeforeList(context.Context, *QueryParams) error {
 	return h.beforeListErr
 }
@@ -99,6 +139,34 @@ func TestDBResourceControllerBeforeListErrorUsesSafeCode(t *testing.T) {
 
 	assertDBResourceError(t, rec, http.StatusBadRequest, contract.CodeInvalidRequest, "list hook rejected request")
 	assertBodyOmits(t, rec.Body.String(), "secret before-list failure")
+}
+
+func TestDBResourceMissingIDReportsPathField(t *testing.T) {
+	controller := NewDBResourceController[dbResourceTestItem]("items", nil)
+	for _, tc := range []struct {
+		method string
+		handle http.HandlerFunc
+	}{
+		{http.MethodGet, controller.Show},
+		{http.MethodPut, controller.Update},
+		{http.MethodDelete, controller.Delete},
+	} {
+		t.Run(tc.method, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			tc.handle(w, httptest.NewRequest(tc.method, "/items?id=from-query", nil))
+			var body struct {
+				Error struct {
+					Details struct{ Fields []contract.FieldViolation }
+				}
+			}
+			want := []contract.FieldViolation{{Source: "path", Field: "id", Code: "REQUIRED"}}
+			if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil ||
+				w.Code != http.StatusBadRequest || !slices.Equal(body.Error.Details.Fields, want) ||
+				strings.Contains(w.Body.String(), "from-query") {
+				t.Fatalf("status = %d, body = %s, error = %v", w.Code, w.Body, err)
+			}
+		})
+	}
 }
 
 func TestDBResourceControllerAfterListErrorUsesSafeCode(t *testing.T) {

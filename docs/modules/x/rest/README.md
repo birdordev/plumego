@@ -170,9 +170,13 @@ records two release refs, matching API snapshots, no exported API changes, and
 `DBResourceController.WithStrictJSON` opts create and update into bounded
 single-document decoding. Validator failures may include typed field
 violations. Opaque validator errors produce a generic response.
+Show, update, and delete report a missing resource ID as a `path` field
+violation for `id` in `error.details.fields`.
 
 After-create and after-update hooks run after the repository mutation. A
 failure in one of these hooks can return an error after the write committed.
+Retry a create only through an idempotent write path, or reconcile the
+resource state before submitting it again.
 Use a repository transaction for effects that must commit with the write.
 The SQL reference demonstrates writing an outbox event in the same transaction
 and delivering it from a separate worker.
@@ -185,7 +189,9 @@ fallback. The legacy registration entrypoint still accepts its explicit
 HEAD and OPTIONS handlers.
 
 The repository-backed list accepts either `page`/`page_size` or
-`limit`/`offset`. Combining modes returns 400. Sorting and filtering
+`limit`/`offset`. Combining modes returns 400. `MaxPageSize` caps both modes,
+including when the resource uses a custom query builder. Offset mode echoes
+the effective `limit` and `offset` sent to the repository. Sorting and filtering
 with `BaseRepository` use the plain columns in `WithColumns` and the ID
 column by default. `WithQueryFields` supplies a separate mapping from
 public names to columns. Unmapped fields return a field-level 400.

@@ -7,8 +7,34 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/birdordev/plumego/x/rest"
 	"with-rest/internal/config"
 )
+
+func TestResourceRegistrationThroughNestedAppGroup(t *testing.T) {
+	a, err := New(config.Defaults())
+	if err != nil {
+		t.Fatal(err)
+	}
+	group := a.Core.Group("/api").Group("/v2")
+	register := func(path string) error {
+		return rest.RegisterResource(group, path, a.Users, rest.ResourceOperations{Options: true})
+	}
+	if err := register("/users"); err != nil {
+		t.Fatal(err)
+	}
+	if err := register("/users"); err == nil {
+		t.Fatal("duplicate resource registration succeeded")
+	}
+	w := httptest.NewRecorder()
+	a.Core.ServeHTTP(w, httptest.NewRequest(http.MethodOptions, "/api/v2/users/one", nil))
+	if w.Code != http.StatusNoContent || w.Header().Get("Allow") != "DELETE, GET, HEAD, OPTIONS, PUT" {
+		t.Fatalf("status=%d headers=%v", w.Code, w.Header())
+	}
+	if err := register("/late"); err == nil {
+		t.Fatal("registration after preparation succeeded")
+	}
+}
 
 func TestUserListPaginatesRepositoryResults(t *testing.T) {
 	a, err := New(config.Defaults())
