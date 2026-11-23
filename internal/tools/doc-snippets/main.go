@@ -20,6 +20,7 @@ var (
 		"docs/reference/canonical-style-guide.md",
 		"docs/modules/core/README.md",
 		"docs/start/adoption-path.md",
+		"docs/guides/migration/from-stdmux.md",
 	}
 
 	packageMainPattern = regexp.MustCompile(`(?m)^package\s+main(\s|$)`)

@@ -66,7 +66,7 @@ type Document struct {
 // SecurityRequirement 记录一种认证选择涉及的方案及可选 OAuth 权限范围。
 type SecurityRequirement map[string][]string
 
-// Components 保存接口操作引用的认证方案。
+// Components holds reusable schemas and security schemes.
 type Components struct {
 	Schemas         map[string]Schema         `json:"schemas,omitempty"`
 	SecuritySchemes map[string]SecurityScheme `json:"securitySchemes,omitempty"`

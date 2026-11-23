@@ -36,7 +36,7 @@ Generated for v1.1.0. These symbols are frozen for `v1.x`; breaking changes requ
 
 ### `router` (223 exported symbols)
 
-**Primary Types:** `Router`, `RouteInfo`, `Group`, `Param`, `ParamValues`
+**Primary Types:** `Router`, `RouteInfo`, `Group`
 
 **Key Functions:**
 - `(router *Router) Get(path string, handler http.Handler)`
@@ -46,8 +46,7 @@ Generated for v1.1.0. These symbols are frozen for `v1.x`; breaking changes requ
 - `(router *Router) Match(method, path string) (*RouteInfo, []string)`
 
 **Request Context Accessors:**
-- `RouteInfo(r *http.Request) *RouteInfo` — get matched route metadata
-- `Params(r *http.Request) ParamValues` — all path params
+- `Param(r *http.Request, name string) string` — extract a named path parameter
 
 **Route Metadata:**
 - `(info *RouteInfo) Name` — route name (optional)
@@ -60,16 +59,13 @@ Generated for v1.1.0. These symbols are frozen for `v1.x`; breaking changes requ
 
 **Response Helpers (primary):**
 - `WriteResponse(w http.ResponseWriter, r *http.Request, status int, data interface{}, err error) error`
-- `WriteError(w http.ResponseWriter, r *http.Request, err error) error`
+- `WriteError(w http.ResponseWriter, r *http.Request, err APIError) error`
 - `WriteJSON(w http.ResponseWriter, status int, data interface{}) error`
 - `WriteText(w http.ResponseWriter, status int, text string) error`
 
 **Request Binding:**
-- `BindJSON(r *http.Request, v interface{}) error` — parse + validate JSON
-- `Param(r *http.Request, key string) string` — extract path param
-- `Params(r *http.Request) map[string]string` — all path params
-- `Query(r *http.Request, key string) string` — query parameter
-- `Header(r *http.Request, key string) string` — HTTP header
+- `DecodeJSONRequest(r *http.Request, dst any, opts JSONRequestOptions) error` — decode one bounded JSON document
+- `DecodeUniqueJSONRequest(r *http.Request, dst any, opts JSONRequestOptions) error` — also reject duplicate keys
 
 **Request Metadata:**
 - `RequestID(r *http.Request) string` — request tracking ID (set by middleware/requestid)
@@ -280,8 +276,8 @@ Symbols in experimental extensions (x/ai, x/data, etc.) may change in any minor 
 **I want to...**
 
 - **Register routes** → core.App.Get/Post/Put/Delete, core.RouteGroup
-- **Extract path params** → contract.Param
-- **Bind JSON** → contract.BindJSON
+- **Extract path params** → router.Param
+- **Bind JSON** → contract.DecodeJSONRequest
 - **Send responses** → contract.WriteResponse
 - **Handle errors** → contract.WriteError
 - **Add middleware** → app.Use + middleware.* packages

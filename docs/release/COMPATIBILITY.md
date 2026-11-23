@@ -53,7 +53,7 @@ See `docs/guides/migration/from-gin.md`
 
 **Key differences:**
 - Gin handlers return `(w, r)`; you call `c.JSON()`, `c.Error()`. Plumego handlers return nothing; you call `contract.WriteResponse()`, `contract.WriteError()`.
-- Gin uses `c.Param("id")`. Plumego uses `contract.Param(r, "id")` via request context.
+- Gin uses `c.Param("id")`. Plumego uses `router.Param(r, "id")` via request context.
 - Gin middleware receives `*gin.Context`. Plumego middleware wraps `http.Handler` and works with stdlib patterns.
 
 **Migration path:**
@@ -76,7 +76,7 @@ See `docs/guides/migration/from-echo.md`
 1. Read the Echo migration guide
 2. Replace `echo.New()` with `core.New()`
 3. Convert handlers to take `(http.ResponseWriter, *http.Request)`
-4. Use `contract.Param(r, "id")` instead of `c.Param("id")`
+4. Use `router.Param(r, "id")` instead of `c.Param("id")`
 5. Convert middleware to `func(http.Handler) http.Handler` pattern
 
 ### From Chi
@@ -107,7 +107,7 @@ See `docs/guides/migration/from-stdmux.md`
 **Migration path:**
 1. Read the stdlib migration guide
 2. Replace manual `mux.HandleFunc()` registration with `app.Get()`, `app.Post()`, etc.
-3. Use `contract.Param(r, "id")` instead of manual path parsing
+3. Use `router.Param(r, "id")` instead of manual path parsing
 4. Use `contract.WriteResponse()` instead of manual `json.NewEncoder(w).Encode(data)`
 5. Test incrementally
 

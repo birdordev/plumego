@@ -4,9 +4,11 @@ Demonstrates common error handling patterns in Plumego: validation errors, reque
 
 ## Run it
 
+The example uses Plumego from this checkout.
+
 ```bash
 cd examples/error-handling
-go run main.go
+go run .
 ```
 
 ## Test valid request
@@ -19,7 +21,7 @@ curl -X POST http://localhost:8080/users \
 
 Response (201 Created):
 ```json
-{"message":"user created","user":{"name":"Alice","email":"alice@example.com","age":30}}
+{"data":{"message":"user created","user":{"name":"Alice","email":"alice@example.com","age":30}}}
 ```
 
 ## Test validation errors
@@ -32,9 +34,9 @@ curl -X POST http://localhost:8080/users \
   -d '{"name":"Bob"}'
 ```
 
-Response (400 Bad Request):
+Response excerpt (400 Bad Request):
 ```json
-{"error":"email is required"}
+{"error":{"message":"email is required"}}
 ```
 
 Invalid age:
@@ -45,9 +47,9 @@ curl -X POST http://localhost:8080/users \
   -d '{"name":"Charlie","email":"c@example.com","age":200}'
 ```
 
-Response (400 Bad Request):
+Response excerpt (400 Bad Request):
 ```json
-{"error":"age must be between 0 and 150"}
+{"error":{"message":"age must be between 0 and 150"}}
 ```
 
 ## Test invalid JSON
@@ -58,9 +60,9 @@ curl -X POST http://localhost:8080/users \
   -d '{"name":"Dave"'  # Truncated JSON
 ```
 
-Response (400 Bad Request):
+Response excerpt (400 Bad Request):
 ```json
-{"error":"unexpected end of JSON input"}
+{"error":{"message":"invalid JSON request body"}}
 ```
 
 ## Test path param validation
@@ -73,7 +75,7 @@ curl http://localhost:8080/error/50
 
 Response (200 OK):
 ```json
-{"id":50}
+{"data":{"id":50}}
 ```
 
 Invalid ID format:
@@ -82,9 +84,9 @@ Invalid ID format:
 curl http://localhost:8080/error/abc
 ```
 
-Response (400 Bad Request):
+Response excerpt (400 Bad Request):
 ```json
-{"error":"invalid ID format"}
+{"error":{"message":"invalid ID format"}}
 ```
 
 Not found (simulated):
@@ -93,9 +95,9 @@ Not found (simulated):
 curl http://localhost:8080/error/200
 ```
 
-Response (400 Bad Request):
+Response excerpt (404 Not Found):
 ```json
-{"error":"user not found"}
+{"error":{"message":"user not found"}}
 ```
 
 ## Test panic recovery
@@ -106,12 +108,12 @@ This handler panics, but the recovery middleware catches it:
 curl http://localhost:8080/panic
 ```
 
-Response (500 Internal Server Error):
+Response excerpt (500 Internal Server Error):
 ```json
-{"error":"internal server error"}
+{"error":{"message":"internal server error"}}
 ```
 
-Check the server logs — you'll see the panic and stack trace.
+Check the server logs for the recovery diagnostic.
 
 ## Key patterns
 
@@ -119,7 +121,8 @@ Check the server logs — you'll see the panic and stack trace.
 
 ```go
 if req.Name == "" {
-    contract.WriteError(w, r, errors.New("name is required"))
+    _ = contract.WriteError(w, r, contract.NewErrorBuilder().
+        Type(contract.TypeRequired).Message("name is required").Build())
     return
 }
 ```
@@ -127,8 +130,9 @@ if req.Name == "" {
 ### JSON binding with error handling
 
 ```go
-if err := contract.BindJSON(r, &req); err != nil {
-    contract.WriteError(w, r, err)
+if err := contract.DecodeJSONRequest(r, &req, contract.JSONRequestOptions{}); err != nil {
+    apiErr, _ := contract.AsAPIError(err)
+    _ = contract.WriteError(w, r, apiErr)
     return
 }
 ```
@@ -136,10 +140,11 @@ if err := contract.BindJSON(r, &req); err != nil {
 ### Path param extraction with validation
 
 ```go
-idStr := contract.Param(r, "id")
+idStr := router.Param(r, "id")
 id, err := strconv.Atoi(idStr)
 if err != nil {
-    contract.WriteError(w, r, errors.New("invalid ID format"))
+    _ = contract.WriteError(w, r, contract.NewErrorBuilder().
+        Type(contract.TypeBadRequest).Message("invalid ID format").Build())
     return
 }
 ```
@@ -147,14 +152,20 @@ if err != nil {
 ### Panic recovery middleware
 
 ```go
-app.Use(recovery.Handler())
+recoverPanics, err := recovery.Middleware(recovery.Config{Logger: app.Logger()})
+if err != nil {
+    log.Fatal(err)
+}
+if err := app.Use(recoverPanics); err != nil {
+    log.Fatal(err)
+}
 ```
 
 This catches all panics, logs them, and returns a 500 error with a structured response.
 
 ## Copy these patterns
 
-- Always check `contract.BindJSON()` error
+- Always check `contract.DecodeJSONRequest()` error
 - Use `contract.WriteError()` for all error responses (ensures consistent format)
 - Validate inputs explicitly — don't assume the request is well-formed
 - Use recovery middleware in production to handle unexpected panics

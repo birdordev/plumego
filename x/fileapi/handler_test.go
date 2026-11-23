@@ -1215,21 +1215,42 @@ func TestDownloadClosesReaderAfterCommittedWriteFailure(t *testing.T) {
 	}
 }
 
+type stagedUploadTestStorage struct {
+	*mockStorage
+	putStaged func(context.Context, datafile.PutOptions, io.ReaderAt) (*datafile.File, error)
+}
+
+func (s stagedUploadTestStorage) PutStaged(ctx context.Context, opts datafile.PutOptions, source io.ReaderAt) (*datafile.File, error) {
+	return s.putStaged(ctx, opts, source)
+}
+
 func TestUploadMultipartFileOwnership(t *testing.T) {
 	temp := t.TempDir()
 	t.Setenv("TMPDIR", temp)
 	t.Setenv("TMP", temp)
 	t.Setenv("TEMP", temp)
-	for _, alreadyParsed := range []bool{false, true} {
-		t.Run(strconv.FormatBool(alreadyParsed), func(t *testing.T) {
+	for _, tc := range []struct {
+		name          string
+		length        int
+		hasCapability bool
+		alreadyParsed bool
+		wantStaged    bool
+		storageFails  bool
+	}{
+		{name: "large ordinary backend", length: multipartMemoryLimit + 1, storageFails: true},
+		{name: "large staged backend", length: multipartMemoryLimit + 1, hasCapability: true, wantStaged: true},
+		{name: "large staged backend failure", length: multipartMemoryLimit + 1, hasCapability: true, wantStaged: true, storageFails: true},
+		{name: "preparsed even with capability", length: multipartMemoryLimit + 1, hasCapability: true, alreadyParsed: true, storageFails: true},
+		{name: "in memory even with capability", length: multipartMemoryLimit, hasCapability: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
 			var body bytes.Buffer
 			w := multipart.NewWriter(&body)
 			part, err := w.CreateFormFile("file", "asset.txt")
 			if err != nil {
 				t.Fatal(err)
 			}
-			const length = multipartMemoryLimit + 1
-			if _, err := io.WriteString(part, strings.Repeat("x", length)); err != nil {
+			if _, err := io.WriteString(part, strings.Repeat("x", tc.length)); err != nil {
 				t.Fatal(err)
 			}
 			if err := w.Close(); err != nil {
@@ -1238,7 +1259,7 @@ func TestUploadMultipartFileOwnership(t *testing.T) {
 			req := httptest.NewRequest(http.MethodPost, "/files", &body)
 			req.Header.Set("Content-Type", w.FormDataContentType())
 			req = req.WithContext(tenantcore.WithTenantID(req.Context(), "tenant"))
-			if alreadyParsed {
+			if tc.alreadyParsed {
 				if err := req.ParseMultipartForm(multipartMemoryLimit); err != nil {
 					t.Fatal(err)
 				}
@@ -1248,20 +1269,47 @@ func TestUploadMultipartFileOwnership(t *testing.T) {
 					}
 				})
 			}
-			called := false
-			storage := &mockStorage{putFunc: func(_ context.Context, opts datafile.PutOptions) (*datafile.File, error) {
-				called = true
-				if file, ok := opts.Reader.(*os.File); !ok || filepath.Dir(file.Name()) != temp {
-					t.Errorf("multipart reader did not spill to private directory: %T", opts.Reader)
+			wantStatus := http.StatusOK
+			if tc.storageFails {
+				wantStatus = http.StatusInternalServerError
+			}
+			checkPut := func(ctx context.Context, opts datafile.PutOptions) (*datafile.File, error) {
+				if ctx != req.Context() || opts.TenantID != "tenant" || opts.FileName != "asset.txt" {
+					t.Errorf("unexpected upload inputs: %+v", opts)
 				}
-				return nil, errors.New("storage failure")
+				if tc.length > multipartMemoryLimit {
+					if file, ok := opts.Reader.(*os.File); !ok || filepath.Dir(file.Name()) != temp {
+						t.Errorf("multipart reader did not spill to temporary directory: %T", opts.Reader)
+					}
+				}
+				if tc.storageFails {
+					return nil, errors.New("storage failure")
+				}
+				return &datafile.File{TenantID: opts.TenantID}, nil
+			}
+			putCalls, stagedCalls := 0, 0
+			base := &mockStorage{putFunc: func(ctx context.Context, opts datafile.PutOptions) (*datafile.File, error) {
+				putCalls++
+				return checkPut(ctx, opts)
 			}}
+			var storage datafile.Storage = base
+			if tc.hasCapability {
+				storage = stagedUploadTestStorage{base, func(ctx context.Context, opts datafile.PutOptions, source io.ReaderAt) (*datafile.File, error) {
+					stagedCalls++
+					var last [1]byte
+					_, err := source.ReadAt(last[:], int64(tc.length)-1)
+					if opts.Size != int64(tc.length) || err != nil || last[0] != 'x' {
+						t.Errorf("staged size = %d, final byte = %q, read error = %v", opts.Size, last, err)
+					}
+					return checkPut(ctx, opts)
+				}}
+			}
 			rec := httptest.NewRecorder()
 			NewHandler(storage, &mockMetadataManager{}).Upload(rec, req)
-			if !called || rec.Code != http.StatusInternalServerError {
-				t.Fatalf("upload called=%t, status=%d", called, rec.Code)
+			if putCalls+stagedCalls != 1 || (stagedCalls == 1) != tc.wantStaged || rec.Code != wantStatus {
+				t.Fatalf("Put calls = %d, PutStaged calls = %d, status = %d, want %d", putCalls, stagedCalls, rec.Code, wantStatus)
 			}
-			if alreadyParsed {
+			if tc.alreadyParsed {
 				f, _, err := req.FormFile("file")
 				if err != nil {
 					t.Fatal(err)

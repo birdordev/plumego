@@ -7,11 +7,14 @@ import (
 	"maps"
 	"net/url"
 	"reflect"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
 	"sync"
 )
+
+var componentNamePattern = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
 
 func cloneComponents(components *Components) *Components {
 	if components == nil {
@@ -84,6 +87,9 @@ func validateDocument(doc Document) error {
 	}
 	var failures []error
 	for _, name := range slices.Sorted(maps.Keys(components.SecuritySchemes)) {
+		if !componentNamePattern.MatchString(name) {
+			failures = append(failures, fmt.Errorf("invalid security scheme component name %q", name))
+		}
 		if err := validateSecurityScheme(components.SecuritySchemes[name]); err != nil {
 			failures = append(failures, fmt.Errorf("security scheme %q: %w", name, err))
 		}
@@ -111,12 +117,22 @@ func validateDocument(doc Document) error {
 				continue
 			}
 			pointer, err := url.PathUnescape(fragment)
-			if err != nil || !jsonPointerExists(root, pointer) {
+			target, found := resolveJSONPointer(root, pointer)
+			if err != nil || !found {
 				failures = append(failures, fmt.Errorf("%s refers to undefined schema reference %q", where, ref))
+				continue
+			}
+			switch target.(type) {
+			case map[string]any, bool:
+			default:
+				failures = append(failures, fmt.Errorf("%s schema reference %q must resolve to an object or boolean", where, ref))
 			}
 		}
 	}
 	for _, name := range slices.Sorted(maps.Keys(components.Schemas)) {
+		if !componentNamePattern.MatchString(name) {
+			failures = append(failures, fmt.Errorf("invalid schema component name %q", name))
+		}
 		checkSchema("schema "+name, components.Schemas[name])
 	}
 	operationIDs := make(map[string]string)
@@ -134,8 +150,9 @@ func validateDocument(doc Document) error {
 			if op.OperationID != "" {
 				if first, ok := operationIDs[op.OperationID]; ok {
 					failures = append(failures, fmt.Errorf("%s and %s share operationId %q", first, where, op.OperationID))
+				} else {
+					operationIDs[op.OperationID] = where
 				}
-				operationIDs[op.OperationID] = where
 			}
 			for _, requirement := range op.Security {
 				for _, scheme := range slices.Sorted(maps.Keys(requirement)) {
@@ -163,36 +180,36 @@ func validateDocument(doc Document) error {
 	return errors.Join(failures...)
 }
 
-func jsonPointerExists(value any, pointer string) bool {
+func resolveJSONPointer(value any, pointer string) (any, bool) {
 	if pointer == "" {
-		return true
+		return value, true
 	}
 	parts, ok := strings.CutPrefix(pointer, "/")
 	if !ok {
-		return false
+		return nil, false
 	}
 	for token := range strings.SplitSeq(parts, "/") {
 		token, ok = unescapePointerToken(token)
 		if !ok {
-			return false
+			return nil, false
 		}
 		switch current := value.(type) {
 		case map[string]any:
 			value, ok = current[token]
 			if !ok {
-				return false
+				return nil, false
 			}
 		case []any:
 			index, err := strconv.ParseUint(token, 10, strconv.IntSize)
 			if err != nil || index >= uint64(len(current)) || strconv.FormatUint(index, 10) != token {
-				return false
+				return nil, false
 			}
 			value = current[int(index)]
 		default:
-			return false
+			return nil, false
 		}
 	}
-	return true
+	return value, true
 }
 
 func unescapePointerToken(token string) (string, bool) {

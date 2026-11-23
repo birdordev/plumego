@@ -51,6 +51,42 @@ func TestStrictSpecMatchesRegisteredHandlers(t *testing.T) {
 	}
 }
 
+func TestStrictOperationIDOverrideAndDuplicates(t *testing.T) {
+	routes := []router.RouteInfo{
+		{Method: http.MethodGet, Path: "/items", Meta: router.RouteMeta{Name: "listItems"}},
+		{Method: http.MethodPost, Path: "/items", Meta: router.RouteMeta{Name: "addItem"}},
+	}
+	get := Op{Responses: map[string]Response{"200": {Description: "OK"}}}
+	post := Op{OperationID: "listItems", Responses: map[string]Response{"201": {Description: "Created"}}}
+	hints := map[string]Op{"listItems": get, "addItem": post}
+	g := New()
+	if _, err := g.GenerateStrict(routes, hints); err == nil ||
+		!strings.Contains(err.Error(), `GET /items and POST /items share operationId "listItems"`) {
+		t.Fatalf("duplicate operation ID error = %v", err)
+	}
+	post.OperationID = "createItem"
+	hints["addItem"] = post
+	doc, err := g.GenerateStrict(routes, hints)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if item := doc.Paths["/items"]; item.Get.OperationID != "listItems" || item.Post.OperationID != "createItem" {
+		t.Fatalf("GET ID = %q, POST ID = %q", item.Get.OperationID, item.Post.OperationID)
+	}
+	for _, format := range []struct {
+		marshal func(Document) ([]byte, error)
+		want    string
+	}{
+		{MarshalJSON, `"operationId": "createItem"`},
+		{MarshalYAML, `operationId: "createItem"`},
+	} {
+		data, err := format.marshal(doc)
+		if err != nil || !strings.Contains(string(data), format.want) {
+			t.Fatalf("missing %q in %s: %v", format.want, data, err)
+		}
+	}
+}
+
 func TestStrictSpecRejectsConflictingTemplatesAndInvalidResponses(t *testing.T) {
 	routes := []router.RouteInfo{
 		{Method: http.MethodGet, Path: "/items/:id"},
@@ -122,7 +158,8 @@ func TestStrictValidatesComponentsAndUnusedHints(t *testing.T) {
 	}
 	for _, marshal := range []func(Document) ([]byte, error){MarshalJSON, MarshalYAML} {
 		data, err := marshal(doc)
-		if err != nil || !strings.Contains(string(data), "#/components/schemas/Item") || !strings.Contains(string(data), "listItems") {
+		if err != nil || !strings.Contains(string(data), "schemas") ||
+			!strings.Contains(string(data), "#/components/schemas/Item") || !strings.Contains(string(data), "listItems") {
 			t.Fatalf("render %s %v", data, err)
 		}
 	}
@@ -199,18 +236,32 @@ func TestStrictResolvesNestedLocalSchemaPointers(t *testing.T) {
 	routes := []router.RouteInfo{{Method: http.MethodGet, Path: "/items"}}
 	for _, tc := range []struct {
 		ref string
-		ok  bool
+		err string
 	}{
-		{"#/components/schemas/L%69st/items/properties/a~1b~0c", true},
-		{"#/components/schemas/List/items/properties/unknown", false},
-		{"#/%6dissing", false},
-		{"models.json#/components/schemas/External", true},
+		{"#/components/schemas/L%69st/items/properties/a~1b~0c", ""},
+		{"#/components/schemas/List/items/properties/unknown", "undefined schema reference"},
+		{"#/components/schemas/List/items/type", "must resolve to an object or boolean"},
+		{"#/%6dissing", "undefined schema reference"},
+		{"#/%ZZ", "undefined schema reference"},
+		{"models.json#/components/schemas/External", ""},
 	} {
 		_, err := g.GenerateStrict(routes, map[string]Op{"GET /items": {
 			Responses: map[string]Response{"200": {Description: "OK", Content: JSONContent(Schema{Ref: tc.ref})}},
 		}})
-		if (err == nil) != tc.ok {
-			t.Errorf("ref %q returned %v, want success=%v", tc.ref, err, tc.ok)
+		if tc.err == "" && err != nil || tc.err != "" && (err == nil || !strings.Contains(err.Error(), tc.err)) {
+			t.Errorf("ref %q returned %v, want %q", tc.ref, err, tc.err)
 		}
+	}
+}
+
+func TestStrictRejectsInvalidComponentNames(t *testing.T) {
+	g := New().WithComponents(&Components{
+		Schemas:         map[string]Schema{"bad/name": String, "my.org.Item_1-v2": String},
+		SecuritySchemes: map[string]SecurityScheme{"": {Type: "mutualTLS"}},
+	})
+	_, err := g.GenerateStrict(nil, nil)
+	if err == nil || !strings.Contains(err.Error(), `invalid schema component name "bad/name"`) ||
+		!strings.Contains(err.Error(), `invalid security scheme component name ""`) || strings.Contains(err.Error(), "my.org") {
+		t.Fatalf("component name errors = %v", err)
 	}
 }

@@ -90,10 +90,6 @@ Download responses use `Cache-Control: private, no-store`, including authorizati
 Decode the JSON response normally to obtain the full URL, including any
 query separators.
 
-For large multipart uploads parsed by the handler, the S3 backend can borrow
-the validated multipart file. It hashes and sends that file without a second
-disk staging pass. The handler owns cleanup of the multipart form.
-
 `Handler.EnableDeferredAccessUpdates` can be configured before serving to
 move best-effort access tracking to a bounded queue. Repeated updates for a
 pending file coalesce, and a full queue drops new updates. The returned stop
@@ -109,7 +105,11 @@ read. It serves HEAD from object metadata and avoids opening an object body for
 304 and 416 responses. Multi-range S3 requests fall back to the full
 representation, as do range requests to sequential-only backends.
 
-For large multipart uploads, a storage backend implementing
-`PutStaged(context.Context, file.PutOptions, io.ReaderAt)` can reuse the
-already staged file. Backends can also handle uploads through the ordinary
-streaming `Put` method.
+For multipart files larger than 8 MiB parsed by the handler, a storage backend
+can reuse the staged file by implementing
+`PutStaged(context.Context, file.PutOptions, io.ReaderAt) (*file.File, error)`
+with types from `x/data/file`. The handler passes the validated file size in
+`PutOptions.Size`, lends the reader until the method returns, and cleans up its
+temporary file. S3 uses this capability to hash and send the same bytes. The
+handler calls `Put` for smaller files, forms parsed by the caller, and backends
+without the capability.

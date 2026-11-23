@@ -248,7 +248,10 @@ Strict mode supports HTTP authentication with a scheme token, API keys with a
 name and a `header`, `query`, or `cookie` location, and mutual TLS. OAuth 2.0 and
 OpenID Connect definitions require fields outside the current scheme model.
 Fragment pointers can refer to nested properties and use percent-encoding and JSON
-Pointer escapes. External references are preserved without resolution. Configure
+Pointer escapes. Their targets must be schema objects or booleans. External
+references are preserved without resolution. Component names allow ASCII
+letters, digits, periods, underscores, and hyphens. Configure
 `components.schemas` and `components.securitySchemes` via
 `WithComponents` in Go or the hint file in the CLI. Operation hints can
-supply `operationId`. A named route provides the default operation ID.
+supply `operationId`. A named route provides the default operation ID. Strict
+generation requires all supplied or inferred operation IDs to be unique.

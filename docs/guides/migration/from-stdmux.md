@@ -83,11 +83,11 @@ log.Fatal(http.ListenAndServe(":8080", mux))
 app := plumego.New()
 
 // Clearer HTTP method API
-app.Get("/users", listUsers)
-app.Post("/users", createUser)
-app.Get("/users/{id}", getUser)
-app.Put("/users/{id}", updateUser)
-app.Delete("/users/{id}", deleteUser)
+app.Get("/users", http.HandlerFunc(listUsers))
+app.Post("/users", http.HandlerFunc(createUser))
+app.Get("/users/:id", http.HandlerFunc(getUser))
+app.Put("/users/:id", http.HandlerFunc(updateUser))
+app.Delete("/users/:id", http.HandlerFunc(deleteUser))
 
 log.Fatal(http.ListenAndServe(":8080", app))
 ```
@@ -111,12 +111,12 @@ mux.HandleFunc("POST /api/v1/posts", createPost)
 api := app.Group("/api/v1")
 {
     users := api.Group("/users")
-    users.Get("", listUsers)
-    users.Post("", createUser)
+    users.Get("", http.HandlerFunc(listUsers))
+    users.Post("", http.HandlerFunc(createUser))
 
     posts := api.Group("/posts")
-    posts.Get("", listPosts)
-    posts.Post("", createPost)
+    posts.Get("", http.HandlerFunc(listPosts))
+    posts.Post("", http.HandlerFunc(createPost))
 }
 ```
 
@@ -126,29 +126,41 @@ api := app.Group("/api/v1")
 
 **Before (stdlib):**
 ```go
-// Manual parsing
-func getUser(w http.ResponseWriter, r *http.Request) {
-    // Stdlib doesn't extract path params automatically
-    // You have to parse the path manually:
-    parts := strings.Split(r.URL.Path, "/")
-    id := parts[len(parts)-1]  // Error-prone!
-    
-    // Or use a router library alongside stdlib
-}
+mux.HandleFunc("GET /users/{id}", func(w http.ResponseWriter, r *http.Request) {
+    fmt.Fprintln(w, r.PathValue("id"))
+})
 ```
 
 **After (Plumego):**
 ```go
-// Automatic extraction via context
-func getUser(w http.ResponseWriter, r *http.Request) {
-    id := contract.Param(r, "id")  // Clean, type-safe
-    // ...
+package main
+
+import (
+    "fmt"
+    "log"
+    "net/http"
+
+    "github.com/birdordev/plumego/core"
+    "github.com/birdordev/plumego/router"
+)
+
+func main() {
+    app := core.New(core.DefaultConfig(), core.AppDependencies{})
+    if err := app.Get("/users/:id", http.HandlerFunc(getUser)); err != nil {
+        log.Fatal(err)
+    }
+    if err := app.Prepare(); err != nil {
+        log.Fatal(err)
+    }
+    log.Fatal(http.ListenAndServe(":8080", app))
 }
 
-app.Get("/users/{id}", getUser)
+func getUser(w http.ResponseWriter, r *http.Request) {
+    fmt.Fprintln(w, router.Param(r, "id"))
+}
 ```
 
-**Why better:** No manual string parsing, less error-prone.
+Plumego registers named segments with `:id` and exposes them through `router.Param`.
 
 ### 4. Response Writing
 
@@ -182,7 +194,8 @@ func listUsers(w http.ResponseWriter, r *http.Request) {
 // Consistent error responses
 func createUser(w http.ResponseWriter, r *http.Request) {
     if err := validateUser(data); err != nil {
-        contract.WriteError(w, r, err)
+        _ = contract.WriteError(w, r, contract.NewErrorBuilder().
+            Type(contract.TypeValidation).Message("invalid user").Build())
         return
     }
 }
@@ -207,9 +220,13 @@ log.Fatal(http.ListenAndServe(":8080", handler))
 ```go
 // Clean middleware chain
 app := plumego.New()
-app.Use(recovery.Handler())      // First: catch panics
-app.Use(requestid.Handler())     // Add request ID
-app.Use(accesslog.Handler(log))  // Log requests
+recoverPanics, err := recovery.Middleware(recovery.Config{Logger: app.Logger()})
+if err != nil {
+    log.Fatal(err)
+}
+if err := app.Use(recoverPanics, requestid.Middleware()); err != nil {
+    log.Fatal(err)
+}
 // ... register routes ...
 log.Fatal(http.ListenAndServe(":8080", app))
 ```
@@ -267,9 +284,9 @@ mux.HandleFunc("DELETE /users/{id}", deleteUser)
 
 **After:**
 ```go
-app.Get("/users", listUsers)
-app.Post("/users", createUsers)
-app.Delete("/users/{id}", deleteUser)
+app.Get("/users", http.HandlerFunc(listUsers))
+app.Post("/users", http.HandlerFunc(createUsers))
+app.Delete("/users/:id", http.HandlerFunc(deleteUser))
 ```
 
 ### Step 3: Convert path param extraction
@@ -277,8 +294,7 @@ app.Delete("/users/{id}", deleteUser)
 **Before:**
 ```go
 func getUser(w http.ResponseWriter, r *http.Request) {
-    // Parse path manually
-    id := strings.TrimPrefix(r.URL.Path, "/users/")
+    id := r.PathValue("id")
     user, err := db.GetUser(id)
     // ...
 }
@@ -288,7 +304,7 @@ func getUser(w http.ResponseWriter, r *http.Request) {
 ```go
 func getUser(w http.ResponseWriter, r *http.Request) {
     // Get param from context
-    id := contract.Param(r, "id")
+    id := router.Param(r, "id")
     user, err := db.GetUser(id)
     // ...
 }
@@ -321,7 +337,8 @@ if err != nil {
 **After:**
 ```go
 if err != nil {
-    contract.WriteError(w, r, err)
+    _ = contract.WriteError(w, r, contract.NewErrorBuilder().
+        Type(contract.TypeBadRequest).Message("invalid request").Build())
     return
 }
 ```
@@ -336,8 +353,9 @@ log.Fatal(http.ListenAndServe(":8080", handler))
 
 **After:**
 ```go
-app.Use(recovery.Handler())
-app.Use(accesslog.Handler(logger))
+if err := app.Use(recoverPanics, requestid.Middleware()); err != nil {
+    log.Fatal(err)
+}
 log.Fatal(http.ListenAndServe(":8080", app))
 ```
 
@@ -383,12 +401,14 @@ var user struct {
     Name  string
     Email string
 }
-if err := contract.BindJSON(r, &user); err != nil {
-    contract.WriteError(w, r, err)
+if err := contract.DecodeJSONRequest(r, &user, contract.JSONRequestOptions{}); err != nil {
+    apiErr, _ := contract.AsAPIError(err)
+    _ = contract.WriteError(w, r, apiErr)
     return
 }
 if user.Name == "" {
-    contract.WriteError(w, r, errors.New("name required"))
+    _ = contract.WriteError(w, r, contract.NewErrorBuilder().
+        Type(contract.TypeRequired).Message("name required").Build())
     return
 }
 ```
@@ -405,18 +425,12 @@ mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
 
 **Plumego way:**
 ```go
-app.Get("/health", func(w http.ResponseWriter, r *http.Request) {
-    contract.WriteResponse(w, r, http.StatusOK, 
-        map[string]string{"status": "healthy"}, nil)
-})
-
-// Or better, use the health module:
-import "github.com/birdordev/plumego/health"
-
-app.Get("/health", func(w http.ResponseWriter, r *http.Request) {
-    h := health.Status{Status: health.StatusHealthy}
-    contract.WriteResponse(w, r, http.StatusOK, h, nil)
-})
+if err := app.Get("/health", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+    status := health.HealthStatus{Status: health.StatusHealthy}
+    _ = contract.WriteResponse(w, r, http.StatusOK, status, nil)
+})); err != nil {
+    log.Fatal(err)
+}
 ```
 
 ### Graceful shutdown
@@ -466,7 +480,7 @@ Plumego handlers, middleware, and tests are 100% stdlib-compatible. You can:
 
 1. Copy your stdlib handlers to a Plumego project (they're already compatible!)
 2. Replace `mux.HandleFunc()` with `app.Get()`, `app.Post()`, etc.
-3. Convert path param extraction to use `contract.Param()`
+3. Convert path param extraction to use `router.Param()`
 4. Convert response writing to use `contract.WriteResponse()` and `contract.WriteError()`
 5. Add middleware with `app.Use()`
 6. Run your tests (they work unchanged!)

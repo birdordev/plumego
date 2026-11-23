@@ -96,6 +96,55 @@ This path takes you from "hello world" to understanding the control plane. Time 
 - `router.Param(r, "id")`
 - `app.Prepare()`, `app.Server()`, `app.Shutdown()`
 
+Add shared middleware before registering the routes that use it. This
+example exercises that assembly and a strict JSON endpoint in memory.
+
+```go
+package main
+
+import (
+    "net/http"
+    "net/http/httptest"
+    "strings"
+
+    "github.com/birdordev/plumego/contract"
+    "github.com/birdordev/plumego/core"
+    "github.com/birdordev/plumego/middleware/requestid"
+    "github.com/birdordev/plumego/router"
+)
+
+func main() {
+    app := core.New(core.DefaultConfig(), core.AppDependencies{})
+    items := app.Group("/items")
+    if err := items.Use(requestid.Middleware()); err != nil {
+        panic(err)
+    }
+    if err := items.Post("/:id", http.HandlerFunc(update)); err != nil {
+        panic(err)
+    }
+    req := httptest.NewRequest(http.MethodPost, "/items/1", strings.NewReader(`{"name":"widget"}`))
+    req.Header.Set("Content-Type", "application/json")
+    rec := httptest.NewRecorder()
+    app.ServeHTTP(rec, req)
+    if rec.Code != http.StatusOK {
+        panic(rec.Body.String())
+    }
+}
+
+func update(w http.ResponseWriter, r *http.Request) {
+    var input struct{ Name string }
+    if err := contract.DecodeJSONRequest(r, &input, contract.JSONRequestOptions{}); err != nil {
+        if invalid, ok := contract.AsAPIError(err); ok {
+            _ = contract.WriteError(w, r, invalid)
+        }
+        return
+    }
+    _ = contract.WriteResponse(w, r, http.StatusOK, map[string]string{
+        "id": router.Param(r, "id"), "name": input.Name,
+    }, nil)
+}
+```
+
 **Done when:** You can modify the example and add your own endpoints.
 
 ---
@@ -224,48 +273,3 @@ A: Yes. v1.0+ is GA and recommended for production. See `STABILITY.md` for guara
 ---
 
 **Time to get started?** Pick a timeline above and begin. Good luck!
-
-Add shared middleware before registering the routes that use it. This
-example exercises that assembly and a strict JSON endpoint in memory.
-
-```go
-package main
-
-import (
-    "net/http"
-    "net/http/httptest"
-    "strings"
-
-    "github.com/birdordev/plumego/contract"
-    "github.com/birdordev/plumego/core"
-    "github.com/birdordev/plumego/middleware/requestid"
-    "github.com/birdordev/plumego/router"
-)
-
-func main() {
-    app := core.New(core.DefaultConfig(), core.AppDependencies{})
-    items := app.Group("/items")
-    if err := items.Use(requestid.Middleware()); err != nil {
-        panic(err)
-    }
-    if err := items.Post("/:id", http.HandlerFunc(update)); err != nil {
-        panic(err)
-    }
-    req := httptest.NewRequest(http.MethodPost, "/items/1", strings.NewReader(`{"name":"widget"}`))
-    req.Header.Set("Content-Type", "application/json")
-    app.ServeHTTP(httptest.NewRecorder(), req)
-}
-
-func update(w http.ResponseWriter, r *http.Request) {
-    var input struct{ Name string }
-    if err := contract.DecodeJSONRequest(r, &input, contract.JSONRequestOptions{}); err != nil {
-        if invalid, ok := contract.AsAPIError(err); ok {
-            _ = contract.WriteError(w, r, invalid)
-        }
-        return
-    }
-    _ = contract.WriteResponse(w, r, http.StatusOK, map[string]string{
-        "id": router.Param(r, "id"), "name": input.Name,
-    }, nil)
-}
-```

@@ -1,24 +1,30 @@
 package main
 
 import (
-	"errors"
 	"log"
 	"net/http"
 	"strconv"
 
-	"github.com/birdordev/plumego"
 	"github.com/birdordev/plumego/contract"
+	"github.com/birdordev/plumego/core"
 	"github.com/birdordev/plumego/middleware/recovery"
+	"github.com/birdordev/plumego/router"
 )
 
 func main() {
-	app := plumego.New()
+	app := core.New(core.DefaultConfig(), core.AppDependencies{})
 
 	// Add recovery middleware to handle panics
-	app.Use(recovery.Handler())
+	recoverPanics, err := recovery.Middleware(recovery.Config{Logger: app.Logger()})
+	if err != nil {
+		log.Fatal(err)
+	}
+	if err := app.Use(recoverPanics); err != nil {
+		log.Fatal(err)
+	}
 
 	// Route that validates input and returns an error for invalid data
-	app.Post("/users", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	if err := app.Post("/users", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var req struct {
 			Name  string `json:"name"`
 			Email string `json:"email"`
@@ -26,58 +32,65 @@ func main() {
 		}
 
 		// Bind and return error if JSON is invalid
-		if err := contract.BindJSON(r, &req); err != nil {
-			contract.WriteError(w, r, err)
+		if err := contract.DecodeJSONRequest(r, &req, contract.JSONRequestOptions{}); err != nil {
+			apiErr, _ := contract.AsAPIError(err)
+			_ = contract.WriteError(w, r, apiErr)
 			return
 		}
 
 		// Validate required fields
 		if req.Name == "" {
-			contract.WriteError(w, r, errors.New("name is required"))
+			_ = contract.WriteError(w, r, contract.NewErrorBuilder().Type(contract.TypeRequired).Message("name is required").Build())
 			return
 		}
 		if req.Email == "" {
-			contract.WriteError(w, r, errors.New("email is required"))
+			_ = contract.WriteError(w, r, contract.NewErrorBuilder().Type(contract.TypeRequired).Message("email is required").Build())
 			return
 		}
 
 		// Validate age is reasonable
 		if req.Age < 0 || req.Age > 150 {
-			contract.WriteError(w, r, errors.New("age must be between 0 and 150"))
+			_ = contract.WriteError(w, r, contract.NewErrorBuilder().Type(contract.TypeValidation).Message("age must be between 0 and 150").Build())
 			return
 		}
 
 		// Success
-		contract.WriteResponse(w, r, http.StatusCreated, map[string]any{
+		_ = contract.WriteResponse(w, r, http.StatusCreated, map[string]any{
 			"message": "user created",
 			"user":    req,
 		}, nil)
-	}))
+	})); err != nil {
+		log.Fatal(err)
+	}
 
 	// Route that intentionally panics to show recovery middleware
-	app.Get("/panic", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	if err := app.Get("/panic", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		panic("this is a panic from a handler")
-	}))
+	})); err != nil {
+		log.Fatal(err)
+	}
 
 	// Route that returns a custom error
-	app.Get("/error/{id}", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		idStr := contract.Param(r, "id")
+	if err := app.Get("/error/:id", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		idStr := router.Param(r, "id")
 		id, err := strconv.Atoi(idStr)
 		if err != nil {
-			contract.WriteError(w, r, errors.New("invalid ID format"))
+			_ = contract.WriteError(w, r, contract.NewErrorBuilder().Type(contract.TypeBadRequest).Message("invalid ID format").Build())
 			return
 		}
 
 		// Simulate not found
 		if id > 100 {
-			contract.WriteError(w, r, errors.New("user not found"))
+			_ = contract.WriteError(w, r, contract.NewErrorBuilder().Type(contract.TypeNotFound).Message("user not found").Build())
 			return
 		}
 
-		contract.WriteResponse(w, r, http.StatusOK, map[string]any{
+		_ = contract.WriteResponse(w, r, http.StatusOK, map[string]any{
 			"id": id,
 		}, nil)
-	}))
+	})); err != nil {
+		log.Fatal(err)
+	}
 
 	log.Println("server started at :8080")
 	log.Println("Try:")
