@@ -2757,7 +2757,7 @@ func TestScheduleReportsBestEffortSaveFailure(t *testing.T) {
 					if err := json.Unmarshal(output.Bytes(), &fields); err != nil {
 						t.Fatalf("invalid JSON diagnostic %q: %v", output.String(), err)
 					}
-					if fields["job_id"] != string(id) || fields["error"] != tt.saveErr.Error() ||
+					if fields["job_id"] != string(id) || fields["failure_code"] != "scheduler_failure" || strings.Contains(output.String(), tt.saveErr.Error()) ||
 						strings.Contains(output.String(), taskName) {
 						t.Errorf("unexpected save diagnostic: %s", output.String())
 					}
@@ -2911,7 +2911,7 @@ func TestTerminalJobPersistenceCleanup(t *testing.T) {
 					if strings.Count(output.String(), diagnostic) != 1 ||
 						!strings.Contains(output.String(), `"job_id":"terminal"`) ||
 						!strings.Contains(output.String(), `"operation":"delete"`) ||
-						!strings.Contains(output.String(), "test terminal delete failure") {
+						!strings.Contains(output.String(), `"failure_code":"scheduler_failure"`) || strings.Contains(output.String(), "test terminal delete failure") {
 						t.Errorf("missing cleanup diagnostic: %s", output.String())
 					}
 				} else if strings.Contains(output.String(), diagnostic) {
@@ -3173,7 +3173,7 @@ func TestLoadPersistedRestoresDependencyChain(t *testing.T) {
 			if len(ran) != 4 || ran[0] != "first" || ran[3] != "last" || !slices.Contains(ran, "middle") || !slices.Contains(ran, "other") {
 				t.Errorf("run order = %v", ran)
 			}
-			if got := strings.Count(output.String(), "missing or cyclic dependencies"); got != 3 {
+			if got := strings.Count(output.String(), `"failure_code":"invalid_stored_dependencies"`); got != 3 {
 				t.Errorf("invalid records diagnosed = %d", got)
 			}
 		})
@@ -3213,7 +3213,8 @@ func TestSkippedDelayJobRetriesPersistenceCleanup(t *testing.T) {
 			if status, ok := s.Status("child"); !ok || status.State != JobStateFailed {
 				t.Errorf("final child status = %+v", status)
 			}
-			if diagnosed := strings.Contains(output.String(), "test skipped job delete failure"); diagnosed != (failures == 2) {
+			diagnosed := strings.Contains(output.String(), `"failure_code":"scheduler_failure"`)
+			if diagnosed != (failures == 2) || strings.Contains(output.String(), "test skipped job delete failure") {
 				t.Errorf("cleanup diagnostics = %s", output.String())
 			}
 		})
@@ -3359,5 +3360,61 @@ func TestDelayUsesInjectedClock(t *testing.T) {
 	status, ok := s.Status(id)
 	if !ok || !status.NextRun.Equal(now.Add(delay)) {
 		t.Errorf("status = %+v, found=%v, want NextRun=%v", status, ok, now.Add(delay))
+	}
+}
+
+func TestExecutorRechecksQueuedTask(t *testing.T) {
+	for _, action := range []string{"cancel", "pause", "replace"} {
+		t.Run(action, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				s := New(WithWorkers(1), WithQueueSize(1))
+				s.Start()
+				defer func() {
+					if err := s.Stop(t.Context()); err != nil {
+						t.Error(err)
+					}
+				}()
+				started := make(chan struct{})
+				if _, err := s.Delay("blocking", 0, func(ctx context.Context) error {
+					close(started)
+					<-ctx.Done()
+					return ctx.Err()
+				}); err != nil {
+					t.Fatal(err)
+				}
+				<-started
+				var ran atomic.Bool
+				if _, err := s.Delay("target", 0, func(context.Context) error {
+					ran.Store(true)
+					return nil
+				}, WithOverlapPolicy(SkipIfRunning)); err != nil {
+					t.Fatal(err)
+				}
+				synctest.Wait()
+				if s.Health().Queued != 1 {
+					t.Fatal("target was not dispatched")
+				}
+				switch action {
+				case "cancel":
+					if !s.Cancel("target") {
+						t.Fatal("cancel failed")
+					}
+				case "pause":
+					if !s.Pause("target") {
+						t.Fatal("pause failed")
+					}
+				case "replace":
+					if _, err := s.Delay("target", time.Hour, func(context.Context) error { return nil }, ReplaceExisting()); err != nil {
+						t.Fatal(err)
+					}
+				}
+				// 取出已派发请求，模拟 Worker 获得执行槽。
+				req := <-s.workCh
+				s.execute(req.job, req.enqueuedAt)
+				if ran.Load() || req.job.running.Load() {
+					t.Fatalf("%s task ran or leaked its execution slot", action)
+				}
+			})
+		})
 	}
 }

@@ -3,7 +3,6 @@ package scheduler
 import (
 	"context"
 	"errors"
-	"fmt"
 	"math/rand"
 	"time"
 
@@ -13,8 +12,8 @@ import (
 func (s *Scheduler) runLoop() {
 	defer s.wg.Done()
 	for {
-		item := s.nextDue()
-		if item == nil {
+		at, exists := s.nextDue()
+		if !exists {
 			select {
 			case <-s.stopCh:
 				return
@@ -23,7 +22,7 @@ func (s *Scheduler) runLoop() {
 			}
 		}
 
-		wait := item.runAt.Sub(s.clock.Now())
+		wait := at.Sub(s.clock.Now())
 		if wait > 0 {
 			timer := time.NewTimer(wait)
 			select {
@@ -51,13 +50,16 @@ func (s *Scheduler) runLoop() {
 	}
 }
 
-func (s *Scheduler) nextDue() *scheduleItem {
+func (s *Scheduler) nextDue() (time.Time, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if s.closed {
-		return nil
+		return time.Time{}, false
 	}
-	return s.queue.Peek()
+	if item := s.queue.Peek(); item != nil {
+		return item.runAt, true
+	}
+	return time.Time{}, false
 }
 
 func (s *Scheduler) popDue(now time.Time) *scheduleItem {
@@ -222,6 +224,20 @@ func (s *Scheduler) worker() {
 }
 
 func (s *Scheduler) execute(j *job, enqueuedAt time.Time) {
+	s.mu.Lock()
+	if s.closed || s.jobs[j.id] != j || j.canceled.Load() || j.paused.Load() {
+		if j.options.OverlapPolicy != AllowConcurrent {
+			j.running.Store(false)
+		}
+		s.mu.Unlock()
+		return
+	}
+	attempt := j.nextAttempt
+	scheduledAt := j.runAt
+	lastErr := j.lastError
+	s.setJobStateLocked(j, JobStateRunning)
+	s.mu.Unlock()
+
 	// Derive execution context from the scheduler's stop context so that
 	// running tasks are notified when the scheduler shuts down.
 	ctx := s.stopCtx
@@ -232,12 +248,6 @@ func (s *Scheduler) execute(j *job, enqueuedAt time.Time) {
 	queueDelay := s.clock.Now().Sub(enqueuedAt)
 	s.stats.addQueueDelay(queueDelay)
 	start := s.clock.Now()
-	s.mu.Lock()
-	attempt := j.nextAttempt
-	scheduledAt := j.runAt
-	lastErr := j.lastError
-	s.setJobStateLocked(j, JobStateRunning)
-	s.mu.Unlock()
 	ctx = WithJobID(ctx, j.id)
 	ctx = WithJobAttempt(ctx, attempt)
 	ctx = WithJobScheduledAt(ctx, scheduledAt)
@@ -250,7 +260,7 @@ func (s *Scheduler) execute(j *job, enqueuedAt time.Time) {
 				if s.panicHandler != nil {
 					s.panicHandler(ctx, j.id, recovered)
 				}
-				err = fmt.Errorf("panic: %v", recovered)
+				err = errScheduledTaskPanic
 			}
 		}()
 		return j.fn(ctx)

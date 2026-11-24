@@ -2,6 +2,7 @@ package mq
 
 import (
 	"context"
+	"crypto/rand"
 	"fmt"
 	"strings"
 	"time"
@@ -123,6 +124,17 @@ func (q *TaskQueue) Reserve(ctx context.Context, opts ReserveOptions) ([]Task, e
 	}
 	q.observe(ctx, "queue_reserve", topic, start, err)
 	return tasks, err
+}
+
+// ReserveFenced assigns a fresh lease owner to this reservation. Finalization
+// and renewal must pass the returned task's LeaseOwner, rather than the
+// configured consumer ID. Together, task ID and lease owner identify a claim.
+func (q *TaskQueue) ReserveFenced(ctx context.Context, opts ReserveOptions) ([]Task, error) {
+	if strings.TrimSpace(opts.ConsumerID) == "" {
+		return q.Reserve(ctx, opts)
+	}
+	opts.ConsumerID += "/" + rand.Text()
+	return q.Reserve(ctx, opts)
 }
 
 func (q *TaskQueue) Ack(ctx context.Context, taskID, consumerID string, now time.Time) error {

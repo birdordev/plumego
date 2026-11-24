@@ -263,6 +263,7 @@ func buildRange(min, max, step int) []int {
 }
 
 // Next returns the next time after the given time that matches the spec.
+// 跳过不存在的本地时刻。重复的本地时刻可以分别命中。
 // It returns zero if no match exists within one Gregorian calendar cycle.
 func (c CronSpec) Next(after time.Time) time.Time {
 	// Handle @every interval syntax
@@ -280,17 +281,32 @@ func (c CronSpec) Next(after time.Time) time.Time {
 		loc = time.UTC
 	}
 	next := after.In(loc).Truncate(time.Second).Add(time.Second)
+	_, offset := next.Zone()
+	_, transition := next.ZoneBounds()
+	advance := func(year int, month time.Month, day, hour, minute, second int) time.Time {
+		// 按当前偏移计算本地时刻。跨越偏移切换时，从切换点重新匹配。
+		candidate := time.Date(year, month, day, hour, minute, second, 0, time.UTC).
+			Add(-time.Duration(offset) * time.Second)
+		if transition.After(next) && !candidate.Before(transition) {
+			return transition.In(loc)
+		}
+		return candidate.In(loc)
+	}
 
 	limit := next.AddDate(400, 0, 0) // The Gregorian calendar repeats every 400 years.
 	previous := after
 	for next.Before(limit) {
-		// A local time in a clock transition can normalize backwards.
+		// 遇到异常的时区边界时仍保持搜索向前推进。
 		if !next.After(previous) {
 			next = previous.Truncate(time.Second).Add(time.Second).In(loc)
 		}
+		if !transition.IsZero() && !next.Before(transition) {
+			_, offset = next.Zone()
+			_, transition = next.ZoneBounds()
+		}
 		previous = next
 		if !containsInt(c.months, int(next.Month())) {
-			next = time.Date(next.Year(), next.Month()+1, 1, 0, 0, 0, 0, next.Location())
+			next = advance(next.Year(), next.Month()+1, 1, 0, 0, 0)
 			continue
 		}
 		// Vixie cron day-matching semantics:
@@ -316,43 +332,43 @@ func (c CronSpec) Next(after time.Time) time.Time {
 				day, carry := nextAllowed(next.Day(), c.dom)
 				end := time.Date(next.Year(), next.Month()+1, 0, 12, 0, 0, 0, time.UTC).Day()
 				if carry || day > end {
-					next = time.Date(next.Year(), next.Month()+1, 1, 0, 0, 0, 0, loc)
+					next = advance(next.Year(), next.Month()+1, 1, 0, 0, 0)
 				} else {
-					next = time.Date(next.Year(), next.Month(), day, 0, 0, 0, 0, loc)
+					next = advance(next.Year(), next.Month(), day, 0, 0, 0)
 				}
 				continue
 			}
-			next = time.Date(next.Year(), next.Month(), next.Day(), 0, 0, 0, 0, next.Location()).AddDate(0, 0, 1)
+			next = advance(next.Year(), next.Month(), next.Day()+1, 0, 0, 0)
 			continue
 		}
 
 		hour, carry := nextAllowed(next.Hour(), c.hours)
 		if carry {
-			next = time.Date(next.Year(), next.Month(), next.Day()+1, c.hours[0], 0, 0, 0, next.Location())
+			next = advance(next.Year(), next.Month(), next.Day()+1, c.hours[0], 0, 0)
 			continue
 		}
 		if hour != next.Hour() {
-			next = time.Date(next.Year(), next.Month(), next.Day(), hour, 0, 0, 0, next.Location())
+			next = advance(next.Year(), next.Month(), next.Day(), hour, 0, 0)
 			continue
 		}
 
 		minute, carry := nextAllowed(next.Minute(), c.minutes)
 		if carry {
-			next = time.Date(next.Year(), next.Month(), next.Day(), next.Hour()+1, c.minutes[0], 0, 0, next.Location())
+			next = advance(next.Year(), next.Month(), next.Day(), next.Hour()+1, c.minutes[0], 0)
 			continue
 		}
 		if minute != next.Minute() {
-			next = time.Date(next.Year(), next.Month(), next.Day(), next.Hour(), minute, 0, 0, next.Location())
+			next = advance(next.Year(), next.Month(), next.Day(), next.Hour(), minute, 0)
 			continue
 		}
 
 		second, carry := nextAllowed(next.Second(), c.seconds)
 		if carry {
-			next = time.Date(next.Year(), next.Month(), next.Day(), next.Hour(), next.Minute()+1, c.seconds[0], 0, next.Location())
+			next = advance(next.Year(), next.Month(), next.Day(), next.Hour(), next.Minute()+1, c.seconds[0])
 			continue
 		}
 		if second != next.Second() {
-			next = time.Date(next.Year(), next.Month(), next.Day(), next.Hour(), next.Minute(), second, 0, next.Location())
+			next = advance(next.Year(), next.Month(), next.Day(), next.Hour(), next.Minute(), second)
 			continue
 		}
 

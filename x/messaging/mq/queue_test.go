@@ -188,3 +188,35 @@ func TestTaskQueueObservesStatsErrors(t *testing.T) {
 		}
 	}
 }
+
+func TestReserveFencedRejectsPriorClaim(t *testing.T) {
+	now := time.Unix(1000, 0)
+	q := mq.NewTaskQueue(mqstore.NewMemory(mqstore.DefaultMemConfig()), mq.WithQueueNowFunc(func() time.Time { return now }))
+	if err := q.Enqueue(t.Context(), mq.Task{ID: "task", Topic: "work"}, mq.EnqueueOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	opts := mq.ReserveOptions{ConsumerID: "same-worker", Limit: 1, Lease: time.Second}
+	first, err := q.ReserveFenced(t.Context(), opts)
+	if err != nil || len(first) != 1 {
+		t.Fatalf("first reservation: %v, %v", first, err)
+	}
+	now = now.Add(2 * time.Second)
+	second, err := q.ReserveFenced(t.Context(), opts)
+	if err != nil || len(second) != 1 || second[0].LeaseOwner == first[0].LeaseOwner {
+		t.Fatalf("second reservation: %v, %v", second, err)
+	}
+	old := first[0].LeaseOwner
+	for _, err := range []error{
+		q.ExtendLease(t.Context(), "task", old, time.Second, now),
+		q.Release(t.Context(), "task", old, mq.ReleaseOptions{Now: now}),
+		q.MoveToDLQ(t.Context(), "task", old, "stale", now),
+		q.Ack(t.Context(), "task", old, now),
+	} {
+		if !errors.Is(err, mq.ErrLeaseLost) {
+			t.Errorf("stale lease operation: %v", err)
+		}
+	}
+	if err := q.Ack(t.Context(), "task", second[0].LeaseOwner, now); err != nil {
+		t.Fatal(err)
+	}
+}

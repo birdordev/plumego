@@ -325,8 +325,8 @@ func (s *Scheduler) addJob(id JobID, kind jobKind, task TaskFunc, spec CronSpec,
 		s.unlockAndReportCleanup(&failures)
 		if persistErr != nil && s.logger != nil {
 			s.logger.Error("scheduler persist job failed", log.Fields{
-				"job_id": id,
-				"error":  persistErr.Error(),
+				"job_id":       id,
+				"failure_code": schedulerFailureCode(persistErr),
 			})
 		}
 	}()
@@ -415,12 +415,12 @@ func (s *Scheduler) pushScheduleItemLocked(j *job, runAt time.Time, invalidateEx
 	if j == nil {
 		return
 	}
-	version := uint64(0)
 	if invalidateExisting {
 		j.scheduleVersion++
-		version = j.scheduleVersion
+		s.queue.setPlanned(j, runAt)
+		return
 	}
-	s.queue.PushSchedule(&scheduleItem{runAt: runAt, job: j, version: version})
+	s.queue.PushSchedule(&scheduleItem{runAt: runAt, job: j})
 }
 
 // ListDeadLetters returns all dead letter entries.

@@ -32,6 +32,8 @@ type job struct {
 	stateAt              time.Time
 	runCount             int64 // total successful executions; protected by scheduler mu
 	scheduleVersion      uint64
+	planned              *scheduleItem
+	manual               map[*scheduleItem]struct{}
 	resolvedDependencies map[JobID]struct{} // per dependent; protected by scheduler mu
 }
 
@@ -72,7 +74,23 @@ func (h *scheduleHeap) Pop() any {
 	n := len(old)
 	item := old[n-1]
 	item.index = -1
+	old[n-1] = nil
+	if j := item.job; j != nil {
+		if j.planned == item {
+			j.planned = nil
+		} else {
+			delete(j.manual, item)
+			if len(j.manual) == 0 {
+				j.manual = nil
+			}
+		}
+	}
 	*h = old[:n-1]
+	if cap(old) >= 256 && n-1 <= cap(old)/4 {
+		compacted := make(scheduleHeap, n-1, 2*(n-1))
+		copy(compacted, *h)
+		*h = compacted
+	}
 	return item
 }
 
@@ -84,7 +102,36 @@ func (h *scheduleHeap) Peek() *scheduleItem {
 }
 
 func (h *scheduleHeap) PushSchedule(item *scheduleItem) {
+	if j := item.job; j != nil {
+		if item.version != 0 {
+			j.planned = item
+		} else {
+			if j.manual == nil {
+				j.manual = make(map[*scheduleItem]struct{})
+			}
+			j.manual[item] = struct{}{}
+		}
+	}
 	heap.Push(h, item)
+}
+
+func (h *scheduleHeap) setPlanned(j *job, at time.Time) {
+	if j.planned == nil {
+		h.PushSchedule(&scheduleItem{runAt: at, job: j, version: j.scheduleVersion})
+		return
+	}
+	j.planned.runAt = at
+	j.planned.version = j.scheduleVersion
+	heap.Fix(h, j.planned.index)
+}
+
+func (h *scheduleHeap) removeJob(j *job) {
+	if j.planned != nil {
+		heap.Remove(h, j.planned.index)
+	}
+	for item := range j.manual {
+		heap.Remove(h, item.index)
+	}
 }
 
 func (h *scheduleHeap) PopDue(now time.Time) *scheduleItem {

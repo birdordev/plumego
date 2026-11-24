@@ -48,6 +48,8 @@ func (s *Scheduler) PruneTerminalJobs(limit int) int {
 		}
 		// Mark canceled defensively so stale queued pointers (if any) cannot run.
 		j.canceled.Store(true)
+		s.queue.removeJob(j)
+		s.wakeScheduler()
 		delete(s.jobs, id)
 		s.cleanupDependencyTrackingLocked(id, j)
 		pruned++

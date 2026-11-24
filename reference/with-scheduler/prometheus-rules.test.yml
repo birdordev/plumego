@@ -1,0 +1,220 @@
+rule_files:
+  - prometheus-rules.yml
+evaluation_interval: 15s
+tests:
+  - name: idle
+    interval: 15s
+    input_series:
+      - series: 'plumego_scheduler_storage_probe_success'
+        values: '1+0x24'
+      - series: 'plumego_scheduler_oldest_due_schedule_seconds'
+        values: '0+0x24'
+      - series: 'plumego_scheduler_oldest_runnable_seconds'
+        values: '0+0x24'
+      - series: 'plumego_scheduler_dead_letters_5m'
+        values: '0+0x24'
+      - series: 'plumego_scheduler_lease_renewal_failures_total'
+        values: '0+0x24'
+      - series: 'plumego_scheduler_finalization_failures_total'
+        values: '0+0x24'
+      - series: 'up{job="plumego-scheduler"}'
+        values: '1+0x24'
+      - series: 'up{job="plumego-worker"}'
+        values: '1+0x24'
+      - series: 'up{job="plumego-finalizer"}'
+        values: '1+0x24'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: PlumegoScheduleDelay
+        exp_alerts: []
+      - eval_time: 4m
+        alertname: PlumegoRunnableBacklog
+        exp_alerts: []
+      - eval_time: 4m
+        alertname: PlumegoFinalizationFailures
+        exp_alerts: []
+      - eval_time: 4m
+        alertname: PlumegoLeaseRenewalFailures
+        exp_alerts: []
+      - eval_time: 4m
+        alertname: PlumegoDeadLetterSpike
+        exp_alerts: []
+      - eval_time: 4m
+        alertname: PlumegoSchedulerStorageUnavailable
+        exp_alerts: []
+      - eval_time: 4m
+        alertname: PlumegoSchedulerMetricsUnavailable
+        exp_alerts: []
+  - name: backlog and dead-letter growth then recovery
+    interval: 15s
+    input_series:
+      - series: 'plumego_scheduler_storage_probe_success'
+        values: '1+0x24'
+      - series: 'plumego_scheduler_oldest_due_schedule_seconds'
+        values: '10+0x16 0+0x7'
+      - series: 'plumego_scheduler_oldest_runnable_seconds'
+        values: '75+0x16 0+0x7'
+      - series: 'plumego_scheduler_dead_letters_5m'
+        values: '11+0x16 0+0x7'
+      - series: 'plumego_scheduler_lease_renewal_failures_total'
+        values: '0+0x24'
+      - series: 'plumego_scheduler_finalization_failures_total'
+        values: '0+0x24'
+      - series: 'up{job="plumego-scheduler"}'
+        values: '1+0x24'
+      - series: 'up{job="plumego-worker"}'
+        values: '1+0x24'
+      - series: 'up{job="plumego-finalizer"}'
+        values: '1+0x24'
+    alert_rule_test:
+      - eval_time: 30s
+        alertname: PlumegoScheduleDelay
+        exp_alerts: []
+      - eval_time: 30s
+        alertname: PlumegoRunnableBacklog
+        exp_alerts: []
+      - eval_time: 30s
+        alertname: PlumegoDeadLetterSpike
+        exp_alerts: []
+      - eval_time: 3m
+        alertname: PlumegoScheduleDelay
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: Eligible occurrences are missing the five-second dispatch objective.
+      - eval_time: 3m
+        alertname: PlumegoRunnableBacklog
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: A runnable task has waited more than one minute.
+      - eval_time: 3m
+        alertname: PlumegoDeadLetterSpike
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: More than ten dead-letter entries were recorded in five minutes.
+      - eval_time: 5m
+        alertname: PlumegoScheduleDelay
+        exp_alerts: []
+      - eval_time: 5m
+        alertname: PlumegoRunnableBacklog
+        exp_alerts: []
+      - eval_time: 5m
+        alertname: PlumegoDeadLetterSpike
+        exp_alerts: []
+  - name: unavailable storage with write and renewal failures
+    interval: 15s
+    input_series:
+      - series: 'plumego_scheduler_storage_probe_success'
+        values: '0+0x16 1+0x7'
+      - series: 'plumego_scheduler_oldest_due_schedule_seconds'
+        values: '0+0x24'
+      - series: 'plumego_scheduler_oldest_runnable_seconds'
+        values: '0+0x24'
+      - series: 'plumego_scheduler_dead_letters_5m'
+        values: '0+0x24'
+      - series: 'plumego_scheduler_lease_renewal_failures_total'
+        values: '0+1x24'
+      - series: 'plumego_scheduler_finalization_failures_total'
+        values: '0+1x24'
+      - series: 'up{job="plumego-scheduler"}'
+        values: '1+0x24'
+      - series: 'up{job="plumego-worker"}'
+        values: '1+0x24'
+      - series: 'up{job="plumego-finalizer"}'
+        values: '1+0x24'
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: PlumegoSchedulerStorageUnavailable
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+            exp_annotations:
+              summary: Scheduler storage telemetry is unavailable.
+      - eval_time: 2m
+        alertname: PlumegoLeaseRenewalFailures
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: Workers could not confirm or renew task ownership.
+      - eval_time: 2m
+        alertname: PlumegoFinalizationFailures
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: Queue finalization writes required recovery.
+      - eval_time: 2m
+        alertname: PlumegoRunnableBacklog
+        exp_alerts: []
+      - eval_time: 5m
+        alertname: PlumegoSchedulerStorageUnavailable
+        exp_alerts: []
+  - name: materialization SLO missed while due work is still draining
+    interval: 15s
+    input_series:
+      - series: 'plumego_scheduler_storage_probe_success'
+        values: '1+0x24'
+      - series: 'plumego_scheduler_oldest_due_schedule_seconds'
+        values: '0+0x24'
+      - series: 'plumego_scheduler_oldest_runnable_seconds'
+        values: '0+0x24'
+      - series: 'plumego_scheduler_dead_letters_5m'
+        values: '0+0x24'
+      - series: 'plumego_scheduler_lease_renewal_failures_total'
+        values: '0+0x24'
+      - series: 'plumego_scheduler_finalization_failures_total'
+        values: '0+0x24'
+      - series: 'up{job="plumego-scheduler"}'
+        values: '1+0x24'
+      - series: 'up{job="plumego-worker"}'
+        values: '1+0x24'
+      - series: 'up{job="plumego-finalizer"}'
+        values: '1+0x24'
+      - series: 'plumego_scheduler_dispatch_delay_seconds_bucket{le="5"}'
+        values: '0+1x24'
+      - series: 'plumego_scheduler_dispatch_delay_seconds_count'
+        values: '0+2x24'
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: PlumegoScheduleDelay
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: Eligible occurrences are missing the five-second dispatch objective.
+  - name: missing worker scrape
+    interval: 15s
+    input_series:
+      - series: 'plumego_scheduler_storage_probe_success'
+        values: '1+0x24'
+      - series: 'plumego_scheduler_oldest_due_schedule_seconds'
+        values: '0+0x24'
+      - series: 'plumego_scheduler_oldest_runnable_seconds'
+        values: '0+0x24'
+      - series: 'plumego_scheduler_dead_letters_5m'
+        values: '0+0x24'
+      - series: 'plumego_scheduler_lease_renewal_failures_total'
+        values: '0+0x24'
+      - series: 'plumego_scheduler_finalization_failures_total'
+        values: '0+0x24'
+      - series: 'up{job="plumego-scheduler"}'
+        values: '1+0x24'
+      - series: 'up{job="plumego-worker"}'
+        values: '0+0x24'
+      - series: 'up{job="plumego-finalizer"}'
+        values: '1+0x24'
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: PlumegoSchedulerMetricsUnavailable
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              job: plumego-worker
+            exp_annotations:
+              summary: A scheduler role has no reachable metrics endpoint.

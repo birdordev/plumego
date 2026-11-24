@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"slices"
+	"sync/atomic"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -47,7 +48,7 @@ func TestWorkerTracksLeaseBeforeDelivery(t *testing.T) {
 		w.pollCtx, w.pollCancel = context.WithCancel(w.runCtx)
 		w.pollDone = make(chan struct{})
 		w.tasksCh = make(chan Task)
-		w.inflightTasks = make(map[string]Task)
+		w.inflightTasks = make(map[taskClaim]inflightTask)
 		defer w.runCancel()
 		w.Register("test", func(context.Context, Task) error { return nil })
 		w.wg.Add(1)
@@ -59,7 +60,7 @@ func TestWorkerTracksLeaseBeforeDelivery(t *testing.T) {
 		}
 		w.handleTask(<-w.tasksCh)
 		synctest.Wait() // Second delivery is still blocked.
-		if got := w.inflight.Load(); got != 1 || w.inflightTasks["second"].ID != "second" {
+		if got := w.inflight.Load(); got != 1 || w.inflightTasks[taskClaim{id: "second"}].task.ID != "second" {
 			t.Fatalf("after first task count = %d, leases = %v", got, w.inflightTasks)
 		}
 
@@ -201,6 +202,121 @@ func TestWorkerCancelsBlockedFinalization(t *testing.T) {
 					t.Error("forced Stop did not release the retained lease")
 				}
 			})
+		})
+	}
+}
+
+type renewalTestStore struct {
+	TaskStore
+	renew func(context.Context, string, time.Time) error
+}
+
+func (s renewalTestStore) ExtendLease(ctx context.Context, _ string, owner string, _ time.Duration, now time.Time) error {
+	return s.renew(ctx, owner, now)
+}
+
+func TestWorkerCancelsWhenLeaseCannotBeRenewed(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		start := time.Now()
+		expiry := start.Add(3 * time.Second)
+		var renewed bool
+		store := renewalTestStore{renew: func(ctx context.Context, owner string, now time.Time) error {
+			renewed = true
+			if owner != "claim" || !now.Equal(start.Add(time.Second)) {
+				t.Errorf("unexpected renewal owner or time: %q %v", owner, now)
+			}
+			deadline, ok := ctx.Deadline()
+			if !ok || !deadline.Equal(start.Add(2*time.Second)) {
+				t.Errorf("unexpected renewal deadline: %v (%v)", deadline, ok)
+			}
+			<-ctx.Done()
+			return ctx.Err()
+		}}
+		w := NewWorker(NewTaskQueue(store), WorkerConfig{
+			LeaseDuration: 3 * time.Second, LeaseExtendInterval: time.Second,
+		})
+		ctx, cancel := context.WithCancel(t.Context())
+		defer cancel()
+		var lost atomic.Bool
+		w.extendLeaseLoop(ctx, Task{ID: "task", LeaseOwner: "claim", LeaseUntil: expiry}, &lost, cancel)
+		if !renewed || !lost.Load() || ctx.Err() != context.Canceled || !time.Now().Equal(expiry) {
+			t.Fatalf("renewed=%t lost=%t context=%v time=%v", renewed, lost.Load(), ctx.Err(), time.Now())
+		}
+	})
+}
+
+func TestWorkerRecoversTaskPanicAndContinues(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		store := &workerInflightTestStore{}
+		w := NewWorker(NewTaskQueue(store), WorkerConfig{Concurrency: 1})
+		w.Register("test", func(_ context.Context, task Task) error {
+			if task.ID == "first" {
+				panic("sensitive diagnostic")
+			}
+			return nil
+		})
+		w.Start(t.Context())
+		synctest.Wait()
+		if err := w.Stop(t.Context()); err != nil {
+			t.Fatal(err)
+		}
+		if !slices.Equal(store.acked, []string{"second"}) || !slices.Equal(store.released, []string{"first"}) {
+			t.Fatalf("acknowledged = %v, released = %v", store.acked, store.released)
+		}
+	})
+}
+
+func TestWorkerSkipsExpiredPrefetch(t *testing.T) {
+	store := &workerInflightTestStore{}
+	w := NewWorker(NewTaskQueue(store), WorkerConfig{})
+	w.config = normalizeWorkerConfig(w.config)
+	w.runCtx = t.Context()
+	w.inflightTasks = make(map[taskClaim]inflightTask)
+	w.Register("test", func(context.Context, Task) error {
+		t.Fatal("expired claim entered handler")
+		return nil
+	})
+	task := Task{ID: "expired", Topic: "test", LeaseOwner: "claim", LeaseUntil: time.Now().Add(-time.Second)}
+	w.trackInflight([]Task{task})
+	w.handleTask(task)
+	if w.inflight.Load() != 0 || len(w.inflightTasks) != 0 {
+		t.Fatal("expired claim retained its slot")
+	}
+}
+
+func TestWorkerRetriesFinalizationAndReportsUnresolvedErrors(t *testing.T) {
+	transient := errors.New("transient")
+	for _, scenario := range []struct {
+		name string
+		errs []error
+		want error
+	}{
+		{"recovered", []error{transient, nil}, nil},
+		{"uncertain", []error{transient, ErrLeaseLost}, transient},
+		{"lost", []error{ErrLeaseLost}, ErrLeaseLost},
+	} {
+		t.Run(scenario.name, func(t *testing.T) {
+			var observed error
+			w := NewWorker(nil, WorkerConfig{
+				FinalizationErrorHook: func(_ context.Context, id, operation string, err error) {
+					if id != "task" || operation != "ack" || observed != nil {
+						t.Errorf("unexpected callback: %s %s %v", id, operation, err)
+					}
+					observed = err
+				},
+			})
+			calls := 0
+			w.finalizeTask(t.Context(), Task{ID: "task"}, "ack", func() error {
+				if calls >= len(scenario.errs) {
+					t.Fatal("unexpected extra finalization attempt")
+				}
+				err := scenario.errs[calls]
+				calls++
+				return err
+			})
+			if calls != len(scenario.errs) || !errors.Is(observed, scenario.want) {
+				t.Fatalf("calls = %d, reported error = %v", calls, observed)
+			}
 		})
 	}
 }

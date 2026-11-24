@@ -65,6 +65,10 @@ var (
 
 	// ErrLeaseLost is returned when a task lease is lost.
 	ErrLeaseLost = errors.New("mq: lease lost")
+	// ErrClaimPaused 表示登记执行时领取被暂停，应保留任务并归还当前代次。
+	ErrClaimPaused = errors.New("mq: claim paused")
+	// ErrExecutionHandled 表示登记回调已提交当前领取的状态转换。
+	ErrExecutionHandled = errors.New("mq: execution handled")
 
 	// ErrTaskExpired is returned when a task has expired.
 	ErrTaskExpired = errors.New("mq: task expired")

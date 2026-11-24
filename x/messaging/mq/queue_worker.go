@@ -2,6 +2,7 @@ package mq
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"os"
@@ -13,13 +14,30 @@ import (
 type TaskHandler func(ctx context.Context, task Task) error
 
 type WorkerConfig struct {
-	ConsumerID          string
-	Concurrency         int
-	LeaseDuration       time.Duration
-	PollInterval        time.Duration
+	ConsumerID    string
+	Pool          string
+	Version       string
+	Concurrency   int
+	LeaseDuration time.Duration
+	PollInterval  time.Duration
+	// MaxIdlePollInterval 启用空闲指数退避。零值保留固定轮询间隔。
+	MaxIdlePollInterval time.Duration
+	// Wake 接收外部队列变更提示。每个 Worker 应使用独立的通知订阅。
+	Wake                <-chan struct{}
 	MaxInflight         int
 	RetryPolicy         RetryPolicy
 	LeaseExtendInterval time.Duration
+	// MaxQueueWait 从本次可领取时间计时。MaxTaskAge 从原始入队时间计时。
+	MaxQueueWait time.Duration
+	MaxTaskAge   time.Duration
+	TaskTimeout  time.Duration
+	// BeginExecution 在调用处理器前登记持久化执行次数。正数是本次执行序号，
+	// 零表示预算用尽。ErrExecutionHandled 表示回调已提交状态转换。
+	// ErrClaimPaused 会归还领取，其他错误让领取按原租约恢复。
+	BeginExecution func(context.Context, Task) (int, error)
+	// ResolveOutcome 返回 true 表示已提交，false 表示已确认可安全重试。
+	// 返回错误表示结果仍未知，Worker 将任务隔离到死信。
+	ResolveOutcome func(context.Context, Task) (bool, error)
 	// ShutdownTimeout bounds Stop and individual task finalization calls.
 	ShutdownTimeout time.Duration
 	MetricsObserver MetricsObserver
@@ -27,9 +45,12 @@ type WorkerConfig struct {
 	DedupeKeyFunc   func(Task) string
 	DedupeTTL       time.Duration
 	DedupeErrorHook func(ctx context.Context, task Task, err error)
+	// FinalizationErrorHook 接收当前领取的最后一次终态写入错误。
+	FinalizationErrorHook func(ctx context.Context, taskID, operation string, err error)
 }
 
 type Worker struct {
+	identity WorkerIdentity
 	queue    *TaskQueue
 	config   WorkerConfig
 	mu       sync.RWMutex
@@ -47,13 +68,37 @@ type Worker struct {
 	inflight          atomic.Int64
 
 	inflightMu    sync.Mutex
-	inflightTasks map[string]Task
+	inflightTasks map[taskClaim]inflightTask
 	pollDone      chan struct{}
+	workersDone   chan struct{}
 	closeOnce     sync.Once
 }
 
+// WorkerIdentity 记录本次启动代次、执行池和版本。
+type WorkerIdentity struct {
+	ConsumerID string
+	InstanceID string
+	Pool       string
+	Version    string
+}
+
+func (w *Worker) Identity() WorkerIdentity { return w.identity }
+
+type taskClaim struct {
+	id, owner string
+}
+
+type inflightTask struct {
+	task      Task
+	executing bool
+}
+
 func NewWorker(q *TaskQueue, cfg WorkerConfig) *Worker {
+	if cfg.ConsumerID == "" {
+		cfg.ConsumerID = defaultConsumerID()
+	}
 	return &Worker{
+		identity:          WorkerIdentity{ConsumerID: cfg.ConsumerID, InstanceID: rand.Text(), Pool: cfg.Pool, Version: cfg.Version},
 		queue:             q,
 		config:            cfg,
 		handlers:          make(map[string]TaskHandler),
@@ -89,7 +134,7 @@ func (w *Worker) Start(ctx context.Context) {
 	w.pollCtx, w.pollCancel = context.WithCancel(ctx)
 	w.tasksCh = make(chan Task, w.config.MaxInflight)
 	if w.inflightTasks == nil {
-		w.inflightTasks = make(map[string]Task)
+		w.inflightTasks = make(map[taskClaim]inflightTask)
 	}
 	if w.pollDone == nil {
 		w.pollDone = make(chan struct{})
@@ -102,11 +147,15 @@ func (w *Worker) Start(ctx context.Context) {
 		w.wg.Add(1)
 		go w.workerLoop()
 	}
+	w.workersDone = make(chan struct{})
+	go func() {
+		w.wg.Wait()
+		close(w.workersDone)
+	}()
 }
 
-// Stop drains tasks within the earlier of the caller's deadline and
-// ShutdownTimeout. A portion of that time is reserved for releasing in-flight
-// leases after cancellation. Leases that cannot be released expire normally.
+// Stop 在调用方期限和 ShutdownTimeout 中较早的时间内排空任务。
+// 强停时先请求取消，再仅释放当前未执行处理器或结果核对的领取。
 func (w *Worker) Stop(ctx context.Context) error {
 	if w == nil {
 		return nil
@@ -141,13 +190,13 @@ func (w *Worker) Stop(ctx context.Context) error {
 		w.pollCancel()
 	}
 
-	if err := waitForPoll(drainCtx, w.pollDone); err != nil {
+	if err := waitForWorkerSignal(drainCtx, w.pollDone); err != nil {
 		return errors.Join(err, w.forceStop(ctx))
 	}
 
 	w.closeTasks()
 
-	if err := waitWithContext(drainCtx, &w.wg); err != nil {
+	if err := waitForWorkerSignal(drainCtx, w.workersDone); err != nil {
 		return errors.Join(err, w.forceStop(ctx))
 	}
 	w.runCancel()
@@ -162,6 +211,8 @@ func (w *Worker) pollLoop() {
 		}
 	}()
 
+	wake := w.config.Wake
+	idle := w.config.PollInterval
 	for {
 		select {
 		case <-w.pollCtx.Done():
@@ -192,31 +243,35 @@ func (w *Worker) pollLoop() {
 			limit = available
 		}
 
-		tasks, err := w.queue.Reserve(w.pollCtx, ReserveOptions{
+		tasks, err := w.queue.ReserveFenced(w.pollCtx, ReserveOptions{
 			Topics:     topics,
 			Limit:      limit,
 			Lease:      w.config.LeaseDuration,
-			ConsumerID: w.config.ConsumerID,
+			ConsumerID: w.identity.ConsumerID + "/" + w.identity.InstanceID,
 		})
 		if err != nil {
-			if !sleepWithContext(w.pollCtx, w.config.PollInterval) {
+			delay := jitterIdlePoll(idle, w.config.PollInterval, w.config.MaxIdlePollInterval)
+			if !sleepWithContext(w.pollCtx, delay) {
 				return
 			}
+			idle = nextIdlePoll(idle, w.config.MaxIdlePollInterval)
 			continue
 		}
 		if len(tasks) == 0 {
-			timer := time.NewTimer(w.config.PollInterval)
-			select {
-			case <-w.pollCtx.Done():
-				timer.Stop()
+			delay := w.idlePollDelay(topics, idle)
+			notified, running := w.waitIdle(delay, &wake)
+			if !running {
 				return
-			case <-w.queue.ready:
-			case <-timer.C:
 			}
-			timer.Stop()
+			if notified {
+				idle = w.config.PollInterval
+			} else {
+				idle = nextIdlePoll(idle, w.config.MaxIdlePollInterval)
+			}
 			continue
 		}
 
+		idle = w.config.PollInterval
 		w.trackInflight(tasks)
 		for i, task := range tasks {
 			select {
@@ -259,15 +314,11 @@ func (w *Worker) handleTask(task Task) {
 		// Leave shutdown cleanup ownership intact when the operation was
 		// canceled by the worker lifecycle.
 		if w.runCtx.Err() == nil {
-			w.untrackInflight(task.ID)
+			w.untrackInflight(task)
 		}
 	}()
 
-	if task.MaxAttempts > 0 && task.Attempts > task.MaxAttempts {
-		ctx, cancel := context.WithTimeout(w.runCtx, w.config.ShutdownTimeout)
-		defer cancel()
-		_ = w.queue.MoveToDLQ(ctx, task.ID, w.config.ConsumerID, "max attempts exceeded", time.Now())
-		w.observeLatency(task)
+	if w.runCtx.Err() != nil || (!task.LeaseUntil.IsZero() && !time.Now().Before(task.LeaseUntil)) {
 		return
 	}
 
@@ -288,31 +339,143 @@ func (w *Worker) handleTask(task Task) {
 		}
 	}
 
+	now := time.Now()
+	totalDeadline := workerDeadline(task.CreatedAt, w.config.MaxTaskAge)
+	if !totalDeadline.IsZero() && !now.Before(totalDeadline) {
+		w.deadLetter(task, "task age limit exceeded")
+		return
+	}
+	queueDeadline := workerDeadline(task.AvailableAt, w.config.MaxQueueWait)
+	if !queueDeadline.IsZero() && !now.Before(queueDeadline) {
+		w.deadLetter(task, "task queue wait limit exceeded")
+		return
+	}
+
+	if w.config.BeginExecution == nil && task.MaxAttempts > 0 && task.Attempts > task.MaxAttempts {
+		w.deadLetter(task, "max attempts exceeded")
+		return
+	}
+
 	handler := w.handlerFor(task.Topic)
 	if handler == nil {
+		if w.config.BeginExecution != nil {
+			w.deadLetter(task, "permanent task failure")
+			return
+		}
 		err := fmt.Errorf("no handler registered for topic %s", task.Topic)
 		w.failTask(task, err)
 		return
 	}
 
-	taskCtx, cancel := context.WithCancel(w.runCtx)
+	if !w.confirmClaim(&task) {
+		return
+	}
+	now = time.Now()
+	if !totalDeadline.IsZero() && !now.Before(totalDeadline) {
+		w.deadLetter(task, "task age limit exceeded")
+		return
+	}
+	if !queueDeadline.IsZero() && !now.Before(queueDeadline) {
+		w.deadLetter(task, "task queue wait limit exceeded")
+		return
+	}
+	deadline := totalDeadline
+	if w.config.TaskTimeout > 0 {
+		candidate := time.Now().Add(w.config.TaskTimeout)
+		if deadline.IsZero() || candidate.Before(deadline) {
+			deadline = candidate
+		}
+	}
+	var taskCtx context.Context
+	var cancel context.CancelFunc
+	if deadline.IsZero() {
+		taskCtx, cancel = context.WithCancel(w.runCtx)
+	} else {
+		taskCtx, cancel = context.WithDeadline(w.runCtx, deadline)
+	}
+	if w.config.BeginExecution != nil {
+		startDeadline := time.Now().Add(w.config.ShutdownTimeout)
+		if !task.LeaseUntil.IsZero() {
+			startDeadline = minTime(task.LeaseUntil, startDeadline)
+		}
+		startCtx, finish := context.WithDeadline(taskCtx, startDeadline)
+		n, err := w.config.BeginExecution(startCtx, task)
+		startErr := startCtx.Err()
+		finish()
+		if errors.Is(err, ErrExecutionHandled) {
+			cancel()
+			return
+		}
+		if errors.Is(err, ErrClaimPaused) && startErr == nil {
+			releaseCtx, endRelease := context.WithTimeout(taskCtx, w.config.ShutdownTimeout)
+			w.finalizeTask(releaseCtx, task, "release", func() error {
+				return w.queue.Release(releaseCtx, task.ID, task.LeaseOwner, ReleaseOptions{
+					RetryAt: task.AvailableAt, Reason: "schedule claim paused", Now: time.Now(),
+				})
+			})
+			endRelease()
+			cancel()
+			return
+		}
+		if err != nil || startErr != nil {
+			if hook := w.config.FinalizationErrorHook; hook != nil && !errors.Is(err, ErrLeaseLost) {
+				hook(taskCtx, task.ID, "execution_start", errors.Join(err, startErr))
+			}
+			cancel()
+			return
+		}
+		if n <= 0 {
+			cancel()
+			w.deadLetter(task, "max attempts exceeded")
+			return
+		}
+		task.ExecutionAttempts = n
+	}
 	var leaseLost atomic.Bool
-	stopLease := make(chan struct{})
+	leaseDone := make(chan struct{})
 
 	if w.config.LeaseExtendInterval > 0 {
 		go func() {
-			w.extendLeaseLoop(taskCtx, task, &leaseLost, stopLease, cancel)
+			defer close(leaseDone)
+			w.extendLeaseLoop(taskCtx, task, &leaseLost, cancel)
 		}()
+	} else {
+		close(leaseDone)
 	}
 
-	err := handler(taskCtx, task)
-	close(stopLease)
+	var err error
+	if taskCtx.Err() == nil && w.beginHandler(task) {
+		err = callTaskHandler(taskCtx, handler, task)
+		if err == nil && errors.Is(taskCtx.Err(), context.DeadlineExceeded) {
+			err = &TaskFailure{Kind: TaskFailureOutcomeUnknown}
+		}
+		if taskFailure(err).Kind == TaskFailureOutcomeUnknown && w.config.ResolveOutcome != nil && taskCtx.Err() == nil {
+			done, resolveErr := callOutcomeResolver(taskCtx, w.config.ResolveOutcome, task)
+			if resolveErr == nil && taskCtx.Err() == nil {
+				if done {
+					err = nil
+				} else {
+					err = &TaskFailure{Kind: TaskFailureTransient, Cause: err}
+				}
+			}
+		}
+		w.endHandler(task)
+	}
+	timedOut := errors.Is(taskCtx.Err(), context.DeadlineExceeded)
 	cancel()
+	<-leaseDone
 
-	if leaseLost.Load() {
+	if leaseLost.Load() || w.runCtx.Err() != nil {
 		return
 	}
 
+	if timedOut && !totalDeadline.IsZero() && !time.Now().Before(totalDeadline) {
+		w.deadLetter(task, "task age limit exceeded")
+		return
+	}
+	if timedOut && taskFailure(err).Kind == TaskFailureTransient {
+		err = context.DeadlineExceeded
+	}
 	if err == nil {
 		w.ackTask(task, true)
 		return
@@ -321,64 +484,176 @@ func (w *Worker) handleTask(task Task) {
 	w.failTask(task, err)
 }
 
+func workerDeadline(origin time.Time, interval time.Duration) time.Time {
+	if origin.IsZero() || interval <= 0 {
+		return time.Time{}
+	}
+	return origin.Add(interval)
+}
+
+func (w *Worker) confirmClaim(task *Task) bool {
+	if w.runCtx.Err() != nil {
+		return false
+	}
+	if task.LeaseUntil.IsZero() {
+		return true
+	}
+	now := time.Now()
+	if !now.Before(task.LeaseUntil) {
+		return false
+	}
+	ctx, cancel := context.WithDeadline(w.runCtx, minTime(task.LeaseUntil, now.Add(w.config.LeaseExtendInterval)))
+	defer cancel()
+	if err := w.queue.ExtendLease(ctx, task.ID, task.LeaseOwner, w.config.LeaseDuration, now); err != nil || ctx.Err() != nil {
+		return false
+	}
+	task.LeaseUntil = now.Add(w.config.LeaseDuration)
+	return true
+}
+
+func (w *Worker) deadLetter(task Task, reason string) {
+	ctx, cancel := context.WithTimeout(w.runCtx, w.config.ShutdownTimeout)
+	defer cancel()
+	w.finalizeTask(ctx, task, "dlq", func() error {
+		return w.queue.MoveToDLQ(ctx, task.ID, task.LeaseOwner, reason, time.Now())
+	})
+}
+
 func (w *Worker) ackTask(task Task, markCompleted bool) {
 	ctx, cancel := context.WithTimeout(w.runCtx, w.config.ShutdownTimeout)
 	defer cancel()
 	if markCompleted {
 		w.markDeduped(ctx, task)
 	}
-	_ = w.queue.Ack(ctx, task.ID, w.config.ConsumerID, time.Now())
-	w.observeLatency(task)
+	w.finalizeTask(ctx, task, "ack", func() error {
+		return w.queue.Ack(ctx, task.ID, task.LeaseOwner, time.Now())
+	})
 }
 
 func (w *Worker) failTask(task Task, err error) {
-	ctx, cancel := context.WithTimeout(w.runCtx, w.config.ShutdownTimeout)
-	defer cancel()
+	failure := taskFailure(err)
+	switch failure.Kind {
+	case TaskFailurePermanent:
+		w.deadLetter(task, "permanent task failure")
+		return
+	case TaskFailureOutcomeUnknown:
+		w.deadLetter(task, "task outcome unknown")
+		return
+	}
 	maxAttempts := task.MaxAttempts
 	if maxAttempts <= 0 {
 		maxAttempts = DefaultTaskMaxAttempts
 	}
-
-	if task.Attempts >= maxAttempts {
-		_ = w.queue.MoveToDLQ(ctx, task.ID, w.config.ConsumerID, err.Error(), time.Now())
-		w.observeLatency(task)
+	attempt := task
+	if task.ExecutionAttempts > 0 {
+		attempt.Attempts = task.ExecutionAttempts
+	}
+	if attempt.Attempts >= maxAttempts {
+		w.deadLetter(task, "task failed")
 		return
 	}
 
-	retryDelay := w.config.RetryPolicy.NextDelay(task, err)
-	retryAt := time.Now().Add(retryDelay)
-	releaseErr := w.queue.Release(ctx, task.ID, w.config.ConsumerID, ReleaseOptions{
-		RetryAt: retryAt,
-		Reason:  err.Error(),
-		Now:     time.Now(),
+	delay := w.config.RetryPolicy.NextDelay(attempt, err)
+	reason := "task failed"
+	if failure.Kind == TaskFailureRateLimited {
+		delay = max(delay, failure.RetryAfter)
+		reason = "task rate limited"
+	} else if errors.Is(err, context.DeadlineExceeded) {
+		reason = "task execution timed out"
+	}
+	retryAt := time.Now().Add(max(delay, 0))
+	if deadline := workerDeadline(task.CreatedAt, w.config.MaxTaskAge); !deadline.IsZero() && !retryAt.Before(deadline) {
+		w.deadLetter(task, "task retry would exceed age limit")
+		return
+	}
+	ctx, cancel := context.WithTimeout(w.runCtx, w.config.ShutdownTimeout)
+	defer cancel()
+	w.finalizeTask(ctx, task, "release", func() error {
+		return w.queue.Release(ctx, task.ID, task.LeaseOwner, ReleaseOptions{
+			RetryAt: retryAt,
+			Reason:  reason,
+			Now:     time.Now(),
+		})
 	})
-	if releaseErr != nil && !errors.Is(releaseErr, ErrLeaseLost) {
+}
+
+func (w *Worker) finalizeTask(ctx context.Context, task Task, operation string, write func() error) {
+	if err := write(); err != nil {
+		if ctx.Err() == nil && !errors.Is(err, ErrLeaseLost) && !errors.Is(err, ErrTaskNotFound) {
+			if retryErr := write(); retryErr == nil {
+				w.observeLatency(task)
+				return
+			} else {
+				err = errors.Join(err, retryErr)
+			}
+		}
+		if hook := w.config.FinalizationErrorHook; hook != nil {
+			hook(ctx, task.ID, operation, err)
+		}
 		return
 	}
 	w.observeLatency(task)
 }
 
-func (w *Worker) extendLeaseLoop(ctx context.Context, task Task, leaseLost *atomic.Bool, stop <-chan struct{}, cancel context.CancelFunc) {
-	ticker := time.NewTicker(w.config.LeaseExtendInterval)
-	defer ticker.Stop()
+func callTaskHandler(ctx context.Context, handler TaskHandler, task Task) (err error) {
+	defer func() {
+		if recover() != nil {
+			err = errTaskHandlerPanic
+		}
+	}()
+	return handler(ctx, task)
+}
+
+func callOutcomeResolver(ctx context.Context, resolver func(context.Context, Task) (bool, error), task Task) (done bool, err error) {
+	defer func() {
+		if recover() != nil {
+			err = errTaskHandlerPanic
+		}
+	}()
+	return resolver(ctx, task)
+}
+
+var errTaskHandlerPanic = errors.New("task handler panicked")
+
+func (w *Worker) extendLeaseLoop(ctx context.Context, task Task, leaseLost *atomic.Bool, cancel context.CancelFunc) {
+	expiry := task.LeaseUntil
+	if expiry.IsZero() {
+		expiry = time.Now().Add(w.config.LeaseDuration)
+	}
+	timer := time.NewTimer(min(w.config.LeaseExtendInterval, time.Until(expiry)))
+	defer timer.Stop()
 
 	for {
 		select {
-		case <-stop:
-			return
 		case <-ctx.Done():
 			return
-		case <-ticker.C:
-			err := w.queue.ExtendLease(context.Background(), task.ID, w.config.ConsumerID, w.config.LeaseDuration, time.Now())
-			if err != nil {
-				if errors.Is(err, ErrLeaseLost) || errors.Is(err, ErrTaskNotFound) {
-					leaseLost.Store(true)
-					cancel()
-					return
-				}
-			}
+		case <-timer.C:
 		}
+		now := time.Now()
+		if !now.Before(expiry) {
+			break
+		}
+		renewCtx, stopRenew := context.WithDeadline(ctx, minTime(expiry, now.Add(w.config.LeaseExtendInterval)))
+		err := w.queue.ExtendLease(renewCtx, task.ID, task.LeaseOwner, w.config.LeaseDuration, now)
+		renewErr := renewCtx.Err()
+		stopRenew()
+		if errors.Is(err, ErrLeaseLost) || errors.Is(err, ErrTaskNotFound) || !time.Now().Before(expiry) {
+			break
+		}
+		if err == nil && renewErr == nil {
+			expiry = now.Add(w.config.LeaseDuration)
+		}
+		timer.Reset(min(w.config.LeaseExtendInterval, time.Until(expiry)))
 	}
+	leaseLost.Store(true)
+	cancel()
+}
+
+func minTime(a, b time.Time) time.Time {
+	if a.Before(b) {
+		return a
+	}
+	return b
 }
 
 func (w *Worker) registeredTopics() []string {
@@ -414,9 +689,10 @@ func normalizeWorkerConfig(cfg WorkerConfig) WorkerConfig {
 	if cfg.PollInterval <= 0 {
 		cfg.PollInterval = DefaultPollInterval
 	}
-	if cfg.LeaseExtendInterval <= 0 {
+	if cfg.LeaseExtendInterval <= 0 || cfg.LeaseExtendInterval >= cfg.LeaseDuration {
 		cfg.LeaseExtendInterval = cfg.LeaseDuration / 2
 	}
+	cfg.LeaseExtendInterval = max(cfg.LeaseExtendInterval, time.Nanosecond)
 	if cfg.RetryPolicy == nil {
 		cfg.RetryPolicy = DefaultRetryPolicy()
 	}
@@ -443,15 +719,39 @@ func (w *Worker) observeLatency(task Task) {
 func (w *Worker) trackInflight(tasks []Task) {
 	w.inflightMu.Lock()
 	for _, task := range tasks {
-		w.inflightTasks[task.ID] = task
+		w.inflightTasks[taskClaim{task.ID, task.LeaseOwner}] = inflightTask{task: task}
 	}
 	w.inflight.Add(int64(len(tasks)))
 	w.inflightMu.Unlock()
 }
 
-func (w *Worker) untrackInflight(taskID string) {
+func (w *Worker) beginHandler(task Task) bool {
 	w.inflightMu.Lock()
-	delete(w.inflightTasks, taskID)
+	defer w.inflightMu.Unlock()
+	if w.runCtx.Err() != nil {
+		return false
+	}
+	key := taskClaim{task.ID, task.LeaseOwner}
+	if entry, ok := w.inflightTasks[key]; ok {
+		entry.executing = true
+		w.inflightTasks[key] = entry
+	}
+	return true
+}
+
+func (w *Worker) endHandler(task Task) {
+	w.inflightMu.Lock()
+	defer w.inflightMu.Unlock()
+	key := taskClaim{task.ID, task.LeaseOwner}
+	if entry, ok := w.inflightTasks[key]; ok {
+		entry.executing = false
+		w.inflightTasks[key] = entry
+	}
+}
+
+func (w *Worker) untrackInflight(task Task) {
+	w.inflightMu.Lock()
+	delete(w.inflightTasks, taskClaim{task.ID, task.LeaseOwner})
 	w.inflightMu.Unlock()
 }
 
@@ -461,8 +761,10 @@ func (w *Worker) releaseInflight(ctx context.Context) error {
 	}
 	w.inflightMu.Lock()
 	tasks := make([]Task, 0, len(w.inflightTasks))
-	for _, task := range w.inflightTasks {
-		tasks = append(tasks, task)
+	for _, entry := range w.inflightTasks {
+		if !entry.executing {
+			tasks = append(tasks, entry.task)
+		}
 	}
 	w.inflightMu.Unlock()
 
@@ -472,7 +774,7 @@ func (w *Worker) releaseInflight(ctx context.Context) error {
 			return errors.Join(releaseErr, err)
 		}
 		now := time.Now()
-		err := w.queue.Release(ctx, task.ID, w.config.ConsumerID, ReleaseOptions{
+		err := w.queue.Release(ctx, task.ID, task.LeaseOwner, ReleaseOptions{
 			RetryAt: now,
 			Reason:  "worker shutdown",
 			Now:     now,
@@ -481,7 +783,7 @@ func (w *Worker) releaseInflight(ctx context.Context) error {
 			releaseErr = errors.Join(releaseErr, err)
 			continue
 		}
-		w.untrackInflight(task.ID)
+		w.untrackInflight(task)
 	}
 	return releaseErr
 }
@@ -502,9 +804,16 @@ func (w *Worker) forceStop(ctx context.Context) error {
 	if w.runCancel != nil {
 		w.runCancel()
 	}
-	// Let a Reserve already returning hand off its leases before taking the
-	// cleanup snapshot. If it outlives the stop budget, leases expire normally.
-	return errors.Join(waitForPoll(ctx, w.pollDone), w.releaseInflight(ctx))
+	// 先等已发出的领取交接给本地清理流程，再给处理器一段时间响应取消。
+	if err := waitForWorkerSignal(ctx, w.pollDone); err != nil {
+		return err
+	}
+	if deadline, ok := ctx.Deadline(); ok {
+		cooperate, cancel := context.WithTimeout(ctx, time.Until(deadline)/2)
+		_ = waitForWorkerSignal(cooperate, w.workersDone)
+		cancel()
+	}
+	return w.releaseInflight(ctx)
 }
 
 func (w *Worker) markDeduped(ctx context.Context, task Task) {
@@ -544,22 +853,7 @@ func defaultConsumerID() string {
 	return fmt.Sprintf("worker-%s-%d", host, os.Getpid())
 }
 
-func waitWithContext(ctx context.Context, wg *sync.WaitGroup) error {
-	done := make(chan struct{})
-	go func() {
-		wg.Wait()
-		close(done)
-	}()
-
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-done:
-		return nil
-	}
-}
-
-func waitForPoll(ctx context.Context, done <-chan struct{}) error {
+func waitForWorkerSignal(ctx context.Context, done <-chan struct{}) error {
 	if done == nil {
 		return nil
 	}

@@ -8,8 +8,8 @@ import (
 // DeadLetterEntry represents a job that failed after all retries.
 type DeadLetterEntry struct {
 	JobID        JobID
-	Error        error  // runtime error; not included in JSON output
-	ErrorMessage string // string form of Error, safe for JSON serialization
+	Error        error  `json:"-"`
+	ErrorMessage string // 固定失败摘要
 	Attempts     int
 	FirstFailed  time.Time
 	LastFailed   time.Time

@@ -31,6 +31,8 @@ type Task struct {
 
 	Attempts    int
 	MaxAttempts int
+	// ExecutionAttempts 是已登记的处理器执行序号，由启用 BeginExecution 的 Worker 设置。
+	ExecutionAttempts int
 
 	LeaseOwner string
 	LeaseUntil time.Time

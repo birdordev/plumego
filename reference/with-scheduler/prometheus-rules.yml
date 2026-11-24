@@ -1,0 +1,59 @@
+groups:
+  - name: plumego-scheduler
+    interval: 15s
+    rules:
+      - alert: PlumegoScheduleDelay
+        expr: |
+          (sum(increase(plumego_scheduler_dispatch_delay_seconds_bucket{le="5"}[10m]))
+            / sum(increase(plumego_scheduler_dispatch_delay_seconds_count[10m])) < 0.99)
+          or (max(plumego_scheduler_oldest_due_schedule_seconds) > 5)
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: Eligible occurrences are missing the five-second dispatch objective.
+      - alert: PlumegoRunnableBacklog
+        expr: max(plumego_scheduler_oldest_runnable_seconds) > 60
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: A runnable task has waited more than one minute.
+      - alert: PlumegoFinalizationFailures
+        expr: sum(increase(plumego_scheduler_finalization_failures_total[5m])) > 0
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: Queue finalization writes required recovery.
+      - alert: PlumegoLeaseRenewalFailures
+        expr: sum(increase(plumego_scheduler_lease_renewal_failures_total[5m])) > 0
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: Workers could not confirm or renew task ownership.
+      - alert: PlumegoDeadLetterSpike
+        expr: max(plumego_scheduler_dead_letters_5m) > 10
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: More than ten dead-letter entries were recorded in five minutes.
+      - alert: PlumegoSchedulerStorageUnavailable
+        expr: min(plumego_scheduler_storage_probe_success) == 0 or absent(plumego_scheduler_storage_probe_success)
+        for: 30s
+        labels:
+          severity: critical
+        annotations:
+          summary: Scheduler storage telemetry is unavailable.
+      - alert: PlumegoSchedulerMetricsUnavailable
+        expr: |
+          label_replace(absent(up{job="plumego-scheduler"} == 1), "job", "plumego-scheduler", "", "^$")
+          or label_replace(absent(up{job="plumego-worker"} == 1), "job", "plumego-worker", "", "^$")
+          or label_replace(absent(up{job="plumego-finalizer"} == 1), "job", "plumego-finalizer", "", "^$")
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: A scheduler role has no reachable metrics endpoint.

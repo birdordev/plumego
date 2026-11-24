@@ -47,7 +47,7 @@ func TestKVStoreReportsUnreadableJobsAndRestoresReadableJobs(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !restored || !strings.Contains(output.String(), "scheduler load persisted jobs failed") ||
-		!strings.Contains(output.String(), "broken") || strings.Contains(output.String(), badPayload) {
+		!strings.Contains(output.String(), "invalid_stored_job") || strings.Contains(output.String(), badPayload) {
 		t.Errorf("valid restored = %v, recovery logs = %s", restored, output.String())
 	}
 

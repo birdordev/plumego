@@ -26,10 +26,10 @@ A high-performance, feature-rich in-process message broker for Go applications.
 - **Task leasing**: Reserve/ack with lease timeouts for competitive consumers
 - **Retry & DLQ**: Release with backoff, move to dead letter on exhaustion
 - **Pluggable storage**: `TaskStore` interface with SQL and in-memory stores
-- **Schema**: See `docs/MQ_TASK_QUEUE_SCHEMA.md` for recommended SQL tables
+- **Schema**: See `[SQL task queue schema](../../../docs/MQ_TASK_QUEUE_SCHEMA.md)` for recommended SQL tables
 - **Attempt audit**: Optional attempt logging via `SQLConfig.EnableAttemptLog`
 - **Metrics**: Queue operations emit `ObserveMQ` with `queue_*` operations
-- **Graceful shutdown**: Stop drains in-flight tasks; timed-out shutdown releases leases
+- **Graceful shutdown**: Stop drains in-flight tasks. On timeout, it cancels execution and releases claims that are safe to hand off. Active handlers keep their leases until expiry.
 - **Duplicate protection**: Optional `TaskDeduper` hook to skip tasks already processed
 
 ### Durable Task Queue (Quick Start)

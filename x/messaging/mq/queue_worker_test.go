@@ -165,12 +165,16 @@ func (s shutdownReleaseStore) Release(ctx context.Context, id, consumer string, 
 }
 
 func TestWorkerStopBoundsForcedLeaseRelease(t *testing.T) {
-	for _, block := range []bool{false, true} {
-		name := "released"
-		if block {
-			name = "expires"
-		}
-		t.Run(name, func(t *testing.T) {
+	for _, scenario := range []struct {
+		name         string
+		cooperative  bool
+		blockRelease bool
+	}{
+		{"cooperative handoff", true, false},
+		{"unavailable release", true, true},
+		{"active handler retains lease", false, false},
+	} {
+		t.Run(scenario.name, func(t *testing.T) {
 			backend := mqstore.NewMemory(mqstore.MemConfig{})
 			attempted := make(chan struct{}, 1)
 			queue := mq.NewTaskQueue(shutdownReleaseStore{
@@ -180,7 +184,7 @@ func TestWorkerStopBoundsForcedLeaseRelease(t *testing.T) {
 						return backend.Release(ctx, id, consumer, opts)
 					}
 					attempted <- struct{}{}
-					if block {
+					if scenario.blockRelease {
 						<-ctx.Done()
 						return ctx.Err()
 					}
@@ -192,8 +196,12 @@ func TestWorkerStopBoundsForcedLeaseRelease(t *testing.T) {
 			finish := make(chan struct{})
 			defer close(finish)
 			worker := mq.NewWorker(queue, mq.WorkerConfig{ConsumerID: "worker", PollInterval: time.Millisecond, LeaseDuration: lease, ShutdownTimeout: 300 * time.Millisecond})
-			worker.Register("send", func(context.Context, mq.Task) error {
+			worker.Register("send", func(ctx context.Context, _ mq.Task) error {
 				close(started)
+				if scenario.cooperative {
+					<-ctx.Done()
+					return ctx.Err()
+				}
 				<-finish
 				return nil
 			})
@@ -217,17 +225,21 @@ func TestWorkerStopBoundsForcedLeaseRelease(t *testing.T) {
 			case <-time.After(3 * time.Second):
 				t.Fatal("forced release outlived stop budget")
 			}
+			var released bool
 			select {
 			case <-attempted:
+				released = true
 			default:
-				t.Fatal("Stop did not attempt to release the lease")
+			}
+			if released != scenario.cooperative {
+				t.Fatalf("release attempted=%t, cooperative=%t", released, scenario.cooperative)
 			}
 			opts := mq.ReserveOptions{Topics: []string{"send"}, Limit: 1, ConsumerID: "next", Now: time.Now()}
 			tasks, err := queue.Reserve(t.Context(), opts)
 			if err != nil {
 				t.Fatal(err)
 			}
-			if !block {
+			if scenario.cooperative && !scenario.blockRelease {
 				if len(tasks) != 1 {
 					t.Fatal("released task is not reservable")
 				}

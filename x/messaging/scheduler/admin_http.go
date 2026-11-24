@@ -68,14 +68,22 @@ func (h *AdminHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		result := h.scheduler.QueryJobs(query)
 		w.Header().Set("X-Total-Count", strconv.Itoa(result.Total))
-		_ = contract.WriteResponse(w, r, http.StatusOK, result.Jobs, nil)
+		statuses := make([]adminJobStatus, 0, len(result.Jobs))
+		for _, status := range result.Jobs {
+			statuses = append(statuses, safeAdminStatus(status))
+		}
+		_ = contract.WriteResponse(w, r, http.StatusOK, statuses, nil)
 		return
 	case strings.HasPrefix(path, "/jobs/"):
 		h.handleJob(w, r, strings.TrimPrefix(path, "/jobs/"))
 		return
 	// Dead letter queue endpoints
 	case r.Method == http.MethodGet && path == "/dlq":
-		_ = contract.WriteResponse(w, r, http.StatusOK, h.scheduler.ListDeadLetters(), nil)
+		entries := h.scheduler.ListDeadLetters()
+		for i := range entries {
+			entries[i] = safeAdminDeadLetter(entries[i])
+		}
+		_ = contract.WriteResponse(w, r, http.StatusOK, entries, nil)
 		return
 	case r.Method == http.MethodDelete && path == "/dlq":
 		count := h.scheduler.ClearDeadLetters()
@@ -125,7 +133,7 @@ func (h *AdminHandler) handleJob(w http.ResponseWriter, r *http.Request, suffix 
 			writeAdminJobNotFound(w, r, id)
 			return
 		}
-		_ = contract.WriteResponse(w, r, http.StatusOK, status, nil)
+		_ = contract.WriteResponse(w, r, http.StatusOK, safeAdminStatus(status), nil)
 		return
 	}
 
@@ -193,7 +201,7 @@ func (h *AdminHandler) handleDLQEntry(w http.ResponseWriter, r *http.Request, su
 			writeAdminDeadLetterNotFound(w, r, jobID)
 			return
 		}
-		_ = contract.WriteResponse(w, r, http.StatusOK, entry, nil)
+		_ = contract.WriteResponse(w, r, http.StatusOK, safeAdminDeadLetter(*entry), nil)
 	case http.MethodDelete:
 		if !h.scheduler.DeleteDeadLetter(jobID) {
 			writeAdminDeadLetterNotFound(w, r, jobID)

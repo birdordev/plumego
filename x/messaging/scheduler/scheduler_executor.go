@@ -10,7 +10,7 @@ func (s *Scheduler) logError(msg string, err error) {
 	if s.logger == nil || err == nil {
 		return
 	}
-	s.logger.Error(msg, log.Fields{"error": err.Error()})
+	s.logger.Error(msg, log.Fields{"failure_code": schedulerFailureCode(err)})
 }
 
 func (s *Scheduler) persistJobLocked(j *job) error {
@@ -51,7 +51,7 @@ func (s *Scheduler) deleteTerminalJobLocked(j *job) error {
 func (s *Scheduler) reportTerminalCleanupFailure(id JobID, err error) {
 	if err != nil && s.logger != nil {
 		s.logger.Error("scheduler terminal job cleanup failed", log.Fields{
-			"job_id": id, "operation": "delete", "error": err.Error(),
+			"job_id": id, "operation": "delete", "failure_code": schedulerFailureCode(err),
 		})
 	}
 }
@@ -114,7 +114,7 @@ func (s *Scheduler) loadPersisted() {
 	}
 	for _, job := range pending {
 		if job.missing > 0 {
-			s.reportRestoreFailure(job.item, errors.New("missing or cyclic dependencies"))
+			s.reportRestoreFailure(job.item, errStoredDependencies)
 		}
 	}
 }
@@ -122,7 +122,7 @@ func (s *Scheduler) loadPersisted() {
 func (s *Scheduler) reportRestoreFailure(item StoredJob, err error) {
 	if s.logger != nil {
 		s.logger.Warn("scheduler: failed to restore job", log.Fields{
-			"job_id": item.ID, "dependencies": item.Dependencies, "error": err.Error(),
+			"job_id": item.ID, "dependencies": item.Dependencies, "failure_code": schedulerFailureCode(err),
 		})
 	}
 }
@@ -259,6 +259,8 @@ func (s *Scheduler) cancelJobLocked(id JobID, j *job, failures *[]terminalCleanu
 func (s *Scheduler) setJobCanceledLocked(j *job) {
 	j.canceled.Store(true)
 	s.setJobStateLocked(j, JobStateCanceled)
+	s.queue.removeJob(j)
+	s.wakeScheduler()
 }
 
 func (s *Scheduler) finishJobCancellationLocked(id JobID, j *job, failures *[]terminalCleanupFailure) {
@@ -286,6 +288,8 @@ func (s *Scheduler) retireJobLocked(j *job) {
 		return
 	}
 	j.canceled.Store(true)
+	s.queue.removeJob(j)
+	s.wakeScheduler()
 	// State is already JobStateCompleted — do not override.
 	// Clean up dependency tracking (same as cancelJobLocked, minus dependent notification).
 	s.cleanupDependencyTrackingLocked(j.id, j)

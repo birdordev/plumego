@@ -156,12 +156,13 @@ func TestSQLReserveIncludesExpiredLeases(t *testing.T) {
 	store := NewSQL(nil, DefaultSQLConfig())
 	now := time.Unix(12345, 0)
 	query, args := store.buildReserveSelect(mq.ReserveOptions{Topics: []string{"send"}, Limit: 2}, now)
-	if !strings.Contains(query, "WHERE (status = $1 OR (status = $2 AND lease_until < $3))") ||
-		!strings.Contains(query, "AND available_at <= $4 AND (expires_at IS NULL OR expires_at > $5)") ||
-		!strings.Contains(query, "AND topic IN ($6)") || !strings.HasSuffix(query, "LIMIT $7") {
+	if !strings.Contains(query, "WHERE (status = 'queued' OR (status = 'leased' AND lease_until < $1))") ||
+		!strings.Contains(query, "AND available_at <= $1 AND (expires_at IS NULL OR expires_at > $1)") ||
+		!strings.Contains(query, "AND topic IN ($2)") ||
+		!strings.HasSuffix(query, "ORDER BY priority DESC, created_at ASC, id ASC LIMIT $3 FOR UPDATE SKIP LOCKED") {
 		t.Fatalf("unexpected reserve query: %s", query)
 	}
-	want := []any{mq.TaskStatusQueued, mq.TaskStatusLeased, now, now, now, "send", 2}
+	want := []any{now, "send", 2}
 	if !slices.Equal(args, want) {
 		t.Fatalf("args = %v, want %v", args, want)
 	}

@@ -19,8 +19,21 @@ type SQLConfig struct {
 	DLQTable         string
 	AttemptsTable    string
 	EnableAttemptLog bool
-	AttemptLogHook   AttemptLogHook
-	Now              func() time.Time
+	// DeferredExpiration 让 PostgreSQL 领取只排除超期任务，由调用方运行 ExpireBatch。
+	DeferredExpiration bool
+	// BlockedClaimsTable 是 PostgreSQL 可选的可信表或视图，按 task_id 排除暂停领取的任务。
+	BlockedClaimsTable string
+	// PriorityAging 提升等待达到阈值的 PostgreSQL 任务，按实际可领取时间优先领取。零值保留严格优先级。
+	PriorityAging  time.Duration
+	AttemptLogHook AttemptLogHook
+	Now            func() time.Time
+}
+
+// ExpirationOptions 指定 PostgreSQL 清理的状态分区、批次上限和时间。
+type ExpirationOptions struct {
+	Leased bool
+	Limit  int
+	Now    time.Time
 }
 
 type AttemptLogError struct {

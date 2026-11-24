@@ -61,9 +61,9 @@ func (s *Scheduler) handleFailure(j *job, err error) {
 
 	if s.logger != nil {
 		s.logger.Warn("scheduler job failed", log.Fields{
-			"job_id":  j.id,
-			"error":   err,
-			"attempt": attempt,
+			"job_id":       j.id,
+			"failure_code": schedulerFailureCode(err),
+			"attempt":      attempt,
 		})
 	}
 	s.stats.incRetry()
@@ -101,7 +101,7 @@ func (s *Scheduler) addToDeadLetterQueue(j *job, err error, attempts int) {
 	now := s.clock.Now()
 	errMsg := ""
 	if err != nil {
-		errMsg = err.Error()
+		errMsg = schedulerFailureCode(err)
 	}
 	entry := DeadLetterEntry{
 		JobID:        j.id,

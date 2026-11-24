@@ -34,7 +34,20 @@ func (s *SQLStore) Insert(ctx context.Context, task mq.Task) error {
 	if s == nil || s.db == nil {
 		return mq.ErrNotInitialized
 	}
+	return s.insert(ctx, s.db, task)
+}
 
+// InsertTx 在调用方事务中写入已准备好的任务。调用方负责提交事务。
+func (s *SQLStore) InsertTx(ctx context.Context, tx *sql.Tx, task mq.Task) error {
+	if s == nil || tx == nil {
+		return mq.ErrNotInitialized
+	}
+	return s.insert(ctx, tx, task)
+}
+
+func (s *SQLStore) insert(ctx context.Context, exec interface {
+	ExecContext(context.Context, string, ...any) (sql.Result, error)
+}, task mq.Task) error {
 	meta, err := marshalMeta(task.Meta)
 	if err != nil {
 		return err
@@ -42,7 +55,7 @@ func (s *SQLStore) Insert(ctx context.Context, task mq.Task) error {
 
 	status := mq.TaskStatusQueued
 	query, args := s.buildInsert(task, status, meta)
-	_, err = s.db.ExecContext(ctx, query, args...)
+	_, err = exec.ExecContext(ctx, query, args...)
 	if err != nil {
 		if isDuplicateError(err) {
 			return mq.ErrDuplicateTask
@@ -52,8 +65,7 @@ func (s *SQLStore) Insert(ctx context.Context, task mq.Task) error {
 	return nil
 }
 
-// Reserve expires queued tasks and leases eligible tasks in one transaction.
-// A failure updating expired tasks aborts the reservation.
+// Reserve 领取合格任务。默认在同一事务中迁移过期任务，清理失败会中止领取。
 func (s *SQLStore) Reserve(ctx context.Context, opts mq.ReserveOptions) ([]mq.Task, error) {
 	if s == nil || s.db == nil {
 		return nil, mq.ErrNotInitialized
@@ -77,8 +89,10 @@ func (s *SQLStore) Reserve(ctx context.Context, opts mq.ReserveOptions) ([]mq.Ta
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	if err := s.expireQueued(ctx, tx, now); err != nil {
-		return nil, fmt.Errorf("expire queued tasks: %w", err)
+	if !s.cfg.DeferredExpiration || s.cfg.Dialect != DialectPostgres {
+		if err := s.expireUnavailable(ctx, tx, now); err != nil {
+			return nil, fmt.Errorf("expire unavailable tasks: %w", err)
+		}
 	}
 
 	selectQuery, selectArgs := s.buildReserveSelect(opts, now)
@@ -87,8 +101,12 @@ func (s *SQLStore) Reserve(ctx context.Context, opts mq.ReserveOptions) ([]mq.Ta
 	if s.cfg.Dialect == DialectPostgres {
 		const columns = "id, topic, tenant_id, payload, meta, priority, dedupe_key, available_at, expires_at, attempts, max_attempts, lease_owner, lease_until, created_at, updated_at"
 		i := len(selectArgs) + 1
-		query := fmt.Sprintf("WITH eligible AS (%s) UPDATE %s SET status = %s, lease_owner = %s, lease_until = %s, attempts = attempts + 1, updated_at = %s WHERE id IN (SELECT id FROM eligible) RETURNING %s",
-			selectQuery, s.cfg.Table, s.placeholder(i), s.placeholder(i+1), s.placeholder(i+2), s.placeholder(i+3), columns)
+		output := "SELECT * FROM reserved ORDER BY " + reserveOrder
+		if s.cfg.PriorityAging > 0 {
+			output = "SELECT reserved.* FROM reserved JOIN eligible USING(id) ORDER BY " + reserveAgedOrder("eligible.ready_at")
+		}
+		query := fmt.Sprintf("WITH eligible AS (%s), reserved AS (UPDATE %s SET status = %s, lease_owner = %s, lease_until = %s, attempts = attempts + 1, updated_at = %s WHERE id IN (SELECT id FROM eligible) RETURNING %s) %s",
+			selectQuery, s.cfg.Table, s.placeholder(i), s.placeholder(i+1), s.placeholder(i+2), s.placeholder(i+3), columns, output)
 		selectArgs = append(selectArgs, mq.TaskStatusLeased, opts.ConsumerID, leaseUntil, now)
 		rows, err = tx.QueryContext(ctx, query, selectArgs...)
 		capacity = min(opts.Limit, 64)
@@ -451,26 +469,97 @@ func (s *SQLStore) ReplayDLQ(ctx context.Context, opts ReplayOptions) (ReplayRes
 	}, nil
 }
 
-func (s *SQLStore) expireQueued(ctx context.Context, tx *sql.Tx, now time.Time) error {
-	query := fmt.Sprintf("UPDATE %s SET status = %s, updated_at = %s WHERE status = %s AND expires_at IS NOT NULL AND expires_at <= %s", s.cfg.Table, s.placeholder(1), s.placeholder(2), s.placeholder(3), s.placeholder(4))
-	_, err := tx.ExecContext(ctx, query, mq.TaskStatusExpired, now, mq.TaskStatusQueued, now)
+func (s *SQLStore) expireUnavailable(ctx context.Context, tx *sql.Tx, now time.Time) error {
+	query := fmt.Sprintf("UPDATE %s SET status = %s, lease_owner = NULL, lease_until = NULL, updated_at = %s"+
+		" WHERE expires_at IS NOT NULL AND expires_at <= %s AND (status = %s OR (status = %s AND lease_until < %s))",
+		s.cfg.Table, s.placeholder(1), s.placeholder(2), s.placeholder(3), s.placeholder(4), s.placeholder(5), s.placeholder(6))
+	_, err := tx.ExecContext(ctx, query, mq.TaskStatusExpired, now, now, mq.TaskStatusQueued, mq.TaskStatusLeased, now)
 	return err
 }
 
+// ExpireBatch 迁移一个 PostgreSQL 状态分区中最多 Limit 条过期记录。Leased 分区只处理已失去有效租约的记录。
+func (s *SQLStore) ExpireBatch(ctx context.Context, opts ExpirationOptions) (int64, error) {
+	if s == nil || s.db == nil {
+		return 0, mq.ErrNotInitialized
+	}
+	if s.cfg.Dialect != DialectPostgres {
+		return 0, errors.New("bounded expiration requires PostgreSQL")
+	}
+	if opts.Limit <= 0 {
+		return 0, nil
+	}
+	if opts.Now.IsZero() {
+		opts.Now = s.nowFunc()
+	}
+	condition := "status = 'queued'"
+	if opts.Leased {
+		condition = "status = 'leased' AND lease_until < $1"
+	}
+	query := fmt.Sprintf(`WITH candidates AS (
+		SELECT id FROM %s WHERE expires_at <= $1 AND %s
+		ORDER BY expires_at, id LIMIT $2 FOR UPDATE SKIP LOCKED
+	) UPDATE %s SET status = 'expired', lease_owner = NULL, lease_until = NULL, updated_at = $1
+	WHERE id IN (SELECT id FROM candidates)`, s.cfg.Table, condition, s.cfg.Table)
+	result, err := s.db.ExecContext(ctx, query, opts.Now, opts.Limit)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+// NextAvailable 返回 PostgreSQL 队列中下一次未来可领取的时间。提示可能随并发操作失效。
+func (s *SQLStore) NextAvailable(ctx context.Context, topics []string, now time.Time) (time.Time, error) {
+	if s == nil || s.db == nil {
+		return time.Time{}, mq.ErrNotInitialized
+	}
+	if s.cfg.Dialect != DialectPostgres {
+		return time.Time{}, nil
+	}
+	if now.IsZero() {
+		now = s.nowFunc()
+	}
+	args := make([]any, 1, 1+len(topics))
+	args[0] = now
+	filter := ""
+	if len(topics) > 0 {
+		placeholders := make([]string, 0, len(topics))
+		for _, topic := range topics {
+			args = append(args, topic)
+			placeholders = append(placeholders, s.placeholder(len(args)))
+		}
+		filter = " AND topic IN (" + strings.Join(placeholders, ", ") + ")"
+	}
+	filter += s.claimExclusion()
+	query := fmt.Sprintf(`SELECT min(at) FROM (
+		(SELECT available_at AS at FROM %[1]s WHERE status = 'queued' AND available_at > $1
+			AND (expires_at IS NULL OR expires_at > available_at)%[2]s ORDER BY available_at LIMIT 1)
+		UNION ALL
+		(SELECT lease_until + interval '1 microsecond' FROM %[1]s WHERE status = 'leased' AND lease_until >= $1
+			AND available_at <= lease_until AND (expires_at IS NULL OR expires_at > lease_until + interval '1 microsecond')%[2]s
+			ORDER BY lease_until LIMIT 1)
+	) upcoming`, s.cfg.Table, filter)
+	var next sql.NullTime
+	err := s.db.QueryRowContext(ctx, query, args...).Scan(&next)
+	return next.Time, err
+}
+
 func (s *SQLStore) buildInsert(task mq.Task, status string, meta []byte) (string, []any) {
-	cols := []string{
-		"id", "topic", "tenant_id", "payload", "meta", "priority", "dedupe_key",
-		"status", "attempts", "max_attempts", "available_at", "lease_owner", "lease_until",
-		"expires_at", "last_error", "last_error_at", "created_at", "updated_at",
-	}
-	placeholders := make([]string, 0, len(cols))
-	args := make([]any, 0, len(cols))
+	args := taskInsertArgs(task, status, meta)
+	return "INSERT INTO " + s.cfg.Table + " (" + taskInsertColumns + ") VALUES " + s.insertPlaceholders(0, len(args)), args
+}
 
-	for i := range cols {
-		placeholders = append(placeholders, s.placeholder(i+1))
-	}
+const taskInsertColumns = "id, topic, tenant_id, payload, meta, priority, dedupe_key, status, attempts, max_attempts, available_at, lease_owner, lease_until, expires_at, last_error, last_error_at, created_at, updated_at"
 
-	args = append(args,
+func (s *SQLStore) insertPlaceholders(offset, length int) string {
+	placeholders := make([]string, length)
+	for i := range placeholders {
+		placeholders[i] = s.placeholder(offset + i + 1)
+	}
+	return "(" + strings.Join(placeholders, ", ") + ")"
+}
+
+func taskInsertArgs(task mq.Task, status string, meta []byte) []any {
+	return []any{
 		task.ID,
 		task.Topic,
 		task.TenantID,
@@ -489,20 +578,49 @@ func (s *SQLStore) buildInsert(task mq.Task, status string, meta []byte) (string
 		nil,
 		task.CreatedAt,
 		task.UpdatedAt,
-	)
+	}
+}
 
-	query := fmt.Sprintf("INSERT INTO %s (%s) VALUES (%s)", s.cfg.Table, strings.Join(cols, ", "), strings.Join(placeholders, ", "))
-	return query, args
+const reserveOrder = "priority DESC, created_at ASC, id ASC"
+
+const reserveReadyTime = "GREATEST(created_at, available_at, lease_until)"
+
+func reserveAgedOrder(readyTime string) string {
+	// 已老化的任务按可领取时间排序。未老化任务沿用严格优先级。
+	return "CASE WHEN " + readyTime + " <= $2 THEN 0 ELSE 1 END, CASE WHEN " +
+		readyTime + " <= $2 THEN " + readyTime + " END ASC, " + reserveOrder
+}
+
+func (s *SQLStore) claimExclusion() string {
+	if s.cfg.Dialect != DialectPostgres || s.cfg.BlockedClaimsTable == "" {
+		return ""
+	}
+	return " AND NOT EXISTS (SELECT 1 FROM " + s.cfg.BlockedClaimsTable + " b WHERE b.task_id = " + s.cfg.Table + ".id)"
 }
 
 func (s *SQLStore) buildReserveSelect(opts mq.ReserveOptions, now time.Time) (string, []any) {
 	args := make([]any, 0, 6+len(opts.Topics))
 	idx := 1
 
-	query := fmt.Sprintf("SELECT id FROM %s WHERE (status = %s OR (status = %s AND lease_until < %s)) AND available_at <= %s AND (expires_at IS NULL OR expires_at > %s)",
-		s.cfg.Table, s.placeholder(idx), s.placeholder(idx+1), s.placeholder(idx+2), s.placeholder(idx+3), s.placeholder(idx+4))
-	args = append(args, mq.TaskStatusQueued, mq.TaskStatusLeased, now, now, now)
-	idx += 5
+	var query string
+	order := reserveOrder
+	if s.cfg.Dialect == DialectPostgres {
+		columns := "id"
+		args = append(args, now)
+		idx++
+		if s.cfg.PriorityAging > 0 {
+			columns += ", " + reserveReadyTime + " AS ready_at"
+			order = reserveAgedOrder(reserveReadyTime)
+			args = append(args, now.Add(-s.cfg.PriorityAging))
+			idx++
+		}
+		query = fmt.Sprintf("SELECT %s FROM %s WHERE (status = 'queued' OR (status = 'leased' AND lease_until < $1)) AND available_at <= $1 AND (expires_at IS NULL OR expires_at > $1)", columns, s.cfg.Table)
+	} else {
+		query = fmt.Sprintf("SELECT id FROM %s WHERE (status = %s OR (status = %s AND lease_until < %s)) AND available_at <= %s AND (expires_at IS NULL OR expires_at > %s)",
+			s.cfg.Table, s.placeholder(1), s.placeholder(2), s.placeholder(3), s.placeholder(4), s.placeholder(5))
+		args = append(args, mq.TaskStatusQueued, mq.TaskStatusLeased, now, now, now)
+		idx += len(args)
+	}
 
 	if len(opts.Topics) > 0 {
 		placeholders := make([]string, 0, len(opts.Topics))
@@ -514,7 +632,8 @@ func (s *SQLStore) buildReserveSelect(opts mq.ReserveOptions, now time.Time) (st
 		query += fmt.Sprintf(" AND topic IN (%s)", strings.Join(placeholders, ", "))
 	}
 
-	query += fmt.Sprintf(" ORDER BY priority DESC, created_at ASC FOR UPDATE SKIP LOCKED LIMIT %s", s.placeholder(idx))
+	query += s.claimExclusion()
+	query += fmt.Sprintf(" ORDER BY %s LIMIT %s FOR UPDATE SKIP LOCKED", order, s.placeholder(idx))
 	args = append(args, opts.Limit)
 
 	return query, args
@@ -553,7 +672,7 @@ func (s *SQLStore) buildSelectTasks(ids []string) (string, []any) {
 		args = append(args, id)
 		idx++
 	}
-	query := fmt.Sprintf("SELECT %s FROM %s WHERE id IN (%s)", strings.Join(cols, ", "), s.cfg.Table, strings.Join(placeholders, ", "))
+	query := fmt.Sprintf("SELECT %s FROM %s WHERE id IN (%s) ORDER BY %s", strings.Join(cols, ", "), s.cfg.Table, strings.Join(placeholders, ", "), reserveOrder)
 	return query, args
 }
 
