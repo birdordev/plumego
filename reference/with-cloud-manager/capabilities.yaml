@@ -1,0 +1,49 @@
+# 首发采购与验收范围，发布由实际厂商证据授权。
+providers:
+  tencent-cvm:
+    verification: pending-sandbox
+    inventory: [configured-regions, instances]
+    inventory-local-evidence: tc3-signed-tls-protocol-fixture-and-postgresql
+    actions: []
+  alibaba-ecs:
+    verification: pending-sandbox
+    inventory: [configured-regions, instances]
+    inventory-local-evidence: acs3-signed-tls-protocol-fixture-and-postgresql
+    actions: []
+  huawei-ecs:
+    verification: pending-sandbox
+    inventory: [configured-regions, instances]
+    inventory-local-evidence: scoped-iam-tls-protocol-fixture-and-postgresql
+    actions: []
+  aws-ec2:
+    verification: pending-sandbox
+    inventory-local-evidence: signed-sdk-tls-protocol-fixture
+    point-read-404: outcome-unknown
+    inventory: [regions, zones, instances, images, volumes, networks, subnets, security-groups, security-group-rules]
+    actions: [create-instance, start-instance, stop-instance, reboot-instance, delete-instance, attach-volume, detach-volume, create-network, create-subnet, create-security-group, create-security-group-rule, revoke-security-group-rule]
+    create-recovery: scoped-client-token-and-observe
+    create-local-evidence: signed-sdk-tls-protocol-fixture-and-postgresql
+    volume-local-evidence: signed-sdk-tls-protocol-fixture-and-postgresql
+    network-local-evidence: signed-sdk-tls-protocol-fixture-and-postgresql
+    network-create-recovery: observe-scoped-creation-tag-or-manual-review
+    security-rule-create-scope: ipv4-tcp-udp-ingress-egress
+    security-rule-local-evidence: signed-sdk-tls-protocol-fixture-and-postgresql
+    console-access: approved-single-use-serial-key
+    console-local-evidence: signed-sdk-tls-protocol-fixture-and-postgresql
+    approvals: [delete-instance, detach-volume, instance-console, create-security-group-rule, revoke-security-group-rule]
+  openstack:
+    verification: pending-sandbox
+    inventory-local-evidence: tls-protocol-fixture-and-postgresql
+    point-read-404: outcome-unknown
+    inventory: [regions, zones, instances, images, volumes, networks, subnets, security-groups, security-group-rules]
+    actions: [create-instance, start-instance, stop-instance, reboot-instance, delete-instance, attach-volume, detach-volume, create-network, create-subnet, create-security-group, create-security-group-rule, revoke-security-group-rule]
+    create-recovery: observe-correlated-operation-or-manual-review
+    create-local-evidence: nova-neutron-tls-protocol-fixture-and-postgresql
+    volume-local-evidence: nova-cinder-tls-protocol-fixture-and-postgresql
+    network-local-evidence: neutron-tls-protocol-fixture-and-postgresql
+    network-create-recovery: observe-scoped-creation-description-or-manual-review
+    security-rule-create-scope: ipv4-tcp-udp-ingress-egress
+    security-rule-local-evidence: neutron-tls-protocol-fixture-and-postgresql
+    console-access: approved-single-use-novnc-relay
+    console-local-evidence: novnc-browser-nova-tls-protocol-fixture-and-postgresql
+    approvals: [delete-instance, detach-volume, instance-console, create-security-group-rule, revoke-security-group-rule]

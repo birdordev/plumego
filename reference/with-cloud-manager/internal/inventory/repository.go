@@ -1,0 +1,231 @@
+package inventory
+
+import (
+	"context"
+	"crypto/sha256"
+	"database/sql"
+	_ "embed"
+	"encoding/json"
+	"errors"
+	"slices"
+	"time"
+
+	dbutil "github.com/birdordev/plumego/store/db"
+
+	"with-cloud-manager/internal/dbschema"
+	"with-cloud-manager/internal/provider"
+)
+
+//go:embed 0002_inventory.sql
+var schema string
+
+//go:embed 0005_inventory_history.sql
+var historySchema string
+
+//go:embed 0006_inventory_topology.sql
+var topologySchema string
+
+//go:embed 0015_confirmed_instance_deletions.sql
+var confirmedDeletionsSchema string
+
+var ErrUnavailable = errors.New("inventory scope unavailable")
+var ErrStale = errors.New("inventory observation is no longer current")
+
+type Key struct {
+	Tenant  string
+	Account string
+	Region  string
+	Kind    provider.Kind
+}
+
+type Claim struct {
+	id         int64
+	fence      int64
+	generation int64
+	cursor     string
+}
+
+type Store struct {
+	db *sql.DB
+}
+
+func NewStore(db *sql.DB) Store {
+	return Store{db: db}
+}
+
+func Migrate(ctx context.Context, db *sql.DB) error {
+	if err := dbschema.Apply(ctx, db, "0002_inventory", schema); err != nil {
+		return err
+	}
+	if err := dbschema.Apply(ctx, db, "0005_inventory_history", historySchema); err != nil {
+		return err
+	}
+	if err := dbschema.Apply(ctx, db, "0006_inventory_topology", topologySchema); err != nil {
+		return err
+	}
+	if err := MigrateOwnership(ctx, db); err != nil {
+		return err
+	}
+	if err := migrateTagAssignment(ctx, db); err != nil {
+		return err
+	}
+	return dbschema.Apply(ctx, db, "0015_confirmed_instance_deletions", confirmedDeletionsSchema)
+}
+
+func (s Store) Claim(ctx context.Context, key Key, lease time.Duration) (Claim, error) {
+	return s.ClaimWithCredentialRevision(ctx, key, lease, 0)
+}
+
+func (s Store) ClaimWithCredentialRevision(ctx context.Context, key Key, lease time.Duration, revision int64) (Claim, error) {
+	if revision < 0 || lease < time.Millisecond || lease > 15*time.Minute || !key.Kind.Valid() {
+		return Claim{}, ErrUnavailable
+	}
+	var claim Claim
+	err := s.db.QueryRowContext(ctx, `
+		WITH account AS (
+			SELECT tenant_id,account_id,credential_revision FROM cmp_cloud_accounts
+			WHERE tenant_id=$1 AND account_id=$2 AND mode IN ('read_only','write_enabled') AND ($6::bigint=0 OR credential_revision=$6) FOR SHARE
+		)
+		INSERT INTO cmp_inventory_scopes AS scope (tenant_id,account_id,region,kind,credential_revision,lease_until)
+		SELECT tenant_id,account_id,$3,$4,credential_revision,statement_timestamp()+$5*interval '1 millisecond'
+		FROM account
+		ON CONFLICT (tenant_id,account_id,region,kind) DO UPDATE SET
+			fence=scope.fence+1, running=true, lease_until=EXCLUDED.lease_until,
+			credential_revision=EXCLUDED.credential_revision,
+			generation=CASE WHEN scope.running AND scope.credential_revision=EXCLUDED.credential_revision
+				THEN scope.generation ELSE scope.generation+1 END,
+			cursor=CASE WHEN scope.running AND scope.credential_revision=EXCLUDED.credential_revision
+				THEN scope.cursor ELSE '' END,
+			pages=CASE WHEN scope.running AND scope.credential_revision=EXCLUDED.credential_revision
+				THEN scope.pages ELSE 0 END
+		WHERE NOT scope.running OR scope.lease_until<=statement_timestamp()
+			OR scope.credential_revision<>EXCLUDED.credential_revision
+		RETURNING scope_id,fence,generation,cursor`,
+		key.Tenant, key.Account, key.Region, key.Kind, lease.Milliseconds(), revision).
+		Scan(&claim.id, &claim.fence, &claim.generation, &claim.cursor)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Claim{}, ErrUnavailable
+	}
+	return claim, err
+}
+
+const active = ` FROM cmp_inventory_scopes AS s JOIN cmp_cloud_accounts AS a USING (tenant_id,account_id)
+	WHERE s.scope_id=$1 AND s.fence=$2 AND s.generation=$3 AND s.running
+	  AND s.cursor=$4 AND s.lease_until>clock_timestamp()
+	  AND a.mode IN ('read_only','write_enabled') AND a.credential_revision=s.credential_revision`
+
+func (s Store) scope(ctx context.Context, claim Claim) (provider.Scope, error) {
+	var scope provider.Scope
+	err := s.db.QueryRowContext(ctx, "SELECT a.provider,a.remote_identity,s.region,s.kind"+active,
+		claim.id, claim.fence, claim.generation, claim.cursor).
+		Scan(&scope.Provider, &scope.RemoteIdentity, &scope.Region, &scope.Kind)
+	if errors.Is(err, sql.ErrNoRows) {
+		return provider.Scope{}, ErrStale
+	}
+	return scope, err
+}
+
+func (s Store) advance(ctx context.Context, claim Claim, page provider.Page, restart bool) (Claim, bool, error) {
+	err := dbutil.WithTransaction(ctx, s.db, nil, func(tx *sql.Tx) error {
+		var scopeID int64
+		var pages int
+		err := tx.QueryRowContext(ctx, "SELECT s.scope_id,s.pages"+active+" FOR UPDATE OF s FOR SHARE OF a",
+			claim.id, claim.fence, claim.generation, claim.cursor).Scan(&scopeID, &pages)
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrStale
+		}
+		if err != nil {
+			return err
+		}
+		if claim.cursor == "" {
+			if _, err := tx.ExecContext(ctx, "DELETE FROM cmp_inventory_cursors WHERE scope_id=$1", scopeID); err != nil {
+				return err
+			}
+		}
+		if page.Next != "" {
+			if pages >= 9999 {
+				return &provider.Failure{Kind: provider.InvalidResponse}
+			}
+			hash := sha256.Sum256([]byte(page.Next))
+			result, err := tx.ExecContext(ctx, `INSERT INTO cmp_inventory_cursors(scope_id,fingerprint)
+			VALUES ($1,$2) ON CONFLICT DO NOTHING`, scopeID, hash[:])
+			if err != nil {
+				return err
+			}
+			count, err := result.RowsAffected()
+			if err != nil {
+				return err
+			}
+			if count == 0 {
+				return &provider.Failure{Kind: provider.InvalidResponse}
+			}
+		}
+		if len(page.Objects) != 0 {
+			if err := upsert(ctx, tx, scopeID, claim.generation, page.Objects); err != nil {
+				return err
+			}
+		}
+		switch {
+		case restart:
+			_, err = tx.ExecContext(ctx, "UPDATE cmp_inventory_scopes SET running=false,cursor='' WHERE scope_id=$1", scopeID)
+		case page.Next != "":
+			_, err = tx.ExecContext(ctx, "UPDATE cmp_inventory_scopes SET cursor=$2,pages=pages+1 WHERE scope_id=$1", scopeID, page.Next)
+		default:
+			err = complete(ctx, tx, scopeID, claim.generation)
+		}
+		if err != nil {
+			return err
+		}
+		return nil
+	})
+	if err != nil {
+		return Claim{}, false, err
+	}
+	claim.cursor = page.Next
+	return claim, page.Next == "", nil
+}
+
+func upsert(ctx context.Context, tx *sql.Tx, id, generation int64, objects []provider.Object) error {
+	data, err := json.Marshal(objects)
+	if err != nil {
+		return err
+	}
+	_, err = tx.ExecContext(ctx, `INSERT INTO cmp_inventory_objects AS existing
+		(scope_id,external_id,name,status,seen_generation,links)
+		SELECT $1, "ID", "Name", "Status", $2, COALESCE(links,'[]'::jsonb) FROM (
+			SELECT DISTINCT ON ("ID") "ID", "Name", "Status", links
+			FROM ROWS FROM(jsonb_to_recordset($3::jsonb) AS ("ID" text, "Name" text, "Status" text, links jsonb))
+				WITH ORDINALITY AS records
+			ORDER BY "ID", ordinality DESC
+		) AS deduplicated
+		ON CONFLICT (scope_id,external_id) DO UPDATE SET
+			name=EXCLUDED.name,status=EXCLUDED.status,seen_generation=EXCLUDED.seen_generation,
+			observed_at=EXCLUDED.observed_at,links=EXCLUDED.links,missing_generation=NULL,removed_at=NULL
+	WHERE existing.deletion_confirmed_at IS NULL`, id, generation, string(data))
+	if err != nil {
+		return err
+	}
+	if !slices.ContainsFunc(objects, func(o provider.Object) bool { return o.Tags != nil }) {
+		return nil
+	}
+	return assignTagProjects(ctx, tx, id, string(data))
+}
+
+func complete(ctx context.Context, tx *sql.Tx, id, generation int64) error {
+	if _, err := tx.ExecContext(ctx, `UPDATE cmp_inventory_objects SET missing_generation=$2
+		WHERE scope_id=$1 AND seen_generation<$2 AND removed_at IS NULL`, id, generation); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, "DELETE FROM cmp_inventory_cursors WHERE scope_id=$1", id); err != nil {
+		return err
+	}
+	_, err := tx.ExecContext(ctx, `UPDATE cmp_inventory_scopes SET
+		running=false,cursor='',completed_at=statement_timestamp() WHERE scope_id=$1`, id)
+	return err
+}
+
+func (s Store) Yield(ctx context.Context, claim Claim) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE cmp_inventory_scopes SET lease_until=clock_timestamp()
+		WHERE scope_id=$1 AND fence=$2 AND running`, claim.id, claim.fence)
+	return err
+}
