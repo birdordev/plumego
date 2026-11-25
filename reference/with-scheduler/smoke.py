@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Exercise independent scheduler processes against a disposable database."""
+import argparse
 import contextlib
 import json
 import os
@@ -37,6 +38,9 @@ def wait_for(predicate):
 
 
 def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--json", action="store_true", help="emit rollback evidence as JSON")
+    args = parser.parse_args()
     dsn = os.environ.get("PLUMEGO_TEST_POSTGRES_DSN")
     if not dsn:
         raise RuntimeError("set PLUMEGO_TEST_POSTGRES_DSN to a disposable PostgreSQL database")
@@ -178,16 +182,33 @@ def main():
         submit_probe = submit(1, "worker-rollout-legacy-before-replacement")
         wait_for(lambda: run_completed(submit_probe))
         assert request(new_run)[2]["data"]["queue_status"] == "queued"
-        start("worker", worker_versions="1,2")
+        upgraded_worker = start("worker", worker_versions="1,2")
         wait_for(lambda: run_completed(new_run))
         stop(old_worker)
         stop(old_replica)
         legacy_run = submit(1, "worker-rollout-legacy-after-replacement")
         current_run = submit(2, "worker-rollout-current-after-replacement")
         wait_for(lambda: run_completed(legacy_run) and run_completed(current_run))
+        stop(upgraded_worker)
+        held = submit(2, "worker-rollback-retained-version")
+        rolled_back = start("worker", worker_versions="1")
+        fallback = submit(1, "worker-rollback-legacy")
+        wait_for(lambda: run_completed(fallback))
+        assert request(held)[2]["data"]["queue_status"] == "queued"
+        assert submit(2, "worker-rollback-retained-version") == held
+        assert request("/runs", {**payload, "task_version": 1}, "worker-rollback-retained-version")[0] == 409
+        assert request(route + "/trigger", {}, "manual-once")[1]["Location"] == manual_uri
+        start("worker", worker_versions="2")
+        wait_for(lambda: run_completed(held))
+        assert rolled_back.poll() is None
         assert replacement_scheduler.poll() is None
         assert request("/readyz")[0] == 200
-        print("migration, API replica handoff, scheduler takeover, and versioned Worker rollout passed")
+        if args.json:
+            print(json.dumps({"mode": "local", "in_flight_runs_checked": 1, "run_ids_preserved": True,
+                              "task_versions_preserved": True, "idempotency_preserved": True,
+                              "compatible_workers_drained": True}, sort_keys=True))
+        else:
+            print("migration, API replica handoff, scheduler takeover, and versioned Worker rollout and rollback passed")
 
 
 if __name__ == "__main__":

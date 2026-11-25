@@ -36,7 +36,7 @@ type taskContract struct {
 	topic    string
 }
 
-func registeredTaskContracts() [9]taskContract {
+func registeredTaskContracts() [10]taskContract {
 	return [...]taskContract{
 		{recordTaskType, 1, recordTaskType},
 		{recordTaskType, 2, "demo.record.v2"},
@@ -47,6 +47,7 @@ func registeredTaskContracts() [9]taskContract {
 		{reserveTaskType, 1, reserveTaskType},
 		{releaseTaskType, 1, releaseTaskType},
 		{sandboxTaskType, 1, sandboxTaskType},
+		{inventoryTaskType, 1, inventoryTaskType},
 	}
 }
 
@@ -121,6 +122,11 @@ func validateTaskContract(topic string, payload json.RawMessage, options taskOpt
 	}
 	if registered.taskType == sandboxTaskType {
 		if _, err := parseSandboxScript(payload); err != nil || len(options.ResourceRefs) != 0 {
+			return taskContract{}, nil, errInvalidTask
+		}
+	}
+	if registered.taskType == inventoryTaskType {
+		if _, err := parseInventoryCommand(payload); err != nil {
 			return taskContract{}, nil, errInvalidTask
 		}
 	}

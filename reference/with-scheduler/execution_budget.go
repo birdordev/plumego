@@ -25,8 +25,9 @@ func lockExecutionBudgets(ctx context.Context, tx *sql.Tx, task mq.Task) ([]exec
 	rows, err := tx.QueryContext(ctx, `SELECT scope, budget_key, max_concurrent, min_start_interval_ms, next_start_at
 		FROM scheduler_execution_budgets WHERE (max_concurrent > 0 OR min_start_interval_ms > 0) AND (
 			(scope = 'tenant' AND budget_key = $1) OR (scope = 'type' AND budget_key = $2)
-			OR (scope = 'downstream' AND budget_key = $3))
-		ORDER BY scope, budget_key FOR UPDATE`, task.TenantID, taskType, downstream)
+			OR (scope = 'downstream' AND budget_key = $3) OR (scope = 'retry' AND budget_key = $2
+				AND EXISTS (SELECT 1 FROM mq_tasks WHERE id=$4 AND execution_attempts>0)))
+		ORDER BY scope, budget_key FOR UPDATE`, task.TenantID, taskType, downstream, task.ID)
 	if err != nil {
 		return nil, err
 	}

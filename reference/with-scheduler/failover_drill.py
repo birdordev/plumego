@@ -55,6 +55,7 @@ def main():
     directory = Path(__file__).resolve().parent
     env = {key: value for key, value in os.environ.items()
            if not key.startswith(("PG", "SCHEDULER_"))}
+    env["PGGSSENCMODE"] = "disable"
     primary_port, standby_port, api_port = reserve_ports(3)
     database = "user=postgres dbname=postgres sslmode=disable connect_timeout=2"
 
@@ -71,7 +72,7 @@ def main():
         primary, standby = root / "primary", root / "standby"
 
         def ctl(node, *args):
-            return run("pg_ctl", "-D", node, "-t", "15", *args, env=env)
+            return run("pg_ctl", "-D", node, "-t", "15", *args, env=env, stdout=subprocess.DEVNULL)
 
         def stop_database(node):
             result = subprocess.run(["pg_ctl", "-D", node, "status"], env=env,
@@ -86,28 +87,43 @@ def main():
             ctl(node, "-l", root / (node.name + ".log"), "-o",
                 f"-p {port} -h 127.0.0.1 -c unix_socket_directories=''", "-w", "start")
 
+        def start_standby(node, source_port, port):
+            run("pg_basebackup", "-d", dsn(source_port) + " application_name=scheduler_drill",
+                "-D", node, "-R", "-X", "stream", "-c", "fast", env=env)
+            start_database(node, port)
+
+        def enable_sync(writer):
+            sql(writer, "ALTER SYSTEM SET synchronous_standby_names = 'FIRST 1 (scheduler_drill)';")
+            sql(writer, "ALTER SYSTEM SET synchronous_commit = 'remote_apply';")
+            sql(writer, "SELECT pg_reload_conf();")
+            wait_for(lambda: sql(writer, """
+                SELECT current_setting('synchronous_commit') = 'remote_apply'
+                    AND EXISTS (SELECT 1 FROM pg_stat_replication
+                        WHERE application_name = 'scheduler_drill' AND sync_state = 'sync'
+                            AND state = 'streaming' AND replay_lsn IS NOT NULL);
+            """) == "t", "synchronous standby")
+
+        def assert_fenced(node):
+            result = subprocess.run(["pg_ctl", "-D", node, "status"], env=env,
+                                    capture_output=True, timeout=5)
+            require(result.returncode == 3, "old writer is not confirmed stopped")
+
         run("initdb", "-D", primary, "-U", "postgres", "-A", "trust", "--no-locale",
             env=env, stdout=subprocess.DEVNULL)
         start_database(primary, primary_port)
-        run("pg_basebackup", "-d", dsn(primary_port) + " application_name=scheduler_drill",
-            "-D", standby, "-R", "-X", "stream", env=env)
-        start_database(standby, standby_port)
-        sql(primary_port, "ALTER SYSTEM SET synchronous_standby_names = 'FIRST 1 (scheduler_drill)';")
-        sql(primary_port, "ALTER SYSTEM SET synchronous_commit = 'remote_apply';")
-        sql(primary_port, "SELECT pg_reload_conf();")
-        wait_for(lambda: sql(primary_port, """
-            SELECT current_setting('synchronous_commit') = 'remote_apply'
-                AND EXISTS (SELECT 1 FROM pg_stat_replication
-                    WHERE application_name = 'scheduler_drill' AND sync_state = 'sync');
-        """) == "t", "synchronous standby")
+        start_standby(standby, primary_port, standby_port)
+        enable_sync(primary_port)
 
         binary = root / "scheduler"
         run("go", "build", "-o", binary, ".", cwd=directory, env=env)
+        probe = root / "scheduler-lease-probe"
+        run("go", "test", "-c", "-o", probe, ".", cwd=directory, env=env)
         env.update(
             SCHEDULER_DATABASE_URL=f"{database} host=127.0.0.1,127.0.0.1 "
                                    f"port={primary_port},{standby_port} target_session_attrs=read-write",
             SCHEDULER_API_TOKEN="local-drill-token",
             SCHEDULER_TENANT="failover-drill",
+            SCHEDULER_SYNC_STANDBY="scheduler_drill",
             SCHEDULER_OUTBOX_TOKEN="local-receiver-token",
         )
         run(binary, "-role", "migrate", cwd=directory, env=env)
@@ -148,7 +164,9 @@ def main():
         finalizer = start_role("finalizer")
         short_worker = start_role("worker", SCHEDULER_WORKER_POOL="short")
         wait_for(lambda: request("/readyz")[0] == 200, "API readiness")
-        event = submit("outbox")
+        sql(primary_port, "INSERT INTO scheduler_inventory VALUES ('failover-drill','drill-sku',20);")
+        stock = {"operation_id": "drill-order", "action": "reserve", "sku": "drill-sku", "quantity": 6}
+        event = submit("outbox", "demo.inventory", stock)
         wait_for(lambda: state(event).get("queue_status") == "done", "committed result")
         require(request("/schedules", {
             "id": "drill", "expression": "@every 2s", "time_zone": "UTC",
@@ -162,12 +180,16 @@ def main():
         wait_for(lambda: state(leased).get("execution_attempts") == 1, "live execution")
         old_worker.kill()
         old_worker.wait(timeout=5)
+        former_lease = sql(primary_port, "SELECT lease_owner FROM mq_tasks WHERE id=:'id';", id=leased)
+        require(bool(former_lease), "the former worker had no recorded lease")
 
         receipts = root / "receiver.sqlite"
         with contextlib.closing(sqlite3.connect(receipts)) as db, db:
             db.executescript("""
                 CREATE TABLE deliveries (event_id TEXT NOT NULL);
                 CREATE TABLE effects (event_id TEXT PRIMARY KEY);
+                CREATE TABLE inventory (sku TEXT PRIMARY KEY, reserved INTEGER NOT NULL);
+                INSERT INTO inventory VALUES ('drill-sku', 0);
             """)
         received = threading.Event()
         disconnect = threading.Event()
@@ -175,15 +197,22 @@ def main():
 
         class Receiver(BaseHTTPRequestHandler):
             def do_POST(self):
-                event_id = json.loads(self.rfile.read(int(self.headers["Content-Length"])))["id"]
+                delivery = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+                event_id = delivery["id"]
                 if (self.headers.get("Idempotency-Key") != event_id or
                         self.headers.get("Authorization") != "Bearer " + env["SCHEDULER_OUTBOX_TOKEN"]):
                     self.send_error(400)
+                    return
+                if event_id == event and delivery.get("inventory") != {"tenant": "failover-drill", **stock}:
+                    self.send_error(409)
                     return
                 with contextlib.closing(sqlite3.connect(receipts)) as db, db:
                     db.execute("INSERT INTO deliveries VALUES (?)", (event_id,))
                     effect = db.execute("INSERT OR IGNORE INTO effects VALUES (?)", (event_id,))
                     first = effect.rowcount == 1
+                    if event_id == event and first:
+                        db.execute("UPDATE inventory SET reserved = reserved + ? WHERE sku = ?",
+                                   (stock["quantity"], stock["sku"]))
                 if event_id == event and first:
                     received.set()
                     disconnect.wait(15)
@@ -211,8 +240,13 @@ def main():
                     "failover backlog was not accepted")
         outbox = start_role("outbox", SCHEDULER_OUTBOX_URL=f"http://127.0.0.1:{server.server_port}/events")
         require(received.wait(15), "receiver did not commit the first effect")
+        horizon = sql(primary_port, "SELECT pg_current_wal_flush_lsn();")
+        wait_for(lambda: sql(standby_port,
+            "SELECT pg_last_wal_replay_lsn() >= :'horizon'::pg_lsn;", horizon=horizon) == "t",
+            "candidate's protected commit horizon")
         cut = time.monotonic()
         stop_database(primary)
+        assert_fenced(primary)
         disconnect.set()
         require(request("/readyz")[0] == 503, "standby was accepted by the writable connection")
         require(request("/runs/" + event)[0] == 503, "read during the cut did not return unavailable")
@@ -229,6 +263,21 @@ def main():
         plan_count_query = "SELECT count(*) FROM scheduled_runs WHERE schedule_id = 'drill';"
         plan_count_at_cut = int(sql(standby_port, plan_count_query))
         ctl(standby, "-w", "promote")
+        require(sql(standby_port, "SELECT NOT pg_is_in_recovery();") == "t", "new database writer unavailable")
+        writer_ready_seconds = time.monotonic() - cut
+        require(request("/readyz")[0] == 503, "API advertised readiness before restoring replication")
+        require(request("/runs", {"topic": "demo.record", "payload": {}}, "during-cut")[0] == 503,
+                "API accepted a command before restoring synchronous protection")
+        rebuilt = root / "rebuilt"
+        start_standby(rebuilt, standby_port, primary_port)
+        require(sql(primary_port, "SELECT pg_is_in_recovery();") == "t", "returned old endpoint is writable")
+        write = subprocess.run(["psql", dsn(primary_port), "-XqAt", "-v", "ON_ERROR_STOP=1", "-v", "VERBOSITY=verbose",
+                                "-c", "UPDATE scheduler_schema SET version = version"],
+                               text=True, capture_output=True, env=env, timeout=5)
+        require(write.returncode != 0 and "25006" in write.stderr,
+                "returned old endpoint did not reject a write during recovery")
+        enable_sync(standby_port)
+        protected_seconds = time.monotonic() - cut
         wait_for(lambda: request("/readyz")[0] == 200, "API readiness on the new primary")
         ready_seconds = time.monotonic() - cut
         if args.backlog:
@@ -244,34 +293,55 @@ def main():
             SELECT o.delivered_at IS NULL, o.lease_token IS NOT NULL, r.run_id IS NOT NULL
             FROM scheduled_outbox o JOIN scheduled_results r USING (run_id) WHERE run_id = :'id';
         """, id=event) == "t|t|t", "outbox lease or result did not survive promotion")
-        require(submit("outbox") == event, "idempotency entry changed after promotion")
+        require(submit("outbox", "demo.inventory", stock) == event, "idempotency entry changed after promotion")
         require(request("/runs/" + event + "/result")[0] == 200, "old result was not readable")
         during = submit("during-cut")
+        first_confirmed_seconds = time.monotonic() - cut
         require(submit("during-cut") == during, "outage retry created duplicate instances")
         replacement = start_role("worker", SCHEDULER_WORKER_POOL="io",
                                  SCHEDULER_WORKER_LEASE_DURATION="5s")
+        wait_for(lambda: (current := state(leased)).get("queue_status") == "leased"
+                 and current.get("execution_attempts") == 2, "live replacement claim")
+        run(probe, "-test.run=^TestPostgresFailoverRejectsFormerLease$", "-test.timeout=6s",
+            env={**env, "PLUMEGO_TEST_FAILOVER_DATABASE_URL": dsn(standby_port),
+                 "PLUMEGO_TEST_FAILOVER_RUN_ID": leased, "PLUMEGO_TEST_FAILOVER_LEASE_OWNER": former_lease},
+            stdout=subprocess.DEVNULL)
         recovered = wait_for(lambda: (result if (result := state(leased)).get("queue_status") == "done"
                                      else None), "recovered leased task")
+        lease_recovered_seconds = time.monotonic() - cut
         require(recovered["claim_attempts"] == 2 and recovered["execution_attempts"] == 2,
                 "recovery did not use exactly one replacement claim")
         wait_for(lambda: sql(standby_port, """
             SELECT delivered_at IS NOT NULL AND lease_token IS NULL FROM scheduled_outbox WHERE run_id = :'id';
         """, id=event) == "t", "durable re-delivery acknowledgement")
+        outbox_confirmed_seconds = time.monotonic() - cut
         wait_for(lambda: int(sql(standby_port, plan_count_query)) > plan_count_at_cut,
                  "schedule advancing after promotion")
         wait_for(lambda: state(during).get("queue_status") == "done", "post-promotion write and execution")
         with contextlib.closing(sqlite3.connect(receipts)) as db:
             deliveries = db.execute("SELECT count(*) FROM deliveries WHERE event_id = ?", (event,)).fetchone()[0]
             effects = db.execute("SELECT count(*) FROM effects WHERE event_id = ?", (event,)).fetchone()[0]
-        require(deliveries >= 2 and effects == 1, "delivery and durable effect counts did not reconcile")
+            reserved = db.execute("SELECT reserved FROM inventory WHERE sku = ?", (stock["sku"],)).fetchone()[0]
+        require(deliveries >= 2 and effects == 1 and reserved == stock["quantity"],
+                "delivery and the committed inventory effect did not reconcile")
         require(all(process.poll() is None for process in
                     (api, scheduler, finalizer, short_worker, replacement, outbox)), "a role exited")
         report = {
+            "mode": "local",
             "acknowledged_runs_lost": 0, "acknowledged_runs_checked": 2 + args.backlog,
             "api_ready_seconds": round(ready_seconds, 3),
+            "writer_ready_seconds": round(writer_ready_seconds, 3),
+            "synchronous_protection_restored_seconds": round(protected_seconds, 3),
+            "first_new_ack_seconds": round(first_confirmed_seconds, 3),
+            "lease_recovered_seconds": round(lease_recovered_seconds, 3),
+            "outbox_confirmed_seconds": round(outbox_confirmed_seconds, 3),
+            "old_endpoint_rejected_write": True,
+            "old_worker_rejected_write": True, "stale_writes_accepted": 0,
+            "commit_horizon_verified": True, "admission_paused_without_sync": True,
             "fully_reconciled_seconds": round(time.monotonic() - cut, 3),
             "outbox_deliveries": deliveries, "duplicate_deliveries": deliveries - 1,
             "receiver_effects": effects, "duplicate_effects": effects - 1,
+            "receiver_reserved_units": reserved,
             "recovered_task_claims": recovered["claim_attempts"],
         }
         if args.backlog:
@@ -280,6 +350,7 @@ def main():
                 WHERE r.request_key LIKE 'failover-load-%' AND q.status = 'done';
             """
             wait_for(lambda: int(sql(standby_port, finished)) == args.backlog, "failover backlog drains")
+            report["backlog_drained_seconds"] = round(time.monotonic() - cut, 3)
             backlog_p99, backlog_seconds, wal_bytes = sql(standby_port, """
                 SELECT round((1000 * percentile_cont(.99)
                     WITHIN GROUP (ORDER BY extract(epoch FROM q.updated_at-r.scheduled_at)))::numeric, 3),
@@ -291,6 +362,29 @@ def main():
             report.update(peak_confirmed_backlog=pending_at_cut, backlog_p99_ms=float(backlog_p99),
                           backlog_per_second=round(args.backlog / float(backlog_seconds), 2),
                           cluster_wal_bytes=int(wal_bytes), fully_reconciled_seconds=round(time.monotonic() - cut, 3))
+        second_horizon = sql(standby_port, "SELECT pg_current_wal_flush_lsn();")
+        wait_for(lambda: sql(primary_port, "SELECT pg_last_wal_replay_lsn() >= :'horizon'::pg_lsn;",
+                             horizon=second_horizon) == "t", "second protected commit horizon")
+        second_cut = time.monotonic()
+        stop_database(standby)
+        assert_fenced(standby)
+        ctl(rebuilt, "-w", "promote")
+        require(sql(primary_port, "SELECT NOT pg_is_in_recovery();") == "t", "second protected promotion failed")
+        require(sql(primary_port, """
+            SELECT count(*) FROM scheduled_runs r JOIN scheduled_results s ON s.run_id=r.id
+            WHERE r.id IN (:'old_event',:'old_lease',:'restored');
+        """, old_event=event, old_lease=leased, restored=during) == "3", "second cut lost an acknowledged result")
+        require(int(sql(primary_port, pending_query)) == 0,
+                "second cut reintroduced terminal backlog")
+        require(sql(primary_port, """
+            SELECT available FROM scheduler_inventory WHERE tenant_id='failover-drill' AND sku='drill-sku';
+        """) == "14", "second cut did not preserve the committed inventory effect")
+        if args.backlog:
+            require(int(sql(primary_port, finished)) == args.backlog,
+                    "second cut lost an acknowledged backlog result")
+        require(request("/readyz")[0] == 503, "second cut bypassed the replication admission gate")
+        report["second_writer_ready_seconds"] = round(time.monotonic() - second_cut, 3)
+        report["second_cut_results_checked"] = 3 + args.backlog
         print(json.dumps(report, sort_keys=True))
 
 

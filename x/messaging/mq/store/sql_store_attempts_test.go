@@ -155,7 +155,7 @@ var _ mq.TaskStore = (*SQLStore)(nil)
 func TestSQLReserveIncludesExpiredLeases(t *testing.T) {
 	store := NewSQL(nil, DefaultSQLConfig())
 	now := time.Unix(12345, 0)
-	query, args := store.buildReserveSelect(mq.ReserveOptions{Topics: []string{"send"}, Limit: 2}, now)
+	query, args := store.buildReserveSelect(mq.ReserveOptions{Topics: []string{"send"}, Limit: 2}, now, "")
 	if !strings.Contains(query, "WHERE (status = 'queued' OR (status = 'leased' AND lease_until < $1))") ||
 		!strings.Contains(query, "AND available_at <= $1 AND (expires_at IS NULL OR expires_at > $1)") ||
 		!strings.Contains(query, "AND topic IN ($2)") ||

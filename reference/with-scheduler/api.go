@@ -36,6 +36,10 @@ func newTracedApp(address, token, tenant, actor string, repo repository, tracing
 	if strings.TrimSpace(token) == "" || strings.TrimSpace(tenant) == "" {
 		return nil, errors.New("SCHEDULER_API_TOKEN and SCHEDULER_TENANT are required")
 	}
+	protection := admissionProtection{repo.db, os.Getenv("SCHEDULER_SYNC_STANDBY")}
+	if protection.standby != "" && !runCursorID.MatchString(protection.standby) {
+		return nil, errors.New("invalid SCHEDULER_SYNC_STANDBY")
+	}
 	cfg := core.DefaultConfig()
 	cfg.Addr = address
 	app := core.New(cfg, core.AppDependencies{})
@@ -51,14 +55,14 @@ func newTracedApp(address, token, tenant, actor string, repo repository, tracing
 		calendarPublisher:    os.Getenv("SCHEDULER_CALENDAR_PUBLISHER_ACTOR"),
 		sandboxEnabled:       os.Getenv("SCHEDULER_SANDBOX_TASKS") == "1"}
 	mutation := func(handler http.HandlerFunc) http.Handler {
-		return authenticate(auditRequest(actor, tracing, handler))
+		return authenticate(protection.wrap(auditRequest(actor, tracing, handler)))
 	}
 	for _, route := range []struct {
 		method, path string
 		handler      http.Handler
 	}{
 		{http.MethodGet, "/healthz", http.HandlerFunc(h.live)},
-		{http.MethodGet, "/readyz", readinessHandler(repo.db, func() bool { return true })},
+		{http.MethodGet, "/readyz", protection.wrap(readinessHandler(repo.db, func() bool { return true }))},
 		{http.MethodPost, "/runs", mutation(h.submit)},
 		{http.MethodPost, "/workflows", mutation(h.createWorkflow)},
 		{http.MethodPut, "/event-sources/:source", mutation(h.configureEventSource)},

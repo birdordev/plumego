@@ -67,6 +67,18 @@ func (s *SQLStore) insert(ctx context.Context, exec interface {
 
 // Reserve 领取合格任务。默认在同一事务中迁移过期任务，清理失败会中止领取。
 func (s *SQLStore) Reserve(ctx context.Context, opts mq.ReserveOptions) ([]mq.Task, error) {
+	return s.reserve(ctx, opts, "")
+}
+
+// ReserveTenant 在原子领取事务中只选择指定租户的任务。
+func (s *SQLStore) ReserveTenant(ctx context.Context, opts mq.ReserveOptions, tenant string) ([]mq.Task, error) {
+	if tenant == "" {
+		return nil, errors.New("task reservation requires a tenant")
+	}
+	return s.reserve(ctx, opts, tenant)
+}
+
+func (s *SQLStore) reserve(ctx context.Context, opts mq.ReserveOptions, tenant string) ([]mq.Task, error) {
 	if s == nil || s.db == nil {
 		return nil, mq.ErrNotInitialized
 	}
@@ -95,7 +107,7 @@ func (s *SQLStore) Reserve(ctx context.Context, opts mq.ReserveOptions) ([]mq.Ta
 		}
 	}
 
-	selectQuery, selectArgs := s.buildReserveSelect(opts, now)
+	selectQuery, selectArgs := s.buildReserveSelect(opts, now, tenant)
 	var rows *sql.Rows
 	var capacity int
 	if s.cfg.Dialect == DialectPostgres {
@@ -598,7 +610,7 @@ func (s *SQLStore) claimExclusion() string {
 	return " AND NOT EXISTS (SELECT 1 FROM " + s.cfg.BlockedClaimsTable + " b WHERE b.task_id = " + s.cfg.Table + ".id)"
 }
 
-func (s *SQLStore) buildReserveSelect(opts mq.ReserveOptions, now time.Time) (string, []any) {
+func (s *SQLStore) buildReserveSelect(opts mq.ReserveOptions, now time.Time, tenant string) (string, []any) {
 	args := make([]any, 0, 6+len(opts.Topics))
 	idx := 1
 
@@ -630,6 +642,11 @@ func (s *SQLStore) buildReserveSelect(opts mq.ReserveOptions, now time.Time) (st
 			idx++
 		}
 		query += fmt.Sprintf(" AND topic IN (%s)", strings.Join(placeholders, ", "))
+	}
+	if tenant != "" {
+		query += " AND tenant_id = " + s.placeholder(idx)
+		args = append(args, tenant)
+		idx++
 	}
 
 	query += s.claimExclusion()

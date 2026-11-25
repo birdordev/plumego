@@ -9,6 +9,39 @@ import (
 	"github.com/birdordev/plumego/contract"
 )
 
+type admissionProtection struct {
+	db      *sql.DB
+	standby string
+}
+
+func (protection admissionProtection) available(ctx context.Context) bool {
+	if protection.standby == "" {
+		return true
+	}
+	ctx, cancel := context.WithTimeout(ctx, readinessTimeout)
+	defer cancel()
+	var ready bool
+	err := protection.db.QueryRowContext(ctx, `SELECT NOT pg_is_in_recovery()
+		AND current_setting('synchronous_commit') = 'remote_apply'
+		AND current_setting('synchronous_standby_names') IN ($1, 'FIRST 1 (' || $1 || ')')
+		AND EXISTS (SELECT 1 FROM pg_stat_replication WHERE application_name=$1
+			AND sync_state='sync' AND state='streaming' AND replay_lsn IS NOT NULL)`, protection.standby).Scan(&ready)
+	return err == nil && ready
+}
+
+func (protection admissionProtection) wrap(next http.Handler) http.Handler {
+	if protection.standby == "" {
+		return next
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		if !protection.available(req.Context()) {
+			writeError(w, req, contract.TypeUnavailable, "scheduler synchronous protection unavailable")
+			return
+		}
+		next.ServeHTTP(w, req)
+	})
+}
+
 const (
 	readinessTimeout = time.Second
 	recoveryDeadline = 30 * time.Second

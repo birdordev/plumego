@@ -34,7 +34,7 @@ func loadWorkerPool(name, versions string) (workerPoolConfig, error) {
 			return workerPoolConfig{}, errors.New("invalid SCHEDULER_WORKER_TASK_VERSIONS")
 		}
 		p.contracts = contracts
-		for _, topic := range []string{reserveTaskType, releaseTaskType} {
+		for _, topic := range []string{reserveTaskType, releaseTaskType, inventoryTaskType} {
 			contract, _ := lookupTaskContract(topic, 1)
 			p.contracts = append(p.contracts, contract)
 		}
@@ -109,8 +109,10 @@ func ioDelay(payload json.RawMessage) (time.Duration, error) {
 	return time.Duration(*params.DelayMS) * time.Millisecond, nil
 }
 
-func (r repository) workerHandler(contract taskContract, objects *resultObjects, sandbox *sandboxExecutor) mq.TaskHandler {
+func (r repository) workerHandler(contract taskContract, objects *resultObjects, sandbox *sandboxExecutor, networkIO workerIO) mq.TaskHandler {
 	switch contract.taskType {
+	case inventoryTaskType:
+		return r.applyInventory
 	case reserveTaskType:
 		return r.reserveForWorkflow
 	case releaseTaskType:
@@ -127,7 +129,12 @@ func (r repository) workerHandler(contract taskContract, objects *resultObjects,
 			if err != nil {
 				return &mq.TaskFailure{Kind: mq.TaskFailurePermanent}
 			}
-			if _, err := r.db.ExecContext(ctx, "SELECT pg_sleep($1)", delay.Seconds()); err != nil {
+			if networkIO != nil {
+				err = networkIO(ctx, delay)
+			} else {
+				_, err = r.db.ExecContext(ctx, "SELECT pg_sleep($1)", delay.Seconds())
+			}
+			if err != nil {
 				return err
 			}
 			return r.recordResult(ctx, task)

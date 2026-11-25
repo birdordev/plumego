@@ -82,6 +82,7 @@ func (r repository) submitBatch(ctx context.Context, tenant string, batch []batc
 	}
 	defer func() { _ = rows.Close() }()
 	tasks := make([]mq.Task, 0, len(batch))
+	var high int
 	source := sourceFromRequest(ctx)
 	for rows.Next() {
 		var key string
@@ -95,6 +96,9 @@ func (r repository) submitBatch(ctx context.Context, tenant string, batch []batc
 		}
 		source.attach(task.Meta, "origin")
 		tasks = append(tasks, task)
+		if task.Priority == mq.PriorityHigh {
+			high++
+		}
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -127,6 +131,9 @@ func (r repository) submitBatch(ctx context.Context, tenant string, batch []batc
 		if matched != len(batch) {
 			return nil, errRequestConflict
 		}
+	}
+	if err := reserveTenantIngress(ctx, tx, tenant, len(tasks)-high, high); err != nil {
+		return nil, err
 	}
 	if err := r.queue.InsertBatchTx(ctx, tx, tasks); err != nil {
 		return nil, admissionError(err)

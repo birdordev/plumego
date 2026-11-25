@@ -34,3 +34,22 @@ func TestScaleTargetAccountsForDemandAndDownstreamLimits(t *testing.T) {
 		})
 	}
 }
+
+func TestScaleTargetPreservesDatabaseSessions(t *testing.T) {
+	cfg := autoscaleConfig{
+		pool: workerPoolConfig{concurrency: 2, maxOpen: 8}, minWorkers: 1, maxWorkers: 5,
+		dbReserve: 8, age: time.Second, settle: 2 * time.Second,
+	}
+	demand := scaleSnapshot{ready: 30, active: 2, arrivals: 20, processed: 4, downstreamSlots: -1, databaseFree: 16}
+	if got := scaleTarget(cfg, demand, 1, 0); got != 1 {
+		t.Fatalf("one session below Worker budget, got %d Workers", got)
+	}
+	demand.databaseFree = 17
+	if got := scaleTarget(cfg, demand, 1, 0); got != 2 {
+		t.Fatalf("exactly one budgeted Worker, got %d Workers", got)
+	}
+	demand.databaseFree = 8
+	if got := scaleTarget(cfg, demand, 0, 0); got != 0 {
+		t.Fatalf("reserved connections were consumed for minimum Workers: %d", got)
+	}
+}

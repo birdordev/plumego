@@ -16,6 +16,7 @@ import (
 type autoscaleConfig struct {
 	pool                          workerPoolConfig
 	minWorkers, maxWorkers        int
+	dbReserve                     int
 	interval, window, age, settle time.Duration
 	drain                         time.Duration
 }
@@ -53,6 +54,14 @@ func loadAutoscaleConfig() (autoscaleConfig, error) {
 	if cfg.minWorkers > cfg.maxWorkers {
 		return cfg, errors.New("autoscale minimum exceeds maximum")
 	}
+	cfg.dbReserve = 8
+	if raw := os.Getenv("SCHEDULER_AUTOSCALE_DB_RESERVE"); raw != "" {
+		value, err := strconv.Atoi(raw)
+		if err != nil || value < 0 || value > 262143 {
+			return cfg, errors.New("invalid SCHEDULER_AUTOSCALE_DB_RESERVE")
+		}
+		cfg.dbReserve = value
+	}
 	for _, setting := range []struct {
 		name     string
 		value    *time.Duration
@@ -76,8 +85,13 @@ func loadAutoscaleConfig() (autoscaleConfig, error) {
 }
 
 func scaleTarget(cfg autoscaleConfig, s scaleSnapshot, current int, idle time.Duration) int {
+	maxWorkers := cfg.maxWorkers
+	if cfg.dbReserve > 0 {
+		free := max(0, s.databaseFree-cfg.dbReserve)
+		maxWorkers = min(maxWorkers, current+free/(cfg.pool.maxOpen+1))
+	}
 	if current < cfg.minWorkers {
-		return cfg.minWorkers
+		return min(cfg.minWorkers, maxWorkers)
 	}
 	capacity := float64(current * cfg.pool.concurrency)
 	saturation := float64(s.active) / capacity
@@ -106,7 +120,7 @@ func scaleTarget(cfg autoscaleConfig, s scaleSnapshot, current int, idle time.Du
 			return current
 		}
 	}
-	return min(target, cfg.maxWorkers)
+	return min(target, maxWorkers)
 }
 
 type managedWorker struct {

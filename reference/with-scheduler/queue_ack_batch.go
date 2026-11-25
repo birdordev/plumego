@@ -2,10 +2,32 @@ package main
 
 import (
 	"context"
+	"errors"
+	"os"
+	"strconv"
 	"time"
 
 	mqstore "github.com/birdordev/plumego/x/messaging/mq/store"
 )
+
+func loadAckBatchSettings() (time.Duration, int, error) {
+	window, limit := 2*time.Millisecond, 16
+	if raw := os.Getenv("SCHEDULER_WORKER_ACK_WINDOW"); raw != "" {
+		value, err := time.ParseDuration(raw)
+		if err != nil || value < 0 || value > 50*time.Millisecond {
+			return 0, 0, errors.New("invalid SCHEDULER_WORKER_ACK_WINDOW")
+		}
+		window = value
+	}
+	if raw := os.Getenv("SCHEDULER_WORKER_ACK_BATCH"); raw != "" {
+		value, err := strconv.Atoi(raw)
+		if err != nil || value < 1 || value > mqstore.SQLBatchLimit {
+			return 0, 0, errors.New("invalid SCHEDULER_WORKER_ACK_BATCH")
+		}
+		limit = value
+	}
+	return window, limit, nil
+}
 
 type ackRequest struct {
 	ctx    context.Context

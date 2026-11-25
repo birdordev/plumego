@@ -19,10 +19,10 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
-const schemaVersion = 38
+const schemaVersion = 39
 
 func main() {
-	role := flag.String("role", "api", "api, scheduler, worker, finalizer, expiry, outbox, bulk, archive, result-gc, sandbox-gc, autoscale, workflow, events, region-transfer, receiver, receiver-migrate, or migrate")
+	role := flag.String("role", "api", "api, scheduler, worker, finalizer, expiry, outbox, bulk, archive, result-gc, sandbox-gc, autoscale, workflow, events, region-transfer, receiver, receiver-migrate, inventory-reconcile, inventory-redrive, or migrate")
 	address := flag.String("addr", "127.0.0.1:8094", "API listen address")
 	migration := flag.String("queue-migration", "../../x/messaging/mq/store/migrations/postgres/001_task_queue.sql", "queue migration file")
 	flag.Parse()
@@ -65,6 +65,14 @@ func run(ctx context.Context, role, address, migration string) (runErr error) {
 		return err
 	}
 
+	if role == "inventory-reconcile" {
+		return runInventoryReconcile(ctx, db)
+	}
+
+	if role == "inventory-redrive" {
+		return runInventoryRedrive(ctx, db)
+	}
+
 	queueConfig := mqstore.DefaultSQLConfig()
 	queueConfig.DeferredExpiration = true
 	queueConfig.BlockedClaimsTable = "scheduler_blocked_claims"
@@ -100,6 +108,7 @@ func run(ctx context.Context, role, address, migration string) (runErr error) {
 	}
 	var workerPool workerPoolConfig
 	var sandbox *sandboxExecutor
+	var networkIO workerIO
 	if role == "worker" {
 		workerPool, err = loadWorkerPool(os.Getenv("SCHEDULER_WORKER_POOL"), os.Getenv("SCHEDULER_WORKER_TASK_VERSIONS"))
 		if err != nil {
@@ -108,6 +117,12 @@ func run(ctx context.Context, role, address, migration string) (runErr error) {
 		if objects != nil && workerPool.name == "io" {
 			contract, _ := lookupTaskContract(exportTaskType, 1)
 			workerPool.contracts = append(workerPool.contracts, contract)
+		}
+		if endpoint := os.Getenv("SCHEDULER_IO_ENDPOINT"); workerPool.name == "io" && endpoint != "" {
+			networkIO, err = newWorkerHTTPIO(endpoint, os.Getenv("SCHEDULER_IO_TOKEN"))
+			if err != nil {
+				return err
+			}
 		}
 		db.SetMaxOpenConns(workerPool.maxOpen)
 		db.SetMaxIdleConns(workerPool.maxIdle)
@@ -232,6 +247,14 @@ func run(ctx context.Context, role, address, migration string) (runErr error) {
 	case "autoscale":
 		return runLocalAutoscaler(ctx, repo)
 	case "worker":
+		protectedTenants, err := loadProtectedTenants(os.Getenv("SCHEDULER_WORKER_PROTECTED_TENANTS"))
+		if err != nil {
+			return err
+		}
+		ackWindow, ackLimit, err := loadAckBatchSettings()
+		if err != nil {
+			return err
+		}
 		queueConfig.PriorityAging = 30 * time.Second
 		if raw := os.Getenv("SCHEDULER_WORKER_PRIORITY_AGING"); raw != "" {
 			aging, err := time.ParseDuration(raw)
@@ -280,12 +303,16 @@ func run(ctx context.Context, role, address, migration string) (runErr error) {
 			<-listenerDone
 		}()
 		ackCtx, stopAck := context.WithCancel(context.WithoutCancel(ctx))
-		ackQueue, ackDone := startBatchedQueue(ackCtx, repo.queue, 2*time.Millisecond, 16)
+		ackQueue, ackDone := startBatchedQueue(ackCtx, repo.queue, ackWindow, ackLimit)
 		defer func() {
 			stopAck()
 			<-ackDone
 		}()
-		w := mq.NewWorker(mq.NewTaskQueue(&journalQueue{TaskStore: ackQueue, repo: repo, metrics: metrics}), mq.WorkerConfig{
+		var claimStore mq.TaskStore = ackQueue
+		if len(protectedTenants) > 0 {
+			claimStore = &fairClaimQueue{TaskStore: ackQueue, store: repo.queue, tenants: protectedTenants}
+		}
+		w := mq.NewWorker(mq.NewTaskQueue(&journalQueue{TaskStore: claimStore, repo: repo, metrics: metrics}), mq.WorkerConfig{
 			Concurrency:         workerPool.concurrency,
 			LeaseDuration:       leaseDuration,
 			TaskTimeout:         taskTimeout,
@@ -305,7 +332,7 @@ func run(ctx context.Context, role, address, migration string) (runErr error) {
 			},
 		})
 		for _, taskContract := range workerPool.contracts {
-			w.Register(taskContract.topic, metrics.handler(tracing.handler(taskContract.handle(repo.workerHandler(taskContract, objects, sandbox)))))
+			w.Register(taskContract.topic, metrics.handler(tracing.handler(taskContract.handle(repo.workerHandler(taskContract, objects, sandbox, networkIO)))))
 		}
 		w.Start(context.WithoutCancel(ctx))
 		accepting.Store(true)
@@ -378,7 +405,7 @@ func migrate(ctx context.Context, db *sql.DB, queueMigration string) error {
 	for _, migration := range []struct {
 		version int
 		script  string
-	}{{2, schedulerSchemaV2}, {3, schedulerSchemaV3}, {4, schedulerSchemaV4}, {5, schedulerSchemaV5}, {6, schedulerSchemaV6}, {7, schedulerSchemaV7}, {8, schedulerSchemaV8}, {9, schedulerSchemaV9}, {10, schedulerSchemaV10}, {11, schedulerSchemaV11}, {12, schedulerSchemaV12}, {13, schedulerSchemaV13}, {14, schedulerSchemaV14}, {15, schedulerSchemaV15}, {16, schedulerSchemaV16}, {17, schedulerSchemaV17}, {18, schedulerSchemaV18}, {19, schedulerSchemaV19}, {20, schedulerSchemaV20}, {21, schedulerSchemaV21}, {22, schedulerSchemaV22}, {23, schedulerSchemaV23}, {24, schedulerSchemaV24}, {25, schedulerSchemaV25}, {26, schedulerSchemaV26}, {27, schedulerSchemaV27}, {28, schedulerSchemaV28}, {29, schedulerSchemaV29}, {30, schedulerSchemaV30}, {31, schedulerSchemaV31}, {32, schedulerSchemaV32}, {33, schedulerSchemaV33}, {34, schedulerSchemaV34}, {35, schedulerSchemaV35}, {36, schedulerSchemaV36}, {37, schedulerSchemaV37}, {38, schedulerSchemaV38}} {
+	}{{2, schedulerSchemaV2}, {3, schedulerSchemaV3}, {4, schedulerSchemaV4}, {5, schedulerSchemaV5}, {6, schedulerSchemaV6}, {7, schedulerSchemaV7}, {8, schedulerSchemaV8}, {9, schedulerSchemaV9}, {10, schedulerSchemaV10}, {11, schedulerSchemaV11}, {12, schedulerSchemaV12}, {13, schedulerSchemaV13}, {14, schedulerSchemaV14}, {15, schedulerSchemaV15}, {16, schedulerSchemaV16}, {17, schedulerSchemaV17}, {18, schedulerSchemaV18}, {19, schedulerSchemaV19}, {20, schedulerSchemaV20}, {21, schedulerSchemaV21}, {22, schedulerSchemaV22}, {23, schedulerSchemaV23}, {24, schedulerSchemaV24}, {25, schedulerSchemaV25}, {26, schedulerSchemaV26}, {27, schedulerSchemaV27}, {28, schedulerSchemaV28}, {29, schedulerSchemaV29}, {30, schedulerSchemaV30}, {31, schedulerSchemaV31}, {32, schedulerSchemaV32}, {33, schedulerSchemaV33}, {34, schedulerSchemaV34}, {35, schedulerSchemaV35}, {36, schedulerSchemaV36}, {37, schedulerSchemaV37}, {38, schedulerSchemaV38}, {39, schedulerSchemaV39}} {
 		if version >= migration.version {
 			continue
 		}

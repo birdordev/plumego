@@ -134,6 +134,9 @@ var schedulerSchemaV37 string
 //go:embed scheduler_v38.sql
 var schedulerSchemaV38 string
 
+//go:embed scheduler_v39.sql
+var schedulerSchemaV39 string
+
 var (
 	errRequestConflict = errors.New("idempotency key already used for a different request")
 	errScheduleExists  = errors.New("schedule already exists")
@@ -266,6 +269,13 @@ func (r repository) enqueueCommand(ctx context.Context, tx *sql.Tx, command runC
 		return id, nil
 	}
 	if err != nil {
+		return "", err
+	}
+	regular, high := 1, 0
+	if command.input.Priority == "high" {
+		regular, high = 0, 1
+	}
+	if err := reserveTenantIngress(ctx, tx, command.tenant, regular, high); err != nil {
 		return "", err
 	}
 	if err := r.insertTask(ctx, tx, id, command.tenant, command.input, at, sourceFromRequest(ctx)); err != nil {

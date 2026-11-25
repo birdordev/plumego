@@ -60,6 +60,15 @@ These responses contain fixed reasons without task identifiers or payloads.
 Process liveness remains separate and the finalizer continues processing
 recoverable records while readiness reports a fault.
 
+To pause mutation admission when synchronous replication is unavailable,
+set `SCHEDULER_SYNC_STANDBY` to the designated standby application name.
+The API checks for a streaming synchronous standby, `remote_apply`, and
+the matching single-standby configuration before reporting ready or
+accepting a mutation. Grant the API database role access to the replication
+status fields it reads. Keep synchronous commit enforced for application
+connections and isolate old primaries before promotion. Status reads remain
+available on an active writer while replication is restored.
+
 Use restricted database access to identify the affected runs in `mq_tasks`
 and `mq_task_attempts`. Review the original intent and current lease before
 repairing an inconsistent record. Workers permanently reject malformed
@@ -225,6 +234,9 @@ The Worker groups overlapping ACKs for up to two milliseconds. Each item still
 checks its own claim token. A stale claim returns a lease error for that item.
 A database write error rolls back the group, and unresolved confirmations
 follow the existing retry path.
+Set `SCHEDULER_WORKER_ACK_WINDOW` (0–50 ms) and
+`SCHEDULER_WORKER_ACK_BATCH` (1–128, default 16) to compare confirmation
+settings with the same workload, durability policy, and WAL measurements.
 
 ### Finalization recovery
 
@@ -611,6 +623,11 @@ corresponding Workers before submitting tasks for a new task type.
 | `io` | `demo.io` v1, simulated latency on a PostgreSQL connection | 2 | 8 / 4 |
 
 The I/O example accepts `{"delay_ms":2000}` and allows 1–30,000 ms.
+Set `SCHEDULER_IO_ENDPOINT` and `SCHEDULER_IO_TOKEN` on the I/O pool to
+measure an authenticated downstream HTTP call. The downstream receives a POST
+with the delay in milliseconds as plain text and returns 204 when finished.
+Use a side-effect-free delay endpoint. The client uses a configured URL
+and rejects redirects. Without the setting, the reference uses PostgreSQL delay.
 Choose deployment resources and override concurrency and database
 connections per process with `SCHEDULER_WORKER_CONCURRENCY`,
 `SCHEDULER_WORKER_DB_MAX_OPEN`, and `SCHEDULER_WORKER_DB_MAX_IDLE`.
@@ -618,6 +635,12 @@ Idle connections default to the smaller of the profile default and the
 open limit. Leave capacity for lease renewals and finalization when
 choosing a database limit. Each Worker uses one additional PostgreSQL
 session for queue notifications.
+
+Set `SCHEDULER_WORKER_PROTECTED_TENANTS` on a shared Worker pool to
+give selected tenant IDs explicit claim turns. Specify up to 32 comma-separated
+IDs. A protected turn claims one task and returns to shared claiming when
+the tenant has no eligible work. Tenant filtering uses the same lease,
+priority aging and blocked-claim checks.
 
 ```sh
 SCHEDULER_WORKER_POOL=short SCHEDULER_METRICS_ADDR=127.0.0.1:8096 go -C reference/with-scheduler run . -role worker
@@ -753,6 +776,7 @@ listeners to avoid port collisions.
 | `SCHEDULER_AUTOSCALE_WINDOW` | 30s |
 | `SCHEDULER_AUTOSCALE_TARGET_AGE` | 2s |
 | `SCHEDULER_AUTOSCALE_SCALE_IN_DELAY` | 30s |
+| `SCHEDULER_AUTOSCALE_DB_RESERVE` | 8 unreserved client sessions |
 | `SCHEDULER_WORKER_DRAIN_TIMEOUT` | 10s |
 
 The supervisor samples runnable count and age, excluding future, expired,
@@ -1069,30 +1093,33 @@ PYTHONDONTWRITEBYTECODE=1 python3 reference/with-scheduler/failover_drill.py
 ```
 
 The primary waits for the named standby to apply commits before acknowledging
-them. The drill records an API-accepted task and receipt, an in-flight task
-with a durable claim, and an HTTP event whose receiver commits before it
-disconnects. It stops the primary before promoting the standby. Reads of
-task state and new submissions use the writable connection endpoint and
-return 503 during the cut. Retry an unavailable or uncertain submission with
-its original idempotency key. The existing API, scheduler, Worker and Outbox
-processes reconnect without being restarted.
+them. The drill records an accepted task and result, a live task claim, and
+an HTTP event whose receiver commits before disconnecting. It verifies the
+candidate's replay horizon and stops the old primary before promoting the
+standby. The API rejects mutations until synchronous protection returns.
+The old endpoint is rebuilt as a read-only standby and a test write must
+fail. Retry uncertain submissions with the original idempotency key.
 
-The JSON report includes the number of acknowledged runs checked and lost,
-seconds from initiating the outage to API readiness, and seconds through
-task, schedule and Outbox reconciliation. It counts HTTP deliveries and
-committed receiver effects independently. A second HTTP delivery with one
-durable effect confirms receiver deduplication. The replacement Worker must
-complete the previously leased task with exactly one additional claim.
+The JSON report separates writer readiness, restored synchronous protection,
+API readiness, new confirmation, claim recovery, backlog drain, Outbox
+confirmation and final reconciliation. It reports delivery attempts and
+business effects independently. A second promotion checks that receipts
+accepted under the restored synchronous protection reach the next writer.
 
-For a deployment with a zero-loss objective for acknowledged commits, keep
-synchronous replication enabled, verify the intended standby has applied the
-commit horizon, and fence the old primary before promotion. Keep it fenced
-until rebuilt or rejoined as a standby. With asynchronous replication, the
-unreplayed commit horizon determines the possible loss. Measure it separately
-and reconcile any uncertain submissions and external effects. The local
-drill promotes a single writable node and measures that recovery window.
-Restoring synchronous protection against a second failure requires another
-eligible standby.
+### PostgreSQL point-in-time recovery drill
+
+The restore drill takes a base backup, archives WAL, and restores an isolated
+cluster to a named point. It verifies the schema, plan cursor, live claim,
+prior result and Outbox acknowledgement while delivery remains paused on the
+restored cluster. A separate receiver retains a later inventory change. The
+reconciliation role identifies that effect before any replay. The drill then
+recreates the missing run with its original request and business keys,
+resumes delivery, and verifies that reconciliation has no remaining differences
+and the receiver applied the business effect only once.
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 python3 reference/with-scheduler/restore_drill.py
+```
 
 ### Capacity baseline
 
@@ -1107,6 +1134,8 @@ The JSON report covers sustained short tasks, long I/O, simultaneous
 schedules, a hot tenant, first-attempt failures and a primary failover
 with confirmed backlog. For the sample profile, metric definitions and
 bottleneck observations, see [capacity baseline](load-baseline.md).
+For mixed workload gates and connection budgets, see [mixed load certification](load-baseline.md#混合负载认证)
+and the [production certification runbook](production-certification.md).
 
 ## Tenant capacity
 
@@ -1120,6 +1149,15 @@ The API returns `429` with `Retry-After` for a new command that would exceed a
 limit. A successful command can still be replayed with its original
 idempotency key. A due periodic schedule whose tenant is full keeps its cursor
 until capacity becomes available. Its misfire policy then determines catch-up.
+
+Schema v39 allows a per-tenant write rate for direct, batch and manual trigger
+commands. Only new instances consume it. The optional urgent budget is for
+`high` priority submissions from the named deployment actor
+(`SCHEDULER_API_ACTOR`). A batch exceeding either applicable budget rolls
+back all new admissions. Automatic schedules retain their existing quota and
+misfire rules. Configure a separate execution budget with scope `retry` and
+the logical task type as its key to limit subsequent starts independently
+of initial attempts.
 
 Operators can set tenant-specific limits through the database before or after
 the tenant's first request. For example, use parameters for the tenant and
@@ -1148,9 +1186,13 @@ sender URL to `http://127.0.0.1:8095/events`.
 
 The sender claims a short database lease, sends outside the transaction and
 accepts a `204` confirmation. A timed-out lease can be reclaimed. The
-receiver stores one receipt per event ID before acknowledging it. The
-example sends only the event ID, so task payloads and credentials stay out
-of the event body.
+receiver stores one receipt per event ID before acknowledging it. Regular
+events send only that ID. Inventory events also carry the validated
+business fields.
+
+Inventory events add a versioned business command and transactional receiver
+projection. See the [inventory and reconciliation runbook](production-certification.md#1-业务副作用与对账)
+for setup, safe replay and consistency checks.
 
 ### Crash recovery verification
 

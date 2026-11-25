@@ -1,5 +1,34 @@
 # 调度容量基线
 
+## 混合负载认证
+
+`certify_capacity.py` 复用可自动清理的 PostgreSQL 夹具，提供低流量租户对照、持续混跑、短峰、长稳骨架和少一个短任务 Worker 的降级测试。混跑同时涵盖热点与低流量短任务、CPU、I/O、定时物化和首次失败后的重试。默认本机档用于验证测量与门槛，时长和阈值属于夹具参数。
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 GOMAXPROCS=4 \
+  python3 reference/with-scheduler/certify_capacity.py --local > local-capacity.json
+python3 reference/with-scheduler/certify_capacity.py --template > staging-capacity.json
+```
+
+在独立预发部署中，为热点和低流量租户分别配置 `SCHEDULER_CERT_HOT_{URL,TOKEN,TENANT}` 和 `SCHEDULER_CERT_COLD_{URL,TOKEN,TENANT}`，设置 `SCHEDULER_CERT_READ_DSN` 为指向当前写主库的只读观测账号。该账号需要读取任务、计划、尝试视图和归档计数，以及检查 WAL、复制和等待事件所需的权限。连接使用只读事务默认值和 SQL 时限。测试调用生产同款 API，设置测试计划后会暂停该批计划，因此应只使用隔离的数据库和压测租户。
+
+对模板的每个阶段填写目标拓扑、各流量组的速率、持续时间、同刻计划数和各自门槛。记录历史数据规模、下游配额、部署版本和各角色最大副本数。先跑 `control`、`sustained`、`burst`、`soak`，再用低一档副本数和已接管的数据库拓扑分别运行 `degraded`。长稳档使用 `min_archived_rows` 核对维护期间实际迁出的队列行数，本机档在负载开始时启动归档角色并验证迁出 512 行。目标模式逐阶段启动，拓扑变更和故障注入由部署侧完成。重试组的幂等键形如 `cert-<cohort>-retry-<index>`，预发夹具可以用和本机相同的事务提交前故障注入，报告会验证每个已受理的重试任务确实重试。
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 python3 reference/with-scheduler/certify_capacity.py \
+  --profile staging-capacity.json --phase sustained > staging-sustained.json
+```
+
+用 `--summary` 读取同一种运行模式的一组报告，汇总达标持续吞吐、短峰档、排空时间及低流量租户对照。用 `--hotspot` 在两套本机夹具中复测相同准入和执行预算下的共享领取与租户保护领取。
+
+- 发生器按单调时钟的预定时刻独立驱动每个流量组。有界在途槽满时记录发生器过载，HTTP 超时、网络异常、429 和整批确认分别入账。
+- 吞吐按投放窗口内持久终态统计，积压变化取窗口内采样，排空时间取确认积压清零的首次观测。最老可运行任务年龄也是采样值。
+- 直接提交组单列 API、准备发送的延迟、入队至首次执行与终态延迟。定时组单列实际可派发至物化、物化至执行，以及名义计划时刻至终态。跨机比较时需要同步时钟。
+- 核对 HTTP 确认返回的运行 ID、持久记录与完成回执。阈值超标、关键样本缺失、未知提交状态或账目差异都会输出失败报告并返回非零退出码。
+- WAL、表尺寸和等待事件属于共享数据库观测。租户级延迟按有限的压测流量组输出。比较不同负载档位时保持采样频率、同步复制策略和观测角色一致。
+
+## 单场景基线
+
 使用同一个本地夹具运行工作负载和同步备库切换。需要可用的 Go、Python 3.8+、PostgreSQL Server 与客户端工具，以及 POSIX 的 `ps`。脚本在临时目录启动数据库、只监听回环地址，测试完清理进程和数据。
 
 ```sh

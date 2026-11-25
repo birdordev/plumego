@@ -13,6 +13,7 @@ type scaleSnapshot struct {
 	downstreamCap        int
 	downstreamStarts     float64
 	downstreamMinStartMS int
+	databaseFree         int
 }
 
 func (r repository) readScaleSnapshot(ctx context.Context, topics []string, window time.Duration) (scaleSnapshot, error) {
@@ -47,9 +48,12 @@ func (r repository) readScaleSnapshot(ctx context.Context, topics []string, wind
 		COALESCE((SELECT max_concurrent FROM downstream), 0),
 		(SELECT count(*) FROM mq_task_attempts WHERE execution_started_at IS NOT NULL
 			AND execution_started_at > statement_timestamp() - $2 * interval '1 second') / $2,
-		COALESCE((SELECT min_start_interval_ms FROM downstream), 0)`,
+		COALESCE((SELECT min_start_interval_ms FROM downstream), 0),
+		current_setting('max_connections')::int - current_setting('superuser_reserved_connections')::int
+			- COALESCE(current_setting('reserved_connections', true)::int, 0)
+			- (SELECT count(*) FROM pg_stat_activity WHERE backend_type='client backend')`,
 		topics, window.Seconds(), recordTaskDownstream).Scan(&snapshot.ready, &snapshot.oldest, &snapshot.active,
 		&snapshot.arrivals, &snapshot.processed, &snapshot.downstreamSlots, &snapshot.downstreamCap,
-		&snapshot.downstreamStarts, &snapshot.downstreamMinStartMS)
+		&snapshot.downstreamStarts, &snapshot.downstreamMinStartMS, &snapshot.databaseFree)
 	return snapshot, err
 }

@@ -295,6 +295,38 @@ func TestPostgresResultRequiresCurrentClaimAndIsIdempotent(t *testing.T) {
 	}
 }
 
+func TestPostgresFailoverRejectsFormerLease(t *testing.T) {
+	dsn := os.Getenv("PLUMEGO_TEST_FAILOVER_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("run by the disposable PostgreSQL failover drill")
+	}
+	task := mq.Task{ID: os.Getenv("PLUMEGO_TEST_FAILOVER_RUN_ID"), TenantID: "failover-drill",
+		LeaseOwner: os.Getenv("PLUMEGO_TEST_FAILOVER_LEASE_OWNER")}
+	if !runCursorID.MatchString(task.ID) || task.LeaseOwner == "" {
+		t.Fatal("failover probe requires a run ID and the previous lease")
+	}
+	db, err := sql.Open("pgx", dsn)
+	if err != nil {
+		t.Fatal("could not open the promoted database")
+	}
+	defer db.Close()
+	ctx, cancel := context.WithTimeout(t.Context(), 4*time.Second)
+	defer cancel()
+
+	var active, priorResult bool
+	err = db.QueryRowContext(ctx, `SELECT NOT pg_is_in_recovery() AND status='leased'
+		AND attempts=2 AND execution_attempts=2 AND lease_owner<>$2 AND lease_until>clock_timestamp(),
+		EXISTS (SELECT 1 FROM scheduled_results s WHERE s.run_id=q.id)
+		FROM mq_tasks q WHERE id=$1 AND tenant_id=$3`, task.ID, task.LeaseOwner, task.TenantID).Scan(&active, &priorResult)
+	if err != nil || !active || priorResult {
+		t.Fatal("the promoted writer must have an active replacement claim before returning a result")
+	}
+	repo := repository{db, mqstore.NewSQL(db, mqstore.DefaultSQLConfig())}
+	if err := repo.recordResult(ctx, task); !errors.Is(err, mq.ErrLeaseLost) {
+		t.Fatal("the production result transaction did not fence the former lease")
+	}
+}
+
 func TestPostgresCancellationSerializesWithResult(t *testing.T) {
 	queue, _, db := postgresTestQueues(t)
 	repo := repository{db, mqstore.NewSQL(db, mqstore.DefaultSQLConfig())}
@@ -817,8 +849,26 @@ func TestPostgresV3UpgradePreservesQueuedRuns(t *testing.T) {
 		t.Fatal(err)
 	}
 	repo := repository{db, mqstore.NewSQL(db, mqstore.DefaultSQLConfig())}
-	old, err := repo.submit(ctx, "tenant", "before-upgrade", submission{Topic: "demo.record", Payload: json.RawMessage(`{}`)})
+	input := submission{Topic: "demo.record", Payload: json.RawMessage(`{}`)}
+	command, err := prepareSubmission("tenant", "before-upgrade", input)
 	if err != nil {
+		t.Fatal(err)
+	}
+	// 直接构造 v3 提交事务，避免夹具依赖升级后的入口限速表。
+	old := rand.Text()
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.ExecContext(ctx, `INSERT INTO scheduled_runs (id,tenant_id,request_key,request_hash,scheduled_at)
+		VALUES ($1,'tenant','before-upgrade',$2,clock_timestamp())`, old, command.hash[:]); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.insertTask(ctx, tx, old, "tenant", input, time.Now(), traceSource{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.Commit(); err != nil {
 		t.Fatal(err)
 	}
 	legacyConfig := mqstore.DefaultSQLConfig()

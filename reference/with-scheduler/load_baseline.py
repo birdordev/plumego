@@ -4,6 +4,8 @@ import argparse
 from collections import Counter
 import concurrent.futures
 import contextlib
+import hmac
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import os
 from pathlib import Path
@@ -11,6 +13,7 @@ import platform
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -30,18 +33,25 @@ def cpu_seconds(value):
 
 
 class LoadCluster:
-    def __init__(self, directory, stack):
+    def __init__(self, directory, stack, mixed=False, archive=None, protected_tenants=""):
         self.directory = directory
         self.stack = stack
         self.env = {key: value for key, value in os.environ.items() if not key.startswith(("PG", "SCHEDULER_"))}
+        self.env["PGGSSENCMODE"] = "disable"
         port, hot, cold = reserve_ports(3)
         self.ports = {"hot": hot, "cold": cold}
         data = directory / "pg"
         self.dsn = f"user=postgres dbname=postgres host=127.0.0.1 port={port} connect_timeout=2 sslmode=disable"
         run("initdb", "-D", data, "-U", "postgres", "-A", "trust", "--no-locale",
             stdout=subprocess.DEVNULL, env=self.env)
+        if archive:
+            import shlex
+            command = f"cp %p {shlex.quote(str(archive))}/%f".replace("'", "''")
+            with (data / "postgresql.conf").open("a") as config:
+                config.write(f"\narchive_mode = on\narchive_command = '{command}'\n")
+        connection_option = " -c max_connections=200" if mixed else ""
         run("pg_ctl", "-D", data, "-l", directory / "postgres.log",
-            "-o", f"-p {port} -h 127.0.0.1 -c unix_socket_directories=''", "-w", "start",
+            "-o", f"-p {port} -h 127.0.0.1 -c unix_socket_directories=''"+connection_option, "-w", "start",
             stdout=subprocess.DEVNULL, env=self.env)
         stack.callback(run, "pg_ctl", "-D", data, "-m", "immediate", "-w", "stop",
                        stdout=subprocess.DEVNULL, env=self.env)
@@ -55,7 +65,8 @@ class LoadCluster:
             CREATE FUNCTION baseline_retry_once() RETURNS trigger LANGUAGE plpgsql AS $$
             BEGIN
                 IF EXISTS (SELECT 1 FROM scheduled_runs r JOIN mq_tasks q ON q.id = r.id
-                    WHERE r.id = NEW.run_id AND r.request_key LIKE 'retry-%' AND q.execution_attempts = 1) THEN
+                    WHERE r.id = NEW.run_id AND (r.request_key LIKE 'retry-%' OR r.request_key LIKE 'cert-%-retry-%')
+                        AND q.execution_attempts = 1) THEN
                     RAISE EXCEPTION USING ERRCODE = '40001', MESSAGE = 'baseline transient failure';
                 END IF;
                 RETURN NEW;
@@ -66,13 +77,48 @@ class LoadCluster:
         self.processes = []
         for tenant, api_port in self.ports.items():
             self.start("api", api_port, SCHEDULER_TENANT=tenant)
+        self.short_workers = []
+        io_settings = self.start_io_fixture() if mixed else {}
         for _ in range(2):
             self.start("scheduler")
-            self.start("worker", SCHEDULER_WORKER_POOL="short", SCHEDULER_WORKER_CONCURRENCY="4")
-            self.start("worker", SCHEDULER_WORKER_POOL="io", SCHEDULER_WORKER_CONCURRENCY="2")
+            self.short_workers.append(
+                self.start("worker", SCHEDULER_WORKER_POOL="short", SCHEDULER_WORKER_CONCURRENCY="4",
+                           SCHEDULER_WORKER_PROTECTED_TENANTS=protected_tenants))
+            self.start("worker", SCHEDULER_WORKER_POOL="io", SCHEDULER_WORKER_CONCURRENCY="2", **io_settings)
+        if mixed:
+            self.start("worker", SCHEDULER_WORKER_POOL="cpu")
         self.start("finalizer")
         for tenant in self.ports:
             wait_for(lambda: self.request(tenant, "/readyz", expected=None)[0] == 200, tenant + " API")
+
+    def start_io_fixture(self):
+        token = "local-io-token"
+
+        class IOHandler(BaseHTTPRequestHandler):
+            def do_POST(self):
+                if self.path != "/delay" or not hmac.compare_digest(
+                        self.headers.get("Authorization", ""), "Bearer " + token):
+                    self.send_error(404)
+                    return
+                try:
+                    size = int(self.headers.get("Content-Length", "0"))
+                    delay = int(self.rfile.read(size)) if 1 <= size <= 5 else 0
+                except ValueError:
+                    delay = 0
+                if not 1 <= delay <= 30000:
+                    self.send_error(400)
+                    return
+                time.sleep(delay / 1000)
+                self.send_response(204)
+                self.end_headers()
+
+            def log_message(self, *_args):
+                pass
+
+        server = self.stack.enter_context(ThreadingHTTPServer(("127.0.0.1", 0), IOHandler))
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.stack.callback(server.shutdown)
+        return {"SCHEDULER_IO_ENDPOINT": f"http://127.0.0.1:{server.server_port}/delay", "SCHEDULER_IO_TOKEN": token}
 
     def sql(self, query, **variables):
         args = [arg for key, value in variables.items() for arg in ("-v", f"{key}={value}")]
@@ -88,6 +134,7 @@ class LoadCluster:
                                cwd=DIRECTORY, env={**self.env, **settings}, stdout=log, stderr=log)
         self.stack.callback(stop, cmd)
         self.processes.append(cmd)
+        return cmd
 
     def request(self, tenant, path, body=None, expected=202):
         req = urllib.request.Request(f"http://127.0.0.1:{self.ports[tenant]}" + path,

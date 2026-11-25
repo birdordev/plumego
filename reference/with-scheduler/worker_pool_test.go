@@ -13,8 +13,8 @@ func TestWorkerPoolsRouteTaskContractsAndValidateSettings(t *testing.T) {
 		pool, versions string
 		topics         []string
 	}{
-		{"", "2", []string{"demo.record.v2", "demo.reserve", "demo.release"}},
-		{"short", "", []string{"demo.record", "demo.record.v2", "demo.reserve", "demo.release"}},
+		{"", "2", []string{"demo.record.v2", "demo.reserve", "demo.release", "demo.inventory"}},
+		{"short", "", []string{"demo.record", "demo.record.v2", "demo.reserve", "demo.release", "demo.inventory"}},
 		{"cpu", "", []string{"demo.compute", "demo.checkpoint"}},
 		{"io", "1", []string{"demo.io"}},
 	} {
