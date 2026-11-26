@@ -51,10 +51,11 @@ func inspectOperationVolume(ctx context.Context, tx *sql.Tx, actor identity.Scop
 	if !volumeAction(input.Action) {
 		return inventory.MutationTarget{}, nil
 	}
-	if vendor != "aws-ec2" && vendor != "openstack" {
+	if vendor != "aws-ec2" && vendor != "openstack" && !publicCloudProvider(vendor) {
 		return inventory.MutationTarget{}, ErrInvalid
 	}
-	if input.Action == "attach-volume" && ((vendor == "aws-ec2") != (input.Device != "")) {
+	if input.Action == "attach-volume" && vendor != provider.HuaweiECS &&
+		((vendor == "aws-ec2") != (input.Device != "")) {
 		return inventory.MutationTarget{}, ErrInvalid
 	}
 	var volume inventory.MutationTarget
@@ -64,8 +65,20 @@ func inspectOperationVolume(ctx context.Context, tx *sql.Tx, actor identity.Scop
 	} else {
 		volume, err = inventory.ResolveMutationPreview(ctx, tx, actor, input.Account, input.Region, input.VolumeID, provider.Volume)
 	}
-	if err == nil && volume.OwnershipRevision != input.VolumeRevision {
+	if err != nil {
+		return volume, err
+	}
+	if volume.OwnershipRevision != input.VolumeRevision {
 		return volume, ErrVolumeStale
+	}
+	var snapshotPending bool
+	err = tx.QueryRowContext(ctx, `SELECT EXISTS (
+		SELECT 1 FROM cmp_network_intents AS intent JOIN cmp_instance_operations AS op USING(operation_id)
+		WHERE (intent.parent_scope_id,intent.parent_id)=($1,$2) AND op.action IN ('create-snapshot','rollback-snapshot')
+		  AND op.status IN ('awaiting_approval','queued','applying','observing','needs_review')
+	)`, volume.ScopeID, input.VolumeID).Scan(&snapshotPending)
+	if err == nil && snapshotPending {
+		return volume, ErrConflict
 	}
 	return volume, err
 }
@@ -96,8 +109,23 @@ func (s Store) processVolume(ctx context.Context, task mq.Task, w work, adapter 
 }
 
 func (s Store) dispatchVolume(ctx context.Context, task mq.Task, w work, operator provider.VolumeOperator, scope provider.Scope, change provider.VolumeChange) (bool, error) {
+	send := func(ctx context.Context) (string, error) {
+		return operator.ApplyVolume(ctx, scope, change)
+	}
+	if preparer, ok := operator.(provider.VolumePreparer); ok {
+		prepared, err := preparer.PrepareVolume(ctx, scope, change)
+		if err != nil || prepared == nil || ctx.Err() != nil {
+			if task.Attempts < task.MaxAttempts && (ctx.Err() != nil || remotePreflightRetryable(err)) {
+				return true, nil
+			}
+			cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), accountingTimeout)
+			defer cancel()
+			return false, s.transition(cleanup, task, w.Status, "failed", "provider_volume_precondition", "")
+		}
+		send = prepared
+	}
 	armed, err := s.prepare(ctx, task, true)
-	if errors.Is(err, identity.ErrForbidden) || errors.Is(err, identity.ErrAccountStale) {
+	if errors.Is(err, identity.ErrForbidden) || errors.Is(err, identity.ErrAccountStale) || errors.Is(err, ErrConflict) {
 		return false, s.endUnavailable(ctx, task, armed)
 	}
 	if err != nil {
@@ -106,7 +134,7 @@ func (s Store) dispatchVolume(ctx context.Context, task mq.Task, w work, operato
 	if armed.Status != "applying" {
 		return false, mq.ErrLeaseLost
 	}
-	requestID, callErr := operator.ApplyVolume(ctx, scope, change)
+	requestID, callErr := send(ctx)
 	state, reason := "observing", "provider_accepted"
 	switch {
 	case provider.IsFailure(callErr, provider.VolumeBlocked):

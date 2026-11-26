@@ -42,6 +42,9 @@
       <p id="workspace-message" class="notice" role="status"></p>
 
       <section id="collection" aria-labelledby="title">
+        <div id="asset-tools" class="filters" hidden>
+          <button id="allocate-elastic-ip" type="button" class="primary">申请弹性公网 IP</button>
+        </div>
         <div id="native-tools" class="filters" hidden>
           <button id="native-refresh" type="button">刷新访问申请</button>
         </div>
@@ -51,11 +54,12 @@
           <button id="catalog-retry" type="button" hidden>重试待确认的申请</button>
         </div>
         <form id="filters" class="filters">
-          <label id="search-filter">名称或 ID<input name="q" maxlength="256"></label>
+          <label id="search-filter">名称、ID 或公网地址<input name="q" maxlength="256"></label>
           <label id="account-filter">账号<input name="account" maxlength="128"></label>
           <label id="kind-filter">类型<select name="kind">
-            <option value="">全部类型</option><option value="instance">实例</option><option value="volume">卷</option>
+            <option value="">全部类型</option><option value="instance">实例</option><option value="volume">卷</option><option value="snapshot">云盘快照</option>
             <option value="network">网络</option><option value="subnet">子网</option>
+            <option value="elastic-ip">弹性公网 IP</option>
             <option value="security-group">安全组</option><option value="security-group-rule">安全组规则</option><option value="image">镜像</option>
           </select></label>
           <label id="status-filter" hidden>状态<select name="status">

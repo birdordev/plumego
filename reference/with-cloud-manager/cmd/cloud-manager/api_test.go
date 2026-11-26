@@ -72,4 +72,12 @@ func TestAcceptancePostgresReadiness(t *testing.T) {
 		t.Fatal(err)
 	}
 	get("/readyz", http.StatusOK, `"ready"`)
+	if _, err := db.ExecContext(t.Context(), "DELETE FROM cmp_migrations WHERE version IN ('0034_security_rule_outbox','0047_image_deletion_outbox')"); err != nil {
+		t.Fatal(err)
+	}
+	get("/readyz", http.StatusServiceUnavailable, "storage is unavailable")
+	if err := alerts.Migrate(t.Context(), db); err != nil {
+		t.Fatal(err)
+	}
+	get("/readyz", http.StatusOK, `"ready"`)
 }

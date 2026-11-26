@@ -56,27 +56,36 @@ type Input struct {
 }
 
 type Operation struct {
-	ID                string           `json:"id"`
-	Account           string           `json:"account"`
-	Region            string           `json:"region"`
-	AssetID           string           `json:"asset_id"`
-	ResourceKind      provider.Kind    `json:"resource_kind"`
-	VolumeID          string           `json:"volume_id,omitempty"`
-	Device            string           `json:"device,omitempty"`
-	Action            string           `json:"action"`
-	Status            string           `json:"status"`
-	CreatedAt         time.Time        `json:"created_at"`
-	UpdatedAt         *time.Time       `json:"updated_at,omitempty"`
-	OutcomeReason     string           `json:"outcome_reason,omitempty"`
-	ProviderRequestID string           `json:"provider_request_id,omitempty"`
-	CatalogTemplate   string           `json:"catalog_template,omitempty"`
-	CatalogVersion    int64            `json:"catalog_version,omitempty"`
-	NetworkIntent     *NetworkSpecView `json:"network_intent,omitempty"`
+	ID                    string                   `json:"id"`
+	Account               string                   `json:"account"`
+	Region                string                   `json:"region"`
+	AssetID               string                   `json:"asset_id"`
+	ResourceKind          provider.Kind            `json:"resource_kind"`
+	VolumeID              string                   `json:"volume_id,omitempty"`
+	Device                string                   `json:"device,omitempty"`
+	Action                string                   `json:"action"`
+	Status                string                   `json:"status"`
+	CreatedAt             time.Time                `json:"created_at"`
+	UpdatedAt             *time.Time               `json:"updated_at,omitempty"`
+	OutcomeReason         string                   `json:"outcome_reason,omitempty"`
+	ProviderRequestID     string                   `json:"provider_request_id,omitempty"`
+	CatalogTemplate       string                   `json:"catalog_template,omitempty"`
+	CatalogVersion        int64                    `json:"catalog_version,omitempty"`
+	NetworkIntent         *NetworkSpecView         `json:"network_intent,omitempty"`
+	SnapshotIntent        *SnapshotSpecView        `json:"snapshot_intent,omitempty"`
+	ImageCopyIntent       *ImageCopyView           `json:"image_copy_intent,omitempty"`
+	ImageCreationIntent   *ImageCreationView       `json:"image_creation_intent,omitempty"`
+	NetworkDeletionIntent *NetworkDeletionView     `json:"network_deletion_intent,omitempty"`
+	ImageDeletionIntent   *ImageDeletionView       `json:"image_deletion_intent,omitempty"`
+	SnapshotRestoreIntent *SnapshotRestoreSpecView `json:"snapshot_restore_intent,omitempty"`
 }
 
 type NetworkSpecView struct {
 	provider.NetworkSpec
-	ParentRevision int64 `json:"parent_revision"`
+	ParentRevision int64  `json:"parent_revision"`
+	AssetRevision  int64  `json:"asset_revision,omitempty"`
+	PublicAddress  string `json:"public_address,omitempty"`
+	PortID         string `json:"port_id,omitempty"`
 }
 
 type Store struct {
@@ -135,7 +144,49 @@ func Migrate(ctx context.Context, db *sql.DB) error {
 	if err := dbschema.Apply(ctx, db, "0031_security_group_rules", securityRuleSchema); err != nil {
 		return err
 	}
-	return dbschema.Apply(ctx, db, "0032_security_rule_revocation", securityRuleRevocationSchema)
+	if err := dbschema.Apply(ctx, db, "0032_security_rule_revocation", securityRuleRevocationSchema); err != nil {
+		return err
+	}
+	if err := dbschema.Apply(ctx, db, "0033_subnet_zone", subnetZoneSchema); err != nil {
+		return err
+	}
+	if err := dbschema.Apply(ctx, db, "0037_elastic_ip_creation", elasticIPCreationSchema); err != nil {
+		return err
+	}
+	if err := dbschema.Apply(ctx, db, "0038_elastic_ip_release", elasticIPReleaseSchema); err != nil {
+		return err
+	}
+	if err := dbschema.Apply(ctx, db, "0039_elastic_ip_binding", elasticIPBindingSchema); err != nil {
+		return err
+	}
+	if err := dbschema.Apply(ctx, db, "0042_snapshot_creation", snapshotCreationSchema); err != nil {
+		return err
+	}
+	if err := dbschema.Apply(ctx, db, "0043_snapshot_deletion", snapshotDeletionSchema); err != nil {
+		return err
+	}
+	if err := dbschema.Apply(ctx, db, "0044_snapshot_restore", snapshotRestoreSchema); err != nil {
+		return err
+	}
+	if err := dbschema.Apply(ctx, db, "0045_snapshot_rollback", snapshotRollbackSchema); err != nil {
+		return err
+	}
+	if err := dbschema.Apply(ctx, db, "0046_image_deletion", imageDeletionSchema); err != nil {
+		return err
+	}
+	if err := dbschema.Apply(ctx, db, "0049_image_creation", imageCreationSchema); err != nil {
+		return err
+	}
+	if err := dbschema.Apply(ctx, db, "0051_image_copy", imageCopySchema); err != nil {
+		return err
+	}
+	if err := dbschema.Apply(ctx, db, "0052_network_deletion", networkDeletionSchema); err != nil {
+		return err
+	}
+	if err := dbschema.Apply(ctx, db, "0053_security_group_deletion", securityGroupDeletionSchema); err != nil {
+		return err
+	}
+	return dbschema.Apply(ctx, db, "0055_network_deletion_backfill", networkDeletionBackfillSchema)
 }
 
 const operationFields = "operation_id,account_id,region,COALESCE(external_id,''),action,status,created_at,updated_at,COALESCE(outcome_reason,''),COALESCE(provider_request_id,''),COALESCE(volume_id,''),device,resource_kind,COALESCE(catalog_id,''),COALESCE(catalog_version,0)"
@@ -170,11 +221,16 @@ func (s Store) Get(ctx context.Context, token string, scope identity.Scope, id s
 		if errors.Is(err, sql.ErrNoRows) {
 			return identity.ErrForbidden
 		}
-		if err == nil && op.ResourceKind == provider.SecurityGroupRule {
+		if err == nil && (op.ResourceKind == provider.SecurityGroupRule || op.ResourceKind == provider.Subnet ||
+			op.ResourceKind == provider.SecurityGroup || op.ResourceKind == provider.ElasticIP) {
 			var intent NetworkSpecView
 			var rule []byte
-			if err := tx.QueryRowContext(ctx, `SELECT parent_id,parent_revision,rule_spec,name FROM cmp_network_intents WHERE operation_id=$1`, id).
-				Scan(&intent.ParentID, &intent.ParentRevision, &rule, &intent.Name); err != nil {
+			if err := tx.QueryRowContext(ctx, `SELECT COALESCE(parent_id,''),parent_revision,rule_spec,name,COALESCE(cidr::text,''),zone,
+				bandwidth_mbps,address_pool,COALESCE(host(binding_address),host(release_address),''),
+				CASE WHEN binding_address IS NOT NULL OR release_address IS NOT NULL THEN ownership_revision ELSE 0 END,elastic_ip_port
+				FROM cmp_network_intents JOIN cmp_instance_operations USING(operation_id) WHERE operation_id=$1`, id).
+				Scan(&intent.ParentID, &intent.ParentRevision, &rule, &intent.Name, &intent.CIDR, &intent.Zone,
+					&intent.BandwidthMbps, &intent.AddressPool, &intent.PublicAddress, &intent.AssetRevision, &intent.PortID); err != nil {
 				return err
 			}
 			if len(rule) != 0 {
@@ -183,6 +239,66 @@ func (s Store) Get(ctx context.Context, token string, scope identity.Scope, id s
 				}
 			}
 			op.NetworkIntent = &intent
+		}
+		if err == nil && op.ResourceKind == provider.Snapshot {
+			var intent SnapshotSpecView
+			if err := tx.QueryRowContext(ctx, `SELECT i.name,i.parent_id,i.parent_revision,i.snapshot_allow_attached,i.snapshot_class,
+				(o.action='rollback-snapshot' AND a.provider='huawei-ecs' AND i.snapshot_class='standard' AND COALESCE(o.provider_request_id,'')<>'')
+				FROM cmp_network_intents AS i JOIN cmp_instance_operations AS o USING(operation_id)
+				JOIN cmp_cloud_accounts AS a USING(tenant_id,account_id) WHERE operation_id=$1`, id).
+				Scan(&intent.Name, &intent.VolumeID, &intent.VolumeRevision, &intent.AllowAttached, &intent.Class, &intent.CanRetryObservation); err != nil {
+				return err
+			}
+			op.SnapshotIntent = &intent
+		}
+		if err == nil && op.Action == copyImage {
+			intent := ImageCopyView{ImageCopy: ImageCopy{DestinationAccount: op.Account, DestinationRegion: op.Region}}
+			if err := tx.QueryRowContext(ctx, `SELECT c.source_account,c.source_region,i.parent_id,i.parent_revision,i.name,
+				(a.provider<>'tencent-cvm' OR i.provider_resource_id<>'')
+				FROM cmp_network_intents AS i JOIN cmp_image_copy_intents AS c USING(operation_id)
+				JOIN cmp_cloud_accounts AS a ON (a.tenant_id,a.account_id)=(c.tenant_id,c.source_account)
+				WHERE i.operation_id=$1`, id).
+				Scan(&intent.Account, &intent.Region, &intent.ImageID, &intent.SourceRevision, &intent.Name, &intent.CanRetryObservation); err != nil {
+				return err
+			}
+			op.ImageCopyIntent = &intent
+		}
+		if err == nil && op.Action == createImage {
+			var intent ImageCreationView
+			if err := tx.QueryRowContext(ctx, `SELECT name,parent_id,parent_revision FROM cmp_network_intents WHERE operation_id=$1`, id).
+				Scan(&intent.Name, &intent.InstanceID, &intent.InstanceRevision); err != nil {
+				return err
+			}
+			op.ImageCreationIntent = &intent
+		}
+		if err == nil && isNetworkDeletion(op.Action) {
+			var intent NetworkDeletionView
+			if err := tx.QueryRowContext(ctx, `SELECT i.name,o.ownership_revision,COALESCE(d.parent_id,''),d.parent_revision,d.rule_removal_confirmed
+				FROM cmp_network_deletion_intents AS d JOIN cmp_network_intents AS i USING(operation_id)
+				JOIN cmp_instance_operations AS o USING(operation_id) WHERE operation_id=$1`, id).
+				Scan(&intent.Name, &intent.OwnershipRevision, &intent.ParentID, &intent.ParentRevision, &intent.RuleRemovalConfirmed); err != nil {
+				return err
+			}
+			op.NetworkDeletionIntent = &intent
+		}
+		if err == nil && op.Action == deleteImage {
+			var intent ImageDeletionView
+			if err := tx.QueryRowContext(ctx, `SELECT i.name,o.ownership_revision FROM cmp_network_intents AS i
+				JOIN cmp_instance_operations AS o USING(operation_id) WHERE operation_id=$1`, id).
+				Scan(&intent.Name, &intent.OwnershipRevision); err != nil {
+				return err
+			}
+			op.ImageDeletionIntent = &intent
+		}
+		if err == nil && op.Action == restoreSnapshot {
+			var intent SnapshotRestoreSpecView
+			if err := tx.QueryRowContext(ctx, `SELECT restore_snapshot_id,parent_id,parent_revision,snapshot_class,name,zone,
+				restore_disk_type,restore_size_gib,restore_encrypted FROM cmp_network_intents WHERE operation_id=$1`, id).
+				Scan(&intent.SnapshotID, &intent.VolumeID, &intent.VolumeRevision, &intent.Class, &intent.Name, &intent.Zone,
+					&intent.DiskType, &intent.SizeGiB, &intent.Encrypted); err != nil {
+				return err
+			}
+			op.SnapshotRestoreIntent = &intent
 		}
 		return err
 	})
@@ -207,11 +323,11 @@ func (s Store) Submit(ctx context.Context, token string, scope identity.Scope, k
 		if err != nil {
 			return err
 		}
-		target, err := inventory.ResolveInstanceMutation(ctx, tx, actor, input.Account, input.Region, input.AssetID)
-		if err != nil {
+		if err := lockBudget(ctx, tx, actor); err != nil {
 			return err
 		}
-		if err := lockBudget(ctx, tx, actor); err != nil {
+		target, err := inventory.ResolveInstanceMutation(ctx, tx, actor, input.Account, input.Region, input.AssetID)
+		if err != nil {
 			return err
 		}
 		found, err := findReplay(ctx, tx, actor, key, digest, &op)
@@ -221,11 +337,14 @@ func (s Store) Submit(ctx context.Context, token string, scope identity.Scope, k
 		if target.OwnershipRevision != revision {
 			return identity.ErrAccountStale
 		}
+		if !supportsInstanceAction(target.Provider, input.Action) {
+			return ErrInvalid
+		}
 		volume, err := resolveOperationVolume(ctx, tx, actor, input, target.Provider)
 		if err != nil {
 			return err
 		}
-		if err := checkDeletionProtection(ctx, tx, target.ScopeID, input.AssetID, input.Action); err != nil {
+		if err := checkInstanceMutationProtection(ctx, tx, target.ScopeID, input.AssetID, input.Action); err != nil {
 			return err
 		}
 		if err := checkBudget(ctx, tx, actor); err != nil {
@@ -237,6 +356,26 @@ func (s Store) Submit(ctx context.Context, token string, scope identity.Scope, k
 		return Operation{}, err
 	}
 	return op, nil
+}
+
+func supportsInstanceAction(name, action string) bool {
+	if action == "delete" {
+		return name != provider.TencentCVM
+	}
+	return !publicCloudProvider(name) || instancePowerAction(action) || volumeAction(action)
+}
+
+func instancePowerAction(action string) bool {
+	return action == "start" || action == "stop" || action == "reboot"
+}
+
+func publicCloudProvider(name string) bool {
+	switch name {
+	case provider.TencentCVM, provider.AlibabaECS, provider.HuaweiECS:
+		return true
+	default:
+		return false
+	}
 }
 
 func validOperationInput(input Input, revision int64) bool {
@@ -309,7 +448,7 @@ func (s Store) insert(ctx context.Context, tx *sql.Tx, actor identity.Scope, inp
 }
 
 func initialStatus(ctx context.Context, tx *sql.Tx, actor identity.Scope, action string) (string, error) {
-	if action == "delete" || action == "detach-volume" || action == "create-security-group-rule" {
+	if action == "delete" || action == "detach-volume" || action == "create-security-group-rule" || action == createElasticIP || action == createSnapshot || action == createImage {
 		return "awaiting_approval", nil
 	}
 	var required bool
@@ -336,6 +475,10 @@ func (s Store) enqueue(ctx context.Context, tx *sql.Tx, tenant string, op Operat
 	if op.UpdatedAt != nil {
 		stamp = *op.UpdatedAt
 	}
+	attempts := 8
+	if op.Action == createImage || op.Action == copyImage {
+		attempts = imageCreationAttempts
+	}
 	return s.queue.InsertTx(ctx, tx, mq.Task{ID: op.ID, TenantID: tenant, Topic: topic, Payload: []byte(op.ID),
-		MaxAttempts: 8, AvailableAt: stamp, CreatedAt: stamp, UpdatedAt: stamp})
+		MaxAttempts: attempts, AvailableAt: stamp, CreatedAt: stamp, UpdatedAt: stamp})
 }

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
@@ -73,9 +74,27 @@ func TestAcceptancePublicCloudInventory(t *testing.T) {
 		{provider.HuaweiECS, "huawei", domain, "cn-north-4", firstHuawei, domain + ":" + project},
 	} {
 		t.Run(item.cli, func(t *testing.T) {
-			var identityWrong, redirect atomic.Bool
+			var identityWrong, redirect, scopeWrong, ruleThrottled atomic.Bool
+			var firstRulePage, resumedRulePage atomic.Int32
+			cloudResources := publicCloudResourceFixture{
+				provider: item.name, region: item.region, account: item.account, project: project,
+				key: key, secret: secret, session: sharedToken, token: huaweiToken,
+			}
+			elasticIPs := &elasticIPFixture{publicCloudResourceFixture: cloudResources}
+			snapshots := &cloudSnapshotFixture{publicCloudResourceFixture: cloudResources}
 			var firstPage, secondPage atomic.Int32
 			server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if snapshots.serve(t, w, r) || elasticIPs.serve(t, w, r) || cloudResources.serveSecurityRules(t, w, r, scopeWrong.Load(), func(resumed bool) bool {
+					if !resumed {
+						firstRulePage.Add(1)
+						return false
+					}
+					resumedRulePage.Add(1)
+					return ruleThrottled.CompareAndSwap(false, true)
+				}) || cloudResources.serve(t, w, r, scopeWrong.Load()) ||
+					cloudResources.serveVolumes(t, w, r) || cloudResources.serveImages(t, w, r, scopeWrong.Load()) || cloudResources.serveZones(t, w, r) {
+					return
+				}
 				write := func(body string) {
 					if _, err := io.WriteString(w, body); err != nil {
 						t.Error(err)
@@ -157,13 +176,13 @@ func TestAcceptancePublicCloudInventory(t *testing.T) {
 				}
 				switch item.name {
 				case provider.TencentCVM:
-					write(fmt.Sprintf(`{"Response":{"TotalCount":2,"InstanceSet":[{"InstanceId":"ins-%d","InstanceName":"fixture-cvm","InstanceState":"RUNNING","VirtualPrivateCloud":{"VpcId":"vpc-1"}}]}}`, position))
+					write(fmt.Sprintf(`{"Response":{"TotalCount":2,"InstanceSet":[{"InstanceId":"ins-%d","InstanceName":"fixture-cvm","InstanceState":"RUNNING","ImageId":"img-1","Placement":{"Zone":"ap-guangzhou-1"},"VirtualPrivateCloud":{"VpcId":"vpc-1","SubnetId":"subnet-1"},"SecurityGroupIds":["sg-1"],"SystemDisk":{"DiskId":"disk-1"}}]}}`, position))
 				case provider.AlibabaECS:
 					next := nextAli
 					if resumed {
 						next = ""
 					}
-					write(fmt.Sprintf(`{"NextToken":%q,"Instances":{"Instance":[{"InstanceId":"i-%d","InstanceName":"fixture-ecs","Status":"Running","RegionId":%q}]}}`, next, position, item.region))
+					write(fmt.Sprintf(`{"NextToken":%q,"Instances":{"Instance":[{"InstanceId":"i-%d","InstanceName":"fixture-ecs","Status":"Running","RegionId":%q,"ImageId":"m-1","ZoneId":"cn-hangzhou-a","VpcAttributes":{"VpcId":"vpc-1","VSwitchId":"vsw-1"},"SecurityGroupIds":{"SecurityGroupId":["sg-1"]}}]}}`, next, position, item.region))
 				case provider.HuaweiECS:
 					id, links := firstHuawei, ""
 					if resumed {
@@ -171,7 +190,7 @@ func TestAcceptancePublicCloudInventory(t *testing.T) {
 					} else {
 						links = fmt.Sprintf(`,"servers_links":[{"rel":"next","href":%q}]`, "?limit=100&marker="+firstHuawei)
 					}
-					write(fmt.Sprintf(`{"servers":[{"id":%q,"tenant_id":%q,"name":"fixture-server","status":"ACTIVE"}]%s}`, id, project, links))
+					write(fmt.Sprintf(`{"servers":[{"id":%q,"tenant_id":%q,"name":"fixture-server","status":"ACTIVE","availability_zone":"cn-north-4a","image":{"id":%q},"addresses":{%q:[]},"security_groups":[{"id":%q}]}]%s}`, id, project, cloudResources.id(provider.Image), cloudResources.id(provider.Network), cloudResources.id(provider.SecurityGroup), links))
 				}
 			}))
 			defer server.Close()
@@ -251,6 +270,118 @@ func TestAcceptancePublicCloudInventory(t *testing.T) {
 			var assets struct{ Data inventory.Assets }
 			if err := json.Unmarshal(w.Body.Bytes(), &assets); err != nil || w.Code != http.StatusOK || len(assets.Data.Items) != 2 || assets.Data.Items[0].Provider != item.name {
 				t.Fatalf("asset API mismatch %d %s: %v", w.Code, w.Body, err)
+			}
+			for _, kind := range []provider.Kind{provider.Network, provider.Subnet, provider.SecurityGroup, provider.Volume, provider.Image, provider.Zone} {
+				scan[4] = string(kind)
+				if !validCommand(scan) {
+					t.Fatalf("invalid resource scan %s", kind)
+				}
+				if err := runPublicCloud(ctx, db, scan, item.name, path, transport); err != nil {
+					t.Fatalf("scan %s: %v", kind, err)
+				}
+			}
+			scan[4] = string(provider.SecurityGroupRule)
+			if !validCommand(scan) {
+				t.Fatal("security rule scan command is not registered")
+			}
+			err = runPublicCloud(ctx, db, scan, item.name, path, transport)
+			if !errors.As(err, &throttled) || throttled.Kind != provider.Throttled || throttled.RetryAfter != 3*time.Second {
+				t.Fatalf("security rule scan throttle: %v", err)
+			}
+			var ruleCursor string
+			if err := db.QueryRowContext(ctx, "SELECT cursor FROM cmp_inventory_scopes WHERE account_id=$1 AND kind='security-group-rule'",
+				item.cli).Scan(&ruleCursor); err != nil || ruleCursor == "" {
+				t.Fatalf("missing committed security rule cursor: %v", err)
+			}
+			if err := runPublicCloud(ctx, db, scan, item.name, path, transport); err != nil {
+				t.Fatalf("security rule scan continuation: %v", err)
+			}
+			if firstRulePage.Load() != 1 || resumedRulePage.Load() != 2 {
+				t.Fatalf("incorrect rule continuation requests: first %d, resumed %d", firstRulePage.Load(), resumedRulePage.Load())
+			}
+			for _, kind := range []provider.Kind{provider.Network, provider.Subnet, provider.SecurityGroup, provider.SecurityGroupRule, provider.Volume, provider.Image, provider.Zone, provider.Instance} {
+				w = httptest.NewRecorder()
+				path := base + "/assets/topology?kind=" + string(kind) + "&account=" + item.cli
+				request = httptest.NewRequest(http.MethodGet, path, nil)
+				request.Header.Set("Authorization", "Bearer "+bearer)
+				app.ServeHTTP(w, request)
+				var topology struct{ Data inventory.Topology }
+				if err := json.Unmarshal(w.Body.Bytes(), &topology); err != nil || w.Code != http.StatusOK || len(topology.Data.Nodes) == 0 {
+					t.Fatalf("topology for %s: %d %s: %v", kind, w.Code, w.Body, err)
+				}
+				cloudResources.checkTopology(t, kind, topology.Data.Nodes)
+				if item.name == provider.AlibabaECS && kind == provider.Network {
+					if topology.Data.Next == "" {
+						t.Fatal("missing cursor for remaining Alibaba VPC")
+					}
+					w = httptest.NewRecorder()
+					request = httptest.NewRequest(http.MethodGet, path+"&cursor="+url.QueryEscape(topology.Data.Next), nil)
+					request.Header.Set("Authorization", "Bearer "+bearer)
+					app.ServeHTTP(w, request)
+					var last struct{ Data inventory.Topology }
+					if err := json.Unmarshal(w.Body.Bytes(), &last); err != nil || w.Code != http.StatusOK ||
+						len(last.Data.Nodes) != 1 || last.Data.Next != "" {
+						t.Fatalf("Alibaba VPC continuation: %d %s: %v", w.Code, w.Body, err)
+					}
+				}
+			}
+			elasticIPs.exercise(t, db, app, bearer, item.cli, ref, func(ctx context.Context) error {
+				return runPublicCloud(ctx, db, []string{scan[0], scan[1], scan[2], scan[3], string(provider.ElasticIP)}, item.name, path, transport)
+			})
+			snapshotCommand := []string{scan[0], scan[1], scan[2], scan[3], string(provider.Snapshot)}
+			scanSnapshots := func(ctx context.Context) error {
+				return runPublicCloud(ctx, db, snapshotCommand, item.name, path, transport)
+			}
+			var scanV5 func(context.Context) error
+			if item.name == provider.HuaweiECS {
+				v5 := profile
+				v5.HuaweiSnapshotAPI = "v5"
+				v5Path := filepath.Join(filepath.Dir(path), "profile-v5.json")
+				encodedV5, err := json.Marshal(publicCloudProfile{Ref: ref, Config: v5})
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(v5Path, encodedV5, 0600); err != nil {
+					t.Fatal(err)
+				}
+				scanV5 = func(ctx context.Context) error {
+					return runPublicCloud(ctx, db, snapshotCommand, item.name, v5Path, transport)
+				}
+			}
+			snapshots.exercise(t, db, app, bearer, item.cli, ref, scanSnapshots, scanV5)
+			client, err := publiccloud.Connect(ctx, item.name, profile, transport)
+			if err != nil {
+				t.Fatal(err)
+			}
+			scopeWrong.Store(true)
+			kind := provider.Network
+			if item.name == provider.TencentCVM {
+				kind = provider.SecurityGroup
+			}
+			scope := provider.Scope{Provider: item.name, RemoteIdentity: item.identity, Region: item.region, Kind: kind}
+			if _, err := client.Discover(ctx, scope, ""); !provider.IsFailure(err, provider.Unauthorized) {
+				t.Fatalf("foreign network scope accepted: %v", err)
+			}
+			scope.Kind = provider.Image
+			if _, err := client.Discover(ctx, scope, ""); !provider.IsFailure(err, provider.Unauthorized) {
+				t.Fatalf("foreign image accepted: %v", err)
+			}
+			scope.Kind = provider.SecurityGroupRule
+			if _, err := client.Discover(ctx, scope, ""); !provider.IsFailure(err, provider.Unauthorized) {
+				t.Fatalf("foreign rule scope accepted: %v", err)
+			}
+			scope.Kind = provider.Zone
+			if _, err := client.Discover(ctx, scope, "unexpected"); !provider.IsFailure(err, provider.ExpiredCursor) {
+				t.Fatalf("accepted an invalid cursor for a single-page collection: %v", err)
+			}
+			if item.name == provider.AlibabaECS {
+				var found bool
+				if err := db.QueryRowContext(ctx, `SELECT EXISTS (
+					SELECT FROM cmp_inventory_objects AS o JOIN cmp_inventory_scopes AS s USING (scope_id)
+					WHERE s.account_id=$1 AND s.kind='image' AND o.external_id='m-101' AND o.removed_at IS NULL
+				)`, item.cli).Scan(&found); err != nil || !found {
+					t.Fatalf("missing persisted image from second provider page: %v", err)
+				}
 			}
 		})
 	}

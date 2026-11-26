@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/netip"
+	"slices"
 	"strings"
 
 	dbutil "github.com/birdordev/plumego/store/db"
@@ -29,6 +30,14 @@ var securityGroupSchema string
 //go:embed 0031_security_group_rules.sql
 var securityRuleSchema string
 
+//go:embed 0033_subnet_zone.sql
+var subnetZoneSchema string
+
+//go:embed 0037_elastic_ip_creation.sql
+var elasticIPCreationSchema string
+
+const createElasticIP = "create-elastic-ip"
+
 type NetworkInput struct {
 	Account string        `json:"account"`
 	Region  string        `json:"region"`
@@ -41,6 +50,7 @@ type networkIntent struct {
 	token, resourceID           string
 	parentScope, parentRevision int64
 	observer                    creationObserver
+	snapshotAllowAttached       bool
 }
 
 func migrateNetwork(ctx context.Context, db *sql.DB) error {
@@ -48,11 +58,22 @@ func migrateNetwork(ctx context.Context, db *sql.DB) error {
 }
 
 func isNetworkCreation(action string) bool {
-	return action == "create-network" || action == "create-subnet" || action == "create-security-group" || action == "create-security-group-rule"
+	return action == "create-network" || action == "create-subnet" || action == "create-security-group" ||
+		action == "create-security-group-rule" || action == createElasticIP
 }
 
-func validNetworkInput(input NetworkInput, parentRevision int64) bool {
+func isResourceCreation(action string) bool {
+	return isNetworkCreation(action) || action == createSnapshot || action == restoreSnapshot || action == createImage || action == copyImage
+}
+
+func validCreationInput(input NetworkInput, parentRevision int64) bool {
 	if !operationKey.MatchString(input.Account) || !operationKey.MatchString(input.Region) {
+		return false
+	}
+	if input.Zone != "" && input.Kind != provider.Subnet {
+		return false
+	}
+	if input.Kind != provider.ElasticIP && (input.BandwidthMbps != 0 || input.AddressPool != "") {
 		return false
 	}
 	if input.Kind == provider.SecurityGroupRule {
@@ -68,6 +89,10 @@ func validNetworkInput(input NetworkInput, parentRevision int64) bool {
 		}
 	}
 	switch input.Kind {
+	case provider.Snapshot, provider.Image:
+		return operationKey.MatchString(input.ParentID) && parentRevision > 0 && input.CIDR == ""
+	case provider.ElasticIP:
+		return parentRevision == 0
 	case provider.Network:
 		return input.ParentID == "" && parentRevision == 0
 	case provider.Subnet:
@@ -80,14 +105,22 @@ func validNetworkInput(input NetworkInput, parentRevision int64) bool {
 }
 
 func (s Store) SubmitNetworkCreation(ctx context.Context, token string, scope identity.Scope, key string, parentRevision int64, input NetworkInput) (Operation, error) {
+	if input.Kind == provider.Snapshot || input.Kind == provider.Image {
+		return Operation{}, ErrInvalid
+	}
+	return s.submitResourceCreation(ctx, token, scope, key, parentRevision, input, false)
+}
+
+func (s Store) submitResourceCreation(ctx context.Context, token string, scope identity.Scope, key string, parentRevision int64, input NetworkInput, allowAttached bool) (Operation, error) {
 	input.Name = strings.TrimSpace(input.Name)
-	if !operationKey.MatchString(key) || !validNetworkInput(input, parentRevision) {
+	if !operationKey.MatchString(key) || !validCreationInput(input, parentRevision) {
 		return Operation{}, ErrInvalid
 	}
 	data, err := json.Marshal(struct {
 		NetworkInput
 		ParentRevision int64
-	}{input, parentRevision})
+		AllowAttached  bool `json:"snapshot_allow_attached,omitempty"`
+	}{input, parentRevision, allowAttached})
 	if err != nil {
 		return Operation{}, err
 	}
@@ -138,10 +171,18 @@ func (s Store) SubmitNetworkCreation(ctx context.Context, token string, scope id
 		if err != nil {
 			return err
 		}
-		if _, err := tx.ExecContext(ctx, `INSERT INTO cmp_network_intents (operation_id,launch_token,name,cidr,parent_scope_id,parent_id,parent_revision,rule_spec)
-			VALUES ($1,$2,$3,NULLIF($4,'')::cidr,NULLIF($5::bigint,0),NULLIF($6,''),$7,NULLIF($8::jsonb,'null'::jsonb))`,
-			id, rand.Text(), input.Name, input.CIDR, parent, input.ParentID, parentRevision, string(rule)); err != nil {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO cmp_network_intents
+			(operation_id,launch_token,name,cidr,parent_scope_id,parent_id,parent_revision,rule_spec,zone,bandwidth_mbps,address_pool,snapshot_allow_attached)
+			VALUES ($1,$2,$3,NULLIF($4,'')::cidr,NULLIF($5::bigint,0),NULLIF($6,''),$7,NULLIF($8::jsonb,'null'::jsonb),$9,$10,$11,$12)`,
+			id, rand.Text(), input.Name, input.CIDR, parent, input.ParentID, parentRevision, string(rule), input.Zone,
+			input.BandwidthMbps, input.AddressPool, allowAttached); err != nil {
 			return err
+		}
+		if input.Kind == provider.Image {
+			if _, err := tx.ExecContext(ctx, `INSERT INTO cmp_instance_image_reservations
+				(scope_id,instance_id,operation_id) VALUES ($1,$2,$3)`, parent, input.ParentID, op.ID); err != nil {
+				return err
+			}
 		}
 		return s.recordSubmission(ctx, tx, actor.Tenant, op)
 	})
@@ -152,6 +193,24 @@ func (s Store) SubmitNetworkCreation(ctx context.Context, token string, scope id
 }
 
 func validNetworkVendor(input NetworkInput, name string) bool {
+	if input.Kind == provider.Image {
+		return (provider.ImageSpec{Name: input.Name, InstanceID: input.ParentID}).ValidFor(name)
+	}
+	if input.Kind == provider.Snapshot {
+		return (provider.SnapshotSpec{Name: input.Name, VolumeID: input.ParentID}).ValidFor(name)
+	}
+	if input.Kind == provider.ElasticIP {
+		return input.ValidPublicCloudElasticIP(name)
+	}
+	if publicCloudProvider(name) {
+		return (input.Kind == provider.Network && input.ValidPublicCloudVPC(name)) ||
+			(input.Kind == provider.Subnet && input.ValidPublicCloudSubnet(name, input.Region)) ||
+			(input.Kind == provider.SecurityGroup && input.ValidPublicCloudSecurityGroup(name)) ||
+			input.Kind == provider.SecurityGroupRule
+	}
+	if input.Zone != "" {
+		return false
+	}
 	if input.Kind == provider.SecurityGroupRule {
 		return name == "aws-ec2" || name == "openstack"
 	}
@@ -172,6 +231,12 @@ func validNetworkVendor(input NetworkInput, name string) bool {
 }
 
 func networkParent(kind provider.Kind, id string) provider.Link {
+	if kind == provider.Image {
+		return (provider.ImageSpec{InstanceID: id}).Source()
+	}
+	if kind == provider.Snapshot {
+		return provider.Link{Kind: provider.Volume, ID: id, Relation: "snapshot_of"}
+	}
 	if kind == provider.SecurityGroupRule {
 		return provider.Link{Kind: provider.SecurityGroup, ID: id, Relation: "in_security_group"}
 	}
@@ -182,26 +247,52 @@ func validateNetworkParent(ctx context.Context, tx *sql.Tx, actor identity.Scope
 	if input.ParentID == "" {
 		return 0, nil
 	}
-	parent, err := inventory.ResolveNetworkMutation(ctx, tx, actor, input.Account, input.Region, input.ParentID, networkParent(input.Kind, input.ParentID).Kind)
+	parentKind := networkParent(input.Kind, input.ParentID).Kind
+	parent, err := inventory.ResolveNetworkMutation(ctx, tx, actor, input.Account, input.Region, input.ParentID, parentKind)
 	if err != nil {
 		return 0, err
 	}
 	if parent.OwnershipRevision != revision {
 		return 0, identity.ErrAccountStale
 	}
+	if parentKind == provider.Network || parentKind == provider.SecurityGroup {
+		active, err := inventory.NetworkDeletionActive(ctx, tx, parent.ScopeID, input.ParentID)
+		if err != nil {
+			return 0, err
+		}
+		if active {
+			return 0, ErrConflict
+		}
+	}
+	const releasedIntent = `op.status='succeeded' AND EXISTS (
+		SELECT 1 FROM cmp_inventory_objects AS o
+		WHERE (o.scope_id,o.external_id)=(op.scope_id,op.external_id) AND o.deletion_confirmed_at IS NOT NULL)`
 	const conflictQuery = `SELECT EXISTS (SELECT 1 FROM cmp_network_intents AS intent
 		JOIN cmp_instance_operations AS op USING (operation_id)
 		WHERE intent.parent_scope_id=$1 AND intent.parent_id=$2 AND op.operation_id<>$3 AND op.status<>'failed' AND `
 	var conflict bool
 	switch input.Kind {
+	case provider.Image:
+		conflict, err = inventory.InstanceImageCreationActive(ctx, tx, parent.ScopeID, input.ParentID, opID)
+		if err == nil && !conflict {
+			err = tx.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM cmp_instance_operations
+				WHERE (scope_id,external_id)=($1,$2) AND status IN `+activeOperationStatuses+`)`,
+				parent.ScopeID, input.ParentID).Scan(&conflict)
+		}
+	case provider.Snapshot:
+		err = tx.QueryRowContext(ctx, `SELECT EXISTS (
+			SELECT 1 FROM cmp_instance_operations
+			WHERE (volume_scope_id,volume_id)=($1,$2) AND status IN `+activeOperationStatuses+`
+		) OR `+snapshotWriteConflict, parent.ScopeID, input.ParentID, opID).Scan(&conflict)
 	case provider.Subnet:
-		err = tx.QueryRowContext(ctx, conflictQuery+`intent.cidr && $4::cidr)`, parent.ScopeID, input.ParentID, opID, input.CIDR).Scan(&conflict)
+		err = tx.QueryRowContext(ctx, conflictQuery+`intent.cidr && $4::cidr AND NOT (`+releasedIntent+`))`, parent.ScopeID, input.ParentID, opID, input.CIDR).Scan(&conflict)
 	case provider.SecurityGroupRule:
 		rule, marshalErr := json.Marshal(input.Rule)
 		if marshalErr != nil {
 			return 0, marshalErr
 		}
-		err = tx.QueryRowContext(ctx, conflictQuery+`intent.rule_spec=$4::jsonb)`, parent.ScopeID, input.ParentID, opID, string(rule)).Scan(&conflict)
+		err = tx.QueryRowContext(ctx, conflictQuery+`intent.rule_spec=$4::jsonb AND NOT (`+releasedIntent+`))`,
+			parent.ScopeID, input.ParentID, opID, string(rule)).Scan(&conflict)
 	}
 	if err == nil && conflict {
 		return 0, ErrConflict
@@ -214,10 +305,11 @@ func checkNetworkIntent(ctx context.Context, tx *sql.Tx, w *work, beforeWrite bo
 	var rule []byte
 	err := tx.QueryRowContext(ctx, `SELECT launch_token,provider_resource_id,name,COALESCE(cidr::text,''),
 		COALESCE(parent_scope_id,0),COALESCE(parent_id,''),parent_revision,
-		observation_reviewer,observation_membership_revision,observation_credential_revision,rule_spec
+		observation_reviewer,observation_membership_revision,observation_credential_revision,rule_spec,zone,bandwidth_mbps,address_pool,snapshot_allow_attached
 		FROM cmp_network_intents WHERE operation_id=$1`, w.ID).Scan(&network.token, &network.resourceID, &network.Name,
 		&network.CIDR, &network.parentScope, &network.ParentID, &network.parentRevision,
-		&network.observer.principal, &network.observer.membership, &network.observer.credential, &rule)
+		&network.observer.principal, &network.observer.membership, &network.observer.credential, &rule, &network.Zone,
+		&network.BandwidthMbps, &network.AddressPool, &network.snapshotAllowAttached)
 	if err != nil {
 		return err
 	}
@@ -226,11 +318,24 @@ func checkNetworkIntent(ctx context.Context, tx *sql.Tx, w *work, beforeWrite bo
 			return err
 		}
 	}
-	if _, err := checkCreationAuthority(ctx, tx, w, network.observer, beforeWrite); err != nil {
+	if w.Action == createImage {
+		var reserved bool
+		err := tx.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM cmp_instance_image_reservations
+			WHERE (scope_id,instance_id,operation_id)=($1,$2,$3))`, network.parentScope, network.ParentID, w.ID).Scan(&reserved)
+		if err != nil {
+			return err
+		}
+		if !reserved {
+			return identity.ErrAccountStale
+		}
+	}
+	access, err := checkCreationAuthority(ctx, tx, w, network.observer, beforeWrite)
+	if err != nil {
 		return err
 	}
-	if w.Status == "queued" && w.ResourceKind == provider.SecurityGroupRule {
-		if err := checkSecurityRuleApproval(ctx, tx, w); err != nil {
+	mandatory := w.ResourceKind == provider.SecurityGroupRule || w.ResourceKind == provider.ElasticIP || w.ResourceKind == provider.Snapshot || w.ResourceKind == provider.Image
+	if w.Status == "queued" && (mandatory || publicCloudProvider(access.Provider)) {
+		if err := checkDispatchApproval(ctx, tx, w, mandatory); err != nil {
 			return err
 		}
 	}
@@ -251,25 +356,6 @@ func checkNetworkIntent(ctx context.Context, tx *sql.Tx, w *work, beforeWrite bo
 	parent, err := validateNetworkParent(ctx, tx, w.actor, NetworkInput{Account: w.Account, Region: w.Region,
 		Kind: w.ResourceKind, NetworkSpec: network.NetworkSpec}, network.parentRevision, w.ID)
 	if err == nil && parent != network.parentScope {
-		return identity.ErrAccountStale
-	}
-	return err
-}
-
-func checkSecurityRuleApproval(ctx context.Context, tx *sql.Tx, w *work) error {
-	reviewer := w.actor
-	var revision int64
-	err := tx.QueryRowContext(ctx, `SELECT reviewer_id,reviewer_membership_revision FROM cmp_instance_operation_approvals
-		WHERE operation_id=$1 AND tenant_id=$2 AND decision='approve' AND reviewer_membership_revision IS NOT NULL`,
-		w.ID, reviewer.Tenant).Scan(&reviewer.Principal, &revision)
-	if errors.Is(err, sql.ErrNoRows) || (err == nil && reviewer.Principal == w.actor.Principal) {
-		return identity.ErrForbidden
-	}
-	if err != nil {
-		return err
-	}
-	member, err := identity.NewStore(tx).AuthorizeProject(ctx, reviewer, identity.Approve)
-	if err == nil && member.Revision != revision {
 		return identity.ErrAccountStale
 	}
 	return err
@@ -296,8 +382,13 @@ func (s Store) processNetwork(ctx context.Context, task mq.Task, w work, client 
 			return false, s.transition(ctx, task, w.Status, "needs_review", "creation_receipt_mismatch", "")
 		}
 		switch object.Status {
-		case "available", "ACTIVE":
-			if w.network.ParentID != "" && (len(object.Links) != 1 || object.Links[0] != networkParent(w.ResourceKind, w.network.ParentID)) {
+		case "UNBIND", "DOWN":
+			if w.ResourceKind != provider.ElasticIP {
+				break
+			}
+			fallthrough
+		case "available", "Available", "ACTIVE":
+			if !matchesNetworkLinks(w, object.Links) {
 				return false, s.transition(ctx, task, w.Status, "needs_review", "creation_requires_evidence", "")
 			}
 			return false, s.confirmCreation(ctx, task, w, object)
@@ -311,7 +402,35 @@ func (s Store) processNetwork(ctx context.Context, task mq.Task, w work, client 
 	return true, nil
 }
 
+func matchesNetworkLinks(w work, links []provider.Link) bool {
+	if w.network.ParentID == "" {
+		return true
+	}
+	expected := []provider.Link{networkParent(w.ResourceKind, w.network.ParentID)}
+	if w.ResourceKind == provider.Subnet && w.network.Zone != "" {
+		expected = append(expected, provider.Link{Kind: provider.Zone, ID: w.network.Zone, Relation: "in_zone"})
+	}
+	return slices.Equal(links, expected)
+}
+
 func (s Store) dispatchNetwork(ctx context.Context, task mq.Task, w work, scope provider.Scope, creator provider.NetworkCreator) (bool, error) {
+	var send func(context.Context) (provider.LaunchReceipt, error)
+	if preparer, ok := creator.(provider.NetworkCreationPreparer); ok {
+		var err error
+		send, err = preparer.PrepareNetworkCreation(ctx, scope, w.network.NetworkSpec, w.network.token)
+		if err != nil || send == nil || ctx.Err() != nil {
+			return s.rejectCreationPreflight(ctx, task, w, err)
+		}
+	}
+	return s.dispatchPreparedResource(ctx, task, w, func(ctx context.Context, armed work) (provider.LaunchReceipt, error) {
+		if send != nil {
+			return send(ctx)
+		}
+		return creator.CreateNetwork(ctx, scope, armed.network.NetworkSpec, armed.network.token)
+	})
+}
+
+func (s Store) dispatchPreparedResource(ctx context.Context, task mq.Task, w work, send func(context.Context, work) (provider.LaunchReceipt, error)) (bool, error) {
 	armed, err := s.prepare(ctx, task, true)
 	if errors.Is(err, identity.ErrForbidden) || errors.Is(err, identity.ErrAccountStale) || errors.Is(err, ErrConflict) {
 		return false, s.endUnavailable(ctx, task, armed)
@@ -322,6 +441,6 @@ func (s Store) dispatchNetwork(ctx context.Context, task mq.Task, w work, scope 
 	if armed.Status != "applying" {
 		return false, mq.ErrLeaseLost
 	}
-	receipt, err := creator.CreateNetwork(ctx, scope, armed.network.NetworkSpec, armed.network.token)
+	receipt, err := send(ctx, armed)
 	return s.settleCreationDispatch(ctx, task, w.ResourceKind, receipt, err)
 }

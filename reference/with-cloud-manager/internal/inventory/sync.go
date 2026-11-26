@@ -30,13 +30,19 @@ func (s Store) ScanPage(ctx context.Context, claim Claim, adapter provider.Disco
 }
 
 func validateObservationPage(kind provider.Kind, page provider.Page, cursor string) error {
-	if err := page.Validate(cursor); err != nil || kind != provider.SecurityGroupRule {
+	if err := page.Validate(cursor); err != nil || (kind != provider.SecurityGroupRule && kind != provider.Snapshot) {
 		return err
 	}
 	seen := make(map[string]struct{}, len(page.Objects))
 	for _, object := range page.Objects {
-		_, hasParent := provider.SecurityRuleParent(object)
-		if _, duplicate := seen[object.ID]; duplicate || !hasParent || object.Tags != nil {
+		var valid bool
+		if kind == provider.Snapshot {
+			valid = object.ValidSnapshot()
+		} else {
+			_, hasParent := provider.SecurityRuleParent(object)
+			valid = hasParent && object.Tags == nil
+		}
+		if _, duplicate := seen[object.ID]; duplicate || !valid {
 			return &provider.Failure{Kind: provider.InvalidResponse}
 		}
 		seen[object.ID] = struct{}{}
@@ -94,7 +100,7 @@ func (s Store) ConfirmMissing(ctx context.Context, key Key, id string, adapter p
 			_, err = tx.ExecContext(ctx, "UPDATE cmp_inventory_objects SET removed_at=statement_timestamp() WHERE scope_id=$1 AND external_id=$2",
 				scopeID, id)
 		} else {
-			err = upsert(ctx, tx, scopeID, generation, []provider.Object{object})
+			err = upsert(ctx, tx, scopeID, generation, scope.Kind, []provider.Object{object})
 		}
 		if err != nil {
 			return err

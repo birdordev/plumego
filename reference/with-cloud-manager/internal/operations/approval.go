@@ -10,7 +10,6 @@ import (
 
 	"with-cloud-manager/internal/dbschema"
 	"with-cloud-manager/internal/identity"
-	"with-cloud-manager/internal/provider"
 )
 
 //go:embed 0013_operation_approval.sql
@@ -69,13 +68,11 @@ func (s Store) Approve(ctx context.Context, token string, scope identity.Scope, 
 			if err := checkOperationTarget(ctx, tx, &original); err != nil {
 				return err
 			}
-			if op.ResourceKind == provider.SecurityGroupRule {
-				member, err := identity.NewStore(tx).AuthorizeProject(ctx, reviewer, identity.Approve)
-				if err != nil {
-					return err
-				}
-				reviewerRevision = member.Revision
+			member, err := identity.NewStore(tx).AuthorizeProject(ctx, reviewer, identity.Approve)
+			if err != nil {
+				return err
 			}
+			reviewerRevision = member.Revision
 			state, reason = "queued", "approval_granted"
 		}
 		if _, err := tx.ExecContext(ctx, `INSERT INTO cmp_instance_operation_approvals
@@ -98,4 +95,33 @@ func (s Store) Approve(ctx context.Context, token string, scope identity.Scope, 
 		return Operation{}, err
 	}
 	return op, nil
+}
+
+func checkDispatchApproval(ctx context.Context, tx *sql.Tx, w *work, mandatory bool) error {
+	reviewer := w.actor
+	var revision sql.NullInt64
+	err := tx.QueryRowContext(ctx, `SELECT reviewer_id,reviewer_membership_revision FROM cmp_instance_operation_approvals
+		WHERE operation_id=$1 AND tenant_id=$2 AND decision='approve'`,
+		w.ID, reviewer.Tenant).Scan(&reviewer.Principal, &revision)
+	if errors.Is(err, sql.ErrNoRows) {
+		if mandatory {
+			return identity.ErrForbidden
+		}
+		status, err := initialStatus(ctx, tx, w.actor, w.Action)
+		if err == nil && status == "awaiting_approval" {
+			return identity.ErrForbidden
+		}
+		return err
+	}
+	if err != nil {
+		return err
+	}
+	if !revision.Valid || reviewer.Principal == w.actor.Principal {
+		return identity.ErrForbidden
+	}
+	member, err := identity.NewStore(tx).AuthorizeProject(ctx, reviewer, identity.Approve)
+	if err == nil && member.Revision != revision.Int64 {
+		return identity.ErrAccountStale
+	}
+	return err
 }

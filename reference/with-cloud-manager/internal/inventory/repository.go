@@ -28,6 +28,21 @@ var topologySchema string
 //go:embed 0015_confirmed_instance_deletions.sql
 var confirmedDeletionsSchema string
 
+//go:embed 0035_inventory_public_addresses.sql
+var publicAddressesSchema string
+
+//go:embed 0040_snapshot_inventory.sql
+var snapshotInventorySchema string
+
+//go:embed 0048_instance_image_reservations.sql
+var instanceImageReservationsSchema string
+
+//go:embed 0050_image_copy_reservations.sql
+var imageCopyReservationsSchema string
+
+//go:embed 0054_network_deletion_reservations.sql
+var networkDeletionReservationsSchema string
+
 var ErrUnavailable = errors.New("inventory scope unavailable")
 var ErrStale = errors.New("inventory observation is no longer current")
 
@@ -69,7 +84,22 @@ func Migrate(ctx context.Context, db *sql.DB) error {
 	if err := migrateTagAssignment(ctx, db); err != nil {
 		return err
 	}
-	return dbschema.Apply(ctx, db, "0015_confirmed_instance_deletions", confirmedDeletionsSchema)
+	if err := dbschema.Apply(ctx, db, "0015_confirmed_instance_deletions", confirmedDeletionsSchema); err != nil {
+		return err
+	}
+	if err := dbschema.Apply(ctx, db, "0035_inventory_public_addresses", publicAddressesSchema); err != nil {
+		return err
+	}
+	if err := dbschema.Apply(ctx, db, "0040_snapshot_inventory", snapshotInventorySchema); err != nil {
+		return err
+	}
+	if err := dbschema.Apply(ctx, db, "0048_instance_image_reservations", instanceImageReservationsSchema); err != nil {
+		return err
+	}
+	if err := dbschema.Apply(ctx, db, "0050_image_copy_reservations", imageCopyReservationsSchema); err != nil {
+		return err
+	}
+	return dbschema.Apply(ctx, db, "0054_network_deletion_reservations", networkDeletionReservationsSchema)
 }
 
 func (s Store) Claim(ctx context.Context, key Key, lease time.Duration) (Claim, error) {
@@ -129,8 +159,9 @@ func (s Store) advance(ctx context.Context, claim Claim, page provider.Page, res
 	err := dbutil.WithTransaction(ctx, s.db, nil, func(tx *sql.Tx) error {
 		var scopeID int64
 		var pages int
-		err := tx.QueryRowContext(ctx, "SELECT s.scope_id,s.pages"+active+" FOR UPDATE OF s FOR SHARE OF a",
-			claim.id, claim.fence, claim.generation, claim.cursor).Scan(&scopeID, &pages)
+		var kind provider.Kind
+		err := tx.QueryRowContext(ctx, "SELECT s.scope_id,s.pages,s.kind"+active+" FOR UPDATE OF s FOR SHARE OF a",
+			claim.id, claim.fence, claim.generation, claim.cursor).Scan(&scopeID, &pages, &kind)
 		if errors.Is(err, sql.ErrNoRows) {
 			return ErrStale
 		}
@@ -161,7 +192,7 @@ func (s Store) advance(ctx context.Context, claim Claim, page provider.Page, res
 			}
 		}
 		if len(page.Objects) != 0 {
-			if err := upsert(ctx, tx, scopeID, claim.generation, page.Objects); err != nil {
+			if err := upsert(ctx, tx, scopeID, claim.generation, kind, page.Objects); err != nil {
 				return err
 			}
 		}
@@ -185,23 +216,51 @@ func (s Store) advance(ctx context.Context, claim Claim, page provider.Page, res
 	return claim, page.Next == "", nil
 }
 
-func upsert(ctx context.Context, tx *sql.Tx, id, generation int64, objects []provider.Object) error {
+func upsert(ctx context.Context, tx *sql.Tx, id, generation int64, kind provider.Kind, objects []provider.Object) error {
 	data, err := json.Marshal(objects)
 	if err != nil {
 		return err
 	}
+	if kind == provider.SecurityGroupRule {
+		if err := lockSecurityRuleParents(ctx, tx, id, string(data)); err != nil {
+			return err
+		}
+	}
+	if kind == provider.Snapshot {
+		if err := verifySnapshotOrigins(ctx, tx, id, string(data)); err != nil {
+			return err
+		}
+	}
 	_, err = tx.ExecContext(ctx, `INSERT INTO cmp_inventory_objects AS existing
-		(scope_id,external_id,name,status,seen_generation,links)
-		SELECT $1, "ID", "Name", "Status", $2, COALESCE(links,'[]'::jsonb) FROM (
-			SELECT DISTINCT ON ("ID") "ID", "Name", "Status", links
-			FROM ROWS FROM(jsonb_to_recordset($3::jsonb) AS ("ID" text, "Name" text, "Status" text, links jsonb))
+		(scope_id,external_id,name,status,seen_generation,links,public_addresses,snapshot)
+		SELECT $1, "ID", "Name", "Status", $2, COALESCE(links,'[]'::jsonb), COALESCE(public_addresses,'[]'::jsonb), snapshot FROM (
+			SELECT DISTINCT ON ("ID") "ID", "Name", "Status", links, public_addresses, snapshot
+			FROM ROWS FROM(jsonb_to_recordset($3::jsonb) AS ("ID" text, "Name" text, "Status" text, links jsonb, public_addresses jsonb, snapshot jsonb))
 				WITH ORDINALITY AS records
 			ORDER BY "ID", ordinality DESC
 		) AS deduplicated
+		WHERE $4<>'security-group-rule' OR NOT EXISTS (
+			SELECT 1 FROM cmp_inventory_scopes AS rule_scope
+			JOIN cmp_inventory_scopes AS group_scope USING (tenant_id,account_id,region)
+			JOIN cmp_inventory_objects AS parent ON parent.scope_id=group_scope.scope_id
+			WHERE rule_scope.scope_id=$1 AND group_scope.kind='security-group'
+			  AND parent.external_id=deduplicated.links->0->>'id' AND parent.deletion_confirmed_at IS NOT NULL
+		)
 		ON CONFLICT (scope_id,external_id) DO UPDATE SET
 			name=EXCLUDED.name,status=EXCLUDED.status,seen_generation=EXCLUDED.seen_generation,
-			observed_at=EXCLUDED.observed_at,links=EXCLUDED.links,missing_generation=NULL,removed_at=NULL
-	WHERE existing.deletion_confirmed_at IS NULL`, id, generation, string(data))
+			observed_at=EXCLUDED.observed_at,links=EXCLUDED.links ||
+				CASE WHEN $4='volume' AND NOT EXISTS (
+					SELECT 1 FROM jsonb_array_elements(EXCLUDED.links) AS link WHERE link->>'relation'='restored_from'
+				) THEN COALESCE((SELECT jsonb_agg(link) FROM jsonb_array_elements(existing.links) AS link
+					WHERE link->>'kind'='snapshot' AND link->>'relation'='restored_from'),'[]'::jsonb)
+				ELSE '[]'::jsonb END ||
+				CASE WHEN $4='image' AND NOT EXISTS (
+					SELECT 1 FROM jsonb_array_elements(EXCLUDED.links) AS link WHERE link->>'relation'='created_from'
+				) THEN COALESCE((SELECT jsonb_agg(link) FROM jsonb_array_elements(existing.links) AS link
+					WHERE link->>'kind'='instance' AND link->>'relation'='created_from'),'[]'::jsonb)
+				ELSE '[]'::jsonb END,public_addresses=EXCLUDED.public_addresses,
+			missing_generation=NULL,removed_at=NULL,snapshot=EXCLUDED.snapshot
+	WHERE existing.deletion_confirmed_at IS NULL`, id, generation, string(data), kind)
 	if err != nil {
 		return err
 	}
@@ -209,6 +268,34 @@ func upsert(ctx context.Context, tx *sql.Tx, id, generation int64, objects []pro
 		return nil
 	}
 	return assignTagProjects(ctx, tx, id, string(data))
+}
+
+// 与父组删除使用相同的锁顺序，等待删除提交后再判断迟到页能否写入。
+func lockSecurityRuleParents(ctx context.Context, tx *sql.Tx, scopeID int64, data string) error {
+	_, err := tx.ExecContext(ctx, `SELECT parent.external_id FROM cmp_inventory_scopes AS rule_scope
+		JOIN cmp_inventory_scopes AS group_scope USING (tenant_id,account_id,region)
+		JOIN cmp_inventory_objects AS parent ON parent.scope_id=group_scope.scope_id
+		WHERE rule_scope.scope_id=$1 AND group_scope.kind='security-group'
+		  AND parent.external_id IN (SELECT links->0->>'id' FROM jsonb_to_recordset($2::jsonb) AS incoming(links jsonb))
+		ORDER BY group_scope.scope_id,parent.external_id
+		FOR SHARE OF parent`, scopeID, data)
+	return err
+}
+
+func verifySnapshotOrigins(ctx context.Context, tx *sql.Tx, scopeID int64, data string) error {
+	var changed bool
+	err := tx.QueryRowContext(ctx, `SELECT EXISTS (
+		SELECT 1 FROM jsonb_to_recordset($2::jsonb) AS incoming("ID" text,links jsonb)
+		JOIN cmp_inventory_objects AS o ON (o.scope_id,o.external_id)=($1,incoming."ID")
+		WHERE o.links->0->>'relation'='snapshot_of'
+		  AND o.links->0 IS DISTINCT FROM incoming.links->0)`, scopeID, data).Scan(&changed)
+	if err != nil {
+		return err
+	}
+	if changed {
+		return &provider.Failure{Kind: provider.InvalidResponse}
+	}
+	return nil
 }
 
 func complete(ctx context.Context, tx *sql.Tx, id, generation int64) error {

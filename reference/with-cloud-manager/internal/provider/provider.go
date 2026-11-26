@@ -12,11 +12,13 @@ type Kind string
 const (
 	Instance          Kind = "instance"
 	Volume            Kind = "volume"
+	Snapshot          Kind = "snapshot"
 	Network           Kind = "network"
 	Subnet            Kind = "subnet"
 	Image             Kind = "image"
 	SecurityGroup     Kind = "security-group"
 	SecurityGroupRule Kind = "security-group-rule"
+	ElasticIP         Kind = "elastic-ip"
 	Region            Kind = "region"
 	Zone              Kind = "zone"
 )
@@ -29,11 +31,13 @@ type Scope struct {
 }
 
 type Object struct {
-	ID     string
-	Name   string
-	Status string
-	Links  []Link            `json:"links,omitempty"`
-	Tags   map[string]string `json:"tags"`
+	ID              string
+	Name            string
+	Status          string
+	Links           []Link            `json:"links,omitempty"`
+	Tags            map[string]string `json:"tags"`
+	PublicAddresses []string          `json:"public_addresses,omitempty"`
+	Snapshot        *SnapshotDetails  `json:"snapshot,omitempty"`
 }
 
 type Link struct {
@@ -68,6 +72,9 @@ func (p Page) Validate(cursor string) error {
 			return &Failure{Kind: InvalidResponse}
 		}
 		if len(object.Tags) > 256 {
+			return &Failure{Kind: InvalidResponse}
+		}
+		if !validPublicAddresses(object.PublicAddresses) {
 			return &Failure{Kind: InvalidResponse}
 		}
 		for key, value := range object.Tags {
@@ -108,6 +115,7 @@ const (
 	DeletionDisabled FailureKind = "deletion_disabled"
 	CreationBlocked  FailureKind = "creation_blocked"
 	VolumeBlocked    FailureKind = "volume_change_blocked"
+	PowerDisabled    FailureKind = "instance_power_disabled"
 )
 
 type Failure struct {
@@ -126,7 +134,7 @@ func IsFailure(err error, kind FailureKind) bool {
 
 func (k Kind) Valid() bool {
 	switch k {
-	case Instance, Volume, Network, Subnet, Image, SecurityGroup, SecurityGroupRule, Region, Zone:
+	case Instance, Volume, Snapshot, Network, Subnet, Image, SecurityGroup, SecurityGroupRule, ElasticIP, Region, Zone:
 		return true
 	default:
 		return false
@@ -136,6 +144,14 @@ func (k Kind) Valid() bool {
 type InstanceOperator interface {
 	Observer
 	ApplyInstance(context.Context, Scope, string, string) (string, error)
+}
+
+type InstancePowerPreparer interface {
+	PrepareInstancePower(context.Context, Scope, string, string) (func(context.Context) (string, error), error)
+}
+
+type InstanceDeletionPreparer interface {
+	PrepareInstanceDeletion(context.Context, Scope, string) (func(context.Context) (string, error), error)
 }
 
 type InstanceSpec struct {
@@ -151,21 +167,36 @@ type InstanceCreator interface {
 	FindCreatedInstance(ctx context.Context, scope Scope, spec InstanceSpec, token, instanceID string) (Object, error)
 }
 
+type InstanceCreationPreparer interface {
+	PrepareInstanceCreation(context.Context, Scope, InstanceSpec, string) (func(context.Context) (LaunchReceipt, error), error)
+}
+
+type InstanceCreationReceiptObserver interface {
+	FindCreatedInstanceWithReceipt(context.Context, Scope, InstanceSpec, string, LaunchReceipt) (Object, error)
+}
+
 type LaunchReceipt struct {
 	RequestID  string
 	ResourceID string
 }
 
 type NetworkSpec struct {
-	Name     string        `json:"name"`
-	CIDR     string        `json:"cidr,omitempty"`
-	ParentID string        `json:"parent_id,omitempty"`
-	Rule     *SecurityRule `json:"rule,omitempty"`
+	Name          string        `json:"name"`
+	CIDR          string        `json:"cidr,omitempty"`
+	ParentID      string        `json:"parent_id,omitempty"`
+	Rule          *SecurityRule `json:"rule,omitempty"`
+	Zone          string        `json:"zone,omitempty"`
+	BandwidthMbps int           `json:"bandwidth_mbps,omitempty"`
+	AddressPool   string        `json:"address_pool,omitempty"`
 }
 
 type NetworkCreator interface {
 	CreateNetwork(ctx context.Context, scope Scope, spec NetworkSpec, token string) (LaunchReceipt, error)
 	FindCreatedNetwork(ctx context.Context, scope Scope, spec NetworkSpec, token, resourceID string) (Object, error)
+}
+
+type NetworkCreationPreparer interface {
+	PrepareNetworkCreation(context.Context, Scope, NetworkSpec, string) (func(context.Context) (LaunchReceipt, error), error)
 }
 
 type VolumeChange struct {
@@ -178,6 +209,10 @@ type VolumeChange struct {
 type VolumeOperator interface {
 	ApplyVolume(ctx context.Context, scope Scope, change VolumeChange) (requestID string, err error)
 	ObserveVolume(ctx context.Context, scope Scope, change VolumeChange) (reached bool, err error)
+}
+
+type VolumePreparer interface {
+	PrepareVolume(context.Context, Scope, VolumeChange) (func(context.Context) (string, error), error)
 }
 
 type ActionResult string

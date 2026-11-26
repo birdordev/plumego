@@ -24,30 +24,66 @@ var (
 	regionID   = regexp.MustCompile(`^[a-z][a-z0-9]*(?:-[a-z0-9]+){1,6}$`)
 	accountID  = regexp.MustCompile(`^[0-9]{1,32}$`)
 	projectID  = regexp.MustCompile(`^[a-f0-9]{32}$`)
-	instanceID = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$`)
+	resourceID = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$`)
 )
 
 type Config struct {
-	Regions         []string `json:"regions"`
-	AccountID       string   `json:"account_id"`
-	ProjectID       string   `json:"project_id,omitempty"`
-	AccessKeyID     string   `json:"access_key_id,omitempty"`
-	AccessKeySecret string   `json:"access_key_secret,omitempty"`
-	SecurityToken   string   `json:"security_token,omitempty"`
-	IAMToken        string   `json:"iam_token,omitempty"`
+	Regions                     []string `json:"regions"`
+	AccountID                   string   `json:"account_id"`
+	ProjectID                   string   `json:"project_id,omitempty"`
+	AccessKeyID                 string   `json:"access_key_id,omitempty"`
+	AccessKeySecret             string   `json:"access_key_secret,omitempty"`
+	SecurityToken               string   `json:"security_token,omitempty"`
+	IAMToken                    string   `json:"iam_token,omitempty"`
+	AllowInstancePower          bool     `json:"allow_instance_power,omitempty"`
+	AllowInstanceReboot         bool     `json:"allow_instance_reboot,omitempty"`
+	AllowInstanceDelete         bool     `json:"allow_instance_delete,omitempty"`
+	AllowVolumeChanges          bool     `json:"allow_volume_changes,omitempty"`
+	InstanceCreateSizes         []string `json:"instance_create_sizes,omitempty"`
+	HuaweiRootVolumeType        string   `json:"huawei_root_volume_type,omitempty"`
+	HuaweiSnapshotAPI           string   `json:"huawei_snapshot_api,omitempty"`
+	AllowSnapshotCreation       bool     `json:"allow_snapshot_creation,omitempty"`
+	AllowImageCopy              bool     `json:"allow_image_copy,omitempty"`
+	HuaweiImageCopyAgency       string   `json:"huawei_image_copy_agency,omitempty"`
+	AllowImageCreation          bool     `json:"allow_image_creation,omitempty"`
+	AllowSecurityGroupDeletion  bool     `json:"allow_security_group_deletion,omitempty"`
+	AllowVPCDeletion            bool     `json:"allow_vpc_deletion,omitempty"`
+	AllowSubnetDeletion         bool     `json:"allow_subnet_deletion,omitempty"`
+	AllowImageDeletion          bool     `json:"allow_image_deletion,omitempty"`
+	AllowSnapshotDeletion       bool     `json:"allow_snapshot_deletion,omitempty"`
+	AllowSnapshotRollback       bool     `json:"allow_snapshot_rollback,omitempty"`
+	SnapshotRestoreMaxGiB       int      `json:"snapshot_restore_max_gib,omitempty"`
+	AllowNetworkCreation        bool     `json:"allow_network_creation,omitempty"`
+	AllowSecurityGroupCreation  bool     `json:"allow_security_group_creation,omitempty"`
+	ElasticIPBandwidthLimit     int      `json:"elastic_ip_bandwidth_limit,omitempty"`
+	AllowElasticIPRelease       bool     `json:"allow_elastic_ip_release,omitempty"`
+	AllowElasticIPBinding       bool     `json:"allow_elastic_ip_binding,omitempty"`
+	HuaweiElasticIPPool         string   `json:"huawei_elastic_ip_pool,omitempty"`
+	AllowSecurityGroupRules     bool     `json:"allow_security_group_rules,omitempty"`
+	AllowSecurityRuleRevocation bool     `json:"allow_security_rule_revocation,omitempty"`
 }
 
 type Client struct {
-	name, identity string
-	profile        Config
-	http           http.Client
+	name, identity, projectName string
+	profile                     Config
+	http                        http.Client
 }
 
 func Connect(ctx context.Context, name string, profile Config, transport http.RoundTripper) (*Client, error) {
 	if len(profile.Regions) == 0 || len(profile.Regions) > 64 {
 		return nil, errors.New("invalid cloud regions")
 	}
+	if profile.SnapshotRestoreMaxGiB < 0 || profile.SnapshotRestoreMaxGiB > 32768 {
+		return nil, errors.New("invalid snapshot recovery size limit")
+	}
+	if profile.HuaweiSnapshotAPI != "" && (name != provider.HuaweiECS || (profile.HuaweiSnapshotAPI != "v2" && profile.HuaweiSnapshotAPI != "v5")) {
+		return nil, errors.New("invalid Huawei snapshot API")
+	}
+	if profile.HuaweiImageCopyAgency != "" && (name != provider.HuaweiECS || !resourceID.MatchString(profile.HuaweiImageCopyAgency)) {
+		return nil, errors.New("invalid Huawei IMS agency")
+	}
 	profile.Regions = slices.Clone(profile.Regions)
+	profile.InstanceCreateSizes = slices.Clone(profile.InstanceCreateSizes)
 	for i, region := range profile.Regions {
 		if len(region) > 40 || !regionID.MatchString(region) || slices.Contains(profile.Regions[:i], region) {
 			return nil, errors.New("invalid cloud regions")
@@ -115,21 +151,80 @@ func (c *Client) Discover(ctx context.Context, scope provider.Scope, cursor stri
 		}
 		return page, nil
 	}
-	if scope.Kind != provider.Instance || !slices.Contains(c.profile.Regions, scope.Region) {
+	if !slices.Contains(c.profile.Regions, scope.Region) {
 		return provider.Page{}, &provider.Failure{Kind: provider.Unsupported}
 	}
-	if len(cursor) > provider.MaxCursorBytes {
+	switch scope.Kind {
+	case provider.Instance, provider.Network, provider.Subnet, provider.SecurityGroup, provider.Volume, provider.Snapshot,
+		provider.Image, provider.Zone, provider.SecurityGroupRule, provider.ElasticIP:
+	default:
+		return provider.Page{}, &provider.Failure{Kind: provider.Unsupported}
+	}
+	if len(cursor) > provider.MaxCursorBytes || (scope.Kind == provider.Zone && cursor != "") {
 		return provider.Page{}, &provider.Failure{Kind: provider.ExpiredCursor}
 	}
 	var page provider.Page
 	var err error
 	switch c.name {
 	case provider.TencentCVM:
-		page, err = c.tencentInstances(ctx, scope.Region, cursor)
+		switch scope.Kind {
+		case provider.Instance:
+			page, err = c.tencentInstances(ctx, scope.Region, cursor)
+		case provider.Volume:
+			page, err = c.tencentVolumes(ctx, scope.Region, cursor)
+		case provider.Snapshot:
+			page, err = c.tencentSnapshots(ctx, scope.Region, cursor, nil)
+		case provider.Image:
+			page, err = c.tencentImages(ctx, scope.Region, cursor)
+		case provider.Zone:
+			page, err = c.tencentZones(ctx, scope.Region)
+		case provider.SecurityGroupRule:
+			page, err = c.tencentSecurityRules(ctx, scope.Region, cursor)
+		case provider.ElasticIP:
+			page, err = c.tencentElasticIPs(ctx, scope.Region, cursor)
+		default:
+			page, err = c.tencentNetworking(ctx, scope, cursor)
+		}
 	case provider.AlibabaECS:
-		page, err = c.alibabaInstances(ctx, scope.Region, cursor)
+		switch scope.Kind {
+		case provider.Instance:
+			page, err = c.alibabaInstances(ctx, scope.Region, cursor)
+		case provider.Volume:
+			page, err = c.alibabaVolumes(ctx, scope.Region, cursor)
+		case provider.Snapshot:
+			page, err = c.alibabaSnapshots(ctx, scope.Region, cursor, nil)
+		case provider.Image:
+			page, err = c.alibabaImages(ctx, scope.Region, cursor)
+		case provider.Zone:
+			page, err = c.alibabaZones(ctx, scope.Region)
+		case provider.SecurityGroupRule:
+			page, err = c.alibabaSecurityRules(ctx, scope.Region, cursor)
+		case provider.ElasticIP:
+			page, err = c.alibabaElasticIPs(ctx, scope.Region, cursor)
+		default:
+			page, err = c.alibabaNetworking(ctx, scope, cursor)
+		}
 	case provider.HuaweiECS:
-		page, err = c.huaweiInstances(ctx, scope.Region, cursor)
+		switch scope.Kind {
+		case provider.Instance:
+			page, err = c.huaweiInstances(ctx, scope.Region, cursor)
+		case provider.Volume:
+			page, err = c.huaweiVolumes(ctx, scope.Region, cursor)
+		case provider.Snapshot:
+			page, err = c.huaweiSnapshots(ctx, scope.Region, cursor, nil)
+		case provider.Image:
+			page, err = c.huaweiImages(ctx, scope.Region, cursor)
+		case provider.Zone:
+			page, err = c.huaweiZones(ctx, scope.Region)
+		case provider.SecurityGroupRule:
+			page, err = c.huaweiSecurityRules(ctx, scope.Region, cursor)
+		case provider.ElasticIP:
+			page, err = c.huaweiElasticIPs(ctx, scope.Region, cursor)
+		default:
+			page, err = c.huaweiNetworking(ctx, scope, cursor)
+		}
+	default:
+		return provider.Page{}, &provider.Failure{Kind: provider.Unsupported}
 	}
 	if err != nil {
 		return provider.Page{}, err
@@ -139,15 +234,23 @@ func (c *Client) Discover(ctx context.Context, scope provider.Scope, cursor stri
 	}
 	ids := make(map[string]struct{}, len(page.Objects))
 	for _, item := range page.Objects {
-		if _, duplicate := ids[item.ID]; duplicate || !instanceID.MatchString(item.ID) || item.Status == "" || strings.ContainsRune(item.Name+item.Status, 0) {
+		if _, duplicate := ids[item.ID]; duplicate || !resourceID.MatchString(item.ID) || item.Status == "" || strings.ContainsRune(item.Name, 0) || strings.ContainsRune(item.Status, 0) {
 			return provider.Page{}, &provider.Failure{Kind: provider.InvalidResponse}
+		}
+		if scope.Kind == provider.Snapshot && !item.ValidSnapshot() {
+			return provider.Page{}, &provider.Failure{Kind: provider.InvalidResponse}
+		}
+		for _, link := range item.Links {
+			if strings.ContainsRune(link.ID, 0) {
+				return provider.Page{}, &provider.Failure{Kind: provider.InvalidResponse}
+			}
 		}
 		ids[item.ID] = struct{}{}
 	}
 	return page, nil
 }
 
-func (c *Client) request(req *http.Request, dst any) error {
+func (c *Client) request(req *http.Request, dst any, alsoAccept ...int) error {
 	if err := req.Context().Err(); err != nil {
 		return err
 	}
@@ -160,7 +263,7 @@ func (c *Client) request(req *http.Request, dst any) error {
 		return &provider.Failure{Kind: provider.Transient}
 	}
 	defer func() { _ = res.Body.Close() }()
-	if res.StatusCode != http.StatusOK {
+	if res.StatusCode != http.StatusOK && !slices.Contains(alsoAccept, res.StatusCode) {
 		failure := &provider.Failure{Kind: provider.InvalidResponse}
 		switch res.StatusCode {
 		case http.StatusUnauthorized, http.StatusForbidden:
@@ -192,6 +295,9 @@ func (c *Client) request(req *http.Request, dst any) error {
 		}
 		return failure
 	}
+	if dst == nil && res.StatusCode == http.StatusNoContent {
+		return nil
+	}
 	limited := &io.LimitedReader{R: res.Body, N: (8 << 20) + 1}
 	decoder := json.NewDecoder(limited)
 	if err := decoder.Decode(dst); err != nil {
@@ -206,7 +312,7 @@ func (c *Client) request(req *http.Request, dst any) error {
 func cloudFailure(code string) error {
 	var kind provider.FailureKind
 	switch {
-	case code == "InvalidNextToken" || code == "InvalidNextToken.ValueNotSupported" || code == "InvalidParameterValue.NextToken":
+	case code == "InvalidNextToken" || code == "InvalidNextToken.ValueNotSupported" || code == "InvalidParameterValue.NextToken" || code == "InValidParameter.NextToken":
 		kind = provider.ExpiredCursor
 	case strings.HasPrefix(code, "RequestLimitExceeded"), strings.HasPrefix(code, "Throttling"), code == "TooManyRequests":
 		kind = provider.Throttled
@@ -241,6 +347,9 @@ func tagObject(id, name, status string, tags []*tag) provider.Object {
 				object.Tags = nil
 				break
 			}
+			if tag.Key == launchTag || tag.Key == networkIntentTag || tag.Key == imageMarkerTag {
+				continue
+			}
 			if value, seen := object.Tags[tag.Key]; seen && value != tag.Value {
 				object.Tags = nil
 				break
@@ -254,4 +363,15 @@ func tagObject(id, name, status string, tags []*tag) provider.Object {
 type tag struct {
 	Key   string
 	Value string
+}
+
+func pageNumber(cursor string, first int) (int, error) {
+	if cursor == "" {
+		return first, nil
+	}
+	number, err := strconv.Atoi(cursor)
+	if err != nil || number <= first || number > 1_000_000 || strconv.Itoa(number) != cursor {
+		return 0, &provider.Failure{Kind: provider.ExpiredCursor}
+	}
+	return number, nil
 }

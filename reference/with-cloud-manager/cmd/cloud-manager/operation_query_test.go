@@ -108,7 +108,8 @@ func TestAcceptanceProjectOperationHistory(t *testing.T) {
 	get(strings.Replace(path, "/tenant/", "/external/", 1), token, http.StatusForbidden)
 	get(strings.Replace(path, "/project/", "/hidden/", 1), token, http.StatusForbidden)
 	checkPage(get(strings.Replace(path, "/project/", "/empty/", 1), token, http.StatusOK))
-	for _, query := range []string{"limit=101", "limit=0", "kind=volume", "status=unexpected", "name=any", "account=", "cursor=!", "status=queued&status=failed", "account=%zz"} {
+	checkPage(get(path+"?kind=volume", token, http.StatusOK))
+	for _, query := range []string{"limit=101", "limit=0", "kind=image", "status=unexpected", "name=any", "account=", "cursor=!", "status=queued&status=failed", "account=%zz"} {
 		get(path+"?"+query, token, http.StatusBadRequest)
 	}
 

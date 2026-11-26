@@ -18,6 +18,9 @@ import (
 
 const operationsRoute = "/v1/tenants/:tenant/projects/:project/instance-operations"
 const instancesRoute = "/v1/tenants/:tenant/projects/:project/instances"
+const imagesRoute = "/v1/tenants/:tenant/projects/:project/images"
+
+const snapshotsRoute = "/v1/tenants/:tenant/projects/:project/snapshots"
 const networkOperationsRoute = "/v1/tenants/:tenant/projects/:project/network-operations"
 
 func operationHandler(store operations.Store, logger plumelog.StructuredLogger) http.Handler {
@@ -108,7 +111,10 @@ func writeOperationReceipt(w http.ResponseWriter, r *http.Request, scope identit
 		return
 	}
 	collection := "instance-operations"
-	if op.ResourceKind == provider.Network || op.ResourceKind == provider.Subnet || op.ResourceKind == provider.SecurityGroup || op.ResourceKind == provider.SecurityGroupRule {
+	switch op.ResourceKind {
+	case provider.Snapshot, provider.Volume, provider.Image:
+		collection = "operations"
+	case provider.Network, provider.Subnet, provider.SecurityGroup, provider.SecurityGroupRule, provider.ElasticIP:
 		collection = "network-operations"
 	}
 	w.Header().Set("Location", "/v1/tenants/"+url.PathEscape(scope.Tenant)+"/projects/"+url.PathEscape(scope.Project)+"/"+collection+"/"+op.ID)
@@ -158,7 +164,10 @@ func networkCreationHandler(store operations.Store, logger plumelog.StructuredLo
 	})
 }
 
-func securityRuleRevocationHandler(store operations.Store, logger plumelog.StructuredLogger) http.Handler {
+func versionedOperationHandler[T any](
+	submit func(context.Context, string, identity.Scope, string, int64, T) (operations.Operation, error),
+	revisionError func() error, logger plumelog.StructuredLogger,
+) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
 		token, authenticated := requestCredential(r)
@@ -173,10 +182,10 @@ func securityRuleRevocationHandler(store operations.Store, logger plumelog.Struc
 		}
 		revision, ok := accountRevision(r)
 		if !ok {
-			writeAccountError(w, r, networkRevisionError(), logger)
+			writeAccountError(w, r, revisionError(), logger)
 			return
 		}
-		var input operations.RuleRevocation
+		var input T
 		if err := contract.DecodeUniqueJSONRequest(r, &input, contract.JSONRequestOptions{MaxBytes: 4096}); err != nil {
 			writeAccountError(w, r, err, logger)
 			return
@@ -184,12 +193,24 @@ func securityRuleRevocationHandler(store operations.Store, logger plumelog.Struc
 		ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
 		defer cancel()
 		scope := identity.Scope{Tenant: router.Param(r, "tenant"), Project: router.Param(r, "project")}
-		op, err := store.SubmitSecurityRuleRevocation(ctx, token, scope, keys[0], revision, input)
+		op, err := submit(ctx, token, scope, keys[0], revision, input)
 		if errors.Is(err, identity.ErrAccountStale) {
-			err = networkRevisionError()
+			err = revisionError()
 		}
 		writeOperationReceipt(w, r, scope, op, err, logger)
 	})
+}
+
+func elasticIPRevisionError() error {
+	return contract.NewErrorBuilder().Type(contract.TypePreconditionFailed).Message("current elastic IP ownership revision required").Build()
+}
+
+func elasticIPBindingRevisionError() error {
+	return contract.NewErrorBuilder().Type(contract.TypePreconditionFailed).Message("current elastic IP and instance ownership revisions required").Build()
+}
+
+func networkDeletionRevisionError() error {
+	return contract.NewErrorBuilder().Type(contract.TypePreconditionFailed).Message("current network resource ownership revision required").Build()
 }
 
 func networkRevisionError() error {
@@ -198,4 +219,12 @@ func networkRevisionError() error {
 
 func volumeRevisionError() error {
 	return contract.NewErrorBuilder().Type(contract.TypePreconditionFailed).Message("current volume ownership revision required").Build()
+}
+
+func imageRevisionError() error {
+	return contract.NewErrorBuilder().Type(contract.TypePreconditionFailed).Message("current image ownership revision required").Build()
+}
+
+func sourceInstanceRevisionError() error {
+	return contract.NewErrorBuilder().Type(contract.TypePreconditionFailed).Message("current source instance ownership revision required").Build()
 }

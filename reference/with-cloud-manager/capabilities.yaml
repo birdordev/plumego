@@ -2,19 +2,101 @@
 providers:
   tencent-cvm:
     verification: pending-sandbox
-    inventory: [configured-regions, instances]
+    inventory: [configured-regions, zones, instances, networks, subnets, security-groups, security-group-rules, elastic-ips, volumes, volume-snapshots, owned-images]
     inventory-local-evidence: tc3-signed-tls-protocol-fixture-and-postgresql
-    actions: []
+    actions: [create-instance, start-instance, stop-instance, reboot-instance, attach-volume, detach-volume, create-network, delete-network, create-subnet, delete-subnet, create-security-group, delete-security-group, create-security-group-rule, revoke-security-group-rule, create-elastic-ip, bind-elastic-ip, unbind-elastic-ip, release-elastic-ip, create-snapshot, delete-snapshot, restore-snapshot, rollback-snapshot, create-image, copy-image, delete-image]
+    security-group-local-evidence: tc3-signed-tls-protocol-fixture-and-postgresql
+    elastic-ip-create-recovery: observe-scoped-allocation-marker-or-manual-review
+    elastic-ip-release-confirmation: two-scoped-absence-observations
+    elastic-ip-binding-confirmation: two-scoped-address-and-relationship-observations
+    security-rule-revocation-confirmation: two-scoped-absence-observations
+    security-rule-create-recovery: observe-scoped-rule-description-or-manual-review
+    network-create-recovery: observe-scoped-network-tag-or-manual-review
+    network-deletion-confirmation: two-complete-exact-scope-absence-observations
+    security-group-deletion: unbound-group-and-explicit-rule-removal
+    network-local-evidence: tc3-signed-tls-protocol-fixture-and-postgresql
+    create-recovery: observe-scoped-launch-tag-or-manual-review
+    create-local-evidence: tc3-signed-tls-protocol-fixture-and-postgresql
+    reboot-confirmation: instance-latest-operation-request-id
+    power-local-evidence: tc3-signed-tls-protocol-fixture-and-postgresql
+    volume-local-evidence: tc3-signed-tls-protocol-fixture-and-postgresql
+    snapshot-rollback: original-detached-data-volume
+    snapshot-rollback-confirmation: manual-review-with-provider-request-id
+    snapshot-restore: single-on-demand-data-volume
+    snapshot-restore-recovery: observe-scoped-launch-marker-and-volume-spec-or-manual-review
+    image-create-recovery: stopped-instance-system-disk-with-scoped-marker-and-receipt
+    image-copy-confirmation: destination-region-and-image-id-or-review
+    image-deletion-confirmation: two-scoped-absence-observations
+    snapshot-deletion-confirmation: two-scoped-absence-observations
+    snapshot-create-recovery: observe-scoped-source-and-marker-or-manual-review
+    snapshot-create-local-evidence: tc3-signed-tls-protocol-fixture-and-postgresql
+    approvals: [detach-volume, create-security-group-rule, revoke-security-group-rule, delete-network, delete-subnet, delete-security-group, create-elastic-ip, bind-elastic-ip, unbind-elastic-ip, release-elastic-ip, create-snapshot, delete-snapshot, restore-snapshot, rollback-snapshot, create-image, copy-image, delete-image]
   alibaba-ecs:
     verification: pending-sandbox
-    inventory: [configured-regions, instances]
+    inventory: [configured-regions, zones, instances, networks, subnets, security-groups, security-group-rules, elastic-ips, volumes, volume-snapshots, owned-images]
     inventory-local-evidence: acs3-signed-tls-protocol-fixture-and-postgresql
-    actions: []
+    actions: [create-instance, start-instance, stop-instance, reboot-instance, attach-volume, detach-volume, delete-instance, create-network, delete-network, create-subnet, delete-subnet, create-security-group, delete-security-group, create-security-group-rule, revoke-security-group-rule, create-elastic-ip, bind-elastic-ip, unbind-elastic-ip, release-elastic-ip, create-snapshot, delete-snapshot, restore-snapshot, rollback-snapshot, create-image, copy-image, delete-image]
+    security-group-local-evidence: acs3-signed-tls-protocol-fixture-and-postgresql
+    elastic-ip-create-recovery: observe-scoped-allocation-marker-or-manual-review
+    elastic-ip-release-confirmation: two-scoped-absence-observations
+    elastic-ip-binding-confirmation: two-scoped-address-and-relationship-observations
+    security-rule-revocation-confirmation: two-scoped-absence-observations
+    security-rule-create-recovery: observe-scoped-rule-description-or-manual-review
+    network-create-recovery: observe-scoped-network-tag-or-manual-review
+    network-deletion-confirmation: two-complete-exact-scope-absence-observations
+    security-group-deletion: unbound-unmanaged-enterprise-vpc-group-and-explicit-rule-removal
+    network-local-evidence: acs3-signed-tls-protocol-fixture-and-postgresql
+    create-recovery: observe-scoped-launch-tag-or-manual-review
+    create-local-evidence: acs3-signed-tls-protocol-fixture-and-postgresql
+    reboot-confirmation: manual-review
+    deletion-confirmation: manual-review
+    deletion-local-evidence: acs3-signed-tls-protocol-fixture-and-postgresql
+    power-local-evidence: acs3-signed-tls-protocol-fixture-and-postgresql
+    volume-local-evidence: acs3-signed-tls-protocol-fixture-and-postgresql
+    snapshot-rollback: original-detached-data-volume
+    snapshot-rollback-confirmation: manual-review-with-provider-request-id
+    snapshot-restore: single-on-demand-data-volume
+    snapshot-restore-recovery: observe-scoped-launch-marker-and-volume-spec-or-manual-review
+    image-create-recovery: stopped-instance-system-disk-with-scoped-marker-and-receipt
+    image-copy-confirmation: destination-scoped-marker-and-receipt
+    image-deletion-confirmation: two-scoped-absence-observations
+    snapshot-deletion-confirmation: two-scoped-absence-observations
+    snapshot-create-recovery: observe-scoped-source-and-marker-or-manual-review
+    snapshot-create-local-evidence: acs3-signed-tls-protocol-fixture-and-postgresql
+    approvals: [detach-volume, delete-instance, create-security-group-rule, revoke-security-group-rule, delete-network, delete-subnet, delete-security-group, create-elastic-ip, bind-elastic-ip, unbind-elastic-ip, release-elastic-ip, create-snapshot, delete-snapshot, restore-snapshot, rollback-snapshot, create-image, copy-image, delete-image]
   huawei-ecs:
     verification: pending-sandbox
-    inventory: [configured-regions, instances]
+    inventory: [configured-regions, zones, instances, networks, subnets, security-groups, security-group-rules, elastic-ips, volumes, volume-snapshots, owned-images]
     inventory-local-evidence: scoped-iam-tls-protocol-fixture-and-postgresql
-    actions: []
+    actions: [create-instance, start-instance, stop-instance, reboot-instance, attach-volume, detach-volume, delete-instance, create-network, delete-network, create-subnet, delete-subnet, create-security-group, delete-security-group, create-security-group-rule, revoke-security-group-rule, create-elastic-ip, bind-elastic-ip, unbind-elastic-ip, release-elastic-ip, create-snapshot, delete-snapshot, restore-snapshot, rollback-snapshot, create-image, copy-image, delete-image]
+    security-group-local-evidence: scoped-iam-tls-protocol-fixture-and-postgresql
+    elastic-ip-create-recovery: observe-scoped-allocation-marker-or-manual-review
+    elastic-ip-release-confirmation: two-scoped-absence-observations
+    elastic-ip-binding-confirmation: two-scoped-address-and-relationship-observations
+    security-rule-revocation-confirmation: two-scoped-absence-observations
+    security-rule-create-recovery: observe-scoped-rule-description-or-manual-review
+    network-create-recovery: observe-scoped-network-description-or-manual-review
+    network-deletion-confirmation: two-complete-exact-scope-absence-observations
+    security-group-deletion: unbound-group-and-explicit-rule-removal
+    network-local-evidence: scoped-iam-tls-protocol-fixture-and-postgresql
+    create-recovery: observe-scoped-create-job-or-launch-tag-and-verify-interface
+    create-local-evidence: scoped-iam-tls-protocol-fixture-and-postgresql
+    reboot-confirmation: scoped-job-and-target-instance
+    deletion-confirmation: scoped-delete-job-and-target-instance
+    deletion-local-evidence: scoped-iam-tls-protocol-fixture-and-postgresql
+    power-local-evidence: scoped-iam-tls-protocol-fixture-and-postgresql
+    volume-local-evidence: scoped-iam-tls-protocol-fixture-and-postgresql
+    snapshot-rollback: original-detached-data-volume
+    snapshot-rollback-confirmation: v5-scoped-job-or-manual-review-v2-manual-review
+    snapshot-restore: single-on-demand-data-volume
+    snapshot-restore-recovery: observe-scoped-launch-marker-and-volume-spec-or-manual-review
+    image-create-recovery: stopped-instance-system-disk-with-scoped-marker-and-receipt
+    image-copy-confirmation: same-domain-destination-project-and-job-or-scoped-description
+    image-deletion-confirmation: two-scoped-absence-observations
+    snapshot-deletion-confirmation: two-scoped-absence-observations
+    snapshot-create-recovery: observe-scoped-source-and-marker-or-manual-review
+    snapshot-create-local-evidence: scoped-iam-tls-protocol-fixture-and-postgresql
+    approvals: [detach-volume, delete-instance, create-security-group-rule, revoke-security-group-rule, delete-network, delete-subnet, delete-security-group, create-elastic-ip, bind-elastic-ip, unbind-elastic-ip, release-elastic-ip, create-snapshot, delete-snapshot, restore-snapshot, rollback-snapshot, create-image, copy-image, delete-image]
   aws-ec2:
     verification: pending-sandbox
     inventory-local-evidence: signed-sdk-tls-protocol-fixture

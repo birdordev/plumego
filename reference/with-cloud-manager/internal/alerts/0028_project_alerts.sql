@@ -66,7 +66,7 @@ ALTER TABLE cmp_operation_event_outbox
     ADD PRIMARY KEY (sink_id,public_id),
     ADD CONSTRAINT cmp_event_outbox_source CHECK (
         (sequence IS NOT NULL AND alert_id IS NULL AND event_type ~
-            '^(instance|network|subnet|security-group)\.operation\.(succeeded|failed|needs_review)$') OR
+            '^(instance|network|subnet|security-group|security-group-rule|elastic-ip|snapshot|volume)\.operation\.(succeeded|failed|needs_review)$') OR
         (sequence IS NULL AND alert_id IS NOT NULL AND event_type IN ('project.alert.opened','project.alert.resolved')));
 CREATE UNIQUE INDEX cmp_event_outbox_operation ON cmp_operation_event_outbox (sink_id,sequence) WHERE sequence IS NOT NULL;
 CREATE UNIQUE INDEX cmp_event_outbox_alert ON cmp_operation_event_outbox (sink_id,alert_id,event_type) WHERE alert_id IS NOT NULL;

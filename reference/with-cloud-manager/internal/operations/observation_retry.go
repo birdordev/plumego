@@ -8,6 +8,7 @@ import (
 	dbutil "github.com/birdordev/plumego/store/db"
 
 	"with-cloud-manager/internal/identity"
+	"with-cloud-manager/internal/provider"
 )
 
 type ObservationRetry struct {
@@ -28,7 +29,8 @@ func (s Store) RetryCreationObservation(ctx context.Context, token string, scope
 		err = tx.QueryRowContext(ctx, `SELECT t.status FROM cmp_operation_tasks AS t
 			JOIN cmp_instance_operations AS o ON (t.tenant_id,t.id)=(o.tenant_id,o.operation_id)
 			WHERE (o.tenant_id,o.project_id,o.operation_id)=($1,$2,$3)
-			AND o.action IN ('create','create-network','create-subnet','create-security-group','create-security-group-rule','revoke-security-group-rule') FOR UPDATE OF t`,
+			AND o.action IN ('create','create-network','create-subnet','create-security-group','create-security-group-rule',
+			    'create-elastic-ip','create-snapshot','delete-snapshot','restore-snapshot','rollback-snapshot','create-image','copy-image','delete-image','delete-network','delete-subnet','delete-security-group','revoke-security-group-rule','release-elastic-ip','bind-elastic-ip','unbind-elastic-ip') FOR UPDATE OF t`,
 			actor.Tenant, actor.Project, id).Scan(&queueStatus)
 		if errors.Is(err, sql.ErrNoRows) {
 			return identity.ErrForbidden
@@ -58,7 +60,7 @@ func (s Store) RetryCreationObservation(ctx context.Context, token string, scope
 			return ErrConflict
 		}
 		var access identity.AccountAccess
-		if op.Action == revokeSecurityRule {
+		if op.Action == revokeSecurityRule || op.Action == deleteImage || isNetworkDeletion(op.Action) || op.Action == deleteSnapshot || op.Action == rollbackSnapshot || op.Action == releaseElasticIP || isElasticIPBinding(op.Action) {
 			access, err = identity.NewStore(tx).AuthorizeAccount(ctx, actor, op.Account, identity.View)
 		} else {
 			access, err = authorizeLaunchObservation(ctx, tx, actor, op.Account)
@@ -66,11 +68,27 @@ func (s Store) RetryCreationObservation(ctx context.Context, token string, scope
 		if err != nil {
 			return err
 		}
+		if op.Action == rollbackSnapshot && (access.Provider != provider.HuaweiECS || op.ProviderRequestID == "") {
+			return ErrConflict
+		}
+		if op.Action == copyImage {
+			source, resourceID, err := imageCopyReviewTarget(ctx, tx, actor, op.ID)
+			if err != nil {
+				return err
+			}
+			if source.Provider == provider.TencentCVM && resourceID == "" {
+				return ErrConflict
+			}
+			if _, err := tx.ExecContext(ctx, `UPDATE cmp_image_copy_intents SET observation_credential_revision=$2
+				WHERE operation_id=$1`, op.ID, source.CredentialRevision); err != nil {
+				return err
+			}
+		}
 		query := `UPDATE cmp_instance_launches SET observation_reviewer=$2,
 			observation_membership_revision=$3,observation_credential_revision=$4 WHERE operation_id=$1`
-		if isNetworkCreation(op.Action) || op.Action == revokeSecurityRule {
+		if isResourceCreation(op.Action) || op.Action == revokeSecurityRule || op.Action == deleteImage || isNetworkDeletion(op.Action) || op.Action == deleteSnapshot || op.Action == rollbackSnapshot || op.Action == releaseElasticIP || isElasticIPBinding(op.Action) {
 			query = `UPDATE cmp_network_intents SET observation_reviewer=$2,
-				observation_membership_revision=$3,observation_credential_revision=$4,absence_observations=0 WHERE operation_id=$1`
+				observation_membership_revision=$3,observation_credential_revision=$4,absence_observations=0,binding_observations=0 WHERE operation_id=$1`
 		}
 		if _, err := tx.ExecContext(ctx, query, id, actor.Principal,
 			access.MembershipRevision, access.CredentialRevision); err != nil {

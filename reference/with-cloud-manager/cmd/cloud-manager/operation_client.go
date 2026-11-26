@@ -27,8 +27,19 @@ const operationsUsage = `usage: cloud-manager operations COMMAND TENANT PROJECT 
   preview-delete --account ACCOUNT --region REGION --asset-id ID
   submit --idempotency-key KEY --if-match REVISION < request.json
   create-instance --idempotency-key KEY < request.json
+  create-snapshot --idempotency-key KEY --if-match REVISION < request.json
+  create-image --idempotency-key KEY --if-match REVISION < request.json
+  copy-image --idempotency-key KEY --if-match REVISION < request.json
+  delete-network --idempotency-key KEY --if-match REVISION < request.json
+  delete-image --idempotency-key KEY --if-match REVISION < request.json
+  delete-snapshot --idempotency-key KEY --if-match REVISION < request.json
+  rollback-snapshot --idempotency-key KEY --if-match REVISION < request.json
+  restore-snapshot --idempotency-key KEY --if-match REVISION < request.json
   create-network --idempotency-key KEY [--if-match REVISION] < request.json
   revoke-security-rule --idempotency-key KEY --if-match REVISION < request.json
+  release-elastic-ip --idempotency-key KEY --if-match REVISION < request.json
+  bind-elastic-ip --idempotency-key KEY --if-match REVISION < request.json
+  unbind-elastic-ip --idempotency-key KEY --if-match REVISION < request.json
   preview-batch < request.json
   submit-batch --idempotency-key KEY < request.json
   get-batch BATCH

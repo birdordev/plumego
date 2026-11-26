@@ -17,15 +17,16 @@ import (
 //go:embed 0008_asset_ownership.sql
 var ownershipSchema string
 
-// 子规则的归属与版本沿用当前父组。统一别名使列表、历史和拓扑应用同一边界。
+// 子规则和快照沿用父资源的归属。列表、历史和拓扑使用相同的授权条件。
 const inventoryOwnershipJoins = `
 	LEFT JOIN cmp_inventory_scopes AS parent_scope
-		ON s.kind='security-group-rule' AND (parent_scope.tenant_id,parent_scope.account_id,parent_scope.region,parent_scope.kind)=
-		(s.tenant_id,s.account_id,s.region,'security-group')
+		ON s.kind IN ('security-group-rule','snapshot') AND (parent_scope.tenant_id,parent_scope.account_id,parent_scope.region,parent_scope.kind)=
+		(s.tenant_id,s.account_id,s.region,CASE WHEN s.kind='snapshot' THEN 'volume' ELSE 'security-group' END)
 	LEFT JOIN cmp_inventory_objects AS parent
 		ON (parent.scope_id,parent.external_id)=(parent_scope.scope_id,o.links->0->>'id')
-		AND o.links->0->>'kind'='security-group' AND o.links->0->>'relation'='in_security_group'
-		AND parent.removed_at IS NULL AND parent.missing_generation IS NULL
+		AND ((s.kind='security-group-rule' AND o.links->0->>'kind'='security-group' AND o.links->0->>'relation'='in_security_group'
+			AND parent.removed_at IS NULL AND parent.missing_generation IS NULL)
+			OR (s.kind='snapshot' AND o.links->0->>'kind'='volume' AND o.links->0->>'relation'='snapshot_of'))
 	LEFT JOIN cmp_asset_ownership AS own ON (own.scope_id,own.external_id)=
 		(COALESCE(parent.scope_id,o.scope_id),COALESCE(parent.external_id,o.external_id))
 	LEFT JOIN cmp_asset_tag_assignments AS rule ON (rule.scope_id,rule.external_id)=
@@ -35,7 +36,7 @@ const projectCanReadAccount = `a.project_id=$2 OR EXISTS (
 	SELECT 1 FROM cmp_cloud_account_grants AS g
 	WHERE (g.tenant_id,g.account_id,g.project_id)=(s.tenant_id,s.account_id,$2))`
 
-const assetVisibility = `s.tenant_id=$1 AND CASE WHEN s.kind='security-group-rule' THEN
+const assetVisibility = `s.tenant_id=$1 AND CASE WHEN s.kind IN ('security-group-rule','snapshot') THEN
 	parent.scope_id IS NOT NULL AND (` + projectCanReadAccount + `)
 	AND (` + projectedOwner + `)=$2 AND (` + ownershipSource + `)<>'pending'
 	ELSE (
@@ -64,7 +65,8 @@ func MigrateOwnership(ctx context.Context, db *sql.DB) error {
 
 func (s Store) TransferOwnership(ctx context.Context, token string, source identity.Scope, expected int64, input OwnershipTransfer) (Ownership, error) {
 	if input.Account == "" || len(input.Account) > 256 || len(input.Region) > 256 ||
-		!input.Kind.Valid() || input.Kind == provider.SecurityGroupRule || (input.Region == "") != (input.Kind == provider.Region) ||
+		!input.Kind.Valid() || input.Kind == provider.SecurityGroupRule || input.Kind == provider.Snapshot ||
+		(input.Region == "") != (input.Kind == provider.Region) ||
 		input.AssetID == "" || len(input.AssetID) > provider.MaxObjectIDSize ||
 		input.TargetProject == "" || len(input.TargetProject) > 256 || input.TargetProject == source.Project ||
 		strings.ContainsRune(input.Account+input.Region+input.AssetID+input.TargetProject, 0) {
@@ -116,6 +118,40 @@ func (s Store) TransferOwnership(ctx context.Context, token string, source ident
 		}
 		if before.Revision != expected {
 			return identity.ErrAccountStale
+		}
+		if input.Kind == provider.Network || input.Kind == provider.Subnet || input.Kind == provider.SecurityGroup {
+			active, err := NetworkDeletionActive(ctx, tx, scopeID, input.AssetID)
+			if err != nil {
+				return err
+			}
+			if active {
+				return identity.ErrAccountConflict
+			}
+		}
+		if input.Kind == provider.Image {
+			active, err := imageDeletionActive(ctx, tx, scopeID, input.AssetID)
+			if err != nil {
+				return err
+			}
+			if active {
+				return identity.ErrAccountConflict
+			}
+			if err := tx.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM cmp_image_copy_reservations
+				WHERE (scope_id,image_id)=($1,$2))`, scopeID, input.AssetID).Scan(&active); err != nil {
+				return err
+			}
+			if active {
+				return identity.ErrAccountConflict
+			}
+		}
+		if input.Kind == provider.Instance {
+			active, err := InstanceImageCreationActive(ctx, tx, scopeID, input.AssetID, "")
+			if err != nil {
+				return err
+			}
+			if active {
+				return identity.ErrAccountConflict
+			}
 		}
 		value = Ownership{Project: target.Project, Revision: before.Revision + 1}
 		return setOwnership(ctx, tx, actor, scopeID, input.AssetID, value, actor.Project)

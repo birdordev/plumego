@@ -27,6 +27,7 @@ route decision is visible and intentional.
 | Receive inbound webhooks (GitHub, Stripe) | [`with-webhook`](#with-webhook) |
 | Add a WebSocket hub | [`with-websocket`](#with-websocket) |
 | Build a transactional SQL API | [`with-sql`](./with-sql) |
+| Verify PostgreSQL cloud account authorization and recoverable inventory scans | [`with-cloud-manager`](./with-cloud-manager) |
 | Serve HTML with browser sessions and OIDC | [`with-browser`](./with-browser) |
 | Mount a streaming SSE endpoint | [`with-sse`](./with-sse) |
 | Measure framework HTTP overhead | [`benchmark`](#benchmark) |

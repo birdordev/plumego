@@ -107,10 +107,43 @@ func TestAcceptanceNetworkOperationAPI(t *testing.T) {
 	if post.RequestBody == nil || post.RequestBody.Content["application/json"].Schema.Properties["rule"].Properties["from_port"].Type != "integer" {
 		t.Fatalf("missing critical security-rule OpenAPI inputs: %+v", post.RequestBody)
 	}
+	snapshot := doc.Paths["/v1/tenants/{tenant}/projects/{project}/snapshots"].Post
+	if snapshot == nil || snapshot.OperationID != "createVolumeSnapshot" || snapshot.Responses["412"].Description == "" ||
+		snapshot.RequestBody == nil || snapshot.RequestBody.Content["application/json"].Schema.Properties["allow_attached"].Type != "boolean" {
+		t.Fatalf("missing snapshot creation contract: %+v", snapshot)
+	}
+	deleteSnapshot := doc.Paths["/v1/tenants/{tenant}/projects/{project}/snapshots/delete"].Post
+	if deleteSnapshot == nil || deleteSnapshot.OperationID != "deleteVolumeSnapshot" || deleteSnapshot.Responses["412"].Description == "" ||
+		deleteSnapshot.RequestBody == nil || deleteSnapshot.RequestBody.Content["application/json"].Schema.Properties["asset_id"].Type != "string" {
+		t.Fatalf("missing snapshot deletion contract: %+v", deleteSnapshot)
+	}
+	restore := doc.Paths["/v1/tenants/{tenant}/projects/{project}/snapshots/restore"].Post
+	if restore == nil || restore.OperationID != "restoreVolumeFromSnapshot" || restore.Responses["412"].Description == "" ||
+		restore.RequestBody == nil || restore.RequestBody.Content["application/json"].Schema.Properties["size_gib"].Type != "integer" {
+		t.Fatalf("missing snapshot restore contract: %+v", restore)
+	}
+	deletion := doc.Paths["/v1/tenants/{tenant}/projects/{project}/network-operations/delete"].Post
+	if deletion == nil || deletion.OperationID != "deleteNetworkResource" || deletion.Responses["412"].Description == "" ||
+		deletion.RequestBody == nil || deletion.RequestBody.Content["application/json"].Schema.Properties["kind"].Type != "string" ||
+		deletion.RequestBody.Content["application/json"].Schema.Properties["confirm_rule_removal"].Type != "boolean" {
+		t.Fatalf("missing VPC and subnet deletion contract: %+v", deletion)
+	}
 	revoke := doc.Paths["/v1/tenants/{tenant}/projects/{project}/network-operations/revoke-rule"].Post
 	if revoke == nil || revoke.OperationID != "revokeSecurityGroupRule" || revoke.Responses["412"].Description == "" ||
 		revoke.RequestBody == nil || revoke.RequestBody.Content["application/json"].Schema.Properties["rule_id"].Type != "string" {
 		t.Fatalf("missing revocation contract: %+v", revoke)
+	}
+	release := doc.Paths["/v1/tenants/{tenant}/projects/{project}/network-operations/release-elastic-ip"].Post
+	if release == nil || release.OperationID != "releaseElasticIP" || release.Responses["412"].Description == "" ||
+		release.RequestBody == nil || release.RequestBody.Content["application/json"].Schema.Properties["public_address"].Format != "ipv4" {
+		t.Fatalf("missing elastic IP release contract: %+v", release)
+	}
+	for action, operationID := range map[string]string{"bind-elastic-ip": "bindElasticIP", "unbind-elastic-ip": "unbindElasticIP"} {
+		binding := doc.Paths["/v1/tenants/{tenant}/projects/{project}/network-operations/"+action].Post
+		if binding == nil || binding.OperationID != operationID || binding.Responses["412"].Description == "" ||
+			binding.RequestBody == nil || binding.RequestBody.Content["application/json"].Schema.Properties["instance_revision"].Type != "integer" {
+			t.Fatalf("missing elastic IP %s contract: %+v", action, binding)
+		}
 	}
 }
 

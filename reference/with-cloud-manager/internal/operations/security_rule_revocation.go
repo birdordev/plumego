@@ -68,8 +68,15 @@ func (s Store) SubmitSecurityRuleRevocation(ctx context.Context, token string, s
 		if parent.OwnershipRevision != revision {
 			return identity.ErrAccountStale
 		}
-		if parent.Provider != "aws-ec2" && parent.Provider != "openstack" {
+		if parent.Provider != "aws-ec2" && parent.Provider != "openstack" && !publicCloudProvider(parent.Provider) {
 			return ErrInvalid
+		}
+		deleting, err := inventory.NetworkDeletionActive(ctx, tx, parent.ScopeID, input.ParentID)
+		if err != nil {
+			return err
+		}
+		if deleting {
+			return ErrConflict
 		}
 		assetScope, name, err := lookupSecurityRule(ctx, tx, actor.Tenant, input, true)
 		if err != nil {
@@ -129,7 +136,7 @@ func checkSecurityRuleRevocation(ctx context.Context, tx *sql.Tx, w *work) error
 		return err
 	}
 	if w.Status == "queued" {
-		if err := checkSecurityRuleApproval(ctx, tx, w); err != nil {
+		if err := checkDispatchApproval(ctx, tx, w, true); err != nil {
 			return err
 		}
 	}
@@ -157,6 +164,15 @@ func checkSecurityRuleRevocation(ctx context.Context, tx *sql.Tx, w *work) error
 		}
 	} else if parent.CredentialRevision != w.credential || parent.MembershipRevision != w.membership {
 		return identity.ErrAccountStale
+	}
+	if beforeWrite {
+		active, err := inventory.NetworkDeletionActive(ctx, tx, parent.ScopeID, intent.ParentID)
+		if err != nil {
+			return err
+		}
+		if active {
+			return ErrConflict
+		}
 	}
 	assetScope, name, err := lookupSecurityRule(ctx, tx, actor.Tenant, RuleRevocation{w.Account, w.Region, intent.ParentID, w.AssetID}, beforeWrite)
 	if err == nil && (assetScope != targetScope || (beforeWrite && name != intent.Name)) {

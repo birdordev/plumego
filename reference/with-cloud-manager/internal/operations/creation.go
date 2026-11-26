@@ -138,8 +138,12 @@ func authorizeCreation(ctx context.Context, tx *sql.Tx, actor identity.Scope, ac
 		return identity.AccountAccess{}, err
 	}
 	access, err := identity.NewStore(tx).AuthorizeAccount(ctx, actor, account, identity.Execute)
-	if err == nil && access.Provider != "aws-ec2" && access.Provider != "openstack" {
-		return identity.AccountAccess{}, ErrInvalid
+	if err == nil {
+		switch access.Provider {
+		case provider.TencentCVM, provider.AlibabaECS, provider.HuaweiECS, "aws-ec2", "openstack":
+		default:
+			return identity.AccountAccess{}, ErrInvalid
+		}
 	}
 	return access, err
 }
@@ -192,11 +196,7 @@ func validateLaunchSpec(ctx context.Context, tx *sql.Tx, actor identity.Scope, a
 	if err != nil {
 		return [3]int64{}, err
 	}
-	networkKind := provider.Subnet
-	if providerName == "openstack" {
-		networkKind = provider.Network
-	}
-	return inventory.CreationDependencies(ctx, tx, actor, account, region, spec, networkKind)
+	return inventory.CreationDependencies(ctx, tx, actor, account, region, spec, providerName)
 }
 
 func checkLaunch(ctx context.Context, tx *sql.Tx, w *work, validateDependencies bool) error {
@@ -213,6 +213,11 @@ func checkLaunch(ctx context.Context, tx *sql.Tx, w *work, validateDependencies 
 	access, err := checkCreationAuthority(ctx, tx, w, w.launch.observer, validateDependencies)
 	if err != nil || !validateDependencies {
 		return err
+	}
+	if w.Status == "queued" && publicCloudProvider(access.Provider) {
+		if err := checkDispatchApproval(ctx, tx, w, false); err != nil {
+			return err
+		}
 	}
 	revisions, err := validateLaunchSpec(ctx, tx, w.actor, w.Account, w.Region, access.Provider, w.launch.InstanceSpec)
 	if errors.Is(err, ErrInvalid) || (err == nil && revisions != w.launch.revisions) {
@@ -253,17 +258,24 @@ func (s Store) processCreation(ctx context.Context, task mq.Task, w work, client
 		w.Status = "observing"
 		w.OutcomeReason = "submission_outcome_unknown"
 	}
-	object, err := creator.FindCreatedInstance(ctx, scope, w.launch.InstanceSpec, w.launch.token, w.launch.instanceID)
+	var object provider.Object
+	var err error
+	if observer, ok := creator.(provider.InstanceCreationReceiptObserver); ok {
+		receipt := provider.LaunchReceipt{RequestID: w.ProviderRequestID, ResourceID: w.launch.instanceID}
+		object, err = observer.FindCreatedInstanceWithReceipt(ctx, scope, w.launch.InstanceSpec, w.launch.token, receipt)
+	} else {
+		object, err = creator.FindCreatedInstance(ctx, scope, w.launch.InstanceSpec, w.launch.token, w.launch.instanceID)
+	}
 	if err == nil && object.ID != "" {
 		if w.launch.instanceID != "" && object.ID != w.launch.instanceID {
 			return false, s.transition(ctx, task, w.Status, "needs_review", "creation_receipt_mismatch", "")
 		}
 		switch object.Status {
-		case "running", "ACTIVE":
+		case "running", "Running", "RUNNING", "ACTIVE":
 			return false, s.confirmCreation(ctx, task, w, object)
 		case "terminated":
 			return false, s.transition(ctx, task, w.Status, "failed", "created_instance_terminated", "")
-		case "ERROR":
+		case "ERROR", "LAUNCH_FAILED":
 			return false, s.transition(ctx, task, w.Status, "needs_review", "provider_creation_error", "")
 		}
 	}
@@ -278,6 +290,14 @@ func (s Store) processCreation(ctx context.Context, task mq.Task, w work, client
 }
 
 func (s Store) dispatchCreation(ctx context.Context, task mq.Task, w work, scope provider.Scope, creator provider.InstanceCreator) (bool, error) {
+	var send func(context.Context) (provider.LaunchReceipt, error)
+	if preparer, ok := creator.(provider.InstanceCreationPreparer); ok {
+		var err error
+		send, err = preparer.PrepareInstanceCreation(ctx, scope, w.launch.InstanceSpec, w.launch.token)
+		if err != nil || send == nil || ctx.Err() != nil {
+			return s.rejectCreationPreflight(ctx, task, w, err)
+		}
+	}
 	armed, err := s.prepare(ctx, task, true)
 	if errors.Is(err, identity.ErrForbidden) || errors.Is(err, identity.ErrAccountStale) {
 		return false, s.endUnavailable(ctx, task, armed)
@@ -288,8 +308,22 @@ func (s Store) dispatchCreation(ctx context.Context, task mq.Task, w work, scope
 	if armed.Status != "applying" {
 		return false, mq.ErrLeaseLost
 	}
-	receipt, callErr := creator.CreateInstance(ctx, scope, armed.launch.InstanceSpec, armed.launch.token)
+	if send == nil {
+		send = func(ctx context.Context) (provider.LaunchReceipt, error) {
+			return creator.CreateInstance(ctx, scope, armed.launch.InstanceSpec, armed.launch.token)
+		}
+	}
+	receipt, callErr := send(ctx)
 	return s.settleCreationDispatch(ctx, task, provider.Instance, receipt, callErr)
+}
+
+func (s Store) rejectCreationPreflight(ctx context.Context, task mq.Task, w work, err error) (bool, error) {
+	if task.Attempts < task.MaxAttempts && (ctx.Err() != nil || remotePreflightRetryable(err)) {
+		return true, nil
+	}
+	cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), accountingTimeout)
+	defer cancel()
+	return false, s.transition(cleanup, task, w.Status, "failed", "provider_creation_blocked", "")
 }
 
 func (s Store) settleCreationDispatch(ctx context.Context, task mq.Task, kind provider.Kind, receipt provider.LaunchReceipt, callErr error) (bool, error) {
@@ -388,13 +422,18 @@ func (s Store) confirmCreation(ctx context.Context, task mq.Task, w work, object
 		err = tx.QueryRowContext(ctx, `UPDATE cmp_instance_operations SET scope_id=$2,external_id=$3,status='succeeded',
 			outcome_reason=$4,updated_at=statement_timestamp()
 			WHERE operation_id=$1 AND NOT EXISTS (SELECT 1 FROM cmp_instance_operations AS prior
-			WHERE prior.action IN ('create','create-network','create-subnet','create-security-group','create-security-group-rule')
+			WHERE prior.action IN ('create','create-network','create-subnet','create-security-group','create-security-group-rule','create-elastic-ip','create-snapshot','restore-snapshot','create-image','copy-image')
 			AND (prior.scope_id,prior.external_id)=($2,$3)) RETURNING operation_id`, w.ID, scopeID, object.ID, reason).Scan(&linked)
 		if errors.Is(err, sql.ErrNoRows) {
 			return ErrConflict
 		}
 		if err != nil {
 			return err
+		}
+		if w.Action == createImage || w.Action == copyImage {
+			if err := releaseImageSource(ctx, tx, w.Action, w.ID); err != nil {
+				return err
+			}
 		}
 		return recordOperationEvent(ctx, tx, w.ID, "succeeded")
 	})

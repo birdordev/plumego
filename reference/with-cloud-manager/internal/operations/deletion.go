@@ -13,21 +13,34 @@ import (
 )
 
 type DeletionPreview struct {
-	AssetID           string `json:"asset_id"`
-	OwnershipRevision int64  `json:"ownership_revision"`
-	Protected         bool   `json:"protected"`
-	KnownVolumeLinks  int    `json:"known_volume_links"`
-	ApprovalRequired  bool   `json:"approval_required"`
+	AssetID                string `json:"asset_id"`
+	OwnershipRevision      int64  `json:"ownership_revision"`
+	Protected              bool   `json:"protected"`
+	KnownVolumeLinks       int    `json:"known_volume_links"`
+	ActiveImageCreation    bool   `json:"active_image_creation,omitempty"`
+	ActiveElasticIPBinding bool   `json:"active_elastic_ip_binding,omitempty"`
+	ApprovalRequired       bool   `json:"approval_required"`
+	ProviderSupported      bool   `json:"provider_supported"`
 }
 
 const deletionProtection = `SELECT EXISTS(SELECT 1 FROM cmp_protected_instances WHERE scope_id=$1 AND external_id=$2)`
 
-func checkDeletionProtection(ctx context.Context, tx *sql.Tx, scopeID int64, id, action string) error {
+const activeElasticIPBinding = `EXISTS(SELECT 1 FROM cmp_network_intents AS i JOIN cmp_instance_operations AS o USING(operation_id)
+	WHERE (i.parent_scope_id,i.parent_id)=($1,$2) AND i.binding_address IS NOT NULL AND o.status IN ` + activeOperationStatuses + `)`
+
+func checkInstanceMutationProtection(ctx context.Context, tx *sql.Tx, scopeID int64, id, action string) error {
+	active, err := inventory.InstanceImageCreationActive(ctx, tx, scopeID, id, "")
+	if err != nil {
+		return err
+	}
+	if active {
+		return ErrConflict
+	}
 	if action != "delete" {
 		return nil
 	}
 	var blocked bool
-	if err := tx.QueryRowContext(ctx, deletionProtection, scopeID, id).Scan(&blocked); err != nil {
+	if err := tx.QueryRowContext(ctx, deletionProtection+" OR "+activeElasticIPBinding, scopeID, id).Scan(&blocked); err != nil {
 		return err
 	}
 	if blocked {
@@ -50,8 +63,16 @@ func (s Store) PreviewDeletion(ctx context.Context, token string, scope identity
 		if err != nil {
 			return err
 		}
-		result = DeletionPreview{AssetID: input.AssetID, OwnershipRevision: target.OwnershipRevision, ApprovalRequired: true}
-		if err := tx.QueryRowContext(ctx, deletionProtection, target.ScopeID, input.AssetID).Scan(&result.Protected); err != nil {
+		result = DeletionPreview{
+			AssetID: input.AssetID, OwnershipRevision: target.OwnershipRevision, ApprovalRequired: true,
+			ProviderSupported: supportsInstanceAction(target.Provider, "delete"),
+		}
+		if err := tx.QueryRowContext(ctx, deletionProtection+", "+activeElasticIPBinding, target.ScopeID, input.AssetID).
+			Scan(&result.Protected, &result.ActiveElasticIPBinding); err != nil {
+			return err
+		}
+		result.ActiveImageCreation, err = inventory.InstanceImageCreationActive(ctx, tx, target.ScopeID, input.AssetID, "")
+		if err != nil {
 			return err
 		}
 		return tx.QueryRowContext(ctx, `SELECT count(DISTINCT link->>'id')

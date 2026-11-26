@@ -12,11 +12,23 @@ import (
 //go:embed 0028_project_alerts.sql
 var schema string
 
+//go:embed 0034_security_rule_outbox.sql
+var securityRuleOutboxSchema string
+
+//go:embed 0047_image_deletion_outbox.sql
+var imageDeletionOutboxSchema string
+
 //go:embed evaluate.sql
 var evaluate string
 
 func Migrate(ctx context.Context, db *sql.DB) error {
-	return dbschema.Apply(ctx, db, "0028_project_alerts", schema)
+	if err := dbschema.Apply(ctx, db, "0028_project_alerts", schema); err != nil {
+		return err
+	}
+	if err := dbschema.Apply(ctx, db, "0034_security_rule_outbox", securityRuleOutboxSchema); err != nil {
+		return err
+	}
+	return dbschema.Apply(ctx, db, "0047_image_deletion_outbox", imageDeletionOutboxSchema)
 }
 
 func (s Store) EvaluateNext(ctx context.Context) (bool, error) {

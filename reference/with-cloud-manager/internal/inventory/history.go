@@ -7,19 +7,25 @@ import (
 	"encoding/json"
 	"regexp"
 	"time"
+
+	"with-cloud-manager/internal/provider"
 )
 
 type Change struct {
-	Account        string    `json:"account"`
-	Region         string    `json:"region"`
-	Kind           string    `json:"kind"`
-	AssetID        string    `json:"asset_id"`
-	Action         string    `json:"action"`
-	PreviousName   *string   `json:"previous_name,omitempty"`
-	PreviousStatus *string   `json:"previous_status,omitempty"`
-	Name           string    `json:"name"`
-	Status         string    `json:"status"`
-	OccurredAt     time.Time `json:"occurred_at"`
+	Account                 string                    `json:"account"`
+	Region                  string                    `json:"region"`
+	Kind                    string                    `json:"kind"`
+	AssetID                 string                    `json:"asset_id"`
+	Action                  string                    `json:"action"`
+	PreviousName            *string                   `json:"previous_name,omitempty"`
+	PreviousStatus          *string                   `json:"previous_status,omitempty"`
+	Name                    string                    `json:"name"`
+	Status                  string                    `json:"status"`
+	OccurredAt              time.Time                 `json:"occurred_at"`
+	PreviousPublicAddresses []string                  `json:"previous_public_addresses,omitempty"`
+	PublicAddresses         []string                  `json:"public_addresses,omitempty"`
+	PreviousSnapshot        *provider.SnapshotDetails `json:"previous_snapshot,omitempty"`
+	Snapshot                *provider.SnapshotDetails `json:"snapshot,omitempty"`
 }
 
 type Changes struct {
@@ -69,13 +75,16 @@ func listHistory(ctx context.Context, tx *sql.Tx, q Query, cursor historyPositio
 		stamp, event = cursor.Time, cursor.ID
 	}
 	rows, err := tx.QueryContext(ctx, `SELECT h.event_id::text,s.account_id,s.region,s.kind,h.external_id,
-			h.action,h.previous_name,h.previous_status,h.name,h.status,h.occurred_at
+		h.action,h.previous_name,h.previous_status,h.name,h.status,h.occurred_at,h.previous_public_addresses,h.public_addresses,
+		h.previous_snapshot,h.snapshot
 		FROM cmp_inventory_history AS h JOIN cmp_inventory_scopes AS s USING (scope_id)
 		JOIN cmp_cloud_accounts AS a USING (tenant_id,account_id)
 		LEFT JOIN cmp_inventory_objects AS o ON (o.scope_id,o.external_id)=(h.scope_id,h.external_id)`+inventoryOwnershipJoins+`
 		WHERE `+assetVisibility+`
 		AND ($3='' OR s.account_id=$3) AND ($4='' OR s.region=$4) AND ($5='' OR s.kind=$5)
-		AND ($6='' OR strpos(lower(h.name),lower($6))>0 OR strpos(lower(h.external_id),lower($6))>0)
+		AND ($6='' OR strpos(lower(h.name),lower($6))>0 OR strpos(lower(h.external_id),lower($6))>0
+		     OR (h.public_addresses<>'[]'::jsonb AND strpos(h.public_addresses::text,lower($6))>0)
+		     OR (h.previous_public_addresses<>'[]'::jsonb AND strpos(h.previous_public_addresses::text,lower($6))>0))
 		AND ($7::timestamptz IS NULL OR (h.occurred_at,h.event_id)<($7,$8::uuid))
 		ORDER BY h.occurred_at DESC,h.event_id DESC LIMIT $9`,
 		q.Tenant, q.Project, q.Account, q.Region, q.Kind, q.Search, stamp, event, q.Limit+1)
@@ -94,9 +103,29 @@ func listHistory(ctx context.Context, tx *sql.Tx, q Query, cursor historyPositio
 			break
 		}
 		var item Change
+		var previous, addresses, previousSnapshot, snapshot []byte
 		if err := rows.Scan(&last.ID, &item.Account, &item.Region, &item.Kind, &item.AssetID,
-			&item.Action, &item.PreviousName, &item.PreviousStatus, &item.Name, &item.Status, &item.OccurredAt); err != nil {
+			&item.Action, &item.PreviousName, &item.PreviousStatus, &item.Name, &item.Status, &item.OccurredAt, &previous, &addresses,
+			&previousSnapshot, &snapshot); err != nil {
 			return err
+		}
+		if len(previous) != 0 {
+			if err := json.Unmarshal(previous, &item.PreviousPublicAddresses); err != nil {
+				return err
+			}
+		}
+		if err := json.Unmarshal(addresses, &item.PublicAddresses); err != nil {
+			return err
+		}
+		if len(previousSnapshot) != 0 {
+			if err := json.Unmarshal(previousSnapshot, &item.PreviousSnapshot); err != nil {
+				return err
+			}
+		}
+		if len(snapshot) != 0 {
+			if err := json.Unmarshal(snapshot, &item.Snapshot); err != nil {
+				return err
+			}
 		}
 		last.Time = item.OccurredAt
 		result.Items = append(result.Items, item)

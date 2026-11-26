@@ -45,10 +45,28 @@ func planOperationRequest(base *url.URL, args []string) (operationRequestPlan, e
 		return planOperationSubmission(project.JoinPath("instance-operations"), args[0], args[3:])
 	case "create-instance":
 		return planOperationSubmission(project.JoinPath("instances"), args[0], args[3:])
+	case "create-snapshot":
+		return planOperationSubmission(project.JoinPath("snapshots"), args[0], args[3:])
+	case "create-image":
+		return planOperationSubmission(project.JoinPath("images"), args[0], args[3:])
+	case "copy-image":
+		return planOperationSubmission(project.JoinPath("images", "copy"), args[0], args[3:])
+	case "delete-image":
+		return planOperationSubmission(project.JoinPath("images", "delete"), args[0], args[3:])
+	case "delete-snapshot":
+		return planOperationSubmission(project.JoinPath("snapshots", "delete"), args[0], args[3:])
+	case "rollback-snapshot":
+		return planOperationSubmission(project.JoinPath("snapshots", "rollback"), args[0], args[3:])
+	case "restore-snapshot":
+		return planOperationSubmission(project.JoinPath("snapshots", "restore"), args[0], args[3:])
+	case "delete-network":
+		return planOperationSubmission(project.JoinPath("network-operations", "delete"), args[0], args[3:])
 	case "create-network":
 		return planOperationSubmission(project.JoinPath("network-operations"), args[0], args[3:])
 	case "revoke-security-rule":
 		return planOperationSubmission(project.JoinPath("network-operations", "revoke-rule"), args[0], args[3:])
+	case "release-elastic-ip", "bind-elastic-ip", "unbind-elastic-ip":
+		return planOperationSubmission(project.JoinPath("network-operations", args[0]), args[0], args[3:])
 	case "preview-batch":
 		if len(args) == 3 {
 			return operationRequestPlan{target: project.JoinPath("operation-batches", "preview"), method: http.MethodPost,
@@ -88,7 +106,8 @@ func planOperationSubmission(target *url.URL, command string, args []string) (op
 	flags.SetOutput(io.Discard)
 	key := flags.String("idempotency-key", "", "")
 	var match string
-	requireMatch := command == "submit" || command == "revoke-security-rule"
+	requireMatch := command == "submit" || command == "delete-network" || command == "revoke-security-rule" || command == "release-elastic-ip" ||
+		command == "bind-elastic-ip" || command == "unbind-elastic-ip" || command == "create-snapshot" || command == "delete-snapshot" || command == "delete-image" || command == "create-image" || command == "copy-image" || command == "restore-snapshot" || command == "rollback-snapshot"
 	if requireMatch || command == "create-network" {
 		flags.Func("if-match", "", func(value string) error {
 			revision, err := strconv.ParseInt(value, 10, 64)

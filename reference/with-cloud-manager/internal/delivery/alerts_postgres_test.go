@@ -32,7 +32,8 @@ func TestAcceptanceAlertMigrationWithOperationBacklog(t *testing.T) {
 		    (operation_id,tenant_id,project_id,principal_id,account_id,region,resource_kind,action,status,idempotency_key,request_hash,
 		     credential_revision,membership_revision,ownership_revision)
 		SELECT kind,'tenant','project','actor','acct','us-east-1',kind,action,'failed',kind,decode(repeat('00',32),'hex'),1,1,0
-		FROM (VALUES ('instance','create'),('network','create-network'),('subnet','create-subnet'),('security-group','create-security-group')) v(kind,action);`)
+		FROM (VALUES ('instance','create'),('network','create-network'),('subnet','create-subnet'),('security-group','create-security-group'),
+		             ('security-group-rule','create-security-group-rule')) v(kind,action);`)
 	const record = `INSERT INTO cmp_instance_operation_events (operation_id,status)
 	                SELECT operation_id,'failed' FROM cmp_instance_operations`
 	exec(record)
@@ -46,8 +47,27 @@ func TestAcceptanceAlertMigrationWithOperationBacklog(t *testing.T) {
 		(SELECT count(*) FROM fixture_backlog JOIN cmp_operation_event_outbox USING (sink_id,sequence,public_id,event_type,body)),
 		count(DISTINCT event_type),count(*) FROM cmp_operation_event_outbox WHERE sequence IS NOT NULL AND alert_id IS NULL`).
 		Scan(&unchanged, &sources, &notifications)
-	if err != nil || unchanged != 4 || sources != 4 || notifications != 8 {
+	if err != nil || unchanged != 5 || sources != 5 || notifications != 10 {
 		t.Fatalf("delivery changed by alert migration: unchanged=%d sources=%d notifications=%d err=%v", unchanged, sources, notifications, err)
+	}
+
+	exec(`DELETE FROM cmp_operation_event_outbox WHERE event_type='security-group-rule.operation.failed';
+		ALTER TABLE cmp_operation_event_outbox DROP CONSTRAINT cmp_event_outbox_source,
+		    ADD CONSTRAINT cmp_event_outbox_source CHECK (
+			(sequence IS NOT NULL AND alert_id IS NULL AND event_type ~
+			    '^(instance|network|subnet|security-group)\.operation\.(succeeded|failed|needs_review)$') OR
+			(sequence IS NULL AND alert_id IS NOT NULL AND event_type IN ('project.alert.opened','project.alert.resolved')));
+		DELETE FROM cmp_migrations WHERE version='0034_security_rule_outbox';`)
+	if err := alerts.Migrate(ctx, db); err != nil {
+		t.Fatal(err)
+	}
+	exec(record + " WHERE operation_id='security-group-rule'")
+	err = db.QueryRowContext(ctx, `SELECT
+		(SELECT count(*) FROM fixture_backlog JOIN cmp_operation_event_outbox USING (sink_id,sequence,public_id,event_type,body)),
+		count(DISTINCT event_type),count(*) FROM cmp_operation_event_outbox WHERE sequence IS NOT NULL AND alert_id IS NULL`).
+		Scan(&unchanged, &sources, &notifications)
+	if err != nil || unchanged != 4 || sources != 5 || notifications != 9 {
+		t.Fatalf("delivery changed by rule outbox upgrade: unchanged=%d sources=%d notifications=%d err=%v", unchanged, sources, notifications, err)
 	}
 }
 

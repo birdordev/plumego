@@ -27,20 +27,22 @@ type Query struct {
 }
 
 type Asset struct {
-	Account           string        `json:"account"`
-	Provider          string        `json:"provider"`
-	Region            string        `json:"region"`
-	Kind              provider.Kind `json:"kind"`
-	ID                string        `json:"id"`
-	ParentID          string        `json:"parent_id,omitempty"`
-	Name              string        `json:"name"`
-	Status            string        `json:"status"`
-	State             string        `json:"inventory_state"`
-	ObservedAt        time.Time     `json:"observed_at"`
-	Project           string        `json:"project"`
-	OwnershipSource   string        `json:"ownership_source"`
-	OwnershipRevision int64         `json:"ownership_revision"`
-	LastFullSync      *time.Time    `json:"last_full_sync,omitempty"`
+	Account           string                    `json:"account"`
+	Provider          string                    `json:"provider"`
+	Region            string                    `json:"region"`
+	Kind              provider.Kind             `json:"kind"`
+	ID                string                    `json:"id"`
+	ParentID          string                    `json:"parent_id,omitempty"`
+	Name              string                    `json:"name"`
+	Status            string                    `json:"status"`
+	State             string                    `json:"inventory_state"`
+	ObservedAt        time.Time                 `json:"observed_at"`
+	Project           string                    `json:"project"`
+	OwnershipSource   string                    `json:"ownership_source"`
+	OwnershipRevision int64                     `json:"ownership_revision"`
+	LastFullSync      *time.Time                `json:"last_full_sync,omitempty"`
+	PublicAddresses   []string                  `json:"public_addresses,omitempty"`
+	Snapshot          *provider.SnapshotDetails `json:"snapshot,omitempty"`
 }
 
 type Assets struct {
@@ -119,15 +121,18 @@ func listAssets(ctx context.Context, tx *sql.Tx, q Query, p position, result *As
 	rows, err := tx.QueryContext(ctx, `SELECT s.account_id,a.provider,s.region,s.kind,o.external_id,COALESCE(parent.external_id,''),o.name,o.status,
 		CASE WHEN o.missing_generation IS NOT NULL THEN 'missing_candidate'
 		     WHEN a.mode NOT IN ('read_only','write_enabled') OR a.credential_revision<>s.credential_revision THEN 'stale'
-		     WHEN s.kind='security-group-rule' AND a.credential_revision<>parent_scope.credential_revision THEN 'stale'
+		     WHEN s.kind IN ('security-group-rule','snapshot') AND a.credential_revision<>parent_scope.credential_revision THEN 'stale'
 		     ELSE 'observed' END,o.observed_at,s.completed_at,`+projectedOwner+`,`+projectedRevision+`,
-		CASE WHEN s.kind='security-group-rule' THEN 'security_group' ELSE `+ownershipSource+` END
+		CASE WHEN s.kind='security-group-rule' THEN 'security_group' WHEN s.kind='snapshot' THEN 'source_volume'
+		ELSE `+ownershipSource+` END,o.public_addresses,o.snapshot
 		FROM cmp_inventory_scopes AS s JOIN cmp_cloud_accounts AS a USING (tenant_id,account_id)
 		JOIN cmp_inventory_objects AS o USING (scope_id)`+inventoryOwnershipJoins+`
 		WHERE `+assetVisibility+`
 		AND o.removed_at IS NULL
 		AND ($3='' OR s.account_id=$3) AND ($4='' OR s.region=$4) AND ($5='' OR s.kind=$5)
-		AND ($6='' OR strpos(lower(o.name),lower($6))>0 OR strpos(lower(o.external_id),lower($6))>0)
+		AND ($6='' OR strpos(lower(o.name),lower($6))>0 OR strpos(lower(o.external_id),lower($6))>0
+		     OR (o.public_addresses<>'[]'::jsonb AND strpos(o.public_addresses::text,lower($6))>0)
+		     OR (s.kind='snapshot' AND strpos(lower(parent.external_id),lower($6))>0))
 		AND ($7='' OR (s.account_id,s.region,s.kind,o.external_id)>($7,$8,$9,$10))
 		ORDER BY s.account_id,s.region,s.kind,o.external_id LIMIT $11`,
 		q.Tenant, q.Project, q.Account, q.Region, q.Kind, q.Search, p.Account, p.Region, p.Kind, p.ID, q.Limit+1)
@@ -137,8 +142,18 @@ func listAssets(ctx context.Context, tx *sql.Tx, q Query, p position, result *As
 	defer func() { _ = rows.Close() }()
 	for rows.Next() {
 		var a Asset
-		if err := rows.Scan(&a.Account, &a.Provider, &a.Region, &a.Kind, &a.ID, &a.ParentID, &a.Name, &a.Status, &a.State, &a.ObservedAt, &a.LastFullSync, &a.Project, &a.OwnershipRevision, &a.OwnershipSource); err != nil {
+		var addresses, snapshot []byte
+		if err := rows.Scan(&a.Account, &a.Provider, &a.Region, &a.Kind, &a.ID, &a.ParentID, &a.Name, &a.Status, &a.State, &a.ObservedAt,
+			&a.LastFullSync, &a.Project, &a.OwnershipRevision, &a.OwnershipSource, &addresses, &snapshot); err != nil {
 			return err
+		}
+		if err := json.Unmarshal(addresses, &a.PublicAddresses); err != nil {
+			return err
+		}
+		if len(snapshot) != 0 {
+			if err := json.Unmarshal(snapshot, &a.Snapshot); err != nil {
+				return err
+			}
 		}
 		if len(result.Items) == q.Limit {
 			last := result.Items[len(result.Items)-1]

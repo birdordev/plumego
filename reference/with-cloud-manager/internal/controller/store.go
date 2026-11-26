@@ -14,10 +14,22 @@ import (
 //go:embed 0004_inventory_schedules.sql
 var schema string
 
+//go:embed 0036_network_asset_schedules.sql
+var networkAssetSchedulesSchema string
+
+//go:embed 0041_snapshot_schedules.sql
+var snapshotSchedulesSchema string
+
 var ErrStale = errors.New("inventory schedule lease expired or was replaced")
 
 func Migrate(ctx context.Context, db *sql.DB) error {
-	return dbschema.Apply(ctx, db, "0004_inventory_schedules", schema)
+	if err := dbschema.Apply(ctx, db, "0004_inventory_schedules", schema); err != nil {
+		return err
+	}
+	if err := dbschema.Apply(ctx, db, "0036_network_asset_schedules", networkAssetSchedulesSchema); err != nil {
+		return err
+	}
+	return dbschema.Apply(ctx, db, "0041_snapshot_schedules", snapshotSchedulesSchema)
 }
 
 type job struct {

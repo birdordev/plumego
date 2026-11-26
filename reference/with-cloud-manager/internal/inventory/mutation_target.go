@@ -39,10 +39,67 @@ func ResolveNetworkObservation(ctx context.Context, tx *sql.Tx, actor identity.S
 	return resolveMutation(ctx, tx, actor, account, region, id, kind, true, identity.View, true)
 }
 
+func ResolveNetworkDeletion(ctx context.Context, tx *sql.Tx, actor identity.Scope, account, region, id string, kind provider.Kind, beforeWrite bool) (MutationTarget, error) {
+	permission := identity.View
+	if beforeWrite {
+		permission = identity.Execute
+	}
+	return resolveMutation(ctx, tx, actor, account, region, id, kind, beforeWrite, permission, true)
+}
+
+func ResolveImageDeletion(ctx context.Context, tx *sql.Tx, actor identity.Scope, account, region, id string, beforeWrite bool) (MutationTarget, error) {
+	permission := identity.View
+	if beforeWrite {
+		permission = identity.Execute
+	}
+	return resolveMutation(ctx, tx, actor, account, region, id, provider.Image, beforeWrite, permission, true)
+}
+
+// 调用方持有镜像行锁后再检查活动删除操作。
+func imageDeletionActive(ctx context.Context, tx *sql.Tx, scopeID int64, id string) (bool, error) {
+	var active bool
+	err := tx.QueryRowContext(ctx, `SELECT EXISTS (
+		SELECT 1 FROM cmp_instance_operations
+		WHERE (scope_id,external_id)=($1,$2) AND action='delete-image'
+		  AND status IN ('awaiting_approval','queued','applying','observing','needs_review'))`, scopeID, id).Scan(&active)
+	return active, err
+}
+
+func ResolveElasticIPObservation(ctx context.Context, tx *sql.Tx, actor identity.Scope, account, region, id string) (MutationTarget, error) {
+	return resolveMutation(ctx, tx, actor, account, region, id, provider.ElasticIP, false, identity.View, true)
+}
+
 func MarkResourceDeleted(ctx context.Context, tx *sql.Tx, scopeID int64, id string) error {
 	_, err := tx.ExecContext(ctx, `UPDATE cmp_inventory_objects SET
 		deletion_confirmed_at=statement_timestamp(),removed_at=COALESCE(removed_at,statement_timestamp())
 		WHERE scope_id=$1 AND external_id=$2 AND deletion_confirmed_at IS NULL`, scopeID, id)
+	return err
+}
+
+func LockInstanceScope(ctx context.Context, tx *sql.Tx, tenant, account, region string) (int64, error) {
+	var scopeID int64
+	err := tx.QueryRowContext(ctx, `SELECT scope_id FROM cmp_inventory_scopes
+		WHERE (tenant_id,account_id,region,kind)=($1,$2,$3,'instance') FOR NO KEY UPDATE`,
+		tenant, account, region).Scan(&scopeID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, identity.ErrForbidden
+	}
+	return scopeID, err
+}
+
+func RecordInstanceStatus(ctx context.Context, tx *sql.Tx, scopeID int64, instance, status string) error {
+	var id string
+	err := tx.QueryRowContext(ctx, `UPDATE cmp_inventory_objects SET status=$3,observed_at=statement_timestamp()
+		WHERE (scope_id,external_id)=($1,$2) AND removed_at IS NULL AND missing_generation IS NULL
+		RETURNING external_id`, scopeID, instance, status).Scan(&id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return identity.ErrAccountStale
+	}
+	if err != nil {
+		return err
+	}
+	_, err = tx.ExecContext(ctx, `UPDATE cmp_inventory_scopes SET running=false,fence=fence+1,cursor='',pages=0
+		WHERE scope_id=$1 AND running`, scopeID)
 	return err
 }
 
@@ -77,4 +134,12 @@ func resolveMutation(ctx context.Context, tx *sql.Tx, actor identity.Scope, acco
 	}
 	target.AccountAccess, err = identity.NewStore(tx).AuthorizeAccount(ctx, actor, account, permission)
 	return target, err
+}
+
+// 调用方在变更实例前持有实例行锁。预览只读取当前预约。
+func InstanceImageCreationActive(ctx context.Context, tx *sql.Tx, scopeID int64, id, exclude string) (bool, error) {
+	var active bool
+	err := tx.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM cmp_instance_image_reservations
+		WHERE (scope_id,instance_id)=($1,$2) AND operation_id<>$3)`, scopeID, id, exclude).Scan(&active)
+	return active, err
 }

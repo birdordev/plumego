@@ -137,10 +137,17 @@ func previewBatchItem(ctx context.Context, tx *sql.Tx, actor identity.Scope, ite
 		result.Reason = "stale"
 		return result, nil
 	}
+	if !supportsInstanceAction(target.Provider, item.Action) {
+		result.Reason = "unsupported_parameters"
+		return result, nil
+	}
 	volume, err := inspectOperationVolume(ctx, tx, actor, item.Input, target.Provider, false)
 	switch {
 	case errors.Is(err, identity.ErrForbidden):
 		result.Reason = "unavailable"
+	case errors.Is(err, ErrConflict):
+		result.VolumeRevision = volume.OwnershipRevision
+		result.Reason = "busy"
 	case errors.Is(err, ErrVolumeStale):
 		result.VolumeRevision = volume.OwnershipRevision
 		result.Reason = "volume_stale"
@@ -153,7 +160,7 @@ func previewBatchItem(ctx context.Context, tx *sql.Tx, actor identity.Scope, ite
 		return result, nil
 	}
 	result.VolumeRevision = volume.OwnershipRevision
-	if err := checkDeletionProtection(ctx, tx, target.ScopeID, item.AssetID, item.Action); err != nil {
+	if err := checkInstanceMutationProtection(ctx, tx, target.ScopeID, item.AssetID, item.Action); err != nil {
 		if errors.Is(err, ErrConflict) {
 			result.Reason = "protected"
 			return result, nil
@@ -198,11 +205,11 @@ func (s Store) SubmitBatch(ctx context.Context, token string, scope identity.Sco
 		if !claimed {
 			return readBatchReplay(ctx, tx, actor, key, digest, &result)
 		}
-		targets, err := lockBatchInstances(ctx, tx, actor, input.Items)
-		if err != nil {
+		if err := lockBudget(ctx, tx, actor); err != nil {
 			return err
 		}
-		if err := lockBudget(ctx, tx, actor); err != nil {
+		targets, err := lockBatchInstances(ctx, tx, actor, input.Items)
+		if err != nil {
 			return err
 		}
 		remaining, err := remainingBudget(ctx, tx, actor)
@@ -245,7 +252,10 @@ func lockBatchInstances(ctx context.Context, tx *sql.Tx, actor identity.Scope, i
 		if targets[index].OwnershipRevision != item.Revision {
 			return nil, BatchItemError{Index: index, Cause: identity.ErrAccountStale}
 		}
-		if err := checkDeletionProtection(ctx, tx, targets[index].ScopeID, item.AssetID, item.Action); err != nil {
+		if !supportsInstanceAction(targets[index].Provider, item.Action) {
+			return nil, BatchItemError{Index: index, Cause: ErrInvalid}
+		}
+		if err := checkInstanceMutationProtection(ctx, tx, targets[index].ScopeID, item.AssetID, item.Action); err != nil {
 			return nil, BatchItemError{Index: index, Cause: err}
 		}
 	}

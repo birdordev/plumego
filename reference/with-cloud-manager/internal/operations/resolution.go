@@ -59,7 +59,21 @@ func (s Store) Resolve(ctx context.Context, token string, scope identity.Scope, 
 		if op.ProviderRequestID != "" && input.ProviderRequestID != op.ProviderRequestID {
 			return ErrConflict
 		}
-		if (op.Action == "create" || isNetworkCreation(op.Action) || op.Action == revokeSecurityRule) && input.Decision == "succeeded" {
+		if op.Action == rollbackSnapshot || op.Action == deleteImage || isNetworkDeletion(op.Action) {
+			if _, err := identity.NewStore(tx).AuthorizeAccount(ctx, actor, op.Account, identity.View); err != nil {
+				return err
+			}
+		}
+		if op.Action == copyImage {
+			if _, err := authorizeLaunchObservation(ctx, tx, actor, op.Account); err != nil {
+				return err
+			}
+			if _, _, err := imageCopyReviewTarget(ctx, tx, actor, op.ID); err != nil {
+				return err
+			}
+		}
+		if (op.Action == "create" || isResourceCreation(op.Action) || op.Action == revokeSecurityRule || op.Action == deleteImage || isNetworkDeletion(op.Action) || op.Action == deleteSnapshot || op.Action == releaseElasticIP || isElasticIPBinding(op.Action)) &&
+			input.Decision == "succeeded" {
 			return ErrConflict
 		}
 		if _, err := tx.ExecContext(ctx, `INSERT INTO cmp_instance_operation_resolutions

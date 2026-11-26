@@ -34,7 +34,7 @@ func registerOpenAPI(app *core.App, console *consoleConfig) error {
 		OperationID: "listProjectAssets",
 		Security:    readAuth,
 		Responses: map[string]openapi.Response{
-			"200": {Description: "项目可见的资产页和后续游标"},
+			"200": {Description: "项目可见的资产页和后续游标。已分配的弹性公网 IP 包含 public_addresses。云盘快照包含 parent_id 和已知的 snapshot.class、snapshot.size_gib。"},
 			"400": {Description: "查询参数或游标无效"},
 			"401": {Description: "服务凭据缺失、无效、过期或撤销"},
 			"403": {Description: "项目不可访问"},
@@ -51,7 +51,7 @@ func registerOpenAPI(app *core.App, console *consoleConfig) error {
 	for status, response := range list.Responses {
 		history.Responses[status] = response
 	}
-	history.Responses["200"] = openapi.Response{Description: "项目可见的资产差异和后续游标"}
+	history.Responses["200"] = openapi.Response{Description: "项目可见的资产差异和后续游标，包含适用的前后公网地址或快照属性。"}
 	export := list
 	export.OperationID = "exportProjectAssets"
 	export.Params = export.Params[:4]
@@ -59,7 +59,8 @@ func registerOpenAPI(app *core.App, console *consoleConfig) error {
 	for status, response := range list.Responses {
 		export.Responses[status] = response
 	}
-	export.Responses["200"] = openapi.Response{Description: "筛选后的资产 CSV", Content: map[string]openapi.MediaType{"text/csv": {Schema: openapi.String}}}
+	export.Responses["200"] = openapi.Response{Description: "筛选后的资产 CSV。kind=elastic-ip 追加 public_addresses。kind=snapshot 追加 source_volume_id、snapshot_class 和 size_gib。",
+		Content: map[string]openapi.MediaType{"text/csv": {Schema: openapi.String}}}
 	export.Responses["422"] = openapi.Response{Description: "匹配资产超过单次导出上限"}
 	topology := list
 	topology.OperationID = "listProjectAssetTopology"
@@ -103,7 +104,7 @@ func registerOpenAPI(app *core.App, console *consoleConfig) error {
 	for _, field := range []string{"account", "region", "name", "image_id", "size", "network_id", "security_group_id"} {
 		createFields[field] = openapi.String
 	}
-	create.Body = &openapi.RequestBody{Required: true, Description: "在 AWS 或 OpenStack 的账号和区域创建一个实例。AWS 的 network_id 是子网 ID，OpenStack 的 network_id 是 Neutron 网络 UUID，size 是 Nova flavor ID。",
+	create.Body = &openapi.RequestBody{Required: true, Description: "在已启用写入的 AWS、OpenStack、腾讯云、阿里云或华为云账号中创建一个实例。network_id 使用 AWS、腾讯云或华为云的子网 ID、阿里云的交换机 ID，或 OpenStack 的 Neutron 网络 UUID。size 使用对应厂商的规格标识。",
 		Content: map[string]openapi.MediaType{"application/json": {Schema: openapi.Schema{Type: "object", Properties: createFields}}}}
 	review := accountOp("resolveInstanceOperation", "200", "已记录独立审批人的处置结果", true)
 	review.Body = &openapi.RequestBody{Required: true, Description: "提交 decision、evidence_ref 及适用的 provider_request_id",
@@ -119,7 +120,7 @@ func registerOpenAPI(app *core.App, console *consoleConfig) error {
 	approval.Responses["409"] = openapi.Response{Description: "审批决定冲突或实例受删除保护"}
 	approval.Body = &openapi.RequestBody{Required: true, Description: "提交 approve 或 reject",
 		Content: map[string]openapi.MediaType{"application/json": {Schema: openapi.Schema{Type: "object", Properties: map[string]openapi.Schema{"decision": openapi.String}}}}}
-	preview := accountOp("previewInstanceDeletion", "200", "实例本地删除影响预览", false)
+	preview := accountOp("previewInstanceDeletion", "200", "实例本地删除影响预览，含归属版本、保护状态、已知卷关联数、审批要求与厂商支持状态", false)
 	preview.Responses["400"] = openapi.Response{Description: "无效的实例坐标"}
 	for _, name := range []string{"account", "region", "asset_id"} {
 		preview.Params = append(preview.Params, openapi.Param{Name: name, In: "query", Required: true, Schema: openapi.String})
@@ -127,17 +128,85 @@ func registerOpenAPI(app *core.App, console *consoleConfig) error {
 	events := accountOp("listInstanceOperationEvents", "200", "按序记录的项目操作事件及续读游标", false)
 	events.Responses["400"] = openapi.Response{Description: "事件游标或页大小无效"}
 	events.Params = []openapi.Param{{Name: "after", In: "query", Schema: openapi.String}, {Name: "limit", In: "query", Schema: openapi.Integer}}
-	network := accountOp("createNetworkResource", "202", "已持久受理的网络、IPv4 子网、安全组或安全组规则创建意图", true)
+	network := accountOp("createNetworkResource", "202", "已持久受理的网络资源创建意图，包括弹性公网 IP 申请", true)
 	network.Responses["412"] = openapi.Response{Description: "父网络或父安全组需要当前归属版本"}
 	network.Responses["429"] = submit.Responses["429"]
 	network.Params = []openapi.Param{create.Params[0], {Name: "If-Match", In: "header", Schema: openapi.String}}
 	rule := openapi.Schema{Type: "object", Properties: map[string]openapi.Schema{
 		"direction": openapi.String, "protocol": openapi.String, "from_port": openapi.Integer, "to_port": openapi.Integer, "remote_cidr": openapi.String,
 	}}
-	network.Body = &openapi.RequestBody{Required: true, Description: "必填 account、region、kind。网络、子网和组创建需要 name。AWS VPC 需要 cidr，子网额外需要 parent_id、cidr、If-Match。AWS 安全组需要父 VPC 版本。security-group-rule 需要 rule、父安全组 parent_id 和 If-Match，并始终独立审批。",
+	network.Body = &openapi.RequestBody{Required: true, Description: "必填 account、region、kind。网络、子网和组创建需要 name。AWS、腾讯云、阿里云和华为云使用 cidr 创建 IPv4 VPC。子网需要 parent_id、cidr、If-Match。腾讯云和阿里云子网还需要 zone，华为云子网可省略 zone。AWS 和阿里云安全组需要父 VPC 的 parent_id 与 If-Match。security-group-rule 需要 rule、父安全组 parent_id 和 If-Match。elastic-ip 需要 name、bandwidth_mbps，华为云还需要 address_pool。规则创建和弹性公网 IP 申请始终独立审批。",
 		Content: map[string]openapi.MediaType{"application/json": {Schema: openapi.Schema{Type: "object",
 			Properties: map[string]openapi.Schema{"account": openapi.String, "region": openapi.String, "kind": openapi.String,
-				"name": openapi.String, "parent_id": openapi.String, "cidr": openapi.String, "rule": rule}}}}}
+				"name": openapi.String, "parent_id": openapi.String, "cidr": openapi.String, "zone": openapi.String, "rule": rule,
+				"bandwidth_mbps": openapi.Integer, "address_pool": openapi.String}}}}}
+	snapshot := accountOp("createVolumeSnapshot", "202", "已持久受理的腾讯云、阿里云或华为云快照申请，需独立审批", true)
+	snapshot.Params = submit.Params
+	snapshot.Responses["412"] = openapi.Response{Description: "缺少当前源卷归属版本，或源卷归属版本已变更"}
+	snapshot.Responses["429"] = submit.Responses["429"]
+	snapshot.Body = &openapi.RequestBody{Required: true,
+		Description: "必填 account、region、volume_id、name。If-Match 使用源卷归属版本。allow_attached 默认为 false。设为 true 表示允许在云盘挂载时创建崩溃一致性快照。",
+		Content: map[string]openapi.MediaType{"application/json": {Schema: openapi.Schema{Type: "object",
+			Properties: map[string]openapi.Schema{"account": openapi.String, "region": openapi.String, "volume_id": openapi.String,
+				"name": openapi.String, "allow_attached": {Type: "boolean"}}}}}}
+	deleteSnapshot := accountOp("deleteVolumeSnapshot", "202", "已持久受理的云盘快照删除申请，需独立审批", true)
+	deleteSnapshot.Params = submit.Params
+	deleteSnapshot.Responses["412"], deleteSnapshot.Responses["429"] = snapshot.Responses["412"], submit.Responses["429"]
+	deleteSnapshot.Body = &openapi.RequestBody{Required: true,
+		Description: "必填 account、region、asset_id、volume_id。If-Match 使用源卷归属版本。受理后需独立审批及厂商缺失证据。",
+		Content: map[string]openapi.MediaType{"application/json": {Schema: openapi.Schema{Type: "object", Properties: map[string]openapi.Schema{
+			"account": openapi.String, "region": openapi.String, "asset_id": openapi.String, "volume_id": openapi.String,
+		}}}}}
+	restore := accountOp("restoreVolumeFromSnapshot", "202", "已持久受理的新建数据盘恢复申请，需独立审批", true)
+	restore.Params = submit.Params
+	restore.Responses["412"], restore.Responses["429"] = snapshot.Responses["412"], submit.Responses["429"]
+	restore.Body = &openapi.RequestBody{Required: true,
+		Description: "必填 account、region、asset_id（快照）、volume_id（源卷）、name、zone、disk_type 和 size_gib。If-Match 使用源卷归属版本。encrypted 须与源快照加密状态匹配。",
+		Content: map[string]openapi.MediaType{"application/json": {Schema: openapi.Schema{Type: "object", Properties: map[string]openapi.Schema{
+			"account": openapi.String, "region": openapi.String, "asset_id": openapi.String, "volume_id": openapi.String,
+			"name": openapi.String, "zone": openapi.String, "disk_type": openapi.String, "size_gib": openapi.Integer, "encrypted": {Type: "boolean"},
+		}}}}}
+	rollback := accountOp("rollbackVolumeToSnapshot", "202", "已持久受理的原卷回滚申请，需独立审批", true)
+	rollback.Params = submit.Params
+	rollback.Responses["412"], rollback.Responses["429"] = snapshot.Responses["412"], submit.Responses["429"]
+	rollback.Body = &openapi.RequestBody{Required: true,
+		Description: "必填 account、region、asset_id（源快照）、volume_id（原卷）、confirm_overwrite=true。If-Match 使用源卷归属版本。回滚会覆盖原卷上快照之后的写入。",
+		Content: map[string]openapi.MediaType{"application/json": {Schema: openapi.Schema{Type: "object", Properties: map[string]openapi.Schema{
+			"account": openapi.String, "region": openapi.String, "asset_id": openapi.String, "volume_id": openapi.String, "confirm_overwrite": {Type: "boolean"},
+		}}}}}
+	imageCreation := accountOp("createSystemImage", "202", "已持久受理的系统盘镜像申请，需独立审批", true)
+	imageCreation.Params = submit.Params
+	imageCreation.Responses["412"] = openapi.Response{Description: "需要当前源实例归属版本"}
+	imageCreation.Responses["429"] = submit.Responses["429"]
+	imageCreation.Body = &openapi.RequestBody{Required: true, Description: "提交 account、region、instance_id、name。If-Match 使用源实例归属版本。源实例必须已停止，阿里云源实例须只挂载系统云盘。",
+		Content: map[string]openapi.MediaType{"application/json": {Schema: openapi.Schema{Type: "object", Properties: map[string]openapi.Schema{
+			"account": openapi.String, "region": openapi.String, "instance_id": openapi.String, "name": openapi.String,
+		}}}}}
+	imageCopy := accountOp("copyPrivateImage", "202", "已持久受理的跨地域镜像复制申请，需独立审批", true)
+	imageCopy.Params = submit.Params
+	imageCopy.Responses["412"] = openapi.Response{Description: "需要当前源镜像归属版本"}
+	imageCopy.Responses["429"] = submit.Responses["429"]
+	imageCopy.Body = &openapi.RequestBody{Required: true, Description: "提交源 account、region、asset_id 和目标 destination_region、name、destination_account。腾讯云与阿里云可省略 destination_account。华为云须指定同企业账号下、属于当前平台项目的另一 IAM 项目账号。",
+		Content: map[string]openapi.MediaType{"application/json": {Schema: openapi.Schema{Type: "object", Properties: map[string]openapi.Schema{
+			"account": openapi.String, "region": openapi.String, "asset_id": openapi.String, "name": openapi.String,
+			"destination_account": openapi.String, "destination_region": openapi.String,
+		}}}}}
+	imageDeletion := accountOp("deleteOwnedImage", "202", "已持久受理的自有镜像删除申请，需独立审批", true)
+	imageDeletion.Params = submit.Params
+	imageDeletion.Responses["412"] = openapi.Response{Description: "需要最新的镜像归属版本和有效的账号盘点"}
+	imageDeletion.Responses["429"] = submit.Responses["429"]
+	imageDeletion.Body = &openapi.RequestBody{Required: true, Description: "提交 account、region、asset_id。If-Match 使用镜像归属版本。使用镜像的实例、待执行申请或已启用目录模板会阻止删除。",
+		Content: map[string]openapi.MediaType{"application/json": {Schema: openapi.Schema{Type: "object", Properties: map[string]openapi.Schema{
+			"account": openapi.String, "region": openapi.String, "asset_id": openapi.String,
+		}}}}}
+	deleteNetwork := accountOp("deleteNetworkResource", "202", "已持久受理的 VPC、子网或安全组删除申请，需独立审批", true)
+	deleteNetwork.Params = submit.Params
+	deleteNetwork.Responses["412"] = openapi.Response{Description: "需要当前资产及其父资源的有效归属与盘点"}
+	deleteNetwork.Responses["429"] = submit.Responses["429"]
+	deleteNetwork.Body = &openapi.RequestBody{Required: true, Description: "必填 account、region、asset_id 和 kind。kind 为 network、subnet 或 security-group。安全组必须传 confirm_rule_removal=true。If-Match 使用目标资产归属版本。存在外部依赖时拒绝删除。",
+		Content: map[string]openapi.MediaType{"application/json": {Schema: openapi.Schema{Type: "object",
+			Properties: map[string]openapi.Schema{"account": openapi.String, "region": openapi.String,
+				"asset_id": openapi.String, "kind": openapi.String, "confirm_rule_removal": {Type: "boolean"}}}}}}
 	revokeRule := accountOp("revokeSecurityGroupRule", "202", "已持久受理的安全组规则撤销操作，需独立审批", true)
 	revokeRule.Responses["412"], revokeRule.Responses["429"] = network.Responses["412"], submit.Responses["429"]
 	revokeRule.Params = submit.Params
@@ -145,6 +214,27 @@ func registerOpenAPI(app *core.App, console *consoleConfig) error {
 		Content: map[string]openapi.MediaType{"application/json": {Schema: openapi.Schema{Type: "object", Properties: map[string]openapi.Schema{
 			"account": openapi.String, "region": openapi.String, "parent_id": openapi.String, "rule_id": openapi.String,
 		}}}}}
+	releaseIP := accountOp("releaseElasticIP", "202", "已持久受理的弹性公网 IP 释放操作，需独立审批", true)
+	releaseIP.Responses["412"] = openapi.Response{Description: "缺少有效的弹性公网 IP 归属版本或版本已变更"}
+	releaseIP.Responses["429"] = submit.Responses["429"]
+	releaseIP.Params = submit.Params
+	releaseIP.Body = &openapi.RequestBody{Required: true, Description: "必填 account、region、asset_id、public_address。仅释放未绑定的按量 IPv4 地址。If-Match 使用该地址当前归属版本。",
+		Content: map[string]openapi.MediaType{"application/json": {Schema: openapi.Schema{Type: "object", Properties: map[string]openapi.Schema{
+			"account": openapi.String, "region": openapi.String, "asset_id": openapi.String, "public_address": {Type: "string", Format: "ipv4"},
+		}}}}}
+	bindIP := accountOp("bindElasticIP", "202", "已持久受理的弹性公网 IP 绑定操作，需独立审批", true)
+	bindIP.Responses["412"] = openapi.Response{Description: "弹性公网 IP 或目标实例的归属版本已变更"}
+	bindIP.Responses["429"] = submit.Responses["429"]
+	bindIP.Params = submit.Params
+	bindIP.Body = &openapi.RequestBody{Required: true,
+		Description: "必填 account、region、asset_id、public_address、instance_id 和 instance_revision。If-Match 使用地址归属版本。华为云须指定 port_id。",
+		Content: map[string]openapi.MediaType{"application/json": {Schema: openapi.Schema{Type: "object", Properties: map[string]openapi.Schema{
+			"account": openapi.String, "region": openapi.String, "asset_id": openapi.String, "public_address": {Type: "string", Format: "ipv4"},
+			"instance_id": openapi.String, "instance_revision": openapi.Integer, "port_id": {Type: "string", Format: "uuid"},
+		}}}}}
+	unbindIP := accountOp("unbindElasticIP", "202", "已持久受理的弹性公网 IP 解绑操作，需独立审批", true)
+	unbindIP.Responses["412"], unbindIP.Responses["429"] = bindIP.Responses["412"], bindIP.Responses["429"]
+	unbindIP.Params, unbindIP.Body = bindIP.Params, bindIP.Body
 	networkApproval, networkReview, networkEvents, networkRetry := approval, review, events, retryObservation
 	networkApproval.OperationID = "decideNetworkApproval"
 	networkReview.OperationID = "resolveNetworkOperation"
@@ -207,8 +297,19 @@ func registerOpenAPI(app *core.App, console *consoleConfig) error {
 		"POST " + operationsRoute + "/:operation/resolution":               review,
 		"GET " + operationsRoute + "/:operation/events":                    events,
 		"POST " + operationsRoute + "/:operation/retry-observation":        retryObservation,
+		"POST " + imagesRoute:                                              imageCreation,
+		"POST " + imagesRoute + "/copy":                                    imageCopy,
+		"POST " + imagesRoute + "/delete":                                  imageDeletion,
+		"POST " + snapshotsRoute + "/rollback":                             rollback,
+		"POST " + snapshotsRoute + "/restore":                              restore,
+		"POST " + snapshotsRoute + "/delete":                               deleteSnapshot,
+		"POST " + snapshotsRoute:                                           snapshot,
 		"POST " + networkOperationsRoute:                                   network,
+		"POST " + networkOperationsRoute + "/delete":                       deleteNetwork,
 		"POST " + networkOperationsRoute + "/revoke-rule":                  revokeRule,
+		"POST " + networkOperationsRoute + "/release-elastic-ip":           releaseIP,
+		"POST " + networkOperationsRoute + "/bind-elastic-ip":              bindIP,
+		"POST " + networkOperationsRoute + "/unbind-elastic-ip":            unbindIP,
 		"GET " + networkOperationsRoute + "/:operation":                    accountOp("getNetworkOperation", "200", "项目网络操作状态", false),
 		"POST " + networkOperationsRoute + "/:operation/approval":          networkApproval,
 		"POST " + networkOperationsRoute + "/:operation/resolution":        networkReview,

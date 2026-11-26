@@ -51,6 +51,11 @@ type awsProfile struct {
 	awsec2.Config
 }
 
+type publicCloudProfile struct {
+	Ref string `json:"credential_ref"`
+	publiccloud.Config
+}
+
 type inventoryReader interface {
 	provider.Discovery
 	Identity() string
@@ -79,10 +84,7 @@ func runAWS(parent context.Context, db *sql.DB, args []string, path string) erro
 }
 
 func runPublicCloud(parent context.Context, db *sql.DB, args []string, name, path string, transport http.RoundTripper) error {
-	var profile struct {
-		Ref string `json:"credential_ref"`
-		publiccloud.Config
-	}
+	var profile publicCloudProfile
 	if err := loadPrivateProfile(path, &profile); err != nil {
 		return err
 	}
