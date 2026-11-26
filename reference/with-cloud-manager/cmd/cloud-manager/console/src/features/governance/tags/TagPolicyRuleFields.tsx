@@ -1,4 +1,4 @@
-import { kinds } from '../../../shared/display/labels'
+import { kinds } from '../../assets/labels'
 import { tagKinds } from './schema'
 
 export type RuleDraft = { id: string; kind: string; keys: string }

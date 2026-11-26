@@ -16,6 +16,12 @@ import (
 )
 
 func deletionPreviewHandler(store operations.Store, logger plumelog.StructuredLogger) http.Handler {
+	return instancePreviewHandler(func(ctx context.Context, token string, scope identity.Scope, account, region, id string) (operations.DeletionPreview, error) {
+		return store.PreviewDeletion(ctx, token, scope, operations.Input{Account: account, Region: region, AssetID: id})
+	}, logger)
+}
+
+func instancePreviewHandler[T any](read func(context.Context, string, identity.Scope, string, string, string) (T, error), logger plumelog.StructuredLogger) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
 		token, authenticated := requestCredential(r)
@@ -35,16 +41,19 @@ func deletionPreviewHandler(store operations.Store, logger plumelog.StructuredLo
 		ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
 		defer cancel()
 		scope := identity.Scope{Tenant: router.Param(r, "tenant"), Project: router.Param(r, "project")}
-		value, err := store.PreviewDeletion(ctx, token, scope, operations.Input{Account: query.Get("account"), Region: query.Get("region"), AssetID: query.Get("asset_id")})
-		if errors.Is(err, operations.ErrInvalid) {
+		value, err := read(ctx, token, scope, query.Get("account"), query.Get("region"), query.Get("asset_id"))
+		switch {
+		case errors.Is(err, operations.ErrInvalid):
 			err = identity.ErrAccountInvalid
+		case errors.Is(err, operations.ErrConflict):
+			err = identity.ErrAccountConflict
 		}
 		if err != nil {
 			writeAccountError(w, r, err, logger)
 			return
 		}
 		if err := contract.WriteResponse(w, r, http.StatusOK, value, nil); err != nil {
-			logger.Warn("deletion preview response write failed", plumelog.Fields{})
+			logger.Warn("instance operation preview response write failed", plumelog.Fields{})
 		}
 	})
 }

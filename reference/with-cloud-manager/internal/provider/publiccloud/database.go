@@ -54,11 +54,11 @@ func (c *Client) observeDatabase(ctx context.Context, scope provider.Scope, id s
 	}
 	product := 0
 	if c.name == provider.TencentCVM {
-		switch {
-		case strings.HasPrefix(id, "cdb-"), strings.HasPrefix(id, "cdbro-"), strings.HasPrefix(id, "cdbdr-"):
-		case strings.HasPrefix(id, "postgres-"):
+		switch provider.TencentDatabaseProduct(id) {
+		case provider.TencentCDB:
+		case provider.TencentPostgreSQL:
 			product = 1
-		case strings.HasPrefix(id, "mssql-"), strings.HasPrefix(id, "mssqldr-"):
+		case provider.TencentSQLServer:
 			product = 2
 		default:
 			return provider.Object{}, &provider.Failure{Kind: provider.Unsupported}

@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from 'react'
-import { selectionCount, subscribeSelection } from '../assets/selection-store'
+import { selectionCount, subscribeSelection } from '../assets/instances/selection-store'
 
 type Props = {
   canExecute: boolean

@@ -1,5 +1,5 @@
 import type { FormEvent } from 'react'
-import { kinds } from '../../../shared/display/labels'
+import { kinds } from '../../assets/labels'
 import { TagComplianceTable } from './TagComplianceTable'
 import type { TagPolicy } from './schema'
 import { useTagReport } from './useTagReport'

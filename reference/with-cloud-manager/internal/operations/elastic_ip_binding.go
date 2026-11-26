@@ -78,7 +78,7 @@ func resolveBindingInstance(ctx context.Context, tx *sql.Tx, actor identity.Scop
 	var busy bool
 	err = tx.QueryRowContext(ctx, `SELECT credential_revision,
 		EXISTS(SELECT 1 FROM cmp_instance_operations WHERE (scope_id,external_id)=($1,$2)
-			AND action='delete' AND status IN `+activeOperationStatuses+`) OR
+			AND action IN ('delete','retire-instance') AND status IN `+activeOperationStatuses+`) OR
 		EXISTS(SELECT 1 FROM cmp_network_intents AS i JOIN cmp_instance_operations AS o USING(operation_id)
 			WHERE (i.parent_scope_id,i.parent_id)=($1,$2) AND i.binding_address IS NOT NULL
 			AND o.operation_id<>$3 AND o.status IN `+activeOperationStatuses+`)

@@ -283,7 +283,7 @@ func validateNetworkParent(ctx context.Context, tx *sql.Tx, actor identity.Scope
 		err = tx.QueryRowContext(ctx, `SELECT EXISTS (
 			SELECT 1 FROM cmp_instance_operations
 			WHERE (volume_scope_id,volume_id)=($1,$2) AND status IN `+activeOperationStatuses+`
-		) OR `+snapshotWriteConflict, parent.ScopeID, input.ParentID, opID).Scan(&conflict)
+		) OR `+snapshotWriteConflict+" OR "+retirementDiskReserved, parent.ScopeID, input.ParentID, opID).Scan(&conflict)
 	case provider.Subnet:
 		err = tx.QueryRowContext(ctx, conflictQuery+`intent.cidr && $4::cidr AND NOT (`+releasedIntent+`))`, parent.ScopeID, input.ParentID, opID, input.CIDR).Scan(&conflict)
 	case provider.SecurityGroupRule:

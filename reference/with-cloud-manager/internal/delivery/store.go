@@ -22,19 +22,21 @@ var ErrBinding = errors.New("event destination binding is unavailable or does no
 var ErrNotFailed = errors.New("failed event is unavailable")
 
 type Config struct {
-	ID            string `json:"id"`
-	Tenant        string `json:"tenant"`
-	Project       string `json:"project"`
-	Endpoint      string `json:"endpoint"`
-	Secret        string `json:"secret"`
-	IncludeAlerts bool   `json:"include_alerts,omitempty"`
+	ID                   string `json:"id"`
+	Tenant               string `json:"tenant"`
+	Project              string `json:"project"`
+	Endpoint             string `json:"endpoint"`
+	Secret               string `json:"secret"`
+	IncludeAlerts        bool   `json:"include_alerts,omitempty"`
+	IncludeChangeTickets bool   `json:"include_change_tickets,omitempty"`
 }
 
 type Destination struct {
-	id, tenant, project string
-	endpoint, secret    string
-	endpointHash        [32]byte
-	includeAlerts       bool
+	id, tenant, project  string
+	endpoint, secret     string
+	endpointHash         [32]byte
+	includeAlerts        bool
+	includeChangeTickets bool
 }
 
 func NewDestination(cfg Config) (Destination, error) {
@@ -45,7 +47,8 @@ func NewDestination(cfg Config) (Destination, error) {
 		len(cfg.Secret) < 32 || len(cfg.Secret) > 512 || strings.TrimSpace(cfg.Secret) != cfg.Secret {
 		return Destination{}, ErrBinding
 	}
-	d := Destination{id: cfg.ID, tenant: cfg.Tenant, project: cfg.Project, endpoint: u.String(), secret: cfg.Secret, includeAlerts: cfg.IncludeAlerts}
+	d := Destination{id: cfg.ID, tenant: cfg.Tenant, project: cfg.Project, endpoint: u.String(), secret: cfg.Secret,
+		includeAlerts: cfg.IncludeAlerts, includeChangeTickets: cfg.IncludeChangeTickets}
 	d.endpointHash = sha256.Sum256([]byte(d.endpoint))
 	return d, nil
 }
@@ -56,11 +59,12 @@ func NewStore(db *sql.DB) Store { return Store{db: db} }
 
 func (s Store) Register(ctx context.Context, dest Destination) error {
 	var id string
-	err := s.db.QueryRowContext(ctx, `INSERT INTO cmp_operation_event_sinks AS existing (sink_id,tenant_id,project_id,endpoint_hash,include_alerts)
-		SELECT $1,tenant_id,project_id,$4,$5 FROM cmp_projects WHERE (tenant_id,project_id)=($2,$3)
-		ON CONFLICT (sink_id) DO UPDATE SET enabled=true,include_alerts=EXCLUDED.include_alerts
+	err := s.db.QueryRowContext(ctx, `INSERT INTO cmp_operation_event_sinks AS existing
+		(sink_id,tenant_id,project_id,endpoint_hash,include_alerts,include_change_tickets)
+		SELECT $1,tenant_id,project_id,$4,$5,$6 FROM cmp_projects WHERE (tenant_id,project_id)=($2,$3)
+		ON CONFLICT (sink_id) DO UPDATE SET enabled=true,include_alerts=EXCLUDED.include_alerts,include_change_tickets=EXCLUDED.include_change_tickets
 		WHERE (existing.tenant_id,existing.project_id,existing.endpoint_hash)=(EXCLUDED.tenant_id,EXCLUDED.project_id,EXCLUDED.endpoint_hash)
-		RETURNING sink_id`, dest.id, dest.tenant, dest.project, dest.endpointHash[:], dest.includeAlerts).Scan(&id)
+		RETURNING sink_id`, dest.id, dest.tenant, dest.project, dest.endpointHash[:], dest.includeAlerts, dest.includeChangeTickets).Scan(&id)
 	return bindingError(err)
 }
 

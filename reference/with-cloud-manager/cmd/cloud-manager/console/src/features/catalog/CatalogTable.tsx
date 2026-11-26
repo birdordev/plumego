@@ -2,7 +2,7 @@ import type { z } from 'zod'
 import type { catalogTemplateSchema } from './schema'
 import { RowAction } from '../../shared/components/RowAction'
 import { ConsoleTable } from '../../shared/components/ConsoleTable'
-import { showCatalogTemplate } from './templates'
+import { showCatalogTemplate } from './templates/detail'
 
 type Template = z.infer<typeof catalogTemplateSchema>
 

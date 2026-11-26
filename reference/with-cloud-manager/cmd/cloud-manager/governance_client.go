@@ -17,6 +17,11 @@ const governanceUsage = `usage: cloud-manager governance COMMAND TENANT PROJECT
   policy-get [REVISION]
   policy-create < policy.json
   policy-update REVISION < policy.json
+  ticket-policy-get [REVISION]
+  ticket-policy-create < policy.json
+  ticket-policy-update REVISION < policy.json
+  ticket-get OPERATION
+  ticket-record OPERATION < evidence.json
   compliance KIND [--state STATE] [--account ACCOUNT] [--region REGION] [--cursor CURSOR] [--limit LIMIT]
   idle [--state STATE] [--account ACCOUNT] [--region REGION] [--cursor CURSOR] [--limit LIMIT]`
 
@@ -32,22 +37,39 @@ func runGovernanceClient(ctx context.Context, args []string, address, token stri
 	target := base.JoinPath("v1", "tenants", url.PathEscape(args[1]), "projects", url.PathEscape(args[2]), "governance")
 	plan := operationRequestPlan{target: target.JoinPath("tag-policy"), method: http.MethodGet, status: http.StatusOK}
 	switch args[0] {
-	case "policy-get":
+	case "policy-get", "ticket-policy-get":
+		if args[0] == "ticket-policy-get" {
+			plan.target = target.JoinPath("ticket-policy")
+		}
 		if len(args) == 4 && validTagRevision(args[3]) {
 			plan.target.RawQuery = url.Values{"revision": {args[3]}}.Encode()
 		} else if len(args) != 3 {
 			return usage
 		}
-	case "policy-create":
+	case "policy-create", "ticket-policy-create":
 		if len(args) != 3 {
 			return usage
 		}
 		plan.method, plan.status, plan.inputLimit = http.MethodPost, http.StatusCreated, tagPolicyInputLimit
-	case "policy-update":
+		if args[0] == "ticket-policy-create" {
+			plan.target, plan.inputLimit = target.JoinPath("ticket-policy"), ticketPolicyInputLimit
+		}
+	case "policy-update", "ticket-policy-update":
 		if len(args) != 4 || !validTagRevision(args[3]) {
 			return usage
 		}
 		plan.method, plan.match, plan.inputLimit = http.MethodPut, strconv.Quote(args[3]), tagPolicyInputLimit
+		if args[0] == "ticket-policy-update" {
+			plan.target, plan.inputLimit = target.JoinPath("ticket-policy"), ticketPolicyInputLimit
+		}
+	case "ticket-get", "ticket-record":
+		if len(args) != 4 || !operationClientSegment(args[3]) {
+			return usage
+		}
+		plan.target = target.JoinPath("change-tickets", url.PathEscape(args[3]))
+		if args[0] == "ticket-record" {
+			plan.method, plan.inputLimit = http.MethodPost, ticketEvidenceInputLimit
+		}
 	case "compliance":
 		if len(args) < 4 || !provider.Kind(args[3]).Valid() {
 			return usage

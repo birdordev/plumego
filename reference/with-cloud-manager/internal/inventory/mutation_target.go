@@ -109,7 +109,7 @@ func RecordInstanceStatus(ctx context.Context, tx *sql.Tx, scopeID int64, instan
 	return restartActiveInventoryScan(ctx, tx, scopeID)
 }
 
-func RecordLoadBalancerName(ctx context.Context, tx *sql.Tx, scopeID int64, id, current, desired string) error {
+func RecordObservedAssetName(ctx context.Context, tx *sql.Tx, scopeID int64, id, current, desired string) error {
 	var recorded string
 	err := tx.QueryRowContext(ctx, `UPDATE cmp_inventory_objects SET name=$4
 		WHERE (scope_id,external_id)=($1,$2) AND name IN ($3,$4) AND removed_at IS NULL AND missing_generation IS NULL

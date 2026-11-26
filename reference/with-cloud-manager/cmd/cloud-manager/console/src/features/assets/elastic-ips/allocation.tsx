@@ -2,7 +2,7 @@ import { formText } from '../../../shared/detail/form-values'
 import { openDetail } from '../../../shared/detail/store'
 import { OperationForm } from '../../operations/forms/OperationForm'
 import { projectURL } from '../../session/project'
-import { assetsCollection } from '../collection'
+import { assetsCollection } from '../inventory/collection'
 
 const addressNamePattern = '[a-zA-Z0-9][a-zA-Z0-9_.\\-]{0,63}'
 

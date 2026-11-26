@@ -219,7 +219,7 @@ func (s Store) confirmLoadBalancerRename(ctx context.Context, task mq.Task, w wo
 			}
 			return writeTransition(ctx, tx, w.ID, w.Status, "succeeded", reason, "")
 		}
-		if err := inventory.RecordLoadBalancerName(ctx, tx, scopeID, w.AssetID, w.rename.CurrentName, w.rename.Name); err != nil {
+		if err := inventory.RecordObservedAssetName(ctx, tx, scopeID, w.AssetID, w.rename.CurrentName, w.rename.Name); err != nil {
 			return err
 		}
 		return writeTransition(ctx, tx, w.ID, w.Status, "succeeded", "load_balancer_name_observed", "")

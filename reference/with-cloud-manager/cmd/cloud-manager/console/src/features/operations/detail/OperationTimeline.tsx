@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { requestErrorMessage } from '../../../shared/api/requests'
-import { statuses, timestamp } from '../../../shared/display/labels'
+import { statuses } from '../../../shared/display/status-labels'
+import { timestamp } from '../../../shared/display/time'
 import { request } from '../../session/client'
 import { operationEventsSchema, type OperationEvents } from './schema'
 

@@ -10,7 +10,11 @@ export function projectURL() {
   return projectPath(session)
 }
 
+export function projectCanExecute({ project }: Session) {
+  return project.role === 'operator' || project.role === 'admin'
+}
+
 export function canExecute() {
-  const role = sessionSnapshot()?.project.role
-  return role === 'operator' || role === 'admin'
+  const session = sessionSnapshot()
+  return session !== null && projectCanExecute(session)
 }

@@ -123,6 +123,7 @@ func (c *Client) ApplyInstance(ctx context.Context, scope provider.Scope, id, ac
 }
 
 type tencentInstanceObservation struct {
+	DisableApiTermination                                           *bool
 	PrivateIpAddresses                                              []string
 	InstanceId, InstanceName, InstanceState                         string
 	LatestOperation, LatestOperationRequestId, LatestOperationState string
@@ -145,29 +146,40 @@ func (c *Client) observeTencentInstance(ctx context.Context, region, id string) 
 }
 
 func (c *Client) describeTencentInstance(ctx context.Context, region, id string) (tencentInstanceObservation, error) {
-	body, err := json.Marshal(struct{ InstanceIds []string }{[]string{id}})
+	row, err := c.readTencentInstance(ctx, region, id)
 	if err != nil {
 		return tencentInstanceObservation{}, err
+	}
+	if row == nil {
+		return tencentInstanceObservation{}, &provider.Failure{Kind: provider.OutcomeUnknown}
+	}
+	return *row, nil
+}
+
+func (c *Client) readTencentInstance(ctx context.Context, region, id string) (*tencentInstanceObservation, error) {
+	body, err := json.Marshal(struct{ InstanceIds []string }{[]string{id}})
+	if err != nil {
+		return nil, err
 	}
 	var response struct {
 		TotalCount  *int
 		InstanceSet []tencentInstanceObservation
 	}
 	if err := c.tencent(ctx, "cvm", region, "DescribeInstances", "2017-03-12", body, &response); err != nil {
-		return tencentInstanceObservation{}, err
+		return nil, err
 	}
 	if response.InstanceSet == nil || response.TotalCount == nil ||
 		*response.TotalCount != len(response.InstanceSet) || len(response.InstanceSet) > 1 {
-		return tencentInstanceObservation{}, &provider.Failure{Kind: provider.InvalidResponse}
+		return nil, &provider.Failure{Kind: provider.InvalidResponse}
 	}
 	if len(response.InstanceSet) == 0 {
-		return tencentInstanceObservation{}, &provider.Failure{Kind: provider.OutcomeUnknown}
+		return nil, nil
 	}
 	row := response.InstanceSet[0]
 	if row.InstanceId != id {
-		return tencentInstanceObservation{}, &provider.Failure{Kind: provider.InvalidResponse}
+		return nil, &provider.Failure{Kind: provider.InvalidResponse}
 	}
-	return row, nil
+	return &row, nil
 }
 
 type alibabaInstanceObservation struct {

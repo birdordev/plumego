@@ -37,7 +37,7 @@ func checkInstanceMutationProtection(ctx context.Context, tx *sql.Tx, scopeID in
 	if active {
 		return ErrConflict
 	}
-	if action != "delete" {
+	if action != "delete" && action != retireInstance {
 		return nil
 	}
 	var blocked bool
@@ -106,16 +106,20 @@ func (s Store) confirmDeletion(ctx context.Context, task mq.Task, w work, reason
 		if target.OwnershipRevision != w.ownership || target.CredentialRevision != w.credential || target.MembershipRevision != w.membership {
 			return identity.ErrForbidden
 		}
-		if err := inventory.MarkResourceDeleted(ctx, tx, target.ScopeID, w.AssetID); err != nil {
-			return err
-		}
-		_, err = tx.ExecContext(ctx, `UPDATE cmp_instance_launches AS l SET released_at=statement_timestamp()
-			FROM cmp_instance_operations AS o WHERE o.operation_id=l.operation_id AND o.action='create'
-			AND (o.scope_id,o.external_id)=($1,$2) AND l.released_at IS NULL`, target.ScopeID, w.AssetID)
-		return err
+		return recordConfirmedInstanceDeletion(ctx, tx, target.ScopeID, w.AssetID)
 	})
 	if errors.Is(err, identity.ErrForbidden) {
 		return s.endUnavailable(ctx, task, w)
 	}
+	return err
+}
+
+func recordConfirmedInstanceDeletion(ctx context.Context, tx *sql.Tx, scopeID int64, id string) error {
+	if err := inventory.MarkResourceDeleted(ctx, tx, scopeID, id); err != nil {
+		return err
+	}
+	_, err := tx.ExecContext(ctx, `UPDATE cmp_instance_launches AS l SET released_at=statement_timestamp()
+		FROM cmp_instance_operations AS o WHERE o.operation_id=l.operation_id AND o.action='create'
+		AND (o.scope_id,o.external_id)=($1,$2) AND l.released_at IS NULL`, scopeID, id)
 	return err
 }

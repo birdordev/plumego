@@ -2,17 +2,23 @@ import type { z } from 'zod'
 import type { auditEventSchema } from './schema'
 import { RowAction } from '../../shared/components/RowAction'
 import { ConsoleTable } from '../../shared/components/ConsoleTable'
-import { actions, alertRules, auditActions, auditKinds, auditOutcomes, grantPurposes, statuses, timestamp } from '../../shared/display/labels'
+import { actions } from '../operations/labels'
+import { alertRules } from '../alerts/labels'
+import { auditActions, auditKinds, auditOutcomes } from './labels'
+import { grantPurposes } from '../native-console/labels'
+import { statuses } from '../../shared/display/status-labels'
+import { timestamp } from '../../shared/display/time'
 import { showAlert } from '../alerts/detail'
-import { showNativeGrant } from '../native-console/grant'
+import { showNativeGrant } from '../native-console/access/detail'
 import { showOperation } from '../operations/detail/open'
 
 type AuditEvent = z.infer<typeof auditEventSchema>
 
 function AuditSubject({ event, nativeEnabled }: { event: AuditEvent; nativeEnabled: boolean }) {
-  const { category, subject_id, related_project } = event
+  const { category, action, subject_id, related_project } = event
   let open: (() => void) | undefined
   if (['operation', 'approval', 'resolution', 'observation'].includes(category)) open = () => showOperation(subject_id)
+  else if (category === 'change_ticket' && action === 'record_receipt') open = () => showOperation(subject_id)
   else if (category === 'alert') open = () => showAlert(subject_id)
   else if (category === 'console_access' && nativeEnabled) open = () => showNativeGrant(subject_id)
   return <div>

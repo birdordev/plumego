@@ -39,6 +39,9 @@ func operationDecisionHandler[T any](decide func(context.Context, string, identi
 			err = identity.ErrAccountInvalid
 		case errors.Is(err, operations.ErrConflict):
 			err = identity.ErrAccountConflict
+		case errors.Is(err, operations.ErrTicketRequired):
+			err = contract.NewErrorBuilder().Type(contract.TypeConflict).Detail("reason", "change_ticket_required").
+				Message("current external change approval required").Build()
 		}
 		if err != nil {
 			writeAccountError(w, r, err, logger)

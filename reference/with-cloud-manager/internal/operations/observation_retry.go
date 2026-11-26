@@ -32,7 +32,7 @@ func (s Store) RetryCreationObservation(ctx context.Context, token string, scope
 			JOIN cmp_instance_operations AS o ON (t.tenant_id,t.id)=(o.tenant_id,o.operation_id)
 			WHERE (o.tenant_id,o.project_id,o.operation_id)=($1,$2,$3)
 			AND o.action IN ('create','create-network','create-subnet','create-security-group','create-security-group-rule',
-			    'create-elastic-ip','create-snapshot','delete-snapshot','restore-snapshot','rollback-snapshot','create-image','copy-image','delete-image','delete-network','delete-subnet','delete-security-group','revoke-security-group-rule','release-elastic-ip','bind-elastic-ip','unbind-elastic-ip','rename-load-balancer','rename-load-balancer-listener','rename-load-balancer-target-group','set-load-balancer-backend-weight','detach-load-balancer-backend','attach-load-balancer-backend','set-dns-record-status','create-dns-record','delete-dns-record','scale-workload') FOR UPDATE OF t`,
+			    'create-elastic-ip','create-snapshot','delete-snapshot','restore-snapshot','rollback-snapshot','create-image','copy-image','delete-image','delete-network','delete-subnet','delete-security-group','revoke-security-group-rule','release-elastic-ip','bind-elastic-ip','unbind-elastic-ip','rename-load-balancer','rename-load-balancer-listener','rename-load-balancer-target-group','set-load-balancer-backend-weight','detach-load-balancer-backend','attach-load-balancer-backend','set-dns-record-status','create-dns-record','delete-dns-record','scale-workload','rename-database-instance','rename-cache-instance','retire-instance') FOR UPDATE OF t`,
 			actor.Tenant, actor.Project, id).Scan(&queueStatus)
 		if errors.Is(err, sql.ErrNoRows) {
 			return identity.ErrForbidden
@@ -65,11 +65,11 @@ func (s Store) RetryCreationObservation(ctx context.Context, token string, scope
 		if !errors.Is(err, sql.ErrNoRows) {
 			return err
 		}
-		if op.Status != "needs_review" || queueStatus != "done" {
+		if op.Status != "needs_review" || queueStatus != "done" || (op.Action == retireInstance && !requestIDPattern.MatchString(op.ProviderRequestID)) {
 			return ErrConflict
 		}
 		var access identity.AccountAccess
-		if op.Action == revokeSecurityRule || op.Action == deleteImage || isNetworkDeletion(op.Action) || op.Action == deleteSnapshot || op.Action == rollbackSnapshot || op.Action == releaseElasticIP || isElasticIPBinding(op.Action) || isLoadBalancerMutation(op.Action) || isDNSRecordMutation(op.Action) || op.Action == scaleWorkload {
+		if op.Action == retireInstance || op.Action == revokeSecurityRule || op.Action == deleteImage || isNetworkDeletion(op.Action) || op.Action == deleteSnapshot || op.Action == rollbackSnapshot || op.Action == releaseElasticIP || isElasticIPBinding(op.Action) || isLoadBalancerMutation(op.Action) || isDNSRecordMutation(op.Action) || op.Action == scaleWorkload || op.Action == renameDatabaseInstance || op.Action == renameCacheInstance {
 			access, err = identity.NewStore(tx).AuthorizeAccount(ctx, actor, op.Account, identity.View)
 		} else {
 			access, err = authorizeLaunchObservation(ctx, tx, actor, op.Account)
@@ -98,6 +98,18 @@ func (s Store) RetryCreationObservation(ctx context.Context, token string, scope
 		if isResourceCreation(op.Action) || op.Action == revokeSecurityRule || op.Action == deleteImage || isNetworkDeletion(op.Action) || op.Action == deleteSnapshot || op.Action == rollbackSnapshot || op.Action == releaseElasticIP || isElasticIPBinding(op.Action) {
 			query = `UPDATE cmp_network_intents SET observation_reviewer=$2,
 				observation_membership_revision=$3,observation_credential_revision=$4,absence_observations=0,binding_observations=0 WHERE operation_id=$1`
+		}
+		if op.Action == retireInstance {
+			query = `UPDATE cmp_instance_retirement_intents SET observation_reviewer=$2,
+				observation_membership_revision=$3,observation_credential_revision=$4,absence_observations=0,last_absence_attempt=0 WHERE operation_id=$1`
+		}
+		if op.Action == renameDatabaseInstance {
+			query = `UPDATE cmp_database_rename_intents SET observation_reviewer=$2,
+				observation_membership_revision=$3,observation_credential_revision=$4 WHERE operation_id=$1`
+		}
+		if op.Action == renameCacheInstance {
+			query = `UPDATE cmp_cache_rename_intents SET observation_reviewer=$2,
+				observation_membership_revision=$3,observation_credential_revision=$4 WHERE operation_id=$1`
 		}
 		if isLoadBalancerRename(op.Action) {
 			query = `UPDATE cmp_load_balancer_rename_intents SET observation_reviewer=$2,

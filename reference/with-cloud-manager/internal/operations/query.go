@@ -59,7 +59,7 @@ func queryPosition(scope identity.Scope, q Query) (operationPosition, error) {
 		return operationPosition{}, ErrInvalidQuery
 	}
 	switch q.Kind {
-	case "", provider.Instance, provider.Network, provider.Subnet, provider.SecurityGroup, provider.SecurityGroupRule, provider.ElasticIP, provider.Snapshot, provider.Volume, provider.Image, provider.LoadBalancer, provider.DNSZone, provider.KubernetesCluster:
+	case "", provider.Instance, provider.Network, provider.Subnet, provider.SecurityGroup, provider.SecurityGroupRule, provider.ElasticIP, provider.Snapshot, provider.Volume, provider.Image, provider.LoadBalancer, provider.DNSZone, provider.KubernetesCluster, provider.DatabaseInstance, provider.CacheInstance:
 	default:
 		return operationPosition{}, ErrInvalidQuery
 	}

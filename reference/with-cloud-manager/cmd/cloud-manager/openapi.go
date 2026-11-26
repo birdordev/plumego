@@ -162,6 +162,15 @@ func registerOpenAPI(app *core.App, console *consoleConfig) error {
 		Content: map[string]openapi.MediaType{"application/json": {Schema: openapi.Schema{Type: "object",
 			Properties: map[string]openapi.Schema{"account": openapi.String, "region": openapi.String, "asset_id": openapi.String, "action": openapi.String,
 				"volume_id": openapi.String, "volume_revision": openapi.Integer, "device": openapi.String, "guest_unmounted": {Type: "boolean"}}}}}}
+	retire := accountOp("retireTencentInstance", "202", "已登记腾讯云 CVM 退役，释放实例及其系统盘，须独立审批", true)
+	retire.Params = submit.Params
+	retire.Responses["412"] = openapi.Response{Description: "需要当前实例归属版本和盘点系统盘"}
+	retire.Responses["429"] = submit.Responses["429"]
+	retire.Body = &openapi.RequestBody{Required: true, Description: "必填 account、region、asset_id、system_disk_id 和 confirm_asset_id。确认值须与实例 ID 完全一致。",
+		Content: map[string]openapi.MediaType{"application/json": {Schema: openapi.Schema{Type: "object", Properties: map[string]openapi.Schema{
+			"account": openapi.String, "region": openapi.String, "asset_id": openapi.String,
+			"system_disk_id": openapi.String, "confirm_asset_id": openapi.String,
+		}}}}}
 	create := accountOp("createInstance", "202", "创建意图和配额预留已持久受理", true)
 	create.Responses["429"] = openapi.Response{Description: "活动操作或已管理实例配额已满"}
 	create.Params = []openapi.Param{{Name: "Idempotency-Key", In: "header", Required: true, Schema: openapi.String}}
@@ -182,7 +191,7 @@ func registerOpenAPI(app *core.App, console *consoleConfig) error {
 		Content: map[string]openapi.MediaType{"application/json": {Schema: openapi.Schema{Type: "object", Properties: map[string]openapi.Schema{"evidence_ref": openapi.String, "provider_resource_id": openapi.String}}}}}
 	approval := accountOp("decideInstanceApproval", "200", "已记录发送前审批决定", true)
 	approval.Responses["412"] = openapi.Response{Description: "申请所依据的资源或授权版本已失效"}
-	approval.Responses["409"] = openapi.Response{Description: "审批决定冲突或实例受删除保护"}
+	approval.Responses["409"] = openapi.Response{Description: "审批决定冲突、实例受删除保护或外部工单批准无效"}
 	approval.Body = &openapi.RequestBody{Required: true, Description: "提交 approve 或 reject",
 		Content: map[string]openapi.MediaType{"application/json": {Schema: openapi.Schema{Type: "object", Properties: map[string]openapi.Schema{"decision": openapi.String}}}}}
 	preview := accountOp("previewInstanceDeletion", "200", "实例本地删除影响预览，含归属版本、保护状态、已知卷关联数、审批要求与厂商支持状态", false)
@@ -190,6 +199,8 @@ func registerOpenAPI(app *core.App, console *consoleConfig) error {
 	for _, name := range []string{"account", "region", "asset_id"} {
 		preview.Params = append(preview.Params, openapi.Param{Name: name, In: "query", Required: true, Schema: openapi.String})
 	}
+	retirementPreview := accountOp("previewTencentInstanceRetirement", "200", "当前关机实例的归属版本和待云端核验的盘点磁盘 ID", true)
+	retirementPreview.Params = preview.Params
 	events := accountOp("listInstanceOperationEvents", "200", "按序记录的项目操作事件及续读游标", false)
 	events.Responses["400"] = openapi.Response{Description: "事件游标或页大小无效"}
 	events.Params = []openapi.Param{{Name: "after", In: "query", Schema: openapi.String}, {Name: "limit", In: "query", Schema: openapi.Integer}}
@@ -312,6 +323,32 @@ func registerOpenAPI(app *core.App, console *consoleConfig) error {
 			Properties: map[string]openapi.Schema{
 				"account": openapi.String, "asset_id": openapi.String, "record_id": openapi.String,
 				"observed_at": {Type: "string", Format: "date-time"}, "enabled": {Type: "boolean"},
+			},
+		}}}}
+	databaseRename := accountOp("renameDatabaseInstance", "202", "已持久受理的托管数据库实例改名申请，需独立审批", true)
+	databaseRename.Params = submit.Params
+	databaseRename.Responses["412"] = openapi.Response{Description: "需要当前数据库名称、归属版本和有效的盘点"}
+	databaseRename.Responses["429"] = submit.Responses["429"]
+	databaseRename.Body = &openapi.RequestBody{Required: true,
+		Description: "必填 account、region、asset_id、current_name 和 name。更新实例显示名。If-Match 使用数据库实例归属版本。",
+		Content: map[string]openapi.MediaType{"application/json": {Schema: openapi.Schema{
+			Type: "object",
+			Properties: map[string]openapi.Schema{
+				"account": openapi.String, "region": openapi.String, "asset_id": openapi.String,
+				"current_name": openapi.String, "name": openapi.String,
+			},
+		}}}}
+	cacheRename := accountOp("renameCacheInstance", "202", "已持久受理的托管缓存实例改名申请，需独立审批", true)
+	cacheRename.Params = submit.Params
+	cacheRename.Responses["412"] = openapi.Response{Description: "需要当前缓存名称、归属版本和有效的盘点"}
+	cacheRename.Responses["429"] = submit.Responses["429"]
+	cacheRename.Body = &openapi.RequestBody{Required: true,
+		Description: "必填 account、region、asset_id、current_name 和 name。新名称为 4–60 位，以英文字母开头，可包含字母、数字、下划线和连字符。If-Match 使用归属版本。",
+		Content: map[string]openapi.MediaType{"application/json": {Schema: openapi.Schema{
+			Type: "object",
+			Properties: map[string]openapi.Schema{
+				"account": openapi.String, "region": openapi.String, "asset_id": openapi.String,
+				"current_name": openapi.String, "name": openapi.String,
 			},
 		}}}}
 	balancerRename := accountOp("renameLoadBalancer", "202", "已持久受理的负载均衡改名申请，需独立审批", true)
@@ -465,11 +502,15 @@ func registerOpenAPI(app *core.App, console *consoleConfig) error {
 		"POST " + dnsRecordDeletionRoute:                                   dnsRecordDeletion,
 		"POST " + workloadScaleRoute:                                       workloadScale,
 		"POST " + dnsRecordStatusRoute:                                     dnsRecordStatus,
+		"POST " + cacheRenameRoute:                                         cacheRename,
+		"POST " + databaseRenameRoute:                                      databaseRename,
 		"POST " + loadBalancerRenameRoute:                                  balancerRename,
 		"POST " + accountsRoute:                                            accountOp("registerCloudAccount", "201", "待校验账号", true),
 		"GET " + accountsRoute + "/:account":                               accountOp("getCloudAccount", "200", "账号元数据", false),
 		"PATCH " + accountsRoute + "/:account":                             patchAccount,
 		"POST " + instancesRoute:                                           create,
+		"POST " + operationsRoute + "/retire":                              retire,
+		"GET " + operationsRoute + "/retirement-preview":                   retirementPreview,
 		"GET " + operationsRoute + "/deletion-preview":                     preview,
 		"POST " + operationsRoute:                                          submit,
 		"GET " + operationsRoute + "/:operation":                           accountOp("getInstanceOperation", "200", "项目操作状态", false),
@@ -522,9 +563,12 @@ func registerOpenAPI(app *core.App, console *consoleConfig) error {
 	}
 	budgetOpenAPI(hints, readAuth, writeAuth)
 	tagPolicyOpenAPI(hints, readAuth, writeAuth)
+	changeTicketOpenAPI(hints, readAuth, writeAuth)
+	hints["GET "+cmdbSnapshotRoute] = cmdbSnapshotOpenAPI()
 	hints["GET "+idleInstancesRoute] = idleReportOpenAPI(readAuth)
 	catalogOpenAPI(hints, accountOp)
 	alertOpenAPI(hints, accountOp)
+	kvmHints(hints, accountOp)
 	doc, err := generator.GenerateStrict(app.Routes(), hints)
 	if err != nil {
 		return err

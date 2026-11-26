@@ -19,6 +19,7 @@ import (
 	"with-cloud-manager/internal/billing"
 	"with-cloud-manager/internal/identity"
 	"with-cloud-manager/internal/inventory"
+	"with-cloud-manager/internal/kvm"
 	"with-cloud-manager/internal/nativeconsole"
 	"with-cloud-manager/internal/operations"
 	"with-cloud-manager/internal/provider"
@@ -35,7 +36,13 @@ func main() {
 
 func run(parent context.Context, args []string) (retErr error) {
 	if !validCommand(args) {
-		return errors.New("usage: cloud-manager billing COMMAND TENANT PROJECT ACCOUNT PERIOD SOURCE ...|billing-{import,replay,source,allocate,allocation-replay} TENANT PROJECT ACCOUNT PERIOD SOURCE ...|migrate|api|controller|workload-controller|alert-controller|idle-controller|idle-schedule TENANT ACCOUNT REGION INSTANCE DURATION_OR_OFF|billing-pull-controller|billing-pull[-status|-source|-replay] TENANT PROJECT ACCOUNT PERIOD SOURCE ...|worker|sessions-purge|operations COMMAND TENANT PROJECT|governance COMMAND TENANT PROJECT|audit {list,export} TENANT PROJECT|catalog COMMAND TENANT PROJECT|alerts COMMAND TENANT PROJECT|console-grants COMMAND TENANT PROJECT|event-publisher|event-{register,disable,failures} SINK|event-retry SINK EVENT_ID|verify-{openstack,aws,tencent,alibaba,huawei} TENANT ACCOUNT|scan-{openstack,aws,tencent,alibaba,huawei} TENANT ACCOUNT REGION KIND (or append ASSET_ID for a public-cloud load-balancer, database-instance, cache-instance, kubernetes-cluster or object-bucket absence check)|refresh-{tencent,alibaba,huawei}-load-balancer TENANT ACCOUNT REGION ASSET_ID [--include-backends]|refresh-{tencent,alibaba,huawei}-dns-zone TENANT ACCOUNT ZONE_ID|refresh-{tencent,alibaba,huawei}-cluster-{node-pools,workloads} TENANT ACCOUNT REGION CLUSTER_ID")
+		return errors.New("usage: cloud-manager billing COMMAND TENANT PROJECT ACCOUNT PERIOD SOURCE ...|billing-{import,replay,source,allocate,allocation-replay} TENANT PROJECT ACCOUNT PERIOD SOURCE ...|cmdb-migrate|cmdb-sync TENANT PROJECT|cmdb-status TENANT PROJECT|kvm COMMAND TENANT PROJECT SITE|migrate|api|controller|workload-controller|alert-controller|idle-controller|idle-schedule TENANT ACCOUNT REGION INSTANCE DURATION_OR_OFF|billing-pull-controller|billing-pull[-status|-source|-replay] TENANT PROJECT ACCOUNT PERIOD SOURCE ...|worker|sessions-purge|operations COMMAND TENANT PROJECT|governance COMMAND TENANT PROJECT|audit {list,export} TENANT PROJECT|catalog COMMAND TENANT PROJECT|alerts COMMAND TENANT PROJECT|console-grants COMMAND TENANT PROJECT|event-publisher|event-{register,disable,failures} SINK|event-retry SINK EVENT_ID|verify-{openstack,aws,tencent,alibaba,huawei,vsphere} TENANT ACCOUNT|scan-{openstack,aws,tencent,alibaba,huawei,vsphere} TENANT ACCOUNT REGION KIND (or append ASSET_ID for a public-cloud load-balancer, database-instance, cache-instance, kubernetes-cluster or object-bucket absence check)|refresh-{tencent,alibaba,huawei}-load-balancer TENANT ACCOUNT REGION ASSET_ID [--include-backends]|refresh-{tencent,alibaba,huawei}-dns-zone TENANT ACCOUNT ZONE_ID|refresh-{tencent,alibaba,huawei}-cluster-{node-pools,workloads} TENANT ACCOUNT REGION CLUSTER_ID")
+	}
+	if strings.HasPrefix(args[0], "cmdb-") {
+		return runCMDB(parent, args, os.Getenv, os.Stdout)
+	}
+	if args[0] == "kvm" {
+		return runKVMClient(parent, args[1:], os.Getenv("CLOUD_MANAGER_API_URL"), os.Getenv("CLOUD_MANAGER_API_TOKEN"), os.Stdin, os.Stdout, nil)
 	}
 	if args[0] == "operations" {
 		return runOperationsClient(parent, args[1:], os.Getenv("CLOUD_MANAGER_API_URL"), os.Getenv("CLOUD_MANAGER_API_TOKEN"), os.Stdin, os.Stdout, nil)
@@ -74,6 +81,9 @@ func run(parent context.Context, args []string) (retErr error) {
 	}()
 	if strings.HasPrefix(args[0], "event-") {
 		return runEventCommand(parent, db, args, os.Getenv("CLOUD_MANAGER_EVENT_PROFILES"), os.Stdout)
+	}
+	if args[0] == "verify-vsphere" || args[0] == "scan-vsphere" {
+		return runVSphere(parent, db, args, os.Getenv("CLOUD_MANAGER_VSPHERE_PROFILE"), nil)
 	}
 	if args[0] == "verify-openstack" || args[0] == "scan-openstack" {
 		return runOpenStack(parent, db, args, os.Getenv("CLOUD_MANAGER_OPENSTACK_PROFILE"), nil)
@@ -196,6 +206,18 @@ func migrateCloudManager(ctx context.Context, db *sql.DB) error {
 	if err := inventory.MigrateIdleAnalysis(ctx, db); err != nil {
 		return errors.New("instance idle analysis migration failed")
 	}
+	if err := operations.MigrateChangeTicketEvents(ctx, db); err != nil {
+		return errors.New("change ticket events migration failed")
+	}
+	if err := operations.MigrateDatabaseRenameEvents(ctx, db); err != nil {
+		return errors.New("database rename events migration failed")
+	}
+	if err := operations.MigrateCacheRenameEvents(ctx, db); err != nil {
+		return errors.New("cache rename events migration failed")
+	}
+	if err := kvm.Migrate(ctx, db); err != nil {
+		return errors.New("KVM placement migration failed")
+	}
 	return nil
 }
 
@@ -204,13 +226,17 @@ func validCommand(args []string) bool {
 		return false
 	}
 	switch args[0] {
+	case "cmdb-migrate":
+		return len(args) == 1
+	case "cmdb-sync", "cmdb-status":
+		return len(args) == 3
 	case "migrate", "api", "controller", "workload-controller", "alert-controller", "idle-controller", "billing-pull-controller", "worker", "event-publisher", "sessions-purge":
 		return len(args) == 1
 	case "event-register", "event-disable", "event-failures":
 		return len(args) == 2
-	case "verify-openstack", "verify-aws", "verify-tencent", "verify-alibaba", "verify-huawei", "event-retry":
+	case "verify-vsphere", "verify-openstack", "verify-aws", "verify-tencent", "verify-alibaba", "verify-huawei", "event-retry":
 		return len(args) == 3
-	case "scan-openstack", "scan-aws":
+	case "scan-openstack", "scan-aws", "scan-vsphere":
 		return len(args) == 5
 	case "scan-tencent", "scan-alibaba", "scan-huawei":
 		return len(args) == 5 || (len(args) == 6 && publicCloudMissingKind(provider.Kind(args[4])) && args[5] != "")
@@ -237,7 +263,7 @@ func validCommand(args []string) bool {
 		return len(args) == 8
 	case "billing-allocate":
 		return len(args) == 9
-	case "operations", "audit", "catalog", "alerts", "console-grants", "billing", "governance":
+	case "kvm", "operations", "audit", "catalog", "alerts", "console-grants", "billing", "governance":
 		return len(args) >= 2
 	default:
 		return false

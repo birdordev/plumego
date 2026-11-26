@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import { tenantSchema } from './schema'
+import './styles.css'
 
 type Props = {
   hidden: boolean

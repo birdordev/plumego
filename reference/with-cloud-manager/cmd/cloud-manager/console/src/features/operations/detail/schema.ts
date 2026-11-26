@@ -1,7 +1,11 @@
 import { z } from 'zod'
 import { time } from '../../../shared/api/fields'
 import { operationSchema } from '../schema'
-import { operationIntents } from './intent-schema'
+import { computeIntents } from './intents/compute'
+import { renameIntents } from './intents/asset-rename'
+import { dnsIntents } from './intents/dns'
+import { loadBalancerIntents } from './intents/load-balancer'
+import { networkIntents } from './intents/network'
 
 export const operationDetailSchema = operationSchema.extend({
   account: z.string(),
@@ -9,7 +13,12 @@ export const operationDetailSchema = operationSchema.extend({
   provider_request_id: z.string().optional(),
   catalog_template: z.string().optional(),
   catalog_version: z.number().int().optional(),
-  ...operationIntents,
+  ticket_policy_revision: z.string().regex(/^[1-9][0-9]*$/).optional(),
+  ...computeIntents,
+  ...renameIntents,
+  ...dnsIntents,
+  ...loadBalancerIntents,
+  ...networkIntents,
 })
 
 export type OperationDetail = z.infer<typeof operationDetailSchema>

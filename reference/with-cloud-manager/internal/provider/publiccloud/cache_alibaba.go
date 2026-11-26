@@ -22,15 +22,11 @@ func (c *Client) alibabaCaches(ctx context.Context, region string, offset int, i
 	if id != "" {
 		query.Set("InstanceIds", id)
 	}
-	host := "r-kvstore." + region + ".aliyuncs.com"
-	if region == "cn-hangzhou" || region == "cn-hangzhou-finance" {
-		host = "r-kvstore.aliyuncs.com"
-	}
 	var result struct {
 		Instances                        struct{ KVStoreInstance []alibabaCacheRow }
 		PageNumber, PageSize, TotalCount *int
 	}
-	if err := c.alibaba(ctx, host, "DescribeInstances", "2015-01-01", query, &result); err != nil {
+	if err := c.alibaba(ctx, alibabaCacheEndpoint(region), "DescribeInstances", "2015-01-01", query, &result); err != nil {
 		return nil, nil, err
 	}
 	if result.PageNumber == nil || *result.PageNumber != number || result.PageSize == nil || *result.PageSize != regionalInstancePageSize {
@@ -50,4 +46,11 @@ func (c *Client) alibabaCaches(ctx context.Context, region string, offset int, i
 		return cacheObject(row.InstanceId, row.InstanceName, row.InstanceStatus, provider.AlibabaTair,
 			engine, row.EngineVersion, row.VpcId, float64(row.Capacity))
 	})
+}
+
+func alibabaCacheEndpoint(region string) string {
+	if region == "cn-hangzhou" || region == "cn-hangzhou-finance" {
+		return "r-kvstore.aliyuncs.com"
+	}
+	return "r-kvstore." + region + ".aliyuncs.com"
 }

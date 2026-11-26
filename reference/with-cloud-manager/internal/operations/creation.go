@@ -348,6 +348,9 @@ func (s Store) replayCreation(ctx context.Context, task mq.Task, w work, scope p
 		if err != nil {
 			return err
 		}
+		if err := requireChangeTicket(ctx, tx, w.actor, w.Operation); err != nil {
+			return err
+		}
 		if err := checkLaunch(ctx, tx, &w, true); err != nil {
 			return err
 		}
@@ -355,7 +358,8 @@ func (s Store) replayCreation(ctx context.Context, task mq.Task, w work, scope p
 			AND replayed_at IS NULL AND dispatch_started_at>clock_timestamp()-interval '3 minutes'
 			RETURNING operation_id`, w.ID).Scan(&claimed)
 	})
-	if errors.Is(err, sql.ErrNoRows) || errors.Is(err, identity.ErrForbidden) || errors.Is(err, identity.ErrAccountStale) {
+	if errors.Is(err, sql.ErrNoRows) || errors.Is(err, identity.ErrForbidden) || errors.Is(err, identity.ErrAccountStale) ||
+		errors.Is(err, ErrTicketRequired) || isTicketGuardError(err) {
 		return true, nil
 	}
 	if err != nil {

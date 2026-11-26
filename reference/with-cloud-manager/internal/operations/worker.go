@@ -20,7 +20,10 @@ import (
 type ConnectOperator func(context.Context, identity.CloudAccountBinding) (provider.InstanceOperator, error)
 
 type work struct {
-	workloadScale provider.WorkloadScaleChange
+	retirement     provider.InstanceRetirement
+	cacheRename    provider.CacheRename
+	databaseRename provider.DatabaseRename
+	workloadScale  provider.WorkloadScaleChange
 	Operation
 	actor                             identity.Scope
 	binding                           identity.CloudAccountBinding
@@ -141,6 +144,9 @@ func (s Store) process(ctx context.Context, task mq.Task, connect ConnectOperato
 		return true, nil
 	}
 	scope := provider.Scope{Provider: w.binding.Provider, RemoteIdentity: w.binding.RemoteIdentity, Region: w.Region, Kind: provider.Instance}
+	if w.Action == retireInstance {
+		return s.processInstanceRetirement(ctx, task, w, client, scope)
+	}
 	if w.Action == "create" {
 		return s.processCreation(ctx, task, w, client, scope)
 	}
@@ -197,6 +203,12 @@ func (s Store) process(ctx context.Context, task mq.Task, connect ConnectOperato
 	}
 	if isLoadBalancerRename(w.Action) {
 		return s.processLoadBalancerRename(ctx, task, w, client, scope)
+	}
+	if w.Action == renameCacheInstance {
+		return s.processCacheRename(ctx, task, w, client, scope)
+	}
+	if w.Action == renameDatabaseInstance {
+		return s.processDatabaseRename(ctx, task, w, client, scope)
 	}
 	if volumeAction(w.Action) {
 		return s.processVolume(ctx, task, w, client, scope)
@@ -391,6 +403,14 @@ func (s Store) prepare(ctx context.Context, task mq.Task, arm bool) (work, error
 		if arm && w.Status != "queued" {
 			return mq.ErrLeaseLost
 		}
+		if w.Status == "queued" {
+			if err := requireChangeTicket(ctx, tx, w.actor, w.Operation); err != nil {
+				if errors.Is(err, ErrTicketRequired) {
+					return identity.ErrForbidden
+				}
+				return err
+			}
+		}
 		if err := checkOperationTarget(ctx, tx, &w); err != nil {
 			return err
 		}
@@ -415,6 +435,9 @@ func (s Store) prepare(ctx context.Context, task mq.Task, arm bool) (work, error
 }
 
 func checkOperationTarget(ctx context.Context, tx *sql.Tx, w *work) error {
+	if w.Action == retireInstance {
+		return checkInstanceRetirement(ctx, tx, w)
+	}
 	if w.Action == scaleWorkload {
 		_, err := checkWorkloadScale(ctx, tx, w)
 		return err
@@ -473,6 +496,12 @@ func checkOperationTarget(ctx context.Context, tx *sql.Tx, w *work) error {
 	}
 	if isLoadBalancerRename(w.Action) {
 		return checkLoadBalancerRename(ctx, tx, w)
+	}
+	if w.Action == renameCacheInstance {
+		return checkCacheRename(ctx, tx, w)
+	}
+	if w.Action == renameDatabaseInstance {
+		return checkDatabaseRename(ctx, tx, w)
 	}
 	resolve := inventory.ResolveInstanceMutation
 	if w.Action == "delete" && w.Status != "queued" && w.Status != "awaiting_approval" {
@@ -582,6 +611,12 @@ func writeTransition(ctx context.Context, tx *sql.Tx, id, from, to, reason, requ
 		WHERE operation_id=$1 AND status=$2 RETURNING action`, id, from, to, reason, requestID).Scan(&action)
 	if errors.Is(err, sql.ErrNoRows) {
 		return mq.ErrLeaseLost
+	}
+	if isTicketGuardError(err) {
+		if from == "awaiting_approval" {
+			return ErrTicketRequired
+		}
+		return identity.ErrForbidden
 	}
 	if err != nil {
 		return err

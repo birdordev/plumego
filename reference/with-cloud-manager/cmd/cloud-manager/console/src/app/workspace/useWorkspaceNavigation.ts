@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { projectPath } from '../../features/session/project'
 import { sessionSnapshot, type Session } from '../../features/session/store'
 import { setWorkspaceNotice } from '../../shared/feedback/notice'
-import { collectionLoaderFor, type View } from '../routes'
+import { collectionLoaderFor, type View } from '../routes/registry'
 
 export function useWorkspaceNavigation() {
   const [view, setView] = useState<View>('assets')

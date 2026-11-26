@@ -40,6 +40,7 @@ type BatchPreviewItem struct {
 	OwnershipRevision int64  `json:"ownership_revision,omitempty"`
 	VolumeRevision    int64  `json:"volume_revision,omitempty"`
 	ApprovalRequired  bool   `json:"approval_required"`
+	TicketRequired    bool   `json:"ticket_required,omitempty"`
 }
 
 type BatchPreview struct {
@@ -99,9 +100,15 @@ func (s Store) PreviewBatch(ctx context.Context, token string, scope identity.Sc
 		if err != nil {
 			return err
 		}
+		ticketActions, err := currentTicketActions(ctx, tx, actor)
+		if err != nil {
+			return err
+		}
+		ticketAll := slices.Contains(ticketActions, "*")
 		result.CanSubmit = result.Remaining >= len(input.Items)
 		for index, item := range input.Items {
-			preview, err := previewBatchItem(ctx, tx, actor, item)
+			ticketRequired := ticketAll || slices.Contains(ticketActions, item.Action)
+			preview, err := previewBatchItem(ctx, tx, actor, item, ticketRequired)
 			if err != nil {
 				return err
 			}
@@ -117,7 +124,7 @@ func (s Store) PreviewBatch(ctx context.Context, token string, scope identity.Sc
 	return result, nil
 }
 
-func previewBatchItem(ctx context.Context, tx *sql.Tx, actor identity.Scope, item BatchItem) (BatchPreviewItem, error) {
+func previewBatchItem(ctx context.Context, tx *sql.Tx, actor identity.Scope, item BatchItem, ticketRequired bool) (BatchPreviewItem, error) {
 	var result BatchPreviewItem
 	target, err := inventory.ResolveMutationPreview(ctx, tx, actor, item.Account, item.Region, item.AssetID, provider.Instance)
 	if errors.Is(err, identity.ErrForbidden) {
@@ -132,7 +139,8 @@ func previewBatchItem(ctx context.Context, tx *sql.Tx, actor identity.Scope, ite
 	if err != nil {
 		return result, err
 	}
-	result.ApprovalRequired = status == "awaiting_approval"
+	result.TicketRequired = ticketRequired
+	result.ApprovalRequired = status == "awaiting_approval" || result.TicketRequired
 	if result.OwnershipRevision != item.Revision {
 		result.Reason = "stale"
 		return result, nil

@@ -156,7 +156,16 @@ func Migrate(ctx context.Context, db *sql.DB) error {
 	if err := dbschema.Apply(ctx, db, "0090_workload_change_reservations", workloadChangeReservationsSchema); err != nil {
 		return err
 	}
-	return dbschema.Apply(ctx, db, "0097_tag_observations", tagObservationsSchema)
+	if err := dbschema.Apply(ctx, db, "0097_tag_observations", tagObservationsSchema); err != nil {
+		return err
+	}
+	if err := dbschema.Apply(ctx, db, "0103_database_rename_reservations", databaseRenameReservationsSchema); err != nil {
+		return err
+	}
+	if err := dbschema.Apply(ctx, db, "0106_instance_retirement_reservations", instanceRetirementReservationsSchema); err != nil {
+		return err
+	}
+	return dbschema.Apply(ctx, db, "0108_cache_rename_reservations", cacheRenameReservationsSchema)
 }
 
 func (s Store) Claim(ctx context.Context, key Key, lease time.Duration) (Claim, error) {

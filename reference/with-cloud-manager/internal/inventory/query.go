@@ -68,6 +68,11 @@ type position struct {
 	ID      string
 }
 
+const projectedInventoryState = `CASE WHEN o.missing_generation IS NOT NULL THEN 'missing_candidate'
+	WHEN a.mode NOT IN ('read_only','write_enabled') OR a.credential_revision<>s.credential_revision THEN 'stale'
+	WHEN s.kind IN ('security-group-rule','snapshot') AND a.credential_revision<>parent_scope.credential_revision THEN 'stale'
+	ELSE 'observed' END`
+
 func queryPosition(q Query) (position, error) {
 	if q.Limit < 1 || q.Limit > 200 ||
 		len(q.Tenant) > 256 || len(q.Project) > 256 || len(q.Account) > 256 ||
@@ -129,10 +134,7 @@ func (s Store) readProject(ctx context.Context, token string, q Query, fn func(*
 
 func listAssets(ctx context.Context, tx *sql.Tx, q Query, p position, result *Assets) error {
 	rows, err := tx.QueryContext(ctx, `SELECT s.account_id,a.provider,s.region,s.kind,o.external_id,COALESCE(parent.external_id,''),o.name,o.status,
-		CASE WHEN o.missing_generation IS NOT NULL THEN 'missing_candidate'
-		     WHEN a.mode NOT IN ('read_only','write_enabled') OR a.credential_revision<>s.credential_revision THEN 'stale'
-		     WHEN s.kind IN ('security-group-rule','snapshot') AND a.credential_revision<>parent_scope.credential_revision THEN 'stale'
-		     ELSE 'observed' END,o.observed_at,s.completed_at,`+projectedOwner+`,`+projectedRevision+`,
+		`+projectedInventoryState+`,o.observed_at,s.completed_at,`+projectedOwner+`,`+projectedRevision+`,
 		CASE WHEN s.kind='security-group-rule' THEN 'security_group' WHEN s.kind='snapshot' THEN 'source_volume'
 		ELSE `+ownershipSource+` END,o.public_addresses,o.snapshot,o.load_balancer,o.database_instance,o.object_bucket,o.cache_instance,o.kubernetes_cluster
 		FROM cmp_inventory_scopes AS s JOIN cmp_cloud_accounts AS a USING (tenant_id,account_id)

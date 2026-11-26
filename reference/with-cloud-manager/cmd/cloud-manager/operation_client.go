@@ -31,6 +31,10 @@ const operationsUsage = `usage: cloud-manager operations COMMAND TENANT PROJECT 
   create-image --idempotency-key KEY --if-match REVISION < request.json
   copy-image --idempotency-key KEY --if-match REVISION < request.json
   delete-network --idempotency-key KEY --if-match REVISION < request.json
+  retire-instance --idempotency-key KEY --if-match REVISION < request.json
+  preview-retire --account ACCOUNT --region REGION --asset-id ID
+  rename-database-instance --idempotency-key KEY --if-match REVISION < request.json
+  rename-cache-instance --idempotency-key KEY --if-match REVISION < request.json
   rename-load-balancer --idempotency-key KEY --if-match REVISION < request.json
   rename-load-balancer-listener --idempotency-key KEY --if-match REVISION < request.json
   rename-load-balancer-target-group --idempotency-key KEY --if-match REVISION < request.json
@@ -70,7 +74,7 @@ func runOperationsClient(ctx context.Context, args []string, address, token stri
 }
 
 func runProjectRequest(ctx context.Context, plan operationRequestPlan, token string, input io.Reader, output io.Writer, transport http.RoundTripper) error {
-	if token == "" || len(token) > 4096 || strings.IndexFunc(token, func(r rune) bool { return unicode.IsSpace(r) || unicode.IsControl(r) }) >= 0 {
+	if !validProjectClientToken(token) {
 		return errors.New("a valid CLOUD_MANAGER_API_TOKEN is required")
 	}
 	body := plan.body
@@ -151,6 +155,11 @@ func runProjectRequest(ctx context.Context, plan operationRequestPlan, token str
 	}
 	_, err = fmt.Fprintln(output, compact.String())
 	return err
+}
+
+func validProjectClientToken(token string) bool {
+	return token != "" && len(token) <= 4096 &&
+		strings.IndexFunc(token, func(r rune) bool { return unicode.IsSpace(r) || unicode.IsControl(r) }) < 0
 }
 
 func operationClientBase(address string) (*url.URL, error) {

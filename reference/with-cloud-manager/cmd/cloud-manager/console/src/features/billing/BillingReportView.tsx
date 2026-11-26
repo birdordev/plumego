@@ -1,6 +1,6 @@
 import { ConsoleTable } from '../../shared/components/ConsoleTable'
 import { DetailFields } from '../../shared/components/DetailFields'
-import { timestamp } from '../../shared/display/labels'
+import { timestamp } from '../../shared/display/time'
 import type { BillingReport } from './schema'
 
 export function BillingReportView({ report }: { report: BillingReport }) {

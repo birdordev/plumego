@@ -4,7 +4,7 @@ import { sessionSnapshot } from '../session/store'
 import { lookupBatch, previewBatch, submitBatch } from './api'
 import { batchInputError } from './input'
 import type { BatchPreview, BatchReceipt } from './schema'
-import { clearSelection } from '../assets/selection-store'
+import { clearSelection } from '../assets/instances/selection-store'
 import { useBatchRead } from './useBatchRead'
 
 type Report = { preview: BatchPreview } | { receipt: BatchReceipt }

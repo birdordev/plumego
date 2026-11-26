@@ -13,6 +13,7 @@ import (
 	"with-cloud-manager/internal/dbtest"
 	"with-cloud-manager/internal/identity"
 	"with-cloud-manager/internal/inventory"
+	"with-cloud-manager/internal/kvm"
 	"with-cloud-manager/internal/nativeconsole"
 	"with-cloud-manager/internal/operations"
 )
@@ -35,6 +36,7 @@ func TestAcceptancePostgresReadiness(t *testing.T) {
 		}
 	}
 	get("/healthz", http.StatusOK, `"ok"`)
+	get("/openapi.json", http.StatusOK, `"renameCacheInstance"`)
 	get("/readyz", http.StatusServiceUnavailable, "storage is unavailable")
 	if err := identity.Migrate(t.Context(), db); err != nil {
 		t.Fatal(err)
@@ -96,6 +98,22 @@ func TestAcceptancePostgresReadiness(t *testing.T) {
 	if err := inventory.MigrateIdleAnalysis(t.Context(), db); err != nil {
 		t.Fatal(err)
 	}
+	get("/readyz", http.StatusServiceUnavailable, "storage is unavailable")
+	if err := operations.MigrateChangeTicketEvents(t.Context(), db); err != nil {
+		t.Fatal(err)
+	}
+	get("/readyz", http.StatusServiceUnavailable, "storage is unavailable")
+	if err := operations.MigrateDatabaseRenameEvents(t.Context(), db); err != nil {
+		t.Fatal(err)
+	}
+	get("/readyz", http.StatusServiceUnavailable, "storage is unavailable")
+	if err := operations.MigrateCacheRenameEvents(t.Context(), db); err != nil {
+		t.Fatal(err)
+	}
+	get("/readyz", http.StatusServiceUnavailable, "storage is unavailable")
+	if err := kvm.Migrate(t.Context(), db); err != nil {
+		t.Fatal(err)
+	}
 	get("/readyz", http.StatusOK, `"ready"`)
 	if _, err := db.ExecContext(t.Context(), "DELETE FROM cmp_migrations WHERE version IN ('0034_security_rule_outbox','0047_image_deletion_outbox')"); err != nil {
 		t.Fatal(err)
@@ -105,4 +123,8 @@ func TestAcceptancePostgresReadiness(t *testing.T) {
 		t.Fatal(err)
 	}
 	get("/readyz", http.StatusOK, `"ready"`)
+	if _, err := db.ExecContext(t.Context(), "DELETE FROM cmp_migrations WHERE version=$1", kvm.BootImageMigration); err != nil {
+		t.Fatal(err)
+	}
+	get("/readyz", http.StatusServiceUnavailable, "storage is unavailable")
 }

@@ -1,4 +1,4 @@
-import { selectedAssets } from '../assets/selection-store'
+import { selectedAssets } from '../assets/instances/selection-store'
 
 export function formatSelectedInstances(action: string) {
   const items = selectedAssets().map((asset) => ({

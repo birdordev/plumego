@@ -63,6 +63,9 @@ func (s Store) Approve(ctx context.Context, token string, scope identity.Scope, 
 		state, reason := "failed", "approval_rejected"
 		var reviewerRevision int64
 		if input.Decision == "approve" {
+			if err := requireChangeTicket(ctx, tx, reviewer, op); err != nil {
+				return err
+			}
 			original.actor.Tenant, original.actor.Project = reviewer.Tenant, reviewer.Project
 			original.Operation = op
 			if err := checkOperationTarget(ctx, tx, &original); err != nil {

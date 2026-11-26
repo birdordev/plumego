@@ -56,6 +56,9 @@ type Input struct {
 }
 
 type Operation struct {
+	InstanceRetirementIntent        *InstanceRetirementView        `json:"instance_retirement_intent,omitempty"`
+	CacheRenameIntent               *CacheRenameView               `json:"cache_rename_intent,omitempty"`
+	DatabaseRenameIntent            *DatabaseRenameView            `json:"database_rename_intent,omitempty"`
 	WorkloadScaleIntent             *provider.WorkloadScaleChange  `json:"workload_scale_intent,omitempty"`
 	ID                              string                         `json:"id"`
 	Account                         string                         `json:"account"`
@@ -72,6 +75,7 @@ type Operation struct {
 	ProviderRequestID               string                         `json:"provider_request_id,omitempty"`
 	CatalogTemplate                 string                         `json:"catalog_template,omitempty"`
 	CatalogVersion                  int64                          `json:"catalog_version,omitempty"`
+	TicketPolicyRevision            int64                          `json:"ticket_policy_revision,string,omitempty"`
 	NetworkIntent                   *NetworkSpecView               `json:"network_intent,omitempty"`
 	SnapshotIntent                  *SnapshotSpecView              `json:"snapshot_intent,omitempty"`
 	ImageCopyIntent                 *ImageCopyView                 `json:"image_copy_intent,omitempty"`
@@ -228,13 +232,25 @@ func Migrate(ctx context.Context, db *sql.DB) error {
 	if err := dbschema.Apply(ctx, db, "0075_dns_record_deletion", dnsRecordDeletionSchema); err != nil {
 		return err
 	}
-	return dbschema.Apply(ctx, db, "0091_workload_scale", workloadScaleSchema)
+	if err := dbschema.Apply(ctx, db, "0091_workload_scale", workloadScaleSchema); err != nil {
+		return err
+	}
+	if err := migrateChangeTickets(ctx, db); err != nil {
+		return err
+	}
+	if err := dbschema.Apply(ctx, db, "0104_database_rename", databaseRenameSchema); err != nil {
+		return err
+	}
+	if err := dbschema.Apply(ctx, db, "0107_instance_retirement", instanceRetirementSchema); err != nil {
+		return err
+	}
+	return dbschema.Apply(ctx, db, "0109_cache_rename", cacheRenameSchema)
 }
 
-const operationFields = "operation_id,account_id,region,COALESCE(external_id,''),action,status,created_at,updated_at,COALESCE(outcome_reason,''),COALESCE(provider_request_id,''),COALESCE(volume_id,''),device,resource_kind,COALESCE(catalog_id,''),COALESCE(catalog_version,0)"
+const operationFields = "operation_id,account_id,region,COALESCE(external_id,''),action,status,created_at,updated_at,COALESCE(outcome_reason,''),COALESCE(provider_request_id,''),COALESCE(volume_id,''),device,resource_kind,COALESCE(catalog_id,''),COALESCE(catalog_version,0),COALESCE(ticket_policy_revision,0)"
 
 func scanOperation(row interface{ Scan(...any) error }, op *Operation, tail ...any) error {
-	fields := []any{&op.ID, &op.Account, &op.Region, &op.AssetID, &op.Action, &op.Status, &op.CreatedAt, &op.UpdatedAt, &op.OutcomeReason, &op.ProviderRequestID, &op.VolumeID, &op.Device, &op.ResourceKind, &op.CatalogTemplate, &op.CatalogVersion}
+	fields := []any{&op.ID, &op.Account, &op.Region, &op.AssetID, &op.Action, &op.Status, &op.CreatedAt, &op.UpdatedAt, &op.OutcomeReason, &op.ProviderRequestID, &op.VolumeID, &op.Device, &op.ResourceKind, &op.CatalogTemplate, &op.CatalogVersion, &op.TicketPolicyRevision}
 	return row.Scan(append(fields, tail...)...)
 }
 
@@ -341,6 +357,33 @@ func (s Store) Get(ctx context.Context, token string, scope identity.Scope, id s
 				return err
 			}
 			op.SnapshotRestoreIntent = &intent
+		}
+		if err == nil && op.Action == retireInstance {
+			var intent InstanceRetirementView
+			if err := tx.QueryRowContext(ctx, `SELECT system_disk_id,disk_ownership_revision
+				FROM cmp_instance_retirement_intents WHERE operation_id=$1`, id).
+				Scan(&intent.SystemDiskID, &intent.DiskOwnershipRevision); err != nil {
+				return err
+			}
+			op.InstanceRetirementIntent = &intent
+		}
+		if err == nil && op.Action == renameDatabaseInstance {
+			var intent DatabaseRenameView
+			if err := tx.QueryRowContext(ctx, `SELECT i.product,i.current_name,i.name,o.ownership_revision
+				FROM cmp_database_rename_intents AS i JOIN cmp_instance_operations AS o USING(operation_id)
+				WHERE operation_id=$1`, id).Scan(&intent.Product, &intent.CurrentName, &intent.Name, &intent.OwnershipRevision); err != nil {
+				return err
+			}
+			op.DatabaseRenameIntent = &intent
+		}
+		if err == nil && op.Action == renameCacheInstance {
+			var intent CacheRenameView
+			if err := tx.QueryRowContext(ctx, `SELECT i.product,i.current_name,i.name,o.ownership_revision
+				FROM cmp_cache_rename_intents AS i JOIN cmp_instance_operations AS o USING(operation_id)
+				WHERE operation_id=$1`, id).Scan(&intent.Product, &intent.CurrentName, &intent.Name, &intent.OwnershipRevision); err != nil {
+				return err
+			}
+			op.CacheRenameIntent = &intent
 		}
 		if err == nil && isLoadBalancerRename(op.Action) {
 			var intent LoadBalancerRenameView

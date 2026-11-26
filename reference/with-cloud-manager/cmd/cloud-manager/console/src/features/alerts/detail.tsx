@@ -3,8 +3,11 @@ import { DetailFields, type DetailField } from '../../shared/components/DetailFi
 import { StateBadge } from '../../shared/components/RowAction'
 import { openDetail } from '../../shared/detail/store'
 import { useDetailAction } from '../../shared/detail/useDetailAction'
-import { useDetailRead } from '../../shared/detail/useDetailRead'
-import { alertRules, kinds, statuses, timestamp } from '../../shared/display/labels'
+import { useResourceRead } from '../../shared/api/useResourceRead'
+import { alertRules } from './labels'
+import { kinds } from '../assets/labels'
+import { statuses } from '../../shared/display/status-labels'
+import { timestamp } from '../../shared/display/time'
 import { showOperation } from '../operations/detail/open'
 import { request } from '../session/client'
 import { projectURL } from '../session/project'
@@ -24,7 +27,7 @@ export function showAlert(id: string) {
 
 function AlertDetail({ id, target, admin, stamp, signal }:
   { id: string; target: string; admin: boolean; stamp: number; signal: AbortSignal }) {
-  const result = useDetailRead(target, signal, readAlert)
+  const result = useResourceRead(target, readAlert, signal)
   const { busy, run } = useDetailAction(stamp)
   if (result.state === 'loading') return <p role="status">正在加载…</p>
   if (result.state === 'error') return <p role="alert" className="notice" data-error="true">{requestErrorMessage(result.error)}</p>

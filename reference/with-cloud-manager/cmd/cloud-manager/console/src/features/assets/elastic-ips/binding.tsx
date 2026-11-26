@@ -3,7 +3,7 @@ import { formText } from '../../../shared/detail/form-values'
 import { openDetail } from '../../../shared/detail/store'
 import { OperationForm } from '../../operations/forms/OperationForm'
 import { projectURL } from '../../session/project'
-import { InstanceLookup } from '../InstanceLookup'
+import { InstanceLookup } from '../instances/InstanceLookup'
 import type { Asset } from '../types'
 
 type Props = { asset: Asset; address: string; bind: boolean; target: string; stamp: number; signal: AbortSignal }

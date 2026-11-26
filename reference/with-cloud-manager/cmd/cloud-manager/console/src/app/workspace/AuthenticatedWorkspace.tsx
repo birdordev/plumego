@@ -1,15 +1,11 @@
-import { lazy, Suspense, useRef, useState } from 'react'
-import type { BatchEditor } from '../../features/batches/BatchPage'
-import { formatSelectedInstances } from '../../features/batches/selection-format'
-import { projectPath } from '../../features/session/project'
+import { projectCanExecute, projectPath } from '../../features/session/project'
 import type { Session } from '../../features/session/store'
 import { WorkspaceNotice } from '../../shared/feedback/WorkspaceNotice'
-import { FeatureBoundary } from '../../shared/components/FeatureBoundary'
-import { WorkspacePage } from './WorkspacePage'
-import { routes, type View } from '../routes'
+import { routes, type View } from '../routes/registry'
 import { Sidebar } from './Sidebar'
-
-const BatchPage = lazy(() => import('../../features/batches/BatchPage'))
+import { useBatchNavigation } from './useBatchNavigation'
+import { WorkspaceBatch } from './WorkspaceBatch'
+import { WorkspacePage } from './WorkspacePage'
 
 type Props = {
   session: Session
@@ -21,23 +17,9 @@ type Props = {
 }
 
 export function AuthenticatedWorkspace({ session, view, ending, selectProject, selectView, logout }: Props) {
-  const batch = useRef<BatchEditor>(null)
-  const [batchVisited, setBatchVisited] = useState(false)
-  const [batchInput, setBatchInput] = useState('')
+  const { editor, visited, initialInput, navigate, openSelectedBatch } = useBatchNavigation(selectView)
   const base = projectPath(session)
-  const { profile, project } = session
-  const canExecute = project.role === 'admin' || project.role === 'operator'
-
-  function navigate(next: View) {
-    if (next === 'batch') setBatchVisited(true)
-    selectView(next)
-  }
-
-  function openSelectedBatch() {
-    if (batch.current) batch.current.fill()
-    else setBatchInput(formatSelectedInstances('start'))
-    navigate('batch')
-  }
+  const { profile } = session
 
   return (
     <div id="workspace" className="workspace">
@@ -48,14 +30,9 @@ export function AuthenticatedWorkspace({ session, view, ending, selectProject, s
           <p id="identity" className="identity">{profile.tenant} / {profile.principal}</p>
         </header>
         <WorkspaceNotice />
-        {view !== 'batch' ? <WorkspacePage base={base} view={view} canExecute={canExecute} admin={project.role === 'admin'}
-          nativeConsole={Boolean(profile.native_console)} nativeSerial={Boolean(profile.native_serial_console)}
-          onBatch={openSelectedBatch} /> : null}
-        {batchVisited ? <div hidden={view !== 'batch'}><FeatureBoundary message="无法加载批量操作，请刷新后重试。">
-          <Suspense fallback={view === 'batch' ? <p role="status">正在加载批量操作…</p> : null}>
-            <BatchPage ref={batch} base={base} canExecute={canExecute} initialInput={batchInput} />
-          </Suspense>
-        </FeatureBoundary></div> : null}
+        {view === 'batch' ? null : <WorkspacePage view={view} session={session} openSelectedBatch={openSelectedBatch} />}
+        {visited ? <WorkspaceBatch base={base} canExecute={projectCanExecute(session)} active={view === 'batch'}
+          initialInput={initialInput} editor={editor} /> : null}
       </main>
     </div>
   )

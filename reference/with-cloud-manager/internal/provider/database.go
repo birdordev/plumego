@@ -2,6 +2,7 @@ package provider
 
 import (
 	"regexp"
+	"strings"
 )
 
 const (
@@ -11,6 +12,23 @@ const (
 	AlibabaRDS        = "alibaba-rds"
 	HuaweiRDS         = "huawei-rds"
 )
+
+func TencentDatabaseProduct(id string) string {
+	prefix, suffix, _ := strings.Cut(id, "-")
+	if suffix == "" {
+		return ""
+	}
+	switch prefix {
+	case "cdb", "cdbro", "cdbdr", "cdbaro":
+		return TencentCDB
+	case "postgres":
+		return TencentPostgreSQL
+	case "mssql", "mssqlro", "mssqldr":
+		return TencentSQLServer
+	default:
+		return ""
+	}
+}
 
 // DatabaseDetails 是托管数据库的盘点投影。连接信息不属于资产库存。
 type DatabaseDetails struct {

@@ -25,11 +25,7 @@ func (c *Client) alibabaRDS(ctx context.Context, region string, offset int, id s
 		PageNumber, PageRecordCount *int
 		TotalRecordCount            *int
 	}
-	host := "rds." + region + ".aliyuncs.com"
-	if region == "cn-hangzhou" || region == "cn-hangzhou-finance" {
-		host = "rds.aliyuncs.com"
-	}
-	if err := c.alibaba(ctx, host, "DescribeDBInstances", "2014-08-15", query, &result); err != nil {
+	if err := c.alibaba(ctx, alibabaRDSEndpoint(region), "DescribeDBInstances", "2014-08-15", query, &result); err != nil {
 		return nil, nil, err
 	}
 	if result.PageNumber == nil || *result.PageNumber != number || result.PageRecordCount == nil ||
@@ -42,6 +38,13 @@ func (c *Client) alibabaRDS(ctx context.Context, region string, offset int, id s
 		}
 		return databaseObject(row.DBInstanceId, row.DBInstanceDescription, row.DBInstanceStatus, provider.AlibabaRDS, row.Engine, row.EngineVersion, row.VpcId)
 	})
+}
+
+func alibabaRDSEndpoint(region string) string {
+	if region == "cn-hangzhou" || region == "cn-hangzhou-finance" {
+		return "rds.aliyuncs.com"
+	}
+	return "rds." + region + ".aliyuncs.com"
 }
 
 type huaweiRDSRow struct {

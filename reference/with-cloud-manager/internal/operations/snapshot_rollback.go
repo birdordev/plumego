@@ -39,7 +39,7 @@ func resolveSnapshotWrite(ctx context.Context, tx *sql.Tx, actor identity.Scope,
 		var busy bool
 		err = tx.QueryRowContext(ctx, `SELECT EXISTS (
 			SELECT 1 FROM cmp_instance_operations WHERE (volume_scope_id,volume_id)=($1,$2)
-			AND status IN `+activeOperationStatuses+`)`, volume.ScopeID, volumeID).Scan(&busy)
+			AND status IN `+activeOperationStatuses+`) OR `+retirementDiskReserved, volume.ScopeID, volumeID).Scan(&busy)
 		if err != nil {
 			return inventory.SnapshotMutationTarget{}, err
 		}

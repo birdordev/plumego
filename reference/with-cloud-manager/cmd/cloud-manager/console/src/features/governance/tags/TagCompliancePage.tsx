@@ -1,4 +1,4 @@
-import { kinds } from '../../../shared/display/labels'
+import { kinds } from '../../assets/labels'
 import { TagComplianceReport } from './TagComplianceReport'
 import { TagPolicyEditor } from './TagPolicyEditor'
 import { useTagPolicy } from './useTagPolicy'

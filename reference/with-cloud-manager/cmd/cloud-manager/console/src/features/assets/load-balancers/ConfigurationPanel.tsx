@@ -1,6 +1,6 @@
 import { ConsoleRequestError, requestErrorMessage } from '../../../shared/api/requests'
-import { useDetailRead } from '../../../shared/detail/useDetailRead'
-import { timestamp } from '../../../shared/display/labels'
+import { useResourceRead } from '../../../shared/api/useResourceRead'
+import { timestamp } from '../../../shared/display/time'
 import { request } from '../../session/client'
 import { canExecute } from '../../session/project'
 import type { Asset } from '../types'
@@ -18,7 +18,7 @@ function readConfiguration(target: string, signal: AbortSignal) {
 }
 
 export default function ConfigurationPanel({ target, asset, signal }: { target: string; asset: Asset; signal: AbortSignal }) {
-  const result = useDetailRead(target, signal, readConfiguration)
+  const result = useResourceRead(target, readConfiguration, signal)
   if (result.state === 'loading') return <p role="status">正在读取最近一次完整快照…</p>
   if (result.state === 'error') {
     const error = result.error

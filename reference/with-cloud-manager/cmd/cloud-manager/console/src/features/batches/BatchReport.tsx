@@ -1,4 +1,6 @@
-import { actions, reasons, statuses } from '../../shared/display/labels'
+import { actions } from '../operations/labels'
+import { reasons } from './labels'
+import { statuses } from '../../shared/display/status-labels'
 import { showOperation } from '../operations/detail/open'
 import type { BatchPreview, BatchReceipt } from './schema'
 
@@ -14,7 +16,7 @@ export function BatchPreviewReport({ preview }: { preview: BatchPreview }) {
         ].filter(Boolean).join(' / ')
         return <li key={item.index}>
           {reasons[item.reason as keyof typeof reasons] || item.reason}
-          {item.approval_required ? '，需要审批' : ''}
+          {item.ticket_required ? '，需要外部工单和独立审批' : item.approval_required ? '，需要审批' : ''}
           {revisions ? <span className="minor">{revisions}</span> : null}
         </li>
       })}

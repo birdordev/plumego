@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { ConsoleTable } from '../../../shared/components/ConsoleTable'
 import { DetailFields } from '../../../shared/components/DetailFields'
-import { timestamp } from '../../../shared/display/labels'
+import { timestamp } from '../../../shared/display/time'
 import type { Allocation } from './schema'
 
 export function AllocationResult({ value }: { value: Allocation }) {

@@ -6,9 +6,9 @@ import { operationsCollection } from '../collection'
 import { reviewChoices } from './review-policy'
 import type { OperationDetail } from './schema'
 
-type Props = { operation: OperationDetail; target: string; stamp: number; onSaved: () => void }
+type Props = { operation: OperationDetail; target: string; stamp: number; approvalReady?: boolean; onSaved: () => void }
 
-export function OperationDecisions({ operation, target, stamp, onSaved }: Props) {
+export function OperationDecisions({ operation, target, stamp, approvalReady = true, onSaved }: Props) {
   const { busy, run } = useDetailAction(stamp)
   const evidence = useRef<HTMLInputElement>(null)
   const record = useRef<HTMLInputElement>(null)
@@ -22,7 +22,7 @@ export function OperationDecisions({ operation, target, stamp, onSaved }: Props)
 
   if (operation.status === 'awaiting_approval') return <>
     <div className="row-actions">
-      <button type="button" disabled={busy} onClick={() => void send('approval', { decision: 'approve' })}>批准</button>
+      <button type="button" disabled={busy || !approvalReady} onClick={() => void send('approval', { decision: 'approve' })}>批准</button>
       <button type="button" disabled={busy} onClick={() => void send('approval', { decision: 'reject' })}>拒绝</button>
     </div>
   </>

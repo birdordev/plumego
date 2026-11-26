@@ -152,6 +152,24 @@ func (s Store) TransferOwnership(ctx context.Context, token string, source ident
 				return identity.ErrAccountConflict
 			}
 		}
+		if input.Kind == provider.DatabaseInstance {
+			active, err := databaseRenameActive(ctx, tx, scopeID, input.AssetID)
+			if err != nil {
+				return err
+			}
+			if active {
+				return identity.ErrAccountConflict
+			}
+		}
+		if input.Kind == provider.CacheInstance {
+			active, err := cacheRenameActive(ctx, tx, scopeID, input.AssetID)
+			if err != nil {
+				return err
+			}
+			if active {
+				return identity.ErrAccountConflict
+			}
+		}
 		if input.Kind == provider.DNSZone {
 			active, err := dnsZoneChangeActive(ctx, tx, scopeID, input.AssetID)
 			if err != nil {
@@ -171,6 +189,15 @@ func (s Store) TransferOwnership(ctx context.Context, token string, source ident
 			}
 			if err := tx.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM cmp_image_copy_reservations
 				WHERE (scope_id,image_id)=($1,$2))`, scopeID, input.AssetID).Scan(&active); err != nil {
+				return err
+			}
+			if active {
+				return identity.ErrAccountConflict
+			}
+		}
+		if input.Kind == provider.Instance || input.Kind == provider.Volume {
+			active, err := instanceRetirementActive(ctx, tx, input.Kind, scopeID, input.AssetID)
+			if err != nil {
 				return err
 			}
 			if active {

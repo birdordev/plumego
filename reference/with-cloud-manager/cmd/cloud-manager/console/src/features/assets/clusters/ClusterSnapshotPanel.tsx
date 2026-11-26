@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { timestamp } from '../../../shared/display/labels'
+import { timestamp } from '../../../shared/display/time'
 import type { ClusterAsset, ClusterSnapshotReader } from './snapshot'
 import { useClusterSnapshot } from './useClusterSnapshot'
 

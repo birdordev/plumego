@@ -40,6 +40,10 @@ func planOperationRequest(base *url.URL, args []string) (operationRequestPlan, e
 	case "list", "get", "events":
 		target, err := readOperationTarget(ledger, args)
 		return operationRequestPlan{target: target, method: http.MethodGet, status: http.StatusOK}, err
+	case "preview-retire":
+		return planOperationPreview(project.JoinPath("instance-operations", "retirement-preview"), args[3:])
+	case "retire-instance":
+		return planOperationSubmission(project.JoinPath("instance-operations", "retire"), args[0], args[3:])
 	case "preview-delete":
 		return planOperationPreview(project.JoinPath("instance-operations", "deletion-preview"), args[3:])
 	case "submit":
@@ -80,6 +84,10 @@ func planOperationRequest(base *url.URL, args []string) (operationRequestPlan, e
 		return planOperationSubmission(project.JoinPath("load-balancers", "rename-target-group"), args[0], args[3:])
 	case "rename-load-balancer-listener":
 		return planOperationSubmission(project.JoinPath("load-balancers", "rename-listener"), args[0], args[3:])
+	case "rename-cache-instance":
+		return planOperationSubmission(project.JoinPath("caches", "rename"), args[0], args[3:])
+	case "rename-database-instance":
+		return planOperationSubmission(project.JoinPath("databases", "rename"), args[0], args[3:])
 	case "rename-load-balancer":
 		return planOperationSubmission(project.JoinPath("load-balancers", "rename"), args[0], args[3:])
 	case "create-network":
@@ -110,7 +118,7 @@ func planOperationRequest(base *url.URL, args []string) (operationRequestPlan, e
 }
 
 func planOperationPreview(target *url.URL, args []string) (operationRequestPlan, error) {
-	flags := flag.NewFlagSet("operations preview-delete", flag.ContinueOnError)
+	flags := flag.NewFlagSet("operations instance preview", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 	account := flags.String("account", "", "")
 	region := flags.String("region", "", "")
@@ -127,7 +135,7 @@ func planOperationSubmission(target *url.URL, command string, args []string) (op
 	flags.SetOutput(io.Discard)
 	key := flags.String("idempotency-key", "", "")
 	var match string
-	requireMatch := command == "scale-workload" || command == "create-dns-record" || command == "delete-dns-record" || command == "set-dns-record-status" || command == "submit" || command == "delete-network" || command == "rename-load-balancer" || command == "rename-load-balancer-listener" || command == "rename-load-balancer-target-group" || command == "set-load-balancer-backend-weight" || command == "detach-load-balancer-backend" || command == "attach-load-balancer-backend" || command == "revoke-security-rule" || command == "release-elastic-ip" ||
+	requireMatch := command == "retire-instance" || command == "rename-database-instance" || command == "rename-cache-instance" || command == "scale-workload" || command == "create-dns-record" || command == "delete-dns-record" || command == "set-dns-record-status" || command == "submit" || command == "delete-network" || command == "rename-load-balancer" || command == "rename-load-balancer-listener" || command == "rename-load-balancer-target-group" || command == "set-load-balancer-backend-weight" || command == "detach-load-balancer-backend" || command == "attach-load-balancer-backend" || command == "revoke-security-rule" || command == "release-elastic-ip" ||
 		command == "bind-elastic-ip" || command == "unbind-elastic-ip" || command == "create-snapshot" || command == "delete-snapshot" || command == "delete-image" || command == "create-image" || command == "copy-image" || command == "restore-snapshot" || command == "rollback-snapshot"
 	if requireMatch || command == "create-network" {
 		flags.Func("if-match", "", func(value string) error {

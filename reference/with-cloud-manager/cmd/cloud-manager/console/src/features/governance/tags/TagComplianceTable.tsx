@@ -1,5 +1,5 @@
 import { ConsoleTable } from '../../../shared/components/ConsoleTable'
-import { timestamp } from '../../../shared/display/labels'
+import { timestamp } from '../../../shared/display/time'
 import type { TagReport } from './schema'
 
 const states = { compliant: '合规', noncompliant: '缺少必填标签', unknown: '证据不足' }

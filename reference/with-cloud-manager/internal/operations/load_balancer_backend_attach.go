@@ -95,7 +95,7 @@ func resolveBackendAttachSource(ctx context.Context, tx *sql.Tx, actor identity.
 	if beforeWrite {
 		var blocked bool
 		err = tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM cmp_instance_operations WHERE (scope_id,external_id)=($1,$2)
-   AND action='delete' AND status IN `+activeOperationStatuses+`)`, source.ScopeID, id).Scan(&blocked)
+   AND action IN ('delete','retire-instance') AND status IN `+activeOperationStatuses+`)`, source.ScopeID, id).Scan(&blocked)
 		if err == nil && blocked {
 			err = ErrConflict
 		}

@@ -1,0 +1,42 @@
+export const auditKinds: Readonly<Partial<Record<string, string>>> = {
+  account: '云账号',
+  ownership: '资产归属',
+  operation: '操作状态',
+  approval: '审批',
+  resolution: '人工处置',
+  observation: '续查',
+  catalog: '服务目录',
+  alert: '项目告警',
+  billing_budget: '云预算',
+  tag_policy: '标签规则',
+  change_ticket: '变更工单',
+  console_access: '原生控制台',
+}
+
+export const auditActions: Readonly<Partial<Record<string, string>>> = {
+  register: '登记',
+  rotate: '轮换凭据',
+  suspend: '停用',
+  resume: '恢复',
+  transfer: '转移归属',
+  assign: '分配归属',
+  share: '共享',
+  unshare: '取消共享',
+  publish: '发布模板',
+  retire: '停用模板',
+  opened: '告警触发',
+  acknowledged: '确认告警',
+  resolved: '告警恢复',
+  created: '创建',
+  updated: '更新',
+  publish_policy: '发布工单策略',
+  record_receipt: '登记工单回执',
+}
+
+export const auditOutcomes: Readonly<Partial<Record<string, string>>> = {
+  approve: '批准',
+  reject: '拒绝',
+  restarted: '已恢复观测',
+  approved: '外部批准',
+  revoked: '已撤回',
+}

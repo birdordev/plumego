@@ -1,6 +1,6 @@
 import { DetailFields } from '../../../shared/components/DetailFields'
 import { openDetail } from '../../../shared/detail/store'
-import { timestamp } from '../../../shared/display/labels'
+import { timestamp } from '../../../shared/display/time'
 import type { IdleInstance } from './schema'
 
 const number = new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 2 })

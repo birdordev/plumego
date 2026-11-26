@@ -19,6 +19,7 @@ type databaseFixture struct {
 	lateMode             atomic.Int32
 	observation          atomic.Int32
 	changed, missing     atomic.Bool
+	pointRow             func(string) map[string]any
 }
 
 const (
@@ -74,7 +75,10 @@ func (f *databaseFixture) serveDatabase(t *testing.T, w http.ResponseWriter, r *
 	rows := make([]map[string]any, 0, 50)
 	total := 51
 	targetRegion := f.region
-	if id != "" {
+	if id != "" && f.pointRow != nil {
+		total = 1
+		rows = append(rows, f.pointRow(family))
+	} else if id != "" {
 		switch f.observation.Load() {
 		case 0:
 			w.WriteHeader(http.StatusNotFound)

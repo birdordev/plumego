@@ -2,7 +2,8 @@ import type { z } from 'zod'
 import type { operationSchema } from './schema'
 import { RowAction, StateBadge } from '../../shared/components/RowAction'
 import { ConsoleTable } from '../../shared/components/ConsoleTable'
-import { actions, timestamp } from '../../shared/display/labels'
+import { actions } from './labels'
+import { timestamp } from '../../shared/display/time'
 import { showOperation } from './detail/open'
 
 type Operation = z.infer<typeof operationSchema>

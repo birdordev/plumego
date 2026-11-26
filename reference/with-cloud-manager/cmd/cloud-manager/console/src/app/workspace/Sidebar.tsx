@@ -1,5 +1,5 @@
 import type { Session } from '../../features/session/store'
-import { canOpenView, navigation, routes, type View } from '../routes'
+import { canOpenView, navigation, routes, type View } from '../routes/registry'
 
 type Props = {
   session: Session

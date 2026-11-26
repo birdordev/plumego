@@ -1,7 +1,10 @@
-import { relative, resolve, sep } from 'node:path'
+import { relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import ts from 'typescript'
 import { featureEntrypoints } from './feature-entrypoints.mjs'
+import { firstImportCycle } from './import-cycles.mjs'
+import { canImport, sourceArea } from './import-policy.mjs'
+import { moduleReferences } from './module-references.mjs'
 
 const root = fileURLToPath(new URL('../', import.meta.url))
 const source = resolve(root, 'src')
@@ -13,40 +16,42 @@ const project = ts.getParsedCommandLineOfConfigFile(config, {}, {
   },
 })
 
-const layers = {
-  entry: new Set(['app']),
-  app: new Set(['app', 'features', 'shared']),
-  features: new Set(['features', 'shared']),
-  shared: new Set(['shared']),
-}
 const resolutionCache = ts.createModuleResolutionCache(root, (path) => path, project.options)
+const runtimeImports = new Map()
 let violations = 0
 
-function sourceArea(file) {
-  const path = relative(source, file)
-  if (path.startsWith('..' + sep)) return
-  const [layer, ...parts] = path.split(sep)
-  return parts.length ? { layer, parts } : { layer: 'entry', parts: [] }
+function report(message) {
+  console.error(message)
+  violations++
 }
 
-function canImport(from, to) {
-  if (!layers[from.layer]?.has(to.layer)) return false
-  if (from.layer !== 'features' || to.layer !== 'features') return true
-  return from.parts[0] === to.parts[0] || featureEntrypoints.has(to.parts.join('/'))
+for (const entry of featureEntrypoints) {
+  if (!ts.sys.fileExists(resolve(source, 'features', entry))) report(`模块入口不存在：${entry}`)
 }
 
 for (const file of project.fileNames) {
-  const from = sourceArea(file)
+  const from = sourceArea(source, file)
   if (!from) continue
-  const { importedFiles } = ts.preProcessFile(ts.sys.readFile(file), true, true)
-  for (const { fileName } of importedFiles) {
-    const { resolvedModule } = ts.resolveModuleName(fileName, file, project.options, ts.sys, resolutionCache)
+  const parsed = ts.createSourceFile(file, ts.sys.readFile(file), ts.ScriptTarget.Latest, true)
+  const dependencies = []
+  runtimeImports.set(file, dependencies)
+  for (const { name, line, eager } of moduleReferences(parsed)) {
+    const location = `${relative(root, file)}:${line}`
+    if (!name) {
+      report(`${location} 模块路径必须为显式的字符串字面量`)
+      continue
+    }
+
+    const { resolvedModule } = ts.resolveModuleName(name, file, project.options, ts.sys, resolutionCache)
     if (!resolvedModule) continue
-    const target = sourceArea(resolvedModule.resolvedFileName)
-    if (!target || canImport(from, target)) continue
-    console.error(`${relative(root, file)}: import "${fileName}" is outside the declared module boundary`)
-    violations++
+    const dependency = resolvedModule.resolvedFileName
+    const target = sourceArea(source, dependency)
+    if (!target) continue
+    if (!canImport(from, target)) report(`${location} 导入 "${name}" 超出模块边界`)
+    if (eager) dependencies.push(dependency)
   }
 }
 
+const cycle = firstImportCycle(runtimeImports)
+if (cycle) report(`检测到静态运行时循环依赖：${cycle.map((file) => relative(root, file)).join(' -> ')}`)
 if (violations) process.exitCode = 1

@@ -2,8 +2,9 @@ import type { z } from 'zod'
 import type { grantSchema } from './schema'
 import { RowAction, StateBadge } from '../../shared/components/RowAction'
 import { ConsoleTable } from '../../shared/components/ConsoleTable'
-import { grantPurposes, timestamp } from '../../shared/display/labels'
-import { showNativeGrant } from './grant'
+import { grantPurposes } from './labels'
+import { timestamp } from '../../shared/display/time'
+import { showNativeGrant } from './access/detail'
 
 type Grant = z.infer<typeof grantSchema>
 

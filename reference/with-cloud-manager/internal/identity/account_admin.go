@@ -118,7 +118,7 @@ func (a AccountAdmin) Register(ctx context.Context, token string, scope Scope, i
 
 func supportedAccountProvider(name string) bool {
 	switch name {
-	case "aws-ec2", "openstack", provider.TencentCVM, provider.AlibabaECS, provider.HuaweiECS:
+	case "aws-ec2", "openstack", provider.TencentCVM, provider.AlibabaECS, provider.HuaweiECS, provider.VSphere:
 		return true
 	default:
 		return false

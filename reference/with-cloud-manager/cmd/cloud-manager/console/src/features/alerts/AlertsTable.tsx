@@ -2,7 +2,9 @@ import type { z } from 'zod'
 import type { alertSchema } from './schema'
 import { RowAction, StateBadge } from '../../shared/components/RowAction'
 import { ConsoleTable } from '../../shared/components/ConsoleTable'
-import { alertRules, kinds, timestamp } from '../../shared/display/labels'
+import { alertRules } from './labels'
+import { kinds } from '../assets/labels'
+import { timestamp } from '../../shared/display/time'
 import { showAlert } from './detail'
 
 type Alert = z.infer<typeof alertSchema>

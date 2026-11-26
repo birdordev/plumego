@@ -1,6 +1,6 @@
 import { canExecute } from '../../session/project'
 import { openDetail } from '../../../shared/detail/store'
-import { timestamp } from '../../../shared/display/labels'
+import { timestamp } from '../../../shared/display/time'
 import { DNSRecordCreateForm } from './DNSRecordCreateForm'
 import { DNSRecordDeleteForm } from './DNSRecordDeleteForm'
 import { DNSRecordStatusForm } from './DNSRecordStatusForm'

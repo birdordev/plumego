@@ -26,6 +26,8 @@ const dnsRecordCreationRoute = "/v1/tenants/:tenant/projects/:project/dns-zones/
 const dnsRecordDeletionRoute = "/v1/tenants/:tenant/projects/:project/dns-zones/record-deletion"
 const workloadScaleRoute = "/v1/tenants/:tenant/projects/:project/kubernetes-workloads/scale"
 const dnsRecordStatusRoute = "/v1/tenants/:tenant/projects/:project/dns-zones/record-status"
+const databaseRenameRoute = "/v1/tenants/:tenant/projects/:project/databases/rename"
+const cacheRenameRoute = "/v1/tenants/:tenant/projects/:project/caches/rename"
 const loadBalancerRenameRoute = "/v1/tenants/:tenant/projects/:project/load-balancers/rename"
 const loadBalancerListenerRenameRoute = "/v1/tenants/:tenant/projects/:project/load-balancers/rename-listener"
 const loadBalancerBackendAttachRoute = "/v1/tenants/:tenant/projects/:project/load-balancers/attach-backend"
@@ -122,7 +124,7 @@ func writeOperationReceipt(w http.ResponseWriter, r *http.Request, scope identit
 	}
 	collection := "instance-operations"
 	switch op.ResourceKind {
-	case provider.Snapshot, provider.Volume, provider.Image, provider.LoadBalancer, provider.DNSZone, provider.KubernetesCluster:
+	case provider.Snapshot, provider.Volume, provider.Image, provider.LoadBalancer, provider.DNSZone, provider.KubernetesCluster, provider.DatabaseInstance, provider.CacheInstance:
 		collection = "operations"
 	case provider.Network, provider.Subnet, provider.SecurityGroup, provider.SecurityGroupRule, provider.ElasticIP:
 		collection = "network-operations"
@@ -262,6 +264,21 @@ func loadBalancerTargetGroupRenameRevisionError() error {
 func loadBalancerListenerRenameRevisionError() error {
 	return contract.NewErrorBuilder().Type(contract.TypePreconditionFailed).
 		Message("current listener name, parent ownership revision and configuration snapshot required").Build()
+}
+
+func retirementRevisionError() error {
+	return contract.NewErrorBuilder().Type(contract.TypePreconditionFailed).
+		Message("current Tencent instance ownership revision and observed system disk required").Build()
+}
+
+func cacheRenameRevisionError() error {
+	return contract.NewErrorBuilder().Type(contract.TypePreconditionFailed).
+		Message("current cache name, ownership revision and inventory required").Build()
+}
+
+func databaseRenameRevisionError() error {
+	return contract.NewErrorBuilder().Type(contract.TypePreconditionFailed).
+		Message("current database name, ownership revision and inventory required").Build()
 }
 
 func loadBalancerRenameRevisionError() error {

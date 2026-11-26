@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { statuses } from '../display/labels'
+import { statuses } from '../display/status-labels'
 
 export function RowAction({ children, onClick }: { children: ReactNode; onClick: () => void }) {
   return <button type="button" onClick={onClick}>{children}</button>

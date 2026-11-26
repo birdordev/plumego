@@ -7,6 +7,7 @@ import (
 	"errors"
 
 	"with-cloud-manager/internal/dbschema"
+	"with-cloud-manager/internal/provider"
 )
 
 //go:embed 0001_identity.sql
@@ -70,7 +71,7 @@ func (s Store) AuthorizeAccount(ctx context.Context, scope Scope, id string, per
 	if err != nil {
 		return AccountAccess{}, err
 	}
-	if !role.allows(permission) || (permission == Execute && (mode != "write_enabled" || !writeGrant)) {
+	if !role.allows(permission) || (permission == Execute && (mode != "write_enabled" || !writeGrant || access.Provider == provider.VSphere)) {
 		return AccountAccess{}, ErrForbidden
 	}
 	return access, nil

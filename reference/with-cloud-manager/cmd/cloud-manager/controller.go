@@ -54,6 +54,8 @@ func inventoryScheduleExecutor(db *sql.DB, profiles map[string]string, transport
 		switch task.Provider {
 		case awsec2.Name:
 			return nil, runAWS(ctx, db, args, path)
+		case provider.VSphere:
+			return nil, runVSphere(ctx, db, args, path, transport)
 		case openstack.Name:
 			return nil, runOpenStack(ctx, db, args, path, nil)
 		case provider.TencentCVM, provider.AlibabaECS, provider.HuaweiECS:

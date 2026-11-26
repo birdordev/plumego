@@ -1,14 +1,14 @@
 import { Suspense } from 'react'
+import type { Session } from '../../features/session/store'
 import { FeatureBoundary } from '../../shared/components/FeatureBoundary'
-import { routes, type PageProps, type PageView } from '../routes'
+import { routes, type PageView } from '../routes/registry'
 
-type Props = PageProps & { view: PageView }
+type Props = { view: PageView; session: Session; openSelectedBatch: () => void }
 
-export function WorkspacePage({ view, ...props }: Props) {
-  const Page = routes[view].Page
+export function WorkspacePage({ view, session, openSelectedBatch }: Props) {
   return <FeatureBoundary key={view} message="无法加载页面，请刷新后重试。">
     <Suspense fallback={<p role="status">正在加载页面…</p>}>
-      <Page {...props} />
+      {routes[view].render({ session, openSelectedBatch })}
     </Suspense>
   </FeatureBoundary>
 }
