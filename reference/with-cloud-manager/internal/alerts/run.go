@@ -18,6 +18,15 @@ var securityRuleOutboxSchema string
 //go:embed 0047_image_deletion_outbox.sql
 var imageDeletionOutboxSchema string
 
+//go:embed 0060_load_balancer_rename_outbox.sql
+var loadBalancerRenameOutboxSchema string
+
+//go:embed 0073_dns_zone_outbox.sql
+var dnsZoneOutboxSchema string
+
+//go:embed 0092_workload_scale_outbox.sql
+var workloadScaleOutboxSchema string
+
 //go:embed evaluate.sql
 var evaluate string
 
@@ -28,7 +37,16 @@ func Migrate(ctx context.Context, db *sql.DB) error {
 	if err := dbschema.Apply(ctx, db, "0034_security_rule_outbox", securityRuleOutboxSchema); err != nil {
 		return err
 	}
-	return dbschema.Apply(ctx, db, "0047_image_deletion_outbox", imageDeletionOutboxSchema)
+	if err := dbschema.Apply(ctx, db, "0047_image_deletion_outbox", imageDeletionOutboxSchema); err != nil {
+		return err
+	}
+	if err := dbschema.Apply(ctx, db, "0060_load_balancer_rename_outbox", loadBalancerRenameOutboxSchema); err != nil {
+		return err
+	}
+	if err := dbschema.Apply(ctx, db, "0073_dns_zone_outbox", dnsZoneOutboxSchema); err != nil {
+		return err
+	}
+	return dbschema.Apply(ctx, db, "0092_workload_scale_outbox", workloadScaleOutboxSchema)
 }
 
 func (s Store) EvaluateNext(ctx context.Context) (bool, error) {

@@ -1,0 +1,15 @@
+export const featureEntrypoints = new Set([
+  'alerts/detail.tsx',
+  'assets/dns/schema.ts',
+  'assets/row-action.ts',
+  'assets/selection-store.ts',
+  'assets/types.ts',
+  'native-console/asset-actions.ts',
+  'native-console/grant.tsx',
+  'operations/detail/open.tsx',
+  'operations/forms/OperationForm.tsx',
+  'operations/schema.ts',
+  'session/client.ts',
+  'session/project.ts',
+  'session/store.ts',
+])

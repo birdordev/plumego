@@ -19,6 +19,12 @@ const (
 	SecurityGroup     Kind = "security-group"
 	SecurityGroupRule Kind = "security-group-rule"
 	ElasticIP         Kind = "elastic-ip"
+	LoadBalancer      Kind = "load-balancer"
+	DNSZone           Kind = "dns-zone"
+	DatabaseInstance  Kind = "database-instance"
+	CacheInstance     Kind = "cache-instance"
+	KubernetesCluster Kind = "kubernetes-cluster"
+	ObjectBucket      Kind = "object-bucket"
 	Region            Kind = "region"
 	Zone              Kind = "zone"
 )
@@ -34,10 +40,15 @@ type Object struct {
 	ID              string
 	Name            string
 	Status          string
-	Links           []Link            `json:"links,omitempty"`
-	Tags            map[string]string `json:"tags"`
-	PublicAddresses []string          `json:"public_addresses,omitempty"`
-	Snapshot        *SnapshotDetails  `json:"snapshot,omitempty"`
+	Links           []Link               `json:"links,omitempty"`
+	Tags            map[string]string    `json:"tags"`
+	PublicAddresses []string             `json:"public_addresses,omitempty"`
+	LoadBalancer    *LoadBalancerDetails `json:"load_balancer,omitempty"`
+	Bucket          *BucketDetails       `json:"object_bucket,omitempty"`
+	Database        *DatabaseDetails     `json:"database_instance,omitempty"`
+	Cache           *CacheDetails        `json:"cache_instance,omitempty"`
+	Cluster         *ClusterDetails      `json:"kubernetes_cluster,omitempty"`
+	Snapshot        *SnapshotDetails     `json:"snapshot,omitempty"`
 }
 
 type Link struct {
@@ -74,7 +85,23 @@ func (p Page) Validate(cursor string) error {
 		if len(object.Tags) > 256 {
 			return &Failure{Kind: InvalidResponse}
 		}
-		if !validPublicAddresses(object.PublicAddresses) {
+		if object.Bucket != nil && !object.ValidBucket() {
+			return &Failure{Kind: InvalidResponse}
+		}
+		if object.Database != nil && !object.ValidDatabase() {
+			return &Failure{Kind: InvalidResponse}
+		}
+		if object.Cache != nil && !object.ValidCache() {
+			return &Failure{Kind: InvalidResponse}
+		}
+		if object.Cluster != nil && !object.ValidCluster() {
+			return &Failure{Kind: InvalidResponse}
+		}
+		if object.LoadBalancer != nil {
+			if !object.ValidLoadBalancer() {
+				return &Failure{Kind: InvalidResponse}
+			}
+		} else if !validPublicAddresses(object.PublicAddresses) {
 			return &Failure{Kind: InvalidResponse}
 		}
 		for key, value := range object.Tags {
@@ -103,19 +130,20 @@ type Observer interface {
 type FailureKind string
 
 const (
-	Unsupported      FailureKind = "unsupported"
-	Unauthorized     FailureKind = "unauthorized"
-	Throttled        FailureKind = "throttled"
-	Transient        FailureKind = "transient"
-	ExpiredCursor    FailureKind = "expired_cursor"
-	InvalidResponse  FailureKind = "invalid_response"
-	Absent           FailureKind = "absent"
-	OutcomeUnknown   FailureKind = "outcome_unknown"
-	DeletionBlocked  FailureKind = "deletion_blocked"
-	DeletionDisabled FailureKind = "deletion_disabled"
-	CreationBlocked  FailureKind = "creation_blocked"
-	VolumeBlocked    FailureKind = "volume_change_blocked"
-	PowerDisabled    FailureKind = "instance_power_disabled"
+	Unsupported        FailureKind = "unsupported"
+	Unauthorized       FailureKind = "unauthorized"
+	Throttled          FailureKind = "throttled"
+	Transient          FailureKind = "transient"
+	ExpiredCursor      FailureKind = "expired_cursor"
+	InvalidResponse    FailureKind = "invalid_response"
+	PreconditionFailed FailureKind = "precondition_failed"
+	Absent             FailureKind = "absent"
+	OutcomeUnknown     FailureKind = "outcome_unknown"
+	DeletionBlocked    FailureKind = "deletion_blocked"
+	DeletionDisabled   FailureKind = "deletion_disabled"
+	CreationBlocked    FailureKind = "creation_blocked"
+	VolumeBlocked      FailureKind = "volume_change_blocked"
+	PowerDisabled      FailureKind = "instance_power_disabled"
 )
 
 type Failure struct {
@@ -134,7 +162,7 @@ func IsFailure(err error, kind FailureKind) bool {
 
 func (k Kind) Valid() bool {
 	switch k {
-	case Instance, Volume, Snapshot, Network, Subnet, Image, SecurityGroup, SecurityGroupRule, ElasticIP, Region, Zone:
+	case Instance, Volume, Snapshot, Network, Subnet, Image, SecurityGroup, SecurityGroupRule, ElasticIP, LoadBalancer, DNSZone, DatabaseInstance, CacheInstance, KubernetesCluster, ObjectBucket, Region, Zone:
 		return true
 	default:
 		return false

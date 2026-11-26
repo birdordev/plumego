@@ -1,0 +1,1 @@
+import{f as e,m as t,r as n}from"./zod-zO1mk3Lk.js";function r(r){return e({items:n(r).max(200),next:t().optional()})}export{r as t};

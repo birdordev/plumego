@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"with-cloud-manager/internal/identity"
@@ -24,13 +25,16 @@ type openStackProfile struct {
 }
 
 func loadPrivateProfile(path string, profile any) error {
+	return loadPrivateProfileWithin(path, profile, 32<<10)
+}
+
+func loadPrivateProfileWithin(path string, profile any, maxProfile int64) error {
 	f, err := os.Open(path)
 	if err != nil {
 		return errors.New("cannot open profile")
 	}
 	defer func() { _ = f.Close() }()
 	info, err := f.Stat()
-	const maxProfile = 32 << 10
 	if err != nil || !info.Mode().IsRegular() || info.Mode().Perm()&0077 != 0 || info.Size() > maxProfile {
 		return errors.New("profile must be a private regular file within the size limit")
 	}
@@ -52,7 +56,9 @@ type awsProfile struct {
 }
 
 type publicCloudProfile struct {
-	Ref string `json:"credential_ref"`
+	Ref                       string            `json:"credential_ref"`
+	KubernetesWorkloads       map[string]string `json:"kubernetes_workloads,omitempty"`
+	KubernetesWorkloadWriters map[string]string `json:"kubernetes_workload_writers,omitempty"`
 	publiccloud.Config
 }
 
@@ -88,6 +94,9 @@ func runPublicCloud(parent context.Context, db *sql.DB, args []string, name, pat
 	if err := loadPrivateProfile(path, &profile); err != nil {
 		return err
 	}
+	if strings.HasSuffix(args[0], "-cluster-workloads") {
+		return runClusterWorkloadRefresh(parent, db, args, name, profile)
+	}
 	return runInventoryCommand(parent, db, args, name, profile.Ref,
 		func(ctx context.Context) (inventoryReader, error) {
 			return publiccloud.Connect(ctx, name, profile.Config, transport)
@@ -96,11 +105,11 @@ func runPublicCloud(parent context.Context, db *sql.DB, args []string, name, pat
 
 func publicCloudCommand(command string) (name, variable string) {
 	switch command {
-	case "verify-tencent", "scan-tencent":
+	case "verify-tencent", "scan-tencent", "refresh-tencent-load-balancer", "refresh-tencent-dns-zone", "refresh-tencent-cluster-node-pools", "refresh-tencent-cluster-workloads":
 		return provider.TencentCVM, "CLOUD_MANAGER_TENCENT_PROFILE"
-	case "verify-alibaba", "scan-alibaba":
+	case "verify-alibaba", "scan-alibaba", "refresh-alibaba-load-balancer", "refresh-alibaba-dns-zone", "refresh-alibaba-cluster-node-pools", "refresh-alibaba-cluster-workloads":
 		return provider.AlibabaECS, "CLOUD_MANAGER_ALIBABA_PROFILE"
-	case "verify-huawei", "scan-huawei":
+	case "verify-huawei", "scan-huawei", "refresh-huawei-load-balancer", "refresh-huawei-dns-zone", "refresh-huawei-cluster-node-pools", "refresh-huawei-cluster-workloads":
 		return provider.HuaweiECS, "CLOUD_MANAGER_HUAWEI_PROFILE"
 	default:
 		return "", ""
@@ -109,14 +118,27 @@ func publicCloudCommand(command string) (name, variable string) {
 
 func runInventoryCommand(parent context.Context, db *sql.DB, args []string, providerName, reference string, connect connectReader) error {
 	verify := len(args) == 3
+	refreshLoadBalancer := args[0] == "refresh-tencent-load-balancer" || args[0] == "refresh-alibaba-load-balancer" || args[0] == "refresh-huawei-load-balancer"
+	refreshDNS := strings.HasPrefix(args[0], "refresh-") && strings.HasSuffix(args[0], "-dns-zone")
+	refreshCluster := strings.HasPrefix(args[0], "refresh-") && strings.HasSuffix(args[0], "-cluster-node-pools")
 	var kind provider.Kind
 	var region string
-	if !verify {
+	if refreshDNS {
+		kind, region = provider.DNSZone, provider.DNSGlobalScope
+	} else if !verify {
 		kind, region = provider.Kind(args[4]), args[3]
+		if refreshLoadBalancer {
+			kind = provider.LoadBalancer
+		}
+		if refreshCluster {
+			kind = provider.KubernetesCluster
+		}
 		if region == "-" {
 			region = ""
 		}
-		if !kind.Valid() || (kind == provider.Region) != (region == "") {
+		if !kind.Valid() || (kind == provider.Region) != (region == "") ||
+			(kind == provider.DNSZone && region != provider.DNSGlobalScope) ||
+			(kind == provider.ObjectBucket && region != provider.ObjectBucketGlobalScope) {
 			return errors.New("invalid provider resource scope")
 		}
 	}
@@ -145,9 +167,41 @@ func runInventoryCommand(parent context.Context, db *sql.DB, args []string, prov
 		return nil
 	}
 	store := inventory.NewStore(db)
-	claim, err := store.ClaimWithCredentialRevision(ctx, inventory.Key{
-		Tenant: tenant, Account: account, Region: region, Kind: kind,
-	}, 10*time.Minute, binding.Revision)
+	key := inventory.Key{Tenant: tenant, Account: account, Region: region, Kind: kind}
+	if refreshDNS {
+		reader, ok := client.(provider.DNSRecordReader)
+		if !ok {
+			return &provider.Failure{Kind: provider.Unsupported}
+		}
+		err := store.RefreshDNSRecords(ctx, key, args[3], binding.Revision, reader)
+		return inventoryCommandError(err)
+	}
+	if refreshLoadBalancer {
+		reader, ok := client.(provider.LoadBalancerConfigurationReader)
+		if !ok {
+			return &provider.Failure{Kind: provider.Unsupported}
+		}
+		request := provider.LoadBalancerConfigurationRequest{ID: args[4], IncludeBackends: len(args) == 6 && args[5] == "--include-backends"}
+		err := store.RefreshLoadBalancerConfiguration(ctx, key, request, binding.Revision, reader)
+		return inventoryCommandError(err)
+	}
+	if refreshCluster {
+		reader, ok := client.(provider.ClusterNodePoolReader)
+		if !ok {
+			return &provider.Failure{Kind: provider.Unsupported}
+		}
+		err := store.RefreshClusterNodePools(ctx, key, args[4], binding.Revision, reader)
+		return inventoryCommandError(err)
+	}
+	if len(args) == 6 {
+		observer, ok := client.(provider.Observer)
+		if !ok || !publicCloudMissingKind(kind) {
+			return &provider.Failure{Kind: provider.Unsupported}
+		}
+		_, err := store.ConfirmMissingWithCredentialRevision(ctx, key, args[5], binding.Revision, observer)
+		return err
+	}
+	claim, err := store.ClaimWithCredentialRevision(ctx, key, 10*time.Minute, binding.Revision)
 	if err != nil {
 		return inventory.ErrUnavailable
 	}
@@ -171,4 +225,21 @@ func runInventoryCommand(parent context.Context, db *sql.DB, args []string, prov
 		}
 		claim = next
 	}
+}
+
+func publicCloudMissingKind(kind provider.Kind) bool {
+	switch kind {
+	case provider.LoadBalancer, provider.DatabaseInstance, provider.ObjectBucket, provider.CacheInstance, provider.KubernetesCluster:
+		return true
+	default:
+		return false
+	}
+}
+
+func inventoryCommandError(err error) error {
+	var failure *provider.Failure
+	if err != nil && !errors.As(err, &failure) && !errors.Is(err, inventory.ErrStale) && !errors.Is(err, inventory.ErrInvalidQuery) {
+		return inventory.ErrUnavailable
+	}
+	return err
 }

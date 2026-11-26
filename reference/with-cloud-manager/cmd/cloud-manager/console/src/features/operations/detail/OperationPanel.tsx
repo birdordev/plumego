@@ -1,0 +1,45 @@
+import { requestErrorMessage } from '../../../shared/api/requests'
+import { DetailFields, type DetailField } from '../../../shared/components/DetailFields'
+import { StateBadge } from '../../../shared/components/RowAction'
+import { useDetailRead } from '../../../shared/detail/useDetailRead'
+import { actions } from '../../../shared/display/labels'
+import { request } from '../../session/client'
+import { sessionSnapshot } from '../../session/store'
+import { OperationDecisions } from './OperationDecisions'
+import { OperationTimeline } from './OperationTimeline'
+import { dnsOperationFields } from './fields/dns'
+import { imageOperationFields } from './fields/image'
+import { loadBalancerOperationFields } from './fields/load-balancer'
+import { networkOperationFields } from './fields/network'
+import { operationDetailSchema, operationEventsSchema } from './schema'
+import { workloadScaleFields } from './fields/workload'
+import { snapshotOperationFields } from './fields/snapshot'
+
+function readDetails(target: string, signal: AbortSignal) {
+  return Promise.all([
+    request(target, { signal }, operationDetailSchema),
+    request(target + '/events', { signal }, operationEventsSchema),
+  ])
+}
+
+export default function OperationPanel({ target, stamp, signal, reload }:
+  { target: string; stamp: number; signal: AbortSignal; reload: () => void }) {
+  const result = useDetailRead(target, signal, readDetails)
+  if (result.state === 'error') return <p role="alert" className="notice" data-error="true">{requestErrorMessage(result.error)}</p>
+  if (result.state === 'loading') return <p role="status">正在加载…</p>
+  const [op, events] = result.data
+  const fields: DetailField[] = [
+    ['操作 ID', op.id], ['动作', actions[op.action] || op.action], ['状态', <StateBadge status={op.status} />],
+    ['资源', op.asset_id || '待分配'], ['厂商请求', op.provider_request_id || '—'],
+  ]
+  if (op.catalog_template) fields.push(['模板版本', op.catalog_template + ' / ' + op.catalog_version])
+  fields.push(...dnsOperationFields(op), ...loadBalancerOperationFields(op), ...networkOperationFields(op),
+    ...imageOperationFields(op), ...snapshotOperationFields(op), ...workloadScaleFields(op))
+
+  return <>
+    <DetailFields fields={fields} />
+    <OperationTimeline initial={events} target={target} signal={signal} />
+    {sessionSnapshot()?.project.role === 'approver' ? <OperationDecisions operation={op} target={target} stamp={stamp}
+      onSaved={reload} /> : null}
+  </>
+}

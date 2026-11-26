@@ -16,10 +16,12 @@ import (
 
 	"with-cloud-manager/internal/alerts"
 	"with-cloud-manager/internal/audit"
+	"with-cloud-manager/internal/billing"
 	"with-cloud-manager/internal/identity"
 	"with-cloud-manager/internal/inventory"
 	"with-cloud-manager/internal/nativeconsole"
 	"with-cloud-manager/internal/operations"
+	"with-cloud-manager/internal/provider"
 )
 
 func main() {
@@ -33,10 +35,16 @@ func main() {
 
 func run(parent context.Context, args []string) (retErr error) {
 	if !validCommand(args) {
-		return errors.New("usage: cloud-manager migrate|api|controller|alert-controller|worker|sessions-purge|operations COMMAND TENANT PROJECT|audit {list,export} TENANT PROJECT|catalog COMMAND TENANT PROJECT|alerts COMMAND TENANT PROJECT|console-grants COMMAND TENANT PROJECT|event-publisher|event-{register,disable,failures} SINK|event-retry SINK EVENT_ID|verify-{openstack,aws,tencent,alibaba,huawei} TENANT ACCOUNT|scan-{openstack,aws,tencent,alibaba,huawei} TENANT ACCOUNT REGION KIND")
+		return errors.New("usage: cloud-manager billing COMMAND TENANT PROJECT ACCOUNT PERIOD SOURCE ...|billing-{import,replay,source,allocate,allocation-replay} TENANT PROJECT ACCOUNT PERIOD SOURCE ...|migrate|api|controller|workload-controller|alert-controller|idle-controller|idle-schedule TENANT ACCOUNT REGION INSTANCE DURATION_OR_OFF|billing-pull-controller|billing-pull[-status|-source|-replay] TENANT PROJECT ACCOUNT PERIOD SOURCE ...|worker|sessions-purge|operations COMMAND TENANT PROJECT|governance COMMAND TENANT PROJECT|audit {list,export} TENANT PROJECT|catalog COMMAND TENANT PROJECT|alerts COMMAND TENANT PROJECT|console-grants COMMAND TENANT PROJECT|event-publisher|event-{register,disable,failures} SINK|event-retry SINK EVENT_ID|verify-{openstack,aws,tencent,alibaba,huawei} TENANT ACCOUNT|scan-{openstack,aws,tencent,alibaba,huawei} TENANT ACCOUNT REGION KIND (or append ASSET_ID for a public-cloud load-balancer, database-instance, cache-instance, kubernetes-cluster or object-bucket absence check)|refresh-{tencent,alibaba,huawei}-load-balancer TENANT ACCOUNT REGION ASSET_ID [--include-backends]|refresh-{tencent,alibaba,huawei}-dns-zone TENANT ACCOUNT ZONE_ID|refresh-{tencent,alibaba,huawei}-cluster-{node-pools,workloads} TENANT ACCOUNT REGION CLUSTER_ID")
 	}
 	if args[0] == "operations" {
 		return runOperationsClient(parent, args[1:], os.Getenv("CLOUD_MANAGER_API_URL"), os.Getenv("CLOUD_MANAGER_API_TOKEN"), os.Stdin, os.Stdout, nil)
+	}
+	if args[0] == "billing" {
+		return runBillingClient(parent, args[1:], os.Getenv("CLOUD_MANAGER_API_URL"), os.Getenv("CLOUD_MANAGER_API_TOKEN"), os.Stdin, os.Stdout, nil)
+	}
+	if args[0] == "governance" {
+		return runGovernanceClient(parent, args[1:], os.Getenv("CLOUD_MANAGER_API_URL"), os.Getenv("CLOUD_MANAGER_API_TOKEN"), os.Stdin, os.Stdout, nil)
 	}
 	if args[0] == "audit" {
 		return runAuditClient(parent, args[1:], os.Getenv("CLOUD_MANAGER_API_URL"), os.Getenv("CLOUD_MANAGER_API_TOKEN"), os.Stdout, nil)
@@ -79,8 +87,23 @@ func run(parent context.Context, args []string) (retErr error) {
 	if args[0] == "worker" {
 		return runWorker(parent, db, os.Getenv("CLOUD_MANAGER_WORKER_PROFILES"))
 	}
-	if args[0] == "controller" {
-		return runController(parent, db, os.Getenv("CLOUD_MANAGER_CONTROLLER_PROFILES"))
+	if args[0] == "controller" || args[0] == "workload-controller" {
+		watchOnly := args[0] == "workload-controller"
+		if watchOnly {
+			db.SetMaxOpenConns(8)
+			db.SetMaxIdleConns(4)
+		}
+		return runController(parent, db, os.Getenv("CLOUD_MANAGER_CONTROLLER_PROFILES"), watchOnly)
+	}
+	if strings.HasPrefix(args[0], "billing-pull") {
+		db.SetMaxOpenConns(4)
+		db.SetMaxIdleConns(2)
+		return runBillingPull(parent, db, args, os.Getenv(billingPullProfiles), os.Stdout, nil)
+	}
+	if args[0] == "idle-controller" || args[0] == "idle-schedule" {
+		db.SetMaxOpenConns(4)
+		db.SetMaxIdleConns(2)
+		return runIdleCommand(parent, db, args, os.Getenv("CLOUD_MANAGER_IDLE_PROFILES"), nil)
 	}
 	if args[0] == "alert-controller" {
 		if err := alerts.NewStore(db).Run(parent); err != nil {
@@ -110,6 +133,9 @@ func run(parent context.Context, args []string) (retErr error) {
 	}
 	ctx, cancel := context.WithTimeout(parent, time.Minute)
 	defer cancel()
+	if strings.HasPrefix(args[0], "billing-") {
+		return runBillingStorageCommand(ctx, db, args, os.Stdout)
+	}
 	if args[0] == "sessions-purge" {
 		removed, err := identity.NewBrowserSessions(db).PurgeExpired(ctx)
 		if err != nil {
@@ -152,6 +178,24 @@ func migrateCloudManager(ctx context.Context, db *sql.DB) error {
 	if err := nativeconsole.Migrate(ctx, db); err != nil {
 		return errors.New("native console migration failed")
 	}
+	if err := billing.Migrate(ctx, db); err != nil {
+		return errors.New("billing ledger migration failed")
+	}
+	if err := billing.MigrateBudgets(ctx, db); err != nil {
+		return errors.New("billing budget migration failed")
+	}
+	if err := billing.MigrateAllocations(ctx, db); err != nil {
+		return errors.New("billing allocation migration failed")
+	}
+	if err := billing.MigratePulls(ctx, db); err != nil {
+		return errors.New("billing pull migration failed")
+	}
+	if err := inventory.MigrateTagPolicies(ctx, db); err != nil {
+		return errors.New("tag policy migration failed")
+	}
+	if err := inventory.MigrateIdleAnalysis(ctx, db); err != nil {
+		return errors.New("instance idle analysis migration failed")
+	}
 	return nil
 }
 
@@ -160,15 +204,40 @@ func validCommand(args []string) bool {
 		return false
 	}
 	switch args[0] {
-	case "migrate", "api", "controller", "alert-controller", "worker", "event-publisher", "sessions-purge":
+	case "migrate", "api", "controller", "workload-controller", "alert-controller", "idle-controller", "billing-pull-controller", "worker", "event-publisher", "sessions-purge":
 		return len(args) == 1
 	case "event-register", "event-disable", "event-failures":
 		return len(args) == 2
 	case "verify-openstack", "verify-aws", "verify-tencent", "verify-alibaba", "verify-huawei", "event-retry":
 		return len(args) == 3
-	case "scan-openstack", "scan-aws", "scan-tencent", "scan-alibaba", "scan-huawei":
+	case "scan-openstack", "scan-aws":
 		return len(args) == 5
-	case "operations", "audit", "catalog", "alerts", "console-grants":
+	case "scan-tencent", "scan-alibaba", "scan-huawei":
+		return len(args) == 5 || (len(args) == 6 && publicCloudMissingKind(provider.Kind(args[4])) && args[5] != "")
+	case "refresh-tencent-load-balancer", "refresh-alibaba-load-balancer", "refresh-huawei-load-balancer":
+		return (len(args) == 5 || (len(args) == 6 && args[5] == "--include-backends")) && args[4] != ""
+	case "refresh-tencent-cluster-node-pools", "refresh-alibaba-cluster-node-pools", "refresh-huawei-cluster-node-pools",
+		"refresh-tencent-cluster-workloads", "refresh-alibaba-cluster-workloads", "refresh-huawei-cluster-workloads":
+		return len(args) == 5 && args[4] != ""
+	case "refresh-tencent-dns-zone", "refresh-alibaba-dns-zone", "refresh-huawei-dns-zone":
+		return len(args) == 4 && args[3] != ""
+	case "idle-schedule":
+		return len(args) == 6
+	case "billing-import":
+		return len(args) >= 9 && len(args) <= 8+billing.MaxParts
+	case "billing-replay":
+		return len(args) == 7
+	case "billing-source", "billing-allocation-replay":
+		return len(args) == 8
+	case "billing-pull", "billing-pull-status":
+		return len(args) == 6
+	case "billing-pull-replay":
+		return len(args) == 7
+	case "billing-pull-source":
+		return len(args) == 8
+	case "billing-allocate":
+		return len(args) == 9
+	case "operations", "audit", "catalog", "alerts", "console-grants", "billing", "governance":
 		return len(args) >= 2
 	default:
 		return false

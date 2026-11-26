@@ -13,6 +13,7 @@ import (
 
 	"with-cloud-manager/internal/alerts"
 	"with-cloud-manager/internal/audit"
+	"with-cloud-manager/internal/billing"
 	"with-cloud-manager/internal/identity"
 	"with-cloud-manager/internal/inventory"
 	"with-cloud-manager/internal/nativeconsole"
@@ -42,8 +43,8 @@ func newAPI(db *sql.DB, addr string, console *consoleConfig) (*core.App, error) 
 		defer cancel()
 		var applied int
 		err := db.QueryRowContext(ctx, `SELECT count(*) FROM cmp_migrations
-			WHERE version IN ('0001_identity','0002_inventory','0003_service_tokens','0004_inventory_schedules','0005_inventory_history','0006_inventory_topology','0007_account_events','0008_asset_ownership','0009_tag_assignment','0010_instance_operations','0011_operation_worker','0012_operation_resolution','0013_operation_approval','0014_instance_deletion','0015_confirmed_instance_deletions','0016_instance_creation','0017_creation_receipt','0018_volume_operations','0019_operation_outbox','0020_network_operations','0021_security_group_creation','0022_operation_queries','0023_operation_batches','0024_browser_sessions','0025_project_audit','0026_instance_catalog','0027_catalog_audit','0028_project_alerts','0029_native_console','0030_aws_serial_console','0031_security_group_rules','0032_security_rule_revocation','0033_subnet_zone','0034_security_rule_outbox','0035_inventory_public_addresses','0036_network_asset_schedules','0037_elastic_ip_creation','0038_elastic_ip_release','0039_elastic_ip_binding','0040_snapshot_inventory','0041_snapshot_schedules','0042_snapshot_creation','0043_snapshot_deletion','0044_snapshot_restore','0045_snapshot_rollback','0046_image_deletion','0047_image_deletion_outbox','0048_instance_image_reservations','0049_image_creation','0050_image_copy_reservations','0051_image_copy','0052_network_deletion','0053_security_group_deletion','0054_network_deletion_reservations','0055_network_deletion_backfill')`).Scan(&applied)
-		if err == nil && applied == 55 {
+			WHERE version IN ('0001_identity','0002_inventory','0003_service_tokens','0004_inventory_schedules','0005_inventory_history','0006_inventory_topology','0007_account_events','0008_asset_ownership','0009_tag_assignment','0010_instance_operations','0011_operation_worker','0012_operation_resolution','0013_operation_approval','0014_instance_deletion','0015_confirmed_instance_deletions','0016_instance_creation','0017_creation_receipt','0018_volume_operations','0019_operation_outbox','0020_network_operations','0021_security_group_creation','0022_operation_queries','0023_operation_batches','0024_browser_sessions','0025_project_audit','0026_instance_catalog','0027_catalog_audit','0028_project_alerts','0029_native_console','0030_aws_serial_console','0031_security_group_rules','0032_security_rule_revocation','0033_subnet_zone','0034_security_rule_outbox','0035_inventory_public_addresses','0036_network_asset_schedules','0037_elastic_ip_creation','0038_elastic_ip_release','0039_elastic_ip_binding','0040_snapshot_inventory','0041_snapshot_schedules','0042_snapshot_creation','0043_snapshot_deletion','0044_snapshot_restore','0045_snapshot_rollback','0046_image_deletion','0047_image_deletion_outbox','0048_instance_image_reservations','0049_image_creation','0050_image_copy_reservations','0051_image_copy','0052_network_deletion','0053_security_group_deletion','0054_network_deletion_reservations','0055_network_deletion_backfill','0056_load_balancer_inventory','0057_load_balancer_schedules','0058_load_balancer_configuration','0059_load_balancer_rename','0060_load_balancer_rename_outbox','0061_load_balancer_listener_rename','0062_load_balancer_target_group_rename','0063_load_balancer_backend_keys','0064_load_balancer_backend_weight','0065_load_balancer_backend_detach','0066_load_balancer_backend_attach','0067_dns_zone_records','0068_dns_zone_schedules','0069_load_balancer_change_reservations','0070_load_balancer_change_backfill','0071_dns_zone_mutation','0072_dns_record_status','0073_dns_zone_outbox','0074_dns_record_creation','0075_dns_record_deletion','0076_database_inventory','0077_database_schedules','0078_object_bucket_inventory','0079_object_bucket_schedules','0080_cache_inventory','0081_cache_schedules','0082_kubernetes_inventory','0083_kubernetes_schedules','0084_cluster_node_pools','0085_cluster_node_pool_schedules','0086_cluster_workloads','0087_cluster_workload_schedules','0088_cluster_workload_checkpoints','0089_cluster_workload_watch_schedules','0090_workload_change_reservations','0091_workload_scale','0092_workload_scale_outbox','0093_billing_ledger','0094_billing_budgets','0095_billing_allocations','0096_billing_pull','0097_tag_observations','0098_tag_policies','0099_idle_schedules','0100_instance_idle')`).Scan(&applied)
+		if err == nil && applied == 100 {
 			status(w, r, "ready")
 			return
 		}
@@ -61,12 +62,25 @@ func newAPI(db *sql.DB, addr string, console *consoleConfig) (*core.App, error) 
 	resolve := operationDecisionHandler(operationStore.Resolve, app.Logger())
 	retryObservation := operationDecisionHandler(operationStore.RetryCreationObservation, app.Logger())
 	projectAlerts := alertHandler(alerts.NewStore(db), app.Logger())
+	billingStore := billing.NewStore(db)
+	budgets := budgetHandler(billingStore, app.Logger())
+	tagPolicy := tagPolicyHandler(store, app.Logger())
 	accounts := accountHandler(identity.NewAccountAdmin(db), app.Logger())
 	if err := errors.Join(app.Get("/healthz", health), app.Get("/readyz", ready),
 		app.Get(assetsRoute, assetHandler(store.List, app.Logger())),
 		app.Get(assetsRoute+"/changes", assetHandler(store.History, app.Logger())),
 		app.Get(assetsRoute+"/export", inventoryHandler(store.Export, writeAssetCSV, true, app.Logger())),
 		app.Get(assetsRoute+"/topology", assetHandler(store.Topology, app.Logger())),
+		app.Get(loadBalancerConfigurationRoute, loadBalancerConfigurationHandler(store, app.Logger())),
+		app.Get(dnsRecordsRoute, dnsRecordsHandler(store, app.Logger())),
+		app.Get(clusterNodePoolsRoute, clusterNodePoolsHandler(store, app.Logger())),
+		app.Get(clusterWorkloadsRoute, clusterWorkloadsHandler(store, app.Logger())),
+		app.Get(billingRoute, billingHandler(billingStore, app.Logger())),
+		app.Get(allocationRoute, allocationHandler(billingStore, app.Logger())),
+		app.Get(budgetRoute, budgets), app.Post(budgetRoute, budgets), app.Put(budgetRoute, budgets),
+		app.Get(tagPolicyRoute, tagPolicy), app.Post(tagPolicyRoute, tagPolicy), app.Put(tagPolicyRoute, tagPolicy),
+		app.Get(tagComplianceRoute, tagComplianceHandler(store, app.Logger())),
+		app.Get(idleInstancesRoute, idleInstancesHandler(store, app.Logger())),
 		app.Get(auditRoute, projectAuditHandler(auditStore, app.Logger(), false)),
 		app.Get(auditRoute+"/export", projectAuditHandler(auditStore, app.Logger(), true)),
 		app.Get(alertsRoute, projectAlerts), app.Get(alertsRoute+"/:alert", projectAlerts),
@@ -81,6 +95,16 @@ func newAPI(db *sql.DB, addr string, console *consoleConfig) (*core.App, error) 
 		app.Post(imagesRoute, versionedOperationHandler(operationStore.SubmitImageCreation, sourceInstanceRevisionError, app.Logger())),
 		app.Post(imagesRoute+"/copy", versionedOperationHandler(operationStore.SubmitImageCopy, imageRevisionError, app.Logger())),
 		app.Post(imagesRoute+"/delete", versionedOperationHandler(operationStore.SubmitImageDeletion, imageRevisionError, app.Logger())),
+		app.Post(dnsRecordCreationRoute, versionedOperationHandler(operationStore.SubmitDNSRecordCreation, dnsRecordRevisionError, app.Logger())),
+		app.Post(dnsRecordDeletionRoute, versionedOperationHandler(operationStore.SubmitDNSRecordDeletion, dnsRecordRevisionError, app.Logger())),
+		app.Post(workloadScaleRoute, versionedOperationHandler(operationStore.SubmitWorkloadScale, workloadScaleRevisionError, app.Logger())),
+		app.Post(dnsRecordStatusRoute, versionedOperationHandler(operationStore.SubmitDNSRecordStatus, dnsRecordRevisionError, app.Logger())),
+		app.Post(loadBalancerRenameRoute, versionedOperationHandler(operationStore.SubmitLoadBalancerRename, loadBalancerRenameRevisionError, app.Logger())),
+		app.Post(loadBalancerListenerRenameRoute, versionedOperationHandler(operationStore.SubmitLoadBalancerListenerRename, loadBalancerListenerRenameRevisionError, app.Logger())),
+		app.Post(loadBalancerTargetGroupRenameRoute, versionedOperationHandler(operationStore.SubmitLoadBalancerTargetGroupRename, loadBalancerTargetGroupRenameRevisionError, app.Logger())),
+		app.Post(loadBalancerBackendWeightRoute, versionedOperationHandler(operationStore.SubmitLoadBalancerBackendWeight, loadBalancerBackendWeightRevisionError, app.Logger())),
+		app.Post(loadBalancerBackendDetachRoute, versionedOperationHandler(operationStore.SubmitLoadBalancerBackendDetach, loadBalancerBackendDetachRevisionError, app.Logger())),
+		app.Post(loadBalancerBackendAttachRoute, versionedOperationHandler(operationStore.SubmitLoadBalancerBackendAttach, loadBalancerBackendAttachRevisionError, app.Logger())),
 		app.Post(snapshotsRoute, versionedOperationHandler(operationStore.SubmitSnapshotCreation, volumeRevisionError, app.Logger())),
 		app.Post(snapshotsRoute+"/restore", versionedOperationHandler(operationStore.SubmitSnapshotRestore, volumeRevisionError, app.Logger())),
 		app.Post(snapshotsRoute+"/rollback", versionedOperationHandler(operationStore.SubmitSnapshotRollback, volumeRevisionError, app.Logger())),

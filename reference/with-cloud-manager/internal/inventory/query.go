@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"strings"
 	"time"
 	"unicode/utf8"
 
@@ -27,27 +28,36 @@ type Query struct {
 }
 
 type Asset struct {
-	Account           string                    `json:"account"`
-	Provider          string                    `json:"provider"`
-	Region            string                    `json:"region"`
-	Kind              provider.Kind             `json:"kind"`
-	ID                string                    `json:"id"`
-	ParentID          string                    `json:"parent_id,omitempty"`
-	Name              string                    `json:"name"`
-	Status            string                    `json:"status"`
-	State             string                    `json:"inventory_state"`
-	ObservedAt        time.Time                 `json:"observed_at"`
-	Project           string                    `json:"project"`
-	OwnershipSource   string                    `json:"ownership_source"`
-	OwnershipRevision int64                     `json:"ownership_revision"`
-	LastFullSync      *time.Time                `json:"last_full_sync,omitempty"`
-	PublicAddresses   []string                  `json:"public_addresses,omitempty"`
-	Snapshot          *provider.SnapshotDetails `json:"snapshot,omitempty"`
+	Account           string                        `json:"account"`
+	Provider          string                        `json:"provider"`
+	Region            string                        `json:"region"`
+	Kind              provider.Kind                 `json:"kind"`
+	ID                string                        `json:"id"`
+	ParentID          string                        `json:"parent_id,omitempty"`
+	Name              string                        `json:"name"`
+	Status            string                        `json:"status"`
+	State             string                        `json:"inventory_state"`
+	ObservedAt        time.Time                     `json:"observed_at"`
+	Project           string                        `json:"project"`
+	OwnershipSource   string                        `json:"ownership_source"`
+	OwnershipRevision int64                         `json:"ownership_revision"`
+	LastFullSync      *time.Time                    `json:"last_full_sync,omitempty"`
+	PublicAddresses   []string                      `json:"public_addresses,omitempty"`
+	LoadBalancer      *provider.LoadBalancerDetails `json:"load_balancer,omitempty"`
+	Database          *provider.DatabaseDetails     `json:"database_instance,omitempty"`
+	Bucket            *provider.BucketDetails       `json:"object_bucket,omitempty"`
+	Cache             *provider.CacheDetails        `json:"cache_instance,omitempty"`
+	Cluster           *provider.ClusterDetails      `json:"kubernetes_cluster,omitempty"`
+	Snapshot          *provider.SnapshotDetails     `json:"snapshot,omitempty"`
 }
 
 type Assets struct {
 	Items []Asset `json:"items"`
 	Next  string  `json:"next,omitempty"`
+}
+
+func validInventoryText(value string) bool {
+	return utf8.ValidString(value) && !strings.ContainsRune(value, 0)
 }
 
 type position struct {
@@ -124,7 +134,7 @@ func listAssets(ctx context.Context, tx *sql.Tx, q Query, p position, result *As
 		     WHEN s.kind IN ('security-group-rule','snapshot') AND a.credential_revision<>parent_scope.credential_revision THEN 'stale'
 		     ELSE 'observed' END,o.observed_at,s.completed_at,`+projectedOwner+`,`+projectedRevision+`,
 		CASE WHEN s.kind='security-group-rule' THEN 'security_group' WHEN s.kind='snapshot' THEN 'source_volume'
-		ELSE `+ownershipSource+` END,o.public_addresses,o.snapshot
+		ELSE `+ownershipSource+` END,o.public_addresses,o.snapshot,o.load_balancer,o.database_instance,o.object_bucket,o.cache_instance,o.kubernetes_cluster
 		FROM cmp_inventory_scopes AS s JOIN cmp_cloud_accounts AS a USING (tenant_id,account_id)
 		JOIN cmp_inventory_objects AS o USING (scope_id)`+inventoryOwnershipJoins+`
 		WHERE `+assetVisibility+`
@@ -132,7 +142,17 @@ func listAssets(ctx context.Context, tx *sql.Tx, q Query, p position, result *As
 		AND ($3='' OR s.account_id=$3) AND ($4='' OR s.region=$4) AND ($5='' OR s.kind=$5)
 		AND ($6='' OR strpos(lower(o.name),lower($6))>0 OR strpos(lower(o.external_id),lower($6))>0
 		     OR (o.public_addresses<>'[]'::jsonb AND strpos(o.public_addresses::text,lower($6))>0)
-		     OR (s.kind='snapshot' AND strpos(lower(parent.external_id),lower($6))>0))
+		     OR (s.kind='snapshot' AND strpos(lower(parent.external_id),lower($6))>0)
+		     OR (s.kind='load-balancer' AND strpos(lower(COALESCE(o.load_balancer->>'dns_name','') || ' ' ||
+		         COALESCE(o.load_balancer->>'private_addresses','')),lower($6))>0)
+		     OR (s.kind='database-instance' AND strpos(lower(concat_ws(' ',o.database_instance->>'engine',
+		         o.database_instance->>'version',o.database_instance->>'product')),lower($6))>0)
+		     OR (s.kind='object-bucket' AND strpos(lower(concat_ws(' ',o.object_bucket->>'location',
+		         o.object_bucket->>'storage_class',o.object_bucket->>'product')),lower($6))>0)
+		     OR (s.kind='cache-instance' AND strpos(lower(concat_ws(' ',o.cache_instance->>'engine',
+		         o.cache_instance->>'version',o.cache_instance->>'product')),lower($6))>0)
+		     OR (s.kind='kubernetes-cluster' AND strpos(lower(concat_ws(' ',o.kubernetes_cluster->>'cluster_type',
+		         o.kubernetes_cluster->>'version',o.kubernetes_cluster->>'product')),lower($6))>0))
 		AND ($7='' OR (s.account_id,s.region,s.kind,o.external_id)>($7,$8,$9,$10))
 		ORDER BY s.account_id,s.region,s.kind,o.external_id LIMIT $11`,
 		q.Tenant, q.Project, q.Account, q.Region, q.Kind, q.Search, p.Account, p.Region, p.Kind, p.ID, q.Limit+1)
@@ -142,9 +162,9 @@ func listAssets(ctx context.Context, tx *sql.Tx, q Query, p position, result *As
 	defer func() { _ = rows.Close() }()
 	for rows.Next() {
 		var a Asset
-		var addresses, snapshot []byte
+		var addresses, snapshot, loadBalancer, database, bucket, cache, cluster []byte
 		if err := rows.Scan(&a.Account, &a.Provider, &a.Region, &a.Kind, &a.ID, &a.ParentID, &a.Name, &a.Status, &a.State, &a.ObservedAt,
-			&a.LastFullSync, &a.Project, &a.OwnershipRevision, &a.OwnershipSource, &addresses, &snapshot); err != nil {
+			&a.LastFullSync, &a.Project, &a.OwnershipRevision, &a.OwnershipSource, &addresses, &snapshot, &loadBalancer, &database, &bucket, &cache, &cluster); err != nil {
 			return err
 		}
 		if err := json.Unmarshal(addresses, &a.PublicAddresses); err != nil {
@@ -152,6 +172,31 @@ func listAssets(ctx context.Context, tx *sql.Tx, q Query, p position, result *As
 		}
 		if len(snapshot) != 0 {
 			if err := json.Unmarshal(snapshot, &a.Snapshot); err != nil {
+				return err
+			}
+		}
+		if len(loadBalancer) != 0 {
+			if err := json.Unmarshal(loadBalancer, &a.LoadBalancer); err != nil {
+				return err
+			}
+		}
+		if len(database) != 0 {
+			if err := json.Unmarshal(database, &a.Database); err != nil {
+				return err
+			}
+		}
+		if len(bucket) != 0 {
+			if err := json.Unmarshal(bucket, &a.Bucket); err != nil {
+				return err
+			}
+		}
+		if len(cache) != 0 {
+			if err := json.Unmarshal(cache, &a.Cache); err != nil {
+				return err
+			}
+		}
+		if len(cluster) != 0 {
+			if err := json.Unmarshal(cluster, &a.Cluster); err != nil {
 				return err
 			}
 		}

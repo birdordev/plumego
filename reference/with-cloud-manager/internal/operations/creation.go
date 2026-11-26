@@ -374,12 +374,20 @@ func (s Store) recordLaunchReceipt(ctx context.Context, task mq.Task, kind provi
 	if !requestIDPattern.MatchString(receipt.RequestID) {
 		receipt.RequestID = ""
 	}
+	if kind == provider.DNSZone && !provider.ValidDNSRecordID(receipt.ResourceID) {
+		receipt.ResourceID = ""
+	}
 	return s.withLease(ctx, task, func(tx *sql.Tx) error {
 		if requestIDPattern.MatchString(receipt.ResourceID) {
 			var id string
 			query := `UPDATE cmp_instance_launches SET provider_instance_id=$2
 				WHERE operation_id=$1 AND (provider_instance_id='' OR provider_instance_id=$2) RETURNING operation_id`
-			if kind != provider.Instance {
+			switch kind {
+			case provider.Instance:
+			case provider.DNSZone:
+				query = `UPDATE cmp_dns_record_creation_intents SET record_id=$2
+					WHERE operation_id=$1 AND (record_id='' OR record_id=$2) RETURNING operation_id`
+			default:
 				query = `UPDATE cmp_network_intents SET provider_resource_id=$2
 					WHERE operation_id=$1 AND (provider_resource_id='' OR provider_resource_id=$2) RETURNING operation_id`
 			}

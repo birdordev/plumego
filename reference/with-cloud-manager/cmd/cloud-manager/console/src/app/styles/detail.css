@@ -1,0 +1,16 @@
+dialog { background: var(--paper); inline-size: min(38rem, 94vw); color: var(--ink); border: 1px solid var(--line); padding: 1.25rem; }
+dialog::backdrop { background: #163640a6; }
+.detail-header { display: flex; justify-content: space-between; align-items: center; gap: .8rem; }
+.detail-list { display: grid; grid-template-columns: minmax(5rem, max-content) 1fr; gap: .45rem .85rem; overflow-wrap: anywhere; }
+.detail-list dd { margin: 0; }
+.catalog-form { display: grid; gap: .8rem; margin-block: .9rem; }
+.catalog-form .row-actions { margin-top: 0; }
+
+.detail-form-fields {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-inline-size: 0;
+  display: grid;
+  gap: .8rem;
+}

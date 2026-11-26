@@ -31,6 +31,16 @@ const operationsUsage = `usage: cloud-manager operations COMMAND TENANT PROJECT 
   create-image --idempotency-key KEY --if-match REVISION < request.json
   copy-image --idempotency-key KEY --if-match REVISION < request.json
   delete-network --idempotency-key KEY --if-match REVISION < request.json
+  rename-load-balancer --idempotency-key KEY --if-match REVISION < request.json
+  rename-load-balancer-listener --idempotency-key KEY --if-match REVISION < request.json
+  rename-load-balancer-target-group --idempotency-key KEY --if-match REVISION < request.json
+  set-load-balancer-backend-weight --idempotency-key KEY --if-match REVISION < request.json
+  detach-load-balancer-backend --idempotency-key KEY --if-match REVISION < request.json
+  create-dns-record --idempotency-key KEY --if-match REVISION < request.json
+  delete-dns-record --idempotency-key KEY --if-match REVISION < request.json
+  scale-workload --idempotency-key KEY --if-match REVISION < request.json
+  set-dns-record-status --idempotency-key KEY --if-match REVISION < request.json
+  attach-load-balancer-backend --idempotency-key KEY --if-match REVISION < request.json
   delete-image --idempotency-key KEY --if-match REVISION < request.json
   delete-snapshot --idempotency-key KEY --if-match REVISION < request.json
   rollback-snapshot --idempotency-key KEY --if-match REVISION < request.json
@@ -45,7 +55,7 @@ const operationsUsage = `usage: cloud-manager operations COMMAND TENANT PROJECT 
   get-batch BATCH
   approve OPERATION --decision approve|reject
   resolve OPERATION --decision succeeded|failed --evidence-ref REF [--provider-request-id ID]
-  retry-observation OPERATION --evidence-ref REF`
+  retry-observation OPERATION --evidence-ref REF [--provider-resource-id RECORD_ID]`
 
 func runOperationsClient(ctx context.Context, args []string, address, token string, input io.Reader, output io.Writer, transport http.RoundTripper) error {
 	base, err := operationClientBase(address)

@@ -90,6 +90,15 @@ func TestAcceptanceProjectAssetAPI(t *testing.T) {
 		op.Responses["403"].Description == "" || op.Responses["503"].Description == "" {
 		t.Fatalf("asset contract missing: %+v", op)
 	}
+	workloads := doc.Paths["/v1/tenants/{tenant}/projects/{project}/assets/kubernetes-clusters/{asset}/workloads"].Get
+	if workloads == nil || workloads.OperationID != "readProjectClusterWorkloads" || len(workloads.Security) != 1 ||
+		workloads.Responses["409"].Description == "" || workloads.Responses["404"].Description == "" {
+		t.Fatalf("workload contract missing: %+v", workloads)
+	}
+	item := workloads.Responses["200"].Content["application/json"].Schema.Properties["data"].Properties["workloads"].Items
+	if item == nil || item.Properties["namespace"].Type != "string" || item.Properties["ready"].Type != "integer" {
+		t.Fatalf("workload response schema missing: %+v", item)
+	}
 	base := "/v1/tenants/tenant/projects/project/assets"
 	if got := get(base, "", 401).Header().Get("WWW-Authenticate"); !strings.Contains(got, "Bearer") {
 		t.Fatalf("missing challenge: %s", got)

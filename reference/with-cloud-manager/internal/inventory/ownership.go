@@ -36,15 +36,21 @@ const projectCanReadAccount = `a.project_id=$2 OR EXISTS (
 	SELECT 1 FROM cmp_cloud_account_grants AS g
 	WHERE (g.tenant_id,g.account_id,g.project_id)=(s.tenant_id,s.account_id,$2))`
 
-const assetVisibility = `s.tenant_id=$1 AND CASE WHEN s.kind IN ('security-group-rule','snapshot') THEN
-	parent.scope_id IS NOT NULL AND (` + projectCanReadAccount + `)
-	AND (` + projectedOwner + `)=$2 AND (` + ownershipSource + `)<>'pending'
-	ELSE (
+const directInventoryOwnershipJoins = `
+	LEFT JOIN cmp_asset_ownership AS own ON (own.scope_id,own.external_id)=(o.scope_id,o.external_id)
+	LEFT JOIN cmp_asset_tag_assignments AS rule ON (rule.scope_id,rule.external_id)=(o.scope_id,o.external_id)`
+
+const directAssetVisibility = `(
 	(own.project_id IS NOT NULL AND own.project_id=$2)
 	OR (own.project_id IS NULL AND (
 		(COALESCE(rule.state,'inherited')='inherited' AND (` + projectCanReadAccount + `))
 		OR (rule.state IN ('mapped','conflict') AND (` + projectedOwner + `)=$2)
-	))) END`
+	)))`
+
+const assetVisibility = `s.tenant_id=$1 AND CASE WHEN s.kind IN ('security-group-rule','snapshot') THEN
+	parent.scope_id IS NOT NULL AND (` + projectCanReadAccount + `)
+	AND (` + projectedOwner + `)=$2 AND (` + ownershipSource + `)<>'pending'
+	ELSE ` + directAssetVisibility + ` END`
 
 type OwnershipTransfer struct {
 	Account       string        `json:"account"`
@@ -128,6 +134,33 @@ func (s Store) TransferOwnership(ctx context.Context, token string, source ident
 				return identity.ErrAccountConflict
 			}
 		}
+		if input.Kind == provider.LoadBalancer {
+			active, err := loadBalancerChangeActive(ctx, tx, scopeID, input.AssetID)
+			if err != nil {
+				return err
+			}
+			if active {
+				return identity.ErrAccountConflict
+			}
+		}
+		if input.Kind == provider.KubernetesCluster {
+			active, err := workloadChangeActive(ctx, tx, scopeID, input.AssetID)
+			if err != nil {
+				return err
+			}
+			if active {
+				return identity.ErrAccountConflict
+			}
+		}
+		if input.Kind == provider.DNSZone {
+			active, err := dnsZoneChangeActive(ctx, tx, scopeID, input.AssetID)
+			if err != nil {
+				return err
+			}
+			if active {
+				return identity.ErrAccountConflict
+			}
+		}
 		if input.Kind == provider.Image {
 			active, err := imageDeletionActive(ctx, tx, scopeID, input.AssetID)
 			if err != nil {
@@ -146,6 +179,13 @@ func (s Store) TransferOwnership(ctx context.Context, token string, source ident
 		}
 		if input.Kind == provider.Instance {
 			active, err := InstanceImageCreationActive(ctx, tx, scopeID, input.AssetID, "")
+			if err != nil {
+				return err
+			}
+			if active {
+				return identity.ErrAccountConflict
+			}
+			active, err = InstanceBackendAttachmentActive(ctx, tx, scopeID, input.AssetID)
 			if err != nil {
 				return err
 			}

@@ -1,25 +1,32 @@
 package main
 
 import (
-	_ "embed"
+	"embed"
 	"errors"
+	"io/fs"
 	"net/http"
+	"path"
+	"strings"
 
 	"github.com/birdordev/plumego/core"
 	plumelog "github.com/birdordev/plumego/log"
+	"github.com/birdordev/plumego/router"
 	"github.com/birdordev/plumego/x/openapi"
 
 	"with-cloud-manager/internal/identity"
 )
 
-//go:embed console/index.html
+//go:embed console/_embedded/index.html
 var consolePage []byte
 
-//go:embed console/styles.css
+//go:embed console/_embedded/styles.css
 var consoleStyles []byte
 
-//go:embed console/app.js
+//go:embed console/_embedded/app.js
 var consoleScript []byte
+
+//go:embed console/_embedded/assets
+var consoleChunks embed.FS
 
 func registerConsole(app *core.App, cfg consoleConfig, sessions identity.BrowserSessions) error {
 	logger := app.Logger()
@@ -28,28 +35,50 @@ func registerConsole(app *core.App, cfg consoleConfig, sessions identity.Browser
 		app.Get("/console", consoleStatic("text/html; charset=utf-8", consolePage, logger)),
 		app.Get("/console/styles.css", consoleStatic("text/css; charset=utf-8", consoleStyles, logger)),
 		app.Get("/console/app.js", consoleStatic("text/javascript; charset=utf-8", consoleScript, logger)),
+		app.Get("/console/assets/*asset", consoleAssetHandler(logger)),
 		app.Post("/console/login", cfg.login(sessions, logger)),
 		app.Get("/console/session", consoleProfile(sessions, cfg, logger)),
 		app.Post("/console/logout", cfg.logout(sessions, logger)),
 	)
 }
 
+func consoleAssetHandler(logger plumelog.StructuredLogger) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		name := router.Param(r, "asset")
+		if !fs.ValidPath(name) || path.Base(name) != name || !strings.HasSuffix(name, ".js") {
+			http.NotFound(w, r)
+			return
+		}
+		data, err := consoleChunks.ReadFile("console/_embedded/assets/" + name)
+		if err != nil {
+			http.NotFound(w, r)
+			return
+		}
+		writeConsoleAsset(w, "text/javascript; charset=utf-8", "public, max-age=31536000, immutable", data, logger)
+	})
+}
+
 func consoleStatic(media string, content []byte, logger plumelog.StructuredLogger) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", media)
-		w.Header().Set("Cache-Control", "no-store")
-		w.Header().Set("Content-Security-Policy", "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'")
-		w.Header().Set("X-Content-Type-Options", "nosniff")
-		w.Header().Set("Referrer-Policy", "no-referrer")
-		if _, err := w.Write(content); err != nil {
-			logger.Warn("console asset write failed", plumelog.Fields{})
-		}
+		writeConsoleAsset(w, media, "no-store", content, logger)
 	})
+}
+
+func writeConsoleAsset(w http.ResponseWriter, media, cache string, content []byte, logger plumelog.StructuredLogger) {
+	w.Header().Set("Content-Type", media)
+	w.Header().Set("Cache-Control", cache)
+	w.Header().Set("Content-Security-Policy", "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("Referrer-Policy", "no-referrer")
+	if _, err := w.Write(content); err != nil {
+		logger.Warn("console asset write failed", plumelog.Fields{})
+	}
 }
 
 func consoleOpenAPI(hints map[string]openapi.Op) {
 	hints["GET /console"] = openapi.Op{Responses: map[string]openapi.Response{"200": {Description: "浏览器控制台"}}}
 	hints["GET /console/styles.css"] = openapi.Op{Responses: map[string]openapi.Response{"200": {Description: "控制台样式"}}}
+	hints["GET /console/assets/*asset"] = openapi.Op{Responses: map[string]openapi.Response{"200": {Description: "控制台带内容散列的脚本分包"}, "404": {Description: "静态资源不存在"}}}
 	hints["GET /console/app.js"] = openapi.Op{Responses: map[string]openapi.Response{"200": {Description: "控制台脚本"}}}
 	hints["POST /console/login"] = openapi.Op{OperationID: "loginCloudConsole", Summary: "同源浏览器通过已认证的 OIDC 网关建立会话",
 		Responses: map[string]openapi.Response{"200": {Description: "已签发本地会话 Cookie"}, "400": {Description: "无效租户或正文"},

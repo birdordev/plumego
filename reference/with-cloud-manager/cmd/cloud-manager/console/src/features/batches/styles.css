@@ -1,0 +1,3 @@
+.batch-top { display: flex; flex-wrap: wrap; align-items: end; gap: .65rem; margin-bottom: 1rem; }
+.batch-top label { min-width: 10rem; }
+.batch-report, .batch-lookup { margin-top: 1.4rem; }

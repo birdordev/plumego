@@ -1,0 +1,1 @@
+import{r as e,t}from"./react-runtime-Br0ptrPz.js";var n=e(),r=t();function i({fields:e}){return(0,r.jsx)(`dl`,{className:`detail-list`,children:e.map(([e,t],i)=>(0,r.jsxs)(n.Fragment,{children:[(0,r.jsx)(`dt`,{children:e}),(0,r.jsx)(`dd`,{children:t??`—`})]},e+`-`+i))})}export{i as t};

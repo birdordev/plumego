@@ -22,6 +22,16 @@ const imagesRoute = "/v1/tenants/:tenant/projects/:project/images"
 
 const snapshotsRoute = "/v1/tenants/:tenant/projects/:project/snapshots"
 const networkOperationsRoute = "/v1/tenants/:tenant/projects/:project/network-operations"
+const dnsRecordCreationRoute = "/v1/tenants/:tenant/projects/:project/dns-zones/records"
+const dnsRecordDeletionRoute = "/v1/tenants/:tenant/projects/:project/dns-zones/record-deletion"
+const workloadScaleRoute = "/v1/tenants/:tenant/projects/:project/kubernetes-workloads/scale"
+const dnsRecordStatusRoute = "/v1/tenants/:tenant/projects/:project/dns-zones/record-status"
+const loadBalancerRenameRoute = "/v1/tenants/:tenant/projects/:project/load-balancers/rename"
+const loadBalancerListenerRenameRoute = "/v1/tenants/:tenant/projects/:project/load-balancers/rename-listener"
+const loadBalancerBackendAttachRoute = "/v1/tenants/:tenant/projects/:project/load-balancers/attach-backend"
+const loadBalancerBackendDetachRoute = "/v1/tenants/:tenant/projects/:project/load-balancers/detach-backend"
+const loadBalancerBackendWeightRoute = "/v1/tenants/:tenant/projects/:project/load-balancers/backend-weight"
+const loadBalancerTargetGroupRenameRoute = "/v1/tenants/:tenant/projects/:project/load-balancers/rename-target-group"
 
 func operationHandler(store operations.Store, logger plumelog.StructuredLogger) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -112,7 +122,7 @@ func writeOperationReceipt(w http.ResponseWriter, r *http.Request, scope identit
 	}
 	collection := "instance-operations"
 	switch op.ResourceKind {
-	case provider.Snapshot, provider.Volume, provider.Image:
+	case provider.Snapshot, provider.Volume, provider.Image, provider.LoadBalancer, provider.DNSZone, provider.KubernetesCluster:
 		collection = "operations"
 	case provider.Network, provider.Subnet, provider.SecurityGroup, provider.SecurityGroupRule, provider.ElasticIP:
 		collection = "network-operations"
@@ -227,4 +237,44 @@ func imageRevisionError() error {
 
 func sourceInstanceRevisionError() error {
 	return contract.NewErrorBuilder().Type(contract.TypePreconditionFailed).Message("current source instance ownership revision required").Build()
+}
+
+func loadBalancerBackendAttachRevisionError() error {
+	return contract.NewErrorBuilder().Type(contract.TypePreconditionFailed).
+		Message("current instance and load balancer ownership revisions and exclusive target group required").Build()
+}
+
+func loadBalancerBackendDetachRevisionError() error {
+	return contract.NewErrorBuilder().Type(contract.TypePreconditionFailed).
+		Message("confirmed zero-weight member, exclusive target group and parent ownership revision required").Build()
+}
+
+func loadBalancerBackendWeightRevisionError() error {
+	return contract.NewErrorBuilder().Type(contract.TypePreconditionFailed).
+		Message("current editable member weight, exclusive target group and parent ownership revision required").Build()
+}
+
+func loadBalancerTargetGroupRenameRevisionError() error {
+	return contract.NewErrorBuilder().Type(contract.TypePreconditionFailed).
+		Message("current target group name, parent ownership revision and exclusive association required").Build()
+}
+
+func loadBalancerListenerRenameRevisionError() error {
+	return contract.NewErrorBuilder().Type(contract.TypePreconditionFailed).
+		Message("current listener name, parent ownership revision and configuration snapshot required").Build()
+}
+
+func loadBalancerRenameRevisionError() error {
+	return contract.NewErrorBuilder().Type(contract.TypePreconditionFailed).
+		Message("current load balancer name, ownership revision and inventory required").Build()
+}
+
+func dnsRecordRevisionError() error {
+	return contract.NewErrorBuilder().Type(contract.TypePreconditionFailed).
+		Message("current DNS zone ownership revision and record snapshot required").Build()
+}
+
+func workloadScaleRevisionError() error {
+	return contract.NewErrorBuilder().Type(contract.TypePreconditionFailed).
+		Message("current cluster ownership revision and workload snapshot required").Build()
 }

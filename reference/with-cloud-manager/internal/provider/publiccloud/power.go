@@ -38,6 +38,18 @@ func (c *Client) checkInstanceScope(scope provider.Scope, id string) error {
 }
 
 func (c *Client) Observe(ctx context.Context, scope provider.Scope, id string) (provider.Object, error) {
+	switch scope.Kind {
+	case provider.LoadBalancer:
+		return c.observeLoadBalancer(ctx, scope, id)
+	case provider.KubernetesCluster:
+		return c.observeCluster(ctx, scope, id)
+	case provider.CacheInstance:
+		return c.observeCache(ctx, scope, id)
+	case provider.DatabaseInstance:
+		return c.observeDatabase(ctx, scope, id)
+	case provider.ObjectBucket:
+		return c.observeBucket(ctx, scope, id)
+	}
 	if err := c.checkInstanceScope(scope, id); err != nil {
 		return provider.Object{}, err
 	}
@@ -111,6 +123,7 @@ func (c *Client) ApplyInstance(ctx context.Context, scope provider.Scope, id, ac
 }
 
 type tencentInstanceObservation struct {
+	PrivateIpAddresses                                              []string
 	InstanceId, InstanceName, InstanceState                         string
 	LatestOperation, LatestOperationRequestId, LatestOperationState string
 	ImageId, InstanceType, InstanceChargeType                       string
@@ -160,12 +173,15 @@ func (c *Client) describeTencentInstance(ctx context.Context, region, id string)
 type alibabaInstanceObservation struct {
 	InstanceId, InstanceName, RegionId, ZoneId, Status, InstanceChargeType string
 	ImageId, InstanceType                                                  string
-	VpcAttributes                                                          struct{ VpcId, VSwitchId string }
-	SecurityGroupIds                                                       struct{ SecurityGroupId []string }
-	PublicIpAddress                                                        struct{ IpAddress []string }
-	EipAddress                                                             struct{ AllocationId, IpAddress string }
-	Tags                                                                   alibabaECSTags
-	OperationLocks                                                         struct {
+	VpcAttributes                                                          struct {
+		VpcId, VSwitchId string
+		PrivateIpAddress struct{ IpAddress []string }
+	}
+	SecurityGroupIds struct{ SecurityGroupId []string }
+	PublicIpAddress  struct{ IpAddress []string }
+	EipAddress       struct{ AllocationId, IpAddress string }
+	Tags             alibabaECSTags
+	OperationLocks   struct {
 		LockReason []struct{ LockReason string }
 	}
 }

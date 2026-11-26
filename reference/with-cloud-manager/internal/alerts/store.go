@@ -19,19 +19,27 @@ var alertID = regexp.MustCompile(`^[a-f0-9]{8}(-[a-f0-9]{4}){3}-[a-f0-9]{12}$`)
 const DefaultLimit = 50
 
 type Alert struct {
-	ID             string     `json:"id"`
-	Rule           string     `json:"rule"`
-	SubjectID      string     `json:"subject_id"`
-	ResourceKind   string     `json:"resource_kind"`
-	Account        string     `json:"account"`
-	Region         string     `json:"region,omitempty"`
-	SourceStatus   string     `json:"source_status"`
-	Status         string     `json:"status"`
-	OpenedAt       time.Time  `json:"opened_at"`
-	AcknowledgedAt *time.Time `json:"acknowledged_at,omitempty"`
-	AcknowledgedBy string     `json:"acknowledged_by,omitempty"`
-	ResolvedAt     *time.Time `json:"resolved_at,omitempty"`
-	Revision       int64      `json:"revision"`
+	ID             string       `json:"id"`
+	Rule           string       `json:"rule"`
+	SubjectID      string       `json:"subject_id"`
+	ResourceKind   string       `json:"resource_kind"`
+	Account        string       `json:"account"`
+	Region         string       `json:"region,omitempty"`
+	SourceStatus   string       `json:"source_status"`
+	Status         string       `json:"status"`
+	OpenedAt       time.Time    `json:"opened_at"`
+	AcknowledgedAt *time.Time   `json:"acknowledged_at,omitempty"`
+	AcknowledgedBy string       `json:"acknowledged_by,omitempty"`
+	ResolvedAt     *time.Time   `json:"resolved_at,omitempty"`
+	Revision       int64        `json:"revision"`
+	BudgetScope    *BudgetScope `json:"budget_scope,omitempty"`
+}
+
+type BudgetScope struct {
+	Period   string `json:"period"`
+	Source   string `json:"source"`
+	Currency string `json:"currency"`
+	Basis    string `json:"basis"`
 }
 
 type Query struct {
@@ -50,18 +58,18 @@ type Store struct{ db *sql.DB }
 
 func NewStore(db *sql.DB) Store { return Store{db: db} }
 
-func authorize(ctx context.Context, tx *sql.Tx, token string, scope identity.Scope, permission identity.Permission) (identity.Scope, error) {
+func authorize(ctx context.Context, tx *sql.Tx, token string, scope identity.Scope, permission identity.Permission) (identity.Scope, bool, error) {
 	store := identity.NewStore(tx)
 	actor, err := store.AuthenticateRequest(ctx, token)
 	if err != nil {
-		return identity.Scope{}, err
+		return identity.Scope{}, false, err
 	}
 	if actor.Tenant != scope.Tenant {
-		return identity.Scope{}, identity.ErrForbidden
+		return identity.Scope{}, false, identity.ErrForbidden
 	}
 	actor.Project = scope.Project
-	_, err = store.AuthorizeProject(ctx, actor, permission)
-	return actor, err
+	member, err := store.AuthorizeProject(ctx, actor, permission)
+	return actor, member.Role == "admin", err
 }
 
 const alertFields = `alert_id::text,rule,subject_id,resource_kind,account_id,region,source_status,
@@ -92,11 +100,15 @@ func alertStatusCondition(status string) (string, error) {
 
 func validAlertRule(rule string) bool {
 	switch rule {
-	case "", "operation_review", "operation_delayed", "scan_failures", "scan_stale":
+	case "", "operation_review", "operation_delayed", "scan_failures", "scan_stale", "billing_budget_warning", "billing_budget_exceeded":
 		return true
 	default:
 		return false
 	}
+}
+
+func visibleAlert(adminParameter string) string {
+	return "(" + adminParameter + " OR rule NOT IN ('billing_budget_warning','billing_budget_exceeded'))"
 }
 
 func (s Store) List(ctx context.Context, token string, scope identity.Scope, q Query) (Page, error) {
@@ -106,24 +118,24 @@ func (s Store) List(ctx context.Context, token string, scope identity.Scope, q Q
 	}
 	page := Page{Items: make([]Alert, 0)}
 	err = dbutil.WithTransaction(ctx, s.db, &sql.TxOptions{ReadOnly: true, Isolation: sql.LevelRepeatableRead}, func(tx *sql.Tx) (resultErr error) {
-		actor, err := authorize(ctx, tx, token, scope, identity.View)
+		actor, admin, err := authorize(ctx, tx, token, scope, identity.View)
 		if err != nil {
 			return err
 		}
 		statement := "SELECT " + alertFields + " FROM cmp_project_alerts WHERE (tenant_id,project_id)=($1,$2)" + condition
-		params := []any{actor.Tenant, actor.Project, q.Limit + 1, q.Rule}
-		statement += " AND ($4='' OR rule=$4)"
+		params := []any{actor.Tenant, actor.Project, q.Limit + 1, q.Rule, admin}
+		statement += " AND ($4='' OR rule=$4) AND " + visibleAlert("$5")
 		if q.After != "" {
 			var anchor time.Time
 			err := tx.QueryRowContext(ctx, `SELECT opened_at FROM cmp_project_alerts
-				WHERE (tenant_id,project_id,alert_id)=($1,$2,$3::uuid)`, actor.Tenant, actor.Project, q.After).Scan(&anchor)
+				WHERE (tenant_id,project_id,alert_id)=($1,$2,$3::uuid) AND `+visibleAlert("$4"), actor.Tenant, actor.Project, q.After, admin).Scan(&anchor)
 			if errors.Is(err, sql.ErrNoRows) {
 				return ErrInvalid
 			}
 			if err != nil {
 				return err
 			}
-			statement += " AND (opened_at,alert_id)<($5,$6::uuid)"
+			statement += " AND (opened_at,alert_id)<($6,$7::uuid)"
 			params = append(params, anchor, q.After)
 		}
 		rows, err := tx.QueryContext(ctx, statement+" ORDER BY opened_at DESC,alert_id DESC LIMIT $3", params...)
@@ -156,16 +168,19 @@ func (s Store) Get(ctx context.Context, token string, scope identity.Scope, id s
 	}
 	var alert Alert
 	err := dbutil.WithTransaction(ctx, s.db, &sql.TxOptions{ReadOnly: true, Isolation: sql.LevelRepeatableRead}, func(tx *sql.Tx) error {
-		actor, err := authorize(ctx, tx, token, scope, identity.View)
+		actor, admin, err := authorize(ctx, tx, token, scope, identity.View)
 		if err != nil {
 			return err
 		}
 		err = scanAlert(tx.QueryRowContext(ctx, "SELECT "+alertFields+` FROM cmp_project_alerts
-			WHERE (tenant_id,project_id,alert_id)=($1,$2,$3::uuid)`, actor.Tenant, actor.Project, id), &alert)
+			WHERE (tenant_id,project_id,alert_id)=($1,$2,$3::uuid) AND `+visibleAlert("$4"), actor.Tenant, actor.Project, id, admin), &alert)
 		if errors.Is(err, sql.ErrNoRows) {
 			return identity.ErrForbidden
 		}
-		return err
+		if err != nil {
+			return err
+		}
+		return readBudgetScope(ctx, tx, actor, &alert)
 	})
 	if err != nil {
 		return Alert{}, err
@@ -179,7 +194,7 @@ func (s Store) Acknowledge(ctx context.Context, token string, scope identity.Sco
 	}
 	var alert Alert
 	err := dbutil.WithTransaction(ctx, s.db, nil, func(tx *sql.Tx) error {
-		actor, err := authorize(ctx, tx, token, scope, identity.Manage)
+		actor, _, err := authorize(ctx, tx, token, scope, identity.Manage)
 		if err != nil {
 			return err
 		}
@@ -191,10 +206,27 @@ func (s Store) Acknowledge(ctx context.Context, token string, scope identity.Sco
 		if errors.Is(err, sql.ErrNoRows) {
 			return ErrStale
 		}
-		return err
+		if err != nil {
+			return err
+		}
+		return readBudgetScope(ctx, tx, actor, &alert)
 	})
 	if err != nil {
 		return Alert{}, err
 	}
 	return alert, nil
+}
+
+func readBudgetScope(ctx context.Context, tx *sql.Tx, actor identity.Scope, alert *Alert) error {
+	if alert.Rule != "billing_budget_warning" && alert.Rule != "billing_budget_exceeded" {
+		return nil
+	}
+	var scope BudgetScope
+	err := tx.QueryRowContext(ctx, `SELECT to_char(period,'YYYY-MM'),source,currency,basis FROM cmp_billing_budgets
+		WHERE (tenant_id,project_id,budget_id)=($1,$2,$3::uuid)`, actor.Tenant, actor.Project, alert.SubjectID).
+		Scan(&scope.Period, &scope.Source, &scope.Currency, &scope.Basis)
+	if err == nil {
+		alert.BudgetScope = &scope
+	}
+	return err
 }

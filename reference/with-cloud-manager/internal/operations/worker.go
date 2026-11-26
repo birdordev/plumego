@@ -20,6 +20,7 @@ import (
 type ConnectOperator func(context.Context, identity.CloudAccountBinding) (provider.InstanceOperator, error)
 
 type work struct {
+	workloadScale provider.WorkloadScaleChange
 	Operation
 	actor                             identity.Scope
 	binding                           identity.CloudAccountBinding
@@ -36,6 +37,15 @@ type work struct {
 	networkDeletion                   provider.NetworkDeletionTarget
 	networkDeletionScope              int64
 	imageCopy                         imageCopyIntent
+	rename                            provider.LoadBalancerRename
+	backendWeight                     provider.LoadBalancerBackendWeight
+	backendDetach                     provider.LoadBalancerBackendTarget
+	backendDetachBinding              string
+	backendAttach                     provider.LoadBalancerBackendAttach
+	dnsDeletion                       provider.DNSRecordDeletion
+	dnsStatus                         provider.DNSRecordStatusChange
+	dnsCreation                       dnsRecordCreation
+	backendAttachBinding              string
 }
 
 const accountingTimeout = 5 * time.Second
@@ -120,6 +130,9 @@ func (s Store) process(ctx context.Context, task mq.Task, connect ConnectOperato
 		return false, err
 	}
 
+	if w.Action == scaleWorkload {
+		return s.processWorkloadScale(ctx, task, w)
+	}
 	client, err := connect(ctx, w.binding)
 	if err != nil {
 		if errors.Is(err, identity.ErrForbidden) || task.Attempts >= task.MaxAttempts {
@@ -163,6 +176,27 @@ func (s Store) process(ctx context.Context, task mq.Task, connect ConnectOperato
 	}
 	if w.Action == releaseElasticIP || isElasticIPBinding(w.Action) {
 		return s.processElasticIPChange(ctx, task, w, client, scope)
+	}
+	if w.Action == setLoadBalancerBackendWeight {
+		return s.processLoadBalancerBackendWeight(ctx, task, w, client, scope)
+	}
+	if w.Action == detachLoadBalancerBackend {
+		return s.processLoadBalancerBackendDetach(ctx, task, w, client, scope)
+	}
+	if w.Action == attachLoadBalancerBackend {
+		return s.processLoadBalancerBackendAttach(ctx, task, w, client, scope)
+	}
+	if w.Action == createDNSRecord {
+		return s.processDNSRecordCreation(ctx, task, w, client, scope)
+	}
+	if w.Action == deleteDNSRecord {
+		return s.processDNSRecordDeletion(ctx, task, w, client, scope)
+	}
+	if w.Action == setDNSRecordStatus {
+		return s.processDNSRecordStatus(ctx, task, w, client, scope)
+	}
+	if isLoadBalancerRename(w.Action) {
+		return s.processLoadBalancerRename(ctx, task, w, client, scope)
 	}
 	if volumeAction(w.Action) {
 		return s.processVolume(ctx, task, w, client, scope)
@@ -381,6 +415,10 @@ func (s Store) prepare(ctx context.Context, task mq.Task, arm bool) (work, error
 }
 
 func checkOperationTarget(ctx context.Context, tx *sql.Tx, w *work) error {
+	if w.Action == scaleWorkload {
+		_, err := checkWorkloadScale(ctx, tx, w)
+		return err
+	}
 	if w.Action == "create" {
 		return checkLaunch(ctx, tx, w, w.Status == "queued" || w.Status == "awaiting_approval")
 	}
@@ -408,6 +446,33 @@ func checkOperationTarget(ctx context.Context, tx *sql.Tx, w *work) error {
 	}
 	if w.Action == releaseElasticIP || isElasticIPBinding(w.Action) {
 		return checkElasticIPChange(ctx, tx, w)
+	}
+	if w.Action == setLoadBalancerBackendWeight {
+		_, err := checkLoadBalancerBackendWeight(ctx, tx, w)
+		return err
+	}
+	if w.Action == detachLoadBalancerBackend {
+		_, err := checkLoadBalancerBackendDetach(ctx, tx, w)
+		return err
+	}
+	if w.Action == attachLoadBalancerBackend {
+		_, err := checkLoadBalancerBackendAttach(ctx, tx, w)
+		return err
+	}
+	if w.Action == createDNSRecord {
+		_, err := checkDNSRecordCreation(ctx, tx, w)
+		return err
+	}
+	if w.Action == deleteDNSRecord {
+		_, err := checkDNSRecordDeletion(ctx, tx, w)
+		return err
+	}
+	if w.Action == setDNSRecordStatus {
+		_, err := checkDNSRecordStatus(ctx, tx, w)
+		return err
+	}
+	if isLoadBalancerRename(w.Action) {
+		return checkLoadBalancerRename(ctx, tx, w)
 	}
 	resolve := inventory.ResolveInstanceMutation
 	if w.Action == "delete" && w.Status != "queued" && w.Status != "awaiting_approval" {
@@ -456,7 +521,7 @@ func (s Store) withLease(ctx context.Context, task mq.Task, fn func(*sql.Tx) err
 
 func (s Store) dispatchSingleMutation(ctx context.Context, task mq.Task, w work, apply func(context.Context) (string, error), err error, reason string) (bool, error) {
 	switch {
-	case provider.IsFailure(err, provider.DeletionBlocked):
+	case provider.IsFailure(err, provider.DeletionBlocked) || provider.IsFailure(err, provider.PreconditionFailed):
 		return false, s.transition(ctx, task, w.Status, "failed", reason+"_preconditions_unconfirmed", "")
 	case provider.IsFailure(err, provider.DeletionDisabled) || provider.IsFailure(err, provider.Unsupported):
 		return false, s.transition(ctx, task, w.Status, "failed", reason+"_disabled", "")
@@ -479,12 +544,15 @@ func (s Store) dispatchSingleMutation(ctx context.Context, task mq.Task, w work,
 		return false, mq.ErrLeaseLost
 	}
 	requestID, callErr := apply(ctx)
+	cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), accountingTimeout)
+	defer cancel()
+	if w.Action == scaleWorkload && (provider.IsFailure(callErr, provider.PreconditionFailed) || provider.IsFailure(callErr, provider.Unauthorized)) {
+		return false, s.transition(cleanup, task, "applying", "failed", "workload_scale_rejected", "")
+	}
 	reason = "provider_accepted"
 	if callErr != nil {
 		reason = "submission_outcome_unknown"
 	}
-	cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), accountingTimeout)
-	defer cancel()
 	return true, s.transition(cleanup, task, "applying", "observing", reason, requestID)
 }
 

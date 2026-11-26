@@ -1,0 +1,21 @@
+import { SelectField } from '../../shared/components/SelectField'
+
+const states = [
+  ['active', '未恢复'], ['open', '待确认'], ['acknowledged', '已确认'], ['resolved', '已恢复'], ['all', '全部'],
+] as const
+
+const rules = [
+  ['', '全部规则'], ['operation_review', '操作待复核'], ['operation_delayed', '操作超时'],
+  ['scan_failures', '连续盘点失败'], ['scan_stale', '盘点数据过期'],
+] as const
+
+const billingRules = [
+  ['billing_budget_warning', '预算预警'], ['billing_budget_exceeded', '达到预算额度'],
+] as const
+
+export function AlertFilters({ admin }: { admin: boolean }) {
+  return <>
+    <SelectField label="告警状态" name="status" options={states} />
+    <SelectField label="告警规则" name="rule" options={admin ? [...rules, ...billingRules] : rules} />
+  </>
+}

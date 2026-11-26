@@ -2,9 +2,47 @@
 providers:
   tencent-cvm:
     verification: pending-sandbox
-    inventory: [configured-regions, zones, instances, networks, subnets, security-groups, security-group-rules, elastic-ips, volumes, volume-snapshots, owned-images]
+    idle-analysis: cvm-base-cpu-and-four-hourly-network-maxima
+    idle-analysis-local-evidence: independent-controller-signed-tls-fixture-and-postgresql
+    billing: mapped-native-utf8-csv-and-versioned-ledger
+    billing-pull: cos-conditional-object-archive
+    billing-pull-local-evidence: signed-tls-fixture-and-postgresql
+    inventory: [configured-regions, zones, instances, networks, subnets, security-groups, security-group-rules, elastic-ips, volumes, volume-snapshots, owned-images, load-balancers, public-dns-zones, database-instances, cache-instances, object-buckets, kubernetes-clusters]
     inventory-local-evidence: tc3-signed-tls-protocol-fixture-and-postgresql
-    actions: [create-instance, start-instance, stop-instance, reboot-instance, attach-volume, detach-volume, create-network, delete-network, create-subnet, delete-subnet, create-security-group, delete-security-group, create-security-group-rule, revoke-security-group-rule, create-elastic-ip, bind-elastic-ip, unbind-elastic-ip, release-elastic-ip, create-snapshot, delete-snapshot, restore-snapshot, rollback-snapshot, create-image, copy-image, delete-image]
+    cache-inventory: tencent-redis-describe-instances
+    kubernetes-inventory: tencent-tke-regional-clusters
+    kubernetes-node-pools: tencent-tke-paginated-cluster-snapshot
+    kubernetes-node-pool-refresh: manual-and-durable-per-cluster-schedule
+    kubernetes-workloads: namespaced-paginated-read-only-snapshot
+    kubernetes-workload-refresh: manual-and-fenced-per-cluster-schedule
+    kubernetes-workload-watch: fenced-independent-controller-with-durable-resource-versions
+    kubernetes-workload-watch-recovery: resume-after-disconnect-and-relist-expired-collection
+    kubernetes-workload-scale: independently-approved-deployment-and-statefulset-replica-count
+    kubernetes-workload-scale-recovery: uid-and-resource-version-conditional-single-write-with-readback
+    kubernetes-workload-evidence: namespace-uid-bound-kubernetes-tls-fixture-and-postgresql
+    kubernetes-missing-evidence: scope-wide-verified-cluster-list
+    cache-missing-evidence: scope-wide-exact-instance-list
+    object-bucket-inventory: tencent-cos-owned-paginated
+    object-bucket-missing-evidence: account-wide-owner-checked-list-and-creation-instant
+    database-inventory: [tencent-cdb, tencent-postgresql, tencent-sqlserver]
+    database-missing-evidence: scoped-exact-id-and-complete-empty-page
+    dns-zone-inventory: dnspod-owned-public-zones
+    dns-zone-records: scoped-read-only-paginated-projection
+    dns-record-creation: independently-approved-default-line-a-and-aaaa
+    dns-record-create-recovery: server-generated-marker-and-exact-observation
+    dns-record-status: independently-approved-public-a-and-aaaa-with-exact-observation
+    dns-record-deletion: independently-approved-disabled-a-and-aaaa-with-two-complete-absence-observations
+    load-balancer-inventory: clb
+    load-balancer-configuration: [clb-listeners, classic-clb-listeners, attached-target-groups]
+    load-balancer-backends: [clb-target-group-members, clb-direct-members, clb-health-checks, classic-clb-default-members, classic-clb-health-checks]
+    load-balancer-missing-evidence: complete-exact-scope-list
+    load-balancer-rename: independently-approved-and-scoped-name-observation
+    load-balancer-listener-rename: [tencent-application-clb]
+    load-balancer-target-group-rename: independently-approved-with-exclusive-association
+    load-balancer-backend-weight: independently-approved-single-member-in-exclusive-group
+    load-balancer-backend-detach: approved-drained-member-and-two-complete-absence-observations
+    load-balancer-backend-attach: approved-owned-instance-in-same-vpc-with-zero-initial-weight
+    actions: [create-instance, start-instance, stop-instance, reboot-instance, attach-volume, detach-volume, create-network, delete-network, create-subnet, delete-subnet, create-security-group, delete-security-group, create-security-group-rule, revoke-security-group-rule, create-elastic-ip, bind-elastic-ip, unbind-elastic-ip, release-elastic-ip, create-snapshot, delete-snapshot, restore-snapshot, rollback-snapshot, create-image, copy-image, delete-image, rename-load-balancer, rename-load-balancer-listener, rename-load-balancer-target-group, set-load-balancer-backend-weight, detach-load-balancer-backend, attach-load-balancer-backend, set-dns-record-status, create-dns-record, delete-dns-record, scale-workload]
     security-group-local-evidence: tc3-signed-tls-protocol-fixture-and-postgresql
     elastic-ip-create-recovery: observe-scoped-allocation-marker-or-manual-review
     elastic-ip-release-confirmation: two-scoped-absence-observations
@@ -30,12 +68,50 @@ providers:
     snapshot-deletion-confirmation: two-scoped-absence-observations
     snapshot-create-recovery: observe-scoped-source-and-marker-or-manual-review
     snapshot-create-local-evidence: tc3-signed-tls-protocol-fixture-and-postgresql
-    approvals: [detach-volume, create-security-group-rule, revoke-security-group-rule, delete-network, delete-subnet, delete-security-group, create-elastic-ip, bind-elastic-ip, unbind-elastic-ip, release-elastic-ip, create-snapshot, delete-snapshot, restore-snapshot, rollback-snapshot, create-image, copy-image, delete-image]
+    approvals: [detach-volume, create-security-group-rule, revoke-security-group-rule, delete-network, delete-subnet, delete-security-group, create-elastic-ip, bind-elastic-ip, unbind-elastic-ip, release-elastic-ip, create-snapshot, delete-snapshot, restore-snapshot, rollback-snapshot, create-image, copy-image, delete-image, rename-load-balancer, rename-load-balancer-listener, rename-load-balancer-target-group, set-load-balancer-backend-weight, detach-load-balancer-backend, attach-load-balancer-backend, set-dns-record-status, create-dns-record, delete-dns-record, scale-workload]
   alibaba-ecs:
     verification: pending-sandbox
-    inventory: [configured-regions, zones, instances, networks, subnets, security-groups, security-group-rules, elastic-ips, volumes, volume-snapshots, owned-images]
+    idle-analysis: ecs-native-ten-minute-cpu-and-network
+    idle-analysis-local-evidence: independent-controller-signed-tls-fixture-and-postgresql
+    billing: mapped-native-utf8-csv-and-focus-1.0
+    billing-pull: oss-v4-conditional-object-archive
+    billing-pull-local-evidence: signed-tls-fixture-and-postgresql
+    inventory: [configured-regions, zones, instances, networks, subnets, security-groups, security-group-rules, elastic-ips, volumes, volume-snapshots, owned-images, load-balancers, public-dns-zones, database-instances, cache-instances, object-buckets, kubernetes-clusters]
     inventory-local-evidence: acs3-signed-tls-protocol-fixture-and-postgresql
-    actions: [create-instance, start-instance, stop-instance, reboot-instance, attach-volume, detach-volume, delete-instance, create-network, delete-network, create-subnet, delete-subnet, create-security-group, delete-security-group, create-security-group-rule, revoke-security-group-rule, create-elastic-ip, bind-elastic-ip, unbind-elastic-ip, release-elastic-ip, create-snapshot, delete-snapshot, restore-snapshot, rollback-snapshot, create-image, copy-image, delete-image]
+    cache-inventory: alibaba-tair-describe-instances
+    kubernetes-inventory: alibaba-ack-regional-clusters
+    kubernetes-node-pools: alibaba-ack-cluster-snapshot
+    kubernetes-node-pool-refresh: manual-and-durable-per-cluster-schedule
+    kubernetes-workloads: namespaced-paginated-read-only-snapshot
+    kubernetes-workload-refresh: manual-and-fenced-per-cluster-schedule
+    kubernetes-workload-watch: fenced-independent-controller-with-durable-resource-versions
+    kubernetes-workload-watch-recovery: resume-after-disconnect-and-relist-expired-collection
+    kubernetes-workload-scale: independently-approved-deployment-and-statefulset-replica-count
+    kubernetes-workload-scale-recovery: uid-and-resource-version-conditional-single-write-with-readback
+    kubernetes-workload-evidence: namespace-uid-bound-kubernetes-tls-fixture-and-postgresql
+    kubernetes-missing-evidence: scope-wide-verified-cluster-list
+    cache-missing-evidence: scope-wide-exact-instance-list
+    object-bucket-inventory: alibaba-oss-owned-paginated
+    object-bucket-missing-evidence: account-wide-owner-checked-list-and-creation-instant
+    database-inventory: [alibaba-rds]
+    database-missing-evidence: scoped-exact-id-and-complete-empty-page
+    dns-zone-inventory: alidns-public-zones
+    dns-zone-records: scoped-read-only-paginated-projection
+    dns-record-creation: independently-approved-default-line-a-and-aaaa
+    dns-record-create-recovery: independent-review-with-provider-record-id
+    dns-record-status: independently-approved-public-a-and-aaaa-with-exact-observation
+    dns-record-deletion: independently-approved-disabled-a-and-aaaa-with-two-complete-absence-observations
+    load-balancer-inventory: alb-nlb-classic-clb
+    load-balancer-configuration: [alb-listeners, alb-associated-server-groups, nlb-listeners, nlb-associated-server-groups, clb-listeners, clb-vserver-groups]
+    load-balancer-backends: [alb-server-group-members, nlb-server-group-members, clb-default-members, clb-primary-secondary-members, clb-vserver-group-members, alb-reported-health-checks, nlb-reported-health-checks, clb-health-checks]
+    load-balancer-missing-evidence: complete-exact-scope-list
+    load-balancer-rename: independently-approved-and-scoped-name-observation
+    load-balancer-listener-rename: [alibaba-alb, alibaba-nlb]
+    load-balancer-target-group-rename: independently-approved-with-exclusive-association
+    load-balancer-backend-weight: independently-approved-single-member-in-exclusive-group
+    load-balancer-backend-detach: approved-drained-member-and-two-complete-absence-observations
+    load-balancer-backend-attach: approved-owned-instance-in-same-vpc-with-zero-initial-weight
+    actions: [create-instance, start-instance, stop-instance, reboot-instance, attach-volume, detach-volume, delete-instance, create-network, delete-network, create-subnet, delete-subnet, create-security-group, delete-security-group, create-security-group-rule, revoke-security-group-rule, create-elastic-ip, bind-elastic-ip, unbind-elastic-ip, release-elastic-ip, create-snapshot, delete-snapshot, restore-snapshot, rollback-snapshot, create-image, copy-image, delete-image, rename-load-balancer, rename-load-balancer-listener, rename-load-balancer-target-group, set-load-balancer-backend-weight, detach-load-balancer-backend, attach-load-balancer-backend, set-dns-record-status, create-dns-record, delete-dns-record, scale-workload]
     security-group-local-evidence: acs3-signed-tls-protocol-fixture-and-postgresql
     elastic-ip-create-recovery: observe-scoped-allocation-marker-or-manual-review
     elastic-ip-release-confirmation: two-scoped-absence-observations
@@ -63,12 +139,50 @@ providers:
     snapshot-deletion-confirmation: two-scoped-absence-observations
     snapshot-create-recovery: observe-scoped-source-and-marker-or-manual-review
     snapshot-create-local-evidence: acs3-signed-tls-protocol-fixture-and-postgresql
-    approvals: [detach-volume, delete-instance, create-security-group-rule, revoke-security-group-rule, delete-network, delete-subnet, delete-security-group, create-elastic-ip, bind-elastic-ip, unbind-elastic-ip, release-elastic-ip, create-snapshot, delete-snapshot, restore-snapshot, rollback-snapshot, create-image, copy-image, delete-image]
+    approvals: [detach-volume, delete-instance, create-security-group-rule, revoke-security-group-rule, delete-network, delete-subnet, delete-security-group, create-elastic-ip, bind-elastic-ip, unbind-elastic-ip, release-elastic-ip, create-snapshot, delete-snapshot, restore-snapshot, rollback-snapshot, create-image, copy-image, delete-image, rename-load-balancer, rename-load-balancer-listener, rename-load-balancer-target-group, set-load-balancer-backend-weight, detach-load-balancer-backend, attach-load-balancer-backend, set-dns-record-status, create-dns-record, delete-dns-record, scale-workload]
   huawei-ecs:
     verification: pending-sandbox
-    inventory: [configured-regions, zones, instances, networks, subnets, security-groups, security-group-rules, elastic-ips, volumes, volume-snapshots, owned-images]
+    idle-analysis: ces-ecs-hourly-cpu-and-network-maxima
+    idle-analysis-local-evidence: independent-controller-signed-tls-fixture-and-postgresql
+    billing: mapped-native-utf8-csv-with-verified-iam-project
+    billing-pull: obs-conditional-object-archive
+    billing-pull-local-evidence: signed-tls-fixture-and-postgresql
+    inventory: [configured-regions, zones, instances, networks, subnets, security-groups, security-group-rules, elastic-ips, volumes, volume-snapshots, owned-images, load-balancers, public-dns-zones, database-instances, cache-instances, object-buckets, kubernetes-clusters]
     inventory-local-evidence: scoped-iam-tls-protocol-fixture-and-postgresql
-    actions: [create-instance, start-instance, stop-instance, reboot-instance, attach-volume, detach-volume, delete-instance, create-network, delete-network, create-subnet, delete-subnet, create-security-group, delete-security-group, create-security-group-rule, revoke-security-group-rule, create-elastic-ip, bind-elastic-ip, unbind-elastic-ip, release-elastic-ip, create-snapshot, delete-snapshot, restore-snapshot, rollback-snapshot, create-image, copy-image, delete-image]
+    cache-inventory: huawei-dcs-v2-list-instances
+    kubernetes-inventory: huawei-cce-project-clusters
+    kubernetes-node-pools: huawei-cce-cluster-snapshot-including-default
+    kubernetes-node-pool-refresh: manual-and-durable-per-cluster-schedule
+    kubernetes-workloads: namespaced-paginated-read-only-snapshot
+    kubernetes-workload-refresh: manual-and-fenced-per-cluster-schedule
+    kubernetes-workload-watch: fenced-independent-controller-with-durable-resource-versions
+    kubernetes-workload-watch-recovery: resume-after-disconnect-and-relist-expired-collection
+    kubernetes-workload-scale: independently-approved-deployment-and-statefulset-replica-count
+    kubernetes-workload-scale-recovery: uid-and-resource-version-conditional-single-write-with-readback
+    kubernetes-workload-evidence: namespace-uid-bound-kubernetes-tls-fixture-and-postgresql
+    kubernetes-missing-evidence: scope-wide-verified-cluster-list
+    cache-missing-evidence: scope-wide-exact-instance-list
+    object-bucket-inventory: huawei-obs-owned-object-buckets
+    object-bucket-missing-evidence: account-wide-owner-checked-list-and-creation-instant
+    database-inventory: [huawei-rds]
+    database-missing-evidence: scoped-exact-id-and-complete-empty-page
+    dns-zone-inventory: dns-public-zones-cn-north-4
+    dns-zone-records: scoped-read-only-paginated-projection
+    dns-record-creation: independently-approved-default-line-a-and-aaaa
+    dns-record-create-recovery: server-generated-marker-and-exact-observation
+    dns-record-status: independently-approved-public-a-and-aaaa-with-exact-observation
+    dns-record-deletion: independently-approved-disabled-a-and-aaaa-with-two-complete-absence-observations
+    load-balancer-inventory: elb-v3
+    load-balancer-configuration: [elb-v3-listeners, elb-v3-associated-pools]
+    load-balancer-backends: [elb-v3-pool-members, elb-v3-scoped-health-checks]
+    load-balancer-missing-evidence: complete-exact-scope-list
+    load-balancer-rename: independently-approved-and-scoped-name-observation
+    load-balancer-listener-rename: [huawei-elb-v3]
+    load-balancer-target-group-rename: independently-approved-with-exclusive-association
+    load-balancer-backend-weight: independently-approved-single-member-in-exclusive-group
+    load-balancer-backend-detach: approved-drained-member-and-two-complete-absence-observations
+    load-balancer-backend-attach: approved-owned-instance-in-same-vpc-with-zero-initial-weight
+    actions: [create-instance, start-instance, stop-instance, reboot-instance, attach-volume, detach-volume, delete-instance, create-network, delete-network, create-subnet, delete-subnet, create-security-group, delete-security-group, create-security-group-rule, revoke-security-group-rule, create-elastic-ip, bind-elastic-ip, unbind-elastic-ip, release-elastic-ip, create-snapshot, delete-snapshot, restore-snapshot, rollback-snapshot, create-image, copy-image, delete-image, rename-load-balancer, rename-load-balancer-listener, rename-load-balancer-target-group, set-load-balancer-backend-weight, detach-load-balancer-backend, attach-load-balancer-backend, set-dns-record-status, create-dns-record, delete-dns-record, scale-workload]
     security-group-local-evidence: scoped-iam-tls-protocol-fixture-and-postgresql
     elastic-ip-create-recovery: observe-scoped-allocation-marker-or-manual-review
     elastic-ip-release-confirmation: two-scoped-absence-observations
@@ -96,7 +210,7 @@ providers:
     snapshot-deletion-confirmation: two-scoped-absence-observations
     snapshot-create-recovery: observe-scoped-source-and-marker-or-manual-review
     snapshot-create-local-evidence: scoped-iam-tls-protocol-fixture-and-postgresql
-    approvals: [detach-volume, delete-instance, create-security-group-rule, revoke-security-group-rule, delete-network, delete-subnet, delete-security-group, create-elastic-ip, bind-elastic-ip, unbind-elastic-ip, release-elastic-ip, create-snapshot, delete-snapshot, restore-snapshot, rollback-snapshot, create-image, copy-image, delete-image]
+    approvals: [detach-volume, delete-instance, create-security-group-rule, revoke-security-group-rule, delete-network, delete-subnet, delete-security-group, create-elastic-ip, bind-elastic-ip, unbind-elastic-ip, release-elastic-ip, create-snapshot, delete-snapshot, restore-snapshot, rollback-snapshot, create-image, copy-image, delete-image, rename-load-balancer, rename-load-balancer-listener, rename-load-balancer-target-group, set-load-balancer-backend-weight, detach-load-balancer-backend, attach-load-balancer-backend, set-dns-record-status, create-dns-record, delete-dns-record, scale-workload]
   aws-ec2:
     verification: pending-sandbox
     inventory-local-evidence: signed-sdk-tls-protocol-fixture

@@ -16,17 +16,32 @@ import (
 )
 
 func (c *Client) alibaba(ctx context.Context, host, action, version string, query url.Values, dst any) error {
-	endpoint := url.URL{Scheme: "https", Host: host, Path: "/", RawQuery: strings.ReplaceAll(query.Encode(), "+", "%20")}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint.String(), nil)
+	return c.alibabaRPC(ctx, host, action, version, query, "", dst)
+}
+
+func (c *Client) alibabaForm(ctx context.Context, host, action, version string, fields url.Values, dst any) error {
+	return c.alibabaRPC(ctx, host, action, version, nil, fields.Encode(), dst)
+}
+
+func (c *Client) alibabaRPC(ctx context.Context, host, action, version string, query url.Values, form string, dst any) error {
+	return c.alibabaSigned(ctx, http.MethodPost, host, "/", action, version, query, form, dst)
+}
+
+func (c *Client) alibabaSigned(ctx context.Context, method, host, path, action, version string, query url.Values, form string, dst any) error {
+	endpoint := url.URL{Scheme: "https", Host: host, Path: path, RawQuery: strings.ReplaceAll(query.Encode(), "+", "%20")}
+	req, err := http.NewRequestWithContext(ctx, method, endpoint.String(), strings.NewReader(form))
 	if err != nil {
 		return &provider.Failure{Kind: provider.InvalidResponse}
 	}
 	headers := map[string]string{
-		"host": host, "x-acs-action": action, "x-acs-version": version, "x-acs-content-sha256": sha(nil),
+		"host": host, "x-acs-action": action, "x-acs-version": version, "x-acs-content-sha256": sha([]byte(form)),
 		"x-acs-date": time.Now().UTC().Format("2006-01-02T15:04:05Z"), "x-acs-signature-nonce": rand.Text(),
 	}
 	if c.profile.SecurityToken != "" {
 		headers["x-acs-security-token"] = c.profile.SecurityToken
+	}
+	if form != "" {
+		headers["content-type"] = "application/x-www-form-urlencoded"
 	}
 	keys := make([]string, 0, len(headers))
 	for name := range headers {
@@ -41,7 +56,7 @@ func (c *Client) alibaba(ctx context.Context, host, action, version string, quer
 		}
 	}
 	signed := strings.Join(keys, ";")
-	canonical := "POST\n/\n" + endpoint.RawQuery + "\n" + flattened.String() + "\n" + signed + "\n" + headers["x-acs-content-sha256"]
+	canonical := method + "\n" + endpoint.EscapedPath() + "\n" + endpoint.RawQuery + "\n" + flattened.String() + "\n" + signed + "\n" + headers["x-acs-content-sha256"]
 	const algorithm = "ACS3-HMAC-SHA256"
 	sig := hex.EncodeToString(mac([]byte(c.profile.AccessKeySecret), algorithm+"\n"+sha([]byte(canonical))))
 	req.Header.Set("Authorization", algorithm+" Credential="+c.profile.AccessKeyID+",SignedHeaders="+signed+",Signature="+sig)

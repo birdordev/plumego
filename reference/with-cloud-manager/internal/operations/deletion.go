@@ -13,14 +13,15 @@ import (
 )
 
 type DeletionPreview struct {
-	AssetID                string `json:"asset_id"`
-	OwnershipRevision      int64  `json:"ownership_revision"`
-	Protected              bool   `json:"protected"`
-	KnownVolumeLinks       int    `json:"known_volume_links"`
-	ActiveImageCreation    bool   `json:"active_image_creation,omitempty"`
-	ActiveElasticIPBinding bool   `json:"active_elastic_ip_binding,omitempty"`
-	ApprovalRequired       bool   `json:"approval_required"`
-	ProviderSupported      bool   `json:"provider_supported"`
+	AssetID                 string `json:"asset_id"`
+	OwnershipRevision       int64  `json:"ownership_revision"`
+	Protected               bool   `json:"protected"`
+	KnownVolumeLinks        int    `json:"known_volume_links"`
+	ActiveImageCreation     bool   `json:"active_image_creation,omitempty"`
+	ActiveBackendAttachment bool   `json:"active_backend_attachment,omitempty"`
+	ActiveElasticIPBinding  bool   `json:"active_elastic_ip_binding,omitempty"`
+	ApprovalRequired        bool   `json:"approval_required"`
+	ProviderSupported       bool   `json:"provider_supported"`
 }
 
 const deletionProtection = `SELECT EXISTS(SELECT 1 FROM cmp_protected_instances WHERE scope_id=$1 AND external_id=$2)`
@@ -44,6 +45,13 @@ func checkInstanceMutationProtection(ctx context.Context, tx *sql.Tx, scopeID in
 		return err
 	}
 	if blocked {
+		return ErrConflict
+	}
+	active, err = inventory.InstanceBackendAttachmentActive(ctx, tx, scopeID, id)
+	if err != nil {
+		return err
+	}
+	if active {
 		return ErrConflict
 	}
 	return nil
@@ -72,6 +80,10 @@ func (s Store) PreviewDeletion(ctx context.Context, token string, scope identity
 			return err
 		}
 		result.ActiveImageCreation, err = inventory.InstanceImageCreationActive(ctx, tx, target.ScopeID, input.AssetID, "")
+		if err != nil {
+			return err
+		}
+		result.ActiveBackendAttachment, err = inventory.InstanceBackendAttachmentActive(ctx, tx, target.ScopeID, input.AssetID)
 		if err != nil {
 			return err
 		}

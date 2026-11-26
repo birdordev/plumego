@@ -56,28 +56,36 @@ type Input struct {
 }
 
 type Operation struct {
-	ID                    string                   `json:"id"`
-	Account               string                   `json:"account"`
-	Region                string                   `json:"region"`
-	AssetID               string                   `json:"asset_id"`
-	ResourceKind          provider.Kind            `json:"resource_kind"`
-	VolumeID              string                   `json:"volume_id,omitempty"`
-	Device                string                   `json:"device,omitempty"`
-	Action                string                   `json:"action"`
-	Status                string                   `json:"status"`
-	CreatedAt             time.Time                `json:"created_at"`
-	UpdatedAt             *time.Time               `json:"updated_at,omitempty"`
-	OutcomeReason         string                   `json:"outcome_reason,omitempty"`
-	ProviderRequestID     string                   `json:"provider_request_id,omitempty"`
-	CatalogTemplate       string                   `json:"catalog_template,omitempty"`
-	CatalogVersion        int64                    `json:"catalog_version,omitempty"`
-	NetworkIntent         *NetworkSpecView         `json:"network_intent,omitempty"`
-	SnapshotIntent        *SnapshotSpecView        `json:"snapshot_intent,omitempty"`
-	ImageCopyIntent       *ImageCopyView           `json:"image_copy_intent,omitempty"`
-	ImageCreationIntent   *ImageCreationView       `json:"image_creation_intent,omitempty"`
-	NetworkDeletionIntent *NetworkDeletionView     `json:"network_deletion_intent,omitempty"`
-	ImageDeletionIntent   *ImageDeletionView       `json:"image_deletion_intent,omitempty"`
-	SnapshotRestoreIntent *SnapshotRestoreSpecView `json:"snapshot_restore_intent,omitempty"`
+	WorkloadScaleIntent             *provider.WorkloadScaleChange  `json:"workload_scale_intent,omitempty"`
+	ID                              string                         `json:"id"`
+	Account                         string                         `json:"account"`
+	Region                          string                         `json:"region"`
+	AssetID                         string                         `json:"asset_id"`
+	ResourceKind                    provider.Kind                  `json:"resource_kind"`
+	VolumeID                        string                         `json:"volume_id,omitempty"`
+	Device                          string                         `json:"device,omitempty"`
+	Action                          string                         `json:"action"`
+	Status                          string                         `json:"status"`
+	CreatedAt                       time.Time                      `json:"created_at"`
+	UpdatedAt                       *time.Time                     `json:"updated_at,omitempty"`
+	OutcomeReason                   string                         `json:"outcome_reason,omitempty"`
+	ProviderRequestID               string                         `json:"provider_request_id,omitempty"`
+	CatalogTemplate                 string                         `json:"catalog_template,omitempty"`
+	CatalogVersion                  int64                          `json:"catalog_version,omitempty"`
+	NetworkIntent                   *NetworkSpecView               `json:"network_intent,omitempty"`
+	SnapshotIntent                  *SnapshotSpecView              `json:"snapshot_intent,omitempty"`
+	ImageCopyIntent                 *ImageCopyView                 `json:"image_copy_intent,omitempty"`
+	ImageCreationIntent             *ImageCreationView             `json:"image_creation_intent,omitempty"`
+	NetworkDeletionIntent           *NetworkDeletionView           `json:"network_deletion_intent,omitempty"`
+	DNSRecordCreationIntent         *DNSRecordCreationView         `json:"dns_record_creation_intent,omitempty"`
+	DNSRecordDeletionIntent         *DNSRecordDeletionView         `json:"dns_record_deletion_intent,omitempty"`
+	DNSRecordStatusIntent           *DNSRecordStatusView           `json:"dns_record_status_intent,omitempty"`
+	LoadBalancerBackendAttachIntent *LoadBalancerBackendAttachView `json:"load_balancer_backend_attach_intent,omitempty"`
+	LoadBalancerBackendDetachIntent *LoadBalancerBackendDetachView `json:"load_balancer_backend_detach_intent,omitempty"`
+	LoadBalancerBackendWeightIntent *LoadBalancerBackendWeightView `json:"load_balancer_backend_weight_intent,omitempty"`
+	LoadBalancerRenameIntent        *LoadBalancerRenameView        `json:"load_balancer_rename_intent,omitempty"`
+	ImageDeletionIntent             *ImageDeletionView             `json:"image_deletion_intent,omitempty"`
+	SnapshotRestoreIntent           *SnapshotRestoreSpecView       `json:"snapshot_restore_intent,omitempty"`
 }
 
 type NetworkSpecView struct {
@@ -89,8 +97,9 @@ type NetworkSpecView struct {
 }
 
 type Store struct {
-	db    *sql.DB
-	queue *mqstore.SQLStore
+	connectWorkloadScaler ConnectWorkloadScaler
+	db                    *sql.DB
+	queue                 *mqstore.SQLStore
 }
 
 func NewStore(db *sql.DB) Store {
@@ -186,7 +195,40 @@ func Migrate(ctx context.Context, db *sql.DB) error {
 	if err := dbschema.Apply(ctx, db, "0053_security_group_deletion", securityGroupDeletionSchema); err != nil {
 		return err
 	}
-	return dbschema.Apply(ctx, db, "0055_network_deletion_backfill", networkDeletionBackfillSchema)
+	if err := dbschema.Apply(ctx, db, "0055_network_deletion_backfill", networkDeletionBackfillSchema); err != nil {
+		return err
+	}
+	if err := dbschema.Apply(ctx, db, "0059_load_balancer_rename", loadBalancerRenameSchema); err != nil {
+		return err
+	}
+	if err := dbschema.Apply(ctx, db, "0061_load_balancer_listener_rename", loadBalancerListenerRenameSchema); err != nil {
+		return err
+	}
+	if err := dbschema.Apply(ctx, db, "0062_load_balancer_target_group_rename", loadBalancerTargetGroupRenameSchema); err != nil {
+		return err
+	}
+	if err := dbschema.Apply(ctx, db, "0064_load_balancer_backend_weight", loadBalancerBackendWeightSchema); err != nil {
+		return err
+	}
+	if err := dbschema.Apply(ctx, db, "0065_load_balancer_backend_detach", loadBalancerBackendDetachSchema); err != nil {
+		return err
+	}
+	if err := dbschema.Apply(ctx, db, "0066_load_balancer_backend_attach", loadBalancerBackendAttachSchema); err != nil {
+		return err
+	}
+	if err := dbschema.Apply(ctx, db, "0070_load_balancer_change_backfill", loadBalancerChangeBackfillSchema); err != nil {
+		return err
+	}
+	if err := dbschema.Apply(ctx, db, "0072_dns_record_status", dnsRecordStatusSchema); err != nil {
+		return err
+	}
+	if err := dbschema.Apply(ctx, db, "0074_dns_record_creation", dnsRecordCreationSchema); err != nil {
+		return err
+	}
+	if err := dbschema.Apply(ctx, db, "0075_dns_record_deletion", dnsRecordDeletionSchema); err != nil {
+		return err
+	}
+	return dbschema.Apply(ctx, db, "0091_workload_scale", workloadScaleSchema)
 }
 
 const operationFields = "operation_id,account_id,region,COALESCE(external_id,''),action,status,created_at,updated_at,COALESCE(outcome_reason,''),COALESCE(provider_request_id,''),COALESCE(volume_id,''),device,resource_kind,COALESCE(catalog_id,''),COALESCE(catalog_version,0)"
@@ -299,6 +341,83 @@ func (s Store) Get(ctx context.Context, token string, scope identity.Scope, id s
 				return err
 			}
 			op.SnapshotRestoreIntent = &intent
+		}
+		if err == nil && isLoadBalancerRename(op.Action) {
+			var intent LoadBalancerRenameView
+			if err := tx.QueryRowContext(ctx, `SELECT i.product,i.current_name,i.name,i.listener_id,i.target_group_id,o.ownership_revision
+				FROM cmp_load_balancer_rename_intents AS i JOIN cmp_instance_operations AS o USING(operation_id)
+				WHERE operation_id=$1`, id).Scan(&intent.Product, &intent.CurrentName, &intent.Name, &intent.ListenerID, &intent.TargetGroupID, &intent.OwnershipRevision); err != nil {
+				return err
+			}
+			op.LoadBalancerRenameIntent = &intent
+		}
+		if err == nil && op.Action == setLoadBalancerBackendWeight {
+			var intent LoadBalancerBackendWeightView
+			if err := tx.QueryRowContext(ctx, `SELECT i.product,i.target_group_id,i.member_key,i.current_weight,i.weight,o.ownership_revision
+     FROM cmp_load_balancer_backend_weight_intents AS i JOIN cmp_instance_operations AS o USING(operation_id)
+     WHERE operation_id=$1`, id).Scan(&intent.Product, &intent.TargetGroupID, &intent.MemberKey, &intent.CurrentWeight, &intent.Weight, &intent.OwnershipRevision); err != nil {
+				return err
+			}
+			op.LoadBalancerBackendWeightIntent = &intent
+		}
+		if err == nil && op.Action == detachLoadBalancerBackend {
+			var intent LoadBalancerBackendDetachView
+			if err := tx.QueryRowContext(ctx, `SELECT i.product,i.target_group_id,i.member_key,o.ownership_revision
+     FROM cmp_load_balancer_backend_detach_intents AS i JOIN cmp_instance_operations AS o USING(operation_id)
+     WHERE operation_id=$1`, id).Scan(&intent.Product, &intent.TargetGroupID, &intent.MemberKey, &intent.OwnershipRevision); err != nil {
+				return err
+			}
+			op.LoadBalancerBackendDetachIntent = &intent
+		}
+		if err == nil && op.Action == createDNSRecord {
+			var intent DNSRecordCreationView
+			err = tx.QueryRowContext(ctx, `SELECT i.zone_name,i.record_id,i.spec->>'name',i.spec->>'type',
+				i.spec->>'value',(i.spec->>'ttl')::integer,(a.provider='alibaba-ecs' AND i.record_id='')
+				FROM cmp_dns_record_creation_intents AS i JOIN cmp_instance_operations AS o USING(operation_id)
+				JOIN cmp_cloud_accounts AS a USING(tenant_id,account_id) WHERE i.operation_id=$1`, op.ID).
+				Scan(&intent.ZoneName, &intent.RecordID, &intent.Name, &intent.Type, &intent.Value, &intent.TTL, &intent.NeedsRecordID)
+			if err == nil {
+				op.DNSRecordCreationIntent = &intent
+			}
+		}
+		if err == nil && op.Action == deleteDNSRecord {
+			var intent DNSRecordDeletionView
+			var encoded []byte
+			err = tx.QueryRowContext(ctx, `SELECT zone_name,record FROM cmp_dns_record_deletion_intents
+				WHERE operation_id=$1`, op.ID).Scan(&intent.ZoneName, &encoded)
+			if err == nil {
+				err = json.Unmarshal(encoded, &intent.Record)
+			}
+			if err == nil {
+				op.DNSRecordDeletionIntent = &intent
+			}
+		}
+		if err == nil && op.Action == setDNSRecordStatus {
+			var intent DNSRecordStatusView
+			err = tx.QueryRowContext(ctx, `SELECT zone_name,record->>'id',record->>'name',record->>'status',enabled
+				FROM cmp_dns_record_status_intents WHERE operation_id=$1`, op.ID).
+				Scan(&intent.ZoneName, &intent.RecordID, &intent.Name, &intent.Current, &intent.Enabled)
+			if err == nil {
+				op.DNSRecordStatusIntent = &intent
+			}
+		}
+		if err == nil && op.Action == scaleWorkload {
+			var change provider.WorkloadScaleChange
+			if err := tx.QueryRowContext(ctx, `SELECT uid,namespace,kind,name,current_replicas,replicas
+				FROM cmp_workload_scale_intents WHERE operation_id=$1`, op.ID).
+				Scan(&change.UID, &change.Namespace, &change.Kind, &change.Name, &change.Current, &change.Desired); err != nil {
+				return err
+			}
+			op.WorkloadScaleIntent = &change
+		}
+		if err == nil && op.Action == attachLoadBalancerBackend {
+			var intent LoadBalancerBackendAttachView
+			if err := tx.QueryRowContext(ctx, `SELECT i.product,i.target_group_id,i.instance_id,i.instance_revision,i.port,i.member_key,o.ownership_revision
+     FROM cmp_load_balancer_backend_attach_intents AS i JOIN cmp_instance_operations AS o USING(operation_id)
+     WHERE operation_id=$1`, id).Scan(&intent.Product, &intent.TargetGroupID, &intent.InstanceID, &intent.InstanceRevision, &intent.Port, &intent.MemberKey, &intent.OwnershipRevision); err != nil {
+				return err
+			}
+			op.LoadBalancerBackendAttachIntent = &intent
 		}
 		return err
 	})

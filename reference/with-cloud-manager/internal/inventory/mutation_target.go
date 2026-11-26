@@ -77,10 +77,18 @@ func MarkResourceDeleted(ctx context.Context, tx *sql.Tx, scopeID int64, id stri
 }
 
 func LockInstanceScope(ctx context.Context, tx *sql.Tx, tenant, account, region string) (int64, error) {
+	return lockInventoryScope(ctx, tx, tenant, account, region, provider.Instance)
+}
+
+func LockLoadBalancerScope(ctx context.Context, tx *sql.Tx, tenant, account, region string) (int64, error) {
+	return lockInventoryScope(ctx, tx, tenant, account, region, provider.LoadBalancer)
+}
+
+func lockInventoryScope(ctx context.Context, tx *sql.Tx, tenant, account, region string, kind provider.Kind) (int64, error) {
 	var scopeID int64
 	err := tx.QueryRowContext(ctx, `SELECT scope_id FROM cmp_inventory_scopes
-		WHERE (tenant_id,account_id,region,kind)=($1,$2,$3,'instance') FOR NO KEY UPDATE`,
-		tenant, account, region).Scan(&scopeID)
+		WHERE (tenant_id,account_id,region,kind)=($1,$2,$3,$4) FOR NO KEY UPDATE`,
+		tenant, account, region, kind).Scan(&scopeID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return 0, identity.ErrForbidden
 	}
@@ -98,7 +106,25 @@ func RecordInstanceStatus(ctx context.Context, tx *sql.Tx, scopeID int64, instan
 	if err != nil {
 		return err
 	}
-	_, err = tx.ExecContext(ctx, `UPDATE cmp_inventory_scopes SET running=false,fence=fence+1,cursor='',pages=0
+	return restartActiveInventoryScan(ctx, tx, scopeID)
+}
+
+func RecordLoadBalancerName(ctx context.Context, tx *sql.Tx, scopeID int64, id, current, desired string) error {
+	var recorded string
+	err := tx.QueryRowContext(ctx, `UPDATE cmp_inventory_objects SET name=$4
+		WHERE (scope_id,external_id)=($1,$2) AND name IN ($3,$4) AND removed_at IS NULL AND missing_generation IS NULL
+		RETURNING external_id`, scopeID, id, current, desired).Scan(&recorded)
+	if errors.Is(err, sql.ErrNoRows) {
+		return identity.ErrAccountStale
+	}
+	if err != nil {
+		return err
+	}
+	return restartActiveInventoryScan(ctx, tx, scopeID)
+}
+
+func restartActiveInventoryScan(ctx context.Context, tx *sql.Tx, scopeID int64) error {
+	_, err := tx.ExecContext(ctx, `UPDATE cmp_inventory_scopes SET running=false,fence=fence+1,cursor='',pages=0
 		WHERE scope_id=$1 AND running`, scopeID)
 	return err
 }

@@ -31,7 +31,9 @@ func (c *Client) tencent(ctx context.Context, service, region, action, version s
 	req.Header.Set("Content-Type", contentType)
 	req.Header.Set("X-TC-Action", action)
 	req.Header.Set("X-TC-Version", version)
-	req.Header.Set("X-TC-Region", region)
+	if region != "" {
+		req.Header.Set("X-TC-Region", region)
+	}
 	req.Header.Set("X-TC-Timestamp", timestamp)
 	if c.profile.SecurityToken != "" {
 		req.Header.Set("X-TC-Token", c.profile.SecurityToken)

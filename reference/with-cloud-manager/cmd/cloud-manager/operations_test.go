@@ -107,6 +107,12 @@ func TestAcceptanceNetworkOperationAPI(t *testing.T) {
 	if post.RequestBody == nil || post.RequestBody.Content["application/json"].Schema.Properties["rule"].Properties["from_port"].Type != "integer" {
 		t.Fatalf("missing critical security-rule OpenAPI inputs: %+v", post.RequestBody)
 	}
+	deleteRecord := doc.Paths["/v1/tenants/{tenant}/projects/{project}/dns-zones/record-deletion"].Post
+	if deleteRecord == nil || deleteRecord.OperationID != "deleteDNSRecord" ||
+		deleteRecord.Responses["202"].Description == "" || deleteRecord.Responses["412"].Description == "" ||
+		deleteRecord.RequestBody == nil || deleteRecord.RequestBody.Content["application/json"].Schema.Properties["observed_at"].Format != "date-time" {
+		t.Fatalf("missing DNS deletion contract: %+v", deleteRecord)
+	}
 	snapshot := doc.Paths["/v1/tenants/{tenant}/projects/{project}/snapshots"].Post
 	if snapshot == nil || snapshot.OperationID != "createVolumeSnapshot" || snapshot.Responses["412"].Description == "" ||
 		snapshot.RequestBody == nil || snapshot.RequestBody.Content["application/json"].Schema.Properties["allow_attached"].Type != "boolean" {

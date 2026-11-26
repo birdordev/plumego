@@ -43,6 +43,9 @@ var imageCopyReservationsSchema string
 //go:embed 0054_network_deletion_reservations.sql
 var networkDeletionReservationsSchema string
 
+//go:embed 0056_load_balancer_inventory.sql
+var loadBalancerInventorySchema string
+
 var ErrUnavailable = errors.New("inventory scope unavailable")
 var ErrStale = errors.New("inventory observation is no longer current")
 
@@ -67,6 +70,18 @@ type Store struct {
 func NewStore(db *sql.DB) Store {
 	return Store{db: db}
 }
+
+//go:embed 0076_database_inventory.sql
+var databaseInventorySchema string
+
+//go:embed 0078_object_bucket_inventory.sql
+var objectBucketInventorySchema string
+
+//go:embed 0080_cache_inventory.sql
+var cacheInventorySchema string
+
+//go:embed 0082_kubernetes_inventory.sql
+var kubernetesInventorySchema string
 
 func Migrate(ctx context.Context, db *sql.DB) error {
 	if err := dbschema.Apply(ctx, db, "0002_inventory", schema); err != nil {
@@ -99,7 +114,49 @@ func Migrate(ctx context.Context, db *sql.DB) error {
 	if err := dbschema.Apply(ctx, db, "0050_image_copy_reservations", imageCopyReservationsSchema); err != nil {
 		return err
 	}
-	return dbschema.Apply(ctx, db, "0054_network_deletion_reservations", networkDeletionReservationsSchema)
+	if err := dbschema.Apply(ctx, db, "0054_network_deletion_reservations", networkDeletionReservationsSchema); err != nil {
+		return err
+	}
+	if err := dbschema.Apply(ctx, db, "0056_load_balancer_inventory", loadBalancerInventorySchema); err != nil {
+		return err
+	}
+	if err := migrateLoadBalancerConfiguration(ctx, db); err != nil {
+		return err
+	}
+	if err := dbschema.Apply(ctx, db, "0067_dns_zone_records", dnsZoneRecordsSchema); err != nil {
+		return err
+	}
+	if err := dbschema.Apply(ctx, db, "0069_load_balancer_change_reservations", loadBalancerChangeReservationsSchema); err != nil {
+		return err
+	}
+	if err := dbschema.Apply(ctx, db, "0071_dns_zone_mutation", dnsZoneMutationSchema); err != nil {
+		return err
+	}
+	if err := dbschema.Apply(ctx, db, "0076_database_inventory", databaseInventorySchema); err != nil {
+		return err
+	}
+	if err := dbschema.Apply(ctx, db, "0078_object_bucket_inventory", objectBucketInventorySchema); err != nil {
+		return err
+	}
+	if err := dbschema.Apply(ctx, db, "0080_cache_inventory", cacheInventorySchema); err != nil {
+		return err
+	}
+	if err := dbschema.Apply(ctx, db, "0082_kubernetes_inventory", kubernetesInventorySchema); err != nil {
+		return err
+	}
+	if err := dbschema.Apply(ctx, db, "0084_cluster_node_pools", clusterNodePoolsSchema); err != nil {
+		return err
+	}
+	if err := dbschema.Apply(ctx, db, "0086_cluster_workloads", clusterWorkloadsSchema); err != nil {
+		return err
+	}
+	if err := dbschema.Apply(ctx, db, "0088_cluster_workload_checkpoints", workloadCheckpointSchema); err != nil {
+		return err
+	}
+	if err := dbschema.Apply(ctx, db, "0090_workload_change_reservations", workloadChangeReservationsSchema); err != nil {
+		return err
+	}
+	return dbschema.Apply(ctx, db, "0097_tag_observations", tagObservationsSchema)
 }
 
 func (s Store) Claim(ctx context.Context, key Key, lease time.Duration) (Claim, error) {
@@ -107,7 +164,9 @@ func (s Store) Claim(ctx context.Context, key Key, lease time.Duration) (Claim, 
 }
 
 func (s Store) ClaimWithCredentialRevision(ctx context.Context, key Key, lease time.Duration, revision int64) (Claim, error) {
-	if revision < 0 || lease < time.Millisecond || lease > 15*time.Minute || !key.Kind.Valid() {
+	if revision < 0 || lease < time.Millisecond || lease > 15*time.Minute || !key.Kind.Valid() ||
+		(key.Kind == provider.DNSZone && key.Region != provider.DNSGlobalScope) ||
+		(key.Kind == provider.ObjectBucket && key.Region != provider.ObjectBucketGlobalScope) {
 		return Claim{}, ErrUnavailable
 	}
 	var claim Claim
@@ -232,10 +291,16 @@ func upsert(ctx context.Context, tx *sql.Tx, id, generation int64, kind provider
 		}
 	}
 	_, err = tx.ExecContext(ctx, `INSERT INTO cmp_inventory_objects AS existing
-		(scope_id,external_id,name,status,seen_generation,links,public_addresses,snapshot)
-		SELECT $1, "ID", "Name", "Status", $2, COALESCE(links,'[]'::jsonb), COALESCE(public_addresses,'[]'::jsonb), snapshot FROM (
-			SELECT DISTINCT ON ("ID") "ID", "Name", "Status", links, public_addresses, snapshot
-			FROM ROWS FROM(jsonb_to_recordset($3::jsonb) AS ("ID" text, "Name" text, "Status" text, links jsonb, public_addresses jsonb, snapshot jsonb))
+		(scope_id,external_id,name,status,seen_generation,links,public_addresses,snapshot,load_balancer,database_instance,object_bucket,cache_instance,kubernetes_cluster,tag_keys,tag_observed_at,tag_credential_revision)
+		SELECT $1, "ID", "Name", "Status", $2, COALESCE(links,'[]'::jsonb), COALESCE(public_addresses,'[]'::jsonb), snapshot, load_balancer, database_instance, object_bucket, cache_instance, kubernetes_cluster,
+			CASE WHEN jsonb_typeof(tags)='object' THEN ARRAY(
+				SELECT tag.key FROM jsonb_each_text(tags) AS tag WHERE tag.value !~ '^[[:space:]]*$' ORDER BY tag.key
+			) END,
+			CASE WHEN jsonb_typeof(tags)='object' THEN statement_timestamp() END,
+			CASE WHEN jsonb_typeof(tags)='object' THEN (SELECT credential_revision FROM cmp_inventory_scopes WHERE scope_id=$1) END
+		FROM (
+			SELECT DISTINCT ON ("ID") "ID", "Name", "Status", links, public_addresses, snapshot, load_balancer, database_instance, object_bucket, cache_instance, kubernetes_cluster, tags
+			FROM ROWS FROM(jsonb_to_recordset($3::jsonb) AS ("ID" text, "Name" text, "Status" text, links jsonb, public_addresses jsonb, snapshot jsonb, load_balancer jsonb, database_instance jsonb, object_bucket jsonb, cache_instance jsonb, kubernetes_cluster jsonb,tags jsonb))
 				WITH ORDINALITY AS records
 			ORDER BY "ID", ordinality DESC
 		) AS deduplicated
@@ -259,7 +324,8 @@ func upsert(ctx context.Context, tx *sql.Tx, id, generation int64, kind provider
 				) THEN COALESCE((SELECT jsonb_agg(link) FROM jsonb_array_elements(existing.links) AS link
 					WHERE link->>'kind'='instance' AND link->>'relation'='created_from'),'[]'::jsonb)
 				ELSE '[]'::jsonb END,public_addresses=EXCLUDED.public_addresses,
-			missing_generation=NULL,removed_at=NULL,snapshot=EXCLUDED.snapshot
+			missing_generation=NULL,removed_at=NULL,snapshot=EXCLUDED.snapshot,load_balancer=EXCLUDED.load_balancer,database_instance=EXCLUDED.database_instance,object_bucket=EXCLUDED.object_bucket,cache_instance=EXCLUDED.cache_instance,kubernetes_cluster=EXCLUDED.kubernetes_cluster,
+			tag_keys=EXCLUDED.tag_keys,tag_observed_at=EXCLUDED.tag_observed_at,tag_credential_revision=EXCLUDED.tag_credential_revision
 	WHERE existing.deletion_confirmed_at IS NULL`, id, generation, string(data), kind)
 	if err != nil {
 		return err

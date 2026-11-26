@@ -120,6 +120,542 @@ go run ./cmd/cloud-manager scan-openstack tenant-id openstack-account RegionOne 
 
 已通过厂商协议 TLS 夹具和真实 PostgreSQL 验收，覆盖三家多页扫描、规则页限流后的断点续跑、作用域不匹配拒绝、卷挂载去重、镜像归属和拓扑查询。真实云账号的地域、权限及限流行为仍需在沙箱验收。
 
+#### 对象存储桶盘点
+
+执行 `cloud-manager migrate` 后，使用已核验账号扫描 `global` 范围。定时计划同样使用 `region=global` 和 `kind=object-bucket`，一次列举覆盖已授权账号的桶。返回的实际地域位于 `object_bucket.location`。
+
+```bash
+cloud-manager scan-tencent tenant-id account-id global object-bucket
+cloud-manager scan-alibaba tenant-id account-id global object-bucket
+cloud-manager scan-huawei tenant-id account-id global object-bucket
+```
+
+| 厂商 | 读取权限和认证 |
+|---|---|
+| 腾讯云 COS | 使用配置的访问密钥为 `GetService` 请求签名，授权 `name/cos:GetService`。[API 与分页](https://intl.cloud.tencent.com/document/product/436/8291) · [签名](https://cloud.tencent.com/document/api/436/7778) |
+| 阿里云 OSS | 使用配置的首个地域构造 OSS 接入点，向 `ListBuckets` 发送 V4 签名，授权 `oss:ListBuckets`。[API 与分页](https://www.alibabacloud.com/help/en/oss/developer-reference/listbuckets) · [签名](https://www.alibabacloud.com/help/en/oss/developer-reference/recommend-to-use-signature-version-4) |
+| 华为云 OBS | 通过已验证的 IAM Token 获取 15 分钟临时签名凭据，临时策略只授予 `obs:bucket:ListAllMyBuckets`。通过配置的地域接入点列举对象桶。[IAM 临时凭据](https://support.huaweicloud.com/api-iam/iam_04_0002.html) · [OBS API](https://support.huaweicloud.com/api-obs/obs_04_0020.html) |
+
+在控制台选择“对象存储桶”，或通过资产、差异与导出接口筛选 `kind=object-bucket`。库存保存桶名、产品、实际地域、创建时间和可用的存储类型。资产 ID 采用 `桶名@UTC创建时间`，同名重建且创建时间变化时生成独立资产和归属记录。CSV 追加 `product`、`location`、`storage_class` 和 `created_at`。
+
+腾讯云与阿里云按厂商标记续页，华为云使用有界账号列表。每页核对远端归属。完整盘点后，缺失的旧资产进入待确认状态。可在盘点命令后追加完整资产 ID，重新读取同一账号的桶清单。启用缺失确认前，需确认服务身份具备整个账号的列桶权限，且访问策略不会按标签或其他条件裁剪结果，再在私有厂商配置中设置 `"bucket_list_account_wide": true`。只有具备该配置且完整清单中找不到原创建批次时，才移除库存记录。
+
+```bash
+cloud-manager scan-alibaba tenant-id account-id global object-bucket \
+  'example-bucket@2025-01-01T10:00:00Z'
+```
+
+#### 托管数据库盘点
+
+执行 `cloud-manager migrate` 后，用已核验的云账号按地域扫描 `database-instance`。定时控制器使用同一资源类型和账号配置。
+
+```bash
+cloud-manager scan-tencent tenant-id account-id ap-guangzhou database-instance
+cloud-manager scan-alibaba tenant-id account-id cn-hangzhou database-instance
+cloud-manager scan-huawei tenant-id account-id cn-north-4 database-instance
+```
+
+| 厂商 | 盘点范围与权限 |
+|---|---|
+| 腾讯云 | 云数据库 MySQL、PostgreSQL、SQL Server。一个地域的盘点顺序读取三个产品，完整盘点需要相应的三项 `DescribeDBInstances` 权限。[MySQL](https://cloud.tencent.com/document/api/236/15872) · [PostgreSQL](https://cloud.tencent.com/document/product/409/16773) · [SQL Server](https://cloud.tencent.com/document/api/238/19969) |
+| 阿里云 | ApsaraDB RDS 实例，使用地域接入点和 `rds:DescribeDBInstances`。[API](https://www.alibabacloud.com/help/en/rds/developer-reference/api-rds-2014-08-15-describedbinstances) · [接入点](https://www.alibabacloud.com/help/zh/rds/developer-reference/api-rds-2014-08-15-endpoint) |
+| 华为云 | IAM 项目内的云数据库 RDS v3 实例，使用 `rds:instance:listAll` 或相应角色策略的列表权限。[API](https://support.huaweicloud.com/api-rds/rds_01_0004.html) |
+
+在控制台选择“托管数据库”，或在项目资产、差异、拓扑和 CSV 导出接口传 `kind=database-instance`。资产响应的数据库字段为 `database_instance`，包含产品、引擎和已知版本。资产和历史支持按这些字段搜索，已纳管且可见的 VPC 在拓扑中显示。连接地址、登录账号和厂商响应中的连接配置不进入库存。CSV 增加 `product`、`engine` 和 `engine_version` 三列。
+
+限流或临时请求失败时可从已提交的检查点续跑。续页总数变化会使游标失效，下次扫描从头开始。已完成全量盘点中的缺失实例会显示为待确认。追加精确实例 ID 进行缺失复核，只有同作用域的完整空结果才会移除本地资产。
+
+```bash
+cloud-manager scan-alibaba tenant-id account-id cn-hangzhou database-instance rm-example
+```
+
+使用签名 TLS 夹具及 PostgreSQL 验证了三家盘点链路。真实厂商地域支持、IAM 和限流仍需沙箱验证。
+
+#### 托管缓存盘点
+
+执行 `cloud-manager migrate` 后，通过已核验的账号按地域扫描 `cache-instance`。定时控制器可以使用同一地域和资源类型。
+
+```bash
+cloud-manager scan-tencent tenant-id account-id ap-guangzhou cache-instance
+cloud-manager scan-alibaba tenant-id account-id cn-hangzhou cache-instance
+cloud-manager scan-huawei tenant-id account-id cn-north-4 cache-instance
+```
+
+| 厂商 | 读取权限 |
+|---|---|
+| 腾讯云 Redis | 使用 TC3 签名调用 `DescribeInstances`，授权 `redis:DescribeInstances`。[API](https://cloud.tencent.com/document/product/239/20018) |
+| 阿里云 Tair | 使用 ACS3 签名调用 `DescribeInstances`，授权 `kvstore:DescribeInstances`。[API](https://www.alibabacloud.com/help/zh/redis/developer-reference/api-r-kvstore-2015-01-01-describeinstances-redis) · [接入点](https://www.alibabacloud.com/help/zh/redis/developer-reference/api-r-kvstore-2015-01-01-endpoint-redis) |
+| 华为云 DCS | 使用已验证的 IAM 项目令牌调用 DCS v2 `ListInstances`，授权 `dcs:instance:list`。[API](https://support.huaweicloud.com/api-dcs/ListInstances.html) |
+
+控制台可筛选“托管缓存”。项目资产、差异、拓扑与导出接口使用 `kind=cache-instance`。库存的 `cache_instance` 保存产品、引擎、已知版本和以 MiB 表示的容量，拓扑显示项目可见的已纳管 VPC。列表和历史可按产品、引擎或版本搜索，CSV 追加 `product`、`engine`、`engine_version` 和 `capacity_mib`。连接地址、登录账号和连接配置不进入库存。
+
+厂商限流或请求失败后，扫描可以从已提交的检查点续跑。完整盘点后可在扫描命令末尾追加实例 ID，复核待确认缺失的资产。精确点查找到原实例时恢复观测状态。仅在确认服务身份具备同地域账号的完整查询权限，或华为云 IAM 项目内无企业项目裁剪的完整查询权限后，才在私有厂商配置中设置 `"cache_list_scope_wide": true`。此时同作用域的精确空页可移除库存记录。HTTP 404、授权失败和未启用完整权限声明的空页会保留待确认状态。
+
+```bash
+cloud-manager scan-alibaba tenant-id account-id cn-hangzhou cache-instance r-example
+```
+
+#### Kubernetes 集群盘点
+
+执行 `cloud-manager migrate` 后，使用已核验的云账号按地域扫描 `kubernetes-cluster`。定时计划使用同一资源类型和地域。
+
+```bash
+cloud-manager scan-tencent tenant-id account-id ap-guangzhou kubernetes-cluster
+cloud-manager scan-alibaba tenant-id account-id cn-beijing kubernetes-cluster
+cloud-manager scan-huawei tenant-id account-id cn-north-4 kubernetes-cluster
+```
+
+| 厂商 | 读取范围与权限 |
+|---|---|
+| 腾讯云 TKE | 托管与独立集群，使用 TC3 签名调用区域 `DescribeClusters`，授权 `tke:DescribeClusters`。[API](https://cloud.tencent.com/document/product/457/31862) |
+| 阿里云 ACK | 使用 ACS3 签名调用地域接入点的 `GET /api/v1/clusters`，通过地域和可选集群 ID 过滤，授权 `cs:GetClusters`。[API](https://www.alibabacloud.com/help/zh/ack/ack-managed-and-ack-dedicated/developer-reference/api-cs-2015-12-15-describeclustersv1) · [签名](https://www.alibabacloud.com/help/en/sdk/product-overview/v3-request-structure-and-signature) |
+| 华为云 CCE | 通过已核验的 IAM 项目令牌读取单个项目的 CCE v3 集群列表，授权 `cce:cluster:list`。单次响应最多接收 1000 个集群。[API](https://support.huaweicloud.com/api-cce/cce_02_0239.html) |
+
+控制台提供“Kubernetes 集群”筛选，展示厂商产品、集群类型、已知版本和厂商报告的节点数。项目资产、差异、拓扑与导出支持 `kind=kubernetes-cluster`，响应以 `kubernetes_cluster` 返回集群字段。节点数采用各厂商定义，缺省表示未知。项目可见的已纳管 VPC 会出现在拓扑中。CSV 追加 `product`、`cluster_type`、`kubernetes_version` 和 `node_count`。该能力只读取云管理面元数据，库存不保存 API Server 地址、认证配置或任意注解。
+
+TKE 和 ACK 支持分页检查点，CCE 项目列表作为一个完整页提交。追加集群 ID 可复核待确认缺失的资产。TKE、ACK 按 ID 过滤，CCE 重新读取同一 IAM 项目的完整列表后核对 ID。确认服务身份具备整个盘点作用域的读取权限后，可在私有厂商配置中设置 `"kubernetes_list_scope_wide": true`，允许经确认缺失时移除本地库存。权限错误、404、无效响应及未声明完整可见性的缺失结果均保留待确认状态。
+
+```bash
+cloud-manager scan-tencent tenant-id account-id ap-guangzhou kubernetes-cluster cls-example
+```
+
+##### 节点池快照
+
+先执行迁移并盘点父集群，再按账号、地域和集群 ID 刷新。命令读取厂商管理面数据并原子发布这次刷新取得的全部节点池，失败时保留最近的完整快照。
+
+```bash
+cloud-manager refresh-tencent-cluster-node-pools tenant-id account-id ap-guangzhou cls-example
+cloud-manager refresh-alibaba-cluster-node-pools tenant-id account-id cn-beijing c-example
+cloud-manager refresh-huawei-cluster-node-pools tenant-id account-id cn-north-4 cluster-uuid
+```
+
+| 厂商 | 读取 API 与权限 |
+|---|---|
+| 腾讯云 TKE | 2022-05-01 `DescribeNodePools`，需要 `tke:DescribeNodePools`。按页核对集群 ID、总量和节点池唯一性。[API](https://cloud.tencent.com/document/api/457/103205) |
+| 阿里云 ACK | `GET /clusters/{ClusterId}/nodepools`，需要 `cs:DescribeClusterNodePools`。使用父集群地域的 ACS3 接入点。[API](https://www.alibabacloud.com/help/zh/ack/ack-managed-and-ack-dedicated/developer-reference/api-cs-2015-12-15-describeclusternodepools) |
+| 华为云 CCE | v3 `ListNodePools`，需要 `cce:nodepool:list`。同一 IAM 项目内读取父集群的节点池，并请求包含默认节点池。[API](https://support.huaweicloud.com/api-cce/cce_02_0269.html) |
+
+定时刷新复用 `controller` 进程和 `CLOUD_MANAGER_CONTROLLER_PROFILES`。为每个需要纳管的父集群登记 `kind=kubernetes-node-pools`，并填入地域和 `target_id`。新字段在普通盘点计划中默认留空。使用 `ON CONFLICT` 更新计划的运维脚本应在冲突目标中包含 `target_id`。父集群需要在同一个账号和地域完成盘点，节点池计划可以与父集群的 `kubernetes-cluster` 盘点计划并存。
+
+```sql
+INSERT INTO cmp_inventory_schedules (tenant_id, account_id, region, kind, target_id, interval_seconds)
+VALUES ('tenant-id', 'account-id', 'ap-guangzhou', 'kubernetes-node-pools', 'cls-example', 600);
+```
+
+计划按成功间隔重复执行，失败使用现有退避和厂商 `Retry-After`。节点池快照与本次计划结果在同一事务提交。计划停用、租约被接管、账号凭据轮换或父集群观测已变化时，旧执行者无法发布快照。控制器停机让出计划后，其他副本可以接续。
+
+项目 API 为 `GET /v1/tenants/{tenant}/projects/{project}/assets/kubernetes-clusters/{asset}/node-pools?account=…&region=…`。第一页返回 `snapshot`、`observed_at` 和可选的 `next_offset`。续页使用同一 `snapshot` 和 `offset`。快照已替换时返回 409，调用方从第一页重读。父集群不可见、凭据已轮换或暂未刷新时返回 404。控制台在父集群行提供“查看节点池”。
+
+只公开节点池 ID、名称、已知类型和状态、节点数和自动伸缩配置。数值采用各厂商定义，已知零与未知值分别显示。用户脚本、认证配置、标签和任意注解不进入快照。单个集群最多接收 1000 个节点池。
+
+#### Kubernetes 工作负载
+
+腾讯云 TKE、阿里云 ACK 和华为云 CCE 共用 Kubernetes API 采集工作负载。先运行 `migrate` 应用 `0086_cluster_workloads` 和 `0087_cluster_workload_schedules`，完成云账号核验和父集群盘点，再为需要采集的集群增加只读凭据。
+
+在对应的已有云账号私有配置中添加 `kubernetes_workloads`，以 `地域/集群 ID` 显式绑定工作负载凭据文件。例如在腾讯云配置中添加以下字段。
+
+```json
+{
+  "kubernetes_workloads": {
+    "ap-guangzhou/cls-example": "/etc/cloud-manager/credentials/tke-cls-example.json"
+  }
+}
+```
+
+工作负载凭据文件使用绝对路径，只有文件所有者可读。字段如下。
+
+| 字段 | 用途 |
+| --- | --- |
+| `cloud_identity`、`credential_revision` | 核验后的云账号远端身份、当前凭据版本，须与父集群库存对应 |
+| `endpoint` | 从控制器所在网络可达的 Kubernetes HTTPS API 源，例如 `https://k8s.example.internal:6443` |
+| `ca_pem`、`bearer_token` | 校验 API Server 的 CA 和仅供采集的 Bearer 凭据 |
+| `identity_namespace`、`identity_uid` | 通过受信渠道核对的锚点命名空间名称和 UID，采集前后均确认身份 |
+| `namespaces` | 允许采集的命名空间名称，最多 32 个 |
+
+采集角色需要对锚点命名空间的 `namespaces` 单资源 `get`，ClusterRole 可用 `resourceNames` 限定名字。每个允许采集的命名空间授权 `apps` 组中 `deployments`、`statefulsets`、`daemonsets` 的 `list`，以及 `batch` 组中 `jobs`、`cronjobs` 的 `list`。控制器直连配置的 HTTPS 端点，验证 CA 和主机名，拒绝重定向。注册新的采集范围或替换集群身份时，先轮换平台云账号凭据版本并重新盘点父集群，再启用新配置。
+
+```sh
+cloud-manager refresh-tencent-cluster-workloads tenant-id account-id ap-guangzhou cls-example
+cloud-manager refresh-alibaba-cluster-workloads tenant-id account-id cn-beijing c-example
+cloud-manager refresh-huawei-cluster-workloads tenant-id account-id cn-north-4 cluster-uuid
+```
+
+定时采集由 `controller` 执行。在滚动升级中先部署支持工作负载的新控制器，再启用 `kind=kubernetes-workloads`、`target_id=集群 ID` 的计划。它和父集群盘点及节点池计划各自独立。
+
+```sql
+INSERT INTO cmp_inventory_schedules (tenant_id, account_id, region, kind, target_id, interval_seconds)
+VALUES ('tenant-id', 'account-id', 'ap-guangzhou', 'kubernetes-workloads', 'cls-example', 600);
+```
+
+一次刷新最多采集 5000 条工作负载。同一命名空间与类型的列表逐页核对 `resourceVersion`，所有列表成功且身份复核通过后，在同一事务发布快照与计划成功状态。跨资源类型和命名空间的列表各有独立观测时点。采集失败、权限不足、游标失效或旧租约尝试提交时保留上一份完整快照。游标失效后下一轮从第一页开始。[Kubernetes 分页语义](https://kubernetes.io/docs/reference/using-api/api-concepts/#retrieving-large-results-sets-in-chunks)
+
+项目接口为 `GET /v1/tenants/{tenant}/projects/{project}/assets/kubernetes-clusters/{asset}/workloads?account=…&region=…`。返回 `workloads`、`observed_at`、`snapshot` 和分页信息。续页携带同一个 `snapshot`，遇到 409 从第一页读取。父集群不可见、凭据代次过期或尚无完整快照时返回 404。控制台在集群资产行提供“查看工作负载”。
+
+快照公开工作负载 UID、名称、命名空间、类型和已知计数或暂停状态。采集凭据、Pod 模板、环境变量、日志、容器镜像、任意标签及注解不入库。
+
+##### 持续订阅
+
+执行 `migrate` 应用 `0088_cluster_workload_checkpoints` 和 `0089_cluster_workload_watch_schedules`。将普通控制器更新到支持订阅计划的版本，再启用下列计划。订阅复用云账号私有配置和命名空间白名单，每个白名单命名空间还需对上述五类资源授予 `watch`。使用与控制器相同的 `CLOUD_MANAGER_CONTROLLER_PROFILES` 启动独立进程。
+
+```sh
+cloud-manager workload-controller
+```
+
+```sql
+INSERT INTO cmp_inventory_schedules (tenant_id, account_id, region, kind, target_id, interval_seconds)
+VALUES ('tenant-id', 'account-id', 'ap-guangzhou', 'kubernetes-workload-watch', 'cls-example', 60);
+```
+
+每个订阅控制器并行处理最多 4 个集群，每个集群最多保持 8 个集合连接。每次订阅请求向 API Server 请求 5 秒窗口，单轮上限为 3 分钟，租约为 4 分钟。成功后间隔 1 秒继续领取，`interval_seconds` 参与现有新鲜度告警阈值。失联、限流和连续失败使用各自计划的退避，普通盘点由独立进程领取。
+
+首次订阅逐集合读取完整列表，然后从各自的 `resourceVersion` 续订。支持 `ADDED`、`MODIFIED`、`DELETED` 和 `BOOKMARK`。连接截断时以最后一条完整事件为界处理。遇到 HTTP 410 或流内过期事件时，丢弃该集合本轮增量，重读该集合并从新版本订阅。需要恢复的集合和其他集合的结果一起通过校验后才提交。[Kubernetes 订阅语义](https://kubernetes.io/docs/reference/using-api/api-concepts/#efficient-detection-of-changes)
+
+订阅检查点、公开快照和计划完成状态在同一事务中写入。提交时核对父集群、凭据版本、租约和读取时的快照基线。只有书签或游标变化时，保留公开快照标识和内容的 `observed_at`，避免在翻页中途无故换代。手动全量刷新会生成新快照，下一轮订阅重新建立检查点。持续订阅按端点、信任根、集群锚点和白名单识别检查点，同一采集身份的 Token 更新可继续使用原版本。
+
+##### 调整工作负载副本
+
+应用 `0090_workload_change_reservations` 至 `0092_workload_scale_outbox` 并升级 Worker 后，写入已启用的云账号可以为 Deployment 或 StatefulSet 申请调整期望副本数。申请需要独立审批。同一父集群的活动申请占用变更名额，并阻止归属转移。
+
+在 Worker 使用的云账号配置中添加 `kubernetes_workload_writers`。键与只读配置相同，值指向另一份私有凭据文件。写入文件沿用只读文件的字段，并增加 `max_replicas`，范围为 1 至 100。两份文件使用相同的端点、CA、集群锚点与云账号凭据版本，写入凭据采用独立 Token，命名空间为读取白名单的子集。给写入身份授予锚点命名空间的 `get`，以及目标命名空间中 `deployments/scale` 和 `statefulsets/scale` 的 `get`、`update`。可用 `resourceNames` 进一步限定部署名称。缺少写入配置时，已获批的申请在发送前失败。
+
+```json
+{
+  "kubernetes_workload_writers": {
+    "ap-guangzhou/cls-example": "/etc/cloud-manager/credentials/tke-cls-example-writer.json"
+  }
+}
+```
+
+项目接口为 `POST /v1/tenants/{tenant}/projects/{project}/kubernetes-workloads/scale`。请求使用 `Idempotency-Key` 和包含当前父集群归属版本的 `If-Match`。正文填写快照中的工作负载 UID、命名空间、类型与名称，以及目标副本数。
+
+```json
+{
+  "account": "account-id",
+  "region": "ap-guangzhou",
+  "asset_id": "cls-example",
+  "snapshot": "00000000-0000-4000-8000-000000000001",
+  "uid": "workload-uid",
+  "namespace": "checkout",
+  "kind": "Deployment",
+  "name": "payments",
+  "replicas": 4
+}
+```
+
+```sh
+cloud-manager operations scale-workload tenant-id project-id --idempotency-key scale-payments-1 --if-match 2 < scale.json
+```
+
+也可以从控制台的工作负载详情提交。Worker 在发送前核对云端 UID 与当前期望副本数，通过 `PUT /scale` 携带 UID 和当前 `resourceVersion` 写入。冲突返回失败，回执丢失进入只读观测。观察到同一 UID 的期望副本数达到目标后，同一事务更新库存、结束操作并生成终态事件。若出现其他期望值或目标重建，交由独立审批人核实证据后重启只读观测。前置条件、审批和只读恢复均通过现有操作接口完成。[Kubernetes Scale 前置条件](https://kubernetes.io/docs/reference/generated/kubectl/kubectl-commands.html#scale)
+
+成功表示观测到期望副本数已调整。Pod 就绪度继续由采集更新。HPA 或 GitOps 控制器后续变更会作为新的观测进入库存。
+
+#### 公网 DNS 托管区与解析记录
+
+执行 `cloud-manager migrate` 应用 `0067_dns_zone_records` 和 `0068_dns_zone_schedules`。使用已核验的只读云账号扫描 `global` 范围，定时盘点可使用相同的 `region=global`、`kind=dns-zone`。
+
+```bash
+cloud-manager scan-tencent tenant-id account-id global dns-zone
+cloud-manager scan-alibaba tenant-id account-id global dns-zone
+cloud-manager scan-huawei tenant-id account-id global dns-zone
+```
+
+| 厂商 | 范围 | 读取权限 |
+|---|---|---|
+| 腾讯云 DNSPod | 当前账号自有公网托管区 | `dnspod:DescribeDomainList`、`dnspod:DescribeRecordList` |
+| 阿里云云解析 DNS | 当前账号可读的公网托管区 | `alidns:DescribeDomains`、`alidns:DescribeDomainInfo`、`alidns:DescribeDomainRecords` |
+| 华为云 DNS | 中国站公网托管区，通过华北-北京四 `cn-north-4` 访问，只接受已核验 IAM 项目的结果 | `dns:zone:list`、`dns:recordset:list` |
+
+资产列表、历史和 CSV 支持 `kind=dns-zone`。托管区名称使用 ASCII 或厂商提供的 Punycode。完整盘点中未出现的托管区标为待确认缺失，控制台隐藏其记录快照。厂商列表和记录集在多个 API 调用间可发生变更，采集会拒绝可检测的分页总数变化和记录 ID 重复。
+
+扫描发现托管区后，以资产 ID 刷新单区记录。阿里云按域名查询记录，会在采集前后分别核对域名和 ID。
+
+```bash
+cloud-manager refresh-tencent-dns-zone tenant-id account-id zone-id
+cloud-manager refresh-alibaba-dns-zone tenant-id account-id zone-id
+cloud-manager refresh-huawei-dns-zone tenant-id account-id zone-id
+```
+
+在资产详情中选择“查看解析记录”，或调用 `GET /v1/tenants/{tenant}/projects/{project}/assets/dns-zones/{asset}/records?account={account}`。结果按记录名、类型及 ID 排序，`limit` 默认 50、最大 100，后续读取使用 `next_offset`。如果 `observed_at` 变化，从第一页重新读取。
+
+快照最多包含 5,000 条记录和 4 MiB 投影。记录包括名称、类型、TTL、厂商状态和可用的解析线路。A、AAAA、CNAME、NS、PTR 和 MX 返回通过类型校验的值。TXT、SRV、CAA、SOA 等类型只保存值数量。权限失败、分页错误和重叠刷新均保留上一份有效快照。读取受项目资产可见性及当前云凭据版本约束。该查询提供公网 DNS 盘点与记录快照。
+
+#### 创建公网 DNS 记录
+
+运行 `cloud-manager migrate` 后，从已刷新的托管区快照选择“申请添加记录”。入口创建包含一个地址的 A 或 AAAA 记录集，使用默认解析线路。同名同类型记录、CNAME 冲突及子域委派会阻止提交或云端写入。TTL 接受 1 至 604800 秒，厂商套餐可能进一步限制取值。
+
+```bash
+cloud-manager operations create-dns-record tenant-id project-id \
+  --idempotency-key dns-create-example --if-match 3 < request.json
+```
+
+```json
+{
+  "account": "account-id",
+  "asset_id": "zone-id",
+  "observed_at": "2026-11-26T00:00:00Z",
+  "name": "www.example.test",
+  "type": "A",
+  "value": "192.0.2.42",
+  "ttl": 600
+}
+```
+
+API 为 `POST /v1/tenants/{tenant}/projects/{project}/dns-zones/records`，使用 `Idempotency-Key` 和带托管区归属版本的 `If-Match`。须由独立审批人批准。账号必须启用写入，且 Worker 私有凭据配置需要显式设置 `"allow_dns_record_creation": true`。
+
+| 厂商 | 创建权限 | 回执丢失后的证据 |
+|---|---|---|
+| 腾讯云 DNSPod | `dnspod:CreateRecord` | 从记录列表核实内部对账标记与记录属性 |
+| 阿里云云解析 DNS | `alidns:AddDomainRecord` | 独立审批人查阅厂商审计后提交证据引用和准确的厂商记录 ID |
+| 华为云 DNS 中国站 | `dns:recordset:create` | 从记录集列表核实内部对账标记与记录属性 |
+
+回执丢失后 Worker 只进行读取，不会重复创建。阿里云审批人使用 `operations retry-observation TENANT PROJECT OPERATION --evidence-ref REF --provider-resource-id RECORD_ID` 或相应 API 提交 `evidence_ref` 和 `provider_resource_id`，Worker 会在同一托管区复核 ID 和完整属性。创建确认后原快照失效。刷新托管区后可查看新增记录。
+
+#### 启用或停用公网 DNS 解析
+
+执行 `cloud-manager migrate` 后，项目操作者可从 DNS 快照选择一条稳定状态的 A 或 AAAA 记录，提交启用或停用申请。请求固定托管区归属版本、快照时间及记录内容。申请必须经另一位项目成员审批，且同一托管区一次只允许一条进行中的变更。控制台在记录旁显示申请入口。
+
+```bash
+cloud-manager operations set-dns-record-status tenant-id project-id \
+  --idempotency-key dns-status-example --if-match 3 < request.json
+```
+
+```json
+{
+  "account": "account-id",
+  "asset_id": "zone-id",
+  "record_id": "record-id",
+  "observed_at": "2026-11-26T00:00:00Z",
+  "enabled": false
+}
+```
+
+API 为 `POST /v1/tenants/{tenant}/projects/{project}/dns-zones/record-status`，使用 `Idempotency-Key` 和携带托管区归属版本的 `If-Match`。操作的 `202` 响应提供详情地址。云端写入默认关闭，执行需要账号开启写入，且 Worker 私有凭据配置 `"allow_dns_record_status": true`。
+
+| 厂商 | 精确复核权限 | 状态变更权限 |
+|---|---|---|
+| 腾讯云 DNSPod | `dnspod:DescribeRecord` | `dnspod:ModifyRecordStatus` |
+| 阿里云云解析 DNS | `alidns:DescribeDomainRecordInfo` | `alidns:SetDomainRecordStatus` |
+| 华为云 DNS 中国站 | `dns:recordset:get` | `dns:recordset:setStatus` |
+
+Worker 在发送前核对厂商记录 ID、托管区归属、名称、类型、已投影线路、TTL、记录值和原状态。三家均使用专用状态接口。发送后仅用精确读取确认目标状态和其余字段。审批人可为待复核操作提交证据引用并恢复只读观测。确认成功会使写入前的快照失效，刷新后才能据新快照继续申请。DNS 客户端的缓存按各自 TTL 到期。
+
+#### 删除停用的公网 DNS 记录
+
+执行 `cloud-manager migrate` 应用 `0075_dns_record_deletion`。项目操作者可从托管区快照中为一条已停用的 A 或 AAAA 记录申请删除，审批人可查看该记录的厂商 ID、类型、地址、TTL 和已归档线路。必须经独立审批，同区创建、启停及删除共用一份活动操作预约。执行要求云账号已启用写入，且 Worker 私有凭据配置显式设置 `"allow_dns_record_deletion": true`。
+
+```bash
+cloud-manager operations delete-dns-record tenant-id project-id \
+  --idempotency-key dns-delete-example --if-match 3 < request.json
+```
+
+```json
+{
+  "account": "account-id",
+  "asset_id": "zone-id",
+  "record_id": "record-id",
+  "observed_at": "2026-11-26T00:00:00Z"
+}
+```
+
+API 为 `POST /v1/tenants/{tenant}/projects/{project}/dns-zones/record-deletion`，要求 `Idempotency-Key` 和托管区归属版本 `If-Match`。除了盘点所需读权限，Worker 需要精确读取记录及删除权限。腾讯云还需通过自有域名列表确认托管区，华为云还需查询公网托管区详情并通过 v2.1 读取记录关联。
+
+| 厂商 | 删除 API | 删除权限 |
+|---|---|---|
+| 腾讯云 DNSPod | [DeleteRecord](https://cloud.tencent.com/document/product/1427/56176) | `dnspod:DeleteRecord` |
+| 阿里云云解析 DNS | [DeleteDomainRecord](https://www.alibabacloud.com/help/en/dns/api-alidns-2015-01-09-deletedomainrecord) | `alidns:DeleteDomainRecord` |
+| 华为云 DNS 中国站 | [DeleteRecordSet](https://support.huaweicloud.com/api-dns/DeleteRecordSet.html) | `dns:recordset:delete` |
+
+Worker 发送前核对托管区身份、目标记录 ID、停用状态、名称、类型、已投影线路、TTL 和地址。华为云仅接受默认线路的非系统记录，并拦截别名及关联了健康检查的记录集。删除只发送一次。Worker 在两轮连续的完整分页读取中确认原记录 ID 已消失后才将操作标记成功。同名的新记录有独立 ID，保留在托管区中。404、分页中断及仍存在的原记录会清空连续缺失计数。
+
+证据不足时，审批人可使用 `operations retry-observation TENANT PROJECT OPERATION --evidence-ref REF` 恢复只读核查。成功确认、旧快照失效及终态事件在同一事务内提交，刷新托管区可读取新快照。上线前需在对应厂商沙箱验证账号角色及记录类型。
+
+#### 负载均衡盘点
+
+执行 `cloud-manager migrate` 应用 `0056_load_balancer_inventory` 与 `0057_load_balancer_schedules`。使用 `scan-tencent`、`scan-alibaba` 或 `scan-huawei`，在租户、账号和地域之后传入 `load-balancer`。定时盘点使用同一种类。
+
+| 厂商 | 资源与分页 |
+| --- | --- |
+| 腾讯云 | CLB 通用型与传统型使用 TC3 签名和偏移分页。记录 VPC、子网、可用区及安全组等可验证关系。 [DescribeLoadBalancers](https://cloud.tencent.com/document/product/214/30685) |
+| 阿里云 | 同一地域盘点 ALB、NLB 与传统型 CLB。先后使用 ALB 和 NLB 的厂商令牌及 CLB 的页号。检查点保存当前产品，三个产品都取得完整结果时才结束该轮。部署地域及凭据需支持这三个读取 API。 [ALB](https://www.alibabacloud.com/help/en/slb/application-load-balancer/developer-reference/api-alb-2020-06-16-listloadbalancers) · [NLB](https://www.alibabacloud.com/help/en/slb/network-load-balancer/developer-reference/api-nlb-2022-04-30-listloadbalancers) · [传统型 CLB](https://www.alibabacloud.com/help/en/slb/classic-load-balancer/developer-reference/api-slb-2014-05-15-describeloadbalancers) |
+| 华为云 | ELB 通过原 IAM 项目读取，核对每条资源的项目 ID，使用 V3 标记续页。通过 VPC、虚拟子网、可用区和弹性公网 IP 的稳定标识建立关系。 [ListLoadBalancers](https://support.huaweicloud.com/intl/en-us/api-elb/ListLoadBalancers.html) |
+
+项目可按名称、ID、域名或已采集地址查询 `kind=load-balancer`。响应中的 `load_balancer` 包含产品、地址类型、已知域名和私网地址，`public_addresses` 返回已知公网地址。地址类型 `dual` 表示前端同时涉及公网与私网。阿里云 ALB 列表提供 DNS 名称，地址和可用区按厂商列表实际提供的字段登记。资产历史保留变更前后的属性。筛选同一种类的 CSV 追加公网地址、产品、地址类型、域名和私网地址。拓扑只解析同账号、地域且项目可见的目标。
+
+完整盘点后未出现的资产先进入 `missing_candidate`。在三家扫描命令的 `load-balancer` 之后追加该资产 ID，可重新点查缺失候选。完整的精确空结果才确认移除。404、限流、权限错误和不完整分页仍保留候选。真实厂商沙箱验收仍待完成。
+
+#### 监听器和后端组
+
+应用 `0058_load_balancer_configuration` 后，用已核验账号的读取凭据刷新单个已盘点实例。参数依次为租户、云账号、地域和负载均衡 ID。
+
+```bash
+cloud-manager refresh-tencent-load-balancer TENANT ACCOUNT REGION ASSET_ID
+cloud-manager refresh-alibaba-load-balancer TENANT ACCOUNT REGION ASSET_ID
+cloud-manager refresh-huawei-load-balancer TENANT ACCOUNT REGION ASSET_ID
+```
+
+| 厂商 | 快照内容与只读权限 |
+| --- | --- |
+| 腾讯云 | 通用 CLB 需要 `DescribeLoadBalancers`、`DescribeListeners`、`DescribeTargetGroups`，读取监听器和直接或经转发规则绑定的目标组。传统 CLB 使用 `DescribeClassicalLBListeners` 读取监听器。 [通用监听器](https://cloud.tencent.com/document/api/214/30686) · [目标组](https://cloud.tencent.com/document/api/214/40554) · [传统监听器](https://cloud.tencent.com/document/api/214/31791) |
+| 阿里云 | ALB 需要 `ListLoadBalancers`、`ListListeners`、`ListRules`、`ListServerGroups`，读取监听器及默认动作、转发和镜像引用的服务器组。NLB 使用 `ListLoadBalancers`、`ListListeners`、`ListServerGroups`。CLB 使用 `DescribeLoadBalancers`、`DescribeLoadBalancerAttribute`、`DescribeVServerGroups`，读取监听器和虚拟服务器组，监听器标识由实例 ID、协议和端口组成。 [ALB 转发规则](https://www.alibabacloud.com/help/en/slb/application-load-balancer/developer-reference/api-alb-2020-06-16-listrules) · [NLB 服务器组](https://www.alibabacloud.com/help/en/slb/network-load-balancer/developer-reference/api-nlb-2022-04-30-listservergroups) · [CLB 虚拟服务器组](https://www.alibabacloud.com/help/en/slb/classic-load-balancer/developer-reference/api-slb-2014-05-15-describevservergroups) |
+| 华为云 | ELB V3 需要 `elb:loadbalancers:list`、`elb:listeners:list` 和 `elb:pools:list`，按父实例查询监听器和后端服务器组。 [监听器](https://support.huaweicloud.com/intl/en-us/api-elb/ListListeners.html) · [后端服务器组](https://support.huaweicloud.com/intl/en-us/api-elb/ListPools.html) |
+
+刷新读取成功后一次提交。单个分页序列最多 20 页，单个实例最多保存 1,000 个监听器和后端组。超限、跨父实例响应、分页失败和结构错误保留上一份完整快照。凭据版本变更、账号停用或父实例待确认缺失时，查询隐藏已保存的快照。并发刷新中，较早启动的请求无法覆盖更新的快照。
+
+有父实例查看权限的项目可以使用控制台的“查看配置”，或调用 `GET /v1/tenants/{tenant}/projects/{project}/assets/load-balancers/{asset}/configuration?account=ACCOUNT&region=REGION`。返回采集时间、监听器及后端组，以及厂商提供的监听器到组的关联。快照没有可访问结果时返回 404，共享组的其他实例引用不进入响应。此入口使用数据库保存的快照。
+
+#### 后端成员和健康检查
+
+在刷新命令末尾添加 `--include-backends`，同时采集关联组的成员和厂商报告的健康结果。常规刷新保存基础配置快照，带该参数的刷新保存同一采集批次的配置和后端状态。对应的附加读取权限如下。
+
+| 厂商 | 成员和健康检查来源 |
+| --- | --- |
+| 腾讯云 | 通用 CLB 使用 `DescribeTargetGroupInstances` 枚举目标组成员，按需使用 `DescribeTargets` 读取监听器及转发规则的直接绑定，用 `DescribeTargetHealth` 读取健康结果。传统 CLB 使用 `DescribeClassicalLBTargets` 枚举实例级默认成员，用 `DescribeClassicalLBHealthStatus` 读取监听器健康结果。 [目标组成员](https://cloud.tencent.com/document/product/214/40556) · [直接绑定](https://cloud.tencent.com/document/product/214/30684) · [传统 CLB 成员](https://cloud.tencent.com/document/api/214/31790) |
+| 阿里云 | ALB 和 NLB 使用 `ListServerGroupServers` 和 `GetListenerHealthStatus`。健康结果保留厂商报告的异常、初始化等状态，缺少报告的成员健康状态未知。传统 CLB 从 `DescribeLoadBalancerAttribute` 读取默认组成员，从 `DescribeVServerGroupAttribute` 读取虚拟服务器组成员，用 `DescribeMasterSlaveServerGroups` 和 `DescribeMasterSlaveServerGroupAttribute` 查询主备组，用 `DescribeHealthStatus` 读取监听器健康结果。 [传统 CLB 实例属性](https://www.alibabacloud.com/help/zh/slb/classic-load-balancer/developer-reference/api-slb-2014-05-15-describeloadbalancerattribute) · [主备组列表](https://www.alibabacloud.com/help/zh/slb/classic-load-balancer/developer-reference/api-slb-2014-05-15-describemasterslaveservergroups) · [传统 CLB 健康检查](https://www.alibabacloud.com/help/en/slb/classic-load-balancer/developer-reference/api-slb-2014-05-15-describehealthstatus) |
+| 华为云 | 使用 `elb:members:list` 逐组查询成员，只保留当前实例的监听器健康结果。厂商只提供组级状态时，在确认组与单一当前监听器关联的条件下采用。 [ELB 后端成员](https://support.huaweicloud.com/intl/en-us/api-elb/ListMembers.html) |
+
+扩展快照包含 `backends.members` 与 `backends.checks`。成员包含组、端口和厂商提供的权重。检查包含监听器、已知组和规则、端口及状态。两类记录用匿名标识 `key` 关联。应用保留每个父实例的独立随机密钥，同一父实例中，云端端点标识和端口相同时刷新可复用标识。旧快照在迁移后首次扩展刷新时生成新标识。后端地址、厂商实例 ID 和共享组的其他监听器不会落库或进入响应。
+
+`target_groups[].kind` 标识默认组 `default`、主备组 `primary-secondary`、传统虚拟组 `virtual` 和直接绑定 `direct`。传统默认成员由实例登记，`port` 为 `0` 表示后端端口按监听器配置。阿里云默认组的监听器绑定需云端证据，快照继续保留实例级成员。主备成员的 `role` 分为 `primary` 和 `secondary`。腾讯云通用 CLB 的直接成员只纳入未绑定目标组的监听器或转发规则，厂商在关联目标组下重复报告的成员仍归原组。
+
+每个实例的扩展读取最多额外发出 128 次厂商请求，保存至多 4,000 条成员和检查记录。超限、越界响应、限流或不完整分页均保留上一份完整快照。阿里云 NLB 健康接口若返回续页令牌，会将该轮判定为不完整，因为公开的请求合同没有续页参数。未绑定至实例的通用目标组和腾讯云后端云函数仍待纳管。
+
+#### 负载均衡改名
+
+执行迁移 `0059_load_balancer_rename` 和 `0060_load_balancer_rename_outbox` 后，项目操作者可在控制台选中已观测负载均衡并申请改名，或通过 CLI 提交同一申请。请求发送前须由另一位有权限的成员审批。默认关闭云端写入，启用时需将 Worker 对应的私有凭据配置设为 `"allow_load_balancer_rename": true`，并启用账号写入模式。
+
+```sh
+cloud-manager operations rename-load-balancer TENANT PROJECT --idempotency-key REQUEST_KEY --if-match 7 < rename.json
+```
+
+请求体示例以 `account` 表示本平台登记的云账号 ID。`current_name` 填写资产最近盘点的名称，原名称为空时传空字符串。`If-Match` 是归属版本。新名称由 2 至 60 个 ASCII 字母、数字、下划线或短划线组成，以字母开头。
+
+```json
+{"account":"prod-cloud","region":"ap-guangzhou","asset_id":"lb-example","current_name":"edge-old","name":"edge-new"}
+```
+
+API 使用 `POST /v1/tenants/{tenant}/projects/{project}/load-balancers/rename`，持久受理后返回 `202` 和操作地址。Worker 在发送前复核审批、账号代次和云端旧名称。发送后仅进行观测。腾讯云 CLB 和阿里云 NLB 在有回执时还核对异步任务状态。观察到同一实例以新名称处于可用状态后，同一事务更新资产名称、拦截此前启动的盘点页并写入成功事件。结果不明时可由独立审批人恢复只读观测。厂商原生控制台等外部入口在点查与写入之间仍有并发修改窗口。
+
+| 厂商 | 写入与回执 |
+| --- | --- |
+| 腾讯云 CLB | `ModifyLoadBalancerAttributes` 与 `DescribeTaskStatus`。 [改名](https://cloud.tencent.com/document/api/214/30680) · [任务状态](https://cloud.tencent.com/document/product/214/30683) |
+| 阿里云 | ALB 和 NLB 使用 `UpdateLoadBalancerAttribute`，NLB 使用 `GetJobStatus`。传统 CLB 使用 `SetLoadBalancerName`。 [ALB](https://www.alibabacloud.com/help/zh/slb/application-load-balancer/developer-reference/api-alb-2020-06-16-updateloadbalancerattribute) · [NLB](https://www.alibabacloud.com/help/zh/slb/network-load-balancer/developer-reference/api-nlb-2022-04-30-updateloadbalancerattribute) |
+| 华为云 ELB V3 | `UpdateLoadBalancer` 的请求只提交名称，并核对响应的项目及资源标识。 [改名](https://support.huaweicloud.com/api-elb/UpdateLoadBalancer.html) |
+
+真实厂商沙箱验收仍待完成。
+
+#### 负载均衡监听器改名
+
+执行迁移 `0061_load_balancer_listener_rename` 后，项目操作者可在负载均衡配置详情中选择监听器并申请改名。API 为 `POST /v1/tenants/{tenant}/projects/{project}/load-balancers/rename-listener`，持久受理后返回 `202` 和操作地址。写入默认关闭。启用时需要账号处于写入模式，且 Worker 私有凭据配置为 `"allow_load_balancer_listener_rename": true`。
+
+```sh
+cloud-manager operations rename-load-balancer-listener TENANT PROJECT --idempotency-key REQUEST_KEY --if-match 7 < rename-listener.json
+```
+
+```json
+{"account":"prod-cloud","region":"cn-hangzhou","asset_id":"nlb-example","listener_id":"lsn-example@443","current_name":"edge-old","name":"edge-new"}
+```
+
+`asset_id` 与 `If-Match` 分别绑定父负载均衡的标识及归属版本。`listener_id` 与 `current_name` 来自当前凭据版本的配置快照，未命名时传空字符串。名称限制和独立审批与实例改名相同。同一父实例同时只能有一条进行中的操作申请。
+
+| 产品 | 点查、更新与回执 |
+| --- | --- |
+| 腾讯云通用 CLB | `DescribeLoadBalancers`、`DescribeListeners`、`ModifyListener`、`DescribeTaskStatus`。 [监听器点查](https://cloud.tencent.com/document/api/214/30686) · [监听器改名](https://cloud.tencent.com/document/product/214/30681) |
+| 阿里云 ALB | `GetListenerAttribute`、`UpdateListenerAttribute`、`ListAsynJobs`。 [监听器改名](https://www.alibabacloud.com/help/zh/slb/application-load-balancer/developer-reference/api-alb-2020-06-16-updatelistenerattribute) · [任务状态](https://www.alibabacloud.com/help/en/slb/application-load-balancer/developer-reference/api-alb-2020-06-16-listasynjobs) |
+| 阿里云 NLB | `GetListenerAttribute`、`UpdateListenerAttribute`、`GetJobStatus`。 [监听器改名](https://www.alibabacloud.com/help/en/slb/network-load-balancer/developer-reference/api-nlb-2022-04-30-updatelistenerattribute) |
+| 华为云 ELB V3 | `ListLoadBalancers`、`ShowListener`、`UpdateListener`。 [监听器点查](https://support.huaweicloud.com/api-elb/ShowListener.html) · [监听器改名](https://support.huaweicloud.com/api-elb/UpdateListener.html) |
+
+Worker 在写入前校验批准记录、账号代次、父实例归属和云端旧名称。请求只修改名称。结果不明时走只读对账。云端名称确认后，平台在同一事务更新指定监听器的快照字段并写入成功事件。此前启动的刷新无法覆盖新名称。腾讯云传统型 CLB 和阿里云传统型 CLB 的监听器写入暂未开放。真实厂商沙箱仍待验收。
+
+#### 负载均衡后端组改名
+
+迁移 `0062_load_balancer_target_group_rename` 后重新刷新目标负载均衡的配置快照。云端关联清单确认后端组仅属于该实例时，快照返回 `exclusive: true`，控制台为该组提供“申请后端组改名”。API 为 `POST /v1/tenants/{tenant}/projects/{project}/load-balancers/rename-target-group`，受理后返回 `202` 和操作地址。需要账号写入模式、Worker 私有凭据配置 `"allow_load_balancer_target_group_rename": true` 及独立审批。
+
+```sh
+cloud-manager operations rename-load-balancer-target-group TENANT PROJECT --idempotency-key REQUEST_KEY --if-match 7 < rename-target-group.json
+```
+
+```json
+{"account":"prod-cloud","region":"cn-hangzhou","asset_id":"nlb-example","target_group_id":"sgp-example","current_name":"group-old","name":"group-new"}
+```
+
+`If-Match` 使用父负载均衡归属版本。`current_name` 使用最近一次有效配置快照中的组名，名称规则与实例改名相同。共享组、独占证据缺失的组和传统负载均衡的默认、主备及虚拟组暂不可通过此入口修改。同一账号和地域下，同一个后端组只允许一条活动改名申请。
+
+| 产品 | 点查、修改及任务证据 |
+| --- | --- |
+| 腾讯云通用 CLB | `DescribeLoadBalancers`、`DescribeTargetGroups`、`ModifyTargetGroupAttribute`。以组名、完整关联及父实例状态核对结果。 [目标组属性](https://cloud.tencent.com/document/product/214/40552) |
+| 阿里云 ALB | `ListServerGroups`、`UpdateServerGroupAttribute`、`ListAsynJobs`。点查关联清单和组状态，核对任务关联的后端组。 [更新后端组](https://www.alibabacloud.com/help/en/slb/application-load-balancer/developer-reference/api-alb-2020-06-16-updateservergroupattribute) |
+| 阿里云 NLB | `ListServerGroups`、`UpdateServerGroupAttribute`、`GetJobStatus`。点查关联清单和组状态，核对回执及任务状态。 [更新后端组](https://www.alibabacloud.com/help/en/slb/network-load-balancer/developer-reference/api-nlb-2022-04-30-updateservergroupattribute) |
+| 华为云 ELB V3 | `ListLoadBalancers`、`ShowPool`、`UpdatePool`。核对所用云项目、后端组和父实例。 [查询后端组](https://support.huaweicloud.com/api-elb/ShowPool.html) · [更新后端组](https://support.huaweicloud.com/api-elb/UpdatePool.html) |
+
+Worker 在发送前复核审批、归属版本及云端关联。只发送名称更新，回执丢失后进行只读对账。只有同一后端组仍独占关联且名称已确认时，平台才原子更新快照和成功事件，并阻止此前开始的刷新覆盖变更。厂商接口没有按父实例做条件更新，平台外创建关联仍可能发生在点查和发送之间。真实厂商沙箱仍待验收。
+
+#### 调整后端成员权重
+
+执行迁移 `0063_load_balancer_backend_keys` 和 `0064_load_balancer_backend_weight` 后，使用 `--include-backends` 刷新父负载均衡。独占后端组内具有固定端口、已知权重及可唯一定位的成员可提交申请。控制台显示“申请修改权重”，CLI 和 REST API 使用相同审批流程。云端写入默认关闭，启用需要账号处于写入模式，且 Worker 私有凭据配置为 `"allow_load_balancer_backend_weight": true`。
+
+```sh
+cloud-manager operations set-load-balancer-backend-weight TENANT PROJECT --idempotency-key REQUEST_KEY --if-match 7 < backend-weight.json
+```
+
+```json
+{"account":"prod-cloud","region":"cn-hangzhou","asset_id":"nlb-example","target_group_id":"sgp-example","member_key":"19273a49ad02a19123e8f38429acbd80","current_weight":20,"weight":0}
+```
+
+API 为 `POST /v1/tenants/{tenant}/projects/{project}/load-balancers/backend-weight`。使用父负载均衡归属版本作为 `If-Match`。原权重和新权重都须填写，范围为 0 至 100 的整数。权重设为 0 可停止向该成员分发新的请求，存量连接由厂商负载均衡策略决定。共享组、传统默认或主备组、直接绑定成员和全端口绑定不走此入口。
+
+| 产品 | 读取成员与执行 |
+| --- | --- |
+| 腾讯云通用 CLB | `DescribeTargetGroupInstances`、`ModifyTargetGroupInstancesWeight`、`DescribeTaskStatus`。在组内用地址和端口核对唯一目标。 [更新权重](https://cloud.tencent.com/document/api/214/40550) |
+| 阿里云 ALB 与 NLB | `ListServerGroupServers`、`UpdateServerGroupServersAttribute`，ALB 使用 `ListAsynJobs`，NLB 使用 `GetJobStatus`。支持固定端口的 ECS、ENI、ECI 或 IP 成员。 [ALB 更新](https://www.alibabacloud.com/help/en/slb/application-load-balancer/developer-reference/api-alb-2020-06-16-updateservergroupserversattribute) · [NLB 更新](https://www.alibabacloud.com/help/en/slb/network-load-balancer/developer-reference/api-nlb-2022-04-30-updateservergroupserversattribute) |
+| 华为云 ELB V3 | `ListMembers`、`UpdateMember`。目前为轮询和最少连接算法的独占组开放。 [更新成员](https://support.huaweicloud.com/api-elb/UpdateMember.html) |
+
+Worker 根据组内点查结果用匿名标识确认成员，平台无需保存云端成员地址或原始 ID。发送前复核审批、归属代次、组的独占关联和当前权重。发送后用厂商状态和同一成员的实际权重确认结果。回执丢失后只读对账。确认成功与发件箱事件同事务保存，晚到的旧快照无法覆盖该权重。厂商的并发外部变更仍可能发生在预检与发送之间。真实厂商沙箱仍待验收。
+
+#### 添加实例到后端组
+
+执行 `cloud-manager migrate` 后，使用 `--include-backends` 刷新父负载均衡的配置快照。独占组支持从同项目、同账号和同地域选择一台已盘点实例。当前入口要求实例运行中、仅有一个可定位的私网 IPv4 地址，且与负载均衡和后端组在同一个 VPC。新成员初始权重固定为 0，可在验证后通过权重调整流程引流。写入默认关闭，启用需要账号写入模式、Worker 私有凭据中的 `"allow_load_balancer_backend_attach": true` 以及独立审批。
+
+```sh
+cloud-manager operations attach-load-balancer-backend TENANT PROJECT --idempotency-key REQUEST_KEY --if-match 7 < attach-backend.json
+```
+
+```json
+{"account":"prod-cloud","region":"cn-hangzhou","asset_id":"nlb-example","target_group_id":"sgp-example","instance_id":"i-example","instance_revision":4,"port":8080}
+```
+
+API 为 `POST /v1/tenants/{tenant}/projects/{project}/load-balancers/attach-backend`。提交时绑定负载均衡的 `If-Match` 和源实例的 `instance_revision`。端口取 1–65535。控制台按项目、账号和地域核对实例后提交版本。活动绑定申请会阻止同组并行变更以及源实例删除或归属转移。升级时，`0069_load_balancer_change_reservations` 和 `0070_load_balancer_change_backfill` 保留进行中操作的资源预约，操作终结后释放预约。确认后，操作详情提供用于后续改权重或解绑的匿名成员标识。
+
+| 产品 | 实例查证及绑定 |
+| --- | --- |
+| 腾讯云通用 CLB | CVM `DescribeInstances` 读取私网地址，CLB `RegisterTargetGroupInstances` 添加固定端口成员，`DescribeTaskStatus` 检查异步任务。 [注册目标组服务器](https://cloud.tencent.com/document/api/214/40549) |
+| 阿里云 ALB/NLB | ECS `DescribeInstances` 核对实例 VPC 和私网地址，`AddServersToServerGroup` 添加 ECS 成员。ALB 使用 `ListAsynJobs`，NLB 使用 `GetJobStatus`。 [ALB 添加](https://www.alibabacloud.com/help/en/slb/application-load-balancer/developer-reference/api-alb-2020-06-16-addserverstoservergroup) · [NLB 添加](https://www.alibabacloud.com/help/en/slb/network-load-balancer/developer-reference/api-nlb-2022-04-30-addserverstoservergroup) |
+| 华为云 ELB V3 | 点查 ECS 及网卡固定 IPv4 地址和子网，使用 `CreateMember` 添加成员。支持轮询或最少连接的同 VPC 后端组。 [创建后端服务器](https://support.huaweicloud.com/api-elb/CreateMember.html) |
+
+Worker 复核独占关系、实例归属、VPC、私网地址和候选绑定是否已存在。发送前保存源端点摘要，平台无需持久化私网 IP 或原始成员 ID。一次发送后只读核查实际出现的单一目标及零权重，地址变化等不匹配情况转入复核。确认终态、快照及事件在同一事务提交，晚到的旧快照结果无法覆盖确认结果。真实厂商沙箱仍待验收。
+
+#### 解绑已排空的后端成员
+
+迁移 `0065_load_balancer_backend_detach` 后，可通过控制台、CLI 或 API 申请解绑单个成员。当前入口适用于腾讯云通用 CLB、阿里云 ALB/NLB 和华为云 ELB V3 的独占组固定端口成员，要求云端权重已为 0。请确认存量连接已按业务要求排空。解绑移除负载均衡成员的绑定，云服务器仍归所属项目管理。云端写入默认关闭，启用需要账号处于写入模式、Worker 配置 `"allow_load_balancer_backend_detach": true`，每个申请仍须独立审批。
+
+```sh
+cloud-manager operations detach-load-balancer-backend TENANT PROJECT --idempotency-key REQUEST_KEY --if-match 7 < detach-backend.json
+```
+
+```json
+{"account":"prod-cloud","region":"cn-hangzhou","asset_id":"nlb-example","target_group_id":"sgp-example","member_key":"19273a49ad02a19123e8f38429acbd80","confirm_detach":true}
+```
+
+API 为 `POST /v1/tenants/{tenant}/projects/{project}/load-balancers/detach-backend`，持久受理返回 `202`。使用父负载均衡归属版本作为 `If-Match`，并使用带后端数据的配置快照中的成员标识。同一组的改名、改权重及解绑申请互斥。
+
+| 产品 | 解绑及任务确认 |
+| --- | --- |
+| 腾讯云通用 CLB | `DeregisterTargetGroupInstances`，异步任务用 `DescribeTaskStatus` 查询。 [解绑目标组服务器](https://cloud.tencent.com/document/product/214/40557) |
+| 阿里云 ALB 与 NLB | `RemoveServersFromServerGroup`，ALB 核对 `ListAsynJobs` 返回的任务，NLB 核对 `GetJobStatus`。 [ALB 解绑](https://www.alibabacloud.com/help/en/slb/application-load-balancer/developer-reference/api-alb-2020-06-16-removeserversfromservergroup) · [NLB 解绑](https://www.alibabacloud.com/help/en/slb/network-load-balancer/developer-reference/api-nlb-2022-04-30-removeserversfromservergroup) |
+| 华为云 ELB V3 | 按 IAM 项目、组和成员调用 `DeleteMember`，通过同组完整成员列表确认解绑。 [删除后端服务器](https://support.huaweicloud.com/api-elb/DeleteMember.html) |
+
+Worker 发送前复核审批、归属、独占关联、成员当前权重和唯一身份，并保存厂商实际绑定标识的摘要。结果未知时只读核对。错误、成员仍存在或异步任务未结束都会中断连续缺失证据。连续两次完整观测确认同一绑定已消失后，平台在同一事务清理该成员及能归属到它的健康记录、拦截此前启动的刷新并写入成功事件。真实厂商沙箱仍待验收。
+
 #### 云盘快照盘点
 
 应用 `0040_snapshot_inventory` 和 `0041_snapshot_schedules` 后，用原账号和地域配置运行以下任一命令，也可登记 `kind=snapshot` 的定时计划。
@@ -304,7 +840,7 @@ cloud-manager operations release-elastic-ip TENANT PROJECT --idempotency-key KEY
 
 ## 定时盘点控制器
 
-完成迁移后，运维可在 `cmp_inventory_schedules` 中按云账号、地域和资源类型登记扫描计划。间隔范围为 60 秒至 7 天。全局 `region` 盘点使用空地域。
+完成迁移后，运维可在 `cmp_inventory_schedules` 中按云账号、地域和资源类型登记扫描计划。间隔范围为 60 秒至 7 天。全局 `region` 盘点使用空地域。普通盘点使用默认的空 `target_id`，节点池快照计划使用父集群 ID。
 
 ```sql
 INSERT INTO cmp_inventory_schedules (tenant_id, account_id, region, kind, interval_seconds)
@@ -440,6 +976,45 @@ go run ./cmd/cloud-manager operations get-batch tenant-id project-id batch-id
 
 控制台位于 `/console`。可切换项目、筛选资源、查看操作与事件、预览和提交批次。独立审批人可在操作详情批准、拒绝或处置待复核项。项目角色由本地成员表决定。
 
+#### 前端开发
+
+控制台使用 React、Vite、严格模式 TypeScript 和 Zod，源码位于 `cmd/cloud-manager/console/src`。
+
+| 目录 | 职责 |
+| --- | --- |
+| `main.tsx` | 挂载 React 应用和载入基础样式 |
+| `app/` | 应用入口和 `routes.ts` 页面注册。页面标题、导航权限、按需加载和列表入口在此装配 |
+| `app/workspace/` | 工作区布局、会话恢复、项目切换和当前页面的请求生命周期 |
+| `features/<业务>/` | 页面、表格、筛选、`api.ts`、`schema.ts` 和该业务的 `collection.ts`。复杂详情和表单按工作流分目录，业务专用样式随模块维护 |
+| `features/session/` | 会话接口、当前项目和请求客户端。客户端向共用传输层提供 CSRF 信息 |
+| `features/assets/` | 资源清单与资产选择状态。DNS、负载均衡、节点池和快照等各自维护摘要、契约和行操作 |
+| `features/operations/` | 变更请求与幂等键、操作详情、审批、事件分页及各资源类型的字段展示 |
+| `features/batches/` | 从资产选择生成批次，维护批量表单、收据查询、提交状态与请求取消 |
+| `features/billing/` | 账期与版本筛选、原币种费用、对账差额和归档摘要 |
+| `features/billing/budgets/` | 月度预算查询、配置、版本校验和费用口径状态 |
+| `features/billing/allocation/` | 历史分摊查询、按币种查看成本中心及版本追溯 |
+| `shared/` | 同源传输、通用 Zod 契约、`collection/` 分页与筛选组件、`feedback/` 状态提示，以及 `detail/` 弹窗和表单生命周期 |
+
+新增列表时，在业务目录用 `schema.ts` 定义响应结构，由 `api.ts` 负责请求和校验，再在 `collection.ts` 用读取器创建类型化列表。页面通过 `useCollection` 订阅，并在 `app/routes.ts` 注册页面、列表加载器和导航权限。会话、批次和详情也在请求边界通过 Zod 校验，组件从对应契约推导类型。
+
+应用层负责装配业务与共用层，业务层可使用共用层。跨业务复用时，从能力所属模块直接导入已声明的文件入口，以 `scripts/feature-entrypoints.mjs` 为准。`npm run check` 同时检查 TypeScript 类型和模块导入，类型引用及动态导入也受检查。
+
+新增资产行操作时，在资源目录定义 `row-actions.ts`，通过资产模块的 `asset-actions.ts` 按资源类型接入。业务组件负责字段和校验，通过 `OperationForm` 提交带资源版本和幂等键的变更。共用弹窗通过 React 渲染内容，通过浏览器原生对话框管理焦点。
+
+页面和列表读取器按访问加载，操作、负载均衡、DNS 和 Kubernetes 详情按打开加载。离开列表时会取消进行中的列表请求，迟到的分包也不会为旧页面发起请求。批量操作在同一项目内保留草稿。项目切换和会话退出会清空当前选择和草稿，关闭旧详情并取消旧项目的列表、批次、详情和审计导出读请求。已经发出的写请求仍可能在服务端完成，结果仅在发起请求的弹窗仍打开时展示。留在同一项目重试结果不明确的批次时，控制台对同一表单内容复用幂等键。分页和审计导出按已提交的筛选条件请求。Kubernetes 分页中途发现快照更新时要求重新加载。
+
+在 `cmd/cloud-manager/console` 目录使用 Node.js 22.12 或更新版本运行配置命令。
+
+```bash
+npm ci
+npm run check
+npm run build
+```
+
+`npm run build` 会生成供 Go 嵌入的 `_embedded` 产物及第三方许可证。提交前端更改时一起提交源码、锁文件和对应产物。生产访问 `/console`，使用同源会话和现有 CSP。入口脚本和样式保持禁用缓存，带内容散列的分包使用不可变缓存。
+
+使用 `npm run dev` 启动本地开发服务，访问 Vite 的 `/console/` 路径。可用 `CLOUD_MANAGER_DEV_API` 指向受控测试后端，代理仅转发项目 API 和会话接口。真实登录仍由受信 OIDC 网关完成，后端按配置验证请求源和 CSRF。
+
 运行 `migrate` 后为 API 进程设置以下配置以启用控制台。
 
 | 环境变量 | 用途 |
@@ -454,11 +1029,178 @@ go run ./cmd/cloud-manager operations get-batch tenant-id project-id batch-id
 
 登录使用租户、发行者与主体标识匹配已经登记的 `human` 主体。浏览器得到有效期一小时的 Secure、HttpOnly、SameSite=Strict Cookie，共用 PostgreSQL 的 API 副本可以读取或撤销该会话。写请求须同时提供同源 `Origin` 和会话 CSRF 头。项目权限随请求重新校验。退出撤销本地会话，网关和身份提供方的退出由各自管理。CLI 继续支持 Bearer 调用。可定期运行 `go run ./cmd/cloud-manager sessions-purge` 清理过期会话，每次最多清理 1000 条。
 
+### 云账单归档与对账
+
+财务运维在受信任的导入进程运行 `billing-import`。该命令使用 `CLOUD_MANAGER_DATABASE_URL`，一次发布一个归属项目、已验证账号、账期和来源的完整报表。随账单更新提交新版本时传入当前版本号，首次导入传 `0`。同一清单和分卷内容重复导入会返回原收据，分卷顺序可变，历史重放保留当前发布版本。一次写入最多 32 个 UTF-8 CSV 分卷、每卷 16 MiB、合计 64 MiB 和 250,000 条记录。分卷应来自同一账期的完整导出，且覆盖互不重叠的记录。
+
+`native` 使用 JSON 清单把文件实际表头映射到账号、账期、币种和账单金额。下列示例使用假定表头。每行账号必须匹配已验证的远端账号 ID，账期列使用 `YYYY-MM`，费用列使用有符号十进制。没有币种列时，通过清单的 `currency` 明确指定已核实的原币种。可选列有 `effective`、`list`、`resource`、`service`、`region`、`category` 和 `tags`。华为云还必须通过 `columns.project` 提供可核验的 IAM 项目 ID，与已验证的 `账号 ID:项目 ID` 绑定一致。
+
+```json
+{
+  "provider": "tencent-cvm",
+  "columns": {
+    "account": "计费账号ID",
+    "period": "账期",
+    "currency": "币种",
+    "billed": "应付金额",
+    "resource": "资源ID"
+  },
+  "expected_billed": { "CNY": "1234.56789012" }
+}
+```
+
+`focus-1.0` 读取 `BillingAccountId`、`BillingCurrency`、`BillingPeriodStart`、`BillingPeriodEnd`、`ProviderName`、`BilledCost` 和 `EffectiveCost`。华为云项目范围还要求可核验的 `SubAccountId`。清单使用 `provider`、可选的 `offset_minutes` 与 `expected_billed`，其中 UTC+08:00 使用 `480`。开始和结束时间必须对应选定时区的完整自然月。阿里云 FOCUS 导出可用于成本分析，结算控制总额仍取对应账单。 [FOCUS 账期规范](https://focus.finops.org/docs/specification/v1-0/columns/cost-and-usage/billing-period-start/) · [阿里云 FOCUS 导出](https://help.aliyun.com/en/user-center/exporting-alibaba-cloud-focus1-0-preview) · [腾讯云账单字段](https://cloud.tencent.com/document/product/555/44144) · [华为云对账示例](https://support.huaweicloud.com/usermanual-billing/bills-topic_800000123.html)
+
+```bash
+cloud-manager billing-import tenant finance cloud-account 2026-11 native 0 manifest.json part-01.csv part-02.csv
+cloud-manager billing-replay tenant finance cloud-account 2026-11 native 1
+cloud-manager billing-source tenant finance cloud-account 2026-11 native 1 1 > verified-part.csv
+cloud-manager billing get tenant finance cloud-account 2026-11 native
+```
+
+收据包括报表版本、原件编号、SHA-256 和记录数。重放读取原件，以归档清单重新解析并核对明细与汇总。查询通过 `GET /v1/tenants/:tenant/projects/:project/billing/reports`、`billing get` 或控制台「云账单」读取。归属项目管理员可按账号、账期、来源和可选的历史版本查询，账号共享仅授予已有资源访问权限。费用和差额以十进制字符串返回，按原币种汇总。摊销成本或目录价在某币种的任一记录缺失该口径时显示为未提供。提供 `expected_billed` 时，差额为账单金额减该币种控制总额。两种账单来源各自独立发布和查询。
+
+#### 订阅账单自动拉取
+
+先在费用中心将目标账单订阅到对应对象存储，再应用迁移 `0096_billing_pull`。腾讯云读 COS，阿里云读 OSS，华为云读 OBS。通过 `CLOUD_MANAGER_BILLING_PULL_PROFILES` 指定权限为 `0600` 的私有 JSON 配置文件，内容是一个任务数组。每项明确租户、归属项目、已校验账号、账期、账单来源、对象键和解析清单。拉取进程使用独立的对象读取凭据。厂商凭据授权限定到目标对象或前缀。 [腾讯云账单存储](https://cloud.tencent.com/document/product/555/61275) · [阿里云 FOCUS 订阅](https://help.aliyun.com/en/user-center/exporting-alibaba-cloud-focus1-0-preview) · [华为云消费数据存储](https://support.huaweicloud.com/intl/zh-cn/usermanual-billing/bills_topic_1000015.html)
+
+```json
+[
+  {
+    "tenant": "tenant",
+    "project": "finance",
+    "account": "cloud-account",
+    "period": "2026-11",
+    "source": "native",
+    "generation": 1,
+    "interval_seconds": 900,
+    "region": "ap-guangzhou",
+    "bucket": "finance-1250000000",
+    "credentials": {
+      "access_key_id": "<只读密钥 ID>",
+      "access_key_secret": "<只读密钥>"
+    },
+    "objects": [
+      {"key":"billing/2026-11/export.zip","format":"zip","entries":["detail-1.csv","detail-2.csv"]}
+    ],
+    "manifest": {
+      "provider": "tencent-cvm",
+      "currency": "CNY",
+      "columns": {"account":"计费账号ID","period":"账期","billed":"应付金额"}
+    }
+  }
+]
+```
+
+`objects` 支持 `csv`、单成员 `gzip` 和显式 CSV 成员列表的 `zip`，可选 `sha256` 固定整个对象的摘要。多对象配置应引用同一个已完成批次的不可变键。对象键和 ZIP 内部路径采用原始名称。任务直接读取配置中的对象键，供应商生成新路径或换月时更新配置后重启拉取进程。改变同一任务的对象、解析规则或调度间隔时递增 `generation`，凭据轮换可以沿用任务代次。每次最多读取 64 MiB 厂商原件，展开后的 CSV 延用账本分卷、大小和行数上限。
+
+```bash
+CLOUD_MANAGER_BILLING_PULL_PROFILES=/run/secrets/cloud-manager/billing.json cloud-manager billing-pull-controller
+cloud-manager billing-pull tenant finance cloud-account 2026-11 native
+cloud-manager billing-pull-status tenant finance cloud-account 2026-11 native
+cloud-manager billing-pull-source tenant finance cloud-account 2026-11 native OBSERVATION_SHA256 1 > original.zip
+cloud-manager billing-pull-replay tenant finance cloud-account 2026-11 native OBSERVATION_SHA256
+```
+
+独立控制器逐个领取到期任务，租约、失败状态和下次执行时间保存在 PostgreSQL。一次拉取先读对象元数据，下载使用对应 ETag 条件，发布前复核所有对象。重复观察到同一批次时只读元数据。获取失败、对象改版或分卷不完整会留下失败状态，已发布账本保持原版本。新账单、原件及拉取状态在同一事务发布。状态命令返回观察摘要及关联账单版本，原件按对象键排序编号。重放重新解压归档原件、校验摘要，并检查选中分卷生成的账本明细与汇总。
+
+### 账单费用分摊
+
+财务运维使用 `billing-allocate` 发布某个账单版本的分摊，首次发布的预期分摊版本为 `0`。后续规则变更使用当前分摊版本提交。相同规则重复发布时返回原收据，历史收据保留原版本。归属项目管理员可通过 `GET /v1/tenants/:tenant/projects/:project/billing/allocations`、`billing allocation-get` 和控制台「费用分摊」读取结果。默认查询当前账单的分摊。若当前账单已有修订，查询历史结果时显式传入对应账单版本。
+
+```json
+{
+  "rules": [
+    {
+      "service": "compute",
+      "tags": { "environment": "production" },
+      "shares": [
+        { "center": "product", "weight": 7500 },
+        { "center": "platform", "weight": 2500 }
+      ]
+    }
+  ]
+}
+```
+
+规则按声明顺序匹配，首条匹配生效。可组合 `resource`、`service`、`region`、`category` 和 `tags` 做精确匹配。同一规则的各条件须同时满足。标签列应为 JSON 对象，匹配区分字符串、布尔值、有值为 `null` 的键和缺失键。标签格式不可识别时继续尝试其他规则，并记录已尝试解析且失败的行数。未匹配记录按 `default` 分配，省略时归入未归属成本中心。每组权重合计 10,000 基点。单次最多 64 条规则、32 个成本中心，每组最多 8 个分摊对象。 [FOCUS 1.0 标签定义](https://focus.finops.org/docs/specification/v1-0/columns/cost-and-usage/tags/)
+
+```bash
+cloud-manager billing-allocate tenant finance cloud-account 2026-11 native 1 0 allocation.json
+cloud-manager billing allocation-get tenant finance cloud-account 2026-11 native 1 1
+cloud-manager billing-allocation-replay tenant finance cloud-account 2026-11 native 1 1
+```
+
+按匹配规则和原币种先汇总，再按权重分摊。金额保留 12 位小数。余数按比例余量从大到小分配，余量相同时按成本中心名排序。退款保留负号，各币种合计与原账单一致。某成本中心涉及的记录缺少摊销成本或目录价时，对应总额显示为未提供。目录价可用时同时显示目录价减账单金额。参与行数可在多个成本中心重复出现，账单总行数单独显示。
+
+收据保存账单 SHA-256、规则 SHA-256 和算法版本。重放使用归档明细与规则核对所有成本中心和金额，并把保存的规则随复核结果输出给本地运维。可用 `billing-replay` 独立核对厂商原件和账本投影。
+
+### 月度云预算
+
+账号归属项目的管理员通过「云预算」、CLI 或 `/v1/tenants/:tenant/projects/:project/billing/budget` 管理预算。用账号 `account`、月份 `period`、来源 `source`、原币种 `currency` 和成本口径 `basis` 定位预算。分别用 `billed` 和 `effective` 对账单金额与摊销成本设额度。GET 读配置，POST 创建，PUT 用当前预算 `If-Match` 更新。额度使用正十进制字符串，预警百分比为 1 至 99，`enabled` 明确控制启用或停用。
+
+```json
+{"limit":"10000.00","warning_percent":80,"enabled":true}
+```
+
+```bash
+cloud-manager billing budget-create tenant finance cloud-account 2026-11 native CNY billed < budget.json
+cloud-manager billing budget-get tenant finance cloud-account 2026-11 native CNY billed
+cloud-manager billing budget-update tenant finance cloud-account 2026-11 native CNY billed 1 < budget.json
+```
+
+系统使用该作用域的最新已发布账单，以十进制计算累计费用。达到预警比例或额度时生成当前最高级别告警。重复发布同一报表保留已有告警。账单修正使费用回落时恢复旧告警，费用口径暂不可用时保留已有告警。停用预算、停用账号或转移账号归属会恢复原作用域的预算告警。账单发布与对应告警、审计及待投递事件在同一事务提交。
+
+预算告警在「项目告警」中仅向该项目管理员显示，详情列出账期、原币种、来源和成本口径，确认操作沿用告警版本。订阅项目告警的 Webhook 会收到开启和恢复事件，载荷包含告警级别、账号与预算标识。预算金额和累计费用通过预算查询读取。配置变更可在「项目审计」使用「云预算」类型检索。
+
+从旧版本滚动升级时，先完成数据库迁移和所有 API 副本的更新，再创建预算。预算告警的角色过滤由新版 API 提供，预算恢复判定也在数据库中执行，旧告警控制器仍可处理原有规则。
+
+### 资源标签合规
+
+应用 `0097_tag_observations` 和 `0098_tag_policies` 后，重新盘点对应资产。项目成员可以在标签合规页查看规则和结果，管理员可以发布规则。规则按项目保存不可变历史。每类资源配置一组必填标签键，键区分大小写，对应值须含非空白字符。每类最多 24 个键，规则请求体最多 128 KiB。证据有效期为 60 至 604800 秒。发布空规则数组可停用当前项目的评估。
+
+盘点事务只保存标签键、观测时间及凭据版本。报告区分合规、缺少标签和证据不足。厂商未返回标签、资产待确认缺失、账号停用、凭据轮换或观测过期都可能产生证据不足。明确返回的空标签集可以判定缺少标签。报告复用资产归属与账号共享规则，只显示当前项目可见资源。标签值不进入报告及治理存储。
+
+使用现有的 `CLOUD_MANAGER_API_URL` 和 `CLOUD_MANAGER_API_TOKEN` 配置。示例规则要求实例具备 `team` 和 `environment` 标签。
+
+```sh
+cloud-manager governance policy-create TENANT PROJECT <<'JSON'
+{"max_age_seconds":3600,"rules":[{"kind":"instance","required_keys":["team","environment"]}]}
+JSON
+cloud-manager governance policy-get TENANT PROJECT
+cloud-manager governance policy-get TENANT PROJECT 1
+cloud-manager governance policy-update TENANT PROJECT 1 < policy.json
+cloud-manager governance compliance TENANT PROJECT instance --state noncompliant --limit 50
+```
+
+在项目 API 下通过 `GET /governance/tag-policy` 读取，使用 `POST` 发布首版，使用带强 `If-Match` 的 `PUT` 更新。版本和审计事件同事务提交。通过 `GET /governance/tag-compliance?kind=instance` 查询，支持 `account`、`region`、`state`、`limit` 和 `cursor`。分页游标绑定筛选项及当前规则版本，换版后从第一页重新查询。
+
+### 实例闲置分析
+
+应用 `0099_idle_schedules` 和 `0100_instance_idle` 并升级所有盘点、工作负载和告警控制器。完成腾讯云 CVM、阿里云 ECS 或华为云 ECS 的初次盘点后，可给指定实例登记监控采集计划。独立的 `idle-controller` 进程读取 `CLOUD_MANAGER_IDLE_PROFILES` 指定的私有 JSON 文件。文件格式为凭据引用到私有账号配置文件路径的映射，文件权限与盘点控制器相同。凭据需要能校验账号身份并读取目标地域的实例监控数据。
+
+```sh
+cloud-manager idle-schedule TENANT ACCOUNT REGION INSTANCE 24h
+CLOUD_MANAGER_IDLE_PROFILES=/run/secrets/cloud-manager/idle-profiles.json cloud-manager idle-controller
+cloud-manager governance idle TENANT PROJECT --state candidate --limit 50
+cloud-manager idle-schedule TENANT ACCOUNT REGION INSTANCE off
+```
+
+采集间隔为 1 至 24 小时。每个采集进程同一时间处理一项计划，采集超时为 90 秒，租约为 2 分钟。限流按厂商提供的重试时间退避。进程停机释放尚未完成的租约。停用计划阻止旧领取发布；已有证据仍按新鲜度规则展示。
+
+分析窗口为结束于上一完整 UTC 小时边界的七天时段，预留至少一小时给厂商上报。腾讯云采用主机基础 CPU 与内外网双向小时最大值。阿里云通过 ECS 实例监控读取十分钟样本，将双向内外网流量换算为字节每秒。华为云使用 CES 的 ECS 小时最大值。窗口中任何已知 CPU 样本超过 5%，或任何已知网络样本超过 64 KiB/s，结果为「观察到活动」。只有 CPU 和网络样本全部存在且均未超过阈值，才列为「低活动候选」。未采样、过期盘点、归属或凭据变化以及数据有缺口时显示「证据不足」。本地确认未运行的实例单独显示。
+
+结果用于人工核查。腾讯云公网指标覆盖厂商提供的 IPv4 统计，阿里云的网络速率是十分钟区间平均值。查询同时返回厂商、窗口、采样间隔、样本覆盖、峰值和规范采样摘要。只保存每个实例最新采集窗口的摘要及其校验指纹。采集失败保留上一份证据，窗口结束超过 30 小时后停止用于判断。
+
+项目成员可使用「实例闲置分析」控制台、CLI，或调用 `GET /v1/tenants/{tenant}/projects/{project}/governance/idle-instances`。列表复用当前资产可见性，支持账号、地域、结果状态和游标筛选。结果不会触发云端停机或回收。
+
+腾讯云与阿里云均限制监控接口调用量，腾讯云超出免费额度时需要开通计费。各厂商的真实凭据、地域覆盖、指标口径和调用预算仍需针对目标环境验收。[腾讯云监控 API](https://cloud.tencent.com/document/api/248/31014) · [腾讯云 CVM 指标](https://cloud.tencent.com/document/product/248/6843//) · [阿里云实例监控](https://help.aliyun.com/en/ecs/developer-reference/api-ecs-2014-05-26-describeinstancemonitordata) · [华为云 CES API](https://support.huaweicloud.com/intl/zh-cn/api-ces/ces_03_0034.html) · [华为云 ECS 基础指标](https://support.huaweicloud.com/intl/zh-cn/usermanual-ecs/ecs_03_1002.html)
+
 ### 项目审计与导出
 
 项目管理员可通过浏览器的「项目审计」、CLI 或 `GET /v1/tenants/{tenant}/projects/{project}/audit` 查询审计账本。记录涵盖云账号变更、资产归属、操作状态、审批、人工处置、创建续查和服务目录变更。归属转移或账号共享的双方项目各有一份记录。操作申请记载申请人，审批和处置记载实际审批人，系统状态事件留空主体字段。
 
-可按 `category`、`account`、`subject_id` 和 RFC 3339 时间范围筛选。类别为 `account`、`ownership`、`operation`、`approval`、`resolution`、`observation`、`catalog`、`alert`、`console_access`。时间区间含 `from`，截止于 `until` 之前。列表按发生时间和审计 ID 倒序返回，`limit` 默认 50，范围为 1 至 200。续读使用 `next` 及原筛选条件。操作类记录的 `subject_id` 可直接查询项目操作详情，目录、告警和原生控制台记录分别使用模板 ID、告警 ID 与访问授权 ID。
+可按 `category`、`account`、`subject_id` 和 RFC 3339 时间范围筛选。类别为 `account`、`ownership`、`operation`、`approval`、`resolution`、`observation`、`catalog`、`alert`、`console_access`、`billing_budget` 和 `tag_policy`。时间区间含 `from`，截止于 `until` 之前。列表按发生时间和审计 ID 倒序返回，`limit` 默认 50，范围为 1 至 200。续读使用 `next` 及原筛选条件。操作类记录的 `subject_id` 可直接查询项目操作详情，目录、告警和原生控制台记录分别使用模板 ID、告警 ID 与访问授权 ID。标签规则发布记录使用项目 ID 作为对象，并包含发布版本。
 
 `GET /v1/tenants/{tenant}/projects/{project}/audit/export` 使用同样的筛选条件，在一个数据库快照内导出最多 2000 条 CSV。超限返回 422，可用时间或类别缩小范围。输出字段为事件 ID、时间、类别、动作、对象、账号、地域、主体、关联项目、结果及适用的修订号。可能被电子表格识别为公式的文本单元格会转成文本。凭据、请求指纹和原始证据引用保留在各自的存储边界。
 

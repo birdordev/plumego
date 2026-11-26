@@ -8,6 +8,7 @@ import (
 
 	"with-cloud-manager/internal/alerts"
 	"with-cloud-manager/internal/audit"
+	"with-cloud-manager/internal/billing"
 	"with-cloud-manager/internal/controller"
 	"with-cloud-manager/internal/dbtest"
 	"with-cloud-manager/internal/identity"
@@ -69,6 +70,30 @@ func TestAcceptancePostgresReadiness(t *testing.T) {
 	}
 	get("/readyz", http.StatusServiceUnavailable, "storage is unavailable")
 	if err := nativeconsole.Migrate(t.Context(), db); err != nil {
+		t.Fatal(err)
+	}
+	get("/readyz", http.StatusServiceUnavailable, "storage is unavailable")
+	if err := billing.Migrate(t.Context(), db); err != nil {
+		t.Fatal(err)
+	}
+	get("/readyz", http.StatusServiceUnavailable, "storage is unavailable")
+	if err := billing.MigrateBudgets(t.Context(), db); err != nil {
+		t.Fatal(err)
+	}
+	get("/readyz", http.StatusServiceUnavailable, "storage is unavailable")
+	if err := billing.MigrateAllocations(t.Context(), db); err != nil {
+		t.Fatal(err)
+	}
+	get("/readyz", http.StatusServiceUnavailable, "storage is unavailable")
+	if err := billing.MigratePulls(t.Context(), db); err != nil {
+		t.Fatal(err)
+	}
+	get("/readyz", http.StatusServiceUnavailable, "storage is unavailable")
+	if err := inventory.MigrateTagPolicies(t.Context(), db); err != nil {
+		t.Fatal(err)
+	}
+	get("/readyz", http.StatusServiceUnavailable, "storage is unavailable")
+	if err := inventory.MigrateIdleAnalysis(t.Context(), db); err != nil {
 		t.Fatal(err)
 	}
 	get("/readyz", http.StatusOK, `"ready"`)

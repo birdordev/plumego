@@ -1,0 +1,14 @@
+.filters { display: flex; align-items: end; flex-wrap: wrap; gap: .75rem; margin-bottom: 1.15rem; }
+.filters label { flex: 0 1 11rem; }
+.table-scroll { overflow-x: auto; border: 1px solid var(--line); background: white; }
+table { inline-size: 100%; min-inline-size: 39rem; border-collapse: collapse; text-align: left; font-size: .92rem; }
+th { background: #dfeae3; color: var(--ink); font-size: .83rem; }
+th, td { padding: .78rem .85rem; border-bottom: 1px solid var(--line); }
+tr:last-child td { border-bottom: 0; }
+td { overflow-wrap: anywhere; }
+.table-actions, .row-actions { display: flex; flex-wrap: wrap; gap: .7rem; margin-top: .95rem; }
+.table-actions #more { margin-inline-start: auto; }
+.minor { display: block; color: var(--muted); font-size: .82rem; overflow-wrap: anywhere; }
+.state { display: inline-block; color: #28544c; background: #e8f3e9; padding: .16rem .42rem; font-weight: 650; white-space: nowrap; }
+.state[data-state="failed"], .state[data-state="needs_review"] { color: #8c3926; background: #f9e9e1; }
+.state[data-state="awaiting_approval"], .state[data-state="open"] { color: #663e14; background: #f8e8c9; }

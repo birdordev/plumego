@@ -12,6 +12,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"io"
+	"io/fs"
 	"math/big"
 	"net"
 	"net/http"
@@ -126,6 +127,18 @@ func TestAcceptanceConsoleAcrossReplicas(t *testing.T) {
 	if !strings.HasPrefix(headers.Get("Content-Type"), "text/javascript") || headers.Get("X-Content-Type-Options") != "nosniff" {
 		t.Fatal("console application script has unsafe media type")
 	}
+	chunks, err := fs.ReadDir(consoleChunks, "console/_embedded/assets")
+	if err != nil || len(chunks) == 0 {
+		t.Fatalf("console Vite chunks missing: %v", err)
+	}
+	for _, chunk := range chunks {
+		body, headers := req(direct, first, http.MethodGet, "/console/assets/"+chunk.Name(), "", nil, nil, http.StatusOK)
+		if len(body) == 0 || !strings.Contains(headers.Get("Cache-Control"), "immutable") ||
+			!strings.HasPrefix(headers.Get("Content-Type"), "text/javascript") {
+			t.Fatalf("Vite chunk %s was not served with the expected policy", chunk.Name())
+		}
+	}
+	req(direct, first, http.MethodGet, "/console/assets/missing.js", "", nil, nil, http.StatusNotFound)
 	loginHeaders := http.Header{"Origin": {origin}, http.CanonicalHeaderKey(consoleSubjectHeader): {subject}}
 	const loginBody = `{"tenant":"tenant"}`
 	req(direct, first, http.MethodPost, "/console/login", loginBody, nil, loginHeaders, http.StatusForbidden)

@@ -1,0 +1,1 @@
+import{n as e}from"./rolldown-runtime-4tVxZq34.js";import{n as t,t as n}from"./read-page-BWEL5FUE.js";import{t as r}from"../app.js";import{t as i}from"./schema-BPKVF64v.js";var a=n(r,`/operations`,i,`cursor`),o=e({operationsCollection:()=>s}),s=t(a);export{s as n,o as t};

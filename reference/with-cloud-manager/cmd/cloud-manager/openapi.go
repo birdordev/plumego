@@ -34,7 +34,7 @@ func registerOpenAPI(app *core.App, console *consoleConfig) error {
 		OperationID: "listProjectAssets",
 		Security:    readAuth,
 		Responses: map[string]openapi.Response{
-			"200": {Description: "项目可见的资产页和后续游标。已分配的弹性公网 IP 包含 public_addresses。云盘快照包含 parent_id 和已知的 snapshot.class、snapshot.size_gib。"},
+			"200": {Description: "项目可见的资产页和后续游标。已分配的弹性公网 IP 包含 public_addresses。云盘快照包含 parent_id 和已知的 snapshot.class、snapshot.size_gib。负载均衡包含 load_balancer 的产品、地址类型、已知域名及私网地址，也可返回多个公网地址。托管数据库包含 database_instance 的产品、引擎和已知版本。对象存储桶包含 object_bucket 的产品、实际地域、可用存储类型和创建时间。托管缓存包含 cache_instance 的产品、引擎、已知版本和容量。Kubernetes 集群包含 kubernetes_cluster 的产品、类型和已知版本及节点数。"},
 			"400": {Description: "查询参数或游标无效"},
 			"401": {Description: "服务凭据缺失、无效、过期或撤销"},
 			"403": {Description: "项目不可访问"},
@@ -51,7 +51,7 @@ func registerOpenAPI(app *core.App, console *consoleConfig) error {
 	for status, response := range list.Responses {
 		history.Responses[status] = response
 	}
-	history.Responses["200"] = openapi.Response{Description: "项目可见的资产差异和后续游标，包含适用的前后公网地址或快照属性。"}
+	history.Responses["200"] = openapi.Response{Description: "项目可见的资产差异和后续游标，包含适用的前后公网地址、快照属性、负载均衡详情、托管数据库、对象存储桶、托管缓存或 Kubernetes 集群详情。"}
 	export := list
 	export.OperationID = "exportProjectAssets"
 	export.Params = export.Params[:4]
@@ -59,12 +59,77 @@ func registerOpenAPI(app *core.App, console *consoleConfig) error {
 	for status, response := range list.Responses {
 		export.Responses[status] = response
 	}
-	export.Responses["200"] = openapi.Response{Description: "筛选后的资产 CSV。kind=elastic-ip 追加 public_addresses。kind=snapshot 追加 source_volume_id、snapshot_class 和 size_gib。",
+	export.Responses["200"] = openapi.Response{Description: "筛选后的资产 CSV。kind=elastic-ip 追加 public_addresses。kind=snapshot 追加 source_volume_id、snapshot_class 和 size_gib。kind=load-balancer 追加公网地址、产品、地址类型、域名和私网地址。kind=database-instance 追加 product、engine、engine_version。kind=object-bucket 追加 product、location、storage_class 和 created_at。kind=cache-instance 追加 product、engine、engine_version 和 capacity_mib。kind=kubernetes-cluster 追加 product、cluster_type、kubernetes_version 和 node_count。",
 		Content: map[string]openapi.MediaType{"text/csv": {Schema: openapi.String}}}
 	export.Responses["422"] = openapi.Response{Description: "匹配资产超过单次导出上限"}
 	topology := list
 	topology.OperationID = "listProjectAssetTopology"
 	topology.Summary = "查询已盘点的资源及其关联，每页最多 50 个源资源"
+	lbListener := openapi.Schema{Type: "object", Properties: map[string]openapi.Schema{
+		"id": openapi.String, "name": openapi.String, "protocol": openapi.String,
+		"port": openapi.Integer, "end_port": openapi.Integer,
+		"target_group_ids": {Type: "array", Items: &openapi.String},
+	}}
+	lbTargetGroup := openapi.Schema{Type: "object", Properties: map[string]openapi.Schema{
+		"id": openapi.String, "name": openapi.String, "kind": openapi.String, "protocol": openapi.String, "algorithm": openapi.String, "exclusive": {Type: "boolean"},
+	}}
+	lbBackendMember := openapi.Schema{Type: "object", Properties: map[string]openapi.Schema{
+		"key": openapi.String, "group_id": openapi.String, "port": openapi.Integer, "weight": openapi.Integer, "role": openapi.String, "weight_editable": {Type: "boolean"},
+	}}
+	lbBackendCheck := openapi.Schema{Type: "object", Properties: map[string]openapi.Schema{
+		"key": openapi.String, "listener_id": openapi.String, "group_id": openapi.String, "rule_id": openapi.String,
+		"port": openapi.Integer, "listener_port": openapi.Integer, "status": openapi.String,
+	}}
+	lbData := openapi.Schema{Type: "object", Properties: map[string]openapi.Schema{
+		"observed_at": {Type: "string", Format: "date-time"},
+		"listeners":   {Type: "array", Items: &lbListener}, "target_groups": {Type: "array", Items: &lbTargetGroup},
+		"backends": {Type: "object", Properties: map[string]openapi.Schema{
+			"members": {Type: "array", Items: &lbBackendMember}, "checks": {Type: "array", Items: &lbBackendCheck},
+		}},
+	}}
+	lbConfiguration := openapi.Op{
+		OperationID: "readProjectLoadBalancerConfiguration", Security: readAuth,
+		Summary: "读取负载均衡监听器和后端组的最近完整快照",
+		Params: []openapi.Param{
+			{Name: "account", In: "query", Required: true, Schema: openapi.String},
+			{Name: "region", In: "query", Required: true, Schema: openapi.String},
+		},
+		Responses: map[string]openapi.Response{
+			"200": {Description: "最近完整配置快照。采集时启用后端盘点才提供 backends，其中包含后端成员及其实际报告的健康结果。key 仅在当前快照内用于关联。", Content: map[string]openapi.MediaType{
+				"application/json": {Schema: openapi.Schema{Type: "object", Properties: map[string]openapi.Schema{"data": lbData}}},
+			}},
+			"400": {Description: "查询参数无效"}, "401": {Description: "服务凭据无效"},
+			"403": {Description: "项目不可访问"}, "404": {Description: "未刷新、父实例不可见或快照已失效"},
+			"503": {Description: "资产存储不可用"},
+		},
+	}
+	dnsRecord := openapi.Schema{Type: "object", Properties: map[string]openapi.Schema{
+		"id": openapi.String, "name": openapi.String, "type": openapi.String, "ttl": openapi.Integer,
+		"status": openapi.String, "line": openapi.String, "value_count": openapi.Integer,
+		"values": {Type: "array", Items: &openapi.String},
+	}}
+	dnsRecords := openapi.Op{
+		OperationID: "readProjectDNSZoneRecords", Security: readAuth,
+		Summary: "分页读取公网 DNS 托管区的最近完整记录集快照",
+		Params: []openapi.Param{
+			{Name: "account", In: "query", Required: true, Schema: openapi.String},
+			{Name: "offset", In: "query", Description: "从零开始的行偏移", Schema: openapi.Integer},
+			{Name: "limit", In: "query", Description: "每页 1 至 100 条，默认 50", Schema: openapi.Integer},
+		},
+		Responses: map[string]openapi.Response{
+			"200": {Description: "最近完整快照的一页，TXT 等类型只返回值数量。", Content: map[string]openapi.MediaType{
+				"application/json": {Schema: openapi.Schema{Type: "object", Properties: map[string]openapi.Schema{
+					"data": {Type: "object", Properties: map[string]openapi.Schema{
+						"observed_at": {Type: "string", Format: "date-time"}, "records": {Type: "array", Items: &dnsRecord},
+						"total": openapi.Integer, "next_offset": openapi.Integer,
+					}},
+				}}},
+			}},
+			"400": {Description: "查询参数无效"}, "401": {Description: "服务凭据无效"},
+			"403": {Description: "项目不可访问"}, "404": {Description: "未刷新、父资产不可见或快照失效"},
+			"503": {Description: "资产存储不可用"},
+		},
+	}
 	accountOp := func(id, status, description string, mutation bool) openapi.Op {
 		auth := readAuth
 		responses := map[string]openapi.Response{
@@ -113,8 +178,8 @@ func registerOpenAPI(app *core.App, console *consoleConfig) error {
 		}}}}}
 	retryObservation := accountOp("retryInstanceCreationObservation", "200", "已恢复对创建操作的只读观测", true)
 	retryObservation.Responses["412"] = openapi.Response{Description: "续查授权在处理期间发生变化"}
-	retryObservation.Body = &openapi.RequestBody{Required: true, Description: "独立审批人提交排查证据引用 evidence_ref。",
-		Content: map[string]openapi.MediaType{"application/json": {Schema: openapi.Schema{Type: "object", Properties: map[string]openapi.Schema{"evidence_ref": openapi.String}}}}}
+	retryObservation.Body = &openapi.RequestBody{Required: true, Description: "独立审批人提交 evidence_ref。阿里云公网 DNS 创建丢失回执时另需 provider_resource_id。",
+		Content: map[string]openapi.MediaType{"application/json": {Schema: openapi.Schema{Type: "object", Properties: map[string]openapi.Schema{"evidence_ref": openapi.String, "provider_resource_id": openapi.String}}}}}
 	approval := accountOp("decideInstanceApproval", "200", "已记录发送前审批决定", true)
 	approval.Responses["412"] = openapi.Response{Description: "申请所依据的资源或授权版本已失效"}
 	approval.Responses["409"] = openapi.Response{Description: "审批决定冲突或实例受删除保护"}
@@ -203,6 +268,107 @@ func registerOpenAPI(app *core.App, console *consoleConfig) error {
 	deleteNetwork.Params = submit.Params
 	deleteNetwork.Responses["412"] = openapi.Response{Description: "需要当前资产及其父资源的有效归属与盘点"}
 	deleteNetwork.Responses["429"] = submit.Responses["429"]
+	dnsRecordCreation := accountOp("createDNSRecord", "202", "已持久受理的公网 DNS 记录创建申请，需独立审批", true)
+	dnsRecordCreation.Params = submit.Params
+	dnsRecordCreation.Responses["412"] = openapi.Response{Description: "需要当前托管区归属版本和记录快照"}
+	dnsRecordCreation.Responses["429"] = submit.Responses["429"]
+	dnsRecordCreation.Body = &openapi.RequestBody{Required: true,
+		Description: "必填 account、asset_id、observed_at、name、type、value、ttl。name 是托管区内的完整名称，type 为 A 或 AAAA，If-Match 使用托管区归属版本。",
+		Content: map[string]openapi.MediaType{"application/json": {Schema: openapi.Schema{Type: "object", Properties: map[string]openapi.Schema{
+			"account": openapi.String, "asset_id": openapi.String, "observed_at": {Type: "string", Format: "date-time"},
+			"name": openapi.String, "type": openapi.String, "value": openapi.String, "ttl": openapi.Integer,
+		}}}}}
+	dnsRecordDeletion := accountOp("deleteDNSRecord", "202", "已持久受理的停用公网 DNS 记录删除申请，需独立审批", true)
+	dnsRecordDeletion.Params = submit.Params
+	dnsRecordDeletion.Responses["412"] = openapi.Response{Description: "需要当前托管区归属版本和记录快照"}
+	dnsRecordDeletion.Responses["429"] = submit.Responses["429"]
+	dnsRecordDeletion.Body = &openapi.RequestBody{Required: true,
+		Description: "必填 account、asset_id、record_id、observed_at。目标必须是已停用的 A 或 AAAA 记录，If-Match 使用托管区归属版本。",
+		Content: map[string]openapi.MediaType{"application/json": {Schema: openapi.Schema{
+			Type: "object",
+			Properties: map[string]openapi.Schema{
+				"account": openapi.String, "asset_id": openapi.String, "record_id": openapi.String, "observed_at": {Type: "string", Format: "date-time"},
+			},
+		}}}}
+	workloadScale := accountOp("scaleKubernetesWorkload", "202", "已持久受理的工作负载副本调整申请，需独立审批", true)
+	workloadScale.Params = submit.Params
+	workloadScale.Responses["412"] = openapi.Response{Description: "需要当前父集群归属版本与工作负载快照"}
+	workloadScale.Responses["429"] = submit.Responses["429"]
+	workloadScale.Body = &openapi.RequestBody{Required: true,
+		Description: "提供账号、地域、集群 ID、快照 ID、工作负载 UID、命名空间、类型、名称和目标副本数。类型为 Deployment 或 StatefulSet，副本数范围为 1 至 100。If-Match 使用父集群归属版本。",
+		Content: map[string]openapi.MediaType{"application/json": {Schema: openapi.Schema{Type: "object", Properties: map[string]openapi.Schema{
+			"account": openapi.String, "region": openapi.String, "asset_id": openapi.String, "snapshot": {Type: "string", Format: "uuid"},
+			"uid": openapi.String, "namespace": openapi.String, "kind": openapi.String, "name": openapi.String, "replicas": openapi.Integer,
+		}}}}}
+
+	dnsRecordStatus := accountOp("setDNSRecordStatus", "202", "已持久受理的公网 DNS 启停解析申请，需独立审批", true)
+	dnsRecordStatus.Params = submit.Params
+	dnsRecordStatus.Responses["412"] = openapi.Response{Description: "需要当前托管区归属版本和记录快照"}
+	dnsRecordStatus.Responses["429"] = submit.Responses["429"]
+	dnsRecordStatus.Body = &openapi.RequestBody{Required: true,
+		Description: "必填 account、asset_id、record_id、observed_at、enabled。If-Match 使用托管区归属版本。",
+		Content: map[string]openapi.MediaType{"application/json": {Schema: openapi.Schema{
+			Type: "object",
+			Properties: map[string]openapi.Schema{
+				"account": openapi.String, "asset_id": openapi.String, "record_id": openapi.String,
+				"observed_at": {Type: "string", Format: "date-time"}, "enabled": {Type: "boolean"},
+			},
+		}}}}
+	balancerRename := accountOp("renameLoadBalancer", "202", "已持久受理的负载均衡改名申请，需独立审批", true)
+	balancerRename.Params = submit.Params
+	balancerRename.Responses["412"] = openapi.Response{Description: "需要当前资源名称、归属版本和有效的盘点"}
+	balancerRename.Responses["429"] = submit.Responses["429"]
+	balancerRename.Body = &openapi.RequestBody{Required: true,
+		Description: "提交 account、region、asset_id、current_name 和 name。If-Match 使用负载均衡归属版本。",
+		Content: map[string]openapi.MediaType{"application/json": {Schema: openapi.Schema{Type: "object", Properties: map[string]openapi.Schema{
+			"account": openapi.String, "region": openapi.String, "asset_id": openapi.String,
+			"name": openapi.String, "current_name": openapi.String,
+		}}}}}
+	listenerRename := accountOp("renameLoadBalancerListener", "202", "已持久受理的负载均衡监听器改名申请，需独立审批", true)
+	listenerRename.Params = submit.Params
+	listenerRename.Responses["412"] = openapi.Response{Description: "需要监听器当前名称、父实例归属版本和当前配置快照"}
+	listenerRename.Responses["429"] = submit.Responses["429"]
+	listenerRename.Body = &openapi.RequestBody{Required: true,
+		Description: "必填 account、region、asset_id、listener_id、current_name 和 name。asset_id 和 If-Match 使用父负载均衡的 ID 和归属版本。仅更新监听器名称。",
+		Content: map[string]openapi.MediaType{"application/json": {Schema: openapi.Schema{Type: "object", Properties: map[string]openapi.Schema{
+			"account": openapi.String, "region": openapi.String, "asset_id": openapi.String, "listener_id": openapi.String,
+			"name": openapi.String, "current_name": openapi.String,
+		}}}}}
+	targetGroupRename := accountOp("renameLoadBalancerTargetGroup", "202", "已持久受理的负载均衡后端组改名申请，需独立审批", true)
+	targetGroupRename.Params = submit.Params
+	targetGroupRename.Responses["412"] = openapi.Response{Description: "需要后端组当前名称、父实例归属版本和独占关联快照"}
+	targetGroupRename.Responses["429"] = submit.Responses["429"]
+	targetGroupRename.Body = &openapi.RequestBody{Required: true, Description: "必填 account、region、asset_id、target_group_id、current_name 和 name。If-Match 使用父负载均衡归属版本。",
+		Content: map[string]openapi.MediaType{"application/json": {Schema: openapi.Schema{Type: "object", Properties: map[string]openapi.Schema{
+			"account": openapi.String, "region": openapi.String, "asset_id": openapi.String, "target_group_id": openapi.String, "name": openapi.String, "current_name": openapi.String,
+		}}}}}
+	backendWeight := accountOp("setLoadBalancerBackendWeight", "202", "已持久受理的单个后端成员权重变更，需独立审批", true)
+	backendWeight.Params = submit.Params
+	backendWeight.Responses["412"] = openapi.Response{Description: "需要当前权重、独占后端组、成员标识及父实例归属版本"}
+	backendWeight.Responses["429"] = submit.Responses["429"]
+	backendWeight.Body = &openapi.RequestBody{Required: true, Description: "必填 account、region、asset_id、target_group_id、member_key、current_weight 和 weight。权重为 0 至 100 的整数，If-Match 使用父实例归属版本。",
+		Content: map[string]openapi.MediaType{"application/json": {Schema: openapi.Schema{Type: "object", Properties: map[string]openapi.Schema{
+			"account": openapi.String, "region": openapi.String, "asset_id": openapi.String, "target_group_id": openapi.String, "member_key": openapi.String,
+			"current_weight": openapi.Integer, "weight": openapi.Integer,
+		}}}}}
+	backendDetach := accountOp("detachLoadBalancerBackend", "202", "已持久受理的单后端成员解绑申请，需独立审批", true)
+	backendDetach.Params = submit.Params
+	backendDetach.Responses["412"] = openapi.Response{Description: "需要零权重成员、独占后端组和父实例当前归属版本"}
+	backendDetach.Responses["429"] = submit.Responses["429"]
+	backendDetach.Body = &openapi.RequestBody{Required: true, Description: "必填 account、region、asset_id、target_group_id、member_key 和 confirm_detach=true。If-Match 使用父负载均衡归属版本。",
+		Content: map[string]openapi.MediaType{"application/json": {Schema: openapi.Schema{Type: "object", Properties: map[string]openapi.Schema{
+			"account": openapi.String, "region": openapi.String, "asset_id": openapi.String, "target_group_id": openapi.String, "member_key": openapi.String,
+			"confirm_detach": {Type: "boolean"},
+		}}}}}
+	backendAttach := accountOp("attachLoadBalancerBackend", "202", "已持久受理的单后端实例绑定申请，需独立审批", true)
+	backendAttach.Params = submit.Params
+	backendAttach.Responses["412"] = openapi.Response{Description: "需要当前实例及负载均衡归属版本和独占后端组快照"}
+	backendAttach.Responses["429"] = submit.Responses["429"]
+	backendAttach.Body = &openapi.RequestBody{Required: true, Description: "必填 account、region、asset_id、target_group_id、instance_id、instance_revision 和 port。新成员权重固定为 0。If-Match 使用父负载均衡归属版本。",
+		Content: map[string]openapi.MediaType{"application/json": {Schema: openapi.Schema{Type: "object", Properties: map[string]openapi.Schema{
+			"account": openapi.String, "region": openapi.String, "asset_id": openapi.String, "target_group_id": openapi.String,
+			"instance_id": openapi.String, "instance_revision": openapi.Integer, "port": openapi.Integer,
+		}}}}}
 	deleteNetwork.Body = &openapi.RequestBody{Required: true, Description: "必填 account、region、asset_id 和 kind。kind 为 network、subnet 或 security-group。安全组必须传 confirm_rule_removal=true。If-Match 使用目标资产归属版本。存在外部依赖时拒绝删除。",
 		Content: map[string]openapi.MediaType{"application/json": {Schema: openapi.Schema{Type: "object",
 			Properties: map[string]openapi.Schema{"account": openapi.String, "region": openapi.String,
@@ -286,6 +452,20 @@ func registerOpenAPI(app *core.App, console *consoleConfig) error {
 		"GET " + assetsRoute + "/export":                                   export,
 		"PATCH " + assetsRoute + "/ownership":                              ownership,
 		"GET " + assetsRoute + "/topology":                                 topology,
+		"GET " + dnsRecordsRoute:                                           dnsRecords,
+		"GET " + clusterNodePoolsRoute:                                     clusterNodePoolsOpenAPI(readAuth),
+		"GET " + clusterWorkloadsRoute:                                     clusterWorkloadsOpenAPI(readAuth),
+		"GET " + loadBalancerConfigurationRoute:                            lbConfiguration,
+		"POST " + loadBalancerBackendAttachRoute:                           backendAttach,
+		"POST " + loadBalancerBackendDetachRoute:                           backendDetach,
+		"POST " + loadBalancerBackendWeightRoute:                           backendWeight,
+		"POST " + loadBalancerTargetGroupRenameRoute:                       targetGroupRename,
+		"POST " + loadBalancerListenerRenameRoute:                          listenerRename,
+		"POST " + dnsRecordCreationRoute:                                   dnsRecordCreation,
+		"POST " + dnsRecordDeletionRoute:                                   dnsRecordDeletion,
+		"POST " + workloadScaleRoute:                                       workloadScale,
+		"POST " + dnsRecordStatusRoute:                                     dnsRecordStatus,
+		"POST " + loadBalancerRenameRoute:                                  balancerRename,
 		"POST " + accountsRoute:                                            accountOp("registerCloudAccount", "201", "待校验账号", true),
 		"GET " + accountsRoute + "/:account":                               accountOp("getCloudAccount", "200", "账号元数据", false),
 		"PATCH " + accountsRoute + "/:account":                             patchAccount,
@@ -324,6 +504,8 @@ func registerOpenAPI(app *core.App, console *consoleConfig) error {
 		"POST " + operationBatchesRoute + "/preview":                       batchPreview,
 		"POST " + operationBatchesRoute:                                    batchSubmit,
 		"GET " + operationBatchesRoute + "/:batch":                         accountOp("getOperationBatch", "200", "项目批次及当前子操作状态", false),
+		"GET " + allocationRoute:                                           allocationOpenAPI(readAuth),
+		"GET " + billingRoute:                                              billingOpenAPI(readAuth),
 		"GET " + auditRoute:                                                auditList,
 		"GET " + auditRoute + "/export":                                    auditExport,
 		"GET /healthz":                                                     {Responses: map[string]openapi.Response{"200": {Description: "进程存活"}}},
@@ -338,6 +520,9 @@ func registerOpenAPI(app *core.App, console *consoleConfig) error {
 	if consoleEnabled && (console.nativeConnect != nil || console.nativeSerial != nil) {
 		nativeOpenAPI(hints, accountOp, *console)
 	}
+	budgetOpenAPI(hints, readAuth, writeAuth)
+	tagPolicyOpenAPI(hints, readAuth, writeAuth)
+	hints["GET "+idleInstancesRoute] = idleReportOpenAPI(readAuth)
 	catalogOpenAPI(hints, accountOp)
 	alertOpenAPI(hints, accountOp)
 	doc, err := generator.GenerateStrict(app.Routes(), hints)
@@ -402,12 +587,12 @@ func alertOpenAPI(hints map[string]openapi.Op, operation func(string, string, st
 	list := operation("listProjectAlerts", "200", "项目告警及按发生时间倒序的续读位置", false)
 	list.Params = []openapi.Param{
 		{Name: "status", In: "query", Description: "active、open、acknowledged、resolved 或 all，默认为 active", Schema: openapi.String},
-		{Name: "rule", In: "query", Description: "operation_review、operation_delayed、scan_failures 或 scan_stale", Schema: openapi.String},
+		{Name: "rule", In: "query", Description: "operation_review、operation_delayed、scan_failures、scan_stale 或管理员可用的 billing_budget_warning、billing_budget_exceeded", Schema: openapi.String},
 		{Name: "after", In: "query", Schema: openapi.String},
 		{Name: "limit", In: "query", Schema: openapi.Integer},
 	}
 	list.Responses["400"] = openapi.Response{Description: "筛选条件或续读位置无效"}
-	get := operation("getProjectAlert", "200", "告警详情以及当前修订号 ETag", false)
+	get := operation("getProjectAlert", "200", "告警详情以及当前修订号 ETag，预算告警包含账期、来源、币种和成本口径", false)
 	get.Responses["400"] = openapi.Response{Description: "告警 ID 无效"}
 	ack := operation("acknowledgeProjectAlert", "200", "管理员已确认告警，返回新修订号 ETag", true)
 	ack.Params = []openapi.Param{{Name: "If-Match", In: "header", Required: true, Schema: openapi.String}}

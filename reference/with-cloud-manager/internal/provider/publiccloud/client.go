@@ -28,39 +28,51 @@ var (
 )
 
 type Config struct {
-	Regions                     []string `json:"regions"`
-	AccountID                   string   `json:"account_id"`
-	ProjectID                   string   `json:"project_id,omitempty"`
-	AccessKeyID                 string   `json:"access_key_id,omitempty"`
-	AccessKeySecret             string   `json:"access_key_secret,omitempty"`
-	SecurityToken               string   `json:"security_token,omitempty"`
-	IAMToken                    string   `json:"iam_token,omitempty"`
-	AllowInstancePower          bool     `json:"allow_instance_power,omitempty"`
-	AllowInstanceReboot         bool     `json:"allow_instance_reboot,omitempty"`
-	AllowInstanceDelete         bool     `json:"allow_instance_delete,omitempty"`
-	AllowVolumeChanges          bool     `json:"allow_volume_changes,omitempty"`
-	InstanceCreateSizes         []string `json:"instance_create_sizes,omitempty"`
-	HuaweiRootVolumeType        string   `json:"huawei_root_volume_type,omitempty"`
-	HuaweiSnapshotAPI           string   `json:"huawei_snapshot_api,omitempty"`
-	AllowSnapshotCreation       bool     `json:"allow_snapshot_creation,omitempty"`
-	AllowImageCopy              bool     `json:"allow_image_copy,omitempty"`
-	HuaweiImageCopyAgency       string   `json:"huawei_image_copy_agency,omitempty"`
-	AllowImageCreation          bool     `json:"allow_image_creation,omitempty"`
-	AllowSecurityGroupDeletion  bool     `json:"allow_security_group_deletion,omitempty"`
-	AllowVPCDeletion            bool     `json:"allow_vpc_deletion,omitempty"`
-	AllowSubnetDeletion         bool     `json:"allow_subnet_deletion,omitempty"`
-	AllowImageDeletion          bool     `json:"allow_image_deletion,omitempty"`
-	AllowSnapshotDeletion       bool     `json:"allow_snapshot_deletion,omitempty"`
-	AllowSnapshotRollback       bool     `json:"allow_snapshot_rollback,omitempty"`
-	SnapshotRestoreMaxGiB       int      `json:"snapshot_restore_max_gib,omitempty"`
-	AllowNetworkCreation        bool     `json:"allow_network_creation,omitempty"`
-	AllowSecurityGroupCreation  bool     `json:"allow_security_group_creation,omitempty"`
-	ElasticIPBandwidthLimit     int      `json:"elastic_ip_bandwidth_limit,omitempty"`
-	AllowElasticIPRelease       bool     `json:"allow_elastic_ip_release,omitempty"`
-	AllowElasticIPBinding       bool     `json:"allow_elastic_ip_binding,omitempty"`
-	HuaweiElasticIPPool         string   `json:"huawei_elastic_ip_pool,omitempty"`
-	AllowSecurityGroupRules     bool     `json:"allow_security_group_rules,omitempty"`
-	AllowSecurityRuleRevocation bool     `json:"allow_security_rule_revocation,omitempty"`
+	Regions                            []string `json:"regions"`
+	AccountID                          string   `json:"account_id"`
+	ProjectID                          string   `json:"project_id,omitempty"`
+	AccessKeyID                        string   `json:"access_key_id,omitempty"`
+	AccessKeySecret                    string   `json:"access_key_secret,omitempty"`
+	SecurityToken                      string   `json:"security_token,omitempty"`
+	IAMToken                           string   `json:"iam_token,omitempty"`
+	BucketListAccountWide              bool     `json:"bucket_list_account_wide,omitempty"`
+	CacheListScopeWide                 bool     `json:"cache_list_scope_wide,omitempty"`
+	KubernetesListScopeWide            bool     `json:"kubernetes_list_scope_wide,omitempty"`
+	AllowInstancePower                 bool     `json:"allow_instance_power,omitempty"`
+	AllowInstanceReboot                bool     `json:"allow_instance_reboot,omitempty"`
+	AllowInstanceDelete                bool     `json:"allow_instance_delete,omitempty"`
+	AllowVolumeChanges                 bool     `json:"allow_volume_changes,omitempty"`
+	InstanceCreateSizes                []string `json:"instance_create_sizes,omitempty"`
+	HuaweiRootVolumeType               string   `json:"huawei_root_volume_type,omitempty"`
+	HuaweiSnapshotAPI                  string   `json:"huawei_snapshot_api,omitempty"`
+	AllowSnapshotCreation              bool     `json:"allow_snapshot_creation,omitempty"`
+	AllowImageCopy                     bool     `json:"allow_image_copy,omitempty"`
+	HuaweiImageCopyAgency              string   `json:"huawei_image_copy_agency,omitempty"`
+	AllowImageCreation                 bool     `json:"allow_image_creation,omitempty"`
+	AllowSecurityGroupDeletion         bool     `json:"allow_security_group_deletion,omitempty"`
+	AllowVPCDeletion                   bool     `json:"allow_vpc_deletion,omitempty"`
+	AllowSubnetDeletion                bool     `json:"allow_subnet_deletion,omitempty"`
+	AllowImageDeletion                 bool     `json:"allow_image_deletion,omitempty"`
+	AllowSnapshotDeletion              bool     `json:"allow_snapshot_deletion,omitempty"`
+	AllowSnapshotRollback              bool     `json:"allow_snapshot_rollback,omitempty"`
+	SnapshotRestoreMaxGiB              int      `json:"snapshot_restore_max_gib,omitempty"`
+	AllowNetworkCreation               bool     `json:"allow_network_creation,omitempty"`
+	AllowSecurityGroupCreation         bool     `json:"allow_security_group_creation,omitempty"`
+	ElasticIPBandwidthLimit            int      `json:"elastic_ip_bandwidth_limit,omitempty"`
+	AllowElasticIPRelease              bool     `json:"allow_elastic_ip_release,omitempty"`
+	AllowElasticIPBinding              bool     `json:"allow_elastic_ip_binding,omitempty"`
+	AllowDNSRecordCreation             bool     `json:"allow_dns_record_creation,omitempty"`
+	AllowDNSRecordDeletion             bool     `json:"allow_dns_record_deletion,omitempty"`
+	AllowDNSRecordStatus               bool     `json:"allow_dns_record_status,omitempty"`
+	AllowLoadBalancerBackendAttach     bool     `json:"allow_load_balancer_backend_attach,omitempty"`
+	AllowLoadBalancerBackendDetach     bool     `json:"allow_load_balancer_backend_detach,omitempty"`
+	AllowLoadBalancerBackendWeight     bool     `json:"allow_load_balancer_backend_weight,omitempty"`
+	AllowLoadBalancerTargetGroupRename bool     `json:"allow_load_balancer_target_group_rename,omitempty"`
+	AllowLoadBalancerListenerRename    bool     `json:"allow_load_balancer_listener_rename,omitempty"`
+	AllowLoadBalancerRename            bool     `json:"allow_load_balancer_rename,omitempty"`
+	HuaweiElasticIPPool                string   `json:"huawei_elastic_ip_pool,omitempty"`
+	AllowSecurityGroupRules            bool     `json:"allow_security_group_rules,omitempty"`
+	AllowSecurityRuleRevocation        bool     `json:"allow_security_rule_revocation,omitempty"`
 }
 
 type Client struct {
@@ -151,18 +163,44 @@ func (c *Client) Discover(ctx context.Context, scope provider.Scope, cursor stri
 		}
 		return page, nil
 	}
+	switch scope.Kind {
+	case provider.DNSZone:
+		return c.discoverDNSZones(ctx, scope.Region, cursor)
+	case provider.ObjectBucket:
+		return c.discoverBuckets(ctx, scope, cursor)
+	}
 	if !slices.Contains(c.profile.Regions, scope.Region) {
 		return provider.Page{}, &provider.Failure{Kind: provider.Unsupported}
 	}
 	switch scope.Kind {
 	case provider.Instance, provider.Network, provider.Subnet, provider.SecurityGroup, provider.Volume, provider.Snapshot,
-		provider.Image, provider.Zone, provider.SecurityGroupRule, provider.ElasticIP:
+		provider.Image, provider.Zone, provider.SecurityGroupRule, provider.ElasticIP, provider.LoadBalancer, provider.DatabaseInstance, provider.CacheInstance,
+		provider.KubernetesCluster:
 	default:
 		return provider.Page{}, &provider.Failure{Kind: provider.Unsupported}
 	}
 	if len(cursor) > provider.MaxCursorBytes || (scope.Kind == provider.Zone && cursor != "") {
 		return provider.Page{}, &provider.Failure{Kind: provider.ExpiredCursor}
 	}
+	var page provider.Page
+	var err error
+	switch scope.Kind {
+	case provider.DatabaseInstance:
+		page, err = c.discoverDatabases(ctx, scope.Region, cursor)
+	case provider.CacheInstance:
+		page, err = c.discoverCaches(ctx, scope.Region, cursor)
+	case provider.KubernetesCluster:
+		page, err = c.discoverClusters(ctx, scope.Region, cursor)
+	default:
+		page, err = c.discoverVendorResources(ctx, scope, cursor)
+	}
+	if err != nil {
+		return provider.Page{}, err
+	}
+	return validateRegionalPage(scope, cursor, page)
+}
+
+func (c *Client) discoverVendorResources(ctx context.Context, scope provider.Scope, cursor string) (provider.Page, error) {
 	var page provider.Page
 	var err error
 	switch c.name {
@@ -182,6 +220,8 @@ func (c *Client) Discover(ctx context.Context, scope provider.Scope, cursor stri
 			page, err = c.tencentSecurityRules(ctx, scope.Region, cursor)
 		case provider.ElasticIP:
 			page, err = c.tencentElasticIPs(ctx, scope.Region, cursor)
+		case provider.LoadBalancer:
+			page, err = c.tencentLoadBalancers(ctx, scope.Region, cursor, "")
 		default:
 			page, err = c.tencentNetworking(ctx, scope, cursor)
 		}
@@ -201,6 +241,8 @@ func (c *Client) Discover(ctx context.Context, scope provider.Scope, cursor stri
 			page, err = c.alibabaSecurityRules(ctx, scope.Region, cursor)
 		case provider.ElasticIP:
 			page, err = c.alibabaElasticIPs(ctx, scope.Region, cursor)
+		case provider.LoadBalancer:
+			page, err = c.alibabaLoadBalancers(ctx, scope.Region, cursor, "")
 		default:
 			page, err = c.alibabaNetworking(ctx, scope, cursor)
 		}
@@ -220,15 +262,18 @@ func (c *Client) Discover(ctx context.Context, scope provider.Scope, cursor stri
 			page, err = c.huaweiSecurityRules(ctx, scope.Region, cursor)
 		case provider.ElasticIP:
 			page, err = c.huaweiElasticIPs(ctx, scope.Region, cursor)
+		case provider.LoadBalancer:
+			page, err = c.huaweiLoadBalancers(ctx, scope.Region, cursor, "")
 		default:
 			page, err = c.huaweiNetworking(ctx, scope, cursor)
 		}
 	default:
 		return provider.Page{}, &provider.Failure{Kind: provider.Unsupported}
 	}
-	if err != nil {
-		return provider.Page{}, err
-	}
+	return page, err
+}
+
+func validateRegionalPage(scope provider.Scope, cursor string, page provider.Page) (provider.Page, error) {
 	if err := page.Validate(cursor); err != nil {
 		return provider.Page{}, err
 	}
@@ -264,36 +309,7 @@ func (c *Client) request(req *http.Request, dst any, alsoAccept ...int) error {
 	}
 	defer func() { _ = res.Body.Close() }()
 	if res.StatusCode != http.StatusOK && !slices.Contains(alsoAccept, res.StatusCode) {
-		failure := &provider.Failure{Kind: provider.InvalidResponse}
-		switch res.StatusCode {
-		case http.StatusUnauthorized, http.StatusForbidden:
-			failure.Kind = provider.Unauthorized
-		case http.StatusTooManyRequests:
-			failure.Kind = provider.Throttled
-			if delay, err := strconv.ParseInt(res.Header.Get("Retry-After"), 10, 32); err == nil && delay > 0 {
-				failure.RetryAfter = time.Duration(delay) * time.Second
-			} else if when, err := http.ParseTime(res.Header.Get("Retry-After")); err == nil {
-				failure.RetryAfter = max(time.Until(when), 0)
-			}
-		case http.StatusNotFound:
-			failure.Kind = provider.OutcomeUnknown
-		case http.StatusBadRequest:
-			var response struct {
-				Code      string
-				ErrorCode string `json:"error_code"`
-			}
-			if json.NewDecoder(io.LimitReader(res.Body, 16<<10)).Decode(&response) == nil {
-				if response.Code == "" {
-					response.Code = response.ErrorCode
-				}
-				return cloudFailure(response.Code)
-			}
-		default:
-			if res.StatusCode >= 500 || res.StatusCode == http.StatusRequestTimeout {
-				failure.Kind = provider.Transient
-			}
-		}
-		return failure
+		return cloudHTTPFailure(res)
 	}
 	if dst == nil && res.StatusCode == http.StatusNoContent {
 		return nil
@@ -307,6 +323,39 @@ func (c *Client) request(req *http.Request, dst any, alsoAccept ...int) error {
 		return &provider.Failure{Kind: provider.InvalidResponse}
 	}
 	return nil
+}
+
+func cloudHTTPFailure(res *http.Response) error {
+	failure := &provider.Failure{Kind: provider.InvalidResponse}
+	switch res.StatusCode {
+	case http.StatusUnauthorized, http.StatusForbidden:
+		failure.Kind = provider.Unauthorized
+	case http.StatusTooManyRequests:
+		failure.Kind = provider.Throttled
+		if delay, err := strconv.ParseInt(res.Header.Get("Retry-After"), 10, 32); err == nil && delay > 0 {
+			failure.RetryAfter = time.Duration(delay) * time.Second
+		} else if when, err := http.ParseTime(res.Header.Get("Retry-After")); err == nil {
+			failure.RetryAfter = max(time.Until(when), 0)
+		}
+	case http.StatusNotFound:
+		failure.Kind = provider.OutcomeUnknown
+	case http.StatusBadRequest:
+		var response struct {
+			Code      string
+			ErrorCode string `json:"error_code"`
+		}
+		if json.NewDecoder(io.LimitReader(res.Body, 16<<10)).Decode(&response) == nil {
+			if response.Code == "" {
+				response.Code = response.ErrorCode
+			}
+			return cloudFailure(response.Code)
+		}
+	default:
+		if res.StatusCode >= 500 || res.StatusCode == http.StatusRequestTimeout {
+			failure.Kind = provider.Transient
+		}
+	}
+	return failure
 }
 
 func cloudFailure(code string) error {

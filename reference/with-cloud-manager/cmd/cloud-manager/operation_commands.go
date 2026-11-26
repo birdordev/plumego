@@ -15,6 +15,7 @@ import (
 	"unicode"
 
 	"with-cloud-manager/internal/operations"
+	"with-cloud-manager/internal/provider"
 )
 
 type operationRequestPlan struct {
@@ -61,6 +62,26 @@ func planOperationRequest(base *url.URL, args []string) (operationRequestPlan, e
 		return planOperationSubmission(project.JoinPath("snapshots", "restore"), args[0], args[3:])
 	case "delete-network":
 		return planOperationSubmission(project.JoinPath("network-operations", "delete"), args[0], args[3:])
+	case "create-dns-record":
+		return planOperationSubmission(project.JoinPath("dns-zones", "records"), args[0], args[3:])
+	case "delete-dns-record":
+		return planOperationSubmission(project.JoinPath("dns-zones", "record-deletion"), args[0], args[3:])
+	case "scale-workload":
+		return planOperationSubmission(project.JoinPath("kubernetes-workloads", "scale"), args[0], args[3:])
+	case "set-dns-record-status":
+		return planOperationSubmission(project.JoinPath("dns-zones", "record-status"), args[0], args[3:])
+	case "attach-load-balancer-backend":
+		return planOperationSubmission(project.JoinPath("load-balancers", "attach-backend"), args[0], args[3:])
+	case "detach-load-balancer-backend":
+		return planOperationSubmission(project.JoinPath("load-balancers", "detach-backend"), args[0], args[3:])
+	case "set-load-balancer-backend-weight":
+		return planOperationSubmission(project.JoinPath("load-balancers", "backend-weight"), args[0], args[3:])
+	case "rename-load-balancer-target-group":
+		return planOperationSubmission(project.JoinPath("load-balancers", "rename-target-group"), args[0], args[3:])
+	case "rename-load-balancer-listener":
+		return planOperationSubmission(project.JoinPath("load-balancers", "rename-listener"), args[0], args[3:])
+	case "rename-load-balancer":
+		return planOperationSubmission(project.JoinPath("load-balancers", "rename"), args[0], args[3:])
 	case "create-network":
 		return planOperationSubmission(project.JoinPath("network-operations"), args[0], args[3:])
 	case "revoke-security-rule":
@@ -106,7 +127,7 @@ func planOperationSubmission(target *url.URL, command string, args []string) (op
 	flags.SetOutput(io.Discard)
 	key := flags.String("idempotency-key", "", "")
 	var match string
-	requireMatch := command == "submit" || command == "delete-network" || command == "revoke-security-rule" || command == "release-elastic-ip" ||
+	requireMatch := command == "scale-workload" || command == "create-dns-record" || command == "delete-dns-record" || command == "set-dns-record-status" || command == "submit" || command == "delete-network" || command == "rename-load-balancer" || command == "rename-load-balancer-listener" || command == "rename-load-balancer-target-group" || command == "set-load-balancer-backend-weight" || command == "detach-load-balancer-backend" || command == "attach-load-balancer-backend" || command == "revoke-security-rule" || command == "release-elastic-ip" ||
 		command == "bind-elastic-ip" || command == "unbind-elastic-ip" || command == "create-snapshot" || command == "delete-snapshot" || command == "delete-image" || command == "create-image" || command == "copy-image" || command == "restore-snapshot" || command == "rollback-snapshot"
 	if requireMatch || command == "create-network" {
 		flags.Func("if-match", "", func(value string) error {
@@ -158,7 +179,9 @@ func planOperationDecision(target *url.URL, command string, args []string) (oper
 	case "retry-observation":
 		var input operations.ObservationRetry
 		flags.StringVar(&input.EvidenceRef, "evidence-ref", "", "")
-		if flags.Parse(args) != nil || flags.NArg() != 0 || input.EvidenceRef == "" {
+		flags.StringVar(&input.ProviderResourceID, "provider-resource-id", "", "")
+		if flags.Parse(args) != nil || flags.NArg() != 0 || input.EvidenceRef == "" ||
+			(input.ProviderResourceID != "" && !provider.ValidDNSRecordID(input.ProviderResourceID)) {
 			return operationRequestPlan{}, usage
 		}
 		body, path = input, "retry-observation"

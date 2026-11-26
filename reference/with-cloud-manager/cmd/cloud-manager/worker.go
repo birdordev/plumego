@@ -22,8 +22,10 @@ func runWorker(ctx context.Context, db *sql.DB, manifest string) error {
 	if len(profiles) == 0 {
 		return errors.New("worker needs a credential reference map")
 	}
-	if err := operations.NewStore(db).RunWorker(ctx, func(ctx context.Context, binding identity.CloudAccountBinding) (provider.InstanceOperator, error) {
+	if err := operations.NewStore(db).RunWorkerWithWorkloadScale(ctx, func(ctx context.Context, binding identity.CloudAccountBinding) (provider.InstanceOperator, error) {
 		return connectOperator(ctx, binding, profiles[binding.CredentialRef])
+	}, func(ctx context.Context, binding identity.CloudAccountBinding, region, cluster string) (provider.WorkloadScaler, error) {
+		return connectWorkloadScaler(ctx, binding, profiles[binding.CredentialRef], region, cluster)
 	}); err != nil {
 		return errors.New("instance operation worker stopped")
 	}

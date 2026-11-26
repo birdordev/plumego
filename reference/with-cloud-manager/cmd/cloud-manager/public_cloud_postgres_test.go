@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
@@ -415,16 +416,39 @@ func validFixtureTencentSignature(r *http.Request, body []byte, key, secret stri
 }
 
 func validFixtureAlibabaSignature(r *http.Request, key, secret string) bool {
-	if r.Method != http.MethodPost || r.URL.Path != "/" || r.Header.Get("X-ACS-Signature-Nonce") == "" {
+	if r.Method != http.MethodPost || r.URL.Path != "/" {
 		return false
 	}
-	const signed = "host;x-acs-action;x-acs-content-sha256;x-acs-date;x-acs-security-token;x-acs-signature-nonce;x-acs-version"
+	return validFixtureAlibabaRequestSignature(r, key, secret)
+}
+
+func validFixtureAlibabaRequestSignature(r *http.Request, key, secret string) bool {
+	if r.Header.Get("X-ACS-Signature-Nonce") == "" {
+		return false
+	}
+	signed := "host;x-acs-action;x-acs-content-sha256;x-acs-date;x-acs-security-token;x-acs-signature-nonce;x-acs-version"
+	var payload []byte
+	if r.Header.Get("Content-Type") == "application/x-www-form-urlencoded" {
+		var err error
+		payload, err = io.ReadAll(r.Body)
+		if err != nil || len(payload) == 0 {
+			return false
+		}
+		r.Body = io.NopCloser(bytes.NewReader(payload))
+		signed = "content-type;" + signed
+	}
+	if r.Header.Get("X-ACS-Content-Sha256") != fixtureDigest(payload) {
+		return false
+	}
 	var headers strings.Builder
-	fmt.Fprintf(&headers, "host:%s\n", r.Host)
-	for _, name := range strings.Split(signed, ";")[1:] {
+	for name := range strings.SplitSeq(signed, ";") {
+		if name == "host" {
+			fmt.Fprintf(&headers, "host:%s\n", r.Host)
+			continue
+		}
 		fmt.Fprintf(&headers, "%s:%s\n", name, r.Header.Get(name))
 	}
-	canonical := fmt.Sprintf("POST\n/\n%s\n%s\n%s\n%s", r.URL.RawQuery, headers.String(), signed, fixtureDigest(nil))
+	canonical := fmt.Sprintf("%s\n%s\n%s\n%s\n%s\n%s", r.Method, r.URL.EscapedPath(), r.URL.RawQuery, headers.String(), signed, fixtureDigest(payload))
 	sig := fixtureHMAC([]byte(secret), "ACS3-HMAC-SHA256\n"+fixtureDigest([]byte(canonical)))
 	return r.Header.Get("Authorization") == fmt.Sprintf("ACS3-HMAC-SHA256 Credential=%s,SignedHeaders=%s,Signature=%x", key, signed, sig)
 }

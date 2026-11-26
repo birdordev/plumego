@@ -272,11 +272,11 @@ func runFixtureScheduledScan(t *testing.T, db *sql.DB, expected inventory.Key, d
 	}
 	done := make(chan error, 1)
 	go func() {
-		done <- controller.NewStore(db).Run(ctx, func(ctx context.Context, key inventory.Key, driver, reference string) error {
-			if key != expected || driver != driverName || reference != profile {
-				return fmt.Errorf("unexpected scheduled scope: %+v", key)
+		done <- controller.NewStore(db).Run(ctx, func(ctx context.Context, task controller.Task) (controller.Publish, error) {
+			if task.Key != expected || task.Provider != driverName || task.CredentialRef != profile || task.TargetID != "" {
+				return nil, fmt.Errorf("unexpected scheduled scope: %+v", task.Key)
 			}
-			return scan(ctx)
+			return nil, scan(ctx)
 		})
 	}()
 	defer func() {
