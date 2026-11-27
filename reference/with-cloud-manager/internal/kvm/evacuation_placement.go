@@ -39,8 +39,12 @@ func requestAutomaticEvacuation(ctx context.Context, tx *sql.Tx, actor identity.
 	}
 	spec := PlacementInput{Capacity: vm.Capacity, Network: vm.Network, ExcludedFailureDomain: source.FailureDomain,
 		TTLSeconds: maxPlacementTTL, EvacuationVM: vm.ID}
+	var verifiedImage string
+	if input.RequireVerifiedBackup {
+		verifiedImage = image.ID
+	}
 	// 已持有源主机锁，跳过正在执行其他事务的目标，避免反向等待。
-	target, err := selectHost(ctx, tx, actor, site, spec, true)
+	target, err := selectHost(ctx, tx, actor, site, spec, verifiedImage, true)
 	if err != nil {
 		return ColdMigration{}, err
 	}

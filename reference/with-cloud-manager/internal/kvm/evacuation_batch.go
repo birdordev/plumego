@@ -17,10 +17,11 @@ import (
 const MaxEvacuationBatchItems = 16
 
 type EvacuationBatchItemInput struct {
-	VM       string `json:"vm_id"`
-	Revision int64  `json:"vm_revision"`
-	Image    string `json:"image_id"`
-	Evidence string `json:"evidence_sha256"`
+	VM                    string `json:"vm_id"`
+	Revision              int64  `json:"vm_revision"`
+	Image                 string `json:"image_id"`
+	Evidence              string `json:"evidence_sha256"`
+	RequireVerifiedBackup bool   `json:"require_verified_backup,omitempty"`
 }
 
 type EvacuationBatchInput struct {
@@ -40,11 +41,15 @@ type EvacuationBatch struct {
 }
 
 func (input EvacuationBatchInput) valid() bool {
-	if !identifier.MatchString(input.ID) || input.SourceFenceGeneration < 1 || len(input.Items) == 0 || len(input.Items) > MaxEvacuationBatchItems {
+	return identifier.MatchString(input.ID) && input.SourceFenceGeneration > 0 && validEvacuationItems(input.Items)
+}
+
+func validEvacuationItems(items []EvacuationBatchItemInput) bool {
+	if len(items) == 0 || len(items) > MaxEvacuationBatchItems {
 		return false
 	}
-	seen := make(map[string]struct{}, len(input.Items))
-	for _, item := range input.Items {
+	seen := make(map[string]struct{}, len(items))
+	for _, item := range items {
 		if !hostUUID.MatchString(item.VM) || item.Revision < 1 || !identifier.MatchString(item.Image) ||
 			!fenceEvidence.MatchString(item.Evidence) {
 			return false
@@ -94,26 +99,32 @@ func (s Store) RequestEvacuationBatch(ctx context.Context, token string, scope i
 		if err := checkVMGrant(ctx, tx, actor, actor.Principal, string(identity.Manage), member.Revision); err != nil {
 			return err
 		}
-		result = EvacuationBatch{ID: input.ID, SourceHost: source.ID, SourceFenceGeneration: source.Generation,
-			HostRevision: source.Revision, Requester: actor.Principal, Items: make([]ColdMigration, 0, len(input.Items))}
-		if err := tx.QueryRowContext(ctx, `INSERT INTO cmp_kvm_evacuation_batches
-			(tenant_id,project_id,site_id,source_host,batch_id,source_fence_generation,host_revision,requester_id,requester_revision,request_sha256)
-			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING requested_at`,
-			actor.Tenant, actor.Project, site, source.ID, input.ID, source.Generation, source.Revision,
-			actor.Principal, member.Revision, hash[:]).Scan(&result.RequestedAt); err != nil {
-			return err
-		}
-		for i, item := range input.Items {
-			migration, err := requestEvacuationBatchItem(ctx, tx, actor, member, site, source, input.ID, i+1, item)
-			if err != nil {
-				return err
-			}
-			result.Items = append(result.Items, migration)
-		}
-		return nil
+		result, err = insertEvacuationBatch(ctx, tx, actor, member, source, input, hash)
+		return err
 	})
 	if err != nil {
 		return EvacuationBatch{}, err
+	}
+	return result, nil
+}
+
+func insertEvacuationBatch(ctx context.Context, tx *sql.Tx, actor identity.Scope, member identity.Membership,
+	source Host, input EvacuationBatchInput, hash [32]byte) (EvacuationBatch, error) {
+	result := EvacuationBatch{ID: input.ID, SourceHost: source.ID, SourceFenceGeneration: source.Generation,
+		HostRevision: source.Revision, Requester: actor.Principal, Items: make([]ColdMigration, 0, len(input.Items))}
+	if err := tx.QueryRowContext(ctx, `INSERT INTO cmp_kvm_evacuation_batches
+		(tenant_id,project_id,site_id,source_host,batch_id,source_fence_generation,host_revision,requester_id,requester_revision,request_sha256)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING requested_at`,
+		actor.Tenant, actor.Project, source.Site, source.ID, input.ID, source.Generation, source.Revision,
+		actor.Principal, member.Revision, hash[:]).Scan(&result.RequestedAt); err != nil {
+		return EvacuationBatch{}, err
+	}
+	for i, item := range input.Items {
+		migration, err := requestEvacuationBatchItem(ctx, tx, actor, member, source.Site, source, input.ID, i+1, item)
+		if err != nil {
+			return EvacuationBatch{}, err
+		}
+		result.Items = append(result.Items, migration)
 	}
 	return result, nil
 }
@@ -148,7 +159,7 @@ func requestEvacuationBatchItem(ctx context.Context, tx *sql.Tx, actor identity.
 	}
 	key := sha256.Sum256([]byte(source.ID + "/" + batch + "/" + item.VM))
 	input := ColdMigrationInput{ID: "batch-" + hex.EncodeToString(key[:16]), Image: item.Image,
-		Evidence: item.Evidence, SourceFenceGeneration: source.Generation}
+		Evidence: item.Evidence, SourceFenceGeneration: source.Generation, RequireVerifiedBackup: item.RequireVerifiedBackup}
 	if _, err := readColdMigration(ctx, tx, actor, site, item.VM, input.ID); err == nil {
 		return ColdMigration{}, ErrConflict
 	} else if !errors.Is(err, sql.ErrNoRows) {

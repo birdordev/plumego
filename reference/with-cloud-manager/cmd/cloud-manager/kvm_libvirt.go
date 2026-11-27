@@ -33,8 +33,11 @@ type virshCapabilities struct {
 }
 
 type kvmProbe struct {
-	read    virshReader
-	freeMiB func(string) (int64, error)
+	read          virshReader
+	freeMiB       func(string) (int64, error)
+	sharedFreeMiB func(string) (int64, error)
+	mountInfo     func(context.Context) ([]byte, error)
+	shared        kvm.SharedStorageSpec
 }
 
 func (probe kvmProbe) capacity(ctx context.Context, host kvm.Host, limits kvm.Capacity) (kvm.Capacity, error) {
@@ -115,7 +118,17 @@ func (probe kvmProbe) storage(ctx context.Context, pool string) (int64, error) {
 	if err != nil || path == "" {
 		return 0, err
 	}
-	return probe.freeMiB(path)
+	return probe.poolFreeMiB(path)
+}
+
+func (probe kvmProbe) poolFreeMiB(path string) (int64, error) {
+	if probe.shared.ID == "" {
+		return probe.freeMiB(path)
+	}
+	if probe.sharedFreeMiB != nil {
+		return probe.sharedFreeMiB(path)
+	}
+	return kvmSharedFreeMiB(path)
 }
 
 func (probe kvmProbe) poolPath(ctx context.Context, pool string) (string, error) {
@@ -127,14 +140,15 @@ func (probe kvmProbe) poolPath(ctx context.Context, pool string) (string, error)
 	if err != nil {
 		return "", err
 	}
-	var volume struct {
-		XMLName xml.Name `xml:"pool"`
-		Type    string   `xml:"type,attr"`
-		Name    string   `xml:"name"`
-		Path    string   `xml:"target>path"`
-	}
-	if xml.Unmarshal(document, &volume) != nil || volume.Type != "dir" || volume.Name != pool ||
+	var volume kvmPoolXML
+	if xml.Unmarshal(document, &volume) != nil || volume.Name != pool ||
 		!filepath.IsAbs(volume.Path) || filepath.Clean(volume.Path) != volume.Path {
+		return "", errInvalidKVMObservation
+	}
+	if probe.shared.ID != "" {
+		return probe.sharedPoolPath(ctx, volume)
+	}
+	if volume.Type != "dir" {
 		return "", errInvalidKVMObservation
 	}
 	return volume.Path, nil

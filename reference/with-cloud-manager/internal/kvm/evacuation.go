@@ -27,7 +27,17 @@ func checkFencedEvacuationSource(ctx context.Context, tx *sql.Tx, v vmRecord, ho
 	if generation != host.Generation {
 		return ErrStale
 	}
-	if host.ID != v.Host || host.FenceState != "fenced" || v.Generation >= generation {
+	if host.FenceState != "fenced" {
+		return ErrConflict
+	}
+	if err := ensureVMNotMigrating(ctx, tx, v.ID); err != nil {
+		return err
+	}
+	return checkEvacuationVM(ctx, tx, v, host.ID, generation)
+}
+
+func checkEvacuationVM(ctx context.Context, tx *sql.Tx, v vmRecord, host string, generation int64) error {
+	if host != v.Host || v.Generation >= generation {
 		return ErrConflict
 	}
 	switch v.State {

@@ -80,6 +80,7 @@ type kvmBacking struct {
 type kvmDiskDriver struct {
 	Name   string `xml:"name,attr"`
 	Format string `xml:"type,attr"`
+	Cache  string `xml:"cache,attr,omitempty"`
 }
 
 type kvmDiskSource struct {
@@ -112,11 +113,15 @@ func desiredKVMDomain(vm kvm.VM) kvmDomain {
 	if vm.MAC != "" {
 		link.MAC = &kvmMAC{Address: vm.MAC}
 	}
+	driver := kvmDiskDriver{Name: "qemu", Format: "raw"}
+	if vm.SharedStoragePool != "" {
+		driver.Cache = "none"
+	}
 	return kvmDomain{
 		Type: "kvm", Name: "cmp-" + vm.ID, UUID: vm.ID,
 		VCPU: vm.Capacity.VCPU, Memory: kvmMemory{Unit: "KiB", Amount: vm.Capacity.MemoryMiB * 1024},
 		Metadata: kvmMetadata{Owner: &kvmOwner{Placement: vm.Placement}}, OS: &kvmDomainOS{Type: "hvm", Boot: kvmBootDevice{Device: "hd"}},
-		Disks: []kvmDisk{{Type: "volume", Device: "disk", Driver: kvmDiskDriver{Name: "qemu", Format: "raw"},
+		Disks: []kvmDisk{{Type: "volume", Device: "disk", Driver: driver,
 			Source: kvmDiskSource{Pool: vm.StoragePool, Volume: vm.Volume}, Target: kvmDiskTarget{Device: "vda", Bus: "virtio"}}},
 		Networks: []kvmInterface{link},
 	}
@@ -133,9 +138,14 @@ func (domain kvmDomain) matches(vm kvm.VM) bool {
 		domain.VCPU == want.VCPU && domain.Metadata.Owner != nil && *domain.Metadata.Owner == *want.Metadata.Owner &&
 		len(domain.Disks) == 1 && (domain.Disks[0].Backing == nil || *domain.Disks[0].Backing == (kvmBacking{})) &&
 		domain.Disks[0].Type == want.Disks[0].Type && domain.Disks[0].Device == want.Disks[0].Device &&
-		domain.Disks[0].Driver == want.Disks[0].Driver && domain.Disks[0].Source == want.Disks[0].Source &&
+		domain.Disks[0].Driver.matches(want.Disks[0].Driver) && domain.Disks[0].Source == want.Disks[0].Source &&
 		domain.Disks[0].Target == want.Disks[0].Target && len(domain.Networks) == 1 &&
 		domain.Networks[0].matches(want.Networks[0])
+}
+
+func (driver kvmDiskDriver) matches(want kvmDiskDriver) bool {
+	// 常规生命周期沿用已有比较，实时迁移另行要求显式 cache=none。
+	return driver.Name == want.Name && driver.Format == want.Format
 }
 
 func (iface kvmInterface) matches(want kvmInterface) bool {
@@ -245,8 +255,7 @@ func validateKVMVolume(ctx context.Context, runner kvmVMRunner, vm kvm.VM) error
 	if path == "" {
 		return errKVMUnsafeTarget
 	}
-	// 用 Statfs 核对池所在的本地文件系统。
-	if _, err := probe.freeMiB(path); err != nil {
+	if _, err := probe.poolFreeMiB(path); err != nil {
 		return err
 	}
 	networks, err := probe.read(ctx, "net-list", "--name")

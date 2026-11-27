@@ -8,6 +8,14 @@ import (
 )
 
 func kvmLocalFreeMiB(path string) (int64, error) {
+	return kvmFilesystemFreeMiB(path, false)
+}
+
+func kvmSharedFreeMiB(path string) (int64, error) {
+	return kvmFilesystemFreeMiB(path, true)
+}
+
+func kvmFilesystemFreeMiB(path string, shared bool) (int64, error) {
 	var info syscall.Statfs_t
 	if err := syscall.Statfs(path, &info); err != nil {
 		return 0, errors.New("cannot read local KVM storage capacity")
@@ -16,10 +24,13 @@ func kvmLocalFreeMiB(path string) (int64, error) {
 		ext4  = 0xef53
 		xfs   = 0x58465342
 		btrfs = 0x9123683e
+		nfs   = 0x6969
 	)
-	switch uint32(info.Type) {
-	case ext4, xfs, btrfs:
-	default:
+	filesystem := uint32(info.Type)
+	if shared && filesystem != nfs {
+		return 0, errors.New("KVM shared storage must use NFS")
+	}
+	if !shared && filesystem != ext4 && filesystem != xfs && filesystem != btrfs {
 		return 0, errors.New("KVM directory pool must use a supported local filesystem")
 	}
 	blockSize := info.Frsize

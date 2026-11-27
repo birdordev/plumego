@@ -36,7 +36,7 @@ func main() {
 
 func run(parent context.Context, args []string) (retErr error) {
 	if !validCommand(args) {
-		return errors.New("usage: cloud-manager billing COMMAND TENANT PROJECT ACCOUNT PERIOD SOURCE ...|billing-{import,replay,source,allocate,allocation-replay} TENANT PROJECT ACCOUNT PERIOD SOURCE ...|cmdb-migrate|cmdb-sync TENANT PROJECT|cmdb-status TENANT PROJECT|kvm COMMAND TENANT PROJECT SITE|migrate|api|controller|workload-controller|alert-controller|idle-controller|idle-schedule TENANT ACCOUNT REGION INSTANCE DURATION_OR_OFF|billing-pull-controller|billing-pull[-status|-source|-replay] TENANT PROJECT ACCOUNT PERIOD SOURCE ...|worker|sessions-purge|operations COMMAND TENANT PROJECT|governance COMMAND TENANT PROJECT|audit {list,export} TENANT PROJECT|catalog COMMAND TENANT PROJECT|alerts COMMAND TENANT PROJECT|console-grants COMMAND TENANT PROJECT|event-publisher|event-{register,disable,failures} SINK|event-retry SINK EVENT_ID|verify-{openstack,aws,tencent,alibaba,huawei,vsphere,redfish} TENANT ACCOUNT|scan-{openstack,aws,tencent,alibaba,huawei,vsphere,redfish} TENANT ACCOUNT REGION KIND (or append ASSET_ID for a public-cloud load-balancer, database-instance, cache-instance, kubernetes-cluster or object-bucket absence check)|refresh-{tencent,alibaba,huawei}-load-balancer TENANT ACCOUNT REGION ASSET_ID [--include-backends]|refresh-{tencent,alibaba,huawei}-dns-zone TENANT ACCOUNT ZONE_ID|refresh-{tencent,alibaba,huawei}-cluster-{node-pools,workloads} TENANT ACCOUNT REGION CLUSTER_ID")
+		return errors.New("usage: cloud-manager billing COMMAND TENANT PROJECT ACCOUNT PERIOD SOURCE ...|billing-{import,replay,source,allocate,allocation-replay} TENANT PROJECT ACCOUNT PERIOD SOURCE ...|cmdb-migrate|cmdb-sync TENANT PROJECT|cmdb-status TENANT PROJECT|kvm COMMAND TENANT PROJECT SITE|migrate|api|controller|workload-controller|kvm-evacuation-controller|alert-controller|idle-controller|idle-schedule TENANT ACCOUNT REGION INSTANCE DURATION_OR_OFF|billing-pull-controller|billing-pull[-status|-source|-replay] TENANT PROJECT ACCOUNT PERIOD SOURCE ...|worker|sessions-purge|operations COMMAND TENANT PROJECT|governance COMMAND TENANT PROJECT|audit {list,export} TENANT PROJECT|catalog COMMAND TENANT PROJECT|alerts COMMAND TENANT PROJECT|console-grants COMMAND TENANT PROJECT|event-publisher|event-{register,disable,failures} SINK|event-retry SINK EVENT_ID|verify-{openstack,aws,tencent,alibaba,huawei,vsphere,redfish} TENANT ACCOUNT|scan-{openstack,aws,tencent,alibaba,huawei,vsphere,redfish} TENANT ACCOUNT REGION KIND (or append ASSET_ID for a public-cloud load-balancer, database-instance, cache-instance, kubernetes-cluster or object-bucket absence check)|refresh-{tencent,alibaba,huawei}-load-balancer TENANT ACCOUNT REGION ASSET_ID [--include-backends]|refresh-{tencent,alibaba,huawei}-dns-zone TENANT ACCOUNT ZONE_ID|refresh-{tencent,alibaba,huawei}-cluster-{node-pools,workloads} TENANT ACCOUNT REGION CLUSTER_ID")
 	}
 	if strings.HasPrefix(args[0], "cmdb-") {
 		return runCMDB(parent, args, os.Getenv, os.Stdout)
@@ -117,6 +117,14 @@ func run(parent context.Context, args []string) (retErr error) {
 		db.SetMaxOpenConns(4)
 		db.SetMaxIdleConns(2)
 		return runIdleCommand(parent, db, args, os.Getenv("CLOUD_MANAGER_IDLE_PROFILES"), nil)
+	}
+	if args[0] == "kvm-evacuation-controller" {
+		db.SetMaxOpenConns(2)
+		db.SetMaxIdleConns(2)
+		if err := kvm.NewStore(db).RunEvacuationController(parent); err != nil {
+			return errors.New("KVM evacuation controller storage unavailable")
+		}
+		return nil
 	}
 	if args[0] == "alert-controller" {
 		if err := alerts.NewStore(db).Run(parent); err != nil {
@@ -248,7 +256,7 @@ func validCommand(args []string) bool {
 		return len(args) == 1
 	case "cmdb-sync", "cmdb-status":
 		return len(args) == 3
-	case "migrate", "api", "controller", "workload-controller", "alert-controller", "idle-controller", "billing-pull-controller", "worker", "event-publisher", "sessions-purge":
+	case "migrate", "api", "controller", "workload-controller", "kvm-evacuation-controller", "alert-controller", "idle-controller", "billing-pull-controller", "worker", "event-publisher", "sessions-purge":
 		return len(args) == 1
 	case "event-register", "event-disable", "event-failures":
 		return len(args) == 2

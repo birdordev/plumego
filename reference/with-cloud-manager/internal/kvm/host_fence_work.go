@@ -18,16 +18,18 @@ type HostFenceWorkItem struct {
 	Observation     string `json:"observation"`
 	PendingRecovery string `json:"pending_recovery_id,omitempty"`
 	EvacuationID    string `json:"evacuation_id,omitempty"`
+	LiveMigrationID string `json:"live_migration_id,omitempty"`
 }
 
 type HostFenceWorkPage struct {
-	Host       string              `json:"host"`
-	HostUUID   string              `json:"host_uuid"`
-	Revision   int64               `json:"host_revision"`
-	Generation int64               `json:"host_generation"`
-	FenceState string              `json:"fence_state"`
-	Items      []HostFenceWorkItem `json:"items"`
-	Next       string              `json:"next,omitempty"`
+	Host                     string              `json:"host"`
+	HostUUID                 string              `json:"host_uuid"`
+	Revision                 int64               `json:"host_revision"`
+	Generation               int64               `json:"host_generation"`
+	FenceState               string              `json:"fence_state"`
+	DispatchedVolumeCleanups int64               `json:"dispatched_volume_cleanups,omitempty"`
+	Items                    []HostFenceWorkItem `json:"items"`
+	Next                     string              `json:"next,omitempty"`
 }
 
 const fenceBlockingVMs = ` FROM cmp_kvm_vms AS v JOIN cmp_kvm_placements AS p USING (placement_id)
@@ -36,22 +38,27 @@ const fenceBlockingVMs = ` FROM cmp_kvm_vms AS v JOIN cmp_kvm_placements AS p US
 
 // 单条查询读取宿主机、任务和待审批记录，避免隔离状态切换时返回混合代次。
 const hostFenceWorkQuery = `SELECT h.host_uuid::text,h.revision,h.generation,h.fence_state,
+	(SELECT count(*) FROM cmp_kvm_volume_cleanups WHERE (tenant_id,project_id,site_id,host_id)=($1,$2,$3,$4) AND status='dispatched'),
 	COALESCE(work.vm_id::text,''),COALESCE(work.placement_id,''),COALESCE(work.generation,0),
 	COALESCE(work.revision,0),COALESCE(work.state,''),COALESCE(work.observation,''),COALESCE(r.recovery_id,''),
-	COALESCE(work.evacuation_id,'')
+	COALESCE(work.evacuation_id,''),COALESCE(work.live_migration_id,'')
 	FROM cmp_kvm_hosts AS h
 	LEFT JOIN LATERAL (
 		SELECT * FROM (
-			SELECT v.vm_id,p.placement_id,p.generation,v.revision,v.state,v.observation,'' AS evacuation_id` + fenceBlockingVMs + `
+			SELECT v.vm_id,p.placement_id,p.generation,v.revision,v.state,v.observation,'' AS evacuation_id,'' AS live_migration_id` + fenceBlockingVMs + `
 			UNION ALL
 			SELECT m.vm_id,m.source_placement_id,(SELECT generation FROM cmp_kvm_placements WHERE placement_id=m.source_placement_id),
-				m.vm_revision,'cleanup_required','',m.migration_id` + pendingEvacuationCleanup + `
+				m.vm_revision,'cleanup_required','',m.migration_id,''` + pendingEvacuationCleanup + `
+			UNION ALL
+			SELECT live.vm_id,live.placement_id,CASE WHEN live.source_host=$4 THEN live.source_generation ELSE live.target_generation END,
+				live.vm_revision,'live_migration',live.status,'',live.migration_id` + liveMigrationHostWork + `
 		) AS blockers
 		WHERE h.fence_state<>'' AND ($5::bigint=0 OR $5=h.generation)
 			AND ($6='' OR blockers.vm_id>NULLIF($6,'')::uuid)
 		ORDER BY blockers.vm_id LIMIT $7
 	) AS work ON true
-	LEFT JOIN cmp_kvm_fenced_vm_recoveries AS r ON r.vm_id=work.vm_id AND r.status='pending' AND work.evacuation_id=''
+	LEFT JOIN cmp_kvm_fenced_vm_recoveries AS r ON r.vm_id=work.vm_id AND r.status='pending'
+		AND work.evacuation_id='' AND work.live_migration_id=''
 		AND r.fence_generation=h.generation AND r.vm_revision=work.revision
 		AND (r.tenant_id,r.project_id,r.site_id,r.host_id)=(h.tenant_id,h.project_id,h.site_id,h.host_id)
 	WHERE (h.tenant_id,h.project_id,h.site_id,h.host_id)=($1,$2,$3,$4)
@@ -74,9 +81,9 @@ func (s Store) ListHostFenceWork(ctx context.Context, token string, scope identi
 		defer func() { _ = rows.Close() }()
 		for rows.Next() {
 			var item HostFenceWorkItem
-			if err := rows.Scan(&result.HostUUID, &result.Revision, &result.Generation, &result.FenceState,
+			if err := rows.Scan(&result.HostUUID, &result.Revision, &result.Generation, &result.FenceState, &result.DispatchedVolumeCleanups,
 				&item.VM, &item.Placement, &item.Generation, &item.Revision, &item.State, &item.Observation,
-				&item.PendingRecovery, &item.EvacuationID); err != nil {
+				&item.PendingRecovery, &item.EvacuationID, &item.LiveMigrationID); err != nil {
 				return err
 			}
 			if item.VM != "" {

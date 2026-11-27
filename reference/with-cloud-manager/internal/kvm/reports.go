@@ -46,6 +46,9 @@ func (s Store) Report(ctx context.Context, token string, scope identity.Scope, s
 		if host.FenceState != "" {
 			return ErrConflict
 		}
+		if err := checkSharedStorageReport(ctx, tx, actor, host, report); err != nil {
+			return err
+		}
 		if report.Inventory != nil {
 			if err := verifyCapacityInventory(ctx, tx, actor, host, *report.Inventory); err != nil {
 				return err

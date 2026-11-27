@@ -18,20 +18,40 @@ type kvmImageMirrorProfile struct {
 	ImageRoot string `json:"image_root"`
 }
 
-func runKVMImageMirror(ctx context.Context, api kvmVMAPI, site, id string, input io.Reader, output io.Writer) error {
+type kvmImageMirror struct {
+	base *url.URL
+	root string
+}
+
+func readKVMImageMirror(input io.Reader) (kvmImageMirror, error) {
 	raw, err := readOperationInput(input, 4096)
 	if err != nil {
-		return err
+		return kvmImageMirror{}, err
 	}
 	var profile kvmImageMirrorProfile
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.DisallowUnknownFields()
 	if decoder.Decode(&profile) != nil || decoder.Decode(new(any)) != io.EOF {
-		return errors.New("invalid local KVM image mirror profile")
+		return kvmImageMirror{}, errors.New("invalid local KVM image mirror profile")
 	}
 	mirror, err := operationClientBase(profile.MirrorURL)
 	if err != nil || mirror.Scheme != "https" {
-		return errors.New("KVM image mirror must be an HTTPS base URL")
+		return kvmImageMirror{}, errors.New("KVM image mirror must be an HTTPS base URL")
+	}
+	return kvmImageMirror{base: mirror, root: profile.ImageRoot}, nil
+}
+
+func (mirror kvmImageMirror) publish(ctx context.Context, image kvm.BootImageSpec, authorize func() error, transport http.RoundTripper) error {
+	name := image.SHA256 + ".raw"
+	return publishKVMImage(ctx, mirror.root, name, image, authorize, func() (io.ReadCloser, error) {
+		return openKVMImageMirror(ctx, mirror.base.JoinPath(name), image.SizeBytes, transport)
+	})
+}
+
+func runKVMImageMirror(ctx context.Context, api kvmVMAPI, site, id string, input io.Reader, output io.Writer) error {
+	mirror, err := readKVMImageMirror(input)
+	if err != nil {
+		return err
 	}
 	ctx, cancel := context.WithTimeout(ctx, 20*time.Minute)
 	defer cancel()
@@ -43,7 +63,6 @@ func runKVMImageMirror(ctx context.Context, api kvmVMAPI, site, id string, input
 		return errors.New("KVM image catalog response does not match the requested image")
 	}
 
-	name := image.SHA256 + ".raw"
 	authorize := func() error {
 		var current kvm.BootImage
 		if err := api.request(ctx, api.target, http.MethodGet, nil, &current); err != nil {
@@ -54,9 +73,7 @@ func runKVMImageMirror(ctx context.Context, api kvmVMAPI, site, id string, input
 		}
 		return nil
 	}
-	if err := publishKVMImage(ctx, profile.ImageRoot, name, image.BootImageSpec, authorize, func() (io.ReadCloser, error) {
-		return openKVMImageMirror(ctx, mirror.JoinPath(name), image.SizeBytes, api.transport)
-	}); err != nil {
+	if err := mirror.publish(ctx, image.BootImageSpec, authorize, api.transport); err != nil {
 		return err
 	}
 	return json.NewEncoder(output).Encode(image)

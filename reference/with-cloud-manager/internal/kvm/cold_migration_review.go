@@ -126,7 +126,16 @@ func applyColdMigration(ctx context.Context, tx *sql.Tx, actor identity.Scope, h
 	if err := checkColdMigrationTarget(v, target, host, draft.SourceFenceGeneration > 0); err != nil {
 		return err
 	}
-	ok, err := fitsCurrentCapacity(ctx, tx, actor, host, Capacity{})
+	if draft.RequireVerifiedBackup {
+		if err := requireVerifiedHostImage(ctx, tx, actor, host, draft.Image); err != nil {
+			return err
+		}
+	}
+	var needed Capacity
+	if target.SharedStoragePool != "" {
+		needed.DiskMiB = target.Capacity.DiskMiB
+	}
+	ok, err := fitsCurrentCapacity(ctx, tx, actor, host, needed)
 	if err != nil {
 		return err
 	}

@@ -28,7 +28,7 @@ func openKVMImageRoot(path string) (*os.Root, error) {
 	return os.OpenRoot(path)
 }
 
-func openKVMImageFile(root *os.Root, name string) (*os.File, os.FileInfo, error) {
+func openKVMImageFile(root *os.Root, name string, flags int) (*os.File, os.FileInfo, error) {
 	before, err := root.Lstat(name)
 	if err != nil {
 		return nil, nil, err
@@ -36,7 +36,7 @@ func openKVMImageFile(root *os.Root, name string) (*os.File, os.FileInfo, error)
 	if !before.Mode().IsRegular() {
 		return nil, nil, errKVMUnsafeTarget
 	}
-	file, err := root.OpenFile(name, os.O_RDONLY|syscall.O_NONBLOCK, 0)
+	file, err := root.OpenFile(name, flags|syscall.O_NONBLOCK, 0)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -86,7 +86,7 @@ func verifyKVMImageVolume(ctx context.Context, pool string, vm kvm.VM) (err erro
 		return err
 	}
 	defer func() { err = errors.Join(err, root.Close()) }()
-	file, info, err := openKVMImageFile(root, vm.Volume)
+	file, info, err := openKVMImageFile(root, vm.Volume, os.O_RDONLY)
 	if err != nil {
 		return err
 	}
@@ -109,7 +109,8 @@ func lockKVMImageSpool(root *os.Root, volume string) (*os.File, error) {
 	file, err := root.OpenFile(name, os.O_CREATE|os.O_EXCL|os.O_RDWR, 0600)
 	if errors.Is(err, os.ErrExist) {
 		var info os.FileInfo
-		file, info, err = openKVMImageFile(root, name)
+		// 在 NFS 上，flock 的独占模式要求文件描述符可写。
+		file, info, err = openKVMImageFile(root, name, os.O_RDWR)
 		if err == nil && (kvmImageLinkCount(info) != 1 || info.Mode().Perm() != 0600) {
 			return nil, errors.Join(errKVMUnsafeTarget, file.Close())
 		}
@@ -133,7 +134,7 @@ func stageKVMImage(ctx context.Context, imageRoot, pool string, vm kvm.VM, autho
 		if err != nil {
 			return nil, err
 		}
-		source, info, openErr := openKVMImageFile(root, image.SHA256+".raw")
+		source, info, openErr := openKVMImageFile(root, image.SHA256+".raw", os.O_RDONLY)
 		if err := errors.Join(openErr, root.Close()); err != nil {
 			if source != nil {
 				err = errors.Join(err, source.Close())
@@ -163,7 +164,7 @@ func publishKVMImage(ctx context.Context, directory, name string, image kvm.Boot
 	defer func() { err = errors.Join(err, lock.Close()) }()
 
 	temp := filepath.Join(kvmImageSpool, name+".part")
-	existing, info, err := openKVMImageFile(root, name)
+	existing, info, err := openKVMImageFile(root, name, os.O_RDONLY)
 	if err == nil {
 		if info.Size() != image.SizeBytes {
 			return errors.Join(errKVMImageMismatch, existing.Close())

@@ -38,7 +38,7 @@ func runKVMImageStage(ctx context.Context, api kvmVMAPI, target *url.URL, agent 
 	if pool == "" {
 		return errKVMUnsafeTarget
 	}
-	if _, err := runner.freeMiB(pool); err != nil {
+	if _, err := runner.poolFreeMiB(pool); err != nil {
 		return err
 	}
 	if err := verifyKVMVolumeExclusive(ctx, runner.read, job, filepath.Join(pool, job.Volume)); err != nil {
@@ -58,6 +58,12 @@ func runKVMImageStage(ctx context.Context, api kvmVMAPI, target *url.URL, agent 
 		}
 		if current != job {
 			return errKVMUnsafeTarget
+		}
+		if job.SharedStoragePool != "" {
+			path, err := runner.poolPath(ctx, job.StoragePool)
+			if err != nil || path != pool {
+				return errors.Join(errKVMUnsafeTarget, err)
+			}
 		}
 		return nil
 	}

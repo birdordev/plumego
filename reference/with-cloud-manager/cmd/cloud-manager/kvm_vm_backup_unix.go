@@ -32,7 +32,7 @@ func publishKVMBackup(ctx context.Context, pool, directory, volume, imageID stri
 	if err != nil || !destinationDirectory.IsDir() || os.SameFile(sourceDirectory, destinationDirectory) {
 		return image, errKVMUnsafeTarget
 	}
-	file, original, err := openKVMImageFile(root, volume)
+	file, original, err := openKVMImageFile(root, volume, os.O_RDONLY)
 	if err != nil {
 		return image, err
 	}

@@ -15,6 +15,7 @@ type ColdMigrationInput struct {
 	Image                 string `json:"image_id"`
 	Evidence              string `json:"evidence_sha256"`
 	SourceFenceGeneration int64  `json:"source_fence_generation,omitempty"`
+	RequireVerifiedBackup bool   `json:"require_verified_backup,omitempty"`
 }
 
 type ColdMigration struct {
@@ -44,7 +45,7 @@ type ColdMigrationView struct {
 const coldMigrationColumns = `migration_id,target_placement_id,image_id,evidence_sha256,vm_id::text,
 	source_host,source_placement_id,target_host,target_generation,vm_revision,status,
 	requester_id,COALESCE(reviewer_id,''),requested_at,reviewed_at,requester_revision,
-	source_fence_generation,cleanup_sha256,COALESCE(cleanup_reviewer_id,''),cleanup_at,automatic_placement`
+	source_fence_generation,cleanup_sha256,COALESCE(cleanup_reviewer_id,''),cleanup_at,automatic_placement,require_verified_backup`
 
 const coldMigrationSelect = `SELECT ` + coldMigrationColumns + ` FROM cmp_kvm_cold_migrations
 	WHERE (tenant_id,project_id,site_id,vm_id)=($1,$2,$3,$4::uuid)`
@@ -54,7 +55,7 @@ func scanColdMigration(row interface{ Scan(...any) error }) (ColdMigration, erro
 	err := row.Scan(&m.ID, &m.Placement, &m.Image, &m.Evidence, &m.VM, &m.SourceHost, &m.SourcePlacement,
 		&m.TargetHost, &m.TargetGeneration, &m.VMRevision, &m.Status, &m.Requester, &m.Reviewer,
 		&m.RequestedAt, &m.ReviewedAt, &m.requesterVersion,
-		&m.SourceFenceGeneration, &m.CleanupSHA256, &m.CleanupReviewer, &m.CleanupAt, &m.AutomaticPlacement)
+		&m.SourceFenceGeneration, &m.CleanupSHA256, &m.CleanupReviewer, &m.CleanupAt, &m.AutomaticPlacement, &m.RequireVerifiedBackup)
 	return m, err
 }
 
@@ -140,6 +141,11 @@ func (s Store) RequestColdMigration(ctx context.Context, token string, scope ide
 		if err := checkColdMigrationTarget(v, target, host, input.SourceFenceGeneration > 0); err != nil {
 			return err
 		}
+		if input.RequireVerifiedBackup {
+			if err := requireVerifiedHostImage(ctx, tx, actor, host, input.Image); err != nil {
+				return err
+			}
+		}
 		if _, err := reserveBootVolume(ctx, tx, actor, site, target, VMInput{ImageID: input.Image}); err != nil {
 			return err
 		}
@@ -159,11 +165,12 @@ func insertColdMigration(ctx context.Context, tx *sql.Tx, actor identity.Scope, 
 	vm vmRecord, target Placement, input ColdMigrationInput) (ColdMigration, error) {
 	result, err := scanColdMigration(tx.QueryRowContext(ctx, `INSERT INTO cmp_kvm_cold_migrations
 		(vm_id,migration_id,tenant_id,project_id,site_id,source_host,target_host,source_placement_id,target_placement_id,
-		 target_generation,vm_revision,image_id,evidence_sha256,requester_id,requester_revision,source_fence_generation,automatic_placement)
-		VALUES ($1::uuid,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
+		 target_generation,vm_revision,image_id,evidence_sha256,requester_id,requester_revision,source_fence_generation,automatic_placement,require_verified_backup)
+		VALUES ($1::uuid,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
 		ON CONFLICT DO NOTHING RETURNING `+coldMigrationColumns,
 		vm.ID, input.ID, actor.Tenant, actor.Project, site, vm.Host, target.Host, vm.Placement, target.ID,
-		target.Generation, vm.Revision, input.Image, input.Evidence, actor.Principal, member.Revision, input.SourceFenceGeneration, input.Placement == ""))
+		target.Generation, vm.Revision, input.Image, input.Evidence, actor.Principal, member.Revision,
+		input.SourceFenceGeneration, input.Placement == "", input.RequireVerifiedBackup))
 	if errors.Is(err, sql.ErrNoRows) {
 		return ColdMigration{}, ErrConflict
 	}
@@ -208,7 +215,9 @@ func checkRetainedVMSource(ctx context.Context, tx *sql.Tx, v vmRecord, revision
 		return ErrConflict
 	}
 	var retained bool
-	err := tx.QueryRowContext(ctx, `SELECT boot_volume_retained FROM cmp_kvm_placements WHERE placement_id=$1`, v.Placement).Scan(&retained)
+	err := tx.QueryRowContext(ctx, `SELECT boot_volume_retained AND NOT EXISTS (
+		SELECT 1 FROM cmp_kvm_volume_cleanups WHERE placement_id=$1 AND `+activeVolumeCleanup+`)
+		FROM cmp_kvm_placements WHERE placement_id=$1`, v.Placement).Scan(&retained)
 	if err == nil && !retained {
 		return ErrConflict
 	}
@@ -231,7 +240,7 @@ func checkColdMigrationTarget(v vmRecord, target Placement, host Host, evacuatio
 	}
 	if target.State != "held" || target.Host == v.Host || target.Capacity != v.Capacity ||
 		target.Network != v.Network || target.Capacity.GPU != 0 ||
-		host.FenceState != "" || host.Draining {
+		host.FenceState != "" || host.Draining || target.SharedStoragePool != host.SharedStoragePool {
 		return ErrConflict
 	}
 	if evacuation {

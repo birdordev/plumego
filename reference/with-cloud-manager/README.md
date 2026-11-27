@@ -1905,6 +1905,23 @@ cloud-manager kvm request-vm-recovery TENANT PROJECT SITE VM REVISION < recovery
 cloud-manager kvm review-vm-recovery TENANT PROJECT SITE VM REVISION < review.json
 ```
 
+### 自有 KVM NFSv4 共享存储
+
+执行 `cloud-manager migrate` 应用 `0131_kvm_shared_storage`。站点先准备项目专用的 NFSv4 导出、访问控制及实际容量上限。该导出用于平台管理卷，镜像缓存另外配置。管理员登记不可变的共享池 ID、规范 IPv4、导出路径和 MiB 预算。同一服务地址上的相同导出或包含关系会被拒绝。站点需为每个登记的导出提供独立容量预算，避免用别名重复登记同一后端。
+
+```json
+{"id":"shared-data","server":"10.24.0.9","export":"/kvm/compute","capacity_mib":524288}
+```
+
+```bash
+cloud-manager kvm register-shared-storage TENANT PROJECT SITE < storage.json
+cloud-manager kvm get-shared-storage TENANT PROJECT SITE POOL
+```
+
+每台候选宿主机先建立可写的持久 libvirt `netfs` 池。配置 `format type='nfs'`、NFSv4/TCP 和服务端锁，源地址和导出与登记一致。在宿主机登记里填写本机 libvirt 池名 `storage_pool` 及 `shared_storage_pool_id`。候选主机可使用不同的本机池名和挂载目录。`observe-host` 校验 libvirt XML、Linux 挂载身份和实际文件系统，失败时上报零容量。绑定的代理还会在启动卷暂存和后续任务执行前检查挂载。 [libvirt 存储池 XML](https://libvirt.org/formatstorage.html) [Linux NFS 锁语义](https://man7.org/linux/man-pages/man2/flock.2.html)
+
+在预留中填写 `shared_storage_pool_id`。省略 `storage_pool` 时允许选择该共享池任意合格的宿主机。CPU、内存及 GPU 按宿主机计费，磁盘预留由候选宿主机共用同一预算。未绑定的放置在成功回收后释放预算，退役后保留的卷继续计为 `retained_mib`。查询回执包含仍在记账的 `reserved_mib` 和 `retained_mib`，代理用 `usage=false` 读取身份与预算。共享池上的新 VM 使用登记镜像及平台生成的独占卷名。冷迁移可显式指定共享池上的目标预留，并在审批时复核目标容量。
+
 ### 自有 KVM 网络与 IPv4 地址池
 
 执行 `cloud-manager migrate` 应用 `0115_kvm_ipam`，更新 API 副本和站点代理。管理员在 `POST /v1/tenants/{tenant}/projects/{project}/kvm/sites/{site}/networks` 登记项目站点网络。在宿主机登记的 `networks` 中使用相同网络名。地址池不可变，规范 IPv4 子网为 /16 至 /30，连续地址段包含 1 至 4096 个可用地址，排除网关、网络地址和广播地址。同一项目站点的地址池子网不得重叠。启用前现有网络的有效预留和已绑定虚拟机须先结算。
@@ -2003,6 +2020,20 @@ cloud-manager kvm mirror-image TENANT PROJECT SITE IMAGE < mirror.json
 
 镜像源按文件名提供 `/kvm/SHA256.raw` 原始字节，使用宿主机信任的 TLS 证书。命令拒绝重定向和内容编码，控制面令牌仅用于读取登记合同。数据流到磁盘，校验长度和摘要后重新查询登记与读权限，再原子发布。相同摘要的有效文件可就地复用，损坏目标保留供运维检查。要启动使用此镜像的 VM，各候选宿主机的 `image_root` 都应能读到该文件。
 
+#### 目标宿主机备份回执
+
+应用 `0130_kvm_host_images`。在候选宿主机上，用该宿主机绑定的代理凭据执行 `mirror-host-image`。使用与 `run-vm` 相同的本地 `image_root` 和站点维护的 HTTPS 镜像源。代理先验证本机 libvirt UUID、服务绑定和代次，校验尺寸与 SHA-256，并在文件原子发布后上报回执。已存在的文件会重新校验，成功时刷新回执，无需重新下载。
+
+```bash
+cloud-manager kvm mirror-host-image TENANT PROJECT SITE HOST GENERATION IMAGE < mirror.json
+cloud-manager kvm get-host-image TENANT PROJECT SITE HOST IMAGE
+cloud-manager kvm report-host-image TENANT PROJECT SITE HOST IMAGE < report.json
+```
+
+回执有效期为 30 分钟，换绑或隔离代次变化使旧回执失效。项目成员可查询版本、状态和有效期。已绑定的代理可向宿主机的 `/images/{image}` 回报 `missing`，提交当前 `revision`、宿主机 `uuid` 与 `generation`、`image_sha256` 和 `image_size_bytes`。探测到本地镜像损坏时，镜像命令也会尝试撤销之前的校验回执。重放相同上报返回原回执，有效期只有通过新版本校验才能刷新。
+
+#### 从镜像创建启动卷
+
 提交 VM 时可以传入 `{"placement_id":"PLACEMENT_ID","image_id":"base-linux"}`，或者使用原来的 `boot_volume`，两者择一。预留磁盘容量须覆盖镜像字节数。系统按预留生成独占启动卷名，`cmp-image-` 前缀用于管理生成的卷。提交回执包含镜像摘要、大小和目标卷，同预留同镜像重试返回原 VM。
 
 需要准备镜像的宿主机在 `run-vm` 的本地配置中设置规范绝对路径 `{"image_root":"/srv/kvm-images"}`。也可同时提供 `boot_volumes`。目录池和镜像目录由站点独占管理，程序校验路径和文件类型。镜像准备在临时文件中写入，经精确长度和 SHA-256 校验、授权复核和持久化后，原子发布目标卷。已有目标仅在内容与镜像完全一致且链接状态可以核验时采用。
@@ -2039,6 +2070,28 @@ cloud-manager kvm get-vm TENANT PROJECT SITE VM
 
 收到回执或断连后，代理都通过完整域清单继续只读核对。第一轮确认缺失后推进观测版本，第二轮必须基于新版本重新读取。期间若再次看到该域，先前的缺失证据失效。平台在同一事务标记 `retired`、释放原放置预留并登记审计。预留显示 `boot_volume_retained: true`，原启动卷保留且继续禁止绑定任何新 VM。文件系统容量采样仍会计入该卷实际占用。退役请求在写入授权登记前发现域已缺失时保持待核对。
 
+### 自有 KVM 保留卷清理
+
+应用 `0133_kvm_volume_cleanups`，更新 API 和宿主机代理。项目管理员按原 `placement_id` 申请清理退役卷或迁移后的历史卷。历史卷仍属于原宿主机。故障疏散产生的旧卷需先确认源域和网络已清理。进行中的冷迁移申请与保留卷清理互斥。
+
+申请正文包含 `cleanup_id`、`backup_image_id` 和站点保留策略审核的 `evidence_sha256`，通过强 `If-Match` 提交当前宿主机版本。独立审批人使用清理回执的 `revision` 批准或拒绝。源代理从本地 `image_root` 读取已登记备份的 `SHA256.raw`，核对其和原卷的准确字节数与 SHA-256。备份沿用镜像目录的 32 GiB 上限。镜像目录需与启动卷池分离，并由站点在独立故障域保管备份。预置旧卷还需出现在代理配置的 `boot_volumes` 中。
+
+```bash
+cloud-manager kvm request-volume-cleanup TENANT PROJECT SITE PLACEMENT HOST_REVISION < cleanup.json
+cloud-manager kvm review-volume-cleanup TENANT PROJECT SITE PLACEMENT CLEANUP REVISION < review.json
+cloud-manager kvm get-volume-cleanup TENANT PROJECT SITE PLACEMENT CLEANUP
+cloud-manager kvm list-volume-cleanups TENANT PROJECT SITE HOST [AFTER]
+cloud-manager kvm run-volume-cleanup TENANT PROJECT SITE HOST GENERATION PLACEMENT CLEANUP < agent.json
+```
+
+绑定代理核对池 UUID、挂载、文件身份、域及 backing chain 引用后，领取一次逻辑删除授权。站点需保持池路径和挂载受控，共享池仅由受管宿主机使用。代理后续刷新卷清单，分别核对文件、libvirt 目录和域引用。两次独立确认缺失后，移除预算中的保留卷占用并释放卷名。卷重新出现会重置观察记录。删除回执丢失后，使用同一代理命令观察结果。 [libvirt 卷删除](https://www.libvirt.org/manpages/virsh.html#vol-delete)
+
+已派发的任务阻塞重新绑定和隔离后重新接入。可按宿主机分页查看当前任务。物理隔离已确认且旧删除进程已停止时，独立审批人可使用清理版本和现场证据结算。确认卷仍在时提交 `observed=present` 和证据摘要，可保留磁盘后重新申请。确认缺失时提交 `observed=absent` 和两份独立证据摘要，结算保留占用。
+
+```bash
+cloud-manager kvm resolve-volume-cleanup TENANT PROJECT SITE PLACEMENT CLEANUP REVISION < evidence.json
+```
+
 ### 自有 KVM 虚拟机冷迁移
 
 执行 `cloud-manager migrate` 应用 `0125_kvm_cold_migrations`。首条路径适用于同一项目和站点、已确认源域缺失且原启动卷仍在保留的虚拟机，以备份恢复到另一宿主机。源虚拟机可经正常退役进入 `retired`，也可经故障隔离后的独立核对收敛为保留启动卷的 `rejected` 或 `retired`。
@@ -2064,6 +2117,31 @@ cloud-manager kvm review-cold-migration TENANT PROJECT SITE VM REVISION < review
 cloud-manager kvm get-vm TENANT PROJECT SITE VM
 ```
 
+### 自有 KVM 实时迁移
+
+应用 `0132_kvm_live_migrations`，升级 KVM API 和宿主机代理。首条路径适用于同站点、同一已验证 NFSv4 池、同名 libvirt 池及同一个外部二层网络上的运行中 VM。两台宿主机的 libvirt 网络须是已激活且持久的 `forward mode="bridge"`，使用同一网络 UUID 和网桥名。地址由站点网络分配。此路径要求单个管理 raw 启动卷、明确的 `cache="none"`、兼容的 CPU、QEMU 及 libvirt 配置。 [libvirt 迁移前提](https://www.libvirt.org/manpages/virsh.html#migrate)
+
+站点为源、目标及源 libvirt 守护进程配置经过认证的 TLS 连接。源代理本地配置以目标宿主机 ID 映射 `qemu+tls://主机名/system`，目标代理可以使用空对象。源代理在派发前检查目标的 TLS 连接、libvirt 宿主机 UUID、桥接网络和域缺失状态。迁移使用 libvirt TLS 隧道保护虚拟机内存数据。 [libvirt 对等迁移与隧道](https://libvirt.org/migration.html)
+
+```json
+{"destinations":{"host-two":"qemu+tls://host-two.example.net/system"}}
+```
+
+```bash
+cloud-manager kvm request-live-migration TENANT PROJECT SITE VM VM_REVISION < migration.json
+cloud-manager kvm review-live-migration TENANT PROJECT SITE VM MIGRATION VM_REVISION < review.json
+cloud-manager kvm get-live-migration TENANT PROJECT SITE VM MIGRATION
+cloud-manager kvm run-live-migration TENANT PROJECT SITE HOST GENERATION VM MIGRATION < migration-agent.json
+```
+
+管理员在申请正文提供 `migration_id` 和 `target_host`。独立审批人提交 `{"decision":"approve"}` 后，目标 CPU 和内存进入预留，磁盘继续沿用同一共享卷。先在目标运行代理完成本地检查，再在源运行代理派发。目标准备证据有效期为 90 秒，可再次采样。已派发的后续调用只进行观测。源代理报告原域已消失后，目标代理报告同一个 UUID、MAC 和持久域在运行。平台在同一事务切换宿主机归属和计算预留，保留 VM ID、放置 ID、启动卷和原创建请求的幂等记录。
+
+派发前，独立审批人可拒绝迁移并释放目标计算预留。派发后发生无法收敛的故障时，先按宿主机隔离协议分别确认两端的新隔离代次。现场证据须证明旧派发和 libvirt 迁移任务已结束，目标没有残留域定义或自动启动路径。独立审批人使用当前**迁移版本**和 `evidence_sha256` 提交终止。控制面保留原归属和审计回执，之后可继续使用原有故障疏散流程。
+
+```bash
+cloud-manager kvm abort-live-migration TENANT PROJECT SITE VM MIGRATION MIGRATION_REVISION < evidence.json
+```
+
 ### 自有 KVM 故障疏散
 
 执行 `cloud-manager migrate` 应用 `0126_kvm_evacuation`。源宿主机失联且仍可能保留原域时，站点人员先通过带外手段确保旧宿主机及其网络不能对外运行，并由独立审批人确认该次隔离。管理员核对已经存在的可信备份、可恢复时间点和源 VM 身份。流程支持已有运行或停机历史的 VM，要求源放置仍绑定。
@@ -2071,6 +2149,8 @@ cloud-manager kvm get-vm TENANT PROJECT SITE VM
 管理员使用原放置接口申请目标容量，在放置正文中填写 `evacuation_vm_id` 和 `required_host`，沿用源 VM 的网络和 CPU、内存及磁盘规格。平台保留源 IPv4 到审批提交，目标预留只占容量。向 `/vms/{vm}/cold-migration` 提交目标预留、备份、证据，以及已独立确认的 `source_fence_generation`。独立审批再次核对源隔离和目标代次。事务同时转移 VM ID、IPv4 及 MAC，保留原启动卷，并为目标代理入队。即使地址池没有空闲地址，也能使用原地址恢复。
 
 应用 `0127_kvm_evacuation_placement` 后，疏散申请可省略 `target_placement_id`，由控制面在其他故障域内选择可用宿主机。控制面沿用源网络与资源规格，核对目标代理授权、容量观测及剩余容量，并将目标放置与待审批申请同事务写入。候选宿主机须可取得已登记的备份。默认预留 15 分钟，收据包含 `target_host`、`target_placement_id` 和 `automatic_placement=true`。同一申请重试时继续省略目标预留。审批拒绝会释放自动预留。若没有可用目标或候选正被其他事务占用，申请返回 409。预留过期时，拒绝原申请后用新迁移 ID 提交，控制面重新选择目标。
+
+需要控制面验证备份可达时，在单项冷迁移请求、批次的每项或疏散预案的每项设置 `require_verified_backup: true`。自动选址只接受同时具备足够容量和当前回执的目标，显式目标也要通过回执校验。审批时再次核对当前回执，失效则返回 409。自动预案在没有合格目标时记录 `verified_target_unavailable` 并重试。目标代理在实际暂存启动卷时仍校验文件字节。
 
 源宿主机保持隔离，直到站点人员确认原域和自动启动配置已清除、遗留网络映射已清理，并确保原域无法再次接入。独立审批人以当前宿主机 `If-Match` 向源宿主机的 `/fence/cleanup` 提交 `vm_id`、`migration_id` 和现场清理证据的 `evidence_sha256`。在该隔离代次内，`GET /fence/work` 将未完成清理的疏散显示为 `cleanup_required`，并提供 `evacuation_id`。所有阻塞清除后，仍需完成原宿主机重新接入审批及新的容量上报。
 
@@ -2095,4 +2175,21 @@ cloud-manager kvm request-evacuation-batch TENANT PROJECT SITE SOURCE_HOST HOST_
 cloud-manager kvm get-evacuation-batch TENANT PROJECT SITE SOURCE_HOST BATCH_ID
 ```
 
-实际停机一致性备份、恢复后的访客数据、物理网络连通及带外隔离仍需现场验收。共享存储、实时迁移、故障自动触发及保留卷清理仍待实现。
+#### 隔离确认后自动提交疏散预案
+
+应用 `0129_kvm_evacuation_plans` 后，用同一套 PostgreSQL 连接配置启动 `cloud-manager kvm-evacuation-controller`。多个控制器副本可共享一个任务表。进程只需数据库连接配置，站点人员仍负责带外隔离并由独立审批人提交 `confirm`。
+
+项目管理员可在宿主机正常或隔离待确认时，向其 `/fence/evacuation-plans` 提交 `plan_id` 和 1 至 16 项与批量疏散相同的 `items`，并附当前宿主机 `If-Match`。预案绑定隔离代次、申请人的项目授权版本和各 VM 的版本及已登记备份。同一宿主机的多个预案可分别覆盖不同 VM。用同一个 `plan_id`、原宿主机版本和相同清单可查询登记结果。变更清单时先取消旧预案，再使用新 ID 登记。
+
+隔离确认与激活预案同事务写入。控制器再次核对隔离代次、当前授权、VM 和备份，随后原子受理批次。项目成员通过预案的 `batch_id` 查询各 VM 的待审批申请，独立审批人逐台审核。出现容量不足、源宿主机正在申请重新接入或暂时的数据库写入失败时，控制器每 30 秒重试。查询中的 `last_result` 和 `next_attempt_at` 表明等待原因及下次执行时间。授权、源代次或 VM 状态变化导致终止时，先查看失败原因，再重新核对现场状态。已确认隔离的宿主机可使用手工批次接口提交修订后的方案。
+
+批次受理后，目标预留有效期为 15 分钟。超过有效期的申请由独立审批人拒绝后，可按当前状态重新提交手工批次。
+
+```bash
+cloud-manager kvm-evacuation-controller
+cloud-manager kvm arm-evacuation-plan TENANT PROJECT SITE SOURCE_HOST HOST_REVISION < plan.json
+cloud-manager kvm get-evacuation-plan TENANT PROJECT SITE SOURCE_HOST PLAN_ID
+cloud-manager kvm cancel-evacuation-plan TENANT PROJECT SITE SOURCE_HOST PLAN_ID
+```
+
+实际停机一致性备份、恢复后的访客数据、物理网络连通、带外隔离及真实 NFSv4 故障恢复仍需现场验收。实时迁移需在实际 KVM 双宿主机量测访客停顿、数据完整性和中途断连恢复。保留卷清理需在实际 libvirt 池及 NFS 服务端验证删除、目录刷新和容量归还。

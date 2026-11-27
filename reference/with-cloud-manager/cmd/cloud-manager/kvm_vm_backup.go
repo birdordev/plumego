@@ -67,6 +67,10 @@ func runKVMVMBackup(ctx context.Context, api kvmVMAPI, target kvmBackupTarget, i
 	if _, err := readKVMMemory(caps, host.UUID); err != nil {
 		return err
 	}
+	probe.shared, err = loadKVMSharedStorage(ctx, api, host)
+	if err != nil {
+		return err
+	}
 	plan := api.target.JoinPath("vm-work", target.vm, "backup-plan")
 	command := kvm.VMCommand{AgentIdentity: kvm.AgentIdentity{UUID: host.UUID, Generation: host.Generation}, Revision: target.revision}
 	var vm kvm.VM
@@ -86,7 +90,7 @@ func runKVMVMBackup(ctx context.Context, api kvmVMAPI, target kvmBackupTarget, i
 	if pool == "" || pool == profile.ImageRoot {
 		return errKVMUnsafeTarget
 	}
-	if _, err := probe.freeMiB(pool); err != nil {
+	if _, err := probe.poolFreeMiB(pool); err != nil {
 		return err
 	}
 	size, err := readKVMRawVolume(ctx, probe.read, vm, pool)

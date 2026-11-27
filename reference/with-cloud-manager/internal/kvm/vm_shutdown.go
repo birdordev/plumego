@@ -23,6 +23,9 @@ func (s Store) RequestVMShutdown(ctx context.Context, token string, scope identi
 		if v.State != "running" {
 			return ErrConflict
 		}
+		if err := ensureVMNotMigrating(ctx, tx, v.ID); err != nil {
+			return err
+		}
 		if _, err := tx.ExecContext(ctx, `UPDATE cmp_kvm_vms SET state='shutdown_requested',
 			shutdown_requester_id=$2,shutdown_requester_revision=$3,revision=revision+1,
 			updated_at=clock_timestamp() WHERE vm_id=$1::uuid`, id, actor.Principal, member.Revision); err != nil {

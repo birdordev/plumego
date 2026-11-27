@@ -44,29 +44,40 @@ func observeKVMHost(ctx context.Context, target *url.URL, hostID, generation, to
 	if host.FenceState != "" {
 		return kvm.ErrConflict
 	}
-	sampling, stopSampling := context.WithTimeout(ctx, 12*time.Second)
-	defer stopSampling()
-	capacity, err := probe.capacity(sampling, host, limits)
+	api := kvmVMAPI{target: target, token: token, transport: transport}
+	probe.shared, err = loadKVMSharedStorage(ctx, api, host)
 	if err != nil {
 		return err
 	}
+	sampling, stopSampling := context.WithTimeout(ctx, 12*time.Second)
+	defer stopSampling()
+	capacity, sampleErr := probe.capacity(sampling, host, limits)
+	if sampleErr != nil && probe.shared.ID == "" {
+		return sampleErr
+	}
 	domains := []string{}
+	var evidence *kvm.SharedStorageEvidence
 	if capacity.VCPU > 0 && capacity.MemoryMiB > 0 && capacity.DiskMiB > 0 {
-		api := kvmVMAPI{target: target, token: token, transport: transport}
 		verified, ok := probe.capacityDomains(sampling, host, api.lookupInventory)
 		if ok {
 			domains = verified
+			if probe.shared.ID != "" {
+				evidence = &kvm.SharedStorageEvidence{ID: probe.shared.ID, SharedStorageSource: probe.shared.SharedStorageSource}
+			}
 		} else {
 			capacity = kvm.Capacity{}
 		}
 	}
+	if probe.shared.ID != "" && evidence == nil {
+		capacity = kvm.Capacity{}
+	}
 	body, err := json.Marshal(kvm.Report{UUID: host.UUID, Generation: expected, Sequence: host.Sequence + 1, Capacity: capacity,
-		Inventory: &kvm.CapacityInventory{HostRevision: host.Revision, Domains: domains}})
+		Inventory: &kvm.CapacityInventory{HostRevision: host.Revision, Domains: domains}, SharedStorage: evidence})
 	if err != nil {
 		return err
 	}
 	writePlan := operationRequestPlan{target: target.JoinPath("capacity"), method: http.MethodPut, status: http.StatusOK, body: body}
-	return runProjectRequest(ctx, writePlan, token, nil, output, transport)
+	return errors.Join(sampleErr, runProjectRequest(ctx, writePlan, token, nil, output, transport))
 }
 
 func readKVMHostLimits(input io.Reader) (kvm.Capacity, error) {
@@ -89,10 +100,14 @@ func runLocalVirsh(ctx context.Context, args ...string) ([]byte, error) {
 }
 
 func invokeLocalVirsh(ctx context.Context, args ...string) ([]byte, error) {
+	return invokeKVMVirsh(ctx, "qemu:///system", args...)
+}
+
+func invokeKVMVirsh(ctx context.Context, connection string, args ...string) ([]byte, error) {
 	if runtime.GOOS != "linux" {
 		return nil, errors.New("local KVM capacity collection requires Linux")
 	}
-	cmd := exec.CommandContext(ctx, "/usr/bin/virsh", append([]string{"--connect", "qemu:///system"}, args...)...)
+	cmd := exec.CommandContext(ctx, "/usr/bin/virsh", append([]string{"--connect", connection}, args...)...)
 	cmd.Env = []string{"LC_ALL=C", "PATH=/usr/bin:/bin"}
 	cmd.WaitDelay = time.Second
 	var output cappedVirshOutput

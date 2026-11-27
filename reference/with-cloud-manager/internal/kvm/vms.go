@@ -16,22 +16,23 @@ type VMInput struct {
 
 type VM struct {
 	IPv4Assignment
-	ImageID        string   `json:"image_id,omitempty"`
-	ImageSHA256    string   `json:"image_sha256,omitempty"`
-	ImageSizeBytes int64    `json:"image_size_bytes,omitempty"`
-	Subnet         string   `json:"subnet,omitempty"`
-	Gateway        string   `json:"gateway,omitempty"`
-	ID             string   `json:"id"`
-	Placement      string   `json:"placement_id"`
-	Host           string   `json:"host"`
-	Generation     int64    `json:"generation"`
-	Network        string   `json:"network"`
-	StoragePool    string   `json:"storage_pool"`
-	Volume         string   `json:"boot_volume"`
-	Capacity       Capacity `json:"capacity"`
-	State          string   `json:"state"`
-	Revision       int64    `json:"revision"`
-	Observation    string   `json:"observation,omitempty"`
+	ImageID           string   `json:"image_id,omitempty"`
+	ImageSHA256       string   `json:"image_sha256,omitempty"`
+	ImageSizeBytes    int64    `json:"image_size_bytes,omitempty"`
+	Subnet            string   `json:"subnet,omitempty"`
+	Gateway           string   `json:"gateway,omitempty"`
+	ID                string   `json:"id"`
+	Placement         string   `json:"placement_id"`
+	Host              string   `json:"host"`
+	Generation        int64    `json:"generation"`
+	Network           string   `json:"network"`
+	StoragePool       string   `json:"storage_pool"`
+	Volume            string   `json:"boot_volume"`
+	Capacity          Capacity `json:"capacity"`
+	State             string   `json:"state"`
+	Revision          int64    `json:"revision"`
+	Observation       string   `json:"observation,omitempty"`
+	SharedStoragePool string   `json:"shared_storage_pool_id,omitempty"`
 }
 
 type vmRecord struct {
@@ -50,7 +51,7 @@ const vmColumns = `v.vm_id::text,p.placement_id,p.host_id,p.generation,p.network
 	v.shutdown_requester_revision,v.shutdown_reviewer_revision,
 	v.retire_requester_id,v.retire_reviewer_id,v.retire_requester_revision,v.retire_reviewer_revision,
 	COALESCE(host(p.ipv4),''),COALESCE(n.subnet::text,''),COALESCE(host(n.gateway),''),
-	COALESCE(i.image_id,''),COALESCE(i.sha256,''),COALESCE(i.size_bytes,0)`
+	COALESCE(i.image_id,''),COALESCE(i.sha256,''),COALESCE(i.size_bytes,0),COALESCE(p.shared_storage_pool_id,'')`
 const vmFrom = ` FROM cmp_kvm_vms AS v JOIN cmp_kvm_placements AS p USING (placement_id)
 	LEFT JOIN cmp_kvm_ipv4_pools AS n ON (n.tenant_id,n.project_id,n.site_id,n.network_id)=(p.tenant_id,p.project_id,p.site_id,p.ipam_network_id)
 	LEFT JOIN cmp_kvm_boot_images AS i ON (i.tenant_id,i.project_id,i.site_id,i.image_id)=(p.tenant_id,p.project_id,p.site_id,p.image_id)`
@@ -61,7 +62,8 @@ func scanVM(row interface{ Scan(...any) error }) (vmRecord, error) {
 		&v.Capacity.VCPU, &v.Capacity.MemoryMiB, &v.Capacity.DiskMiB, &v.Capacity.GPU,
 		&v.State, &v.Revision, &v.Observation, &v.requester, &v.reviewer, &v.requesterRevision, &v.reviewerRevision,
 		&v.shutdownRequester, &v.shutdownReviewer, &v.shutdownRequesterRevision, &v.shutdownReviewerRevision,
-		&v.retireRequester, &v.retireReviewer, &v.retireRequesterRevision, &v.retireReviewerRevision, &v.Address, &v.Subnet, &v.Gateway, &v.ImageID, &v.ImageSHA256, &v.ImageSizeBytes)
+		&v.retireRequester, &v.retireReviewer, &v.retireRequesterRevision, &v.retireReviewerRevision, &v.Address, &v.Subnet, &v.Gateway,
+		&v.ImageID, &v.ImageSHA256, &v.ImageSizeBytes, &v.SharedStoragePool)
 	v.MAC = IPv4MAC(v.Address)
 	return v, err
 }
@@ -130,6 +132,18 @@ func (s Store) SubmitVM(ctx context.Context, token string, scope identity.Scope,
 		}
 		if p.State != "held" || p.Generation != host.Generation || host.Draining || p.Capacity.GPU != 0 || p.EvacuationVM != "" {
 			return ErrConflict
+		}
+		if p.SharedStoragePool != "" {
+			if p.SharedStoragePool != host.SharedStoragePool {
+				return ErrConflict
+			}
+			ok, err := fitsCurrentCapacity(ctx, tx, actor, host, Capacity{DiskMiB: p.Capacity.DiskMiB})
+			if err != nil {
+				return err
+			}
+			if !ok {
+				return ErrNoCapacity
+			}
 		}
 		volume, err = reserveBootVolume(ctx, tx, actor, site, p, input)
 		if err != nil {

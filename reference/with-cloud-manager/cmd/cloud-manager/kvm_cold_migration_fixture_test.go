@@ -18,10 +18,16 @@ import (
 
 func migrationAgentFixture(t *testing.T, server *httptest.Server, destination string, vm kvm.VM, contents []byte) (*fakeKVMDaemon, kvmVMRunner, kvmVMAPI, string) {
 	t.Helper()
-	source, pool := imageFixtureDir(t), imageFixtureDir(t)
+	source := imageFixtureDir(t)
 	if err := os.WriteFile(filepath.Join(source, vm.ImageSHA256+".raw"), contents, 0600); err != nil {
 		t.Fatal(err)
 	}
+	return recoveryAgentFixture(t, server, destination, fixtureMigrationUUID, fixtureKVMReplacement, source, vm)
+}
+
+func recoveryAgentFixture(t *testing.T, server *httptest.Server, destination, uuid, token, source string, vm kvm.VM) (*fakeKVMDaemon, kvmVMRunner, kvmVMAPI, string) {
+	t.Helper()
+	pool := imageFixtureDir(t)
 	target := filepath.Join(pool, vm.Volume)
 	network := `<network><name>app</name><forward mode="nat"/><ip address="10.77.0.1" prefix="29"><dhcp>
 		<host ip="` + vm.Address + `" mac="` + vm.MAC + `" name="fixture-vm"/>
@@ -33,7 +39,7 @@ func migrationAgentFixture(t *testing.T, server *httptest.Server, destination st
 		switch strings.Join(args, " ") {
 		case "capabilities":
 			data, err := read(ctx, args...)
-			return bytes.ReplaceAll(data, []byte(fixtureKVMUUID), []byte(fixtureMigrationUUID)), err
+			return bytes.ReplaceAll(data, []byte(fixtureKVMUUID), []byte(uuid)), err
 		case "pool-dumpxml --pool local":
 			return []byte(`<pool type="dir"><name>local</name><target><path>` + pool + `</path></target></pool>`), nil
 		case "vol-dumpxml --pool local --vol " + vm.Volume:
@@ -69,6 +75,6 @@ func migrationAgentFixture(t *testing.T, server *httptest.Server, destination st
 	if err != nil {
 		t.Fatal(err)
 	}
-	api := kvmVMAPI{target: base.JoinPath(destination), token: fixtureKVMReplacement, transport: server.Client().Transport}
+	api := kvmVMAPI{target: base.JoinPath(destination), token: token, transport: server.Client().Transport}
 	return daemon, runner, api, fmt.Sprintf(`{"image_root":%q}`, source)
 }

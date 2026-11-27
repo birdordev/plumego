@@ -52,6 +52,8 @@ func writeKVMError(w http.ResponseWriter, r *http.Request, err error, logger plu
 		err = contract.NewErrorBuilder().Type(contract.TypeConflict).Message("no matching KVM IPv4 address is available").Build()
 	case errors.Is(err, kvm.ErrNoCapacity):
 		err = contract.NewErrorBuilder().Type(contract.TypeConflict).Message("no matching KVM host has capacity").Build()
+	case errors.Is(err, kvm.ErrNoVerifiedTarget):
+		err = contract.NewErrorBuilder().Type(contract.TypeConflict).Message("no eligible KVM target with a fresh verified backup").Build()
 	}
 	writeAccountError(w, r, err, logger)
 }

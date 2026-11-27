@@ -3,6 +3,7 @@ package main
 import "github.com/birdordev/plumego/x/openapi"
 
 func kvmVMHints(hints map[string]openapi.Op, operation func(string, string, string, bool) openapi.Op) {
+	kvmLiveMigrationHints(hints, operation)
 	submit := operation("submitKVMVM", "202", "固定预留和启动卷的待审批虚拟机任务", true)
 	submit.Body = serviceCatalogBody([]string{"placement_id", "boot_volume", "image_id"}, false)
 	submit.Body.Description = "绑定已预置的独占 boot_volume 或已登记的 image_id，两者择一。"
@@ -42,6 +43,7 @@ func kvmVMHints(hints map[string]openapi.Op, operation func(string, string, stri
 	migration.Responses["409"] = openapi.Response{Description: "源域缺失条件、备份或目标预留不满足冷迁移要求"}
 	migration.Body = serviceCatalogBody([]string{"migration_id", "target_placement_id", "image_id", "evidence_sha256"}, false)
 	migration.Body.Content["application/json"].Schema.Properties["source_fence_generation"] = openapi.Integer
+	migration.Body.Content["application/json"].Schema.Properties["require_verified_backup"] = openapi.Schema{Type: "boolean"}
 	migration.Body.Description = "故障疏散需提供独立确认的源隔离代次。省略 target_placement_id 时，服务自动在其他故障域预留同规格容量。"
 	hints["POST "+kvmColdMigrationRoute] = migration
 	hints["GET "+kvmColdMigrationRoute] = operation("getKVMColdMigration", "200", "本虚拟机最新冷迁移申请及审批结果", false)

@@ -16,20 +16,26 @@ platform:
   kvm-host-probe: local-read-only-libvirt-and-filesystem-capacity
   kvm-resident-domain-capacity: batched-bound-inventory-check-with-existing-reservations
   kvm-placement: transactional-expiring-hold-with-host-network-local-storage-and-gpu-constraints
+  kvm-shared-storage: verified-nfsv4-pool-with-cross-host-transactional-disk-budget-and-retained-volumes
   kvm-ipv4-allocation: site-network-scoped-atomic-capacity-and-ip-holds-with-verified-static-dhcp
   kvm-static-dhcp: bound-agent-preview-and-additive-live-and-persistent-reconciliation
   kvm-vm-create: independent-approval-and-two-agent-commands
   kvm-vm-boot: exclusive-local-prestaged-raw-volume
   kvm-image-mirror: operator-configured-https-pull-with-site-catalog-and-atomic-local-publication
+  kvm-host-image-receipt: bound-agent-versioned-local-image-verification-and-expiry
   kvm-vm-boot-image: immutable-site-raw-image-and-recoverable-exclusive-volume-staging
   kvm-vm-create-recovery: single-dispatch-defined-and-running-evidence
   kvm-vm-shutdown: independent-approval-single-acpi-dispatch-and-persistent-offline-evidence
   kvm-vm-retirement: admin-and-independent-approval-two-absence-observations-and-retained-boot-volume
+  kvm-retained-volume-cleanup: exact-backup-verification-single-dispatch-double-absence-and-fenced-resolution
   kvm-vm-cold-migration: approved-verified-absence-to-target-reservation-with-registered-raw-backup-and-stable-vm-id
+  kvm-vm-live-migration: shared-nfsv4-bridged-guest-with-independent-approval-single-tls-dispatch-and-two-sided-handoff
   kvm-vm-backup-export: bound-agent-verified-retained-raw-volume-atomic-digest-publication-and-source-receipt
   kvm-fenced-vm-evacuation: approved-backup-restore-with-atomic-ipv4-transfer-and-source-cleanup-rejoin-gate
   kvm-evacuation-placement: atomic-cross-failure-domain-target-reservation-and-idempotent-review-draft
+  kvm-verified-backup-placement: optional-verified-host-image-gate-on-migration-admission-and-approval
   kvm-evacuation-batch: atomic-host-scoped-admission-with-independent-vm-reviews-and-live-receipt
+  kvm-evacuation-plan: durable-fence-confirmation-trigger-with-grant-revalidation-and-atomic-batch-submission
   kvm-target-environment: pending-physical-host-validation
   change-ticket-policy: versioned-project-policy-with-frozen-operation-binding
   change-ticket-delivery: signed-project-outbox-opt-in

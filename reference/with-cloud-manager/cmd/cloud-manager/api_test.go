@@ -39,6 +39,11 @@ func TestAcceptancePostgresReadiness(t *testing.T) {
 	get("/openapi.json", http.StatusOK, `"renameCacheInstance"`)
 	get("/openapi.json", http.StatusOK, `"listKVMHostFenceWork"`)
 	get("/openapi.json", http.StatusOK, `"reviewKVMColdMigration"`)
+	get("/openapi.json", http.StatusOK, `"cancelKVMEvacuationPlan"`)
+	get("/openapi.json", http.StatusOK, `"reportKVMHostImage"`)
+	get("/openapi.json", http.StatusOK, `"registerKVMSharedStorage"`)
+	get("/openapi.json", http.StatusOK, `"applyKVMLiveMigrationCommand"`)
+	get("/openapi.json", http.StatusOK, `"applyKVMVolumeCleanupCommand"`)
 	get("/readyz", http.StatusServiceUnavailable, "storage is unavailable")
 	if err := identity.Migrate(t.Context(), db); err != nil {
 		t.Fatal(err)
@@ -138,7 +143,8 @@ func TestAcceptancePostgresReadiness(t *testing.T) {
 	}
 	get("/readyz", http.StatusOK, `"ready"`)
 	for _, version := range []string{kvm.HostFenceMigration, kvm.FencedVMRecoveryMigration, kvm.ColdMigrationVersion,
-		kvm.EvacuationMigration, kvm.AutomaticEvacuationMigration, kvm.EvacuationBatchMigration} {
+		kvm.EvacuationMigration, kvm.AutomaticEvacuationMigration, kvm.EvacuationBatchMigration, kvm.EvacuationPlanMigration,
+		kvm.HostImageMigration, kvm.SharedStorageMigration, kvm.LiveMigrationVersion, kvm.VolumeCleanupMigration} {
 		if _, err := db.ExecContext(t.Context(), "DELETE FROM cmp_migrations WHERE version=$1", version); err != nil {
 			t.Fatal(err)
 		}

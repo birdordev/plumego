@@ -10,14 +10,14 @@ import (
 )
 
 const hostColumns = `host_id,host_uuid::text,agent_id,failure_domain,networks,storage_pool,gpu_model,site_id,
-	revision,generation,sequence,draining,reported_at,vcpu,memory_mib,disk_mib,gpu,fence_state`
+	revision,generation,sequence,draining,reported_at,vcpu,memory_mib,disk_mib,gpu,fence_state,COALESCE(shared_storage_pool_id,'')`
 
 func scanHost(row *sql.Row) (Host, error) {
 	var host Host
 	var networks []byte
 	err := row.Scan(&host.ID, &host.UUID, &host.Agent, &host.FailureDomain, &networks, &host.StoragePool,
 		&host.GPUModel, &host.Site, &host.Revision, &host.Generation, &host.Sequence, &host.Draining, &host.ReportedAt,
-		&host.Capacity.VCPU, &host.Capacity.MemoryMiB, &host.Capacity.DiskMiB, &host.Capacity.GPU, &host.FenceState)
+		&host.Capacity.VCPU, &host.Capacity.MemoryMiB, &host.Capacity.DiskMiB, &host.Capacity.GPU, &host.FenceState, &host.SharedStoragePool)
 	if err != nil {
 		return Host{}, err
 	}
@@ -30,7 +30,7 @@ func scanHost(row *sql.Row) (Host, error) {
 func readHost(ctx context.Context, tx *sql.Tx, scope identity.Scope, site, host string, lock bool) (Host, error) {
 	query := `SELECT ` + hostColumns + ` FROM cmp_kvm_hosts WHERE (tenant_id,project_id,site_id,host_id)=($1,$2,$3,$4)`
 	if lock {
-		query += " FOR UPDATE"
+		query += " FOR NO KEY UPDATE"
 	}
 	result, err := scanHost(tx.QueryRowContext(ctx, query, scope.Tenant, scope.Project, site, host))
 	return result, hiddenMissing(err)
@@ -62,12 +62,18 @@ func (s Store) RegisterHost(ctx context.Context, token string, scope identity.Sc
 		if err := checkAgent(ctx, tx, actor, spec.Agent); err != nil {
 			return err
 		}
+		if spec.SharedStoragePool != "" {
+			if _, err := readSharedStorage(ctx, tx, actor, site, spec.SharedStoragePool, false); err != nil {
+				return err
+			}
+		}
 		var err error
 		result, err = scanHost(tx.QueryRowContext(ctx, `INSERT INTO cmp_kvm_hosts
-			(tenant_id,project_id,site_id,host_id,host_uuid,agent_id,failure_domain,networks,storage_pool,gpu_model)
-			VALUES ($1,$2,$3,$4,$5::uuid,$6,$7,$8::jsonb,$9,$10)
+			(tenant_id,project_id,site_id,host_id,host_uuid,agent_id,failure_domain,networks,storage_pool,gpu_model,shared_storage_pool_id)
+			VALUES ($1,$2,$3,$4,$5::uuid,$6,$7,$8::jsonb,$9,$10,NULLIF($11,''))
 			ON CONFLICT DO NOTHING RETURNING `+hostColumns,
-			actor.Tenant, actor.Project, site, spec.ID, spec.UUID, spec.Agent, spec.FailureDomain, string(networks), spec.StoragePool, spec.GPUModel))
+			actor.Tenant, actor.Project, site, spec.ID, spec.UUID, spec.Agent, spec.FailureDomain, string(networks),
+			spec.StoragePool, spec.GPUModel, spec.SharedStoragePool))
 		if errors.Is(err, sql.ErrNoRows) {
 			return ErrConflict
 		}
@@ -106,7 +112,16 @@ func (s Store) ChangeHost(ctx context.Context, token string, scope identity.Scop
 			return ErrConflict
 		}
 		if change.Action == "rebind" {
+			if err := ensureHostNoDispatchedVolumeCleanup(ctx, tx, actor, host); err != nil {
+				return err
+			}
+			if err := ensureHostNotMigrating(ctx, tx, actor, host); err != nil {
+				return err
+			}
 			result, err = rebindHost(ctx, tx, actor, host, change.Agent)
+			if err == nil {
+				err = invalidateUnactivatedEvacuationPlan(ctx, tx, actor, result)
+			}
 		} else {
 			result, err = setHostDrain(ctx, tx, actor, host, change.Action == "drain")
 		}

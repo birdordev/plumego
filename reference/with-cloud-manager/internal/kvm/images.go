@@ -91,6 +91,9 @@ func readBootImage(ctx context.Context, tx *sql.Tx, actor identity.Scope, site, 
 
 func reserveBootVolume(ctx context.Context, tx *sql.Tx, actor identity.Scope, site string, p Placement, input VMInput) (string, error) {
 	volume := input.Volume
+	if p.SharedStoragePool != "" && input.ImageID == "" {
+		return "", ErrConflict
+	}
 	if input.ImageID != "" {
 		image, err := readBootImage(ctx, tx, actor, site, input.ImageID)
 		if err != nil {

@@ -37,19 +37,20 @@ func (c Capacity) fits(limit, used Capacity) bool {
 }
 
 type HostSpec struct {
-	ID            string   `json:"id"`
-	UUID          string   `json:"uuid"`
-	Agent         string   `json:"agent"`
-	FailureDomain string   `json:"failure_domain"`
-	Networks      []string `json:"networks"`
-	StoragePool   string   `json:"storage_pool"`
-	GPUModel      string   `json:"gpu_model,omitempty"`
+	ID                string   `json:"id"`
+	UUID              string   `json:"uuid"`
+	Agent             string   `json:"agent"`
+	FailureDomain     string   `json:"failure_domain"`
+	Networks          []string `json:"networks"`
+	StoragePool       string   `json:"storage_pool"`
+	SharedStoragePool string   `json:"shared_storage_pool_id,omitempty"`
+	GPUModel          string   `json:"gpu_model,omitempty"`
 }
 
 func (h HostSpec) valid() bool {
 	if !identifier.MatchString(h.ID) || !hostUUID.MatchString(h.UUID) || h.UUID == "00000000-0000-0000-0000-000000000000" ||
 		!identifier.MatchString(h.Agent) || !identifier.MatchString(h.FailureDomain) ||
-		!identifier.MatchString(h.StoragePool) || !optionalID(h.GPUModel) ||
+		!identifier.MatchString(h.StoragePool) || !optionalID(h.SharedStoragePool) || !optionalID(h.GPUModel) ||
 		len(h.Networks) == 0 || len(h.Networks) > 32 {
 		return false
 	}
@@ -81,11 +82,17 @@ type HostChange struct {
 }
 
 type Report struct {
-	UUID       string             `json:"uuid"`
-	Generation int64              `json:"generation"`
-	Sequence   int64              `json:"sequence"`
-	Capacity   Capacity           `json:"capacity"`
-	Inventory  *CapacityInventory `json:"inventory,omitempty"`
+	UUID          string                 `json:"uuid"`
+	Generation    int64                  `json:"generation"`
+	Sequence      int64                  `json:"sequence"`
+	Capacity      Capacity               `json:"capacity"`
+	Inventory     *CapacityInventory     `json:"inventory,omitempty"`
+	SharedStorage *SharedStorageEvidence `json:"shared_storage,omitempty"`
+}
+
+type SharedStorageEvidence struct {
+	ID string `json:"id"`
+	SharedStorageSource
 }
 
 var ErrNoIPv4 = errors.New("no matching KVM IPv4 address")
@@ -103,11 +110,13 @@ type PlacementInput struct {
 	TTLSeconds            int    `json:"ttl_seconds"`
 	IPv4                  string `json:"ipv4,omitempty"`
 	EvacuationVM          string `json:"evacuation_vm_id,omitempty"`
+	SharedStoragePool     string `json:"shared_storage_pool_id,omitempty"`
 }
 
 func (p PlacementInput) valid() bool {
 	return p.Capacity.valid() && p.VCPU > 0 && p.MemoryMiB > 0 && p.DiskMiB > 0 &&
-		identifier.MatchString(p.Network) && identifier.MatchString(p.StoragePool) &&
+		identifier.MatchString(p.Network) && optionalID(p.SharedStoragePool) &&
+		(optionalID(p.StoragePool) && (p.StoragePool != "" || p.SharedStoragePool != "")) &&
 		optionalID(p.GPUModel) && ((p.GPU == 0) == (p.GPUModel == "")) &&
 		optionalID(p.RequiredHost) && optionalID(p.FailureDomain) && optionalID(p.ExcludedFailureDomain) &&
 		(p.FailureDomain == "" || p.FailureDomain != p.ExcludedFailureDomain) && p.TTLSeconds >= 1 && p.TTLSeconds <= maxPlacementTTL &&
@@ -131,4 +140,5 @@ type Placement struct {
 	ExpiresAt          time.Time `json:"expires_at"`
 	BootVolumeRetained bool      `json:"boot_volume_retained,omitempty"`
 	EvacuationVM       string    `json:"evacuation_vm_id,omitempty"`
+	SharedStoragePool  string    `json:"shared_storage_pool_id,omitempty"`
 }

@@ -89,6 +89,9 @@ func (s Store) ChangeHostFence(ctx context.Context, token string, scope identity
 			(tenant_id,project_id,site_id,host_id,host_revision,host_generation,actor_id,actor_revision,action,evidence_sha256,replacement_agent)
 			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`, actor.Tenant, actor.Project, site, id,
 			result.Revision, result.Generation, actor.Principal, member.Revision, change.Action, change.EvidenceSHA256, change.ReplacementAgent)
+		if err == nil && change.Action == "confirm" {
+			return activateEvacuationPlan(ctx, tx, actor, result)
+		}
 		return err
 	})
 	if err != nil {
@@ -162,6 +165,12 @@ func checkReplacementFenceAgent(ctx context.Context, tx *sql.Tx, actor identity.
 }
 
 func checkFenceRejoinWork(ctx context.Context, tx *sql.Tx, actor identity.Scope, host Host) error {
+	if err := ensureHostNoDispatchedVolumeCleanup(ctx, tx, actor, host); err != nil {
+		return err
+	}
+	if err := ensureHostNotMigrating(ctx, tx, actor, host); err != nil {
+		return err
+	}
 	var unresolved bool
 	err := tx.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1`+fenceBlockingVMs+`)
 		OR EXISTS (SELECT 1`+pendingEvacuationCleanup+`)`,

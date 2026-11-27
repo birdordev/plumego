@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"os"
 
 	"with-cloud-manager/internal/kvm"
 )
@@ -25,3 +26,19 @@ func publishKVMImage(context.Context, string, string, kvm.BootImageSpec, func() 
 func publishKVMBackup(context.Context, string, string, string, string, int64, func() error) (kvm.BootImageSpec, error) {
 	return kvm.BootImageSpec{}, errors.New("KVM VM backup requires a supported Unix filesystem")
 }
+
+func kvmCleanupPoolSHA256(string, string) (string, error) {
+	return "", errKVMUnsafeTarget
+}
+
+func kvmCleanupFileInfo(string, string) (os.FileInfo, bool, error) {
+	return nil, false, errKVMUnsafeTarget
+}
+
+func hashKVMCleanupFile(context.Context, string, string, kvm.BootImageSpec) (os.FileInfo, error) {
+	return nil, errKVMUnsafeTarget
+}
+
+func checkKVMCleanupFile(string, string, os.FileInfo) error { return errKVMUnsafeTarget }
+
+func distinctKVMCleanupDirectories(string, string) bool { return false }

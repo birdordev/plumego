@@ -24,6 +24,11 @@ const ColdMigrationVersion = "0125_kvm_cold_migrations"
 const EvacuationMigration = "0126_kvm_evacuation"
 const AutomaticEvacuationMigration = "0127_kvm_evacuation_placement"
 const EvacuationBatchMigration = "0128_kvm_evacuation_batches"
+const EvacuationPlanMigration = "0129_kvm_evacuation_plans"
+const HostImageMigration = "0130_kvm_host_images"
+const SharedStorageMigration = "0131_kvm_shared_storage"
+const LiveMigrationVersion = "0132_kvm_live_migrations"
+const VolumeCleanupMigration = "0133_kvm_volume_cleanups"
 
 //go:embed 0111_kvm_placement.sql
 var schema string
@@ -61,6 +66,21 @@ var automaticEvacuationSchema string
 //go:embed 0128_kvm_evacuation_batches.sql
 var evacuationBatchSchema string
 
+//go:embed 0129_kvm_evacuation_plans.sql
+var evacuationPlanSchema string
+
+//go:embed 0130_kvm_host_images.sql
+var hostImageSchema string
+
+//go:embed 0131_kvm_shared_storage.sql
+var sharedStorageSchema string
+
+//go:embed 0132_kvm_live_migrations.sql
+var liveMigrationSchema string
+
+//go:embed 0133_kvm_volume_cleanups.sql
+var volumeCleanupSchema string
+
 func kvmMigrations() []struct{ version, schema string } {
 	return []struct{ version, schema string }{
 		{Migration, schema}, {VMMigration, vmSchema}, {ShutdownMigration, shutdownSchema},
@@ -71,6 +91,11 @@ func kvmMigrations() []struct{ version, schema string } {
 		{EvacuationMigration, evacuationSchema},
 		{AutomaticEvacuationMigration, automaticEvacuationSchema},
 		{EvacuationBatchMigration, evacuationBatchSchema},
+		{EvacuationPlanMigration, evacuationPlanSchema},
+		{HostImageMigration, hostImageSchema},
+		{SharedStorageMigration, sharedStorageSchema},
+		{LiveMigrationVersion, liveMigrationSchema},
+		{VolumeCleanupMigration, volumeCleanupSchema},
 	}
 }
 

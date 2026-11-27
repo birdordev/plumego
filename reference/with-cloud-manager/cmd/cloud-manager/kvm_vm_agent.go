@@ -82,6 +82,10 @@ func runKVMVMJob(ctx context.Context, api kvmVMAPI, hostID, generation string, i
 	if _, err := readKVMMemory(caps, host.UUID); err != nil {
 		return err
 	}
+	runner.shared, err = loadKVMSharedStorage(ctx, api, host)
+	if err != nil {
+		return err
+	}
 	agent := kvm.AgentIdentity{UUID: host.UUID, Generation: expected}
 	poll := api.target.JoinPath("vm-work")
 	var work kvm.VMWork
@@ -94,6 +98,12 @@ func runKVMVMJob(ctx context.Context, api kvmVMAPI, hostID, generation string, i
 	job := *work.Job
 	if !validKVMJob(job, host) {
 		return errKVMUnsafeTarget
+	}
+	if job.SharedStoragePool != "" {
+		pool, err := runner.poolPath(ctx, job.StoragePool)
+		if err != nil || pool == "" {
+			return errors.Join(errKVMUnsafeTarget, err)
+		}
 	}
 	jobTarget := poll.JoinPath(job.ID)
 	if job.State == "staging" || (job.State == "queued" && job.ImageID != "") {
@@ -177,6 +187,7 @@ func validKVMVMSpec(job kvm.VM, host kvm.Host) bool {
 		kvmSafePlacement.MatchString(job.Placement) && kvmUnitName.MatchString(job.Volume) &&
 		kvmUnitName.MatchString(job.StoragePool) && kvmUnitName.MatchString(job.Network) &&
 		job.StoragePool == host.StoragePool && slices.Contains(host.Networks, job.Network) && job.Revision > 0 &&
+		job.SharedStoragePool == host.SharedStoragePool && (job.SharedStoragePool == "" || job.ImageID != "") &&
 		job.Capacity.GPU == 0 && job.Capacity.VCPU > 0 && job.Capacity.VCPU <= 4096 &&
 		job.Capacity.MemoryMiB > 0 && job.Capacity.MemoryMiB <= 1<<24 && job.Capacity.DiskMiB > 0 && job.Capacity.DiskMiB <= 1<<40
 }
