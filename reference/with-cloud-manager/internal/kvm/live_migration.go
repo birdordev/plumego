@@ -48,7 +48,7 @@ const liveMigrationColumns = `migration_id,target_host,vm_id::text,placement_id,
 	aborted_at,COALESCE(aborted_by,''),abort_evidence`
 const activeLiveMigration = `status IN ('pending','approved','dispatched','source_departed')`
 
-func scanLiveMigration(row *sql.Row) (LiveMigration, error) {
+func scanLiveMigration(row interface{ Scan(...any) error }) (LiveMigration, error) {
 	var m LiveMigration
 	err := row.Scan(&m.ID, &m.Target, &m.VM, &m.Placement, &m.Source, &m.SourceGeneration, &m.TargetGeneration,
 		&m.VMRevision, &m.Revision, &m.Status, &m.Requester, &m.Reviewer, &m.RequestedAt, &m.ReviewedAt, &m.PreparedAt,
@@ -160,10 +160,8 @@ func lockLiveMigrationHosts(ctx context.Context, tx *sql.Tx, actor identity.Scop
 }
 
 func checkLiveMigrationBinding(vm VM, source, target Host) error {
-	if vm.Host != source.ID || vm.Generation != source.Generation || vm.State != "running" || vm.Observation != "running" ||
-		vm.SharedStoragePool == "" || vm.SharedStoragePool != source.SharedStoragePool ||
-		vm.SharedStoragePool != target.SharedStoragePool || vm.StoragePool != source.StoragePool || vm.StoragePool != target.StoragePool ||
-		vm.Address != "" || vm.ImageID == "" || vm.Capacity.GPU != 0 || source.FenceState != "" || target.FenceState != "" {
+	if !liveMigrationSourceMatches(vm, source) || vm.SharedStoragePool != target.SharedStoragePool ||
+		vm.StoragePool != target.StoragePool || target.FenceState != "" {
 		return ErrConflict
 	}
 	for _, network := range target.Networks {
@@ -172,4 +170,10 @@ func checkLiveMigrationBinding(vm VM, source, target Host) error {
 		}
 	}
 	return ErrConflict
+}
+
+func liveMigrationSourceMatches(vm VM, source Host) bool {
+	return vm.Host == source.ID && vm.Generation == source.Generation && vm.State == "running" && vm.Observation == "running" &&
+		vm.SharedStoragePool != "" && vm.SharedStoragePool == source.SharedStoragePool && vm.StoragePool == source.StoragePool &&
+		vm.Address == "" && vm.ImageID != "" && vm.Capacity.GPU == 0 && source.FenceState == ""
 }

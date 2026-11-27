@@ -3,6 +3,8 @@ package main
 import "github.com/birdordev/plumego/x/openapi"
 
 func kvmHints(hints map[string]openapi.Op, operation func(string, string, string, bool) openapi.Op) {
+	kvmProvisioningHints(hints, operation)
+	kvmInventoryHints(hints, operation)
 	kvmVolumeCleanupHints(hints, operation)
 	kvmVMHints(hints, operation)
 	body := func(description string, properties map[string]openapi.Schema) *openapi.RequestBody {

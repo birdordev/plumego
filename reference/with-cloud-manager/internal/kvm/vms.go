@@ -117,9 +117,7 @@ func (s Store) SubmitVM(ctx context.Context, token string, scope identity.Scope,
 		if err != nil {
 			return err
 		}
-		prior, err := scanVM(tx.QueryRowContext(ctx, "SELECT "+vmColumns+vmFrom+`
-			WHERE v.vm_id=COALESCE((SELECT vm_id FROM cmp_kvm_vms WHERE placement_id=$1),
-				(SELECT vm_id FROM cmp_kvm_cold_migrations WHERE source_placement_id=$1 AND status='approved'))`, p.ID))
+		prior, err := scanVM(tx.QueryRowContext(ctx, "SELECT "+vmColumns+vmFrom+" WHERE v.vm_id="+vmByOriginalPlacement, p.ID))
 		if err == nil {
 			if image != input.ImageID || (image == "" && volume != input.Volume) {
 				return ErrConflict

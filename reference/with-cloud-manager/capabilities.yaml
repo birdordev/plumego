@@ -20,16 +20,23 @@ platform:
   kvm-ipv4-allocation: site-network-scoped-atomic-capacity-and-ip-holds-with-verified-static-dhcp
   kvm-static-dhcp: bound-agent-preview-and-additive-live-and-persistent-reconciliation
   kvm-vm-create: independent-approval-and-two-agent-commands
+  kvm-vm-provisioning-console: paged-host-and-image-selection-with-owner-scoped-reservation-replay-and-vm-discovery
   kvm-vm-boot: exclusive-local-prestaged-raw-volume
   kvm-image-mirror: operator-configured-https-pull-with-site-catalog-and-atomic-local-publication
   kvm-host-image-receipt: bound-agent-versioned-local-image-verification-and-expiry
   kvm-vm-boot-image: immutable-site-raw-image-and-recoverable-exclusive-volume-staging
   kvm-vm-create-recovery: single-dispatch-defined-and-running-evidence
+  kvm-project-console: cross-site-host-and-vm-inventory-and-versioned-shutdown-retirement-review
+  kvm-host-fence-console: role-scoped-fence-and-rejoin-with-generation-bound-blockers-and-evacuation-cleanup-evidence
+  kvm-fenced-vm-recovery-console: phase-specific-observation-and-two-proof-absence-with-independent-review
   kvm-vm-shutdown: independent-approval-single-acpi-dispatch-and-persistent-offline-evidence
   kvm-vm-retirement: admin-and-independent-approval-two-absence-observations-and-retained-boot-volume
   kvm-retained-volume-cleanup: exact-backup-verification-single-dispatch-double-absence-and-fenced-resolution
+  kvm-retained-volume-console: historical-placement-and-cleanup-history-with-backup-preview-independent-review-and-fenced-resolution
   kvm-vm-cold-migration: approved-verified-absence-to-target-reservation-with-registered-raw-backup-and-stable-vm-id
+  kvm-cold-migration-console: source-eligibility-history-owned-reservation-retry-independent-review-and-single-vm-evacuation
   kvm-vm-live-migration: shared-nfsv4-bridged-guest-with-independent-approval-single-tls-dispatch-and-two-sided-handoff
+  kvm-live-migration-console: scoped-candidate-discovery-and-migration-history-with-versioned-review-and-fenced-abort
   kvm-vm-backup-export: bound-agent-verified-retained-raw-volume-atomic-digest-publication-and-source-receipt
   kvm-fenced-vm-evacuation: approved-backup-restore-with-atomic-ipv4-transfer-and-source-cleanup-rejoin-gate
   kvm-evacuation-placement: atomic-cross-failure-domain-target-reservation-and-idempotent-review-draft

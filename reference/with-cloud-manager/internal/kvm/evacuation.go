@@ -36,18 +36,15 @@ func checkFencedEvacuationSource(ctx context.Context, tx *sql.Tx, v vmRecord, ho
 	return checkEvacuationVM(ctx, tx, v, host.ID, generation)
 }
 
+const evacuationVMStates = `('running','shutdown_requested','shutdown_queued','stopping','stopped','retire_requested','retire_queued','undefining')`
+
 func checkEvacuationVM(ctx context.Context, tx *sql.Tx, v vmRecord, host string, generation int64) error {
 	if host != v.Host || v.Generation >= generation {
 		return ErrConflict
 	}
-	switch v.State {
-	case "running", "shutdown_requested", "shutdown_queued", "stopping", "stopped", "retire_requested", "retire_queued", "undefining":
-	default:
-		return ErrConflict
-	}
 	var bound bool
-	err := tx.QueryRowContext(ctx, `SELECT consumed_at IS NOT NULL AND released_at IS NULL
-		FROM cmp_kvm_placements WHERE placement_id=$1`, v.Placement).Scan(&bound)
+	err := tx.QueryRowContext(ctx, `SELECT consumed_at IS NOT NULL AND released_at IS NULL AND $2::text IN `+evacuationVMStates+`
+		FROM cmp_kvm_placements WHERE placement_id=$1`, v.Placement, v.State).Scan(&bound)
 	if err == nil && !bound {
 		return ErrConflict
 	}

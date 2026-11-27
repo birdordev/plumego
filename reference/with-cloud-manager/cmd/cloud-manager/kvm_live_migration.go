@@ -13,7 +13,34 @@ import (
 
 const kvmLiveMigrationsRoute = kvmVMRoute + "/live-migrations"
 const kvmLiveMigrationRoute = kvmLiveMigrationsRoute + "/:migration"
+const kvmLiveMigrationTargetsRoute = kvmVMRoute + "/live-migration-targets"
 const kvmLiveMigrationAgentRoute = kvmHostRoute + "/live-migrations/:vm/:migration"
+
+func (h kvmHTTP) listLiveMigrations(ctx context.Context, w http.ResponseWriter, r *http.Request, token string, scope identity.Scope, site string) error {
+	query, err := kvmInventoryQuery(r.URL.RawQuery)
+	if err != nil || query.Site != "" {
+		return kvm.ErrInvalid
+	}
+	result, err := h.store.ListLiveMigrations(ctx, token, scope, site, router.Param(r, "vm"), query.After, query.Limit)
+	if err != nil {
+		return err
+	}
+	h.write(w, r, http.StatusOK, result)
+	return nil
+}
+
+func (h kvmHTTP) listLiveMigrationTargets(ctx context.Context, w http.ResponseWriter, r *http.Request, token string, scope identity.Scope, site string) error {
+	query, err := kvmInventoryQuery(r.URL.RawQuery)
+	if err != nil || query.Site != "" {
+		return kvm.ErrInvalid
+	}
+	result, err := h.store.ListLiveMigrationTargets(ctx, token, scope, site, router.Param(r, "vm"), query.After, query.Limit)
+	if err != nil {
+		return err
+	}
+	h.write(w, r, http.StatusOK, result)
+	return nil
+}
 
 func (h kvmHTTP) requestLiveMigration(ctx context.Context, w http.ResponseWriter, r *http.Request, token string, scope identity.Scope, site string) error {
 	revision, ok := accountRevision(r)

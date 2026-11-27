@@ -13,6 +13,15 @@ func kvmVolumeCleanupHints(hints map[string]openapi.Op, operation func(string, s
 	list.Responses["400"] = openapi.Response{Description: "分页选项无效"}
 	list.Params = []openapi.Param{{Name: "after", In: "query", Schema: openapi.String}, {Name: "limit", In: "query", Schema: openapi.Integer}}
 	hints["GET "+kvmHostVolumeCleanupsRoute] = list
+	for _, item := range []struct{ route, id, summary string }{
+		{kvmRetainedVolumesRoute, "listKVMRetainedVolumes", "分页读取 VM 当前或历史保留卷及已清理记录，显示原宿主机和备份尺寸约束。"},
+		{kvmVolumeCleanupsRoute, "listKVMVolumeCleanupHistory", "分页读取放置上的清理历史，最近申请优先。"},
+	} {
+		op := operation(item.id, "200", item.summary, false)
+		op.Params = list.Params
+		op.Responses["400"] = list.Responses["400"]
+		hints["GET "+item.route] = op
+	}
 	review := operation("reviewKVMVolumeCleanup", "200", "独立批准，或在派发前关闭清理", true)
 	review.Params = request.Params
 	review.Responses["412"] = openapi.Response{Description: "需要当前清理版本"}

@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync"
@@ -20,12 +21,15 @@ func TestAcceptanceKVMAutomaticEvacuationPlacement(t *testing.T) {
 	db, first, second, _, vm := prepareKVMVMWithPool(t, &pool)
 	vm = startEvacuationSourceVM(t, first, vm)
 	revision := strconv.Quote(strconv.FormatInt(vm.Revision, 10))
-	path := fixtureVMSitePath + "/" + vm.ID + "/cold-migration"
+	vmPath := fixtureVMSitePath + "/" + vm.ID
+	path := vmPath + "/cold-migration"
 	fencePath := fixtureVMHostPath + "/fence"
 	expectKVM(t, kvmRequest(t, first, fixtureKVMAdmin, "POST", fencePath, `"1"`, "",
 		kvm.HostFenceChange{Action: "request", UUID: fixtureKVMUUID}), 200, nil)
+	assertColdMigrationEligibility(t, second, vmPath, vm, "unavailable", 0)
 	expectKVM(t, kvmRequest(t, second, fixtureKVMReviewer, "POST", fencePath, `"2"`, "",
 		kvm.HostFenceChange{Action: "confirm", UUID: fixtureKVMUUID, EvidenceSHA256: strings.Repeat("a", 64)}), 200, nil)
+	assertColdMigrationEligibility(t, first, vmPath, vm, "evacuation", 2)
 	backup := []byte("evacuation image")
 	image := testKVMImage(backup)
 	expectKVM(t, kvmRequest(t, first, fixtureKVMAdmin, "POST", fixtureKVMSite+"/images", "", "", image), 201, nil)
@@ -105,7 +109,25 @@ func TestAcceptanceKVMAutomaticEvacuationPlacement(t *testing.T) {
 	if moved.Host != fixtureMigrationHost || moved.State != "queued" || moved.Address != vm.Address || moved.MAC != vm.MAC {
 		t.Fatalf("approved automatic relocation lost VM identity: %+v", moved)
 	}
+	assertEvacuationHistory(t, first, vmPath, input.ID, firstDraft.ID)
 	checkMigrationExecution(t, first, second, destination, moved, backup)
+}
+
+func assertEvacuationHistory(t *testing.T, handler http.Handler, vmPath, latestID, olderID string) {
+	t.Helper()
+	path := vmPath + "/cold-migrations"
+	var latest, older kvm.InventoryPage[kvm.ColdMigration]
+	expectKVM(t, kvmRequest(t, handler, fixtureKVMOperator, "GET", path+"?limit=1", "", "", nil), 200, &latest)
+	if len(latest.Items) != 1 || latest.Items[0].ID != latestID || latest.Items[0].Status != "approved" || latest.Next == "" {
+		t.Fatalf("unexpected recent evacuation history: %+v", latest)
+	}
+	expectKVM(t, kvmRequest(t, handler, fixtureKVMOperator, "GET", path+"?limit=1&after="+url.QueryEscape(latest.Next), "", "", nil), 200, &older)
+	if len(older.Items) != 1 || older.Items[0].ID != olderID || older.Items[0].Status != "rejected" || older.Next != "" {
+		t.Fatalf("unexpected older evacuation history: %+v", older)
+	}
+	expectKVM(t, kvmRequest(t, handler, fixtureKVMGuest, "GET", path, "", "", nil), 403, nil)
+	expectKVM(t, kvmRequest(t, handler, fixtureKVMAdmin, "GET", strings.Replace(path, "/compute/", "/other/", 1)+"/"+latestID, "", "", nil), 403, nil)
+	expectKVM(t, kvmRequest(t, handler, fixtureKVMOperator, "GET", path+"?after=bad", "", "", nil), 400, nil)
 }
 
 func checkSameDomainIgnored(t *testing.T, db *sql.DB, handler http.Handler) {

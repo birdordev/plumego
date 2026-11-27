@@ -3,6 +3,18 @@ package main
 import "github.com/birdordev/plumego/x/openapi"
 
 func kvmLiveMigrationHints(hints map[string]openapi.Op, operation func(string, string, string, bool) openapi.Op) {
+	list := operation("listKVMLiveMigrations", "200", "虚拟机实时迁移记录，最近申请优先。有更多记录时返回 next。", false)
+	list.Params = []openapi.Param{
+		{Name: "after", In: "query", Schema: openapi.String, Description: "同一虚拟机上一页返回的 next。"},
+		{Name: "limit", In: "query", Schema: openapi.Integer, Description: "默认 50，最大 100。"},
+	}
+	list.Responses["400"] = openapi.Response{Description: "分页参数无效"}
+	hints["GET "+kvmLiveMigrationsRoute] = list
+	targets := operation("listKVMLiveMigrationTargets", "200", "管理员查看同站点符合登记配置与容量采样条件的候选宿主机。审批时复核实际可用容量。", false)
+	targets.Params = list.Params
+	targets.Responses["400"] = list.Responses["400"]
+	targets.Responses["409"] = openapi.Response{Description: "源虚拟机当前不满足实时迁移条件"}
+	hints["GET "+kvmLiveMigrationTargetsRoute] = targets
 	request := operation("requestKVMLiveMigration", "202", "登记同共享池的运行中 VM 迁移请求", true)
 	request.Params = []openapi.Param{{Name: "If-Match", In: "header", Required: true, Schema: openapi.String}}
 	request.Responses["412"] = openapi.Response{Description: "当前 VM 版本已变化"}

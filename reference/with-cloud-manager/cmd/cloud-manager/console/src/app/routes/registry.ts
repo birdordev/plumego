@@ -6,6 +6,7 @@ import { resourceRoutes } from './resources'
 
 export const routes = {
   assets: resourceRoutes.assets,
+  kvm: resourceRoutes.kvm,
   operations: operationRoutes.operations,
   'service-catalog': resourceRoutes['service-catalog'],
   alerts: governanceRoutes.alerts,

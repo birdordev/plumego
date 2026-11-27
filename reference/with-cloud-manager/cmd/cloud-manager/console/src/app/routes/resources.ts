@@ -15,6 +15,10 @@ export const resourceRoutes = {
     }), {
       loadCollection: () => import('../../features/assets/inventory/collection').then(({ assetsCollection }) => assetsCollection),
     }),
+  kvm: projectPage('KVM 运维', () => import('../../features/kvm/KVMPage'),
+    ({ session }) => ({ role: session.project.role, principal: session.profile.principal }), {
+      loadCollection: () => import('../../features/kvm/collection').then(({ kvmCollection }) => kvmCollection),
+    }),
   'service-catalog': projectPage('服务目录', () => import('../../features/catalog/CatalogPage'), adminProps, {
     loadCollection: () => import('../../features/catalog/collection').then(({ catalogCollection }) => catalogCollection),
   }),

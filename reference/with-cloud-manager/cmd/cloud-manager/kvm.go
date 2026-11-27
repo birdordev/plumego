@@ -15,7 +15,8 @@ import (
 	"with-cloud-manager/internal/kvm"
 )
 
-const kvmSiteRoute = "/v1/tenants/:tenant/projects/:project/kvm/sites/:site"
+const kvmProjectRoute = "/v1/tenants/:tenant/projects/:project/kvm"
+const kvmSiteRoute = kvmProjectRoute + "/sites/:site"
 const kvmHostsRoute = kvmSiteRoute + "/hosts"
 const kvmHostRoute = kvmHostsRoute + "/:host"
 const kvmHostFenceRoute = kvmHostRoute + "/fence"
@@ -33,6 +34,9 @@ type kvmHTTP struct {
 func registerKVM(app *core.App, store kvm.Store) error {
 	h := kvmHTTP{store: store, logger: app.Logger()}
 	return errors.Join(
+		app.Get(kvmProjectHostsRoute, h.endpoint(h.listProjectHosts)),
+		app.Get(kvmProjectVMsRoute, h.endpoint(h.listProjectVMs)),
+		app.Get(kvmProvisioningHostsRoute, h.endpoint(h.listProvisioningHosts)),
 		app.Post(kvmHostsRoute, h.endpoint(h.registerHost)),
 		app.Get(kvmHostRoute, h.endpoint(h.getHost)),
 		app.Patch(kvmHostRoute, h.endpoint(h.changeHost)),
@@ -49,6 +53,7 @@ func registerKVM(app *core.App, store kvm.Store) error {
 		app.Post(kvmIPv4PoolsRoute, h.endpoint(h.registerIPv4Pool)),
 		app.Get(kvmIPv4PoolRoute, h.endpoint(h.getIPv4Pool)),
 		app.Post(kvmBootImagesRoute, h.endpoint(h.registerBootImage)),
+		app.Get(kvmBootImagesRoute, h.endpoint(h.listBootImages)),
 		app.Get(kvmBootImageRoute, h.endpoint(h.getBootImage)),
 		app.Post(kvmSharedStoragePoolsRoute, h.endpoint(h.registerSharedStorage)),
 		app.Get(kvmSharedStoragePoolRoute, h.endpoint(h.getSharedStorage)),
@@ -58,7 +63,10 @@ func registerKVM(app *core.App, store kvm.Store) error {
 		app.Post(kvmHostIPv4PoolRoute, h.endpoint(h.hostIPv4Pool)),
 		app.Post(kvmPlacementsRoute, h.endpoint(h.reserve)),
 		app.Get(kvmPlacementRoute, h.endpoint(h.getPlacement)),
+		app.Get(kvmProvisioningStatusRoute, h.endpoint(h.getProvisioningStatus)),
 		app.Delete(kvmPlacementRoute, h.endpoint(h.release)),
+		app.Get(kvmRetainedVolumesRoute, h.endpoint(h.listRetainedVolumes)),
+		app.Get(kvmVolumeCleanupsRoute, h.endpoint(h.listVolumeCleanupHistory)),
 		app.Post(kvmVolumeCleanupsRoute, h.endpoint(h.requestVolumeCleanup)),
 		app.Get(kvmVolumeCleanupRoute, h.endpoint(h.getVolumeCleanup)),
 		app.Get(kvmHostVolumeCleanupsRoute, h.endpoint(h.listVolumeCleanups)),
@@ -71,8 +79,13 @@ func registerKVM(app *core.App, store kvm.Store) error {
 		app.Post(kvmFencedVMRecoveryRoute, h.endpoint(h.requestFencedVMRecovery)),
 		app.Post(kvmFencedVMRecoveryRoute+"/review", h.endpoint(h.reviewFencedVMRecovery)),
 		app.Get(kvmColdMigrationRoute, h.endpoint(h.getColdMigration)),
+		app.Get(kvmColdMigrationsRoute, h.endpoint(h.listColdMigrations)),
+		app.Get(kvmColdMigrationReceiptRoute, h.endpoint(h.getColdMigrationReceipt)),
+		app.Get(kvmColdMigrationEligibilityRoute, h.endpoint(h.getColdMigrationEligibility)),
 		app.Post(kvmColdMigrationRoute, h.endpoint(h.requestColdMigration)),
 		app.Post(kvmColdMigrationRoute+"/review", h.endpoint(h.reviewColdMigration)),
+		app.Get(kvmLiveMigrationsRoute, h.endpoint(h.listLiveMigrations)),
+		app.Get(kvmLiveMigrationTargetsRoute, h.endpoint(h.listLiveMigrationTargets)),
 		app.Post(kvmLiveMigrationsRoute, h.endpoint(h.requestLiveMigration)),
 		app.Get(kvmLiveMigrationRoute, h.endpoint(h.getLiveMigration)),
 		app.Post(kvmLiveMigrationRoute+"/review", h.endpoint(h.reviewLiveMigration)),

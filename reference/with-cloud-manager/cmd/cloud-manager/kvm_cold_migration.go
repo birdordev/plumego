@@ -11,6 +11,40 @@ import (
 )
 
 const kvmColdMigrationRoute = kvmVMRoute + "/cold-migration"
+const kvmColdMigrationsRoute = kvmVMRoute + "/cold-migrations"
+const kvmColdMigrationReceiptRoute = kvmColdMigrationsRoute + "/:migration"
+const kvmColdMigrationEligibilityRoute = kvmVMRoute + "/cold-migration-eligibility"
+
+func (h kvmHTTP) listColdMigrations(ctx context.Context, w http.ResponseWriter, r *http.Request, token string, scope identity.Scope, site string) error {
+	query, err := kvmInventoryQuery(r.URL.RawQuery)
+	if err != nil || query.Site != "" {
+		return kvm.ErrInvalid
+	}
+	result, err := h.store.ListColdMigrations(ctx, token, scope, site, router.Param(r, "vm"), query.After, query.Limit)
+	if err != nil {
+		return err
+	}
+	h.write(w, r, http.StatusOK, result)
+	return nil
+}
+
+func (h kvmHTTP) getColdMigrationReceipt(ctx context.Context, w http.ResponseWriter, r *http.Request, token string, scope identity.Scope, site string) error {
+	result, err := h.store.GetColdMigrationReceipt(ctx, token, scope, site, router.Param(r, "vm"), router.Param(r, "migration"))
+	if err != nil {
+		return err
+	}
+	h.write(w, r, http.StatusOK, result)
+	return nil
+}
+
+func (h kvmHTTP) getColdMigrationEligibility(ctx context.Context, w http.ResponseWriter, r *http.Request, token string, scope identity.Scope, site string) error {
+	result, err := h.store.GetColdMigrationEligibility(ctx, token, scope, site, router.Param(r, "vm"))
+	if err != nil {
+		return err
+	}
+	h.write(w, r, http.StatusOK, result)
+	return nil
+}
 
 func (h kvmHTTP) getColdMigration(ctx context.Context, w http.ResponseWriter, r *http.Request, token string, scope identity.Scope, site string) error {
 	result, err := h.store.GetColdMigration(ctx, token, scope, site, router.Param(r, "vm"))

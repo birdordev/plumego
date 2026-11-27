@@ -52,19 +52,24 @@ func lockRetainedVolume(ctx context.Context, tx *sql.Tx, actor identity.Scope, s
 	return result, nil
 }
 
-func (volume retainedVolume) checkRetained(ctx context.Context, tx *sql.Tx) error {
+func (volume retainedVolume) matchesRetained() bool {
 	if !volume.placement.BootVolumeRetained || volume.placement.State != "released" ||
 		volume.disk.Generation > volume.host.Generation || volume.disk.StoragePool != volume.host.StoragePool ||
 		volume.disk.SharedStoragePool != volume.host.SharedStoragePool {
-		return ErrConflict
+		return false
 	}
-	if volume.current.Placement == volume.placement.ID &&
-		((volume.current.State != "retired" && volume.current.State != "rejected") || volume.current.Observation != "absent") {
+	return volume.current.Placement != volume.placement.ID ||
+		((volume.current.State == "retired" || volume.current.State == "rejected") && volume.current.Observation == "absent")
+}
+
+const retainedBlockingMigration = `AND (status='pending' OR (status='approved' AND source_fence_generation>0 AND cleanup_at IS NULL))`
+
+func (volume retainedVolume) checkRetained(ctx context.Context, tx *sql.Tx) error {
+	if !volume.matchesRetained() {
 		return ErrConflict
 	}
 	var blocked bool
-	err := tx.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM cmp_kvm_cold_migrations WHERE source_placement_id=$1
-		AND (status='pending' OR (status='approved' AND source_fence_generation>0 AND cleanup_at IS NULL)))`,
+	err := tx.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM cmp_kvm_cold_migrations WHERE source_placement_id=$1 `+retainedBlockingMigration+`)`,
 		volume.placement.ID).Scan(&blocked)
 	if err == nil && blocked {
 		return ErrConflict

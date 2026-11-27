@@ -16,7 +16,8 @@ import (
 )
 
 const (
-	fixtureKVMSite           = "/v1/tenants/lab/projects/compute/kvm/sites/site-a"
+	fixtureKVMProject        = "/v1/tenants/lab/projects/compute/kvm"
+	fixtureKVMSite           = fixtureKVMProject + "/sites/site-a"
 	fixtureKVMAdmin          = "fixture-kvm-project-admin-credential-0001"
 	fixtureKVMOperator       = "fixture-kvm-project-operator-credential-0001"
 	fixtureKVMSecondOperator = "fixture-kvm-second-operator-credential-0001"

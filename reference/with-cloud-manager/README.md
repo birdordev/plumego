@@ -1830,6 +1830,24 @@ cloud-manager operations approve TENANT PROJECT OPERATION_ID --decision approve
 
 Worker 对已持久记录的撤销最多发送一次。连续两轮只读观测都确认缺失后，才一并提交资产移除和终态事件。规则仍可见时继续等待，读取范围冲突或证据耗尽时进入待复核。审批人可以恢复只读观测。已确认撤销的本地记录会阻止迟到盘点复活该规则 ID。对在平台外独立删除的规则，普通盘点仍保留待确认缺失状态。
 
+### 自有 KVM 控制台
+
+项目操作者和管理员可从虚拟机清单进入“创建 KVM 虚拟机”。选择宿主机、网络、容量与启动来源，预留后核对到期时间和站点分配的地址，再提交独立审批。未提交的预留可释放。浏览器在同一标签页按租户、项目及身份保留当前申请，刷新后可重试原预留或找回已提交的 VM。
+
+从控制台左侧打开“KVM 运维”。虚拟机列表显示站点、当前宿主机、状态和已分配的 IPv4。宿主机列表显示故障域、隔离或排空状态及最近一次容量上报时间。两个列表都可用站点 ID 筛选，点击资源 ID 可以查看详细配置和最近观测。
+
+项目操作者和管理员可为运行中的虚拟机申请优雅关机，管理员可为已关机的虚拟机申请退役。审批角色可处理待审批的创建、关机和退役申请，也可在宿主机代理领取前拒绝已经排队的任务。提交使用当前虚拟机版本和控制台会话的 CSRF 凭据。遇到版本变化时，在详情中刷新并重新确认。关机和退役的实际状态随宿主机代理的观测更新。
+
+在虚拟机详情打开“实时迁移”可查看按申请时间排序的历史与各阶段回执。管理员可从同站点候选宿主机中选择目标，独立审批人可批准，或在派发前拒绝。派发后需要终止时，回执会核对两端宿主机的最新隔离状态和代次，再由审批人提交现场证据摘要。详见下文的实时迁移前提和现场证据要求。
+
+虚拟机详情的“冷迁移与单机疏散”按源状态提供申请入口。项目成员可分页查历史和目标预留。管理员核对备份与现场证据后提交，独立审批人可批准或拒绝。回到虚拟机详情可核对新的宿主机和目标任务状态。
+
+在宿主机详情打开“宿主机隔离与重新接入”可查看隔离事件和分代次的阻塞清单。管理员可以停止或恢复新放置、申请隔离及重新接入。独立审批人可确认带外隔离、登记疏散源端清理证据，以及批准或拒绝重新接入。清单可打开相关虚拟机、现场恢复记录或实时迁移回执。
+
+虚拟机详情中的“保留卷与清理历史”按原放置显示退役卷、迁移源卷及清理回执。宿主机详情和隔离工作台可进入进行中的保留卷清理列表。
+
+API 提供 `GET /v1/tenants/{tenant}/projects/{project}/kvm/hosts` 和 `GET /v1/tenants/{tenant}/projects/{project}/kvm/vms`。两者需要项目查看权限，按站点和资源 ID 排序，默认 50 条且最多 100 条。可传 `site` 限定站点。存在后续记录时，将响应 `data.next` 原样传给同一列表的 `after`，并保留原站点筛选。虚拟机清单使用稳定的 VM ID，放置迁移后仍显示该 VM 的当前宿主机。
+
 ### 自有 KVM 站点与宿主机放置
 
 执行 `cloud-manager migrate`，待 `0111_kvm_placement` 完成后启动 API。宿主机按租户、项目和站点绑定。每台物理机的 libvirt UUID 全局唯一，每个代理服务主体在租户内只绑定一台宿主机。代理在该项目中使用独立的 `viewer` 服务身份，使用短期 Bearer 凭据通过 HTTPS 上报。
@@ -1894,7 +1912,11 @@ cloud-manager kvm release TENANT PROJECT SITE PLACEMENT
 
 恢复审批记录现场观测及对应结果。确认缺失进入 `rejected` 或 `retired` 时，事务归还容量和 IPv4 地址预留，继续保留启动卷占用。仍有持久域时保留原预留。若已进入 `rejoin_pending`，需先拒绝该次重新接入申请，回到 `fenced` 再批准虚拟机恢复。
 
+在阻塞项旁打开“查看恢复与现场证据”。控制台依据当前任务阶段列出可接受的观测，确认缺失时要求填写两份不同的证据摘要。同一表单以相同观测和摘要重试时沿用原恢复 ID。独立审批人可核对摘要和申请版本后审批，随后返回宿主机清单确认阻塞项是否移除。
+
 宿主机准备重新接入时，管理员提交 `action=request-rejoin`、`uuid`、`replacement_agent` 与新的 `evidence_sha256`。独立审批人以 `approve-rejoin` 或 `reject-rejoin` 审批该版本。仍有未收敛的创建、写入或观测任务时，平台保留隔离。批准后绑定新的代理服务主体并推进代次，宿主机保持排空。管理员执行原来的 `resume` 并完成新容量上报后，宿主机才能接收新放置。
+
+控制台核对隔离记录和阻塞清单的宿主机 UUID、版本和代次。虚拟机阻塞项、未结束的实时迁移及已派发的保留卷清理仍在时，批准重新接入的入口不可用。处理阻塞项后，在工作台刷新并从首页重新核对。批准后的“恢复新放置”需要管理员另行确认。
 
 ```bash
 cloud-manager kvm change-host-fence TENANT PROJECT SITE HOST REVISION < fence.json
@@ -1982,6 +2004,10 @@ cloud-manager kvm review-vm TENANT PROJECT SITE VM REVISION < review.json
 ```
 
 预留原申请人提交创建。同一预留和启动卷重放返回同一 VM，改用其他卷返回 409。受理把原预留转为 `bound`，原 TTL 到期后仍计入宿主机用量。独立审批人发出 `{"decision":"approve"}` 或 `{"decision":"reject"}`。未登记外部写入的任务可拒绝并释放预留。代理领取写入前，API 复核宿主机代次、排空状态以及申请人和审批人的成员版本。
+
+控制台按当前选择预留 5 分钟容量，支持站点登记的 raw 镜像，以及本地池的专用预置卷。镜像字节数须能装入所填磁盘容量。预留请求结果未知时，控制台沿用原幂等键。提交创建结果未知时，从原预留查询 VM ID，并打开审批回执。同一标签页每个项目和身份保留一个待处理的创建申请。
+
+`GET /v1/tenants/{tenant}/projects/{project}/kvm/provisioning-hosts` 为项目执行者提供分页候选，支持 `site`、`limit` 和 `after`。候选要求可用代理授权、近期上报和未排空的宿主机，实际剩余量在预留时重新核对。站点下的 `GET /images` 支持 `limit` 和 `after`。原预留人可通过站点下的 `GET /placements/{placement}/provisioning` 查询预留及已提交的 VM ID。该查询在拒绝和冷迁移之后也保留原 VM 关联。
 
 在绑定的 Linux 宿主机上，运行账号须具备实际定义和启动本地 libvirt 域的权限。站点管理员在本地配置可用启动卷，并使用本项目代理的短期 Bearer 凭据。读取仍走本地 `qemu:///system` 的只读连接。每次运行至多执行一步，按固定间隔重复运行。
 
@@ -2088,6 +2114,10 @@ cloud-manager kvm run-volume-cleanup TENANT PROJECT SITE HOST GENERATION PLACEME
 
 已派发的任务阻塞重新绑定和隔离后重新接入。可按宿主机分页查看当前任务。物理隔离已确认且旧删除进程已停止时，独立审批人可使用清理版本和现场证据结算。确认卷仍在时提交 `observed=present` 和证据摘要，可保留磁盘后重新申请。确认缺失时提交 `observed=absent` 和两份独立证据摘要，结算保留占用。
 
+控制台在申请前核对同站点登记的备份 ID 和字节数。管理员确认独立备份及保留策略后提交，同一表单重试沿用清理 ID。审批使用清理版本。任务已派发且原宿主机进入新的已确认隔离代次后，独立审批人可从隔离工作台登记现场结算证据。结算完成后，活动清单移除该任务，虚拟机的保留卷历史保留回执。
+
+项目成员可在站点路径下通过 `GET /vms/{vm}/retained-volumes` 发现原放置、原宿主机、备份尺寸要求及清理状态，并通过 `GET /placements/{placement}/volume-cleanups` 查询该放置的清理历史。后者按申请时间倒序排列。两者支持 `limit` 和 `after`，默认 50 条且最多 100 条。有更多记录时，使用同一列表返回的 `data.next` 续读。
+
 ```bash
 cloud-manager kvm resolve-volume-cleanup TENANT PROJECT SITE PLACEMENT CLEANUP REVISION < evidence.json
 ```
@@ -2109,6 +2139,10 @@ cloud-manager kvm register-image TENANT PROJECT SITE < image.json
 向站点下的 `/vms/{vm}/cold-migration` 提交 `migration_id`、`target_placement_id`、`image_id` 和关联证据的 `evidence_sha256`。用强 `If-Match` 固定原 VM 版本。独立审批人核对镜像和备份关联证据，再向 `/cold-migration/review` 提交 `migration_id` 与 `decision=approve` 或 `reject`。审批使用原版本。相同申请和审批可以重放。过期的目标预留须经拒绝本次申请后重新申请。项目成员用 GET 查询最新申请。
 
 批准事务绑定目标预留、保留原 VM ID 并推进版本，将虚拟机移交到目标宿主机的 `queued` 状态。源启动卷继续保留，旧宿主机的代理无法领取或上报该 VM。现有 `run-vm` 代理核对备份数据、网络和目标主机，依次准备卷、定义和启动。定义与启动各登记一次写入许可，结果未知时只读核对。迁移审批后，通过普通 VM 查询等到 `running` 并核对访客状态。
+
+在控制台选择同站点、同网络的目标宿主机及已登记备份。页面沿用原 VM 的容量、网络与 IPv4 申请目标预留。未提交的草稿可放弃。同一标签页刷新后，可沿用原预留键、迁移 ID、源版本和备份资料继续提交。拒绝显式预留的迁移后，原申请人可从回执释放仍有效的目标预留。
+
+站点虚拟机路径下的 `GET /cold-migration-eligibility` 返回当前源状态和适用的隔离代次。`GET /cold-migrations` 按申请时间倒序分页，默认 50 条且最多 100 条，使用 `after` 续读。`GET /cold-migrations/{migration}` 按 ID 读取审批、目标与源端清理回执。
 
 ```bash
 cloud-manager kvm request-cold-migration TENANT PROJECT SITE VM REVISION < migration.json
@@ -2136,6 +2170,8 @@ cloud-manager kvm run-live-migration TENANT PROJECT SITE HOST GENERATION VM MIGR
 
 管理员在申请正文提供 `migration_id` 和 `target_host`。独立审批人提交 `{"decision":"approve"}` 后，目标 CPU 和内存进入预留，磁盘继续沿用同一共享卷。先在目标运行代理完成本地检查，再在源运行代理派发。目标准备证据有效期为 90 秒，可再次采样。已派发的后续调用只进行观测。源代理报告原域已消失后，目标代理报告同一个 UUID、MAC 和持久域在运行。平台在同一事务切换宿主机归属和计算预留，保留 VM ID、放置 ID、启动卷和原创建请求的幂等记录。
 
+在虚拟机 API 下，`GET .../vms/{vm}/live-migrations` 为项目成员提供申请记录，包含最近一次准备、派发和交接时间。`GET .../vms/{vm}/live-migration-targets` 为管理员提供同站点候选，按照池、网络、排空和隔离状态、上报新鲜度及报告容量初筛。候选查询不会预留容量。审批时根据实际占用重新计算，宿主机代理在执行时核验 TLS 与本地桥接。两个列表都支持 `limit` 和 `after`，默认 50 条且最多 100 条；有更多记录时返回 `data.next`。控制台在同一次确认的重试中沿用原申请 ID 与 VM 版本。
+
 派发前，独立审批人可拒绝迁移并释放目标计算预留。派发后发生无法收敛的故障时，先按宿主机隔离协议分别确认两端的新隔离代次。现场证据须证明旧派发和 libvirt 迁移任务已结束，目标没有残留域定义或自动启动路径。独立审批人使用当前**迁移版本**和 `evidence_sha256` 提交终止。控制面保留原归属和审计回执，之后可继续使用原有故障疏散流程。
 
 ```bash
@@ -2151,6 +2187,8 @@ cloud-manager kvm abort-live-migration TENANT PROJECT SITE VM MIGRATION MIGRATIO
 应用 `0127_kvm_evacuation_placement` 后，疏散申请可省略 `target_placement_id`，由控制面在其他故障域内选择可用宿主机。控制面沿用源网络与资源规格，核对目标代理授权、容量观测及剩余容量，并将目标放置与待审批申请同事务写入。候选宿主机须可取得已登记的备份。默认预留 15 分钟，收据包含 `target_host`、`target_placement_id` 和 `automatic_placement=true`。同一申请重试时继续省略目标预留。审批拒绝会释放自动预留。若没有可用目标或候选正被其他事务占用，申请返回 409。预留过期时，拒绝原申请后用新迁移 ID 提交，控制面重新选择目标。
 
 需要控制面验证备份可达时，在单项冷迁移请求、批次的每项或疏散预案的每项设置 `require_verified_backup: true`。自动选址只接受同时具备足够容量和当前回执的目标，显式目标也要通过回执校验。审批时再次核对当前回执，失效则返回 409。自动预案在没有合格目标时记录 `verified_target_unavailable` 并重试。目标代理在实际暂存启动卷时仍校验文件字节。
+
+控制台从当前已确认隔离的 VM 发起单机疏散，可自动选址或由管理员指定目标。申请绑定当前隔离代次，并可要求有效的备份校验回执。批准后到原宿主机的隔离工作台登记疏散源端清理证据。
 
 源宿主机保持隔离，直到站点人员确认原域和自动启动配置已清除、遗留网络映射已清理，并确保原域无法再次接入。独立审批人以当前宿主机 `If-Match` 向源宿主机的 `/fence/cleanup` 提交 `vm_id`、`migration_id` 和现场清理证据的 `evidence_sha256`。在该隔离代次内，`GET /fence/work` 将未完成清理的疏散显示为 `cleanup_required`，并提供 `evacuation_id`。所有阻塞清除后，仍需完成原宿主机重新接入审批及新的容量上报。
 

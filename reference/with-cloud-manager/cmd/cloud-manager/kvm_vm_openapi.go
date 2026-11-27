@@ -47,6 +47,12 @@ func kvmVMHints(hints map[string]openapi.Op, operation func(string, string, stri
 	migration.Body.Description = "故障疏散需提供独立确认的源隔离代次。省略 target_placement_id 时，服务自动在其他故障域预留同规格容量。"
 	hints["POST "+kvmColdMigrationRoute] = migration
 	hints["GET "+kvmColdMigrationRoute] = operation("getKVMColdMigration", "200", "本虚拟机最新冷迁移申请及审批结果", false)
+	hints["GET "+kvmColdMigrationReceiptRoute] = operation("getKVMColdMigrationReceipt", "200", "按迁移 ID 读取申请、审批及源端清理回执", false)
+	hints["GET "+kvmColdMigrationEligibilityRoute] = operation("getKVMColdMigrationEligibility", "200", "读取 VM 当前来源资格和已确认隔离代次", false)
+	history := operation("listKVMColdMigrations", "200", "按申请时间倒序分页读取虚拟机的冷迁移和疏散历史", false)
+	history.Params = []openapi.Param{{Name: "after", In: "query", Schema: openapi.String}, {Name: "limit", In: "query", Schema: openapi.Integer}}
+	history.Responses["400"] = openapi.Response{Description: "分页参数无效"}
+	hints["GET "+kvmColdMigrationsRoute] = history
 	migrationReview := operation("reviewKVMColdMigration", "200", "独立审批。同事务切换放置和受理目标宿主机工作。", true)
 	migrationReview.Params = review.Params
 	migrationReview.Responses["412"] = openapi.Response{Description: "需要原虚拟机版本和目标宿主机代次"}

@@ -33,11 +33,13 @@ func TestAcceptanceKVMColdMigration(t *testing.T) {
 	image := testKVMImage(contents)
 	path := fixtureVMSitePath + "/" + vm.ID
 	migration := path + "/cold-migration"
+	assertColdMigrationEligibility(t, first, path, vm, "unavailable", 0)
 	input := kvm.ColdMigrationInput{ID: "move-1", Image: image.ID, Evidence: strings.Repeat("a", 64), Placement: source.ID}
 	expectKVM(t, kvmRequest(t, first, fixtureKVMAdmin, "POST", migration, `"1"`, "", input), 409, nil)
 	expectKVM(t, kvmRequest(t, second, fixtureKVMAgent, "POST", fixtureVMHostPath+"/vm-work/"+vm.ID+"/backup-plan", "", "",
 		kvm.VMCommand{AgentIdentity: kvm.AgentIdentity{UUID: fixtureKVMUUID, Generation: 1}, Revision: vm.Revision}), 409, nil)
 	vm = retireMigrationSource(t, first, vm)
+	assertColdMigrationEligibility(t, second, path, vm, "cold", 0)
 	contents, input.Evidence = exportMigrationBackup(t, second, vm, contents, image)
 	expectKVM(t, kvmRequest(t, second, fixtureKVMAdmin, "POST", fixtureKVMSite+"/images", "", "", image), 201, nil)
 	rev := strconv.Quote(strconv.FormatInt(vm.Revision, 10))
@@ -49,6 +51,7 @@ func TestAcceptanceKVMColdMigration(t *testing.T) {
 	expectKVM(t, kvmRequest(t, first, fixtureKVMAdmin, "POST", migration, `"1"`, "", input), 412, nil)
 	var submitted, replay kvm.ColdMigration
 	expectKVM(t, kvmRequest(t, second, fixtureKVMAdmin, "POST", migration, rev, "", input), 202, &submitted)
+	assertColdMigrationEligibility(t, first, path, vm, "unavailable", 0)
 	expectKVM(t, kvmRequest(t, first, fixtureKVMAdmin, "POST", migration, rev, "", input), 202, &replay)
 	changed := input
 	changed.Evidence = strings.Repeat("b", 64)
@@ -77,12 +80,27 @@ func TestAcceptanceKVMColdMigration(t *testing.T) {
 		!approved.ReviewedAt.Equal(*replay.ReviewedAt) {
 		t.Fatalf("concurrent review did not converge: %+v %+v", approved, replay)
 	}
+	var receipt kvm.ColdMigration
+	expectKVM(t, kvmRequest(t, second, fixtureKVMOperator, "GET", path+"/cold-migrations/"+input.ID, "", "", nil), 200, &receipt)
+	if receipt.Status != approved.Status || receipt.Placement != target.ID || receipt.SourcePlacement != source.ID {
+		t.Fatalf("migration receipt lost the original handoff: %+v", receipt)
+	}
 	var queued kvm.VM
 	expectKVM(t, kvmRequest(t, first, fixtureKVMOperator, "GET", path, "", "", nil), 200, &queued)
 	if queued.ID != vm.ID || queued.State != "queued" || queued.Host != fixtureMigrationHost ||
 		queued.Address != vm.Address || queued.MAC != vm.MAC || queued.Revision != vm.Revision+1 ||
 		queued.Placement != target.ID || queued.ImageSHA256 != image.SHA256 {
 		t.Fatalf("wrong migration handoff: %+v", queued)
+	}
+	var listed kvm.InventoryPage[kvm.VMSummary]
+	expectKVM(t, kvmRequest(t, second, fixtureKVMOperator, "GET", fixtureKVMProject+"/vms", "", "", nil), 200, &listed)
+	if len(listed.Items) != 1 || listed.Items[0].ID != vm.ID || listed.Items[0].Host != queued.Host || listed.Items[0].State != queued.State {
+		t.Fatalf("inventory did not follow current placement: %+v", listed)
+	}
+	var originalRequest kvm.ProvisioningStatus
+	expectKVM(t, kvmRequest(t, second, fixtureKVMOperator, "GET", fixtureVMPlacementPath+"/"+source.ID+"/provisioning", "", "", nil), 200, &originalRequest)
+	if originalRequest.VM != vm.ID || originalRequest.Placement.ID != source.ID || originalRequest.Placement.State != "released" {
+		t.Fatalf("original request did not retain the migrated VM identity: %+v", originalRequest)
 	}
 	var sourceHold kvm.Placement
 	expectKVM(t, kvmRequest(t, first, fixtureKVMAdmin, "GET", fixtureVMPlacementPath+"/"+source.ID, "", "", nil), 200, &sourceHold)
@@ -98,6 +116,15 @@ func TestAcceptanceKVMColdMigration(t *testing.T) {
 	expectKVM(t, kvmRequest(t, first, fixtureKVMAgent, "POST", fixtureVMHostPath+"/vm-work/"+vm.ID+"/arm", "", "",
 		kvm.VMCommand{AgentIdentity: kvm.AgentIdentity{UUID: fixtureKVMUUID, Generation: 1}, Revision: queued.Revision}), 403, nil)
 	checkMigrationExecution(t, first, second, destination, queued, contents)
+}
+
+func assertColdMigrationEligibility(t *testing.T, handler http.Handler, path string, vm kvm.VM, mode string, generation int64) {
+	t.Helper()
+	var view kvm.ColdMigrationEligibility
+	expectKVM(t, kvmRequest(t, handler, fixtureKVMOperator, "GET", path+"/cold-migration-eligibility", "", "", nil), 200, &view)
+	if view.Mode != mode || view.SourceFenceGeneration != generation || view.VM.ID != vm.ID || view.VM.Revision != vm.Revision {
+		t.Fatalf("unexpected cold migration eligibility: %+v", view)
+	}
 }
 
 func checkExpiredMigrationTarget(t *testing.T, db *sql.DB, first, second http.Handler, path, revision string, input kvm.ColdMigrationInput, source kvm.Placement) {

@@ -126,6 +126,11 @@ func (s Store) inProject(ctx context.Context, token string, scope identity.Scope
 	if !identifier.MatchString(site) {
 		return ErrInvalid
 	}
+	return s.authorizedProject(ctx, token, scope, permission, readOnly, work)
+}
+
+func (s Store) authorizedProject(ctx context.Context, token string, scope identity.Scope,
+	permission identity.Permission, readOnly bool, work func(*sql.Tx, identity.Scope, identity.Membership) error) error {
 	return dbutil.WithTransaction(ctx, s.db, &sql.TxOptions{Isolation: sql.LevelReadCommitted, ReadOnly: readOnly}, func(tx *sql.Tx) error {
 		store := identity.NewStore(tx)
 		actor, err := store.AuthenticateRequest(ctx, token)
