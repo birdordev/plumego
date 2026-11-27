@@ -971,6 +971,24 @@ API 为 `POST /v1/tenants/{tenant}/projects/{project}/load-balancers/detach-back
 
 Worker 发送前复核审批、归属、独占关联、成员当前权重和唯一身份，并保存厂商实际绑定标识的摘要。结果未知时只读核对。错误、成员仍存在或异步任务未结束都会中断连续缺失证据。连续两次完整观测确认同一绑定已消失后，平台在同一事务清理该成员及能归属到它的健康记录、拦截此前启动的刷新并写入成功事件。真实厂商沙箱仍待验收。
 
+#### 云盘容量和规格盘点
+
+应用 `0156_volume_inventory_details` 并升级 API 和盘点进程。腾讯云、阿里云和华为云的 `volume` 扫描沿用原有账号、地域、分页和定时计划。重新扫描后，资产列表显示已知容量和规格，搜索支持厂商存储类型以及已知的 `system`、`data` 用途。容量来自厂商查询，单位 GiB。
+
+| 厂商 | 属性来源 |
+| --- | --- |
+| 腾讯云 | CBS 查询的容量、云盘类型和系统盘／数据盘用途。 [DescribeDisks](https://cloud.tencent.com/document/product/362/16315) · [Disk 数据结构](https://cloud.tencent.com/document/api/362/15669) |
+| 阿里云 | ECS 查询的容量、存储类别和系统盘／数据盘用途。 [DescribeDisks](https://www.alibabacloud.com/help/zh/ecs/developer-reference/api-ecs-2014-05-26-describedisks) |
+| 华为云 | EVS 查询的容量、云盘类型和启动标记。 [ListVolumes](https://support.huaweicloud.com/api-evs/evs_04_2006.html) |
+
+资产 API 在 `volume` 返回已知的 `size_gib`、`storage_class`、`usage` 和 `bootable`。字段缺失表示尚无证据，华为云明确返回不可启动时保留 `bootable: false`。资产变化记录提供 `previous_volume` 和 `volume`。明确筛选 `kind=volume` 时，CSV 追加四列，未知值留空。
+
+```sh
+cloud-manager assets list TENANT PROJECT --kind volume
+cloud-manager assets changes TENANT PROJECT --kind volume
+cloud-manager assets export TENANT PROJECT --kind volume > volumes.csv
+```
+
 #### 云盘快照盘点
 
 应用 `0040_snapshot_inventory` 和 `0041_snapshot_schedules` 后，用原账号和地域配置运行以下任一命令，也可登记 `kind=snapshot` 的定时计划。
@@ -1318,6 +1336,28 @@ go run ./cmd/cloud-manager operations events tenant-id project-id operation-id -
 go run ./cmd/cloud-manager operations backlog tenant-id project-id --account account-id --region region-id
 ```
 
+应用 `0153_operation_queue_findings` 后，项目成员可在操作中心使用「队列问题」筛选。`GET /v1/tenants/{tenant}/projects/{project}/operations` 的 `queue_issue` 接受 `anomaly` 或 `overdue_recovery`，可与原有操作筛选组合。每项匹配结果都带 `queue_issue_reason`。异常原因包括 `missing_task`、`expired_task`、`dead_letter` 和 `finished_task`。`lease_recovery_overdue` 表示任务达到可接管条件至少两分钟。查询保留创建时间倒序和游标翻页，每页反映该次查询的队列状态。
+
+```sh
+cloud-manager operations list tenant-id project-id --account account-id --queue-issue anomaly
+```
+
+#### 修复异常队列并恢复只读观测
+
+先执行 `migrate` 应用 `0154_operation_observation_queue_repair` 和 `0155_power_observation_authority`，升级 API 与操作 Worker。独立审批人可从受影响操作的详情提交证据引用，或向 `POST /v1/tenants/{tenant}/projects/{project}/operations/{operation}/retry-observation` 发送 `{"evidence_ref":"incident/queue-42","repair_queue":true}`。
+
+修复仅适用于处于 `applying`、`observing` 且队列缺失、超期、死信或已结束的受支持操作。支持原有只读续查动作，以及实例开机、关机和重启。资源级证据条件和授权检查继续适用。未派发操作、仍可正常领取的任务和持有有效租约的任务会被拒绝。
+
+审批、修复队列和操作转入 `observing` 同事务提交。平台保留原操作 ID、厂商回执、幂等记录及资源占用。原队列记录存在时沿用已有尝试计数，也保留仍可读取的尝试日志。续查沿用原动作的观测预算并只读取厂商状态。使用同一审批人和证据引用重试返回当前状态，改变请求中的修复选项会产生冲突。
+
+```sh
+cloud-manager operations retry-observation tenant-id project-id OPERATION --evidence-ref incident/queue-42 --repair-queue
+```
+
+开机和关机的续查由本次独立审批授权。在账号写入冻结或原申请人撤权后，Worker 仍可核对已记录派发的操作。实例须保持原归属。跨账号代次续查时，派发至审批之间的审计必须连续，且每次变更均为本项目的写入开关。腾讯云、华为云和支持作业回执查询的 OpenStack 也可凭原厂商回执续查重启。阿里云与 AWS 重启沿用人工核验。
+
+Worker 在查询厂商状态前和提交结果前复核绑定的审批代次、账号代次和原实例归属。复核遇到撤权或换代时转为待复核。新的独立审批人可凭新证据再次申请。任务已由 Worker 正常确认结束时，直接使用 `retry-observation --evidence-ref REF` 即可恢复只读观测。回退到旧 Worker 前先排空新授权的观测任务。
+
 ### 操作阶段时延
 
 `GET /v1/tenants/{tenant}/projects/{project}/operation-latency` 按操作受理时间选择 `[from, until)`，以同一数据库快照的 `as_of` 返回项目汇总及厂商分组。`from` 和 `until` 必填，使用带时区、至多微秒精度的 RFC 3339。每个窗口至多 31 天和 10,000 条操作。可用 `account`、`region`、`action` 收窄范围。窗口超出操作上限时返回 422。
@@ -1355,7 +1395,7 @@ go run ./cmd/cloud-manager operations latency tenant-id project-id \
 | `delete-network` | 传入 `--idempotency-key` 和资产归属版本 `--if-match`，从标准输入读取 VPC、子网或安全组删除 JSON |
 | `approve` | 传入操作 ID 及 `--decision approve` 或 `--decision reject` |
 | `resolve` | 传入操作 ID、`--decision succeeded` 或 `--decision failed`、`--evidence-ref`。若原操作记录了厂商请求 ID，还需相同的 `--provider-request-id` |
-| `retry-observation` | 传入待复核的创建操作 ID 和 `--evidence-ref`，申请继续只读核实 |
+| `retry-observation` | 提交操作 ID 和 `--evidence-ref`，申请继续只读核实。已派发且存在队列异常时使用 `--repair-queue` |
 
 ```sh
 go run ./cmd/cloud-manager operations preview-delete tenant-id project-id --account account-id --region us-east-1 --asset-id i-01234567
@@ -1757,7 +1797,7 @@ go run ./cmd/cloud-manager catalog retire tenant-id project-id linux-small --if-
 
 盘点告警归当前云账号所属项目，只评估启用计划和可读账号。每条规则对同一对象至多保留一条未恢复告警。确认记录管理员及时间，条件解除时评估器自动恢复。恢复后同一问题再次出现时生成新的告警 ID。触发、确认和恢复均写入项目审计。操作超时使用当前状态的最后更新时间，首次受理状态使用创建时间。
 
-两条队列规则与项目操作积压报告共用状态判定，按操作所属项目和云账号聚合所有地域。每个账号每条规则最多保留一条未恢复告警。待审批、待人工复核、租约有效和延后执行的操作不触发这两条规则。同一账号对应的问题全部解除后自动恢复。控制台可从告警详情打开该账号的操作积压。
+两条队列规则与项目操作积压报告共用状态判定，按操作所属项目和云账号聚合所有地域。每个账号每条规则最多保留一条未恢复告警。待审批、待人工复核、租约有效和延后执行的操作不触发这两条规则。同一账号对应的问题全部解除后自动恢复。控制台可从告警详情打开该账号的积压汇总，或按规则查看当前受影响的操作及具体原因。
 
 项目成员可在控制台「项目告警」、CLI 或 `GET /v1/tenants/{tenant}/projects/{project}/alerts` 查看。列表默认返回未恢复告警，可用 `status` 和 `rule` 筛选。状态筛选支持 `active`、`open`、`acknowledged`、`resolved`、`all`。每页默认 50 条，最多 100 条。将响应的 `next` 用作下一页的 `after`。详情 `GET /alerts/{alert}` 返回当前 `ETag`。项目管理员以 `POST /alerts/{alert}/acknowledgement` 和当前 `If-Match` 确认告警，状态或修订号变更时返回 412。
 
@@ -1772,7 +1812,7 @@ go run ./cmd/cloud-manager alerts acknowledge tenant-id project-id ALERT_ID --if
 
 部署时先执行 `0028_project_alerts`，再升级事件发布器。确认所有相关发布器已升级后启用告警订阅。回滚旧版本发布器前，先停用告警订阅并排空告警投递。升级前应按实际发件箱和操作表规模评估迁移锁窗口。
 
-启用队列告警前，先运行 `migrate` 应用 `0151_operation_queue_snapshot` 和 `0152_operation_queue_alerts`，再升级 API 与 `alert-controller`。数据库角色分离部署时，API 和告警控制器角色需具备 `cmp_operation_queue_snapshot` 的读取权限。
+启用队列告警前，先运行 `migrate` 应用 `0151_operation_queue_snapshot`、`0152_operation_queue_alerts` 和 `0153_operation_queue_findings`，再升级 API 与 `alert-controller`。数据库角色分离部署时，API 和告警控制器角色需具备 `cmp_operation_queue_snapshot` 的读取权限。
 
 ### OpenStack 原生控制台访问
 

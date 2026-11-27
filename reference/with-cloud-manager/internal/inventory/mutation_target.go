@@ -12,6 +12,7 @@ import (
 type MutationTarget struct {
 	ScopeID           int64
 	OwnershipRevision int64
+	OwnershipSource   string
 	identity.AccountAccess
 }
 
@@ -21,6 +22,11 @@ func ResolveInstanceMutation(ctx context.Context, tx *sql.Tx, actor identity.Sco
 
 func ResolveInstanceObservation(ctx context.Context, tx *sql.Tx, actor identity.Scope, account, region, id string) (MutationTarget, error) {
 	return resolveMutation(ctx, tx, actor, account, region, id, provider.Instance, false, identity.Execute, true)
+}
+
+// ResolveInstancePowerObservation 锁定仍归属当前项目且库存状态明确的实例，供复核人只读对账。
+func ResolveInstancePowerObservation(ctx context.Context, tx *sql.Tx, actor identity.Scope, account, region, id string) (MutationTarget, error) {
+	return resolveMutation(ctx, tx, actor, account, region, id, provider.Instance, true, identity.View, true)
 }
 
 func ResolveVolumeMutation(ctx context.Context, tx *sql.Tx, actor identity.Scope, account, region, id string) (MutationTarget, error) {
@@ -190,16 +196,16 @@ func resolveMutation(ctx context.Context, tx *sql.Tx, actor identity.Scope, acco
 	if err != nil {
 		return MutationTarget{}, err
 	}
-	var owner, source string
+	var owner string
 	err = tx.QueryRowContext(ctx, `SELECT `+projectedOwner+`,`+projectedRevision+", "+ownershipSource+`
 		FROM cmp_inventory_scopes AS s JOIN cmp_cloud_accounts AS a USING (tenant_id,account_id)
 		LEFT JOIN cmp_asset_ownership AS own ON (own.scope_id,own.external_id)=(s.scope_id,$2)
 		LEFT JOIN cmp_asset_tag_assignments AS rule ON (rule.scope_id,rule.external_id)=(s.scope_id,$2)
-		WHERE s.scope_id=$1`, target.ScopeID, id).Scan(&owner, &target.OwnershipRevision, &source)
+		WHERE s.scope_id=$1`, target.ScopeID, id).Scan(&owner, &target.OwnershipRevision, &target.OwnershipSource)
 	if err != nil {
 		return MutationTarget{}, err
 	}
-	if owner != actor.Project || source == "pending" {
+	if owner != actor.Project || target.OwnershipSource == "pending" {
 		return MutationTarget{}, identity.ErrForbidden
 	}
 	target.AccountAccess, err = identity.NewStore(tx).AuthorizeAccount(ctx, actor, account, permission)

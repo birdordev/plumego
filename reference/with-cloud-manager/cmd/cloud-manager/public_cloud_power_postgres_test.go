@@ -190,6 +190,7 @@ func TestAcceptancePublicCloudInstancePower(t *testing.T) {
 			}
 			exec(`UPDATE cmp_inventory_scopes SET running=true,cursor='stale-fixture',pages=1, fence=17
 				WHERE account_id=$1 AND kind='instance'`, item.name)
+			exercisePowerQueueRepair(t, app, db, store, scope, accepted, item.name, actorToken, reviewerToken)
 			wait(start.ID, "succeeded", true)
 			var powerState, cursor string
 			var running bool
@@ -218,6 +219,13 @@ func TestAcceptancePublicCloudInstancePower(t *testing.T) {
 				review := wait(reboot.ID, "needs_review", false)
 				if review.ProviderRequestID != fixtureRebootReceipt || review.OutcomeReason != "reboot_completion_requires_evidence" {
 					t.Fatalf("manual reboot evidence: %+v", review)
+				}
+				if review.CanRetryPowerObservation {
+					t.Fatal("manual-only reboot exposed automatic observation")
+				}
+				if _, err := store.RetryCreationObservation(ctx, reviewerToken, scope, reboot.ID,
+					operations.ObservationRetry{EvidenceRef: "verify/manual-only-reboot"}); !errors.Is(err, operations.ErrConflict) {
+					t.Fatalf("manual-only reboot resumed automatically: %v", err)
 				}
 				resolution := operations.Resolution{Decision: "succeeded", EvidenceRef: "verify/fixture-reboot", ProviderRequestID: "foreign-receipt"}
 				if _, err := store.Resolve(ctx, reviewerToken, scope, reboot.ID, resolution); !errors.Is(err, operations.ErrConflict) {

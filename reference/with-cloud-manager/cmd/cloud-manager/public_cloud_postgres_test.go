@@ -84,6 +84,8 @@ func TestAcceptancePublicCloudInventory(t *testing.T) {
 			elasticIPs := &elasticIPFixture{publicCloudResourceFixture: cloudResources}
 			snapshots := &cloudSnapshotFixture{publicCloudResourceFixture: cloudResources}
 			var firstPage, secondPage atomic.Int32
+			var volumeSize atomic.Int64
+			volumeSize.Store(60)
 			server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if snapshots.serve(t, w, r) || elasticIPs.serve(t, w, r) || cloudResources.serveSecurityRules(t, w, r, scopeWrong.Load(), func(resumed bool) bool {
 					if !resumed {
@@ -93,7 +95,7 @@ func TestAcceptancePublicCloudInventory(t *testing.T) {
 					resumedRulePage.Add(1)
 					return ruleThrottled.CompareAndSwap(false, true)
 				}) || cloudResources.serve(t, w, r, scopeWrong.Load()) ||
-					cloudResources.serveVolumes(t, w, r) || cloudResources.serveImages(t, w, r, scopeWrong.Load()) || cloudResources.serveZones(t, w, r) {
+					cloudResources.serveVolumes(t, w, r, volumeSize.Load()) || cloudResources.serveImages(t, w, r, scopeWrong.Load()) || cloudResources.serveZones(t, w, r) {
 					return
 				}
 				write := func(body string) {
@@ -285,6 +287,9 @@ func TestAcceptancePublicCloudInventory(t *testing.T) {
 					t.Fatalf("scan %s: %v", kind, err)
 				}
 			}
+			cloudResources.checkVolumeInventory(t, app, base, item.cli, bearer, &volumeSize, func() error {
+				return runPublicCloud(ctx, db, []string{scan[0], scan[1], scan[2], scan[3], string(provider.Volume)}, item.name, path, transport)
+			})
 			scan[4] = string(provider.SecurityGroupRule)
 			if !validCommand(scan) {
 				t.Fatal("security rule scan command is not registered")

@@ -17,6 +17,11 @@ var queueSnapshotSchema string
 
 const QueueSnapshotMigration = "0151_operation_queue_snapshot"
 
+//go:embed 0153_operation_queue_findings.sql
+var queueFindingsSchema string
+
+const QueueFindingsMigration = "0153_operation_queue_findings"
+
 type BacklogFilter struct{ Account, Region string }
 
 func (f BacklogFilter) Valid() bool {

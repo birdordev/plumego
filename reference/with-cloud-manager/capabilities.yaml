@@ -16,6 +16,9 @@ platform:
   operation-worker-tenant-indexes: concurrent-index-build-with-interruption-recovery-and-startup-gate
   project-operation-backlog: project-scoped-database-snapshot-with-provider-rollups-and-queue-eligibility
   project-operation-queue-alerts: per-account-overdue-lease-recovery-and-queue-anomaly-alerts-with-audit-and-outbox
+  project-operation-queue-findings: scoped-keyset-pagination-with-typed-queue-reasons-and-alert-drilldown
+  operation-observation-queue-repair: reviewer-authorized-transactional-task-repair-for-read-only-convergence
+  power-observation-authority: exact-review-evidence-with-read-only-freeze-and-post-read-authorization
   project-operation-latency: first-lease-transaction-evidence-and-provider-scoped-observed-success-distributions
   operation-latency-release-gate: approved-cohort-manifest-with-scope-verification-and-independent-success-coverage-p95-checks
   operation-terminal-effect-id: signed-stable-effect-id-across-point-in-time-recovery-and-redelivery
@@ -28,6 +31,7 @@ platform:
   inventory-freshness: project-visible-enabled-schedule-coverage-with-credential-bound-completions
   project-asset-capacity-probe: fixed-arrival-project-query-contract-with-workload-digest-and-per-case-p95
   project-asset-discovery-clients: scoped-list-history-topology-and-csv-with-shared-console-filters
+  priority-cloud-volume-inventory-details: capacity-in-gib-native-storage-class-and-optional-usage-or-bootability-with-history-and-csv
   project-asset-capacity-inventory-evidence: same-project-per-provider-fingerprint-and-freshness-before-during-and-after-query-load
   inventory-dispatch-report: project-scoped-schedule-and-account-lease-and-cooldown-snapshot-with-due-time-pagination
   redfish-inventory: readonly-site-scoped-physical-system-discovery-and-durable-schedule

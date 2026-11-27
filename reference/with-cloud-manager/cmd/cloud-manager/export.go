@@ -22,6 +22,7 @@ func writeAssetCSV(w http.ResponseWriter, r *http.Request, assets []inventory.As
 	loadBalancers := kind == provider.LoadBalancer
 	addresses := kind == provider.ElasticIP || loadBalancers
 	snapshots := kind == provider.Snapshot
+	volumes := kind == provider.Volume
 	databases := kind == provider.DatabaseInstance
 	caches := kind == provider.CacheInstance
 	clusters := kind == provider.KubernetesCluster
@@ -32,6 +33,9 @@ func writeAssetCSV(w http.ResponseWriter, r *http.Request, assets []inventory.As
 	}
 	if snapshots {
 		columns = append(columns, "source_volume_id", "snapshot_class", "size_gib")
+	}
+	if volumes {
+		columns = append(columns, "size_gib", "storage_class", "usage", "bootable")
 	}
 	if loadBalancers {
 		columns = append(columns, "product", "address_type", "dns_name", "private_addresses")
@@ -73,6 +77,19 @@ func writeAssetCSV(w http.ResponseWriter, r *http.Request, assets []inventory.As
 				}
 			}
 			record = append(record, safeCSVCell(asset.ParentID), class, size)
+		}
+		if volumes {
+			size, class, usage, bootable := "", "", "", ""
+			if volume := asset.Volume; volume != nil {
+				class, usage = safeCSVCell(volume.StorageClass), volume.Usage
+				if volume.SizeGiB != nil {
+					size = strconv.Itoa(*volume.SizeGiB)
+				}
+				if volume.Bootable != nil {
+					bootable = strconv.FormatBool(*volume.Bootable)
+				}
+			}
+			record = append(record, size, class, usage, bootable)
 		}
 		if loadBalancers {
 			product, addressType, dns, private := "", "", "", ""

@@ -20,11 +20,10 @@ func MigrateOperationQueue(ctx context.Context, db *sql.DB) error {
 // EvaluateOperationQueueAlerts 在已领取的项目检查事务内写入队列告警。
 func EvaluateOperationQueueAlerts(ctx context.Context, tx *sql.Tx, tenant, project string) error {
 	_, err := tx.ExecContext(ctx, `WITH candidates AS MATERIALIZED (
-		SELECT DISTINCT account_id,state,CASE WHEN state='anomaly' THEN 'operation_queue_anomaly'
+		SELECT DISTINCT account_id,state,CASE WHEN issue='anomaly' THEN 'operation_queue_anomaly'
 			ELSE 'operation_queue_recovery' END AS rule
 		FROM cmp_operation_queue_snapshot WHERE (tenant_id,project_id)=($1,$2)
-		AND (state='anomaly' OR (state='recoverable'
-			AND GREATEST(available_at,created_at,lease_until)<=statement_timestamp()-interval '2 minutes'))
+		AND issue IS NOT NULL
 	), resolved AS (
 		UPDATE cmp_project_alerts AS a SET resolved_at=GREATEST(statement_timestamp(),a.opened_at,a.acknowledged_at),revision=a.revision+1
 		WHERE (a.tenant_id,a.project_id)=($1,$2) AND a.resolved_at IS NULL

@@ -166,7 +166,8 @@ func TestAcceptancePostgresReadiness(t *testing.T) {
 		inventory.InventoryCompletionMigration, identity.AccountWriteModeMigration, controller.ScheduleConfigMigration,
 		controller.AccountDispatchMigration, controller.TenantDispatchMigration, operations.ObservationWorkerMigration,
 		operations.EffectIDMigration, operations.TerminalEventTimeMigration, alerts.BucketProtectionMigration, inventory.TagPolicyAlertsMigration,
-		operations.FirstLeaseMigration, operations.QueueSnapshotMigration, alerts.OperationQueueMigration} {
+		operations.FirstLeaseMigration, operations.QueueSnapshotMigration, alerts.OperationQueueMigration, operations.QueueFindingsMigration,
+		operations.ObservationQueueRepairMigration, operations.PowerObservationMigration, inventory.VolumeInventoryMigration} {
 		if _, err := db.ExecContext(t.Context(), "DELETE FROM cmp_migrations WHERE version=$1", version); err != nil {
 			t.Fatal(err)
 		}

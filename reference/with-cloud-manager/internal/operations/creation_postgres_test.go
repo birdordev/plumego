@@ -151,6 +151,19 @@ func TestAcceptancePersistentInstanceCreation(t *testing.T) {
 	step()
 	status(op.ID, "observing")
 	create("second", ErrQuota)
+	exec(`UPDATE cmp_operation_tasks SET status='done' WHERE id=$1`, op.ID)
+	repaired, err := store.RetryCreationObservation(ctx, reviewer, scope, op.ID,
+		ObservationRetry{EvidenceRef: "case/launch-queue", RepairQueue: true})
+	if err != nil || repaired.OutcomeReason != observationQueueRestarted {
+		t.Fatalf("queue repair did not preserve ambiguous create: %+v, %v", repaired, err)
+	}
+	create("second", ErrQuota)
+	client.readError = &provider.Failure{Kind: provider.OutcomeUnknown}
+	step()
+	if client.launches != 1 || client.discoveries != 1 {
+		t.Fatalf("queue repair repeated an ambiguous AWS launch: writes=%d observations=%d", client.launches, client.discoveries)
+	}
+	client.readError = nil
 	client.object = provider.Object{ID: "i-01234567", Name: config.Name, Status: "running"}
 	exec("UPDATE cmp_operation_tasks SET available_at=clock_timestamp() WHERE id=$1", op.ID)
 	exec("ALTER TABLE cmp_instance_operation_events ADD CONSTRAINT fail_create_result CHECK (status<>'succeeded') NOT VALID")
@@ -167,7 +180,7 @@ func TestAcceptancePersistentInstanceCreation(t *testing.T) {
 		VALUES ('creation-fixture','tenant','project',decode(repeat('00',32),'hex'))`)
 	exec("UPDATE cmp_operation_tasks SET lease_until=clock_timestamp()-interval '1 second' WHERE id=$1", op.ID)
 	step()
-	if current := status(op.ID, "succeeded"); current.AssetID != client.object.ID || client.launches != 1 || client.discoveries != 2 {
+	if current := status(op.ID, "succeeded"); current.AssetID != client.object.ID || client.launches != 1 || client.discoveries != 3 {
 		t.Fatalf("unexpected convergence %+v writes=%d observations=%d", current, client.launches, client.discoveries)
 	}
 	var eventAsset, eventReason string

@@ -13,6 +13,6 @@ export default function OperationsPage() {
     {(values) => <OperationFilters values={values} />}
   </CollectionFilters>
   return <CollectionPage {...page} onLoadNext={operationsCollection.loadNext} filters={filters} tools={<OperationBacklogButton />}>
-    <OperationsTable items={page.items} />
+    <OperationsTable items={page.items} showQueueIssue={new URLSearchParams(page.filters).has('queue_issue')} />
   </CollectionPage>
 }

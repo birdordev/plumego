@@ -50,6 +50,7 @@ type Object struct {
 	Cache           *CacheDetails        `json:"cache_instance,omitempty"`
 	Cluster         *ClusterDetails      `json:"kubernetes_cluster,omitempty"`
 	Snapshot        *SnapshotDetails     `json:"snapshot,omitempty"`
+	Volume          *VolumeDetails       `json:"volume,omitempty"`
 }
 
 type Link struct {
@@ -96,6 +97,9 @@ func (p Page) Validate(cursor string) error {
 			return &Failure{Kind: InvalidResponse}
 		}
 		if object.Cluster != nil && !object.ValidCluster() {
+			return &Failure{Kind: InvalidResponse}
+		}
+		if object.Volume != nil && !object.Volume.Valid() {
 			return &Failure{Kind: InvalidResponse}
 		}
 		if object.LoadBalancer != nil {

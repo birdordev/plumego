@@ -15,6 +15,7 @@ import (
 type ObservationRetry struct {
 	EvidenceRef        string `json:"evidence_ref"`
 	ProviderResourceID string `json:"provider_resource_id,omitempty"`
+	RepairQueue        bool   `json:"repair_queue,omitempty"`
 }
 
 func (s Store) RetryCreationObservation(ctx context.Context, token string, scope identity.Scope, id string, request ObservationRetry) (Operation, error) {
@@ -28,23 +29,18 @@ func (s Store) RetryCreationObservation(ctx context.Context, token string, scope
 		if err != nil {
 			return err
 		}
-		var queueStatus string
-		err = tx.QueryRowContext(ctx, `SELECT t.status FROM cmp_operation_tasks AS t
-			JOIN cmp_instance_operations AS o ON (t.tenant_id,t.id)=(o.tenant_id,o.operation_id)
-			WHERE (o.tenant_id,o.project_id,o.operation_id)=($1,$2,$3)
-			AND o.action IN ('create','create-network','create-subnet','create-security-group','create-security-group-rule',
-			    'create-elastic-ip','create-snapshot','delete-snapshot','restore-snapshot','rollback-snapshot','create-image','copy-image','delete-image','delete-network','delete-subnet','delete-security-group','revoke-security-group-rule','release-elastic-ip','bind-elastic-ip','unbind-elastic-ip','rename-load-balancer','rename-load-balancer-listener','rename-load-balancer-target-group','set-load-balancer-backend-weight','detach-load-balancer-backend','attach-load-balancer-backend','set-dns-record-status','create-dns-record','delete-dns-record','scale-workload','rename-database-instance','rename-cache-instance','retire-instance','power-on-bare-metal','shutdown-bare-metal','stage-bare-metal-pxe','cancel-bare-metal-pxe') FOR UPDATE OF t`,
-			actor.Tenant, actor.Project, id).Scan(&queueStatus)
-		if errors.Is(err, sql.ErrNoRows) {
-			return identity.ErrForbidden
-		}
+		queueStatus, err := lockObservationTask(ctx, tx, actor, id)
 		if err != nil {
 			return err
 		}
 		var requester string
-		err = scanOperation(tx.QueryRowContext(ctx, "SELECT "+operationFields+",principal_id"+
-			" FROM cmp_instance_operations WHERE operation_id=$1 FOR UPDATE", id),
-			&op, &requester)
+		var ownership, credential int64
+		err = scanOperation(tx.QueryRowContext(ctx, "SELECT "+operationFields+",principal_id,ownership_revision,credential_revision"+
+			" FROM cmp_instance_operations WHERE (operation_id,tenant_id,project_id)=($1,$2,$3) FOR UPDATE", id, actor.Tenant, actor.Project),
+			&op, &requester, &ownership, &credential)
+		if errors.Is(err, sql.ErrNoRows) {
+			return identity.ErrForbidden
+		}
 		if err != nil {
 			return err
 		}
@@ -55,10 +51,11 @@ func (s Store) RetryCreationObservation(ctx context.Context, token string, scope
 			return ErrInvalid
 		}
 		var priorResourceID string
-		err = tx.QueryRowContext(ctx, `SELECT provider_resource_id FROM cmp_instance_observation_retries
-			WHERE (operation_id,reviewer_id,evidence_ref)=($1,$2,$3)`, id, actor.Principal, request.EvidenceRef).Scan(&priorResourceID)
+		var priorRepair bool
+		err = tx.QueryRowContext(ctx, `SELECT provider_resource_id,repair_queue FROM cmp_instance_observation_retries
+			WHERE (operation_id,reviewer_id,evidence_ref)=($1,$2,$3)`, id, actor.Principal, request.EvidenceRef).Scan(&priorResourceID, &priorRepair)
 		if err == nil {
-			if priorResourceID != request.ProviderResourceID {
+			if priorResourceID != request.ProviderResourceID || priorRepair != request.RepairQueue {
 				return ErrConflict
 			}
 			return nil
@@ -66,11 +63,35 @@ func (s Store) RetryCreationObservation(ctx context.Context, token string, scope
 		if !errors.Is(err, sql.ErrNoRows) {
 			return err
 		}
-		if op.Status != "needs_review" || queueStatus != "done" || (op.Action == retireInstance && !requestIDPattern.MatchString(op.ProviderRequestID)) {
+		if !supportsObservationRetry(op.Action) || (queueStatus == "" && !request.RepairQueue) {
+			return identity.ErrForbidden
+		}
+		if op.Action == retireInstance && !requestIDPattern.MatchString(op.ProviderRequestID) {
+			return ErrConflict
+		}
+		if request.RepairQueue {
+			issue, err := observationQueueIssue(ctx, tx, actor, op)
+			if err != nil {
+				return err
+			}
+			if issue == "" {
+				return ErrConflict
+			}
+		} else if op.Status != "needs_review" || queueStatus != "done" {
 			return ErrConflict
 		}
 		var access identity.AccountAccess
-		if op.ResourceKind == provider.BareMetal || op.Action == retireInstance || op.Action == revokeSecurityRule || op.Action == deleteImage || isNetworkDeletion(op.Action) || op.Action == deleteSnapshot || op.Action == rollbackSnapshot || op.Action == releaseElasticIP || isElasticIPBinding(op.Action) || isLoadBalancerMutation(op.Action) || isDNSRecordMutation(op.Action) || op.Action == scaleWorkload || op.Action == renameDatabaseInstance || op.Action == renameCacheInstance {
+		power := instancePowerAction(op.Action)
+		if power {
+			dispatched, dispatchErr := powerDispatchRecorded(ctx, tx, id)
+			if dispatchErr != nil {
+				return dispatchErr
+			}
+			if !dispatched {
+				return ErrConflict
+			}
+			access, err = authorizePowerObservation(ctx, tx, actor, op, ownership, credential)
+		} else if op.ResourceKind == provider.BareMetal || op.Action == retireInstance || op.Action == revokeSecurityRule || op.Action == deleteImage || isNetworkDeletion(op.Action) || op.Action == deleteSnapshot || op.Action == rollbackSnapshot || op.Action == releaseElasticIP || isElasticIPBinding(op.Action) || isLoadBalancerMutation(op.Action) || isDNSRecordMutation(op.Action) || op.Action == scaleWorkload || op.Action == renameDatabaseInstance || op.Action == renameCacheInstance {
 			access, err = identity.NewStore(tx).AuthorizeAccount(ctx, actor, op.Account, identity.View)
 		} else {
 			access, err = authorizeLaunchObservation(ctx, tx, actor, op.Account)
@@ -166,21 +187,37 @@ func (s Store) RetryCreationObservation(ctx context.Context, token string, scope
 			if _, err := inventory.ResolveBareMetalObservation(ctx, tx, actor, op.Account, op.Region, op.AssetID); err != nil {
 				return err
 			}
-		} else if _, err := tx.ExecContext(ctx, query, id, actor.Principal,
-			access.MembershipRevision, access.CredentialRevision); err != nil {
-			return err
+		} else if !power {
+			if _, err := tx.ExecContext(ctx, query, id, actor.Principal,
+				access.MembershipRevision, access.CredentialRevision); err != nil {
+				return err
+			}
 		}
 		if _, err := tx.ExecContext(ctx, `INSERT INTO cmp_instance_observation_retries
-			(operation_id,tenant_id,reviewer_id,evidence_ref,membership_revision,credential_revision,provider_resource_id)
-			VALUES ($1,$2,$3,$4,$5,$6,$7)`, id, actor.Tenant, actor.Principal, request.EvidenceRef,
-			access.MembershipRevision, access.CredentialRevision, request.ProviderResourceID); err != nil {
+			(operation_id,tenant_id,reviewer_id,evidence_ref,membership_revision,credential_revision,provider_resource_id,repair_queue)
+			VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`, id, actor.Tenant, actor.Principal, request.EvidenceRef,
+			access.MembershipRevision, access.CredentialRevision, request.ProviderResourceID, request.RepairQueue); err != nil {
 			return err
 		}
-		if _, err := tx.ExecContext(ctx, `UPDATE cmp_operation_tasks SET status='queued',attempts=0,available_at=statement_timestamp(),
+		reason := "observation_restarted"
+		if power {
+			if err := bindPowerObservation(ctx, tx, id, actor.Principal, request.EvidenceRef); err != nil {
+				return err
+			}
+			reason = powerObservationRestarted
+		}
+		if request.RepairQueue || power {
+			if err := s.repairObservationTask(ctx, tx, actor, op, queueStatus == ""); err != nil {
+				return err
+			}
+			if request.RepairQueue {
+				reason = observationQueueRestarted
+			}
+		} else if _, err := tx.ExecContext(ctx, `UPDATE cmp_operation_tasks SET status='queued',attempts=0,available_at=statement_timestamp(),
 			updated_at=statement_timestamp(),lease_owner=NULL,lease_until=NULL WHERE id=$1`, id); err != nil {
 			return err
 		}
-		if err := writeTransition(ctx, tx, id, "needs_review", "observing", "observation_restarted", ""); err != nil {
+		if err := writeTransition(ctx, tx, id, op.Status, "observing", reason, ""); err != nil {
 			return err
 		}
 		return scanOperation(tx.QueryRowContext(ctx, "SELECT "+operationFields+" FROM cmp_instance_operations WHERE operation_id=$1", id), &op)

@@ -79,6 +79,8 @@ type Operation struct {
 	UpdatedAt                       *time.Time                     `json:"updated_at,omitempty"`
 	OutcomeReason                   string                         `json:"outcome_reason,omitempty"`
 	ProviderRequestID               string                         `json:"provider_request_id,omitempty"`
+	QueueIssueReason                string                         `json:"queue_issue_reason,omitempty"`
+	CanRetryPowerObservation        bool                           `json:"can_retry_power_observation,omitempty"`
 	CatalogTemplate                 string                         `json:"catalog_template,omitempty"`
 	CatalogVersion                  int64                          `json:"catalog_version,omitempty"`
 	TicketPolicyRevision            int64                          `json:"ticket_policy_revision,string,omitempty"`
@@ -291,7 +293,16 @@ func Migrate(ctx context.Context, db *sql.DB) error {
 	if err := dbschema.Apply(ctx, db, FirstLeaseMigration, firstLeaseSchema); err != nil {
 		return err
 	}
-	return dbschema.Apply(ctx, db, QueueSnapshotMigration, queueSnapshotSchema)
+	if err := dbschema.Apply(ctx, db, QueueSnapshotMigration, queueSnapshotSchema); err != nil {
+		return err
+	}
+	if err := dbschema.Apply(ctx, db, QueueFindingsMigration, queueFindingsSchema); err != nil {
+		return err
+	}
+	if err := dbschema.Apply(ctx, db, ObservationQueueRepairMigration, observationQueueRepairSchema); err != nil {
+		return err
+	}
+	return dbschema.Apply(ctx, db, PowerObservationMigration, powerObservationSchema)
 }
 
 const operationFields = "operation_id,account_id,region,COALESCE(external_id,''),action,status,created_at,updated_at,COALESCE(outcome_reason,''),COALESCE(provider_request_id,''),COALESCE(volume_id,''),device,resource_kind,COALESCE(catalog_id,''),COALESCE(catalog_version,0),COALESCE(ticket_policy_revision,0)"
@@ -325,6 +336,12 @@ func (s Store) Get(ctx context.Context, token string, scope identity.Scope, id s
 		err = scanOperation(tx.QueryRowContext(ctx, "SELECT "+operationFields+" FROM cmp_instance_operations WHERE tenant_id=$1 AND project_id=$2 AND operation_id=$3", actor.Tenant, actor.Project, id), &op)
 		if errors.Is(err, sql.ErrNoRows) {
 			return identity.ErrForbidden
+		}
+		if err == nil {
+			op.QueueIssueReason, err = observationQueueIssue(ctx, tx, actor, op)
+		}
+		if err == nil {
+			op.CanRetryPowerObservation, err = canRetryPowerObservation(ctx, tx, actor, op)
 		}
 		if err == nil && (op.ResourceKind == provider.SecurityGroupRule || op.ResourceKind == provider.Subnet ||
 			op.ResourceKind == provider.SecurityGroup || op.ResourceKind == provider.ElasticIP) {
@@ -690,10 +707,13 @@ func (s Store) enqueue(ctx context.Context, tx *sql.Tx, tenant string, op Operat
 	if op.UpdatedAt != nil {
 		stamp = *op.UpdatedAt
 	}
-	attempts := 8
-	if op.Action == createImage || op.Action == copyImage {
-		attempts = imageCreationAttempts
-	}
 	return s.queue.InsertTx(ctx, tx, mq.Task{ID: op.ID, TenantID: tenant, Topic: topic, Payload: []byte(op.ID),
-		MaxAttempts: attempts, AvailableAt: stamp, CreatedAt: stamp, UpdatedAt: stamp})
+		MaxAttempts: operationAttemptBudget(op.Action), AvailableAt: stamp, CreatedAt: stamp, UpdatedAt: stamp})
+}
+
+func operationAttemptBudget(action string) int {
+	if action == createImage || action == copyImage {
+		return imageCreationAttempts
+	}
+	return 8
 }

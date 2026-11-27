@@ -254,7 +254,7 @@ func (s Store) process(ctx context.Context, task mq.Task, connect ConnectOperato
 		if w.Action == "delete" {
 			return false, s.confirmDeletion(ctx, task, w, "desired_state_observed")
 		}
-		if publicCloudProvider(scope.Provider) {
+		if publicCloudProvider(scope.Provider) || reviewedPowerObservation(w.Operation) {
 			return false, s.confirmInstancePower(ctx, task, w, object.Status)
 		}
 		return false, s.transition(ctx, task, w.Status, "succeeded", "desired_state_observed", "")
@@ -356,9 +356,9 @@ func (s Store) observeReboot(ctx context.Context, task mq.Task, w work, client p
 	if err == nil {
 		switch result {
 		case provider.ActionSucceeded:
-			return false, s.transition(ctx, task, w.Status, "succeeded", "provider_reboot_confirmed", "")
+			return false, s.settleRebootObservation(ctx, task, w, "succeeded", "provider_reboot_confirmed")
 		case provider.ActionFailed:
-			return false, s.transition(ctx, task, w.Status, "failed", "provider_reboot_failed", "")
+			return false, s.settleRebootObservation(ctx, task, w, "failed", "provider_reboot_failed")
 		}
 	}
 	if task.Attempts >= task.MaxAttempts || provider.IsFailure(err, provider.Unauthorized) ||
@@ -459,6 +459,9 @@ func (s Store) prepare(ctx context.Context, task mq.Task, arm bool) (work, error
 }
 
 func checkOperationTarget(ctx context.Context, tx *sql.Tx, w *work) error {
+	if reviewedPowerObservation(w.Operation) {
+		return checkPowerObservation(ctx, tx, w)
+	}
 	if w.ResourceKind == provider.BareMetal {
 		return checkBareMetalPower(ctx, tx, w)
 	}

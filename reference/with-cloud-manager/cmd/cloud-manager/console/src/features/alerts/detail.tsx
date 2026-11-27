@@ -47,6 +47,10 @@ function AlertDetail({ target, admin, stamp, signal, reload, onReload }:
     ? workspaceHref(project, 'bucket-protection', new URLSearchParams({ account: alert.account, finding }).toString())
     : undefined
   const tagReport = isTagAlert && project ? workspaceHref(project, 'tag-compliance') : undefined
+  const queueOperations = queueSource && project ? workspaceHref(project, 'operations', new URLSearchParams({
+    account: alert.account,
+    queue_issue: alert.rule === 'operation_queue_anomaly' ? 'anomaly' : 'overdue_recovery',
+  }).toString()) : undefined
   const sourceStatus = queueSource ?? (finding === 'encryption_unconfigured' ? '未配置'
     : finding === 'versioning_inactive' ? '未启用' : isTagAlert ? '未满足规则' : statuses[alert.source_status] || alert.source_status)
   const fields: DetailField[] = [['规则', alertRules[alert.rule] || alert.rule], ['状态', <StateBadge status={alert.status} />],
@@ -73,6 +77,7 @@ function AlertDetail({ target, admin, stamp, signal, reload, onReload }:
     <div className="row-actions">
       {queueSource ? <button type="button" onClick={() => showOperationBacklog(projectURL(), new URLSearchParams({ account: alert.account }).toString())}>查看账号操作积压</button>
         : alert.rule.startsWith('operation_') ? <button type="button" onClick={() => showOperation(alert.subject_id, onReload)}>查看关联操作</button> : null}
+      {queueOperations ? <a href={queueOperations}>查看受影响操作</a> : null}
       {bucketReport ? <a href={bucketReport}>查看对象桶防护报告</a> : null}
       {tagReport ? <a href={tagReport}>查看当前标签合规</a> : null}
       {alert.status === 'open' && admin ? <button type="button" disabled={busy} onClick={acknowledge}>确认告警</button> : null}

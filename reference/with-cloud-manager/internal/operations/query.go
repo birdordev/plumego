@@ -26,13 +26,14 @@ var ErrInvalidQuery = errors.New("invalid operation query")
 const DefaultOperationPageSize = 50
 
 type Query struct {
-	Account string
-	Region  string
-	Kind    provider.Kind
-	Action  string
-	Status  string
-	Cursor  string
-	Limit   int
+	Account    string
+	Region     string
+	Kind       provider.Kind
+	Action     string
+	Status     string
+	QueueIssue string
+	Cursor     string
+	Limit      int
 }
 
 type OperationPage struct {
@@ -63,7 +64,15 @@ func queryPosition(scope identity.Scope, q Query) (operationPosition, error) {
 	default:
 		return operationPosition{}, ErrInvalidQuery
 	}
-	keys, err := json.Marshal([7]string{scope.Tenant, scope.Project, q.Account, q.Region, string(q.Kind), q.Action, q.Status})
+	filters := []string{scope.Tenant, scope.Project, q.Account, q.Region, string(q.Kind), q.Action, q.Status}
+	switch q.QueueIssue {
+	case "":
+	case "anomaly", "overdue_recovery":
+		filters = append(filters, q.QueueIssue)
+	default:
+		return operationPosition{}, ErrInvalidQuery
+	}
+	keys, err := json.Marshal(filters)
 	if err != nil {
 		return operationPosition{}, err
 	}
@@ -101,12 +110,20 @@ func (s Store) List(ctx context.Context, token string, scope identity.Scope, q Q
 
 func listOperations(ctx context.Context, tx *sql.Tx, actor identity.Scope, q Query, p operationPosition, page *OperationPage) (retErr error) {
 	var statement strings.Builder
-	statement.WriteString("SELECT " + operationFields + " FROM cmp_instance_operations WHERE (tenant_id,project_id)=($1,$2)")
 	args := []any{actor.Tenant, actor.Project}
 	param := func(value any) string {
 		args = append(args, value)
 		return "$" + strconv.Itoa(len(args))
 	}
+	statement.WriteString("SELECT " + operationFields)
+	if q.QueueIssue == "" {
+		statement.WriteString(" FROM cmp_instance_operations AS o")
+	} else {
+		statement.WriteString(", finding.issue_reason FROM cmp_instance_operations AS o JOIN LATERAL (" +
+			"SELECT issue_reason FROM cmp_operation_queue_snapshot AS q WHERE (q.tenant_id,q.project_id,q.operation_id)=" +
+			"(o.tenant_id,o.project_id,o.operation_id) AND q.issue=" + param(q.QueueIssue) + ") AS finding ON true")
+	}
+	statement.WriteString(" WHERE (o.tenant_id,o.project_id)=($1,$2)")
 	for _, filter := range []struct{ column, value string }{
 		{"account_id", q.Account}, {"region", q.Region}, {"resource_kind", string(q.Kind)}, {"action", q.Action}, {"status", q.Status},
 	} {
@@ -134,7 +151,11 @@ func listOperations(ctx context.Context, tx *sql.Tx, actor identity.Scope, q Que
 			break
 		}
 		var op Operation
-		if err := scanOperation(rows, &op); err != nil {
+		var extra []any
+		if q.QueueIssue != "" {
+			extra = []any{&op.QueueIssueReason}
+		}
+		if err := scanOperation(rows, &op, extra...); err != nil {
 			return err
 		}
 		page.Items = append(page.Items, op)

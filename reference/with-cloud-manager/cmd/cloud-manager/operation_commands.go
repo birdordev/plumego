@@ -254,6 +254,7 @@ func planOperationDecision(target *url.URL, command string, args []string) (oper
 		var input operations.ObservationRetry
 		flags.StringVar(&input.EvidenceRef, "evidence-ref", "", "")
 		flags.StringVar(&input.ProviderResourceID, "provider-resource-id", "", "")
+		flags.BoolVar(&input.RepairQueue, "repair-queue", false, "")
 		if flags.Parse(args) != nil || flags.NArg() != 0 || input.EvidenceRef == "" ||
 			(input.ProviderResourceID != "" && !provider.ValidDNSRecordID(input.ProviderResourceID)) {
 			return operationRequestPlan{}, usage

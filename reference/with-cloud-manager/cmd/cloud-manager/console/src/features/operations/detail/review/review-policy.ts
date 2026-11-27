@@ -11,7 +11,7 @@ const observationActions = new Set([
 
 export function reviewChoices(op: OperationDetail) {
   const observationOnly = op.action.startsWith('create') || observationActions.has(op.action)
-  const observe = observationOnly ||
+  const observe = observationOnly || Boolean(op.can_retry_power_observation) ||
     (op.action === 'copy-image' && op.image_copy_intent?.can_retry_observation) ||
     (op.action === 'rollback-snapshot' && op.snapshot_intent?.can_retry_observation) ||
     (op.action === 'retire-instance' && Boolean(op.provider_request_id))

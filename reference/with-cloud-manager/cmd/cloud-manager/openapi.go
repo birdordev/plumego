@@ -34,7 +34,7 @@ func registerOpenAPI(app *core.App, console *consoleConfig) error {
 		OperationID: "listProjectAssets",
 		Security:    readAuth,
 		Responses: map[string]openapi.Response{
-			"200": {Description: "项目可见的资产页和后续游标。已分配的弹性公网 IP 包含 public_addresses。云盘快照包含 parent_id 和已知的 snapshot.class、snapshot.size_gib。负载均衡包含 load_balancer 的产品、地址类型、已知域名及私网地址，也可返回多个公网地址。托管数据库包含 database_instance 的产品、引擎和已知版本。对象存储桶包含 object_bucket 的产品、实际地域、可用存储类型和创建时间。托管缓存包含 cache_instance 的产品、引擎、已知版本和容量。Kubernetes 集群包含 kubernetes_cluster 的产品、类型和已知版本及节点数。"},
+			"200": {Description: "项目可见的资产页和后续游标。已分配的弹性公网 IP 包含 public_addresses。云盘可包含 volume 的容量、存储类型、用途和可启动信息。云盘快照包含 parent_id 和已知的 snapshot.class、snapshot.size_gib。负载均衡包含 load_balancer 的产品、地址类型、已知域名及私网地址，也可返回多个公网地址。托管数据库包含 database_instance 的产品、引擎和已知版本。对象存储桶包含 object_bucket 的产品、实际地域、可用存储类型和创建时间。托管缓存包含 cache_instance 的产品、引擎、已知版本和容量。Kubernetes 集群包含 kubernetes_cluster 的产品、类型和已知版本及节点数。"},
 			"400": {Description: "查询参数或游标无效"},
 			"401": {Description: "服务凭据缺失、无效、过期或撤销"},
 			"403": {Description: "项目不可访问"},
@@ -51,7 +51,7 @@ func registerOpenAPI(app *core.App, console *consoleConfig) error {
 	for status, response := range list.Responses {
 		history.Responses[status] = response
 	}
-	history.Responses["200"] = openapi.Response{Description: "项目可见的资产差异和后续游标，包含适用的前后公网地址、快照属性、负载均衡详情、托管数据库、对象存储桶、托管缓存或 Kubernetes 集群详情。"}
+	history.Responses["200"] = openapi.Response{Description: "项目可见的资产差异和后续游标，包含适用的前后公网地址、云盘属性、快照属性、负载均衡详情、托管数据库、对象存储桶、托管缓存或 Kubernetes 集群详情。"}
 	export := list
 	export.OperationID = "exportProjectAssets"
 	export.Params = export.Params[:4]
@@ -59,7 +59,7 @@ func registerOpenAPI(app *core.App, console *consoleConfig) error {
 	for status, response := range list.Responses {
 		export.Responses[status] = response
 	}
-	export.Responses["200"] = openapi.Response{Description: "筛选后的资产 CSV。kind=elastic-ip 追加 public_addresses。kind=snapshot 追加 source_volume_id、snapshot_class 和 size_gib。kind=load-balancer 追加公网地址、产品、地址类型、域名和私网地址。kind=database-instance 追加 product、engine、engine_version。kind=object-bucket 追加 product、location、storage_class 和 created_at。kind=cache-instance 追加 product、engine、engine_version 和 capacity_mib。kind=kubernetes-cluster 追加 product、cluster_type、kubernetes_version 和 node_count。",
+	export.Responses["200"] = openapi.Response{Description: "筛选后的资产 CSV。kind=elastic-ip 追加 public_addresses。kind=snapshot 追加 source_volume_id、snapshot_class 和 size_gib。kind=volume 追加 size_gib、storage_class、usage 和 bootable。kind=load-balancer 追加公网地址、产品、地址类型、域名和私网地址。kind=database-instance 追加 product、engine、engine_version。kind=object-bucket 追加 product、location、storage_class 和 created_at。kind=cache-instance 追加 product、engine、engine_version 和 capacity_mib。kind=kubernetes-cluster 追加 product、cluster_type、kubernetes_version 和 node_count。",
 		Content: map[string]openapi.MediaType{"text/csv": {Schema: openapi.String}}}
 	export.Responses["422"] = openapi.Response{Description: "匹配资产超过单次导出上限"}
 	topology := list
@@ -206,10 +206,12 @@ func registerOpenAPI(app *core.App, console *consoleConfig) error {
 		Content: map[string]openapi.MediaType{"application/json": {Schema: openapi.Schema{Type: "object", Properties: map[string]openapi.Schema{
 			"decision": openapi.String, "evidence_ref": openapi.String, "provider_request_id": openapi.String,
 		}}}}}
-	retryObservation := accountOp("retryInstanceCreationObservation", "200", "已恢复对创建操作的只读观测", true)
+	retryObservation := accountOp("retryInstanceCreationObservation", "200", "已恢复操作的只读观测", true)
 	retryObservation.Responses["412"] = openapi.Response{Description: "续查授权在处理期间发生变化"}
-	retryObservation.Body = &openapi.RequestBody{Required: true, Description: "独立审批人提交 evidence_ref。阿里云公网 DNS 创建丢失回执时另需 provider_resource_id。",
-		Content: map[string]openapi.MediaType{"application/json": {Schema: openapi.Schema{Type: "object", Properties: map[string]openapi.Schema{"evidence_ref": openapi.String, "provider_resource_id": openapi.String}}}}}
+	retryObservation.Body = &openapi.RequestBody{Required: true, Description: "独立审批人提交 evidence_ref。repair_queue 仅修复已派发且存在队列异常的受支持操作，沿用原操作 ID。重启续查要求原厂商回执。阿里云公网 DNS 创建丢失回执时另需 provider_resource_id。",
+		Content: map[string]openapi.MediaType{"application/json": {Schema: openapi.Schema{Type: "object", Properties: map[string]openapi.Schema{
+			"evidence_ref": openapi.String, "provider_resource_id": openapi.String, "repair_queue": {Type: "boolean"},
+		}}}}}
 	approval := accountOp("decideInstanceApproval", "200", "已记录发送前审批决定", true)
 	approval.Responses["412"] = openapi.Response{Description: "申请所依据的资源或授权版本已失效"}
 	approval.Responses["409"] = openapi.Response{Description: "审批决定冲突、部署未核对或已过期、实例受删除保护或外部工单批准无效"}
@@ -478,12 +480,14 @@ func registerOpenAPI(app *core.App, console *consoleConfig) error {
 	networkReview.OperationID = "resolveNetworkOperation"
 	networkEvents.OperationID = "listNetworkOperationEvents"
 	networkRetry.OperationID = "retryNetworkCreationObservation"
-	projectOperations := accountOp("listProjectOperations", "200", "按创建时间倒序返回项目操作及下一页游标", false)
+	projectOperations := accountOp("listProjectOperations", "200", "按创建时间倒序返回项目操作及下一页游标。指定队列问题筛选时，每项包含 queue_issue_reason。", false)
 	projectOperations.Responses["400"] = openapi.Response{Description: "筛选项、页大小或游标无效"}
 	for _, name := range []string{"account", "region", "kind", "action", "status", "cursor"} {
 		projectOperations.Params = append(projectOperations.Params, openapi.Param{Name: name, In: "query", Schema: openapi.String})
 	}
 	projectOperations.Params = append(projectOperations.Params, openapi.Param{Name: "limit", In: "query", Schema: openapi.Integer})
+	projectOperations.Params = append(projectOperations.Params, openapi.Param{Name: "queue_issue", In: "query", Schema: openapi.String,
+		Description: "anomaly 为缺失、超期、死信或已结束的队列记录，overdue_recovery 为达到可接管条件至少两分钟的任务。原因码为 missing_task、expired_task、dead_letter、finished_task 或 lease_recovery_overdue。"})
 	projectEvents := events
 	projectEvents.OperationID = "listProjectOperationEvents"
 	projectApproval, projectReview, projectRetry := approval, review, retryObservation

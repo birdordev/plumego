@@ -14,7 +14,7 @@ export function OperationDecisions({ operation, target, stamp, approvalReady = t
   const record = useRef<HTMLInputElement>(null)
   const deployment = operation.bare_metal_deployment?.deployment
 
-  function send(suffix: string, payload: Record<string, string | undefined>) {
+  function send(suffix: string, payload: Record<string, string | boolean | undefined>) {
     void run(() => request(target + '/' + suffix, { method: 'POST', body: JSON.stringify(payload) }), () => {
       onSaved()
       void operationsCollection.refresh()
@@ -31,8 +31,9 @@ export function OperationDecisions({ operation, target, stamp, approvalReady = t
         <button type="button" disabled={busy} onClick={onSaved}>刷新开机详情</button> : null}
     </div>
   </>
-  if (operation.status !== 'needs_review') return null
   const { observe, succeed, needsRecordID } = reviewChoices(operation)
+  const repairQueue = Boolean(operation.queue_issue_reason) && observe
+  if (operation.status !== 'needs_review' && !repairQueue) return null
 
   function review(decision?: string) {
     const providerID = record.current?.value.trim()
@@ -40,16 +41,20 @@ export function OperationDecisions({ operation, target, stamp, approvalReady = t
     const evidenceRef = evidence.current?.value.trim()
     if (!evidenceRef) return setDetailNotice(stamp, '请填写证据引用。', true)
     if (decision) void send('resolution', { decision, evidence_ref: evidenceRef, provider_request_id: operation.provider_request_id })
-    else void send('retry-observation', { evidence_ref: evidenceRef, provider_resource_id: providerID })
+    else void send('retry-observation', {
+      evidence_ref: evidenceRef, provider_resource_id: providerID, repair_queue: repairQueue || undefined,
+    })
   }
 
   return <>
     <label>证据引用<input ref={evidence} maxLength={200} /></label>
     {needsRecordID ? <label>经厂商审计核实的记录 ID<input ref={record} maxLength={128} /></label> : null}
     <div className="row-actions">
-      <button type="button" disabled={busy} onClick={() => review('failed')}>记录失败</button>
-      {observe ? <button type="button" disabled={busy} onClick={() => review()}>恢复只读观测</button> : null}
-      {succeed ? <button type="button" disabled={busy} onClick={() => review('succeeded')}>记录成功</button> : null}
+      {repairQueue ? <button type="button" disabled={busy} onClick={() => review()}>修复队列并恢复只读观测</button> : <>
+        <button type="button" disabled={busy} onClick={() => review('failed')}>记录失败</button>
+        {observe ? <button type="button" disabled={busy} onClick={() => review()}>恢复只读观测</button> : null}
+        {succeed ? <button type="button" disabled={busy} onClick={() => review('succeeded')}>记录成功</button> : null}
+      </>}
     </div>
   </>
 }

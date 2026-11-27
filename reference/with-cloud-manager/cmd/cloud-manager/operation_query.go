@@ -98,6 +98,8 @@ func operationQuery(raw string) (operations.Query, error) {
 			q.Action = value
 		case "status":
 			q.Status = value
+		case "queue_issue":
+			q.QueueIssue = value
 		case "cursor":
 			q.Cursor = value
 		case "limit":

@@ -3,7 +3,7 @@ import type { View } from '../routes/registry'
 const fields: Partial<Record<View, readonly string[]>> = {
   assets: ['q', 'account', 'region', 'kind'],
   kvm: ['kind', 'site'],
-  operations: ['account', 'region', 'status'],
+  operations: ['account', 'region', 'status', 'queue_issue'],
   alerts: ['status', 'rule'],
   audit: ['category', 'account', 'subject_id', 'from', 'until'],
   'idle-instances': ['state', 'account', 'region'],

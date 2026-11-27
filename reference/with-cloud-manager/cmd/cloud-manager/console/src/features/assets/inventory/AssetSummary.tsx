@@ -4,6 +4,7 @@ import { ClusterSummary } from '../clusters/ClusterSummary'
 import { DatabaseSummary } from '../databases/DatabaseSummary'
 import { LoadBalancerSummary } from '../load-balancers/LoadBalancerSummary'
 import { SnapshotSummary } from '../snapshots/SnapshotSummary'
+import { VolumeSummary } from '../volumes/VolumeSummary'
 import type { Asset } from '../types'
 import './styles.css'
 
@@ -18,5 +19,6 @@ export function AssetSummary({ asset }: { asset: Asset }) {
     {asset.cache_instance ? <CacheSummary cache={asset.cache_instance} /> : null}
     {asset.database_instance ? <DatabaseSummary database={asset.database_instance} /> : null}
     {asset.kind === 'snapshot' ? <SnapshotSummary parentID={asset.parent_id} snapshot={asset.snapshot} /> : null}
+    {asset.volume ? <VolumeSummary volume={asset.volume} /> : null}
   </div>
 }

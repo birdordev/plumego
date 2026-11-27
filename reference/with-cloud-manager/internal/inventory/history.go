@@ -36,6 +36,8 @@ type Change struct {
 	Cluster                 *provider.ClusterDetails      `json:"kubernetes_cluster,omitempty"`
 	PreviousSnapshot        *provider.SnapshotDetails     `json:"previous_snapshot,omitempty"`
 	Snapshot                *provider.SnapshotDetails     `json:"snapshot,omitempty"`
+	PreviousVolume          *provider.VolumeDetails       `json:"previous_volume,omitempty"`
+	Volume                  *provider.VolumeDetails       `json:"volume,omitempty"`
 }
 
 type Changes struct {
@@ -87,7 +89,7 @@ func listHistory(ctx context.Context, tx *sql.Tx, q Query, cursor historyPositio
 	rows, err := tx.QueryContext(ctx, `SELECT h.event_id::text,s.account_id,s.region,s.kind,h.external_id,
 		h.action,h.previous_name,h.previous_status,h.name,h.status,h.occurred_at,h.previous_public_addresses,h.public_addresses,
 		h.previous_snapshot,h.snapshot,h.previous_load_balancer,h.load_balancer,h.previous_database_instance,h.database_instance,h.previous_object_bucket,h.object_bucket,
-		h.previous_cache_instance,h.cache_instance,h.previous_kubernetes_cluster,h.kubernetes_cluster
+		h.previous_cache_instance,h.cache_instance,h.previous_kubernetes_cluster,h.kubernetes_cluster,h.previous_volume_details,h.volume_details
 		FROM cmp_inventory_history AS h JOIN cmp_inventory_scopes AS s USING (scope_id)
 		JOIN cmp_cloud_accounts AS a USING (tenant_id,account_id)
 		LEFT JOIN cmp_inventory_objects AS o ON (o.scope_id,o.external_id)=(h.scope_id,h.external_id)`+inventoryOwnershipJoins+`
@@ -111,7 +113,9 @@ func listHistory(ctx context.Context, tx *sql.Tx, q Query, cursor historyPositio
 		         h.previous_cache_instance->>'version',h.previous_cache_instance->>'product')),lower($6))>0)
 		     OR (s.kind='kubernetes-cluster' AND strpos(lower(concat_ws(' ',h.kubernetes_cluster->>'cluster_type',
 		         h.kubernetes_cluster->>'version',h.kubernetes_cluster->>'product',h.previous_kubernetes_cluster->>'cluster_type',
-		         h.previous_kubernetes_cluster->>'version',h.previous_kubernetes_cluster->>'product')),lower($6))>0))
+		         h.previous_kubernetes_cluster->>'version',h.previous_kubernetes_cluster->>'product')),lower($6))>0)
+		     OR (s.kind='volume' AND strpos(lower(concat_ws(' ',h.volume_details->>'storage_class',h.volume_details->>'usage',
+		         h.previous_volume_details->>'storage_class',h.previous_volume_details->>'usage')),lower($6))>0))
 		AND ($7::timestamptz IS NULL OR (h.occurred_at,h.event_id)<($7,$8::uuid))
 		ORDER BY h.occurred_at DESC,h.event_id DESC LIMIT $9`,
 		q.Tenant, q.Project, q.Account, q.Region, q.Kind, q.Search, stamp, event, q.Limit+1)
@@ -130,10 +134,11 @@ func listHistory(ctx context.Context, tx *sql.Tx, q Query, cursor historyPositio
 			break
 		}
 		var item Change
-		var previous, addresses, previousSnapshot, snapshot, previousLB, loadBalancer, previousDatabase, database, previousBucket, bucket, previousCache, cache, previousCluster, cluster []byte
+		var previous, addresses, previousSnapshot, snapshot, previousLB, loadBalancer, previousDatabase, database, previousBucket, bucket, previousCache, cache, previousCluster, cluster, previousVolume, volume []byte
 		if err := rows.Scan(&last.ID, &item.Account, &item.Region, &item.Kind, &item.AssetID,
 			&item.Action, &item.PreviousName, &item.PreviousStatus, &item.Name, &item.Status, &item.OccurredAt, &previous, &addresses,
-			&previousSnapshot, &snapshot, &previousLB, &loadBalancer, &previousDatabase, &database, &previousBucket, &bucket, &previousCache, &cache, &previousCluster, &cluster); err != nil {
+			&previousSnapshot, &snapshot, &previousLB, &loadBalancer, &previousDatabase, &database, &previousBucket, &bucket, &previousCache, &cache, &previousCluster, &cluster,
+			&previousVolume, &volume); err != nil {
 			return err
 		}
 		if len(previous) != 0 {
@@ -202,6 +207,16 @@ func listHistory(ctx context.Context, tx *sql.Tx, q Query, cursor historyPositio
 		}
 		if len(cluster) != 0 {
 			if err := json.Unmarshal(cluster, &item.Cluster); err != nil {
+				return err
+			}
+		}
+		if len(previousVolume) != 0 {
+			if err := json.Unmarshal(previousVolume, &item.PreviousVolume); err != nil {
+				return err
+			}
+		}
+		if len(volume) != 0 {
+			if err := json.Unmarshal(volume, &item.Volume); err != nil {
 				return err
 			}
 		}

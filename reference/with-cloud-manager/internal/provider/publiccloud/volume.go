@@ -25,6 +25,8 @@ func (c *Client) tencentVolumes(ctx context.Context, region, cursor string) (pro
 		TotalCount *int
 		DiskSet    []struct {
 			DiskId, DiskName, DiskState, InstanceId string
+			DiskType, DiskUsage                     string
+			DiskSize                                *int
 			Placement                               struct{ Zone string }
 			InstanceIdList                          []string
 			Tags                                    []*tag
@@ -46,6 +48,14 @@ func (c *Client) tencentVolumes(ctx context.Context, region, cursor string) (pro
 			return provider.Page{}, &provider.Failure{Kind: provider.InvalidResponse}
 		}
 		item := tagObject(row.DiskId, row.DiskName, row.DiskState, row.Tags)
+		usage := ""
+		switch row.DiskUsage {
+		case "SYSTEM_DISK":
+			usage = "system"
+		case "DATA_DISK":
+			usage = "data"
+		}
+		item.Volume = volumeInventoryDetails(row.DiskSize, row.DiskType, usage, nil)
 		item.Link(provider.Zone, row.Placement.Zone, "in_zone")
 		linkVolumeInstances(&item, append(row.InstanceIdList, row.InstanceId))
 		page.Objects = append(page.Objects, item)
@@ -63,6 +73,8 @@ func (c *Client) alibabaVolumes(ctx context.Context, region, cursor string) (pro
 		Disks           struct {
 			Disk []struct {
 				DiskId, DiskName, Status, InstanceId, RegionId, ZoneId string
+				Category, Type                                         string
+				Size                                                   *int
 				MountInstances                                         struct{ MountInstance []struct{ InstanceId string } }
 				Tags                                                   alibabaECSTags
 			}
@@ -84,6 +96,11 @@ func (c *Client) alibabaVolumes(ctx context.Context, region, cursor string) (pro
 			return provider.Page{}, &provider.Failure{Kind: provider.Unauthorized}
 		}
 		item := tagObject(row.DiskId, row.DiskName, row.Status, row.Tags.normalized())
+		usage := ""
+		if row.Type == "system" || row.Type == "data" {
+			usage = row.Type
+		}
+		item.Volume = volumeInventoryDetails(row.Size, row.Category, usage, nil)
 		item.Link(provider.Zone, row.ZoneId, "in_zone")
 		instances := make([]string, 0, len(row.MountInstances.MountInstance)+1)
 		instances = append(instances, row.InstanceId)
@@ -118,6 +135,9 @@ func (c *Client) huaweiVolumes(ctx context.Context, region, cursor string) (prov
 		Links   []struct{ Rel, Href string } `json:"volumes_links"`
 		Volumes []struct {
 			ID, Name, Status string
+			Size             *int
+			VolumeType       string `json:"volume_type"`
+			Bootable         string
 			ProjectID        string `json:"os-vol-tenant-attr:tenant_id"`
 			Zone             string `json:"availability_zone"`
 			Attachments      []struct {
@@ -140,6 +160,16 @@ func (c *Client) huaweiVolumes(ctx context.Context, region, cursor string) (prov
 			return provider.Page{}, &provider.Failure{Kind: provider.InvalidResponse}
 		}
 		item := provider.Object{ID: row.ID, Name: row.Name, Status: row.Status}
+		var bootable *bool
+		switch row.Bootable {
+		case "true", "false":
+			value := row.Bootable == "true"
+			bootable = &value
+		case "":
+		default:
+			return provider.Page{}, &provider.Failure{Kind: provider.InvalidResponse}
+		}
+		item.Volume = volumeInventoryDetails(row.Size, row.VolumeType, "", bootable)
 		item.Link(provider.Zone, row.Zone, "in_zone")
 		instances := make([]string, 0, len(row.Attachments))
 		for _, attachment := range row.Attachments {
@@ -171,6 +201,13 @@ func (c *Client) huaweiVolumes(ctx context.Context, region, cursor string) (prov
 		page.Next = parameters.Get("marker")
 	}
 	return page, nil
+}
+
+func volumeInventoryDetails(size *int, storageClass, usage string, bootable *bool) *provider.VolumeDetails {
+	if size == nil && storageClass == "" && usage == "" && bootable == nil {
+		return nil
+	}
+	return &provider.VolumeDetails{SizeGiB: size, StorageClass: storageClass, Usage: usage, Bootable: bootable}
 }
 
 func linkVolumeInstances(volume *provider.Object, instances []string) {

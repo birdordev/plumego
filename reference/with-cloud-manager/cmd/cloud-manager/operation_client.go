@@ -21,7 +21,7 @@ import (
 )
 
 const operationsUsage = `usage: cloud-manager operations COMMAND TENANT PROJECT [OPTIONS]
-  list [--status STATUS ...]
+  list [--status STATUS] [--queue-issue anomaly|overdue_recovery ...]
   backlog [--account ACCOUNT] [--region REGION]
   latency --from TIME --until TIME [--account ACCOUNT] [--region REGION] [--action ACTION]
   verify-latency < acceptance.json
@@ -75,7 +75,7 @@ const operationsUsage = `usage: cloud-manager operations COMMAND TENANT PROJECT 
   get-batch BATCH
   approve OPERATION --decision approve|reject [--deployment-id ID]
   resolve OPERATION --decision succeeded|failed --evidence-ref REF [--provider-request-id ID]
-  retry-observation OPERATION --evidence-ref REF [--provider-resource-id RECORD_ID]`
+  retry-observation OPERATION --evidence-ref REF [--provider-resource-id RECORD_ID] [--repair-queue]`
 
 func runOperationsClient(ctx context.Context, args []string, address, token string, input io.Reader, output io.Writer, transport http.RoundTripper) error {
 	base, err := operationClientBase(address)
@@ -241,11 +241,19 @@ func operationListClientTarget(target *url.URL, args []string) (*url.URL, error)
 	for _, key := range keys {
 		flags.String(key, "", "")
 	}
+	queueIssue := flags.String("queue-issue", "", "")
 	limit := flags.Int("limit", operations.DefaultOperationPageSize, "")
 	if flags.Parse(args) != nil || flags.NArg() != 0 || *limit < 1 || *limit > 100 {
 		return nil, errors.New(operationsUsage)
 	}
 	values := url.Values{"limit": {strconv.Itoa(*limit)}}
+	switch *queueIssue {
+	case "":
+	case "anomaly", "overdue_recovery":
+		values.Set("queue_issue", *queueIssue)
+	default:
+		return nil, errors.New(operationsUsage)
+	}
 	for _, key := range keys {
 		if value := flags.Lookup(key).Value.String(); value != "" {
 			values.Set(key, value)
