@@ -16,7 +16,19 @@ go run ./cmd/cloud-manager api
 go test -race -timeout 60s ./...
 ```
 
-迁移读取 `CLOUD_MANAGER_DATABASE_URL`，集成测试读取 `CLOUD_MANAGER_TEST_DATABASE_URL`。同一数据库可重复执行迁移。API 默认监听 `127.0.0.1:8096`，可用 `CLOUD_MANAGER_LISTEN_ADDR` 设置。`/healthz` 报告进程状态，`/readyz` 检查所需迁移是否完成。测试输出中的 `TestAcceptancePostgresAuthorization` 和 `TestAcceptancePostgresInventory` 应为通过，跳过无法证明 PostgreSQL 语义。
+迁移读取 `CLOUD_MANAGER_DATABASE_URL`，集成测试读取 `CLOUD_MANAGER_TEST_DATABASE_URL`。同一数据库可重复执行迁移。API 默认监听 `127.0.0.1:8096`，可用 `CLOUD_MANAGER_LISTEN_ADDR` 设置。`/healthz` 报告进程状态，`/readyz` 同时检查迁移、主库角色和当前连接的读写状态。测试输出中的 `TestAcceptancePostgresAuthorization` 和 `TestAcceptancePostgresInventory` 应为通过，跳过无法证明 PostgreSQL 语义。
+
+高可用部署可使用写入端点，或在连接串中列出候选节点并设置 `target_session_attrs=read-write`。提升备库前先隔离旧主。发布前可执行 [PostgreSQL 同步备库提升演练](acceptance.md#postgresql-同步备库提升演练) 和 [PostgreSQL 时间点恢复演练](acceptance.md#postgresql-时间点恢复演练)。[PostgreSQL 连接属性](https://www.postgresql.org/docs/current/libpq-connect.html)
+
+发布候选 API 时，可用独立构建的基线与候选二进制在同一临时 PostgreSQL 上验证迁移、共存和应用回退。Linux 演练可启动两个版本各自的 Worker，覆盖三家优先云协议夹具中的只读冻结及任务接续。[API 滚动升级与回退演练](acceptance.md#api-滚动升级与回退演练)
+
+## 控制台工作区
+
+登录后进入项目总览。页内并行读取资产盘点覆盖、最近五条操作和最近五条未恢复告警。可从盘点统计进入对应筛选，或直接打开操作与告警详情。三个区域独立报告加载和查询失败，刷新总览会重新读取当前项目。
+
+侧栏按资源、运维、治理和费用分组，入口随当前项目角色变化。桌面端可折叠侧栏，窄屏可用导航按钮展开。主题可跟随系统或手动切换。
+
+页面标题旁可复制当前项目、页面和已提交筛选的链接。接收者用自己的账号访问，页面根据其项目权限显示。列表页的「刷新列表」会保留已提交筛选并重新读取第一页。资源明细和操作表单在侧边面板中打开，可用关闭按钮或 Esc 返回列表。
 
 ## 资产盘点与恢复
 
@@ -34,15 +46,54 @@ go test -race -timeout 60s ./...
 
 默认以最近 900 秒内、使用当前账号凭据版本完成的全量盘点为新鲜。较早的有效结果标为 `stale`，当前版本尚无完整结果标为 `pending`。进行中的同凭据盘点可以保留上次完成的状态，凭据轮换后须等新一轮完整提交。报告包含观测时间、汇总计数、最近完整盘点及下次执行计划。近期完成比例使用 `fresh / total`，没有启用范围时无比例。
 
-API 支持 `provider`、`account`、`state`、`window_seconds`、`limit` 和 `after`。状态只筛选明细。窗口为 60 至 604800 秒，分页默认 50 条且最多 100 条。查询下一页时保留筛选条件，并把 `next` 原样传入 `after`。每页的汇总和明细共享同一数据库快照。连续翻页使用各请求的最新快照。
+调度汇总与新鲜度汇总使用同一个观测时间。每项计划在调度明细中有一种状态。
+
+| 状态 | 含义 |
+| --- | --- |
+| `leased` | 当前计划已被控制器领取，计划租约仍有效。 |
+| `scheduled` | 计划尚未到期，没有账号冷却推迟它的执行时间。 |
+| `cooldown` | 账号仍在限流退避，冷却结束晚于计划时间。 |
+| `account_busy` | 计划已到期，同账号另一个计划的租约仍有效。 |
+| `ready` | 计划已到期，当前快照中没有有效的计划或账号租约，也没有账号冷却。 |
+
+明细包含相应的有效租约和冷却截止时间。最近完整盘点、新鲜度及扫描运行标记独立统计，手动触发的扫描也可能仍在运行。可领取计划最久逾期以 `as_of` 减去当前 `ready` 范围中最早的 `next_at` 计算，向下取整为秒。没有 `ready` 范围时 API 返回 0。这个值是瞬时积压指标，历史等待分布需持续采样。
+
+API 支持 `provider`、`account`、`state`、`dispatch_state`、`order`、`window_seconds`、`limit` 和 `after`。两个状态筛选只作用于明细。默认按计划 ID 排列。选择控制台「最早计划优先」或传入 `order=next_at`，按计划时间升序查看，同一时间按计划 ID 排列。窗口为 60 至 604800 秒，分页默认 50 条且最多 100 条。查询下一页时保留筛选和排序，并把 `next` 原样传入 `after`。每页的汇总和明细共享同一数据库快照。连续翻页使用各请求的最新快照，期间重新排程可能移动明细位置。
 
 ```sh
 cloud-manager governance inventory-freshness TENANT PROJECT --provider tencent-cvm --window-seconds 900
 cloud-manager governance inventory-freshness TENANT PROJECT --provider alibaba-ecs --state stale
 cloud-manager governance inventory-freshness TENANT PROJECT --provider huawei-ecs --state pending
+cloud-manager governance inventory-freshness TENANT PROJECT --dispatch-state ready --order next_at
 ```
 
-升级时先运行 `cloud-manager migrate` 应用 `0134_inventory_completion`，再升级盘点进程和 API。早期完成记录缺少凭据版本，升级后从应用新逻辑后的首次完整扫描开始统计。报告可以用于实际负载下的持续观测，95% 目标须在真实厂商环境运行并采样。
+目标环境可使用只读的 `inventory-sample` 收集发布证据。`--expected-scopes` 填该项目和厂商筛选下已批准的作用域数。
+
+```sh
+cloud-manager governance inventory-sample TENANT PROJECT --provider tencent-cvm --expected-scopes 200 > inventory.ndjson
+```
+
+默认采集 31 次，每次完成后等 30 秒。每行样本保存服务端观测时间、900 秒窗口、新鲜度计数和调度汇总。样本须匹配预期范围数量，且至少 95% 在窗口内完成。完整运行输出 `type: summary` 结尾记录，任一样本未达门槛时退出状态非零。中断、请求失败或观测时间未递增时，保留已写样本并以非零状态退出。可用 `--account` 缩小范围，或用 `--samples` 和 `--interval` 调整采样。
+
+使用 `--scope-manifest` 从标准输入读取已批准的清单，让每次观测逐项匹配租户项目下的厂商、账号、地域和资源类型。同数量换范围也会使样本失败。清单不超过 1 MiB，范围不能为空或重复。全局范围的 `region` 使用空字符串。
+
+```json
+{
+  "tenant": "lab",
+  "project": "compute",
+  "scopes": [
+    {"provider": "tencent-cvm", "account": "tc", "region": "ap-guangzhou", "kind": "instance"}
+  ]
+}
+```
+
+```sh
+cloud-manager governance inventory-sample lab compute --provider tencent-cvm --scope-manifest < scopes.json > inventory.ndjson
+```
+
+API 的 `scope_fingerprint=true` 返回同一数据库快照内完整可见范围的 `scope-v1:` 指纹。该值随范围成员变化，与明细分页、排序、新鲜度及调度状态无关。清单模式的样本同时记录预期和实际指纹。
+
+升级时先运行 `cloud-manager migrate` 应用当前版本的迁移。盘点完成记录依赖 `0134_inventory_completion`，调度报告依赖 `0137_inventory_account_dispatch`。早期完成记录缺少凭据版本，升级后从应用新逻辑后的首次完整扫描开始统计。95% 目标须在真实厂商环境运行并采样。
 
 ## OpenStack 只读盘点
 
@@ -1057,6 +1108,8 @@ VALUES ('tenant-id', 'account-id', 'RegionOne', 'instance', 600);
 
 应用 `0138_inventory_tenant_dispatch` 并升级普通盘点控制器后，下一次领取先按租户最久未领取排序，再按该租户的账号和计划排序。轮次与账号及计划租约一同提交。暂时被锁定的候选会跳过，可用执行能力可继续分配给其他候选。只有一个租户可领取时仍可同时处理多个独立账号。轮转在执行能力释放时生效，已领取的计划继续执行。
 
+在每个普通盘点控制器上设置 `CLOUD_MANAGER_CONTROLLER_DISPATCH_LOG=1`，可在标准输出采集 `inventory_dispatch_claimed` JSON 事件。事件在领取事务提交后输出，包含租户、账号、厂商、计划类型、计划 ID、租约代次及数据库给出的 `due_at` 和 `claimed_at`。`due_wait_ms` 是计划到期到领取之间的毫秒数，包含等待空闲执行能力、账号租约和厂商退避的时间。该设置默认关闭。日志只面向部署运维人员，采集端需持续读取标准输出并按账号标识管理访问权限。
+
 成功后从完成时间计算下一次运行。失败按指数退避，厂商提供的限流等待会在 24 小时上限内纳入计算。计划记录最近结果和连续失败数。正常停机主动让出领取，进程异常退出则在租约到期后由其他实例接管。三家优先云的控制器在提交每页时同时核验计划代次与扫描租约。停用计划后晚到页无法发布，再启用沿用停用前已提交的游标。厂商拒绝过期游标时，下次扫描从头开始。通过管理命令发起的独立扫描仍由账号与扫描租约约束。
 
 ## 资产差异历史
@@ -1109,6 +1162,17 @@ cloud-manager cloud-accounts change TENANT PROJECT ACCOUNT REVISION < change.jso
 使用通用云账号写入开关前执行 `cloud-manager migrate`，应用 `0135_account_write_mode`。管理员可在账号详情确认开启或关闭，也可用 `cloud-accounts change` 提交相应动作。写入受理仍须满足每项操作的资源归属、审批、配额和 Worker 厂商开关。共享的只读授权仍保持只读，Redfish 使用独立的电源操作开关，VMware vSphere 只读纳管。
 
 关闭后可继续盘点。Worker 在记录派发前复查账号版本和尚可使用的写入权限，旧版本任务即使在重新开启后也无法通过。已越过派发记录点的请求仍可能在厂商侧完成。对结果不明的操作，按该动作的证据要求由独立审批人续查或登记人工处置。开关变更在项目审计的 `account` 类别可查询。
+
+### 操作放量策略
+
+迁移 `0142_operation_rollout` 后，腾讯云、阿里云和华为云的自有账号支持按地域与动作配置白名单。项目管理员在 `{Location}/operation-rollout` 使用 GET 查询和 PUT 替换。PUT 携带策略的当前 `If-Match`，首次配置使用 `"0"`，正文示例为 `{"rules":[{"region":"ap-guangzhou","action":"start"}]}`。当前版本为 `"0"` 时沿用已有账号写入规则。提交空数组冻结新的受理和派发，已有策略的版本与变更记录保留在数据库和项目审计。
+
+Worker 派发前核对受理时保存的策略版本，镜像复制同时核对源和目标。策略变更前尚未派发的任务必须重新受理才能使用新版本。已登记派发的操作继续按现有授权只读观测。启用策略前先升级所有 API 和 Worker 副本。回退到早于该迁移的程序前，先用账号写入开关关闭受影响账号的写入，再排空 Worker。
+
+```sh
+cloud-manager cloud-accounts rollout TENANT PROJECT ACCOUNT
+cloud-manager cloud-accounts rollout-replace TENANT PROJECT ACCOUNT REVISION < rollout.json
+```
 
 ## 资源归属
 
@@ -1209,8 +1273,9 @@ go run ./cmd/cloud-manager operations get-batch tenant-id project-id batch-id
 | 目录 | 职责 |
 | --- | --- |
 | `main.tsx` | 挂载 React 应用和载入基础样式 |
-| `app/routes/` | `resources.ts`、`operations.ts`、`governance.ts` 和 `billing.ts` 分别声明业务页面、导航权限及列表加载器。`registry.ts` 负责页面标识与侧栏顺序，`project-page.tsx` 封装按需渲染 |
-| `app/workspace/` | `AuthenticatedWorkspace.tsx` 装配工作区。会话与项目切换、列表导航及批次草稿的挂载分别由各自的模块管理 |
+| `app/routes/` | `resources.ts`、`operations.ts`、`governance.ts` 和 `billing.ts` 分别声明业务页面、导航权限及列表加载器。`registry.ts` 登记页面标识，`project-page.tsx` 封装按需渲染 |
+| `app/workspace/` | `AuthenticatedWorkspace.tsx` 装配工作区。`navigation.ts` 声明菜单分组和页面说明。会话与项目切换、列表导航及批次草稿分别由各自的模块管理 |
+| `features/overview/` | 总览页面、盘点指标和活动列表。通过已登记的读取器使用资产盘点、操作和告警接口 |
 | `features/<业务>/` | 页面、表格、筛选、`api.ts`、`schema.ts` 和该业务的 `collection.ts`。复杂详情和表单按工作流分目录，业务专用样式随模块维护 |
 | `features/session/` | 会话接口、当前项目和请求客户端。`login/` 管理登录页和专用样式。客户端向共用传输层提供 CSRF 信息 |
 | `features/assets/` | 共用资产契约与资源专用操作。`inventory/` 管理清单页面、筛选和表格，`instances/` 管理实例选择、核对及实例行操作 |
@@ -1223,11 +1288,17 @@ go run ./cmd/cloud-manager operations get-batch tenant-id project-id batch-id
 | `features/billing/allocation/` | 历史分摊查询、按币种查看成本中心及版本追溯 |
 | `shared/` | 同源传输、通用 Zod 契约、`collection/` 分页与筛选组件、`feedback/` 状态提示，以及 `detail/` 弹窗和表单生命周期。`display/` 提供日期格式和跨业务状态文案 |
 
-新增列表时，在业务目录用 `schema.ts` 定义响应结构，由 `api.ts` 负责请求和校验，再在 `collection.ts` 用读取器创建类型化列表。页面通过 `useCollection` 订阅。页面、导航权限和列表加载器在 `app/routes/` 对应的业务模块声明，菜单位置在 `registry.ts` 登记。路由只向页面传递实际所需的属性。会话、批次和详情也在请求边界通过 Zod 校验，组件从对应契约推导类型。
+新增列表时，在业务目录用 `schema.ts` 定义响应结构，由 `api.ts` 负责请求和校验，再在 `collection.ts` 用读取器创建类型化列表。页面通过 `useCollection` 订阅。页面、导航权限和列表加载器在 `app/routes/` 对应的业务模块声明，菜单位置在 `app/workspace/navigation.ts` 登记。路由只向页面传递实际所需的属性。会话、批次和详情也在请求边界通过 Zod 校验，组件从对应契约推导类型。
 
 应用层负责装配业务与共用层。页面、交互 Hook、请求和 Zod 契约放在对应工作流目录，页面组装视图，Hook 管理交互及请求生命周期，`api.ts` 调用共用客户端，`schema.ts` 定义运行时契约并推导类型。同一业务内多条工作流共用的契约放在业务根目录。负载均衡和快照摘要由资源目录定义契约并推导组件属性，清单组合这些契约。资源类型、操作名称、授权用途等文案由各自业务的 `labels.ts` 维护。
 
 跨业务复用时，从能力所属模块直接导入 `scripts/feature-entrypoints.mjs` 登记的入口。应用装配可额外使用同一文件列出的应用入口。项目路由用显式字符串路径按需导入 `*Page.tsx` 和 `collection.ts`，批次页面在工作区按需装配。使用 `import type` 和 `export type` 声明纯类型依赖。`npm run check` 分别检查静态依赖、动态加载和类型引用，并报告静态运行时循环依赖。
+
+工作区侧栏按资源、运维、治理、费用组织项目入口。页头集中显示项目切换、租户身份和角色。桌面可折叠侧栏，小屏用顶部按钮展开导航。浏览器保存浅色、深色或跟随系统的主题偏好及桌面侧栏状态。`app/styles/` 按基础样式、布局、导航、列表、报表、详情与响应式规则组织。
+
+侧栏提供可分享的项目页面链接，例如 `/console?project=production&view=inventory-freshness&filter.dispatch_state=ready`。打开、刷新或前进后退时，控制台根据已登录身份恢复项目和页面。链接指向不可访问的项目时进入首个可查看项目的资源清单，页面不可访问时进入该项目的资源清单。从页头切换项目时，保留仍有权限访问的页面并重置列表筛选，其余情况打开目标项目总览。
+
+资源清单、操作记录、项目告警、项目审计、KVM 运维、实例闲置分析和盘点新鲜度会把已提交的筛选写入链接。打开链接时回填表单并从第一页加载。「清除筛选」恢复默认条件，KVM 保留当前资源类型。分页游标、弹窗、未提交输入和批次草稿由当前页面管理。审计导出使用已提交的条件。
 
 新增资产行操作时，在资源目录定义 `row-actions.ts`，通过资产清单的 `inventory/asset-actions.ts` 按资源类型接入。业务组件负责字段和校验，通过 `OperationForm` 提交带资源版本和幂等键的变更。共用弹窗通过 React 渲染内容，通过浏览器原生对话框管理焦点。
 
@@ -1594,6 +1665,14 @@ ssh -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes -i ~/.ssh/serial -p 22 \
 
 `CLOUD_MANAGER_WORKER_PROFILES` 指向私有 JSON 文件，映射本地凭据引用到厂商配置文件。配置须与账号已校验的远端身份一致。使用独立的授权身份运行 `go run ./cmd/cloud-manager worker`。每个进程逐个领取队列任务，可通过多个进程并行。
 
+### 恢复期间冻结云端派发
+
+应用 `0139_operation_observation_worker`。写入冻结期间先隔离旧 Worker，再以 `CLOUD_MANAGER_WORKER_MODE=observe-only` 启动所有操作 Worker 副本。分离数据库运行角色的部署，需向操作 Worker 授予 `cmp_operation_observation_blocked_claims` 的读取权限。
+
+该模式只领取 `applying` 或 `observing` 的操作，使用只读查询确认远端状态，并按原有规则更新本地账本、资产、审计和发件箱。恢复库内仍为 `queued` 的任务保留原状态和尝试次数。AWS 创建的自动重发在该模式下暂停。
+
+切回默认的 `dispatch` 模式前，应对照厂商证据核对恢复点后的云端效果，特别是恢复库仍标记为 `queued` 的操作。KVM 站点代理和事件发布进程使用独立入口，需随恢复窗口单独隔离。演练步骤见 [PostgreSQL 时间点恢复演练](acceptance.md#postgresql-时间点恢复演练)。
+
 Worker 发送前核对账号写权限、请求人的当前成员代次及实例归属版本，并提交 `applying`。启动、停止、重启和删除各发一次。厂商超时或领取到已进入 `applying` 的任务时，继续只读观测。启动或停止以目标状态确认为准。重启需要独立完成证据。Nova 支持操作详情和 2.51 微版本时，Worker 按厂商请求 ID 轮询完成事件。AWS 重启和缺失可信证据的 Nova 重启进入 `needs_review`。观测耗尽或原授权失效时进入待复核。旧租约无法提交结果。
 
 `GET {Location}` 返回状态、最近转换时间、可用的厂商请求 ID 及结果原因。生产验证需在已授权的厂商沙箱验收。
@@ -1615,6 +1694,10 @@ TLS 协议夹具和真实 PostgreSQL 已覆盖发送前撤权、断连后只读�
 项目成员可通过 `GET {Location}/events?after=0&limit=50` 查询该操作的状态记录。响应包含 `events`、`next_after` 和 `has_more`。首次查询可省略 `after`，后续通读或轮询复用 `next_after`。序号用十进制字符串编码，页大小为 1 至 100。
 
 为项目登记接收端后，`succeeded`、`failed` 和 `needs_review` 会与操作状态、审计和资产变更同事务写入发件箱。Webhook 正文为 UTF-8 JSON，包含 `schema_version`、`id`、`sequence`、`type`、`tenant`、`project`、`operation_id`、`action`、`status`、`occurred_at`，以及适用的 `asset_id`、`volume_id` 和 `reason`。新事件附带 `resource_kind`。事件类型示例包括 `instance.operation.succeeded`、`network.operation.succeeded`、`subnet.operation.succeeded` 和 `security-group.operation.succeeded`。接收端按 `sequence` 核对同一操作的事件顺序，按 `id` 去重。
+
+应用 `0140_operation_effect_id` 后，新生成的 `succeeded` 和 `failed` 事件在签名正文中包含 `effect_id`，格式为 `cmp-op-final-v1:<operation_id>`。恢复时，同一操作的终态可生成新的投递 `id`，其 `effect_id` 保持一致。接收端在验签及校验项目后，按来源环境、租户、项目和 `effect_id` 建立唯一约束，在登记处理结果的同一事务应用业务变更。相同效果标识的状态、动作或资源归属发生冲突时应拒绝并进入对账。
+
+历史终态事件可从已验签正文中的 `operation_id` 按相同格式计算效果标识。重复投递原记录时继续校验 `id` 对应的原正文。可重复出现的 `needs_review` 和独立的工单、告警事件继续按各自的事件合同处理。恢复点前已持久化的操作可以使用此标识去重，恢复点后丢失操作记录的请求仍需用下游账本和厂商证据核对。
 
 将接收端列表写入权限为 `0600` 或更严格的私有 JSON 文件，并令 `CLOUD_MANAGER_EVENT_PROFILES` 指向它。每个接收端使用独立的随机签名密钥，长度至少 32 字节。URL 使用 HTTPS，认证走 HMAC。
 
@@ -1643,6 +1726,32 @@ go run ./cmd/cloud-manager event-disable project-a-audit
 发布器使用至少一次投递。同一事件的 ID 和正文字节在重试时保持一致。接收端按 `X-Webhook-Timestamp` 与原始正文验证 `X-Webhook-Signature`，签名为 `v1=` 加 HMAC-SHA256 的十六进制编码，签名输入为 `timestamp.body`。接收端应限制时间戳偏差、校验签名正文中的项目，并在去重记录和业务效果持久提交后返回 2xx。`X-Webhook-Delivery` 等于正文 `id`。
 
 连接异常、408、429 和 5xx 进入退避重试。发布器遵守最长 10 分钟的 `Retry-After`，每轮最多尝试 10 次。重定向和其他拒绝转入失败记录。`event-failures` 展示最近 100 条失败的原因及可用的 HTTP 状态。人工重投保留同一事件 ID。发布器按租约并发领取，过期租约无法确认投递。数据库保留事件及每个目的地的最新投递状态。
+
+#### 恢复时核对接收方回执
+
+隔离旧发布器并保持恢复库的云端写入冻结时，可用接收系统已验签、已提交的终态回执核对恢复库。命令使用 `CLOUD_MANAGER_DATABASE_URL` 和 `CLOUD_MANAGER_EVENT_PROFILES` 中已绑定的接收端。
+
+```sh
+cloud-manager event-reconcile project-a-audit < receipts.json
+```
+
+清单是一个 JSON 对象，包含 `sink`、`tenant`、`project` 和 `receipts`。每个回执提供 `delivery_id`、`operation_id`、`effect_id`、`body_sha256`、`type`、`action` 和 `account`。有值时同时提供 `region`、`asset_id` 和 `volume_id`。从接收端保存的原正文计算小写十六进制 SHA-256，`delivery_id` 取正文的 `id`。历史终态可以按上文规则补算 `effect_id`。每批最多 1,000 条且 JSON 最大 1 MiB。
+
+| 报告状态 | 含义 |
+|---|---|
+| `matched` | 恢复库保留同一投递，正文摘要和操作终态一致。 |
+| `regenerated` | 操作终态和资源一致，恢复库记录了新的投递 ID。 |
+| `source_unsettled` | 接收方已有终态回执，恢复库中的操作仍待派发、观测或复核。 |
+| `source_missing` | 当前项目缺少回执对应的操作记录。 |
+| `outbox_missing` | 操作终态一致，当前接收端缺少本地投递记录。 |
+| `conflict` | 操作、资源、终态或相同投递 ID 的正文摘要不一致。 |
+| `receiver_missing` | 声明窗口内，本地有终态投递，接收端清单缺少对应业务效果。 |
+
+应用 `0141_operation_terminal_event_time` 后，可在清单增加 `coverage` 对象，声明接收端完整导出的 `from` 和 `until`。两者均为 RFC 3339 时间，包含起点并排除终点。每条回执同时携带签名正文里的 `occurred_at`，清单窗口按该时间导出，终点须在数据库观测时间之前或与之相等。相同投递的时间也参与一致性核对。接收端在该窗内没有终态回执时使用 `"receipts": []`。
+
+带覆盖窗口时，命令还会核对该接收端在同一窗口内的本地终态发件箱。对账按 `effect_id` 识别重新生成的投递。报告在清单结果后按事件发生时间和序号列出缺少回执的记录，并区分本地已投递、失败、已领取和待投递。若缺失超过 1,000 条，命令返回错误，需缩小窗口后复跑。
+
+报告记录来源数据库的观测时间。所检查的记录全部一致时退出成功，有差异会先输出报告再以非零状态退出。省略覆盖窗口可以仅核对一批已知回执。恢复放行仍须核实接收端导出范围和厂商实际资源状态。
 
 ### 处置待复核操作
 

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -20,7 +21,7 @@ import (
 	"with-cloud-manager/internal/operations"
 )
 
-func runEventCommand(ctx context.Context, db *sql.DB, args []string, profile string, out io.Writer) error {
+func runEventCommand(ctx context.Context, db *sql.DB, args []string, profile string, in io.Reader, out io.Writer) error {
 	var configs []delivery.Config
 	if err := loadPrivateProfile(profile, &configs); err != nil {
 		return err
@@ -52,10 +53,10 @@ func runEventCommand(ctx context.Context, db *sql.DB, args []string, profile str
 	if !exists {
 		return delivery.ErrBinding
 	}
-	return safeDeliveryError(manageEventSink(lookup, store, dest, args, out))
+	return safeDeliveryError(manageEventSink(lookup, store, dest, args, in, out))
 }
 
-func manageEventSink(ctx context.Context, store delivery.Store, dest delivery.Destination, args []string, out io.Writer) error {
+func manageEventSink(ctx context.Context, store delivery.Store, dest delivery.Destination, args []string, in io.Reader, out io.Writer) error {
 	switch args[0] {
 	case "event-register":
 		return store.Register(ctx, dest)
@@ -69,12 +70,42 @@ func manageEventSink(ctx context.Context, store delivery.Store, dest delivery.De
 			return err
 		}
 		return json.NewEncoder(out).Encode(events)
+	case "event-reconcile":
+		return reconcileEventReceipts(ctx, store, dest, in, out)
 	}
 	return errors.New("invalid event command")
 }
 
+var errEventReconciliationIncomplete = errors.New("terminal receipt reconciliation found differences")
+
+func reconcileEventReceipts(ctx context.Context, store delivery.Store, dest delivery.Destination, in io.Reader, out io.Writer) error {
+	raw, err := readOperationInput(in, 1<<20)
+	if err != nil {
+		return delivery.ErrReceiptManifest
+	}
+	var manifest delivery.ReceiptManifest
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&manifest); err != nil {
+		return delivery.ErrReceiptManifest
+	}
+	report, err := store.ReconcileTerminalReceipts(ctx, dest, manifest)
+	if err != nil {
+		return err
+	}
+	if err := json.NewEncoder(out).Encode(report); err != nil {
+		return err
+	}
+	if !report.Clean {
+		return errEventReconciliationIncomplete
+	}
+	return nil
+}
+
 func safeDeliveryError(err error) error {
-	if err == nil || errors.Is(err, delivery.ErrBinding) || errors.Is(err, delivery.ErrNotFailed) {
+	if err == nil || errors.Is(err, delivery.ErrBinding) || errors.Is(err, delivery.ErrNotFailed) ||
+		errors.Is(err, delivery.ErrReceiptManifest) || errors.Is(err, delivery.ErrReconcileWindowTooLarge) ||
+		errors.Is(err, errEventReconciliationIncomplete) {
 		return err
 	}
 	return errors.New("event delivery is unavailable")

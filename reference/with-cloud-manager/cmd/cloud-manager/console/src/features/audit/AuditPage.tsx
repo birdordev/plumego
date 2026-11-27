@@ -9,7 +9,10 @@ import { AuditFilters } from './filters'
 export default function AuditPage({ nativeConsole, nativeSerial }: { nativeConsole: boolean; nativeSerial: boolean }) {
   const page = useCollection(auditCollection)
   if (!page) return null
-  return <CollectionPage {...page} onLoadNext={auditCollection.loadNext} filters={<CollectionFilters onApply={auditCollection.applyFilters} dateFields={['from', 'until']}><AuditFilters /></CollectionFilters>} footer={<AuditExport />}>
+  const filters = <CollectionFilters values={page.filters} onApply={auditCollection.applyFilters} dateFields={['from', 'until']}>
+    {(values) => <AuditFilters values={values} />}
+  </CollectionFilters>
+  return <CollectionPage {...page} onLoadNext={auditCollection.loadNext} filters={filters} footer={<AuditExport />}>
     <AuditTable items={page.items} nativeEnabled={nativeConsole || nativeSerial} />
   </CollectionPage>
 }

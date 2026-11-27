@@ -272,7 +272,7 @@ func testPublicCloudSnapshotCreation(t *testing.T, f *snapshotCreationFixture) {
 	if err := db.QueryRowContext(ctx, `SELECT count(*) FROM cmp_operation_event_outbox WHERE event_type='snapshot.operation.succeeded'`).Scan(&count); err != nil || count != 1 {
 		t.Fatalf("snapshot terminal events: count=%d err=%v", count, err)
 	}
-	r := httptest.NewRequest(http.MethodGet, projectPath+"/assets?kind=snapshot", nil)
+	r := httptest.NewRequest(http.MethodGet, projectPath+"/assets?kind=snapshot&q="+url.QueryEscape(f.volume), nil)
 	r.Header.Set("Authorization", "Bearer "+actor)
 	w := httptest.NewRecorder()
 	app.ServeHTTP(w, r)

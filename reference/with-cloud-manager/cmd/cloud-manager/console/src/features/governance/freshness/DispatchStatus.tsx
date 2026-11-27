@@ -1,4 +1,4 @@
-import { DetailFields } from '../../../shared/components/DetailFields'
+import { MetricStrip } from '../../../shared/components/MetricStrip'
 import { timestamp } from '../../../shared/display/time'
 import type { DispatchState, FreshnessReport, FreshnessScope } from './api'
 
@@ -10,8 +10,9 @@ const labels = {
 export const dispatchOptions = Object.entries(labels)
 
 export function DispatchOverview({ summary }: { summary: NonNullable<FreshnessReport['dispatch_summary']> }) {
-  return <section aria-label="盘点调度汇总">
-    <DetailFields fields={[
+  return <section className="panel report-panel" aria-labelledby="dispatch-summary-title">
+    <h2 id="dispatch-summary-title">盘点调度汇总</h2>
+    <MetricStrip values={[
       [labels.scheduled, summary.scheduled], [labels.ready, summary.ready], [labels.account_busy, summary.account_busy],
       [labels.cooldown, summary.cooldown], [labels.leased, summary.leased],
       ['可领取计划最久逾期（秒）', summary.ready ? summary.longest_ready_overdue_seconds : '无等待计划'],
@@ -26,6 +27,6 @@ export function DispatchStateCell({ item }: { item: FreshnessScope }) {
     : item.dispatch_state === 'leased' ? item.schedule_lease_until : undefined
   return <>
     {labels[item.dispatch_state]}
-    {deadline && <small>（至 {timestamp(deadline)}）</small>}
+    {deadline && <span className="minor">至 {timestamp(deadline)}</span>}
   </>
 }

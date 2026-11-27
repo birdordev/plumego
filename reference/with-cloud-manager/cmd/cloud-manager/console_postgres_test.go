@@ -123,6 +123,10 @@ func TestAcceptanceConsoleAcrossReplicas(t *testing.T) {
 		!strings.Contains(headers.Get("Content-Security-Policy"), "frame-ancestors 'none'") {
 		t.Fatal("console page lacks secure asset wiring")
 	}
+	linked, linkedHeaders := req(direct, second, http.MethodGet, "/console?project=admin-sandbox&view=cloud-accounts", "", nil, nil, http.StatusOK)
+	if string(linked) != string(html) || linkedHeaders.Get("Content-Security-Policy") != headers.Get("Content-Security-Policy") {
+		t.Fatal("a workspace link must serve the same console entry point and policy")
+	}
 	_, headers = req(direct, first, http.MethodGet, "/console/app.js", "", nil, nil, http.StatusOK)
 	if !strings.HasPrefix(headers.Get("Content-Type"), "text/javascript") || headers.Get("X-Content-Type-Options") != "nosniff" {
 		t.Fatal("console application script has unsafe media type")

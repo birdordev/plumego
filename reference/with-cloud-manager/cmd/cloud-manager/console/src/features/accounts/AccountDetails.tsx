@@ -7,7 +7,8 @@ import { AccountChangeForm, type AccountIntent } from './AccountChangeForm'
 import { AccountGrants } from './AccountGrants'
 import { AccountSchedules } from './schedules/AccountSchedules'
 import { readAccount } from './api'
-import { actions, modes, providerName, verifyCommand, writableClouds } from './labels'
+import { providerName } from '../../shared/display/providers'
+import { actions, modes, verifyCommand, writableClouds } from './labels'
 import type { Account } from './schema'
 
 type Props = { target: string; signal: AbortSignal; stamp: number; projects: string[]; refresh: () => void; onSaved: (account: Account) => void }

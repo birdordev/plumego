@@ -1,16 +1,46 @@
-dialog { background: var(--paper); inline-size: min(38rem, 94vw); color: var(--ink); border: 1px solid var(--line); padding: 1.25rem; }
-dialog::backdrop { background: #163640a6; }
-.detail-header { display: flex; justify-content: space-between; align-items: center; gap: .8rem; }
-.detail-list { display: grid; grid-template-columns: minmax(5rem, max-content) 1fr; gap: .45rem .85rem; overflow-wrap: anywhere; }
-.detail-list dd { margin: 0; }
+.detail-drawer {
+  inset-block: 0;
+  inset-inline: auto 0;
+  inline-size: min(52rem, 100%);
+  max-inline-size: 100%;
+  block-size: 100dvh;
+  max-block-size: 100dvh;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-inline-start: 1px solid var(--line);
+  background: var(--paper);
+  color: var(--ink);
+  box-shadow: -12px 0 40px var(--shadow);
+  overscroll-behavior: contain;
+}
+.detail-drawer::backdrop { background: var(--overlay); }
+.detail-header {
+  position: sticky;
+  inset-block-start: 0;
+  z-index: 1;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: .8rem;
+  padding: .9rem clamp(1rem, 3vw, 1.4rem);
+  border-block-end: 1px solid var(--line);
+  background: var(--paper);
+}
+.detail-header h2 { overflow-wrap: anywhere; }
+#detail-message { margin-inline: clamp(1rem, 3vw, 1.4rem); }
+#detail-body { padding: .95rem clamp(1rem, 3vw, 1.4rem) 1.35rem; }
+#detail-body > :first-child { margin-block-start: 0; }
+.detail-list {
+  display: grid;
+  grid-template-columns: minmax(5rem, max-content) minmax(0, 1fr);
+  gap: .45rem 1rem;
+  padding-block: .7rem;
+  border-block: 1px solid var(--line);
+  overflow-wrap: anywhere;
+}
+.detail-list dt { color: var(--muted); font-size: .86rem; }
+.detail-list dd { margin: 0; font-variant-numeric: tabular-nums; }
 .catalog-form { display: grid; gap: .8rem; margin-block: .9rem; }
 .catalog-form .row-actions { margin-top: 0; }
-
-.detail-form-fields {
-  border: 0;
-  padding: 0;
-  margin: 0;
-  min-inline-size: 0;
-  display: grid;
-  gap: .8rem;
-}
+.detail-form-fields { display: grid; gap: .8rem; min-inline-size: 0; border: 0; padding: 0; margin: 0; }

@@ -408,6 +408,9 @@ func (s Store) prepare(ctx context.Context, task mq.Task, arm bool) (work, error
 		if w.actor.Tenant != task.TenantID || string(task.Payload) != task.ID {
 			return mq.ErrLeaseLost
 		}
+		if s.observationOnly && (arm || (w.Status != "applying" && w.Status != "observing")) {
+			return mq.ErrLeaseLost
+		}
 		if terminal(w.Status) {
 			return nil
 		}
@@ -415,6 +418,9 @@ func (s Store) prepare(ctx context.Context, task mq.Task, arm bool) (work, error
 			return mq.ErrLeaseLost
 		}
 		if w.Status == "queued" {
+			if err := authorizeRolloutDispatch(ctx, tx, w.ID); err != nil {
+				return err
+			}
 			if err := requireChangeTicket(ctx, tx, w.actor, w.Operation); err != nil {
 				if errors.Is(err, ErrTicketRequired) {
 					return identity.ErrForbidden

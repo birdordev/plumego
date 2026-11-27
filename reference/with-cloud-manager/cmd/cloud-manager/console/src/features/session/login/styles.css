@@ -1,3 +1,21 @@
-.entry { min-height: 100vh; display: grid; place-items: center; padding: 1.5rem; background: var(--rail); }
-.login { inline-size: min(100%, 27rem); padding: clamp(1.5rem, 5vw, 3rem); background: var(--paper); box-shadow: .65rem .65rem 0 #295763; }
-.login button { margin-top: 1.25rem; inline-size: 100%; }
+.entry {
+  min-block-size: 100dvh;
+  display: grid;
+  place-items: center;
+  padding: 1.5rem;
+  background: var(--page);
+}
+.login {
+  inline-size: min(100%, 28rem);
+  display: grid;
+  gap: 1.1rem;
+  padding: clamp(1.35rem, 4.5vw, 2.3rem);
+  border: 1px solid var(--line);
+  border-radius: var(--panel-radius);
+  background: var(--paper);
+  box-shadow: 0 10px 30px var(--shadow);
+}
+.login-heading { display: grid; gap: .85rem; padding-block-end: 1rem; border-block-end: 1px solid var(--line); }
+.login h1 { font-size: clamp(1.5rem, 4vw, 1.9rem); }
+.login button { inline-size: 100%; }
+.login .notice { margin: 0; }

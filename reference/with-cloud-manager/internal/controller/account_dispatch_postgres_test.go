@@ -125,11 +125,12 @@ func TestAcceptanceInventoryDispatchFiftyAccounts(t *testing.T) {
 	defer cancel()
 	start := time.Now()
 	results := make(chan job, 1000)
+	observations := make(chan DispatchObservation, 1000)
 	failures := make(chan error, 12)
 	var replicas sync.WaitGroup
 	for range 12 {
 		replicas.Go(func() {
-			replica := NewStore(db)
+			replica := NewStore(db).WithDispatchObserver(func(value DispatchObservation) { observations <- value })
 			for {
 				j, err := replica.claim(ctx, time.Minute, inventoryPool)
 				if errors.Is(err, sql.ErrNoRows) {
@@ -145,23 +146,72 @@ func TestAcceptanceInventoryDispatchFiftyAccounts(t *testing.T) {
 	}
 	replicas.Wait()
 	close(results)
+	close(observations)
 	close(failures)
 	for err := range failures {
 		t.Fatalf("inventory claimant failed: %v", err)
 	}
 	claimed := make(map[inventoryAccountKey]bool, 50)
+	byLease := make(map[[2]int64]job, 50)
 	for result := range results {
 		key := inventoryAccountKey{result.task.Key.Tenant, result.task.Key.Account}
 		if claimed[key] {
 			t.Fatalf("account was leased twice: %+v", key)
 		}
 		claimed[key] = true
+		byLease[[2]int64{result.id, result.fence}] = result
 	}
 	if len(claimed) != 50 {
 		t.Fatalf("only %d independent accounts claimed", len(claimed))
 	}
+	for value := range observations {
+		key := [2]int64{value.ScheduleID, value.Fence}
+		result, ok := byLease[key]
+		if !ok || value.Tenant != result.task.Key.Tenant || value.Account != result.task.Key.Account ||
+			value.Provider != result.task.Provider || value.Kind != result.task.ScheduleKind ||
+			value.DueAt.IsZero() || value.ClaimedAt.Sub(value.DueAt) < 30*time.Minute {
+			t.Fatalf("invalid or duplicate dispatch observation: %+v", value)
+		}
+		delete(byLease, key)
+	}
+	if len(byLease) != 0 {
+		t.Fatalf("%d committed leases have no observation", len(byLease))
+	}
 	requireNoAccountClaim(t, store)
 	t.Logf("12 replicas claimed 50 independent accounts from 1,000 due schedules in %s", time.Since(start))
+}
+
+func TestAcceptanceDispatchObservationAfterCommit(t *testing.T) {
+	db, store := prepareAccountDispatch(t, 1)
+	dispatchExec(t, db, `CREATE FUNCTION reject_test_dispatch() RETURNS trigger LANGUAGE plpgsql AS $$
+			BEGIN RAISE EXCEPTION 'dispatch commit rejected for test'; END $$;
+		CREATE CONSTRAINT TRIGGER reject_test_dispatch AFTER INSERT ON cmp_inventory_tenant_dispatch
+			DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION reject_test_dispatch()`)
+	var observations []DispatchObservation
+	store = store.WithDispatchObserver(func(value DispatchObservation) {
+		observations = append(observations, value)
+		var due, claimed time.Time
+		var fence int64
+		err := db.QueryRowContext(t.Context(), `SELECT s.next_at,d.last_claimed_at,d.schedule_fence
+			FROM cmp_inventory_account_dispatch d JOIN cmp_inventory_schedules s USING (schedule_id)
+			WHERE (d.tenant_id,d.account_id,s.schedule_id)=($1,$2,$3)`, value.Tenant, value.Account, value.ScheduleID).
+			Scan(&due, &claimed, &fence)
+		if err != nil || !due.Equal(value.DueAt) || !claimed.Equal(value.ClaimedAt) || fence != value.Fence {
+			t.Errorf("dispatch was not visible with the database timing and fence: %v", err)
+		}
+	})
+	if _, err := store.claim(t.Context(), time.Minute, inventoryPool); err == nil {
+		t.Fatal("deferred commit failure did not abort the claim")
+	}
+	if len(observations) != 0 {
+		t.Fatal("rolled back claim yielded an observation")
+	}
+	dispatchExec(t, db, `DROP TRIGGER reject_test_dispatch ON cmp_inventory_tenant_dispatch`)
+	item := claimAccountFixture(t, store)
+	requireNoAccountClaim(t, store)
+	if item.fence != 1 || len(observations) != 1 {
+		t.Fatalf("expected one observation for the first committed fence, got fence %d and %d observations", item.fence, len(observations))
+	}
 }
 
 type inventoryAccountKey struct{ tenant, account string }

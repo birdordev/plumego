@@ -1,0 +1,20 @@
+.report-panel { display: grid; gap: .8rem; }
+.report-heading { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: .45rem .9rem; }
+.metric-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 9rem), 1fr));
+  margin: 0;
+  border-block-start: 1px solid var(--line);
+}
+.metric {
+  display: flex;
+  flex-direction: column-reverse;
+  justify-content: flex-end;
+  gap: .18rem;
+  min-inline-size: 0;
+  padding: .75rem;
+  border-block-end: 1px solid var(--line);
+  overflow-wrap: anywhere;
+}
+.metric dt { color: var(--muted); font-size: .84rem; }
+.metric dd { margin: 0; font-size: clamp(1.05rem, 1.9vw, 1.65rem); font-weight: 730; font-variant-numeric: tabular-nums; }

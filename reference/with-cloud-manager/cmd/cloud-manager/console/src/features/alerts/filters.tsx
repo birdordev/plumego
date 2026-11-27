@@ -13,9 +13,9 @@ const billingRules = [
   ['billing_budget_warning', '预算预警'], ['billing_budget_exceeded', '达到预算额度'],
 ] as const
 
-export function AlertFilters({ admin }: { admin: boolean }) {
+export function AlertFilters({ admin, values }: { admin: boolean; values: URLSearchParams }) {
   return <>
-    <SelectField label="告警状态" name="status" options={states} />
-    <SelectField label="告警规则" name="rule" options={admin ? [...rules, ...billingRules] : rules} />
+    <SelectField label="告警状态" name="status" initialValue={values.get('status')} options={states} />
+    <SelectField label="告警规则" name="rule" initialValue={values.get('rule')} options={admin ? [...rules, ...billingRules] : rules} />
   </>
 }

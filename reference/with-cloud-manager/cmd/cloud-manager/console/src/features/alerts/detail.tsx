@@ -19,14 +19,18 @@ function readAlert(target: string, signal: AbortSignal) {
   return request(target, { signal }, alertDetailSchema)
 }
 
-export function showAlert(id: string) {
+export function showAlert(id: string, onReload?: () => void) {
   const target = projectURL() + '/alerts/' + encodeURIComponent(id)
   const admin = sessionSnapshot()?.project.role === 'admin'
-  openDetail('告警详情', (stamp, signal) => <AlertDetail id={id} target={target} admin={admin} stamp={stamp} signal={signal} />)
+  openDetail('告警详情', (stamp, signal) => <AlertDetail target={target} admin={admin} stamp={stamp} signal={signal}
+    onReload={onReload} reload={() => {
+    onReload?.()
+    showAlert(id, onReload)
+  }} />)
 }
 
-function AlertDetail({ id, target, admin, stamp, signal }:
-  { id: string; target: string; admin: boolean; stamp: number; signal: AbortSignal }) {
+function AlertDetail({ target, admin, stamp, signal, reload, onReload }:
+  { target: string; admin: boolean; stamp: number; signal: AbortSignal; reload: () => void; onReload?: () => void }) {
   const result = useResourceRead(target, readAlert, signal)
   const { busy, run } = useDetailAction(stamp)
   if (result.state === 'loading') return <p role="status">正在加载…</p>
@@ -47,13 +51,13 @@ function AlertDetail({ id, target, admin, stamp, signal }:
 
   function acknowledge() {
     void run(() => request(target + '/acknowledgement', { method: 'POST', match: alert.revision }),
-      () => { void alertsCollection.refresh(); showAlert(id) })
+      () => { void alertsCollection.refresh(); reload() })
   }
 
   return <>
     <DetailFields fields={fields} />
     <div className="row-actions">
-      {alert.rule.startsWith('operation_') ? <button type="button" onClick={() => showOperation(alert.subject_id)}>查看关联操作</button> : null}
+      {alert.rule.startsWith('operation_') ? <button type="button" onClick={() => showOperation(alert.subject_id, onReload)}>查看关联操作</button> : null}
       {alert.status === 'open' && admin ? <button type="button" disabled={busy} onClick={acknowledge}>确认告警</button> : null}
     </div>
   </>

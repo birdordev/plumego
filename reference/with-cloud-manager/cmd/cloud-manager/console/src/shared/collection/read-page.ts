@@ -6,6 +6,7 @@ export type PageRequest = {
   admin: boolean
   filters: string
   after: string
+  limit?: number
   signal: AbortSignal
 }
 
@@ -16,9 +17,9 @@ export function collectionReader<Page extends { items: unknown[]; next?: string 
   cursor: 'cursor' | 'after',
   configureFilters?: (query: URLSearchParams, admin: boolean) => void,
 ) {
-  return ({ base, admin, filters, after, signal }: PageRequest) => {
+  return ({ base, admin, filters, after, limit = 30, signal }: PageRequest) => {
     const query = new URLSearchParams(filters)
-    query.set('limit', '30')
+    query.set('limit', String(limit))
     configureFilters?.(query, admin)
     if (after) query.set(cursor, after)
     return request(base + path + '?' + query, { signal }, schema)

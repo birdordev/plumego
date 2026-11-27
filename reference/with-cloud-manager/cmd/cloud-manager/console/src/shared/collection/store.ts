@@ -2,11 +2,12 @@ import { ConsoleRequestError, requestErrorMessage } from '../api/requests'
 import { setWorkspaceNotice } from '../feedback/notice'
 import type { PageRequest } from './read-page'
 
-export type CollectionScope = { base: string; admin: boolean; onUnauthorized: () => void }
+export type CollectionScope = { base: string; admin: boolean; onUnauthorized: () => void; commitFilters: (filters: string) => string }
 
 export type CollectionLifecycle = {
-  open: (scope: CollectionScope) => void
+  open: (scope: CollectionScope, filters: string) => void
   close: () => void
+  refresh: () => Promise<void>
 }
 
 type Page<Item> = { items: readonly Item[]; next?: string }
@@ -35,9 +36,9 @@ export function createCollection<Item>(readPage: PageReader<Item>) {
     if (current.scope) publish({ ...empty, generation: current.generation })
   }
 
-  function open(scope: CollectionScope) {
+  function open(scope: CollectionScope, filters: string) {
     activeRequest?.abort()
-    publish({ ...empty, scope, generation: current.generation + 1 })
+    publish({ ...empty, scope, filters, generation: current.generation + 1 })
     void load()
   }
 
@@ -58,7 +59,7 @@ export function createCollection<Item>(readPage: PageReader<Item>) {
       if (signal.aborted) return
       const rows = append ? [...items, ...page.items] : page.items
       publish({ scope, generation, filters, items: rows, next: page.next, loading: false })
-      setWorkspaceNotice(rows.length ? '' : '当前筛选没有结果。')
+      setWorkspaceNotice()
     } catch (error) {
       if (signal.aborted) return
       publish({ scope, generation, filters, items, next: priorCursor, loading: false })
@@ -77,7 +78,7 @@ export function createCollection<Item>(readPage: PageReader<Item>) {
       return () => { listeners.delete(notify) }
     },
     refresh: () => load(),
-    applyFilters: (filters: string) => load(false, filters),
+    applyFilters: (filters: string) => load(false, current.scope?.commitFilters(filters) ?? filters),
     loadNext: () => load(true),
   }
 }

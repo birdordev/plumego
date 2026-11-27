@@ -211,6 +211,18 @@ func TestAcceptancePersistentInstanceCreation(t *testing.T) {
 	}
 	exec("UPDATE cmp_operation_tasks SET lease_until=clock_timestamp()-interval '1 second' WHERE id=$1", crash.ID)
 	client.object, client.readError = provider.Object{}, &provider.Failure{Kind: provider.OutcomeUnknown}
+	observations := client.discoveries
+	if did, err := store.WithObservationOnly().step(ctx, connect); !did || err != nil {
+		t.Fatalf("read-only takeover processed=%t error=%v", did, err)
+	}
+	status(crash.ID, "observing")
+	var replayed bool
+	if err := db.QueryRowContext(ctx, "SELECT replayed_at IS NOT NULL FROM cmp_instance_launches WHERE operation_id=$1", crash.ID).
+		Scan(&replayed); err != nil || replayed || client.launches != 1 || client.discoveries != observations+1 {
+		t.Fatalf("recovery worker replayed creation or skipped reading: sends=%d reads=%d replayed=%t error=%v",
+			client.launches, client.discoveries, replayed, err)
+	}
+	exec("UPDATE cmp_operation_tasks SET available_at=clock_timestamp() WHERE id=$1", crash.ID)
 	step()
 	status(crash.ID, "observing")
 	if client.launches != 2 {

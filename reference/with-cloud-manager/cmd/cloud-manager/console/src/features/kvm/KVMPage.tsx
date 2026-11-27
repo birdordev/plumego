@@ -20,25 +20,28 @@ export default function KVMPage({ role, principal }: { role: Project['role']; pr
 
   function selectKind(next: InventoryKind) {
     if (next === kind) return
-    filters.set('kind', next)
+    if (next === 'hosts') filters.set('kind', next)
+    else filters.delete('kind')
     void kvmCollection.applyFilters(filters.toString())
   }
 
   return <CollectionPage {...page} onLoadNext={kvmCollection.loadNext}
-    tools={<div className="filters" role="group" aria-label="KVM 资源类型">
-      {kinds.map(([name, title]) => <button key={name} type="button" aria-pressed={name === kind}
-        className={name === kind ? 'primary' : undefined} onClick={() => selectKind(name)}>{title}</button>)}
-      <button type="button" onClick={() => void kvmCollection.refresh()}>刷新列表</button>
+    tools={<div className="collection-tools">
+      <div className="view-switcher" role="group" aria-label="KVM 资源类型">
+        {kinds.map(([name, title]) => <button key={name} type="button" aria-pressed={name === kind}
+          onClick={() => selectKind(name)}>{title}</button>)}
+      </div>
       {kind === 'vms' && (role === 'operator' || role === 'admin') && <button type="button" className="primary"
         onClick={() => openProvisioning({ base, principal, site: filters.get('site') ?? undefined, openVM: (site, id) => {
           void kvmCollection.refresh()
           showVMByID(base, site, id, role)
         } })}>创建 KVM 虚拟机</button>}
     </div>}
-    filters={<CollectionFilters onApply={kvmCollection.applyFilters}>
-      <input type="hidden" name="kind" value={kind} />
-      <label>站点 ID<input name="site" defaultValue={filters.get('site') ?? ''} maxLength={64} pattern={siteIDPattern} /></label>
-    </CollectionFilters>}>
+    filters={<CollectionFilters values={page.filters} clearTo={kind === 'hosts' ? 'kind=hosts' : ''}
+      onApply={kvmCollection.applyFilters}>{(values) => <>
+      <input type="hidden" name="kind" value={kind === 'hosts' ? kind : ''} />
+      <label>站点 ID<input name="site" defaultValue={values.get('site') ?? ''} maxLength={64} pattern={siteIDPattern} /></label>
+    </>}</CollectionFilters>}>
     <InventoryTable base={page.scope.base} kind={kind} items={page.items} role={role} />
   </CollectionPage>
 }

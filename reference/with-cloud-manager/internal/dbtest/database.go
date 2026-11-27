@@ -13,7 +13,7 @@ import (
 	"github.com/jackc/pgx/v5/stdlib"
 )
 
-func Open(t *testing.T) *sql.DB {
+func Open(t testing.TB) *sql.DB {
 	t.Helper()
 	dsn := os.Getenv("CLOUD_MANAGER_TEST_DATABASE_URL")
 	if dsn == "" {

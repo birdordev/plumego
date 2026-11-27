@@ -1,8 +1,10 @@
 import { useState } from 'react'
 import { PagedResults } from '../../shared/collection/PagedResults'
 import { ConsoleTable } from '../../shared/components/ConsoleTable'
+import { StateBadge } from '../../shared/components/RowAction'
+import { providerName } from '../../shared/display/providers'
 import { listAccounts } from './api'
-import { modes, providerName } from './labels'
+import { modes } from './labels'
 import { openAccount, openNewAccount } from './open'
 
 type Props = { base: string; project: string; projects: string[] }
@@ -24,7 +26,7 @@ function ProjectAccounts({ base, project, projects }: Props) {
       ? <ConsoleTable columns={['账号', '厂商', '状态', '版本']} rows={items.map((item) => ({
         key: item.id,
         cells: [<button type="button" onClick={() => openAccount(context, item.id)}>{item.id}</button>,
-          providerName(item.provider), modes[item.mode], item.revision],
+          providerName(item.provider), <StateBadge status={item.mode} label={modes[item.mode]} />, item.revision],
       }))} />
       : <p>当前项目没有自有云账号。</p>}</PagedResults>
   </>

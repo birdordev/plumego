@@ -12,7 +12,9 @@
 | 托管缓存改名 | 分别验证腾讯云 Redis、阿里云 Tair 和华为云 DCS 的名称字段、写入开关、独立审批、归属版本、只读续查、同键回放、远端漂移、迟到盘点隔离和发件箱。真实云沙箱按账号和地域验证厂商状态和权限。 |
 | 原生控制台 | 分别在真实 OpenStack 与 AWS 站点验证独立审批、原申请人一次性领取、审批撤权、授权过期和审计。OpenStack 验证同源 noVNC 与活动连接撤销，AWS 验证目标实例与地域、SSH 主机指纹、短时连入及云端发放记录。 |
 | 企业、混合云与治理 | 增加资源与动作后分别验收权限、版本、恢复、控制台和 CLI/API 一致性。账单按账期和原币种重放对账。验证站点失联、Kubernetes 游标恢复和站点间隔离。 |
+| 控制台项目总览 | Chrome 使用生产构建验证默认入口、近期完成比例、三个区域独立查询、状态筛选深链接、告警确认后刷新、项目切换取消旧查询，以及失效会话返回登录。检查桌面浅色、390 像素深色窄屏、可折叠侧栏和键盘关闭详情。真实 PostgreSQL 验证会话、盘点报告、告警和操作历史的项目权限。 |
 | 盘点新鲜度 | PostgreSQL 验证三家优先厂商的汇总分母、未完成基线、凭据轮换、部分页和事务回滚、当前完整扫描恢复、共享撤销和分页。CLI、严格 OpenAPI 和控制台使用同一报告。目标环境按批准的作用域清单和实际扫描窗口持续采样。 |
+| 盘点调度报告 | PostgreSQL 验证五种调度状态、有效租约和退避、跨租户同名账号隔离、项目共享、状态筛选和汇总一致性。API、CLI 和控制台按计划时间查询到期范围，验证同一时间的并列明细连续翻页。 |
 | 云账号管理 | PostgreSQL 验证管理员分页、授权和转移、跨项目拒绝、旧版本拒绝、浏览器 CSRF 与凭据引用脱敏。CLI 与严格 OpenAPI 验证同一项目合同，Chrome 验证登记、刷新校验状态、轮换、共享、撤销和转移。真实远端身份由各厂商 CLI 独立验收。 |
 | 通用云账号写入开关 | PostgreSQL 验证三家优先云待校验拒绝、管理员和当前 ETag、只读共享不提权、同事务审计，以及 VMware 和 Redfish 拒绝通用动作。Worker 夹具覆盖入队后关闭、重新开启后旧任务拒绝、连接后派发前关闭，以及已记录派发后的独立只读续查。 |
 | 三家优先云的定时盘点计划 | PostgreSQL 验证项目管理员管理、账号校验前置条件、作用域唯一、分页、旧版本拒绝和审计。暂停期间释放返回中的厂商页面，验证页面无法发布，恢复后从已提交游标续读。 |
@@ -60,3 +62,90 @@
 | 发布 | 记录环境、版本、区域、作用域和原始证据。验证故障切换、PITR、回退、写入冻结与灰度。 |
 
 初始容量档案使用 50 个账号、10 万条资产、200 次每秒本地查询、查询 p95 250 毫秒、95% 正常同步范围 15 分钟。真实厂商沙箱、运行配额、降级规模和容量目标在放行前以实测审批定标。
+
+### PostgreSQL 同步备库提升演练
+
+在仓库根目录运行 `make cloud-manager-console`。使用支持 Unix 套接字的非 root 环境，将同一 PostgreSQL 主版本的 `initdb`、`pg_ctl` 和 `pg_basebackup` 加入 PATH。在云管模块运行以下命令。
+
+```sh
+CLOUD_MANAGER_TEST_FAILOVER=1 go test -race -count=1 -timeout=120s \
+  ./cmd/cloud-manager -run '^TestAcceptanceCloudManagerDatabaseFailover$' -v
+```
+
+演练启用同步流复制和 `remote_apply`。用腾讯云签名 TLS 夹具制造已确认开机和已在远端生效、仍等回执的关机。旧主停止且原连接失效后才提升备库。使用同一 API 服务与包含两个节点的读写连接池，记录就绪恢复时间，并核对已确认操作 ID、事件投递 ID 和在途租约。演练加速租约过期，验证新的只读 Worker 领取后旧持有者无法确认，迟到的旧执行者也无法覆盖结果，并单独记录只读结算耗时。[PostgreSQL 同步复制](https://www.postgresql.org/docs/current/warm-standby.html)
+
+现场验收须验证实际仲裁、带外隔离、连接端点或服务发现、复制延迟、旧主重新加入、厂商写入边界，以及部署的恢复时间和数据丢失指标。
+
+### PostgreSQL 时间点恢复演练
+
+在仓库根目录运行 `make cloud-manager-console`。使用支持 Unix 套接字的非 root 环境，将同一 PostgreSQL 主版本的 `initdb`、`pg_ctl` 和 `pg_basebackup` 加入 PATH。进入云管模块后运行以下命令。演练只连接自行创建的临时 PostgreSQL 集群，远端状态由本地签名 TLS 夹具保存。
+
+```sh
+CLOUD_MANAGER_TEST_PITR=1 go test -race -count=1 -timeout=120s \
+  ./cmd/cloud-manager -run '^TestAcceptanceCloudManagerPointInTimeRecovery$' -v
+```
+
+演练使用物理基础备份和归档 WAL 恢复至命名标记。标记前已有一次启动成功，另一次关机在远端生效且本地仍持有派发租约，同时留有一项未派发的启动。标记后提交的另一项请求和原关机的后续终态都进入归档。恢复前停止源 Worker 和数据库。恢复后沿用可写的厂商配置，以 `observe-only` 启动 Worker。关机须通过只读观测结算，远端写入次数保持两次，且排序更靠前的未派发任务仍为 `queued`、尝试次数为零。AWS 创建的自动重发冻结由 `TestAcceptancePersistentInstanceCreation` 验证。[PostgreSQL 归档与时间点恢复](https://www.postgresql.org/docs/current/continuous-archiving.html)
+
+源端结算后，发布器将两条成功事件送达独立的 PostgreSQL 接收库。恢复后的发布器重送原启动事件，并发送重新生成的关机事件。接收端验证 HMAC，检查前者的投递 ID 和正文摘要，后者使用新的投递 ID 以及原有效果标识。两条时间线合计应留下三条投递回执和两条业务效果记录。
+
+在恢复库启动发布器前，读取独立接收库持久化的终态回执。云端只读观测前，对账应将原启动标为 `matched`、关机标为 `source_unsettled`。只读结算后对账应报告一个 `matched` 和一个 `regenerated`。CLI 验收还覆盖缺失操作、跨项目隔离、摘要冲突和已结算但缺少发件箱记录。
+
+为接收端导出声明完整的 `coverage` 窗口后，核对另一侧的缺失回执。CLI 验收覆盖同一时刻的不同终态、窗口起止、本地四种投递状态、时间冲突、重新生成的投递、跨项目空清单，以及过大窗口拒绝。
+
+目标环境验收还需核对存储和归档连续性、旧实例隔离、恢复点之后有无未入账的云端效果、对外发件箱接收方状态，以及实际 RTO 和 RPO。
+
+### API 滚动升级与回退演练
+
+在基线和候选各自的源码根目录运行 `make cloud-manager-console`，再各自执行 `go -C reference/with-cloud-manager build -o "$ROLLOUT_BINARY" ./cmd/cloud-manager`。为两次构建分别指定不同的输出路径，记录源码版本、构建配置和产物 SHA-256。使用非 root 环境，并将同版本 PostgreSQL 的 `initdb`、`pg_ctl` 和 `pg_basebackup` 加入 PATH。进入候选源码的云管模块后运行。
+
+```sh
+CLOUD_MANAGER_TEST_ROLLOUT_BASELINE=/absolute/path/baseline/cloud-manager \
+CLOUD_MANAGER_TEST_ROLLOUT_CANDIDATE=/absolute/path/candidate/cloud-manager \
+  go test -race -count=2 -timeout=120s -v ./cmd/cloud-manager \
+  -run '^TestAcceptanceCloudManagerAPIRolloutAndRollback$'
+```
+
+基线进程先迁移和受理，再与候选进程共用同一临时 PostgreSQL。候选启动后先通过存活探测，在迁移前返回未就绪。候选迁移期间持续探测基线就绪及操作读取，再核对两版 API 同时可用。候选用原幂等键读取基线的待执行请求，校验原操作 ID、目标、动作、状态和受理时间。随后候选受理新的操作，基线读取其结果。停止候选并在同一监听地址启动基线，保留候选的数据库迁移。
+
+核对两个版本的操作时间线、管理员审计及项目隔离。比较已有终态事件的投递 ID 和原始正文，候选迁移后生成的终态在回退后保留原效果标识。候选留下一项已到期的开机请求，基线 API 用原幂等键找回同一操作，随后由回退后的 Worker 结算。三次预期写入各发生一次。一项到期时间更晚的基线请求贯穿演练并保留零尝试次数。
+
+常规测试使用进程内 Worker 和腾讯云 TLS 夹具。在 Linux 上为同一命令额外设置 `CLOUD_MANAGER_TEST_ROLLOUT_PROCESS_WORKERS=1`，并将 `-timeout` 调整为 `150s`。该模式启动基线和候选各自的 `worker` 子命令，分别在腾讯云、阿里云和华为云协议夹具上执行。启动基线 Worker 之前，先让候选的 `observe-only` Worker 完成一次 PostgreSQL 队列轮询并退出，再检查已到期的未派发操作仍处于排队状态且尝试次数为零。
+
+独立进程模式使用临时 CA，证书信任限定在各 Worker 子进程。测试 HTTPS 代理仅接受当前夹具的厂商主机名，并始终连接同一回环 TLS 监听器。在容器中复跑时，可用 `go test -c` 构建与容器架构一致的测试程序，将它与两个产物放入带 PostgreSQL 工具的 Linux 容器，以非 root 用户在 `--network none` 下运行测试。
+
+目标环境使用拟上线和可回退版本复跑，并核对真实流量切换、实际 Worker 副本的排空和接续、下游接收方对事件字段的兼容，以及批准账号的逐档放量和写入冻结。
+
+### 目标环境盘点采样
+
+按批准的账号、地域和资源类型清单核对启用计划，分别为腾讯云、阿里云和华为云运行 `governance inventory-sample --scope-manifest`。留存批准清单和 NDJSON，归档版本、环境、账号作用域和发布负载。检查命令成功退出且末行 `threshold_met` 为 `true`，确认每个样本的范围指纹与预期一致。调度状态和就绪逾期提供每次观测的积压证据，采样间隔内的变化需要结合运行指标核对。
+
+在同一测试窗口为全部普通盘点控制器启用 `CLOUD_MANAGER_CONTROLLER_DISPATCH_LOG=1`。按数据库 `claimed_at` 对齐窗口，按同一环境内的 `(schedule_id, fence)` 去重。分别记录每个厂商和租户的领取次数、`due_wait_ms` 的 p50、p95 和最大值，单列低流量租户以及发生厂商退避的时间段。仍未领取的到期范围通过盘点采样和调度积压核对。日志是提交后的进程输出，验收要同时确认各副本的采集连续性，并记录退出、重启及丢失区间。
+
+### 项目资产查询基准
+
+将 `CLOUD_MANAGER_TEST_DATABASE_URL` 指向允许创建临时 schema 的 PostgreSQL 测试数据库。构建控制台资源后，在云管模块运行基准。
+
+```sh
+go test ./cmd/cloud-manager -run '^$' -bench '^BenchmarkProjectAssets$' -benchtime=96x -cpu=4 -count=1
+```
+
+基准生成三家优先厂商共 50 个云账号，每账号 4 个地域，每地域 500 条实例资产。8 路请求混合查询普通首页、指定账号、稀有关键词和零匹配。基准检查 HTTP 状态和返回行数，分别记录四类请求的 p95 和总吞吐。
+
+使用同一数据集运行 30 秒固定到达率验收。
+
+```sh
+CLOUD_MANAGER_TEST_ASSET_TARGET_RATE=1 go test ./cmd/cloud-manager \
+  -run '^TestCapacityProjectAssetsAtTargetRate$' -cpu=4 -count=1 -v
+```
+
+每 5 毫秒安排一个请求，共 6,000 个。负载发生器使用 16 个执行槽位，排队上限为 250 毫秒的计划请求数减去执行槽位，共 34 个。队列满计为丢弃。延迟从计划时刻开始计算，包含排队时间。验收要求全部请求成功且四类查询的 p95 均不超过 250 毫秒。目标环境放行还需覆盖实际授权分布、资源类型及盘点写入竞争。
+
+使用同一固定到达率验证查询与盘点并行。
+
+```sh
+CLOUD_MANAGER_TEST_ASSET_TARGET_RATE=1 go test ./cmd/cloud-manager \
+  -run '^TestCapacityProjectAssetsWithInventoryWrites$' -cpu=4 -count=1 -v
+```
+
+主租户包含共享与私有云账号，第二个租户包含同名账号和实例。查询增加共享及私有账号两组，稀有关键词在三个授权域中各有一条记录，用于检验只返回项目可见的实例。四个普通调度循环驱动 204 个范围，每个范围通过两页本地发现并实际提交 PostgreSQL。验收要求六类读取 p95 均不超过 250 毫秒且 6,000 次读取全部成功，并在 30 秒窗口内完成至少 95% 的范围。每个完成范围校验凭据代次、两页共 500 个资产和 100 个状态更新。真实远端响应时间及限流另在厂商沙箱取样。

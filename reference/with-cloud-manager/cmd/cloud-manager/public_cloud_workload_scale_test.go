@@ -201,7 +201,7 @@ func startWorkloadScaleWorker(t *testing.T, db *sql.DB, manifest string) func() 
 	t.Helper()
 	ctx, stop := context.WithCancel(t.Context())
 	done := make(chan error, 1)
-	go func() { done <- runWorker(ctx, db, manifest) }()
+	go func() { done <- runWorker(ctx, db, manifest, "") }()
 	return func() {
 		stop()
 		if err := <-done; err != nil {

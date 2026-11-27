@@ -1,18 +1,15 @@
 import type { Account, AccountChange } from './schema'
 
-export const providers = [
-  ['tencent-cvm', '腾讯云 CVM', 'verify-tencent'],
-  ['alibaba-ecs', '阿里云 ECS', 'verify-alibaba'],
-  ['huawei-ecs', '华为云 ECS', 'verify-huawei'],
-  ['aws-ec2', 'AWS EC2', 'verify-aws'],
-  ['openstack', 'OpenStack', 'verify-openstack'],
-  ['vmware-vsphere', 'VMware vSphere', 'verify-vsphere'],
-  ['redfish', 'Redfish', 'verify-redfish'],
-] as const
-const names = new Map<string, string>(providers.map(([id, name]) => [id, name]))
-const commands = new Map<string, string>(providers.map(([id, , command]) => [id, command]))
+const commands = new Map([
+  ['tencent-cvm', 'verify-tencent'],
+  ['alibaba-ecs', 'verify-alibaba'],
+  ['huawei-ecs', 'verify-huawei'],
+  ['aws-ec2', 'verify-aws'],
+  ['openstack', 'verify-openstack'],
+  ['vmware-vsphere', 'verify-vsphere'],
+  ['redfish', 'verify-redfish'],
+])
 
-export const providerName = (id: string) => names.get(id) ?? id
 export const verifyCommand = (id: string) => commands.get(id)
 export const writableClouds = new Set<string>(['tencent-cvm', 'alibaba-ecs', 'huawei-ecs', 'aws-ec2', 'openstack'])
 

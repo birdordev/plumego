@@ -34,6 +34,11 @@ var workerSchema string
 //go:embed 0014_instance_deletion.sql
 var deletionSchema string
 
+//go:embed 0139_operation_observation_worker.sql
+var observationWorkerSchema string
+
+const ObservationWorkerMigration = "0139_operation_observation_worker"
+
 const topic = "cmp.instance.v1"
 
 var (
@@ -105,14 +110,30 @@ type Store struct {
 	connectWorkloadScaler ConnectWorkloadScaler
 	db                    *sql.DB
 	queue                 *mqstore.SQLStore
+	observationOnly       bool
 }
 
 func NewStore(db *sql.DB) Store {
+	return Store{db: db, queue: newOperationQueue(db, false)}
+}
+
+// WithObservationOnly 只领取已有派发记录的操作，禁止首次派发和自动重发。
+func (s Store) WithObservationOnly() Store {
+	s.observationOnly = true
+	s.queue = newOperationQueue(s.db, true)
+	return s
+}
+
+func newOperationQueue(db *sql.DB, observationOnly bool) *mqstore.SQLStore {
 	cfg := mqstore.DefaultSQLConfig()
 	cfg.Table = "cmp_operation_tasks"
 	cfg.DLQTable = "cmp_operation_dlq"
 	cfg.AttemptsTable = "cmp_operation_attempts"
-	return Store{db: db, queue: mqstore.NewSQL(db, cfg)}
+	if observationOnly {
+		cfg.BlockedClaimsTable = "cmp_operation_observation_blocked_claims"
+		cfg.DeferredExpiration = true
+	}
+	return mqstore.NewSQL(db, cfg)
 }
 
 func Migrate(ctx context.Context, db *sql.DB) error {
@@ -245,7 +266,19 @@ func Migrate(ctx context.Context, db *sql.DB) error {
 	if err := dbschema.Apply(ctx, db, "0107_instance_retirement", instanceRetirementSchema); err != nil {
 		return err
 	}
-	return dbschema.Apply(ctx, db, "0109_cache_rename", cacheRenameSchema)
+	if err := dbschema.Apply(ctx, db, "0109_cache_rename", cacheRenameSchema); err != nil {
+		return err
+	}
+	if err := dbschema.Apply(ctx, db, ObservationWorkerMigration, observationWorkerSchema); err != nil {
+		return err
+	}
+	if err := dbschema.Apply(ctx, db, EffectIDMigration, effectIDSchema); err != nil {
+		return err
+	}
+	if err := dbschema.Apply(ctx, db, TerminalEventTimeMigration, terminalEventTimeSchema); err != nil {
+		return err
+	}
+	return dbschema.Apply(ctx, db, OperationRolloutMigration, operationRolloutSchema)
 }
 
 const operationFields = "operation_id,account_id,region,COALESCE(external_id,''),action,status,created_at,updated_at,COALESCE(outcome_reason,''),COALESCE(provider_request_id,''),COALESCE(volume_id,''),device,resource_kind,COALESCE(catalog_id,''),COALESCE(catalog_version,0),COALESCE(ticket_policy_revision,0)"
@@ -627,6 +660,9 @@ func initialStatus(ctx context.Context, tx *sql.Tx, actor identity.Scope, action
 }
 
 func (s Store) recordSubmission(ctx context.Context, tx *sql.Tx, tenant string, op Operation) error {
+	if err := captureRollout(ctx, tx, op.ID); err != nil {
+		return err
+	}
 	if err := recordOperationEvent(ctx, tx, op.ID, op.Status); err != nil {
 		return err
 	}

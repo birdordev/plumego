@@ -5,6 +5,7 @@ import { operationRoutes } from './operations'
 import { resourceRoutes } from './resources'
 
 export const routes = {
+  overview: resourceRoutes.overview,
   assets: resourceRoutes.assets,
   'cloud-accounts': resourceRoutes['cloud-accounts'],
   kvm: resourceRoutes.kvm,
@@ -25,7 +26,6 @@ export const routes = {
 
 export type View = keyof typeof routes
 export type PageView = Exclude<View, 'batch'>
-export const navigation = Object.keys(routes) as View[]
 
 export function canOpenView(view: View, session: Session) {
   const route = routes[view]

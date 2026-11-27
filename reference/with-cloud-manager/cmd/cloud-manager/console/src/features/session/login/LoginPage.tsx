@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from 'react'
+import { ConsoleBrand } from '../../../shared/components/ConsoleBrand'
 import { tenantSchema } from '../schema'
 import './styles.css'
 
@@ -33,17 +34,22 @@ export function LoginPage({ hidden, restoring, notice, onLogin }: Props) {
   }
 
   return (
-    <section id="entry" className="entry" hidden={hidden}>
-      <form id="login" onSubmit={login} className="login" aria-busy={restoring || busy}>
-        <p className="brand"><span className="mark" aria-hidden="true" />云资源管理</p>
-        <h1>进入项目控制台</h1>
-        <label>租户 ID<input id="tenant" name="tenant" required maxLength={256} autoComplete="organization" /></label>
-        <button className="primary" disabled={restoring || busy}>使用企业身份登录</button>
+    <main id="entry" className="entry" hidden={hidden}>
+      <form id="login" onSubmit={login} className="login" aria-labelledby="login-title" aria-busy={restoring || busy}>
+        <div className="login-heading">
+          <ConsoleBrand />
+          <h1 id="login-title">进入项目控制台</h1>
+        </div>
+        <label>租户 ID<input id="tenant" name="tenant" required maxLength={256} autoComplete="organization"
+          disabled={restoring || busy} aria-describedby="login-message" /></label>
+        <button className="primary" disabled={restoring || busy}>
+          {restoring ? '正在检查会话…' : busy ? '正在登录…' : '使用企业身份登录'}
+        </button>
         <p id="login-message" className="notice" role="status" data-error={Boolean(error || notice?.error)}>
           {error || notice?.text}
         </p>
         <noscript>请启用 JavaScript 后登录。</noscript>
       </form>
-    </section>
+    </main>
   )
 }

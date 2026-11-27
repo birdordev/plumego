@@ -597,6 +597,7 @@ func registerOpenAPI(app *core.App, console *consoleConfig) error {
 	alertOpenAPI(hints, accountOp)
 	accountInventoryOpenAPI(hints, accountOp)
 	inventoryScheduleOpenAPI(hints, accountOp)
+	accountRolloutOpenAPI(hints, accountOp)
 	bareMetalDeploymentHints(hints, accountOp)
 	bareMetalReclaimHints(hints, accountOp)
 	kvmHints(hints, accountOp)

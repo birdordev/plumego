@@ -3,21 +3,18 @@ import type { BatchEditor } from '../../features/batches/BatchPage'
 import { formatSelectedInstances } from '../../features/batches/request/selection-format'
 import type { View } from '../routes/registry'
 
-export function useBatchNavigation(selectView: (view: View) => void) {
+export function useBatchNavigation(view: View, selectView: (view: View) => void) {
   const editor = useRef<BatchEditor>(null)
   const [visited, setVisited] = useState(false)
   const [initialInput, setInitialInput] = useState('')
 
-  function navigate(next: View) {
-    if (next === 'batch') setVisited(true)
-    selectView(next)
-  }
+  if (view === 'batch' && !visited) setVisited(true)
 
   function openSelectedBatch() {
     if (editor.current) editor.current.fill()
     else setInitialInput(formatSelectedInstances('start'))
-    navigate('batch')
+    selectView('batch')
   }
 
-  return { editor, visited, initialInput, navigate, openSelectedBatch }
+  return { editor, visited, initialInput, openSelectedBatch }
 }

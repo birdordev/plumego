@@ -2,10 +2,15 @@
 platform:
   cloud-account-administration: project-owned-paged-accounts-and-grants-with-browser-and-cli-lifecycle
   cloud-account-write-mode: verified-provider-mode-switch-with-versioned-dispatch-and-transactional-audit
+  operation-worker-observation-mode: recovery-readback-without-new-dispatch-or-aws-create-replay
+  operation-terminal-effect-id: signed-stable-effect-id-across-point-in-time-recovery-and-redelivery
+  operation-receipt-reconciliation: read-only-destination-scoped-terminal-receipts-with-optional-bidirectional-window
   priority-cloud-inventory-schedules: versioned-admin-control-and-lease-fenced-checkpoint-publication
   inventory-account-dispatch: cross-replica-single-account-lease-least-recently-claimed-priority-and-shared-throttle-cooldown
   inventory-tenant-dispatch: durable-least-recently-claimed-tenant-rotation-before-account-and-plan-priority
+  inventory-dispatch-observation: opt-in-post-commit-structured-claims-with-database-due-and-claim-times
   inventory-freshness: project-visible-enabled-schedule-coverage-with-credential-bound-completions
+  inventory-dispatch-report: project-scoped-schedule-and-account-lease-and-cooldown-snapshot-with-due-time-pagination
   redfish-inventory: readonly-site-scoped-physical-system-discovery-and-durable-schedule
   redfish-power: independently-approved-on-and-graceful-shutdown-with-single-dispatch-and-readback
   redfish-one-time-pxe: independently-approved-conditional-stage-and-cancel-with-readback

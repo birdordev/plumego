@@ -6,6 +6,7 @@ import (
 	_ "embed"
 	"regexp"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -20,8 +21,9 @@ var freshnessFilterID = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$`)
 type FreshnessQuery struct {
 	Tenant, Project                 string
 	Provider, Account, State, After string
-	DispatchState                   string
+	DispatchState, Order            string
 	Window, Limit                   int
+	ScopeFingerprint                bool
 }
 
 type FreshnessSummary struct {
@@ -56,41 +58,55 @@ type FreshnessItem struct {
 }
 
 type FreshnessReport struct {
-	AsOf            time.Time                `json:"as_of"`
-	Window          int                      `json:"window_seconds"`
-	Summary         FreshnessSummary         `json:"summary"`
-	DispatchSummary FreshnessDispatchSummary `json:"dispatch_summary"`
-	Items           []FreshnessItem          `json:"items"`
-	Next            string                   `json:"next,omitempty"`
+	AsOf             time.Time                `json:"as_of"`
+	Window           int                      `json:"window_seconds"`
+	Summary          FreshnessSummary         `json:"summary"`
+	DispatchSummary  FreshnessDispatchSummary `json:"dispatch_summary"`
+	ScopeFingerprint string                   `json:"scope_fingerprint,omitempty"`
+	Items            []FreshnessItem          `json:"items"`
+	Next             string                   `json:"next,omitempty"`
 }
 
-func (q FreshnessQuery) position() (int64, error) {
+func (q FreshnessQuery) position() (int64, *time.Time, error) {
 	if q.Window < 60 || q.Window > 604800 || q.Limit < 1 || q.Limit > 100 ||
 		(q.Provider != "" && !freshnessFilterID.MatchString(q.Provider)) || (q.Account != "" && !freshnessFilterID.MatchString(q.Account)) {
-		return 0, ErrInvalidQuery
+		return 0, nil, ErrInvalidQuery
 	}
 	switch q.State {
 	case "", "fresh", "stale", "pending":
 	default:
-		return 0, ErrInvalidQuery
+		return 0, nil, ErrInvalidQuery
 	}
 	switch q.DispatchState {
 	case "", "scheduled", "ready", "account_busy", "cooldown", "leased":
 	default:
-		return 0, ErrInvalidQuery
+		return 0, nil, ErrInvalidQuery
+	}
+	if q.Order != "" && q.Order != "next_at" {
+		return 0, nil, ErrInvalidQuery
 	}
 	if q.After == "" {
-		return 0, nil
+		return 0, nil, nil
 	}
-	id, err := strconv.ParseInt(q.After, 10, 64)
-	if err != nil || id <= 0 || strconv.FormatInt(id, 10) != q.After {
-		return 0, ErrInvalidQuery
+	var nextAt *time.Time
+	idText := q.After
+	if q.Order == "next_at" {
+		stamp, id, ok := strings.Cut(q.After, "/")
+		at, err := time.Parse(time.RFC3339Nano, stamp)
+		if !ok || err != nil || at.UTC().Format(time.RFC3339Nano) != stamp || at.Nanosecond()%1000 != 0 {
+			return 0, nil, ErrInvalidQuery
+		}
+		nextAt, idText = &at, id
 	}
-	return id, nil
+	id, err := strconv.ParseInt(idText, 10, 64)
+	if err != nil || id <= 0 || strconv.FormatInt(id, 10) != idText {
+		return 0, nil, ErrInvalidQuery
+	}
+	return id, nextAt, nil
 }
 
 func (s Store) Freshness(ctx context.Context, token string, q FreshnessQuery) (FreshnessReport, error) {
-	after, err := q.position()
+	after, afterTime, err := q.position()
 	if err != nil {
 		return FreshnessReport{}, err
 	}
@@ -110,11 +126,23 @@ func (s Store) Freshness(ctx context.Context, token string, q FreshnessQuery) (F
 		if err != nil {
 			return err
 		}
+		if q.ScopeFingerprint {
+			report.ScopeFingerprint, err = readFreshnessFingerprint(ctx, tx, args)
+			if err != nil {
+				return err
+			}
+		}
+		pageArgs := append(args, q.State, q.DispatchState, q.Limit+1, after)
+		pageOrder := "AND schedule_id>$9 ORDER BY schedule_id LIMIT $8"
+		if q.Order == "next_at" {
+			pageArgs = append(pageArgs, afterTime)
+			pageOrder = "AND ($10::timestamptz IS NULL OR (next_at,schedule_id)>($10,$9)) ORDER BY next_at,schedule_id LIMIT $8"
+		}
 		rows, err := tx.QueryContext(ctx, freshnessSQL+`
 			SELECT schedule_id,account_id,provider,region,kind,state,running,completed_at,next_at,
 				dispatch_state,schedule_lease_until,account_lease_until,account_cooldown_until
-			FROM freshness WHERE schedule_id>$6 AND ($7='' OR state=$7) AND ($8='' OR dispatch_state=$8)
-			ORDER BY schedule_id LIMIT $9`, append(args, after, q.State, q.DispatchState, q.Limit+1)...)
+			FROM freshness WHERE ($6='' OR state=$6) AND ($7='' OR dispatch_state=$7)
+			`+pageOrder, pageArgs...)
 		if err != nil {
 			return err
 		}
@@ -123,6 +151,10 @@ func (s Store) Freshness(ctx context.Context, token string, q FreshnessQuery) (F
 		for rows.Next() {
 			if len(report.Items) == q.Limit {
 				report.Next = strconv.FormatInt(last, 10)
+				if q.Order == "next_at" {
+					nextAt := report.Items[len(report.Items)-1].NextAt.UTC()
+					report.Next = nextAt.Format(time.RFC3339Nano) + "/" + report.Next
+				}
 				break
 			}
 			var item FreshnessItem

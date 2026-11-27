@@ -12,11 +12,11 @@ const options = [
 export default function IdleInstancesPage() {
   const page = useCollection(idleCollection)
   if (!page) return null
-  const filters = <CollectionFilters onApply={idleCollection.applyFilters}>
-    <SelectField label="实例活动状态" name="state" options={options} />
-    <label>账号<input name="account" maxLength={256} /></label>
-    <label>地域<input name="region" maxLength={256} /></label>
-  </CollectionFilters>
+  const filters = <CollectionFilters values={page.filters} onApply={idleCollection.applyFilters}>{(values) => <>
+    <SelectField label="实例活动状态" name="state" initialValue={values.get('state')} options={options} />
+    <label>账号<input name="account" defaultValue={values.get('account') ?? ''} maxLength={256} /></label>
+    <label>地域<input name="region" defaultValue={values.get('region') ?? ''} maxLength={256} /></label>
+  </>}</CollectionFilters>
   return <CollectionPage {...page} onLoadNext={idleCollection.loadNext} filters={filters}
     tools={<p className="hint">根据最近完成的七天 CPU 和网络采样识别人工核查候选。</p>}>
     <IdleInstancesTable items={page.items} />

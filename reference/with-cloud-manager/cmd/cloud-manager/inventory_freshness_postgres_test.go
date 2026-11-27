@@ -173,6 +173,19 @@ func checkFreshnessCLIAndSpec(t *testing.T, handler http.Handler) {
 		receipt.Summary.Total != 1 || len(receipt.Items) != 1 || receipt.Items[0].Account != "tc" {
 		t.Fatalf("unexpected CLI report: %+v, %v", receipt, err)
 	}
+	out.Reset()
+	if err := runGovernanceClient(t.Context(), []string{"inventory-sample", "lab", "compute",
+		"--provider", "tencent-cvm", "--expected-scopes", "1", "--samples", "1"},
+		server.URL, freshnessToken, nil, &out, server.Client().Transport); err != nil {
+		t.Fatal(err)
+	}
+	reader := json.NewDecoder(&out)
+	var sample inventorySample
+	var result inventorySampleResult
+	if reader.Decode(&sample) != nil || reader.Decode(&result) != nil ||
+		!sample.Passed || sample.Summary.Fresh != 1 || !result.ThresholdMet {
+		t.Fatalf("unexpected sampling evidence: %+v / %+v", sample, result)
+	}
 	spec := freshnessRequest(t, handler, "/openapi.json", "")
 	var document openapi.Document
 	if err := json.Unmarshal(spec.Body.Bytes(), &document); err != nil {
@@ -181,6 +194,21 @@ func checkFreshnessCLIAndSpec(t *testing.T, handler http.Handler) {
 	op := document.Paths["/v1/tenants/{tenant}/projects/{project}/governance/inventory-freshness"].Get
 	if op == nil || op.OperationID != "listInventoryFreshness" || len(op.Security) != 2 {
 		t.Fatalf("unexpected freshness OpenAPI operation: %+v", op)
+	}
+	for _, name := range []string{"order", "dispatch_state"} {
+		found := false
+		for _, param := range op.Parameters {
+			found = found || (param.Name == name && param.In == "query" && param.Schema.Type == "string")
+		}
+		if !found {
+			t.Fatalf("freshness OpenAPI has no %s query parameter", name)
+		}
+	}
+	reportSchema := op.Responses["200"].Content["application/json"].Schema.Properties["data"]
+	if reportSchema.Properties["dispatch_summary"].Properties["longest_ready_overdue_seconds"].Type != "integer" ||
+		reportSchema.Properties["items"].Items == nil ||
+		reportSchema.Properties["items"].Items.Properties["dispatch_state"].Type != "string" {
+		t.Fatal("freshness OpenAPI dispatch contract is incomplete")
 	}
 }
 

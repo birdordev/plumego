@@ -25,7 +25,8 @@ const governanceUsage = `usage: cloud-manager governance COMMAND TENANT PROJECT
   ticket-record OPERATION < evidence.json
   compliance KIND [--state STATE] [--account ACCOUNT] [--region REGION] [--cursor CURSOR] [--limit LIMIT]
   idle [--state STATE] [--account ACCOUNT] [--region REGION] [--cursor CURSOR] [--limit LIMIT]
-  inventory-freshness [--provider PROVIDER] [--account ACCOUNT] [--state STATE] [--dispatch-state STATE] [--window-seconds SECONDS] [--after ID] [--limit LIMIT]`
+  inventory-freshness [--provider PROVIDER] [--account ACCOUNT] [--state STATE] [--dispatch-state STATE] [--order next_at] [--window-seconds SECONDS] [--after CURSOR] [--limit LIMIT]
+  inventory-sample {--expected-scopes COUNT|--scope-manifest < scopes.json} [--provider PROVIDER] [--account ACCOUNT] [--samples COUNT] [--interval DURATION]`
 
 func runGovernanceClient(ctx context.Context, args []string, address, token string, input io.Reader, output io.Writer, transport http.RoundTripper) error {
 	usage := errors.New(governanceUsage)
@@ -97,6 +98,22 @@ func runGovernanceClient(ctx context.Context, args []string, address, token stri
 		}
 		plan.target = target.JoinPath("inventory-freshness")
 		plan.target.RawQuery = query.Encode()
+	case "inventory-sample":
+		options, ok := inventorySampleOptions(args[3:])
+		if !ok {
+			return usage
+		}
+		scope := inventorySampleScope{
+			Tenant: args[1], Project: args[2], Provider: options.query.Get("provider"), Account: options.query.Get("account"),
+		}
+		if options.manifest {
+			if err := options.readManifest(input, scope); err != nil {
+				return err
+			}
+		}
+		plan.target = target.JoinPath("inventory-freshness")
+		plan.target.RawQuery = options.query.Encode()
+		return runInventorySamples(ctx, plan, token, output, transport, options, scope)
 	default:
 		return usage
 	}
@@ -110,6 +127,7 @@ func inventoryFreshnessOptions(args []string) (url.Values, bool) {
 	account := flags.String("account", "", "")
 	state := flags.String("state", "", "")
 	dispatch := flags.String("dispatch-state", "", "")
+	order := flags.String("order", "", "")
 	window := flags.Int("window-seconds", inventory.DefaultFreshnessWindow, "")
 	after := flags.String("after", "", "")
 	limit := flags.Int("limit", inventory.DefaultFreshnessLimit, "")
@@ -117,7 +135,9 @@ func inventoryFreshnessOptions(args []string) (url.Values, bool) {
 		return nil, false
 	}
 	query := url.Values{"limit": {strconv.Itoa(*limit)}, "window_seconds": {strconv.Itoa(*window)}}
-	for key, value := range map[string]string{"provider": *cloud, "account": *account, "state": *state, "dispatch_state": *dispatch, "after": *after} {
+	for key, value := range map[string]string{
+		"provider": *cloud, "account": *account, "state": *state, "dispatch_state": *dispatch, "order": *order, "after": *after,
+	} {
 		if value != "" {
 			query.Set(key, value)
 		}

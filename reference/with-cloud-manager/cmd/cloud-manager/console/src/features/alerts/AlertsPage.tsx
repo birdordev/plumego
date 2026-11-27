@@ -8,7 +8,10 @@ import { AlertFilters } from './filters'
 export default function AlertsPage({ admin }: { admin: boolean }) {
   const page = useCollection(alertsCollection)
   if (!page) return null
-  return <CollectionPage {...page} onLoadNext={alertsCollection.loadNext} filters={<CollectionFilters onApply={alertsCollection.applyFilters}><AlertFilters admin={admin} /></CollectionFilters>}>
+  const filters = <CollectionFilters values={page.filters} onApply={alertsCollection.applyFilters}>
+    {(values) => <AlertFilters values={values} admin={admin} />}
+  </CollectionFilters>
+  return <CollectionPage {...page} onLoadNext={alertsCollection.loadNext} filters={filters}>
     <AlertsTable items={page.items} />
   </CollectionPage>
 }

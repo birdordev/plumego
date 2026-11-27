@@ -93,11 +93,13 @@ func TestAcceptanceOperationOutboxRecovery(t *testing.T) {
 		var event struct {
 			ID, Tenant, Project, Type, Status, Sequence string
 			Operation                                   string `json:"operation_id"`
+			EffectID                                    string `json:"effect_id"`
 			Reason                                      string `json:"reason"`
 		}
 		if err := json.Unmarshal(verified.Body, &event); err != nil || event.ID != r.Header.Get("X-Webhook-Delivery") ||
 			event.Tenant != "tenant" || event.Project != "project" || event.Status != "failed" || event.Reason != "approval_rejected" ||
 			event.Type != "instance.operation.failed" || event.Type != r.Header.Get("X-Webhook-Event") || event.Operation == "" || event.Sequence == "" ||
+			event.EffectID != "cmp-op-final-v1:"+event.Operation ||
 			strings.Contains(string(verified.Body), "fixture/private-ref") || strings.Contains(string(verified.Body), "principal_id") {
 			t.Errorf("unexpected event %s, %v", verified.Body, err)
 			w.WriteHeader(http.StatusBadRequest)

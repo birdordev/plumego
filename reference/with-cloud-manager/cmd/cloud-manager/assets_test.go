@@ -220,7 +220,41 @@ func TestAcceptanceProjectAssetAPI(t *testing.T) {
 	if err != nil || len(empty) != 1 {
 		t.Fatalf("revoked share exported data: %+v %v", empty, err)
 	}
+	checkAssetSearchPages(t, exec, func(suffix string) inventory.Assets { return decode(get(base+suffix, token, 200)) })
 	exec("UPDATE cmp_service_tokens SET revoked_at=now()")
 	get(export, token, 401)
 	get(base, token, 401)
+}
+
+func checkAssetSearchPages(t *testing.T, exec func(string, ...any), list func(string) inventory.Assets) {
+	t.Helper()
+	exec(`INSERT INTO cmp_cloud_accounts (tenant_id,account_id,project_id,provider,remote_identity,credential_ref,mode)
+		VALUES ('tenant','z-owned','project','huawei-ecs','fixture-action','fixture-profile','read_only');
+		INSERT INTO cmp_inventory_scopes (tenant_id,account_id,region,kind,credential_revision,lease_until)
+		VALUES ('tenant','z-owned','us-east-1','instance',1,now());
+		INSERT INTO cmp_inventory_objects (scope_id,external_id,name,status,seen_generation,removed_at)
+		SELECT scope_id, id, name, 'running', 1, CASE WHEN id='0-removed' THEN now() END
+		FROM cmp_inventory_scopes
+		CROSS JOIN (VALUES ('0-removed','fixture sort %_'),('1-hidden','fixture sort %_'),
+			('2-unmatched','fixture sort xx'),('8-match','fixture sort %_'),('9-match','fixture sort %_')) AS fixtures(id,name)
+		WHERE tenant_id='tenant' AND account_id='owned' AND kind='instance'
+		UNION ALL
+		SELECT scope_id,'9-match','fixture sort %_','running',1,NULL FROM cmp_inventory_scopes
+		WHERE tenant_id='tenant' AND account_id='z-owned' AND kind='instance';
+		INSERT INTO cmp_asset_ownership (tenant_id,scope_id,external_id,project_id,revision)
+		SELECT tenant_id,scope_id,'1-hidden','hidden',2 FROM cmp_inventory_scopes
+		WHERE tenant_id='tenant' AND account_id='owned' AND kind='instance';`)
+	for _, filter := range []string{"", "&kind=instance"} {
+		suffix := "?limit=1&q=FiXtUrE+SoRt+%25_" + filter
+		page := list(suffix)
+		for i, want := range []struct{ account, id string }{{"owned", "8-match"}, {"owned", "9-match"}, {"z-owned", "9-match"}} {
+			if len(page.Items) != 1 || page.Items[0].Account != want.account || page.Items[0].ID != want.id ||
+				(page.Next == "") != (i == 2) {
+				t.Fatalf("search visibility or cursor returned the wrong page %d: %+v", i+1, page)
+			}
+			if page.Next != "" {
+				page = list(suffix + "&cursor=" + url.QueryEscape(page.Next))
+			}
+		}
+	}
 }

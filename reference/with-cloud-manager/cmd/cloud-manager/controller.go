@@ -4,8 +4,11 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"io"
 	"net/http"
 	"time"
+
+	plumelog "github.com/birdordev/plumego/log"
 
 	"with-cloud-manager/internal/controller"
 	"with-cloud-manager/internal/identity"
@@ -16,7 +19,7 @@ import (
 	"with-cloud-manager/internal/provider/publiccloud"
 )
 
-func runController(ctx context.Context, db *sql.DB, path string, watchOnly bool) error {
+func runController(ctx context.Context, db *sql.DB, path string, watchOnly bool, dispatchLog io.Writer) error {
 	var profiles map[string]string
 	if err := loadPrivateProfile(path, &profiles); err != nil {
 		return err
@@ -25,6 +28,9 @@ func runController(ctx context.Context, db *sql.DB, path string, watchOnly bool)
 		return errors.New("controller needs a credential reference map")
 	}
 	store := controller.NewStore(db)
+	if !watchOnly && dispatchLog != nil {
+		store = store.WithDispatchObserver(inventoryDispatchLogger(dispatchLog))
+	}
 	execute := inventoryScheduleExecutor(db, profiles, nil)
 	run := store.Run
 	if watchOnly {
@@ -34,6 +40,18 @@ func runController(ctx context.Context, db *sql.DB, path string, watchOnly bool)
 		return errors.New("inventory controller storage unavailable")
 	}
 	return nil
+}
+
+func inventoryDispatchLogger(output io.Writer) func(controller.DispatchObservation) {
+	logger := plumelog.NewLogger(plumelog.LoggerConfig{Format: plumelog.LoggerFormatJSON, Output: output})
+	return func(event controller.DispatchObservation) {
+		logger.Info("inventory_dispatch_claimed", plumelog.Fields{
+			"schema_version": 1, "tenant": event.Tenant, "account": event.Account,
+			"provider": event.Provider, "kind": event.Kind, "schedule_id": event.ScheduleID, "fence": event.Fence,
+			"due_at": event.DueAt.Format(time.RFC3339Nano), "claimed_at": event.ClaimedAt.Format(time.RFC3339Nano),
+			"due_wait_ms": max(0, event.ClaimedAt.Sub(event.DueAt).Milliseconds()),
+		})
+	}
 }
 
 func inventoryScheduleExecutor(db *sql.DB, profiles map[string]string, transport http.RoundTripper) controller.Execute {

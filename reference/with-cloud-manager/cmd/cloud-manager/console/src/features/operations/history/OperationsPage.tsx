@@ -8,7 +8,10 @@ import { OperationFilters } from './filters'
 export default function OperationsPage() {
   const page = useCollection(operationsCollection)
   if (!page) return null
-  return <CollectionPage {...page} onLoadNext={operationsCollection.loadNext} filters={<CollectionFilters onApply={operationsCollection.applyFilters}><OperationFilters /></CollectionFilters>}>
+  const filters = <CollectionFilters values={page.filters} onApply={operationsCollection.applyFilters}>
+    {(values) => <OperationFilters values={values} />}
+  </CollectionFilters>
+  return <CollectionPage {...page} onLoadNext={operationsCollection.loadNext} filters={filters}>
     <OperationsTable items={page.items} />
   </CollectionPage>
 }

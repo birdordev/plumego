@@ -4,14 +4,17 @@ import { projectURL } from '../../session/project'
 
 const OperationPanel = lazy(() => import('./OperationPanel'))
 
-export function showOperation(id: string) {
+export function showOperation(id: string, onReload?: () => void) {
   const base = projectURL()
   const operation = encodeURIComponent(id)
   const target = base + '/operations/' + operation
   openDetail('操作详情', (stamp, signal) => (
     <Suspense fallback={<p role="status">正在加载…</p>}>
       <OperationPanel project={base} target={target} ticketTarget={base + '/governance/change-tickets/' + operation}
-        stamp={stamp} signal={signal} reload={() => showOperation(id)} />
+        stamp={stamp} signal={signal} reload={() => {
+          onReload?.()
+          showOperation(id, onReload)
+        }} />
     </Suspense>
   ))
 }

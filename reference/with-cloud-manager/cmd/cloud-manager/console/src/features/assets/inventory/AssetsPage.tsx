@@ -16,7 +16,7 @@ export default function AssetsPage({ canExecute, nativeConsole, nativeSerial, on
     <button id="allocate-elastic-ip" onClick={showElasticIPAllocation} type="button" className="primary">申请弹性公网 IP</button>
   </div> : null
   return <CollectionPage {...page} onLoadNext={assetsCollection.loadNext} tools={tools}
-    filters={<CollectionFilters onApply={assetsCollection.applyFilters}><AssetFilters /></CollectionFilters>}
+    filters={<CollectionFilters values={page.filters} onApply={assetsCollection.applyFilters}>{(values) => <AssetFilters values={values} />}</CollectionFilters>}
     footer={canExecute ? <SelectedInstances onBatch={onBatch} /> : null}>
     <AssetsTable items={page.items} editable={canExecute} nativeConsole={nativeConsole} nativeSerial={nativeSerial} />
   </CollectionPage>

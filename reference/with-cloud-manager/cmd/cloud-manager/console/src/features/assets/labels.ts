@@ -26,3 +26,13 @@ export const inventoryStates: Readonly<Partial<Record<string, string>>> = {
   missing_candidate: '待确认缺失',
   stale: '观测已过期',
 }
+
+export const resourceStates: Readonly<Partial<Record<string, string>>> = {
+  running: '运行中',
+  stopped: '已停止',
+  active: '运行正常',
+  available: '可用',
+  creating: '创建中',
+  deleting: '删除中',
+  error: '异常',
+}

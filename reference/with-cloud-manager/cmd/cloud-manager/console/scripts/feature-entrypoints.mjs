@@ -1,9 +1,12 @@
 export const featureEntrypoints = new Set([
   'alerts/detail.tsx',
+  'alerts/api.ts',
   'alerts/labels.ts',
   'assets/dns/schema.ts',
   'assets/instances/selection-store.ts',
   'assets/labels.ts',
+  'governance/freshness/api.ts',
+  'governance/freshness/labels.ts',
   'native-console/request/open.tsx',
   'native-console/access/detail.tsx',
   'native-console/labels.ts',
@@ -11,12 +14,14 @@ export const featureEntrypoints = new Set([
   'operations/forms/OperationForm.tsx',
   'operations/labels.ts',
   'operations/forms/schema.ts',
+  'operations/history/api.ts',
   'session/client.ts',
   'session/project.ts',
   'session/store.ts',
 ])
 
 export const appFeatureEntrypoints = new Set([
+  'overview/navigation.ts',
   'batches/request/selection-format.ts',
   'catalog/launch/attempts.ts',
   'operations/forms/attempts.ts',

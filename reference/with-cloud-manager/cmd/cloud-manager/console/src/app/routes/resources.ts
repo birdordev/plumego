@@ -9,6 +9,10 @@ function hasConsole(session: Session) {
 }
 
 export const resourceRoutes = {
+  overview: projectPage('项目总览', () => import('../../features/overview/OverviewPage'),
+    (context) => ({ ...projectProps(context), ...adminProps(context),
+      link: context.link, expireSession: context.expireSession,
+    })),
   'cloud-accounts': projectPage('云账号管理', () => import('../../features/accounts/AccountsPage'),
     (context) => ({ ...projectProps(context), project: context.session.project.id,
       projects: context.session.profile.projects.filter(({ id, role }) => role === 'admin' && id !== context.session.project.id).map(({ id }) => id),

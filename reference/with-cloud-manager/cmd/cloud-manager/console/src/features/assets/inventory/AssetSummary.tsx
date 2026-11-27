@@ -5,10 +5,11 @@ import { DatabaseSummary } from '../databases/DatabaseSummary'
 import { LoadBalancerSummary } from '../load-balancers/LoadBalancerSummary'
 import { SnapshotSummary } from '../snapshots/SnapshotSummary'
 import type { Asset } from '../types'
+import './styles.css'
 
 export function AssetSummary({ asset }: { asset: Asset }) {
-  return <div>
-    {asset.name || asset.id}
+  return <div className="asset-summary">
+    <strong>{asset.name || asset.id}</strong>
     {asset.name && asset.name !== asset.id ? <span className="minor">{asset.id}</span> : null}
     {asset.public_addresses?.length ? <span className="minor">{asset.public_addresses.join(' · ')}</span> : null}
     {asset.load_balancer ? <LoadBalancerSummary {...asset.load_balancer} /> : null}

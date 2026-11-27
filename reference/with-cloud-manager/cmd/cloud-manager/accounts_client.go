@@ -19,6 +19,8 @@ const cloudAccountsUsage = `usage: cloud-manager cloud-accounts COMMAND TENANT P
   grants ACCOUNT [--after PROJECT] [--limit COUNT]
   register < account.json
   change ACCOUNT REVISION < change.json
+  rollout ACCOUNT
+  rollout-replace ACCOUNT REVISION < rollout.json
   schedules ACCOUNT [--after ID] [--limit COUNT]
   schedule-add ACCOUNT < schedule.json
   schedule-change ACCOUNT ID REVISION < change.json`
@@ -36,6 +38,10 @@ func runCloudAccountsClient(ctx context.Context, args []string, address, token s
 		method: http.MethodGet, status: http.StatusOK}
 	options := args[3:]
 	switch args[0] {
+	case "rollout", "rollout-replace":
+		if !planAccountRollout(&plan, args[0], options) {
+			return usage
+		}
 	case "schedules", "schedule-add", "schedule-change":
 		if !planAccountSchedule(&plan, args[0], options) {
 			return usage
@@ -82,6 +88,25 @@ func runCloudAccountsClient(ctx context.Context, args []string, address, token s
 		return usage
 	}
 	return runProjectRequest(ctx, plan, token, input, output, transport)
+}
+
+func planAccountRollout(plan *operationRequestPlan, command string, args []string) bool {
+	if len(args) == 0 || !operationClientSegment(args[0]) {
+		return false
+	}
+	plan.target = plan.target.JoinPath(url.PathEscape(args[0]), "operation-rollout")
+	if command == "rollout" {
+		return len(args) == 1
+	}
+	if len(args) != 2 {
+		return false
+	}
+	revision, err := strconv.ParseInt(args[1], 10, 64)
+	if err != nil || revision < 0 || strconv.FormatInt(revision, 10) != args[1] {
+		return false
+	}
+	plan.method, plan.match, plan.inputLimit = http.MethodPut, strconv.Quote(args[1]), accountRolloutInputLimit
+	return true
 }
 
 func planAccountSchedule(plan *operationRequestPlan, command string, args []string) bool {

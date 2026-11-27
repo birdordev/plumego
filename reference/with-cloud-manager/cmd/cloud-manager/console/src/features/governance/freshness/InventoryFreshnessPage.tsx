@@ -5,12 +5,13 @@ import { readInventoryFreshness } from './api'
 import { FreshnessFilters } from './FreshnessFilters'
 import { FreshnessResults } from './FreshnessResults'
 
-export default function InventoryFreshnessPage({ base }: { base: string }) {
-  return <ProjectFreshness key={base} base={base} />
+type Props = { base: string; filters: string; commitFilters: (filters: string) => string }
+
+export default function InventoryFreshnessPage(props: Props) {
+  return <ProjectFreshness key={JSON.stringify([props.base, props.filters])} {...props} />
 }
 
-function ProjectFreshness({ base }: { base: string }) {
-  const [query, setQuery] = useState('')
+function ProjectFreshness({ base, filters, commitFilters }: Props) {
   const [cursors, setCursors] = useState([''])
   const [revision, setRevision] = useState(0)
   function showFirstPage() {
@@ -18,11 +19,13 @@ function ProjectFreshness({ base }: { base: string }) {
     setRevision((current) => current + 1)
   }
   const after = cursors[cursors.length - 1]
-  const params = new URLSearchParams(query)
+  const params = new URLSearchParams(filters)
   if (after) params.set('after', after)
   const target = base + '/governance/inventory-freshness?' + params
   return <>
-    <FreshnessFilters apply={(filters) => { setQuery(filters); showFirstPage() }} />
+    <FreshnessFilters filters={filters} apply={(input) => {
+      if (commitFilters(input) === filters) showFirstPage()
+    }} />
     <p className="hint">统计启用的全量盘点计划。状态筛选只影响明细，汇总始终包含当前厂商和账号筛选下的所有范围。</p>
     <div className="row-actions"><button type="button" onClick={showFirstPage}>刷新盘点状态</button></div>
     <FreshnessPage key={target + '#' + revision} target={target}

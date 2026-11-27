@@ -108,7 +108,7 @@ func testPublicCloudWorkloadWatch(t *testing.T, cluster *clusterFixture) {
 	saveWorkloadProfile(t, manifest, profiles)
 	execute := inventoryScheduleExecutor(db, profiles, nil)
 	runRole := func(ctx context.Context, _ controller.Execute) error {
-		return runController(ctx, db, manifest, true)
+		return runController(ctx, db, manifest, true, nil)
 	}
 	run := func(round watchRound) {
 		t.Helper()

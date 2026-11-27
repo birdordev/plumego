@@ -1,5 +1,7 @@
 @import './styles/base.css';
 @import './styles/layout.css';
+@import './styles/navigation.css';
 @import './styles/collections.css';
+@import './styles/reports.css';
 @import './styles/detail.css';
 @import './styles/responsive.css';

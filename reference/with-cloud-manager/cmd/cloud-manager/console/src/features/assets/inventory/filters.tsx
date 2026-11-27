@@ -8,10 +8,10 @@ const kinds = [
   ['image', '镜像'], ['region', '地域 / 数据中心'], ['zone', '可用区'],
 ] as const
 
-export function AssetFilters() {
+export function AssetFilters({ values }: { values: URLSearchParams }) {
   return <>
-    <label>名称、ID、域名或地址<input name="q" maxLength={256} /></label>
-    <label>账号<input name="account" maxLength={128} /></label>
-    <SelectField label="类型" name="kind" options={kinds} />
+    <label>资源搜索<input name="q" defaultValue={values.get('q') ?? ''} maxLength={256} placeholder="名称、ID、域名或地址" /></label>
+    <label>账号<input name="account" defaultValue={values.get('account') ?? ''} maxLength={128} /></label>
+    <SelectField label="类型" name="kind" initialValue={values.get('kind')} options={kinds} />
   </>
 }

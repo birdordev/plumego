@@ -146,7 +146,8 @@ type job struct {
 }
 
 type Store struct {
-	db *sql.DB
+	db              *sql.DB
+	observeDispatch func(DispatchObservation)
 }
 
 func NewStore(db *sql.DB) Store { return Store{db: db} }

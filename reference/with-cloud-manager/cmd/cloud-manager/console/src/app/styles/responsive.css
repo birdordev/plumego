@@ -1,8 +1,32 @@
-@media (max-width: 700px) {
-  .workspace { grid-template-columns: minmax(0, 1fr); }
-  .rail { padding: 1rem; gap: .8rem; }
-  .rail nav { display: flex; flex-wrap: wrap; }
-  .rail .logout { align-self: start; }
-  .heading { flex-direction: column; gap: 0; }
-  .filters label { flex: 1 1 8rem; }
+@media (max-width: 800px) {
+  .workspace { display: block; }
+  .rail {
+    position: static;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    block-size: auto;
+    padding: .6rem .85rem;
+    gap: .55rem .75rem;
+    border-inline-end: 0;
+    border-block-end: 1px solid var(--line);
+  }
+  .rail-toggle { display: none; }
+  .mobile-toggle { display: grid; }
+  .rail nav { grid-column: 1 / -1; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .65rem; margin-block-start: .2rem; }
+  .rail[data-mobile-open="false"] nav { display: none; }
+  .rail-group + .rail-group { border: 0; padding-block-start: 0; }
+  .workspace-toolbar { flex: 1 1 100%; }
+  .filters label { flex: 1 1 8.5rem; }
+}
+@media (max-width: 480px) {
+  .workspace > main { padding: 1.1rem .9rem 2rem; }
+  .workspace-header { gap: .7rem; }
+  .workspace-toolbar { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .45rem; }
+  .project-label { grid-column: 1 / -1; grid-template-columns: auto minmax(0, 1fr); }
+  .workspace-user { justify-self: start; max-inline-size: 100%; }
+  .workspace-actions { justify-self: end; }
+  .rail :is(.mobile-toggle, .rail-link) { min-block-size: 40px; }
+  .rail nav { grid-template-columns: repeat(auto-fit, minmax(8.1rem, 1fr)); }
+  .detail-list { grid-template-columns: minmax(4rem, auto) minmax(0, 1fr); }
 }

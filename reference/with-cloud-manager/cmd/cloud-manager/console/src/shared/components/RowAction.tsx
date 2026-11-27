@@ -5,6 +5,7 @@ export function RowAction({ children, onClick }: { children: ReactNode; onClick:
   return <button type="button" onClick={onClick}>{children}</button>
 }
 
-export function StateBadge({ status }: { status: string }) {
-  return <span className="state" data-state={status}>{status in statuses ? statuses[status as keyof typeof statuses] : status || '未知'}</span>
+export function StateBadge({ status, label }: { status: string; label?: string }) {
+  const fallback = Object.hasOwn(statuses, status) ? statuses[status] : status || '未知'
+  return <span className="state" data-state={status}>{label || fallback}</span>
 }

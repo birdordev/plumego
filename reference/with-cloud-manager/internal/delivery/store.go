@@ -69,8 +69,16 @@ func (s Store) Register(ctx context.Context, dest Destination) error {
 }
 
 func (s Store) checkBinding(ctx context.Context, dest Destination) error {
+	return checkDestinationBinding(ctx, s.db, dest)
+}
+
+type deliveryBindingQuery interface {
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+}
+
+func checkDestinationBinding(ctx context.Context, db deliveryBindingQuery, dest Destination) error {
 	var id string
-	err := s.db.QueryRowContext(ctx, `SELECT sink_id FROM cmp_operation_event_sinks
+	err := db.QueryRowContext(ctx, `SELECT sink_id FROM cmp_operation_event_sinks
 		WHERE (sink_id,tenant_id,project_id,endpoint_hash)=($1,$2,$3,$4)`, dest.id, dest.tenant, dest.project, dest.endpointHash[:]).Scan(&id)
 	return bindingError(err)
 }

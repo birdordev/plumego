@@ -1,5 +1,7 @@
 import { ConsoleTable } from '../../../shared/components/ConsoleTable'
-import { inventoryStates, kinds } from '../labels'
+import { StateBadge } from '../../../shared/components/RowAction'
+import { providerName } from '../../../shared/display/providers'
+import { inventoryStates, kinds, resourceStates } from '../labels'
 import { AssetActions } from './AssetActions'
 import { AssetSummary } from './AssetSummary'
 import { assetActions } from './asset-actions'
@@ -18,8 +20,10 @@ export function AssetsTable({ items, editable, ...access }: { items: readonly As
       ...(editable ? [item.kind === 'instance' && item.provider !== 'vmware-vsphere' ? <InstanceSelection asset={item} /> : '—'] : []),
       <AssetSummary asset={item} />,
       kinds[item.kind as keyof typeof kinds] || item.kind,
-      item.region ? item.account + ' / ' + item.region : item.account,
-      inventoryStates[item.inventory_state as keyof typeof inventoryStates] || item.status || item.inventory_state,
+      <div className="asset-location">{item.account}{item.region && ' / ' + item.region}
+        <span className="minor">{providerName(item.provider)}</span></div>,
+      <StateBadge status={item.inventory_state === 'observed' ? item.status.toLowerCase() : item.inventory_state}
+        label={inventoryStates[item.inventory_state] ?? resourceStates[item.status.toLowerCase()] ?? item.status} />,
       item.ownership_revision,
       ...(withActions ? [<AssetActions actions={actionsByRow[index]} />] : []),
     ],

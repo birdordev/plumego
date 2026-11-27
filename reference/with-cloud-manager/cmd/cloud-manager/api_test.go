@@ -150,7 +150,8 @@ func TestAcceptancePostgresReadiness(t *testing.T) {
 		kvm.EvacuationMigration, kvm.AutomaticEvacuationMigration, kvm.EvacuationBatchMigration, kvm.EvacuationPlanMigration,
 		kvm.HostImageMigration, kvm.SharedStorageMigration, kvm.LiveMigrationVersion, kvm.VolumeCleanupMigration,
 		inventory.InventoryCompletionMigration, identity.AccountWriteModeMigration, controller.ScheduleConfigMigration,
-		controller.AccountDispatchMigration, controller.TenantDispatchMigration} {
+		controller.AccountDispatchMigration, controller.TenantDispatchMigration, operations.ObservationWorkerMigration,
+		operations.EffectIDMigration, operations.TerminalEventTimeMigration} {
 		if _, err := db.ExecContext(t.Context(), "DELETE FROM cmp_migrations WHERE version=$1", version); err != nil {
 			t.Fatal(err)
 		}
@@ -173,6 +174,17 @@ func TestAcceptancePostgresReadiness(t *testing.T) {
 	}
 	get("/readyz", http.StatusServiceUnavailable, "storage is unavailable")
 	if _, err := db.ExecContext(t.Context(), "INSERT INTO cmp_migrations(version) VALUES ($1)", kvm.BootImageMigration); err != nil {
+		t.Fatal(err)
+	}
+	get("/readyz", http.StatusOK, `"ready"`)
+	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
+	if _, err := db.ExecContext(t.Context(), "SET default_transaction_read_only=on"); err != nil {
+		t.Fatal(err)
+	}
+	get("/readyz", http.StatusServiceUnavailable, "storage is unavailable")
+	get("/healthz", http.StatusOK, `"ok"`)
+	if _, err := db.ExecContext(t.Context(), "RESET default_transaction_read_only"); err != nil {
 		t.Fatal(err)
 	}
 	get("/readyz", http.StatusOK, `"ready"`)

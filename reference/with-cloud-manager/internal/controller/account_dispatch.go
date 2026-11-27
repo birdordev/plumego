@@ -11,6 +11,19 @@ import (
 
 var errDispatchContended = errors.New("inventory dispatch candidate changed or is locked")
 
+// DispatchObservation 记录已提交的普通盘点领取。时间来自同一数据库。
+type DispatchObservation struct {
+	Tenant, Account, Provider, Kind string
+	ScheduleID, Fence               int64
+	DueAt, ClaimedAt                time.Time
+}
+
+// WithDispatchObserver 设置在领取事务提交后同步调用的观察者。
+func (s Store) WithDispatchObserver(observe func(DispatchObservation)) Store {
+	s.observeDispatch = observe
+	return s
+}
+
 const dueAccountSchedule = `
 	WITH eligible AS MATERIALIZED (
 		SELECT a.tenant_id,a.account_id,head.schedule_id,head.next_at,
@@ -62,6 +75,7 @@ func (s Store) claimAccountSchedule(ctx context.Context, lease time.Duration) (j
 
 func (s Store) tryAccountSchedule(ctx context.Context, lease time.Duration) (job, error) {
 	var j job
+	var dueAt, claimedAt time.Time
 	err := dbutil.WithTransaction(ctx, s.db, nil, func(tx *sql.Tx) error {
 		var id, turn int64
 		var eligible bool
@@ -92,7 +106,6 @@ func (s Store) tryAccountSchedule(ctx context.Context, lease time.Duration) (job
 		}
 
 		// 取得租户与账号锁后，在新快照复核领取轮次、账号租约和冷却窗口。
-		var granted bool
 		err = tx.QueryRowContext(ctx, `
 			WITH leased AS (
 				INSERT INTO cmp_inventory_account_dispatch AS d
@@ -104,12 +117,16 @@ func (s Store) tryAccountSchedule(ctx context.Context, lease time.Duration) (job
 					schedule_fence=EXCLUDED.schedule_fence,lease_until=EXCLUDED.lease_until
 				WHERE (d.lease_until IS NULL OR d.lease_until<=statement_timestamp())
 				  AND (d.cooldown_until IS NULL OR d.cooldown_until<=statement_timestamp())
+				RETURNING tenant_id,last_claimed_at
+			), turned AS (
+				INSERT INTO cmp_inventory_tenant_dispatch AS t (tenant_id,last_turn)
+				SELECT tenant_id,nextval('cmp_inventory_dispatch_turn') FROM leased
+				ON CONFLICT (tenant_id) DO UPDATE SET last_turn=EXCLUDED.last_turn WHERE t.last_turn=$2
 				RETURNING tenant_id
 			)
-			INSERT INTO cmp_inventory_tenant_dispatch AS t (tenant_id,last_turn)
-			SELECT tenant_id,nextval('cmp_inventory_dispatch_turn') FROM leased
-			ON CONFLICT (tenant_id) DO UPDATE SET last_turn=EXCLUDED.last_turn WHERE t.last_turn=$2
-			RETURNING true`, id, turn).Scan(&granted)
+			SELECT s.next_at,l.last_claimed_at
+			FROM leased AS l JOIN turned USING (tenant_id)
+			JOIN cmp_inventory_schedules AS s ON s.schedule_id=$1`, id, turn).Scan(&dueAt, &claimedAt)
 		if errors.Is(err, sql.ErrNoRows) {
 			return errDispatchContended
 		}
@@ -119,6 +136,12 @@ func (s Store) tryAccountSchedule(ctx context.Context, lease time.Duration) (job
 		return job{}, err
 	}
 	j.accountLimited = true
+	if s.observeDispatch != nil {
+		s.observeDispatch(DispatchObservation{
+			Tenant: j.task.Key.Tenant, Account: j.task.Key.Account, Provider: j.task.Provider, Kind: j.task.ScheduleKind,
+			ScheduleID: j.id, Fence: j.fence, DueAt: dueAt.UTC(), ClaimedAt: claimedAt.UTC(),
+		})
+	}
 	return j, nil
 }
 

@@ -1,8 +1,16 @@
 import { lazy, type ComponentType } from 'react'
 import type { Session } from '../../features/session/store'
 import type { CollectionLifecycle } from '../../shared/collection/store'
+import type { WorkspaceLink } from '../../features/overview/navigation'
 
-type PageContext = { session: Session; openSelectedBatch: () => void }
+type PageContext = {
+  session: Session
+  filters: string
+  commitFilters: (filters: string) => string
+  openSelectedBatch: () => void
+  link: WorkspaceLink
+  expireSession: () => void
+}
 
 type PageOptions = {
   allowed?: (session: Session) => boolean

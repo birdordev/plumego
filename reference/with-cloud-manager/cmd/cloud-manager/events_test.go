@@ -32,7 +32,7 @@ func TestAcceptanceEventSinkCommands(t *testing.T) {
 		if err := os.WriteFile(profile, data, 0600); err != nil {
 			t.Fatal(err)
 		}
-		if err := runEventCommand(ctx, db, []string{"event-register", "audit"}, profile, io.Discard); err != nil {
+		if err := runEventCommand(ctx, db, []string{"event-register", "audit"}, profile, nil, io.Discard); err != nil {
 			t.Fatal(err)
 		}
 		var enabled bool
@@ -40,16 +40,17 @@ func TestAcceptanceEventSinkCommands(t *testing.T) {
 			t.Fatalf("unexpected alerts subscription state %t: %v", enabled, err)
 		}
 	}
-	if !validCommand([]string{"event-publisher"}) || !validCommand([]string{"event-retry", "audit", "id"}) || validCommand([]string{"event-disable"}) {
+	if !validCommand([]string{"event-publisher"}) || !validCommand([]string{"event-retry", "audit", "id"}) ||
+		!validCommand([]string{"event-reconcile", "audit"}) || validCommand([]string{"event-disable"}) {
 		t.Fatal("unexpected event command registration")
 	}
 	configure(false)
 	configure(true)
 	var output bytes.Buffer
-	if err := runEventCommand(ctx, db, []string{"event-failures", "audit"}, profile, &output); err != nil || strings.TrimSpace(output.String()) != "[]" {
+	if err := runEventCommand(ctx, db, []string{"event-failures", "audit"}, profile, nil, &output); err != nil || strings.TrimSpace(output.String()) != "[]" {
 		t.Fatalf("unexpected diagnostics output %q %v", output.String(), err)
 	}
-	if err := runEventCommand(ctx, db, []string{"event-disable", "audit"}, profile, io.Discard); err != nil {
+	if err := runEventCommand(ctx, db, []string{"event-disable", "audit"}, profile, nil, io.Discard); err != nil {
 		t.Fatal(err)
 	}
 	var enabled bool

@@ -15,7 +15,11 @@ import (
 	"with-cloud-manager/internal/provider/redfish"
 )
 
-func runWorker(ctx context.Context, db *sql.DB, manifest string) error {
+func runWorker(ctx context.Context, db *sql.DB, manifest, mode string) error {
+	store, err := configuredOperationWorkerStore(db, mode)
+	if err != nil {
+		return err
+	}
 	var profiles map[string]string
 	if err := loadPrivateProfile(manifest, &profiles); err != nil {
 		return err
@@ -23,7 +27,7 @@ func runWorker(ctx context.Context, db *sql.DB, manifest string) error {
 	if len(profiles) == 0 {
 		return errors.New("worker needs a credential reference map")
 	}
-	if err := operations.NewStore(db).RunWorkerWithWorkloadScale(ctx, func(ctx context.Context, binding identity.CloudAccountBinding) (provider.InstanceOperator, error) {
+	if err := store.RunWorkerWithWorkloadScale(ctx, func(ctx context.Context, binding identity.CloudAccountBinding) (provider.InstanceOperator, error) {
 		return connectOperator(ctx, binding, profiles[binding.CredentialRef])
 	}, func(ctx context.Context, binding identity.CloudAccountBinding, region, cluster string) (provider.WorkloadScaler, error) {
 		return connectWorkloadScaler(ctx, binding, profiles[binding.CredentialRef], region, cluster)
@@ -31,6 +35,17 @@ func runWorker(ctx context.Context, db *sql.DB, manifest string) error {
 		return errors.New("instance operation worker stopped")
 	}
 	return nil
+}
+
+func configuredOperationWorkerStore(db *sql.DB, mode string) (operations.Store, error) {
+	switch mode {
+	case "", "dispatch":
+		return operations.NewStore(db), nil
+	case "observe-only":
+		return operations.NewStore(db).WithObservationOnly(), nil
+	default:
+		return operations.Store{}, errors.New("CLOUD_MANAGER_WORKER_MODE must be dispatch or observe-only")
+	}
 }
 
 func connectOperator(ctx context.Context, binding identity.CloudAccountBinding, path string) (provider.InstanceOperator, error) {

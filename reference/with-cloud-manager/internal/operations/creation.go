@@ -340,6 +340,9 @@ func (s Store) settleCreationDispatch(ctx context.Context, task mq.Task, kind pr
 }
 
 func (s Store) replayCreation(ctx context.Context, task mq.Task, w work, scope provider.Scope, creator provider.InstanceCreator) (bool, error) {
+	if s.observationOnly {
+		return true, nil
+	}
 	var claimed string
 	err := s.withLease(ctx, task, func(tx *sql.Tx) error {
 		var active string
