@@ -153,7 +153,7 @@ func ticketPolicyAction(action string) bool {
 		"create-network", "delete-network", "create-subnet", "delete-subnet", "create-security-group",
 		"delete-security-group", "create-security-group-rule", "revoke-security-group-rule",
 		createElasticIP, releaseElasticIP, bindElasticIP, unbindElasticIP,
-		createSnapshot, deleteSnapshot, rollbackSnapshot, restoreSnapshot, createImage, copyImage, deleteImage,
+		createSnapshot, deleteSnapshot, rollbackSnapshot, restoreSnapshot, resizeVolume, createVolume, releaseVolume, createImage, copyImage, deleteImage,
 		scaleWorkload, createDNSRecord, setDNSRecordStatus, deleteDNSRecord,
 		renameLoadBalancer, renameLoadBalancerListener, renameLoadBalancerTargetGroup, renameDatabaseInstance, renameCacheInstance,
 		setLoadBalancerBackendWeight, detachLoadBalancerBackend, attachLoadBalancerBackend:

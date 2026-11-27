@@ -88,7 +88,7 @@ func (s Store) SubmitSnapshotRestore(ctx context.Context, token string, scope id
 			return ErrInvalid
 		}
 		var busy bool
-		if err := tx.QueryRowContext(ctx, "SELECT "+snapshotWriteConflict, target.VolumeScopeID, input.VolumeID, "").Scan(&busy); err != nil {
+		if err := tx.QueryRowContext(ctx, "SELECT "+snapshotWriteConflict+" OR "+volumeChangeConflict, target.VolumeScopeID, input.VolumeID, "").Scan(&busy); err != nil {
 			return err
 		}
 		if busy {

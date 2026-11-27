@@ -123,6 +123,14 @@ func planOperationRequest(base *url.URL, args []string) (operationRequestPlan, e
 		return planBareMetalReclaim(project.JoinPath("bare-metal", "reclaims"), args[0], args[3:])
 	case "rename-cache-instance":
 		return planOperationSubmission(project.JoinPath("caches", "rename"), args[0], args[3:])
+	case "create-volume":
+		return planOperationSubmission(project.JoinPath("volumes"), args[0], args[3:])
+	case "release-volume":
+		return planOperationSubmission(project.JoinPath("volumes", "release"), args[0], args[3:])
+	case "preview-volume-release":
+		return planOperationAssetRead(project.JoinPath("volumes", "release-preview"), "asset_id", args[3:])
+	case "resize-volume":
+		return planOperationSubmission(project.JoinPath("volumes", "resize"), args[0], args[3:])
 	case "rename-database-instance":
 		return planOperationSubmission(project.JoinPath("databases", "rename"), args[0], args[3:])
 	case "rename-load-balancer":
@@ -196,7 +204,7 @@ func planOperationSubmission(target *url.URL, command string, args []string) (op
 	flags.SetOutput(io.Discard)
 	key := flags.String("idempotency-key", "", "")
 	var match string
-	requireMatch := command == "request-reclaim" || command == "bare-metal-pxe" || command == "bare-metal-power" || command == "retire-instance" || command == "rename-database-instance" || command == "rename-cache-instance" || command == "scale-workload" || command == "create-dns-record" || command == "delete-dns-record" || command == "set-dns-record-status" || command == "submit" || command == "delete-network" || command == "rename-load-balancer" || command == "rename-load-balancer-listener" || command == "rename-load-balancer-target-group" || command == "set-load-balancer-backend-weight" || command == "detach-load-balancer-backend" || command == "attach-load-balancer-backend" || command == "revoke-security-rule" || command == "release-elastic-ip" ||
+	requireMatch := command == "request-reclaim" || command == "bare-metal-pxe" || command == "bare-metal-power" || command == "retire-instance" || command == "release-volume" || command == "resize-volume" || command == "rename-database-instance" || command == "rename-cache-instance" || command == "scale-workload" || command == "create-dns-record" || command == "delete-dns-record" || command == "set-dns-record-status" || command == "submit" || command == "delete-network" || command == "rename-load-balancer" || command == "rename-load-balancer-listener" || command == "rename-load-balancer-target-group" || command == "set-load-balancer-backend-weight" || command == "detach-load-balancer-backend" || command == "attach-load-balancer-backend" || command == "revoke-security-rule" || command == "release-elastic-ip" ||
 		command == "bind-elastic-ip" || command == "unbind-elastic-ip" || command == "create-snapshot" || command == "delete-snapshot" || command == "delete-image" || command == "create-image" || command == "copy-image" || command == "restore-snapshot" || command == "rollback-snapshot"
 	if requireMatch || command == "create-network" {
 		flags.Func("if-match", "", func(value string) error {

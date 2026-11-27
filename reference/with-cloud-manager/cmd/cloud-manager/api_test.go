@@ -37,6 +37,9 @@ func TestAcceptancePostgresReadiness(t *testing.T) {
 	}
 	get("/healthz", http.StatusOK, `"ok"`)
 	get("/openapi.json", http.StatusOK, `"renameCacheInstance"`)
+	get("/openapi.json", http.StatusOK, `"resizeVolume"`)
+	get("/openapi.json", http.StatusOK, `"createVolume"`)
+	get("/openapi.json", http.StatusOK, `"releaseVolume"`)
 	get("/openapi.json", http.StatusOK, `"listKVMHostFenceWork"`)
 	get("/openapi.json", http.StatusOK, `"reviewKVMColdMigration"`)
 	get("/openapi.json", http.StatusOK, `"cancelKVMEvacuationPlan"`)
@@ -136,6 +139,18 @@ func TestAcceptancePostgresReadiness(t *testing.T) {
 		t.Fatal(err)
 	}
 	get("/readyz", http.StatusServiceUnavailable, "storage is unavailable")
+	if err := operations.MigrateVolumeResize(t.Context(), db); err != nil {
+		t.Fatal(err)
+	}
+	get("/readyz", http.StatusServiceUnavailable, "storage is unavailable")
+	if err := operations.MigrateVolumeCreation(t.Context(), db); err != nil {
+		t.Fatal(err)
+	}
+	get("/readyz", http.StatusServiceUnavailable, "storage is unavailable")
+	if err := operations.MigrateVolumeRelease(t.Context(), db); err != nil {
+		t.Fatal(err)
+	}
+	get("/readyz", http.StatusServiceUnavailable, "storage is unavailable")
 	if err := operations.MigrateBareMetalDeployments(t.Context(), db); err != nil {
 		t.Fatal(err)
 	}
@@ -167,7 +182,7 @@ func TestAcceptancePostgresReadiness(t *testing.T) {
 		controller.AccountDispatchMigration, controller.TenantDispatchMigration, operations.ObservationWorkerMigration,
 		operations.EffectIDMigration, operations.TerminalEventTimeMigration, alerts.BucketProtectionMigration, inventory.TagPolicyAlertsMigration,
 		operations.FirstLeaseMigration, operations.QueueSnapshotMigration, alerts.OperationQueueMigration, operations.QueueFindingsMigration,
-		operations.ObservationQueueRepairMigration, operations.PowerObservationMigration, inventory.VolumeInventoryMigration} {
+		operations.ObservationQueueRepairMigration, operations.PowerObservationMigration, inventory.VolumeInventoryMigration, operations.VolumeResizeMigration, operations.VolumeCreationMigration, operations.VolumeReleaseMigration} {
 		if _, err := db.ExecContext(t.Context(), "DELETE FROM cmp_migrations WHERE version=$1", version); err != nil {
 			t.Fatal(err)
 		}

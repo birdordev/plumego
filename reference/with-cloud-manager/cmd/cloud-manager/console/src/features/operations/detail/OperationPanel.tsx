@@ -19,6 +19,7 @@ import { readOperationEvents } from './events/api'
 import { operationDetailSchema } from './schema'
 import { workloadScaleFields } from './fields/workload'
 import { snapshotOperationFields } from './fields/snapshot'
+import { volumeOperationFields } from './fields/volume'
 
 function readDetails(target: string, signal: AbortSignal) {
   return Promise.all([
@@ -39,7 +40,7 @@ export default function OperationPanel({ project, target, ticketTarget, stamp, s
   ]
   if (op.catalog_template) fields.push(['模板版本', op.catalog_template + ' / ' + op.catalog_version])
   fields.push(...assetRenameFields(op), ...dnsOperationFields(op), ...loadBalancerOperationFields(op), ...networkOperationFields(op),
-    ...retirementFields(op), ...imageOperationFields(op), ...snapshotOperationFields(op), ...workloadScaleFields(op))
+    ...retirementFields(op), ...imageOperationFields(op), ...snapshotOperationFields(op), ...workloadScaleFields(op), ...volumeOperationFields(op))
   const canReview = sessionSnapshot()?.project.role === 'approver'
 
   return <>

@@ -85,7 +85,7 @@ func (s Store) submitSnapshotMutation(ctx context.Context, token string, scope i
 			return ErrInvalid
 		}
 		var busy bool
-		if err := tx.QueryRowContext(ctx, "SELECT "+snapshotWriteConflict, target.VolumeScopeID, input.VolumeID, "").Scan(&busy); err != nil {
+		if err := tx.QueryRowContext(ctx, "SELECT "+snapshotWriteConflict+" OR "+volumeChangeConflict, target.VolumeScopeID, input.VolumeID, "").Scan(&busy); err != nil {
 			return err
 		}
 		if busy {

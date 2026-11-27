@@ -36,6 +36,10 @@ const operationsUsage = `usage: cloud-manager operations COMMAND TENANT PROJECT 
   delete-network --idempotency-key KEY --if-match REVISION < request.json
   retire-instance --idempotency-key KEY --if-match REVISION < request.json
   preview-retire --account ACCOUNT --region REGION --asset-id ID
+  create-volume --idempotency-key KEY < request.json
+  preview-volume-release --account ACCOUNT --region REGION --asset-id ID
+  release-volume --idempotency-key KEY --if-match REVISION < request.json
+  resize-volume --idempotency-key KEY --if-match REVISION < request.json
   rename-database-instance --idempotency-key KEY --if-match REVISION < request.json
   register-deployment < deployment.json
   get-deployment DEPLOYMENT

@@ -121,7 +121,7 @@ func resolveApprovedAssetChange(ctx context.Context, tx *sql.Tx, w *work, scopeI
 				return target, beforeWrite, err
 			}
 		}
-		if w.Action == retireInstance {
+		if w.Action == retireInstance || w.Action == releaseVolume {
 			target, err = inventory.ResolveNetworkDeletion(ctx, tx, actor, w.Account, w.Region, w.AssetID, kind, false)
 		} else {
 			target, err = inventory.ResolveNetworkObservation(ctx, tx, actor, w.Account, w.Region, w.AssetID, kind)

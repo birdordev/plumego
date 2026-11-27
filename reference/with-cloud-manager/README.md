@@ -989,6 +989,77 @@ cloud-manager assets changes TENANT PROJECT --kind volume
 cloud-manager assets export TENANT PROJECT --kind volume > volumes.csv
 ```
 
+#### 创建独立数据盘
+
+应用迁移 `0158_volume_creation` 后升级 API 和共享操作队列的 Worker。支持腾讯云 CBS、阿里云 ECS 和华为云 EVS。先在项目自有账号盘点可用区。控制台在可用区资产行提供「申请云盘」，提交后可在操作详情查看规格和审批。API 为 `POST /v1/tenants/{tenant}/projects/{project}/volumes`，使用 `Idempotency-Key`，持久受理返回 `202 Accepted`。
+
+```sh
+cloud-manager operations create-volume TENANT PROJECT --idempotency-key REQUEST_KEY < create-volume.json
+```
+
+```json
+{"account":"prod-cloud","region":"cn-hangzhou","zone":"cn-hangzhou-g","name":"app-data","disk_type":"cloud_essd","size_gib":100,"encrypted":true}
+```
+
+支持每次申请一块独占、未挂载的按量数据盘。每个账号 Worker 配置 `volume_create_max_gib` 限制单盘容量，缺省为零并拒绝派发。项目活动操作配额、账号写入模式、放量策略及独立审批均继续生效。平台容量上限为 32768 GiB，阿里云最低 20 GiB，其余两家最低 10 GiB。最终规格和配额以厂商的可用区供应为准。
+
+| 厂商 | 支持类型和核验 |
+| --- | --- |
+| 腾讯云 CBS | `CLOUD_PREMIUM`、`CLOUD_SSD`、`CLOUD_BSSD`。创建时写入操作标签，按标签和规格找回云盘。 [CreateDisks](https://cloud.tencent.com/document/product/362/16312) |
+| 阿里云 ECS | `cloud_essd`、`cloud_ssd`、`cloud_efficiency`。通过实际账单类型、数据盘和独占状态确认，创建时使用厂商默认加密密钥。 [CreateDisk](https://help.aliyun.com/en/ecs/developer-reference/api-ecs-2014-05-26-createdisk) |
+| 华为云 EVS | `SAS`、`SSD`、`GPSSD`。以描述中的唯一标记和项目范围确认。要求加密时，在账号配置填写 `huawei_volume_kms_key_id`。 [Creating EVS Disks](https://support.huaweicloud.com/intl/en-us/api-evs/evs_04_2003.html) |
+
+申请可指定必须加密。省略时沿用厂商默认规则。Worker 在发送前复核授权、凭据代次和可用区。持久登记后最多发送一次。回执丢失或规格冲突时只读回查，独立审批人可提交证据后续查。确认时在同一事务登记项目归属、云盘容量和可用区拓扑、操作终态与发件箱，并使早期扫描失效。真实厂商沙箱仍需核对可用区、规格、计费和加密。
+
+#### 云盘扩容
+
+应用迁移 `0157_volume_resize` 并升级 API 和所有共享操作队列的 Worker。隔离沙箱验收后，在账号凭据配置启用 `"allow_volume_resize": true`，并按既有账号写入模式与动作放量规则开放。凭据开关默认关闭。
+
+操作范围为腾讯云 CBS、阿里云 ECS 和华为云 EVS 的独占未挂载按量数据盘。发出申请前重新盘点云盘。控制台在资产列表提供「申请扩容」，操作详情同时显示原容量、目标容量和审批状态。API 为 `POST /v1/tenants/{tenant}/projects/{project}/volumes/resize`，使用云盘归属版本作为 `If-Match`，携带 `Idempotency-Key`。成功受理返回 `202 Accepted` 和操作地址。
+
+```sh
+cloud-manager operations resize-volume TENANT PROJECT --idempotency-key REQUEST_KEY --if-match 7 < resize-volume.json
+```
+
+```json
+{"account":"prod-cloud","region":"cn-hangzhou","asset_id":"d-example","current_gib":60,"target_gib":120}
+```
+
+目标容量必须大于当前容量，厂商按存储规格、配额和地域复核上限。扩容会影响后续账单。挂载后如需使用新增空间，另行扩展操作系统中的分区和文件系统。
+
+| 厂商 | 写入与确认 |
+| --- | --- |
+| 腾讯云 CBS | `ResizeDisk` 提交弹性云盘扩容。通过 `DescribeDisks` 确认原盘保持未挂载且已达到目标容量。 [扩容云硬盘](https://cloud.tencent.com/document/product/362/16310) |
+| 阿里云 ECS | `ResizeDisk` 请求离线扩容。通过同地域的 `DescribeDisks` 确认原盘及容量。 [使用 ResizeDisk 扩容云盘](https://help.aliyun.com/en/ecs/developer-reference/api-ecs-2014-05-26-resizedisk) |
+| 华为云 EVS | `os-extend` 扩容。收到任务回执时同时核验成功的 EVS 任务和原盘，回执丢失时读取原盘的稳定状态及精确容量。 [扩容云硬盘](https://support.huaweicloud.com/intl/en-us/api-evs/evs_04_2004_0.html) · [查询任务](https://support.huaweicloud.com/intl/en-us/api-evs/evs_04_0054.html) |
+
+每次扩容须独立审批，并与同盘挂卸载、快照变更及实例退役互斥。Worker 核对厂商的盘标识、付费模式、挂载状态、用途和原容量，持久登记派发后最多发送一次。断连、异常证据和任务恢复均只读回查。待复核保留互斥，独立审批人可提交证据继续回查。确认时同事务更新容量盘点、历史、审计和终态事件，并使早期盘点扫描失效。
+
+#### 释放独立数据盘
+
+应用迁移 `0159_volume_release` 后升级 API 和共享操作队列的 Worker。仅支持腾讯云 CBS、阿里云 ECS 和华为云 EVS 的独占未挂载按量数据盘。默认关闭写入，隔离沙箱验收后按账号配置 `"allow_volume_release": true`，并按既有账号写入模式与动作放量规则开放。
+
+控制台的「释放预览」显示本地数据盘资格、挂载或不可释放状态、快照依赖和活动变更。确认数据已按业务要求备份，再输入完整云盘 ID 提交申请。API 预览为 `GET /v1/tenants/{tenant}/projects/{project}/volumes/release-preview`，参数为 `account`、`region`、`asset_id`。提交为同一资源前缀下的 `POST /volumes/release`，携带 `Idempotency-Key` 和云盘当前归属版本 `If-Match`。请求容量使用预览返回的值。
+
+```sh
+cloud-manager operations preview-volume-release TENANT PROJECT --account ACCOUNT --region REGION --asset-id ID
+cloud-manager operations release-volume TENANT PROJECT --idempotency-key REQUEST_KEY --if-match 7 < release-volume.json
+```
+
+```json
+{"account":"prod-cloud","region":"cn-hangzhou","asset_id":"d-example","size_gib":60,"confirm_asset_id":"d-example"}
+```
+
+| 厂商 | 释放确认 |
+| --- | --- |
+| 腾讯云 CBS | `TerminateDisks` 显式传入 `DeleteSnapshot=0`。派发前按云盘检查快照，派发后按盘 ID 确认盘点缺失。 [TerminateDisks](https://cloud.tencent.com/document/product/362/16321) |
+| 阿里云 ECS | `DeleteDisk` 前检查关联快照和 `DeleteAutoSnapshot=false`。派发后查询同地域的盘 ID。 [DeleteDisk](https://help.aliyun.com/zh/ecs/developer-reference/api-ecs-2014-05-26-deletedisk) |
+| 华为云 EVS | `DeleteVolume` 前分别查存量快照与标准快照。存在回执时先核对 EVS 删除任务终态，再检查活动盘点。 [DeleteVolume](https://support.huaweicloud.com/api-evs/evs_04_2008.html) · [回收站说明](https://support.huaweicloud.com/usermanual-evs/evs_01_0100.html) |
+
+释放须独立审批，活动操作与同盘扩容、挂卸盘、快照变更和退役互斥。在云管外也应暂停同一云盘的管理和备份任务，直至操作终结。派发前重新核对云端归属范围、快照、容量、计费与挂载状态。持久登记后最多派发一次，响应丢失时仅查证。连续两次有效精确查询缺失才能更新本地盘点和发件箱。限流、故障或可见资源使缺失证据归零。独立审批人可以提供证据后续查。
+
+成功指活动盘点确认移除，具体留存期和账单由厂商决定。平台保留移除历史，回收站恢复后的盘可被新扫描重新发现。支持范围及权限仍需逐账号完成真实沙箱验收。
+
 #### 云盘快照盘点
 
 应用 `0040_snapshot_inventory` 和 `0041_snapshot_schedules` 后，用原账号和地域配置运行以下任一命令，也可登记 `kind=snapshot` 的定时计划。

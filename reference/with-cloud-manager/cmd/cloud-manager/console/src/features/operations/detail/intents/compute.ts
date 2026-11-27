@@ -5,6 +5,13 @@ const integer = z.number().int()
 const flag = z.boolean()
 
 export const computeIntents = {
+  volume_creation_intent: z.object({
+    name: text, zone: text, disk_type: text, size_gib: integer.positive(), encrypted: flag,
+  }).optional(),
+  volume_release_intent: z.object({ name: text, size_gib: integer.positive(), ownership_revision: integer.positive() }).optional(),
+  volume_resize_intent: z.object({
+    current_gib: integer.positive(), target_gib: integer.positive(), ownership_revision: integer.positive(),
+  }).optional(),
   instance_retirement_intent: z.object({ system_disk_id: text, disk_ownership_revision: integer.positive() }).optional(),
   workload_scale_intent: z.object({
     uid: text, namespace: text, kind: text, name: text, current_replicas: integer, replicas: integer,

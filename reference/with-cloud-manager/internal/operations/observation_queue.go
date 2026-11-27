@@ -20,12 +20,12 @@ const observationQueueRestarted = "queue_observation_restarted"
 func supportsObservationRetry(action string) bool {
 	switch action {
 	case "start", "stop", "reboot", "create", "create-network", "create-subnet", "create-security-group", "create-security-group-rule",
-		"create-elastic-ip", "create-snapshot", "delete-snapshot", "restore-snapshot", "rollback-snapshot", "create-image",
+		"create-elastic-ip", createVolume, "create-snapshot", "delete-snapshot", "restore-snapshot", "rollback-snapshot", "create-image",
 		"copy-image", "delete-image", "delete-network", "delete-subnet", "delete-security-group", "revoke-security-group-rule",
 		"release-elastic-ip", "bind-elastic-ip", "unbind-elastic-ip", "rename-load-balancer", "rename-load-balancer-listener",
 		"rename-load-balancer-target-group", "set-load-balancer-backend-weight", "detach-load-balancer-backend", "attach-load-balancer-backend",
 		"set-dns-record-status", "create-dns-record", "delete-dns-record", "scale-workload", "rename-database-instance", "rename-cache-instance",
-		"retire-instance", "power-on-bare-metal", "shutdown-bare-metal", "stage-bare-metal-pxe", "cancel-bare-metal-pxe":
+		resizeVolume, releaseVolume, "retire-instance", "power-on-bare-metal", "shutdown-bare-metal", "stage-bare-metal-pxe", "cancel-bare-metal-pxe":
 		return true
 	default:
 		return false

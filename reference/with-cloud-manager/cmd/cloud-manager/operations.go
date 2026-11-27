@@ -26,6 +26,10 @@ const dnsRecordCreationRoute = "/v1/tenants/:tenant/projects/:project/dns-zones/
 const dnsRecordDeletionRoute = "/v1/tenants/:tenant/projects/:project/dns-zones/record-deletion"
 const workloadScaleRoute = "/v1/tenants/:tenant/projects/:project/kubernetes-workloads/scale"
 const dnsRecordStatusRoute = "/v1/tenants/:tenant/projects/:project/dns-zones/record-status"
+const volumesRoute = "/v1/tenants/:tenant/projects/:project/volumes"
+const volumeResizeRoute = volumesRoute + "/resize"
+const volumeReleaseRoute = volumesRoute + "/release"
+const volumeReleasePreviewRoute = volumesRoute + "/release-preview"
 const databaseRenameRoute = "/v1/tenants/:tenant/projects/:project/databases/rename"
 const bareMetalPXERoute = "/v1/tenants/:tenant/projects/:project/bare-metal/pxe"
 const bareMetalPowerRoute = "/v1/tenants/:tenant/projects/:project/bare-metal/power"
@@ -83,7 +87,7 @@ func submitOperation(ctx context.Context, w http.ResponseWriter, r *http.Request
 	writeOperationReceipt(w, r, scope, op, err, logger)
 }
 
-func creationHandler(store operations.Store, logger plumelog.StructuredLogger) http.Handler {
+func creationHandler[T any](submit func(context.Context, string, identity.Scope, string, T) (operations.Operation, error), logger plumelog.StructuredLogger) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
 		token, authenticated := requestCredential(r)
@@ -96,7 +100,7 @@ func creationHandler(store operations.Store, logger plumelog.StructuredLogger) h
 			writeAccountError(w, r, identity.ErrAccountInvalid, logger)
 			return
 		}
-		var input operations.CreateInput
+		var input T
 		if err := contract.DecodeUniqueJSONRequest(r, &input, contract.JSONRequestOptions{MaxBytes: 4096}); err != nil {
 			writeAccountError(w, r, err, logger)
 			return
@@ -104,7 +108,7 @@ func creationHandler(store operations.Store, logger plumelog.StructuredLogger) h
 		ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
 		defer cancel()
 		scope := identity.Scope{Tenant: router.Param(r, "tenant"), Project: router.Param(r, "project")}
-		op, err := store.SubmitCreation(ctx, token, scope, keys[0], input)
+		op, err := submit(ctx, token, scope, keys[0], input)
 		writeOperationReceipt(w, r, scope, op, err, logger)
 	})
 }
@@ -445,6 +449,11 @@ func bareMetalPowerRevisionError() error {
 func cacheRenameRevisionError() error {
 	return contract.NewErrorBuilder().Type(contract.TypePreconditionFailed).
 		Message("current cache name, ownership revision and inventory required").Build()
+}
+
+func volumeRevisionAndCapacityError() error {
+	return contract.NewErrorBuilder().Type(contract.TypePreconditionFailed).
+		Message("current volume capacity, ownership revision and inventory required").Build()
 }
 
 func databaseRenameRevisionError() error {

@@ -9,36 +9,43 @@ import (
 	"with-cloud-manager/internal/provider"
 )
 
-type restoredVolume struct {
+type provisionedVolume struct {
 	id, name, status, zone, diskType, snapshot string
 	size                                       int
 	marked, ready                              bool
 	encrypted                                  *bool
 }
 
-type restoreLookup struct {
-	id, marker string
-	spec       provider.SnapshotRestoreSpec
+type volumeLookup struct {
+	id, sourceVolume string
+	order            volumeOrder
 }
 
 func (c *Client) FindRestoredVolume(ctx context.Context, scope provider.Scope, spec provider.SnapshotRestoreSpec, token, id string) (provider.Object, error) {
 	if err := c.checkSnapshotRestoreScope(scope, spec, token); err != nil {
 		return provider.Object{}, err
 	}
-	read, validID := c.restoredHuaweiVolumes, huaweiResourceID.MatchString
+	return c.findProvisionedVolume(ctx, scope, volumeLookup{id: id, sourceVolume: spec.VolumeID, order: volumeOrder{
+		spec: spec.Volume(), tagKey: restoreIntentTag, snapshot: spec.ID, marker: volumeOrderMarker(scope, restoreIntentTag, token),
+	}})
+}
+
+func (c *Client) findProvisionedVolume(ctx context.Context, scope provider.Scope, lookup volumeLookup) (provider.Object, error) {
+	id, spec := lookup.id, lookup.order.spec
+	snapshot := lookup.order.snapshot
+	read, validID := c.readHuaweiProvisionedVolumes, huaweiResourceID.MatchString
 	switch c.name {
 	case provider.TencentCVM:
-		read = c.restoredTencentVolumes
+		read = c.readTencentProvisionedVolumes
 		validID = func(id string) bool { return validLaunchID(id, "disk-") }
 	case provider.AlibabaECS:
-		read = c.restoredAlibabaVolumes
+		read = c.readAlibabaProvisionedVolumes
 		validID = func(id string) bool { return validLaunchID(id, "d-") }
 	}
-	if id != "" && (!validID(id) || id == spec.VolumeID) {
+	if id != "" && (!validID(id) || id == lookup.sourceVolume) {
 		return provider.Object{}, &provider.Failure{Kind: provider.InvalidResponse}
 	}
-	lookup := restoreLookup{id: id, marker: restoreMarker(scope, token), spec: spec}
-	var found restoredVolume
+	var found provisionedVolume
 	var cursor string
 	for range 8 {
 		rows, next, err := read(ctx, scope.Region, cursor, lookup)
@@ -55,7 +62,7 @@ func (c *Client) FindRestoredVolume(ctx context.Context, scope provider.Scope, s
 			if !row.marked {
 				continue
 			}
-			if found.id != "" || row.id == spec.VolumeID || row.name != spec.Name || (row.snapshot != "" && row.snapshot != spec.ID) {
+			if found.id != "" || row.id == lookup.sourceVolume || row.name != spec.Name || (row.snapshot != "" && row.snapshot != snapshot) {
 				return provider.Object{}, &provider.Failure{Kind: provider.InvalidResponse}
 			}
 			found = row
@@ -66,12 +73,22 @@ func (c *Client) FindRestoredVolume(ctx context.Context, scope provider.Scope, s
 			}
 			if found.zone != spec.Zone || found.diskType != spec.DiskType || found.size != spec.SizeGiB ||
 				found.encrypted == nil || (spec.Encrypted && !*found.encrypted) ||
-				(c.name != provider.TencentCVM && found.snapshot != spec.ID) {
+				(c.name != provider.TencentCVM && found.snapshot != snapshot) {
 				return provider.Object{}, &provider.Failure{Kind: provider.InvalidResponse}
 			}
 			result := provider.Object{ID: found.id, Name: found.name, Status: found.status}
 			result.Link(provider.Zone, found.zone, "in_zone")
-			result.Link(provider.Snapshot, spec.ID, "restored_from")
+			if snapshot != "" {
+				result.Link(provider.Snapshot, snapshot, "restored_from")
+			} else {
+				var bootable *bool
+				usage := "data"
+				if c.name == provider.HuaweiECS {
+					value := false
+					bootable, usage = &value, ""
+				}
+				result.Volume = volumeInventoryDetails(&found.size, found.diskType, usage, bootable)
+			}
 			return result, nil
 		}
 		cursor = next
@@ -79,7 +96,7 @@ func (c *Client) FindRestoredVolume(ctx context.Context, scope provider.Scope, s
 	return provider.Object{}, &provider.Failure{Kind: provider.InvalidResponse}
 }
 
-func (c *Client) restoredTencentVolumes(ctx context.Context, region, cursor string, lookup restoreLookup) ([]restoredVolume, string, error) {
+func (c *Client) readTencentProvisionedVolumes(ctx context.Context, region, cursor string, lookup volumeLookup) ([]provisionedVolume, string, error) {
 	offset, err := pageNumber(cursor, 0)
 	if err != nil {
 		return nil, "", err
@@ -92,7 +109,7 @@ func (c *Client) restoredTencentVolumes(ctx context.Context, region, cursor stri
 	if lookup.id != "" {
 		query.DiskIds = []string{lookup.id}
 	} else {
-		query.Filters = []tencentNetworkFilter{{"tag:" + restoreIntentTag, []string{lookup.marker}}}
+		query.Filters = []tencentNetworkFilter{{"tag:" + lookup.order.tagKey, []string{lookup.order.marker}}}
 	}
 	body, err := json.Marshal(query)
 	if err != nil {
@@ -106,6 +123,7 @@ func (c *Client) restoredTencentVolumes(ctx context.Context, region, cursor stri
 			Placement                                                                                struct{ Zone string }
 			Tags                                                                                     []*tag
 			InstanceIdList                                                                           []string
+			Portable, Shareable, Attached                                                            *bool
 			Encrypt                                                                                  *bool
 		}
 	}
@@ -119,18 +137,19 @@ func (c *Client) restoredTencentVolumes(ctx context.Context, region, cursor stri
 	if err != nil {
 		return nil, "", err
 	}
-	rows := make([]restoredVolume, 0, len(result.DiskSet))
+	rows := make([]provisionedVolume, 0, len(result.DiskSet))
 	for _, row := range result.DiskSet {
-		rows = append(rows, restoredVolume{id: row.DiskId, name: row.DiskName, status: row.DiskState, zone: row.Placement.Zone,
+		standalone := row.Portable != nil && *row.Portable && row.Shareable != nil && !*row.Shareable && row.Attached != nil && !*row.Attached
+		rows = append(rows, provisionedVolume{id: row.DiskId, name: row.DiskName, status: row.DiskState, zone: row.Placement.Zone,
 			diskType: row.DiskType, snapshot: row.SnapshotId, size: row.DiskSize, encrypted: row.Encrypt,
-			marked: matchingTag(row.Tags, restoreIntentTag, lookup.marker),
+			marked: matchingTag(row.Tags, lookup.order.tagKey, lookup.order.marker),
 			ready: row.DiskState == "UNATTACHED" && row.DiskUsage == "DATA_DISK" && row.DiskChargeType == "POSTPAID_BY_HOUR" &&
-				row.InstanceId == "" && len(row.InstanceIdList) == 0})
+				row.InstanceId == "" && len(row.InstanceIdList) == 0 && (lookup.order.snapshot != "" || standalone)})
 	}
 	return rows, next, nil
 }
 
-func (c *Client) restoredAlibabaVolumes(ctx context.Context, region, cursor string, lookup restoreLookup) ([]restoredVolume, string, error) {
+func (c *Client) readAlibabaProvisionedVolumes(ctx context.Context, region, cursor string, lookup volumeLookup) ([]provisionedVolume, string, error) {
 	query := url.Values{"RegionId": {region}, "MaxResults": {strconv.Itoa(pageSize)}}
 	if lookup.id != "" {
 		ids, err := json.Marshal([]string{lookup.id})
@@ -139,9 +158,11 @@ func (c *Client) restoredAlibabaVolumes(ctx context.Context, region, cursor stri
 		}
 		query.Set("DiskIds", string(ids))
 	} else {
-		query.Set("SnapshotId", lookup.spec.ID)
-		query.Set("Tag.1.Key", restoreIntentTag)
-		query.Set("Tag.1.Value", lookup.marker)
+		if lookup.order.snapshot != "" {
+			query.Set("SnapshotId", lookup.order.snapshot)
+		}
+		query.Set("Tag.1.Key", lookup.order.tagKey)
+		query.Set("Tag.1.Value", lookup.order.marker)
 	}
 	if cursor != "" {
 		query.Set("NextToken", cursor)
@@ -151,10 +172,9 @@ func (c *Client) restoredAlibabaVolumes(ctx context.Context, region, cursor stri
 		Disks           struct {
 			Disk []struct {
 				alibabaDiskObservation
-				DiskName, SourceSnapshotId, DiskChargeType string
-				Size                                       int
-				Encrypted                                  *bool
-				Tags                                       alibabaECSTags
+				DiskName, SourceSnapshotId, ImageId string
+				Encrypted                           *bool
+				Tags                                alibabaECSTags
 			}
 		}
 	}
@@ -168,49 +188,57 @@ func (c *Client) restoredAlibabaVolumes(ctx context.Context, region, cursor stri
 	if disks == nil || len(disks) > pageSize || (len(disks) == 0 && result.NextToken != "") {
 		return nil, "", &provider.Failure{Kind: provider.InvalidResponse}
 	}
-	rows := make([]restoredVolume, 0, len(disks))
+	rows := make([]provisionedVolume, 0, len(disks))
 	for _, row := range disks {
 		if row.RegionId != region {
 			return nil, "", &provider.Failure{Kind: provider.Unauthorized}
 		}
-		rows = append(rows, restoredVolume{id: row.DiskId, name: row.DiskName, status: row.Status, zone: row.ZoneId,
-			diskType: row.Category, snapshot: row.SourceSnapshotId, size: row.Size, encrypted: row.Encrypted,
-			marked: matchingTag(row.Tags.normalized(), restoreIntentTag, lookup.marker),
-			ready:  row.Status == "Available" && row.Type == "data" && row.DiskChargeType == "PostPaid" && len(row.hosts()) == 0})
+		standalone := row.Portable != nil && *row.Portable && row.MultiAttach == "Disabled" && row.ImageId == ""
+		size := 0
+		if row.Size != nil {
+			size = *row.Size
+		}
+		rows = append(rows, provisionedVolume{id: row.DiskId, name: row.DiskName, status: row.Status, zone: row.ZoneId,
+			diskType: row.Category, snapshot: row.SourceSnapshotId, size: size, encrypted: row.Encrypted,
+			marked: matchingTag(row.Tags.normalized(), lookup.order.tagKey, lookup.order.marker),
+			ready:  row.Status == "Available" && row.Type == "data" && row.DiskChargeType == "PostPaid" && len(row.hosts()) == 0 && (lookup.order.snapshot != "" || standalone)})
 	}
 	return rows, result.NextToken, nil
 }
 
-type huaweiRestoredVolume struct {
+type huaweiProvisionedVolume struct {
 	ID, Name, Status, Description, Bootable string
-	Project                                 string `json:"os-vol-tenant-attr:tenant_id"`
-	Zone                                    string `json:"availability_zone"`
-	Type                                    string `json:"volume_type"`
-	Snapshot                                string `json:"snapshot_id"`
+	Project                                 string                     `json:"os-vol-tenant-attr:tenant_id"`
+	Zone                                    string                     `json:"availability_zone"`
+	Type                                    string                     `json:"volume_type"`
+	Snapshot                                string                     `json:"snapshot_id"`
+	SourceVolume                            string                     `json:"source_volid"`
+	Image                                   map[string]json.RawMessage `json:"volume_image_metadata"`
+	Multiattach                             *bool
 	Size                                    int
 	Attachments                             []json.RawMessage
 	Metadata                                map[string]json.RawMessage
 }
 
-func (c *Client) restoredHuaweiVolumes(ctx context.Context, region, cursor string, lookup restoreLookup) ([]restoredVolume, string, error) {
+func (c *Client) readHuaweiProvisionedVolumes(ctx context.Context, region, cursor string, lookup volumeLookup) ([]provisionedVolume, string, error) {
 	path := "/v2/" + c.profile.ProjectID + "/cloudvolumes"
-	var disks []huaweiRestoredVolume
+	var disks []huaweiProvisionedVolume
 	var next string
 	if lookup.id != "" {
 		endpoint := huaweiEVS(region, path+"/"+lookup.id)
-		var result struct{ Volume huaweiRestoredVolume }
+		var result struct{ Volume huaweiProvisionedVolume }
 		if err := c.readHuawei(ctx, endpoint, &result); err != nil {
 			return nil, "", err
 		}
-		disks = []huaweiRestoredVolume{result.Volume}
+		disks = []huaweiProvisionedVolume{result.Volume}
 	} else {
 		endpoint := huaweiEVS(region, path+"/detail")
-		query := url.Values{"name": {lookup.spec.Name}, "limit": {"100"}, "sort_key": {"id"}, "sort_dir": {"asc"}}
+		query := url.Values{"name": {lookup.order.spec.Name}, "limit": {"100"}, "sort_key": {"id"}, "sort_dir": {"asc"}}
 		if cursor != "" {
 			query.Set("marker", cursor)
 		}
 		endpoint.RawQuery = query.Encode()
-		var result struct{ Volumes []huaweiRestoredVolume }
+		var result struct{ Volumes []huaweiProvisionedVolume }
 		if err := c.readHuawei(ctx, endpoint, &result); err != nil {
 			return nil, "", err
 		}
@@ -229,7 +257,7 @@ func (c *Client) restoredHuaweiVolumes(ctx context.Context, region, cursor strin
 			next = last
 		}
 	}
-	rows := make([]restoredVolume, 0, len(disks))
+	rows := make([]provisionedVolume, 0, len(disks))
 	for _, disk := range disks {
 		if disk.Project != c.profile.ProjectID {
 			return nil, "", &provider.Failure{Kind: provider.Unauthorized}
@@ -243,10 +271,13 @@ func (c *Client) restoredHuaweiVolumes(ctx context.Context, region, cursor strin
 			value := true
 			encrypted = &value
 		}
-		rows = append(rows, restoredVolume{id: disk.ID, name: disk.Name, status: disk.Status, zone: disk.Zone,
+		billing := disk.Metadata["orderID"]
+		standalone := disk.Multiattach != nil && !*disk.Multiattach && disk.Metadata != nil &&
+			(len(billing) == 0 || string(billing) == `""`) && disk.SourceVolume == "" && len(disk.Image) == 0
+		rows = append(rows, provisionedVolume{id: disk.ID, name: disk.Name, status: disk.Status, zone: disk.Zone,
 			diskType: disk.Type, snapshot: disk.Snapshot, size: disk.Size, encrypted: encrypted,
-			marked: disk.Description == restoreIntentTag+":"+lookup.marker,
-			ready:  disk.Status == "available" && disk.Bootable == "false" && disk.Attachments != nil && len(disk.Attachments) == 0})
+			marked: disk.Description == lookup.order.tagKey+":"+lookup.order.marker,
+			ready:  disk.Status == "available" && disk.Bootable == "false" && disk.Attachments != nil && len(disk.Attachments) == 0 && (lookup.order.snapshot != "" || standalone)})
 	}
 	return rows, next, nil
 }

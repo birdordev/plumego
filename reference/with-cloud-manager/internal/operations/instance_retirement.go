@@ -164,7 +164,7 @@ func resolveRetirementDisk(ctx context.Context, tx *sql.Tx, actor identity.Scope
 	var active bool
 	err = tx.QueryRowContext(ctx, `SELECT EXISTS(
 		SELECT 1 FROM cmp_instance_operations WHERE status IN `+activeOperationStatuses+`
-		  AND (volume_scope_id,volume_id)=($1,$2)) OR `+snapshotWriteConflict, disk.ScopeID, id, "").Scan(&active)
+		  AND (volume_scope_id,volume_id)=($1,$2)) OR `+snapshotWriteConflict+" OR "+volumeChangeConflict, disk.ScopeID, id, "").Scan(&active)
 	if err == nil && active {
 		return disk, ErrConflict
 	}

@@ -437,7 +437,7 @@ func (s Store) confirmCreation(ctx context.Context, task mq.Task, w work, object
 		err = tx.QueryRowContext(ctx, `UPDATE cmp_instance_operations SET scope_id=$2,external_id=$3,status='succeeded',
 			outcome_reason=$4,updated_at=statement_timestamp()
 			WHERE operation_id=$1 AND NOT EXISTS (SELECT 1 FROM cmp_instance_operations AS prior
-			WHERE prior.action IN ('create','create-network','create-subnet','create-security-group','create-security-group-rule','create-elastic-ip','create-snapshot','restore-snapshot','create-image','copy-image')
+			WHERE prior.action IN ('create','create-network','create-subnet','create-security-group','create-security-group-rule','create-elastic-ip','create-snapshot','restore-snapshot','create-volume','create-image','copy-image')
 			AND (prior.scope_id,prior.external_id)=($2,$3)) RETURNING operation_id`, w.ID, scopeID, object.ID, reason).Scan(&linked)
 		if errors.Is(err, sql.ErrNoRows) {
 			return ErrConflict

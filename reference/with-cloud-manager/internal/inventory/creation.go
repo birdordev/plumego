@@ -108,7 +108,7 @@ func RegisterCreatedAsset(ctx context.Context, tx *sql.Tx, actor identity.Scope,
 		return 0, err
 	}
 	if kind == provider.Volume {
-		if err := registerRestoredVolume(ctx, tx, scope, generation, object); err != nil {
+		if err := registerProvisionedVolume(ctx, tx, scope, generation, object); err != nil {
 			return 0, err
 		}
 	} else if kind == provider.Image {
@@ -173,9 +173,17 @@ func RegisterCreatedAsset(ctx context.Context, tx *sql.Tx, actor identity.Scope,
 	return scope, nil
 }
 
-func registerRestoredVolume(ctx context.Context, tx *sql.Tx, scope, generation int64, object provider.Object) error {
-	if len(object.Links) != 2 || object.Links[0].Kind != provider.Zone || object.Links[0].Relation != "in_zone" ||
-		object.Links[1].Kind != provider.Snapshot || object.Links[1].Relation != "restored_from" {
+func registerProvisionedVolume(ctx context.Context, tx *sql.Tx, scope, generation int64, object provider.Object) error {
+	if len(object.Links) == 0 || len(object.Links) > 2 || object.Links[0].Kind != provider.Zone || object.Links[0].Relation != "in_zone" {
+		return identity.ErrForbidden
+	}
+	var snapshot string
+	if len(object.Links) == 2 {
+		if object.Links[1].Kind != provider.Snapshot || object.Links[1].Relation != "restored_from" {
+			return identity.ErrForbidden
+		}
+		snapshot = object.Links[1].ID
+	} else if object.Volume == nil || !object.Volume.Valid() {
 		return identity.ErrForbidden
 	}
 	var conflict bool
@@ -183,7 +191,7 @@ func registerRestoredVolume(ctx context.Context, tx *sql.Tx, scope, generation i
 		SELECT 1 FROM cmp_inventory_objects AS o, LATERAL jsonb_array_elements(o.links) AS link
 		WHERE (o.scope_id,o.external_id)=($1,$2) AND (link->>'relation'='attached_to'
 		   OR (link->>'relation'='restored_from' AND (link->>'kind',link->>'id') IS DISTINCT FROM ('snapshot',$3::text))))`,
-		scope, object.ID, object.Links[1].ID).Scan(&conflict)
+		scope, object.ID, snapshot).Scan(&conflict)
 	if err != nil {
 		return err
 	}
@@ -193,9 +201,7 @@ func registerRestoredVolume(ctx context.Context, tx *sql.Tx, scope, generation i
 	if err := upsert(ctx, tx, scope, generation, provider.Volume, []provider.Object{object}); err != nil {
 		return err
 	}
-	_, err = tx.ExecContext(ctx, `UPDATE cmp_inventory_scopes SET running=false,fence=fence+1,cursor='',pages=0
-		WHERE scope_id=$1 AND running`, scope)
-	return err
+	return restartActiveInventoryScan(ctx, tx, scope)
 }
 
 func registerCreatedSnapshot(ctx context.Context, tx *sql.Tx, scope, generation int64, object provider.Object) error {

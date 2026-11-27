@@ -24,6 +24,9 @@ type work struct {
 	retirement          provider.InstanceRetirement
 	cacheRename         provider.CacheRename
 	databaseRename      provider.DatabaseRename
+	volumeRelease       provider.VolumeRelease
+	volumeSpec          provider.VolumeSpec
+	volumeResize        provider.VolumeResize
 	workloadScale       provider.WorkloadScaleChange
 	Operation
 	actor                             identity.Scope
@@ -183,6 +186,9 @@ func (s Store) process(ctx context.Context, task mq.Task, connect ConnectOperato
 	if w.Action == rollbackSnapshot {
 		return s.processSnapshotRollback(ctx, task, w, client, scope)
 	}
+	if w.Action == createVolume {
+		return s.processVolumeCreation(ctx, task, w, client, scope)
+	}
 	if w.Action == restoreSnapshot {
 		return s.processSnapshotRestore(ctx, task, w, client, scope)
 	}
@@ -221,6 +227,12 @@ func (s Store) process(ctx context.Context, task mq.Task, connect ConnectOperato
 	}
 	if w.Action == renameCacheInstance {
 		return s.processCacheRename(ctx, task, w, client, scope)
+	}
+	if w.Action == releaseVolume {
+		return s.processVolumeRelease(ctx, task, w, client, scope)
+	}
+	if w.Action == resizeVolume {
+		return s.processVolumeResize(ctx, task, w, client, scope)
 	}
 	if w.Action == renameDatabaseInstance {
 		return s.processDatabaseRename(ctx, task, w, client, scope)
@@ -488,6 +500,9 @@ func checkOperationTarget(ctx context.Context, tx *sql.Tx, w *work) error {
 	if w.Action == deleteSnapshot || w.Action == rollbackSnapshot {
 		return checkSnapshotMutation(ctx, tx, w)
 	}
+	if w.Action == createVolume {
+		return checkVolumeCreation(ctx, tx, w)
+	}
 	if w.Action == restoreSnapshot {
 		return checkSnapshotRestore(ctx, tx, w)
 	}
@@ -529,6 +544,12 @@ func checkOperationTarget(ctx context.Context, tx *sql.Tx, w *work) error {
 	}
 	if w.Action == renameCacheInstance {
 		return checkCacheRename(ctx, tx, w)
+	}
+	if w.Action == releaseVolume {
+		return checkVolumeRelease(ctx, tx, w)
+	}
+	if w.Action == resizeVolume {
+		return checkVolumeResize(ctx, tx, w)
 	}
 	if w.Action == renameDatabaseInstance {
 		return checkDatabaseRename(ctx, tx, w)

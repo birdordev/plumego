@@ -13,6 +13,7 @@ import { networkActions } from '../network/row-actions'
 import type { AssetActionContext, ListAssetActions } from '../row-action'
 import { snapshotCreationActions, snapshotActions } from '../snapshots/row-actions'
 import type { Asset } from '../types'
+import { volumeCreationActions, volumeReleaseActions, volumeResizeActions } from '../volumes/row-actions'
 
 const actions: Partial<Record<string, ListAssetActions>> = {
   'kubernetes-cluster': clusterActions,
@@ -23,7 +24,8 @@ const actions: Partial<Record<string, ListAssetActions>> = {
   'bare-metal': bareMetalActions,
   'elastic-ip': elasticIPActions,
   'load-balancer': loadBalancerActions,
-  volume: snapshotCreationActions,
+  zone: volumeCreationActions,
+  volume: (asset, context) => [...snapshotCreationActions(asset, context), ...volumeResizeActions(asset, context), ...volumeReleaseActions(asset, context)],
   snapshot: snapshotActions,
   image: imageActions,
   instance: (asset, context) => [

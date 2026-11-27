@@ -50,7 +50,7 @@ func newAPI(db *sql.DB, addr string, console *consoleConfig) (*core.App, error) 
 	additionalVersions = append(additionalVersions, billing.ProjectBudgetMigration, alerts.BucketProtectionMigration,
 		inventory.TagPolicyAlertsMigration, operations.FirstLeaseMigration, operations.QueueSnapshotMigration, alerts.OperationQueueMigration,
 		operations.QueueFindingsMigration, operations.ObservationQueueRepairMigration, operations.PowerObservationMigration,
-		inventory.VolumeInventoryMigration)
+		inventory.VolumeInventoryMigration, operations.VolumeResizeMigration, operations.VolumeCreationMigration, operations.VolumeReleaseMigration)
 	additionalVersionList := strings.Join(additionalVersions, ",")
 	ready := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx, cancel := context.WithTimeout(r.Context(), time.Second)
@@ -117,8 +117,8 @@ func newAPI(db *sql.DB, addr string, console *consoleConfig) (*core.App, error) 
 		app.Get(alertsRoute, projectAlerts), app.Get(alertsRoute+"/:alert", projectAlerts),
 		app.Post(alertsRoute+"/:alert/acknowledgement", projectAlerts),
 		app.Patch(assetsRoute+"/ownership", ownershipHandler(store, app.Logger())),
-		app.Post(instancesRoute, creationHandler(operationStore, app.Logger())),
-		app.Get(operationsRoute+"/retirement-preview", instancePreviewHandler(operationStore.PreviewInstanceRetirement, app.Logger())),
+		app.Post(instancesRoute, creationHandler(operationStore.SubmitCreation, app.Logger())),
+		app.Get(operationsRoute+"/retirement-preview", assetOperationPreviewHandler(operationStore.PreviewInstanceRetirement, app.Logger())),
 		app.Post(operationsRoute+"/retire", versionedOperationHandler(operationStore.SubmitInstanceRetirement, retirementRevisionError, app.Logger())),
 		app.Post(operationsRoute, instanceOps), app.Get(operationsRoute+"/deletion-preview", deletionPreviewHandler(operationStore, app.Logger())), app.Get(operationsRoute+"/:operation", instanceOps),
 		app.Post(operationsRoute+"/:operation/approval", approve),
@@ -132,6 +132,10 @@ func newAPI(db *sql.DB, addr string, console *consoleConfig) (*core.App, error) 
 		app.Post(dnsRecordDeletionRoute, versionedOperationHandler(operationStore.SubmitDNSRecordDeletion, dnsRecordRevisionError, app.Logger())),
 		app.Post(workloadScaleRoute, versionedOperationHandler(operationStore.SubmitWorkloadScale, workloadScaleRevisionError, app.Logger())),
 		app.Post(dnsRecordStatusRoute, versionedOperationHandler(operationStore.SubmitDNSRecordStatus, dnsRecordRevisionError, app.Logger())),
+		app.Post(volumesRoute, creationHandler(operationStore.SubmitVolumeCreation, app.Logger())),
+		app.Get(volumeReleasePreviewRoute, assetOperationPreviewHandler(operationStore.PreviewVolumeRelease, app.Logger())),
+		app.Post(volumeReleaseRoute, versionedOperationHandler(operationStore.SubmitVolumeRelease, volumeRevisionAndCapacityError, app.Logger())),
+		app.Post(volumeResizeRoute, versionedOperationHandler(operationStore.SubmitVolumeResize, volumeRevisionAndCapacityError, app.Logger())),
 		app.Post(databaseRenameRoute, versionedOperationHandler(operationStore.SubmitDatabaseRename, databaseRenameRevisionError, app.Logger())),
 		app.Post(deploymentsRoute, deploymentHandler),
 		app.Get(deploymentRoute, deploymentHandler),

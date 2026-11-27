@@ -64,6 +64,9 @@ type Operation struct {
 	BareMetalDeployment             *BareMetalDeploymentView       `json:"bare_metal_deployment,omitempty"`
 	InstanceRetirementIntent        *InstanceRetirementView        `json:"instance_retirement_intent,omitempty"`
 	CacheRenameIntent               *CacheRenameView               `json:"cache_rename_intent,omitempty"`
+	VolumeReleaseIntent             *VolumeReleaseView             `json:"volume_release_intent,omitempty"`
+	VolumeCreationIntent            *provider.VolumeSpec           `json:"volume_creation_intent,omitempty"`
+	VolumeResizeIntent              *VolumeResizeView              `json:"volume_resize_intent,omitempty"`
 	DatabaseRenameIntent            *DatabaseRenameView            `json:"database_rename_intent,omitempty"`
 	WorkloadScaleIntent             *provider.WorkloadScaleChange  `json:"workload_scale_intent,omitempty"`
 	ID                              string                         `json:"id"`
@@ -430,6 +433,33 @@ func (s Store) Get(ctx context.Context, token string, scope identity.Scope, id s
 				return err
 			}
 			op.InstanceRetirementIntent = &intent
+		}
+		if err == nil && op.Action == createVolume {
+			var intent provider.VolumeSpec
+			if err := tx.QueryRowContext(ctx, `SELECT name,zone,volume_create_type,volume_create_size_gib,volume_create_encrypted
+				FROM cmp_network_intents WHERE operation_id=$1`, id).
+				Scan(&intent.Name, &intent.Zone, &intent.DiskType, &intent.SizeGiB, &intent.Encrypted); err != nil {
+				return err
+			}
+			op.VolumeCreationIntent = &intent
+		}
+		if err == nil && op.Action == releaseVolume {
+			var intent VolumeReleaseView
+			if err := tx.QueryRowContext(ctx, `SELECT i.name,i.volume_release_size_gib,o.ownership_revision
+				FROM cmp_network_intents AS i JOIN cmp_instance_operations AS o USING (operation_id)
+				WHERE operation_id=$1`, id).Scan(&intent.Name, &intent.SizeGiB, &intent.OwnershipRevision); err != nil {
+				return err
+			}
+			op.VolumeReleaseIntent = &intent
+		}
+		if err == nil && op.Action == resizeVolume {
+			var intent VolumeResizeView
+			if err := tx.QueryRowContext(ctx, `SELECT i.current_gib,i.target_gib,o.ownership_revision
+				FROM cmp_volume_resize_intents AS i JOIN cmp_instance_operations AS o USING(operation_id)
+				WHERE operation_id=$1`, id).Scan(&intent.CurrentGiB, &intent.TargetGiB, &intent.OwnershipRevision); err != nil {
+				return err
+			}
+			op.VolumeResizeIntent = &intent
 		}
 		if err == nil && op.Action == renameDatabaseInstance {
 			var intent DatabaseRenameView

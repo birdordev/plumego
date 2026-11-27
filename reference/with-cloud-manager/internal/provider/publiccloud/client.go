@@ -42,6 +42,8 @@ type Config struct {
 	AllowInstanceReboot                bool     `json:"allow_instance_reboot,omitempty"`
 	AllowInstanceDelete                bool     `json:"allow_instance_delete,omitempty"`
 	AllowInstanceRetirement            bool     `json:"allow_instance_retirement,omitempty"`
+	VolumeCreateMaxGiB                 int      `json:"volume_create_max_gib,omitempty"`
+	HuaweiVolumeKMSKeyID               string   `json:"huawei_volume_kms_key_id,omitempty"`
 	AllowVolumeChanges                 bool     `json:"allow_volume_changes,omitempty"`
 	InstanceCreateSizes                []string `json:"instance_create_sizes,omitempty"`
 	HuaweiRootVolumeType               string   `json:"huawei_root_volume_type,omitempty"`
@@ -72,6 +74,8 @@ type Config struct {
 	AllowLoadBalancerListenerRename    bool     `json:"allow_load_balancer_listener_rename,omitempty"`
 	AllowLoadBalancerRename            bool     `json:"allow_load_balancer_rename,omitempty"`
 	AllowDatabaseRename                bool     `json:"allow_database_rename,omitempty"`
+	AllowVolumeResize                  bool     `json:"allow_volume_resize,omitempty"`
+	AllowVolumeRelease                 bool     `json:"allow_volume_release,omitempty"`
 	AllowCacheRename                   bool     `json:"allow_cache_rename,omitempty"`
 	HuaweiElasticIPPool                string   `json:"huawei_elastic_ip_pool,omitempty"`
 	AllowSecurityGroupRules            bool     `json:"allow_security_group_rules,omitempty"`

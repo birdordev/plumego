@@ -47,15 +47,19 @@ func (s SnapshotSpec) ValidFor(vendor string) bool {
 		strings.HasPrefix(name, "manualbk_snapshot_") {
 		return false
 	}
+	return validPublicVolumeID(vendor, s.VolumeID)
+}
+
+func validPublicVolumeID(vendor, id string) bool {
 	switch vendor {
 	case TencentCVM:
-		suffix, ok := strings.CutPrefix(s.VolumeID, "disk-")
+		suffix, ok := strings.CutPrefix(id, "disk-")
 		return ok && snapshotVolumeID.MatchString(suffix)
 	case AlibabaECS:
-		suffix, ok := strings.CutPrefix(s.VolumeID, "d-")
+		suffix, ok := strings.CutPrefix(id, "d-")
 		return ok && snapshotVolumeID.MatchString(suffix)
 	case HuaweiECS:
-		return snapshotEVSID.MatchString(s.VolumeID)
+		return snapshotEVSID.MatchString(id)
 	default:
 		return false
 	}
@@ -102,24 +106,13 @@ type SnapshotRestoreSpec struct {
 	Encrypted            bool
 }
 
-var restoreZone = regexp.MustCompile(`^[a-z][a-z0-9-]{2,63}$`)
-
 func (s SnapshotRestoreSpec) ValidFor(vendor, region string) bool {
-	if !s.SnapshotTarget.ValidFor(vendor) || !snapshotName.MatchString(s.Name) || !restoreZone.MatchString(s.Zone) ||
-		!strings.HasPrefix(s.Zone, region) || s.Zone == region || s.SizeGiB < 10 || s.SizeGiB > 32768 {
-		return false
-	}
-	switch vendor {
-	case TencentCVM:
-		return s.DiskType == "CLOUD_PREMIUM" || s.DiskType == "CLOUD_SSD" || s.DiskType == "CLOUD_BSSD"
-	case AlibabaECS:
-		return !strings.EqualFold(s.Class, "archive") &&
-			(s.DiskType == "cloud_essd" || s.DiskType == "cloud_ssd" || s.DiskType == "cloud_efficiency")
-	case HuaweiECS:
-		return s.DiskType == "SAS" || s.DiskType == "SSD" || s.DiskType == "GPSSD"
-	default:
-		return false
-	}
+	return s.SnapshotTarget.ValidFor(vendor) && (vendor != AlibabaECS || !strings.EqualFold(s.Class, "archive")) &&
+		validVolumePlacement(s.Volume(), vendor, region)
+}
+
+func (s SnapshotRestoreSpec) Volume() VolumeSpec {
+	return VolumeSpec{Name: s.Name, Zone: s.Zone, DiskType: s.DiskType, SizeGiB: s.SizeGiB, Encrypted: s.Encrypted}
 }
 
 type SnapshotRestorer interface {

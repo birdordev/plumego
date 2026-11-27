@@ -350,6 +350,53 @@ func registerOpenAPI(app *core.App, console *consoleConfig) error {
 				"observed_at": {Type: "string", Format: "date-time"}, "enabled": {Type: "boolean"},
 			},
 		}}}}
+	volumeCreate := accountOp("createVolume", "202", "已持久受理的独立按量数据盘创建申请，需独立审批", true)
+	volumeCreate.Params = create.Params
+	volumeCreate.Responses["412"] = openapi.Response{Description: "指定可用区缺少当前凭据代次的有效盘点"}
+	volumeCreate.Responses["429"] = submit.Responses["429"]
+	volumeCreate.Body = &openapi.RequestBody{Required: true,
+		Description: "必填 account、region、zone、name、disk_type、size_gib。encrypted=true 要求确认加密。仅支持单个独占未挂载按量数据盘。",
+		Content: map[string]openapi.MediaType{"application/json": {Schema: openapi.Schema{
+			Type: "object",
+			Properties: map[string]openapi.Schema{
+				"account": openapi.String, "region": openapi.String, "zone": openapi.String, "name": openapi.String,
+				"disk_type": openapi.String, "size_gib": openapi.Integer, "encrypted": {Type: "boolean"},
+			},
+		}}}}
+	volumeReleasePreview := accountOp("previewVolumeRelease", "200", "本地依赖预览，含云盘容量、归属版本、快照和活动操作", false)
+	volumeReleasePreview.Responses["400"] = openapi.Response{Description: "查询参数无效"}
+	volumeReleasePreview.Responses["412"] = openapi.Response{Description: "需要当前凭据代次的有效盘点"}
+	volumeReleasePreview.Params = []openapi.Param{
+		{Name: "account", In: "query", Required: true, Schema: openapi.String},
+		{Name: "region", In: "query", Required: true, Schema: openapi.String},
+		{Name: "asset_id", In: "query", Required: true, Schema: openapi.String},
+	}
+	volumeRelease := accountOp("releaseVolume", "202", "已持久受理的独立按量数据盘释放申请，需独立审批", true)
+	volumeRelease.Params = submit.Params
+	volumeRelease.Responses["412"] = openapi.Response{Description: "需要当前云盘容量、归属版本和有效盘点"}
+	volumeRelease.Responses["429"] = submit.Responses["429"]
+	volumeRelease.Body = &openapi.RequestBody{Required: true,
+		Description: "必填 account、region、asset_id、size_gib 和 confirm_asset_id。确认 ID 必须与 asset_id 相同。If-Match 使用云盘归属版本。",
+		Content: map[string]openapi.MediaType{"application/json": {Schema: openapi.Schema{
+			Type: "object",
+			Properties: map[string]openapi.Schema{
+				"account": openapi.String, "region": openapi.String, "asset_id": openapi.String,
+				"size_gib": openapi.Integer, "confirm_asset_id": openapi.String,
+			},
+		}}}}
+	volumeResize := accountOp("resizeVolume", "202", "已持久受理的按量数据盘扩容申请，需独立审批", true)
+	volumeResize.Params = submit.Params
+	volumeResize.Responses["412"] = openapi.Response{Description: "需要当前云盘容量、归属版本和有效的盘点"}
+	volumeResize.Responses["429"] = submit.Responses["429"]
+	volumeResize.Body = &openapi.RequestBody{Required: true,
+		Description: "仅支持腾讯云、阿里云和华为云的独占未挂载按量数据盘。必填 account、region、asset_id、current_gib 和 target_gib。If-Match 使用云盘归属版本，目标容量须大于当前容量。",
+		Content: map[string]openapi.MediaType{"application/json": {Schema: openapi.Schema{
+			Type: "object",
+			Properties: map[string]openapi.Schema{
+				"account": openapi.String, "region": openapi.String, "asset_id": openapi.String,
+				"current_gib": {Type: "integer"}, "target_gib": {Type: "integer"},
+			},
+		}}}}
 	databaseRename := accountOp("renameDatabaseInstance", "202", "已持久受理的托管数据库实例改名申请，需独立审批", true)
 	databaseRename.Params = submit.Params
 	databaseRename.Responses["412"] = openapi.Response{Description: "需要当前数据库名称、归属版本和有效的盘点"}
@@ -546,6 +593,10 @@ func registerOpenAPI(app *core.App, console *consoleConfig) error {
 		"POST " + bareMetalPXERoute:                                        bareMetalPXE,
 		"POST " + bareMetalPowerRoute:                                      bareMetalPower,
 		"POST " + cacheRenameRoute:                                         cacheRename,
+		"POST " + volumesRoute:                                             volumeCreate,
+		"GET " + volumeReleasePreviewRoute:                                 volumeReleasePreview,
+		"POST " + volumeReleaseRoute:                                       volumeRelease,
+		"POST " + volumeResizeRoute:                                        volumeResize,
 		"POST " + databaseRenameRoute:                                      databaseRename,
 		"POST " + loadBalancerRenameRoute:                                  balancerRename,
 		"POST " + accountsRoute:                                            accountOp("registerCloudAccount", "201", "待校验账号", true),

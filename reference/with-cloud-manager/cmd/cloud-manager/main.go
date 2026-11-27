@@ -281,6 +281,15 @@ func migrateCloudManagerSchema(ctx context.Context, db *sql.DB) error {
 	if err := operations.MigrateBareMetalPXE(ctx, db); err != nil {
 		return errors.New("bare-metal PXE migration failed")
 	}
+	if err := operations.MigrateVolumeResize(ctx, db); err != nil {
+		return errors.New("volume resize migration failed")
+	}
+	if err := operations.MigrateVolumeCreation(ctx, db); err != nil {
+		return errors.New("volume creation migration failed")
+	}
+	if err := operations.MigrateVolumeRelease(ctx, db); err != nil {
+		return errors.New("volume release migration failed")
+	}
 	if err := operations.MigrateBareMetalDeployments(ctx, db); err != nil {
 		return errors.New("bare-metal deployment migration failed")
 	}

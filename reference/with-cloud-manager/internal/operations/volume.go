@@ -76,7 +76,7 @@ func inspectOperationVolume(ctx context.Context, tx *sql.Tx, actor identity.Scop
 		SELECT 1 FROM cmp_network_intents AS intent JOIN cmp_instance_operations AS op USING(operation_id)
 		WHERE (intent.parent_scope_id,intent.parent_id)=($1,$2) AND op.action IN ('create-snapshot','rollback-snapshot')
 		  AND op.status IN ('awaiting_approval','queued','applying','observing','needs_review')
-	)`+" OR "+retirementDiskReserved, volume.ScopeID, input.VolumeID).Scan(&snapshotPending)
+	)`+" OR "+retirementDiskReserved+" OR "+volumeChangeConflict, volume.ScopeID, input.VolumeID, "").Scan(&snapshotPending)
 	if err == nil && snapshotPending {
 		return volume, ErrConflict
 	}

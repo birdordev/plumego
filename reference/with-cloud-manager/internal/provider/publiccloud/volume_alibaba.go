@@ -11,6 +11,8 @@ import (
 )
 
 type alibabaDiskObservation struct {
+	Size                                                                      *int
+	DiskChargeType                                                            string
 	DiskId, RegionId, ZoneId, InstanceId, Type, Status, Category, MultiAttach string
 	Portable, DeleteWithInstance, DeleteAutoSnapshot                          *bool
 	Attachments                                                               struct{ Attachment []struct{ InstanceId string } }
@@ -60,26 +62,9 @@ func (c *Client) alibabaVolumeEvidence(ctx context.Context, region string, chang
 	if err != nil {
 		return volumeEvidence{}, err
 	}
-	ids, err := json.Marshal([]string{change.VolumeID})
+	disk, err := c.describeAlibabaDisk(ctx, region, change.VolumeID)
 	if err != nil {
 		return volumeEvidence{}, err
-	}
-	rows, err := c.describeAlibabaDisks(ctx, region, url.Values{"DiskIds": {string(ids)}})
-	if err != nil {
-		return volumeEvidence{}, err
-	}
-	if len(rows) > 1 {
-		return volumeEvidence{}, &provider.Failure{Kind: provider.InvalidResponse}
-	}
-	if len(rows) == 0 {
-		return volumeEvidence{}, &provider.Failure{Kind: provider.OutcomeUnknown}
-	}
-	disk := rows[0]
-	if disk.RegionId != region {
-		return volumeEvidence{}, &provider.Failure{Kind: provider.Unauthorized}
-	}
-	if disk.DiskId != change.VolumeID {
-		return volumeEvidence{}, &provider.Failure{Kind: provider.InvalidResponse}
 	}
 	hosts := disk.hosts()
 	retained := disk.retained()
@@ -90,6 +75,39 @@ func (c *Client) alibabaVolumeEvidence(ctx context.Context, region string, chang
 			disk.Portable != nil && *disk.Portable && disk.MultiAttach == "Disabled" && retained,
 		instanceHasVolume: len(hosts) == 1 && hosts[0] == change.InstanceID, hosts: hosts,
 	}, nil
+}
+
+func (c *Client) describeAlibabaDisk(ctx context.Context, region, id string) (alibabaDiskObservation, error) {
+	disk, err := c.findAlibabaDisk(ctx, region, id)
+	if err == nil && disk.DiskId == "" {
+		err = &provider.Failure{Kind: provider.OutcomeUnknown}
+	}
+	return disk, err
+}
+
+func (c *Client) findAlibabaDisk(ctx context.Context, region, id string) (alibabaDiskObservation, error) {
+	ids, err := json.Marshal([]string{id})
+	if err != nil {
+		return alibabaDiskObservation{}, err
+	}
+	rows, err := c.describeAlibabaDisks(ctx, region, url.Values{"DiskIds": {string(ids)}})
+	if err != nil {
+		return alibabaDiskObservation{}, err
+	}
+	if len(rows) > 1 {
+		return alibabaDiskObservation{}, &provider.Failure{Kind: provider.InvalidResponse}
+	}
+	if len(rows) == 0 {
+		return alibabaDiskObservation{}, nil
+	}
+	disk := rows[0]
+	if disk.RegionId != region {
+		return alibabaDiskObservation{}, &provider.Failure{Kind: provider.Unauthorized}
+	}
+	if disk.DiskId != id {
+		return alibabaDiskObservation{}, &provider.Failure{Kind: provider.InvalidResponse}
+	}
+	return disk, nil
 }
 
 func (c *Client) alibabaVolumeChange(ctx context.Context, region string, change provider.VolumeChange) (string, error) {
