@@ -36,10 +36,26 @@ func kvmVMHints(hints map[string]openapi.Op, operation func(string, string, stri
 	fenceReview.Responses["412"] = fenced.Responses["412"]
 	fenceReview.Body = serviceCatalogBody([]string{"recovery_id", "decision"}, false)
 	hints["POST "+kvmFencedVMRecoveryRoute+"/review"] = fenceReview
+	migration := operation("requestKVMColdMigration", "202", "固定源虚拟机版本、目标预留和 raw 备份的冷迁移申请", true)
+	migration.Params = review.Params
+	migration.Responses["412"] = review.Responses["412"]
+	migration.Responses["409"] = openapi.Response{Description: "源域缺失条件、备份或目标预留不满足冷迁移要求"}
+	migration.Body = serviceCatalogBody([]string{"migration_id", "target_placement_id", "image_id", "evidence_sha256"}, false)
+	migration.Body.Content["application/json"].Schema.Properties["source_fence_generation"] = openapi.Integer
+	migration.Body.Description = "故障疏散需提供独立确认的源隔离代次。省略 target_placement_id 时，服务自动在其他故障域预留同规格容量。"
+	hints["POST "+kvmColdMigrationRoute] = migration
+	hints["GET "+kvmColdMigrationRoute] = operation("getKVMColdMigration", "200", "本虚拟机最新冷迁移申请及审批结果", false)
+	migrationReview := operation("reviewKVMColdMigration", "200", "独立审批。同事务切换放置和受理目标宿主机工作。", true)
+	migrationReview.Params = review.Params
+	migrationReview.Responses["412"] = openapi.Response{Description: "需要原虚拟机版本和目标宿主机代次"}
+	migrationReview.Responses["409"] = migration.Responses["409"]
+	migrationReview.Body = serviceCatalogBody([]string{"migration_id", "decision"}, false)
+	hints["POST "+kvmColdMigrationRoute+"/review"] = migrationReview
 
 	for _, item := range []struct{ method, path, id, description string }{
 		{"POST", kvmVMPollRoute, "pollKVMVM", "宿主机代理领取一个任务描述。返回空对象表示没有任务。"},
 		{"POST", kvmVMJobRoute + "/arm", "armKVMVM", "登记下一项宿主机写入，仅允许一次。"},
+		{"POST", kvmVMBackupRoute, "authorizeKVMVMBackup", "绑定代理核对同一虚拟机版本及已保留启动卷，供本机冷备份。"},
 		{"POST", kvmVMImageStageRoute, "authorizeKVMImageStage", "复核准备镜像时的代理代次、当前版本和独立审批。"},
 		{"PUT", kvmVMJobRoute + "/observation", "observeKVMVM", "报告同一持久域的只读观测，缺失或不符继续保留预留。"},
 	} {

@@ -19,6 +19,8 @@ const kvmSiteRoute = "/v1/tenants/:tenant/projects/:project/kvm/sites/:site"
 const kvmHostsRoute = kvmSiteRoute + "/hosts"
 const kvmHostRoute = kvmHostsRoute + "/:host"
 const kvmHostFenceRoute = kvmHostRoute + "/fence"
+const kvmHostFenceWorkRoute = kvmHostFenceRoute + "/work"
+const kvmEvacuationCleanupRoute = kvmHostFenceRoute + "/cleanup"
 const kvmCapacityRoute = kvmHostRoute + "/capacity"
 const kvmPlacementsRoute = kvmSiteRoute + "/placements"
 const kvmPlacementRoute = kvmPlacementsRoute + "/:placement"
@@ -35,6 +37,10 @@ func registerKVM(app *core.App, store kvm.Store) error {
 		app.Get(kvmHostRoute, h.endpoint(h.getHost)),
 		app.Patch(kvmHostRoute, h.endpoint(h.changeHost)),
 		app.Get(kvmHostFenceRoute, h.endpoint(h.getHostFence)),
+		app.Get(kvmHostFenceWorkRoute, h.endpoint(h.listHostFenceWork)),
+		app.Post(kvmEvacuationCleanupRoute, h.endpoint(h.confirmEvacuationCleanup)),
+		app.Post(kvmEvacuationBatchesRoute, h.endpoint(h.requestEvacuationBatch)),
+		app.Get(kvmEvacuationBatchRoute, h.endpoint(h.getEvacuationBatch)),
 		app.Post(kvmHostFenceRoute, h.endpoint(h.changeHostFence)),
 		app.Put(kvmCapacityRoute, h.endpoint(h.report)),
 		app.Post(kvmIPv4PoolsRoute, h.endpoint(h.registerIPv4Pool)),
@@ -50,12 +56,16 @@ func registerKVM(app *core.App, store kvm.Store) error {
 		app.Get(kvmFencedVMRecoveryRoute, h.endpoint(h.getFencedVMRecovery)),
 		app.Post(kvmFencedVMRecoveryRoute, h.endpoint(h.requestFencedVMRecovery)),
 		app.Post(kvmFencedVMRecoveryRoute+"/review", h.endpoint(h.reviewFencedVMRecovery)),
+		app.Get(kvmColdMigrationRoute, h.endpoint(h.getColdMigration)),
+		app.Post(kvmColdMigrationRoute, h.endpoint(h.requestColdMigration)),
+		app.Post(kvmColdMigrationRoute+"/review", h.endpoint(h.reviewColdMigration)),
 		app.Post(kvmVMShutdownRoute, h.endpoint(h.requestVMShutdown)),
 		app.Post(kvmVMRetirementRoute, h.endpoint(h.requestVMRetirement)),
 		app.Post(kvmVMRoute+"/review", h.endpoint(h.reviewVM)),
 		app.Post(kvmVMPollRoute, h.endpoint(h.pollVM)),
 		app.Post(kvmVMInventoryRoute, h.endpoint(h.lookupVMInventory)),
 		app.Post(kvmVMJobRoute+"/arm", h.endpoint(h.armVM)),
+		app.Post(kvmVMBackupRoute, h.endpoint(h.authorizeVMBackup)),
 		app.Post(kvmVMImageStageRoute, h.endpoint(h.authorizeImageStage)),
 		app.Put(kvmVMJobRoute+"/observation", h.endpoint(h.observeVM)),
 	)

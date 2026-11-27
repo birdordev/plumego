@@ -163,9 +163,8 @@ func checkReplacementFenceAgent(ctx context.Context, tx *sql.Tx, actor identity.
 
 func checkFenceRejoinWork(ctx context.Context, tx *sql.Tx, actor identity.Scope, host Host) error {
 	var unresolved bool
-	err := tx.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM cmp_kvm_vms AS v JOIN cmp_kvm_placements AS p USING (placement_id)
-		WHERE (p.tenant_id,p.project_id,p.site_id,p.host_id)=($1,$2,$3,$4)
-		  AND v.state IN ('awaiting_approval','queued','staging','staged','defining','defined','starting','stopping','undefining'))`,
+	err := tx.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1`+fenceBlockingVMs+`)
+		OR EXISTS (SELECT 1`+pendingEvacuationCleanup+`)`,
 		actor.Tenant, actor.Project, host.Site, host.ID).Scan(&unresolved)
 	if err == nil && unresolved {
 		return ErrConflict

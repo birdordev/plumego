@@ -109,15 +109,17 @@ func (s Store) SubmitVM(ctx context.Context, token string, scope identity.Scope,
 			return err
 		}
 		// 所有绑定依次锁宿主机与预留，防止到期回收和提交同时成功。
-		var p Placement
-		p, err = scanPlacement(tx.QueryRowContext(ctx, "SELECT "+placementColumns+` FROM cmp_kvm_placements
-			WHERE placement_id=$1 FOR UPDATE`, input.Placement))
+		var image, volume string
+		p, err := scanPlacement(tx.QueryRowContext(ctx, "SELECT "+placementColumns+`,COALESCE(image_id,''),boot_volume
+			FROM cmp_kvm_placements WHERE placement_id=$1 FOR UPDATE`, input.Placement), &image, &volume)
 		if err != nil {
 			return err
 		}
-		prior, err := scanVM(tx.QueryRowContext(ctx, "SELECT "+vmColumns+vmFrom+" WHERE p.placement_id=$1", p.ID))
+		prior, err := scanVM(tx.QueryRowContext(ctx, "SELECT "+vmColumns+vmFrom+`
+			WHERE v.vm_id=COALESCE((SELECT vm_id FROM cmp_kvm_vms WHERE placement_id=$1),
+				(SELECT vm_id FROM cmp_kvm_cold_migrations WHERE source_placement_id=$1 AND status='approved'))`, p.ID))
 		if err == nil {
-			if prior.ImageID != input.ImageID || (input.ImageID == "" && prior.Volume != input.Volume) {
+			if image != input.ImageID || (image == "" && volume != input.Volume) {
 				return ErrConflict
 			}
 			result = prior
@@ -126,25 +128,19 @@ func (s Store) SubmitVM(ctx context.Context, token string, scope identity.Scope,
 		if !errors.Is(err, sql.ErrNoRows) {
 			return err
 		}
-		if p.State != "held" || p.Generation != host.Generation || host.Draining || p.Capacity.GPU != 0 {
+		if p.State != "held" || p.Generation != host.Generation || host.Draining || p.Capacity.GPU != 0 || p.EvacuationVM != "" {
 			return ErrConflict
 		}
-		volume, err := reserveBootVolume(ctx, tx, actor, site, p, input)
+		volume, err = reserveBootVolume(ctx, tx, actor, site, p, input)
 		if err != nil {
 			return err
 		}
-		var changed string
-		err = tx.QueryRowContext(ctx, `UPDATE cmp_kvm_placements SET consumed_at=clock_timestamp(),boot_volume=$2,image_id=NULLIF($3,'')
-			WHERE placement_id=$1 AND expires_at>clock_timestamp() RETURNING placement_id`, p.ID, volume, input.ImageID).Scan(&changed)
-		if errors.Is(err, sql.ErrNoRows) || uniqueViolation(err) {
-			return ErrConflict
-		}
-		if err != nil {
+		if err := consumeVMPlacement(ctx, tx, p.ID, volume, input.ImageID); err != nil {
 			return err
 		}
 		var id string
 		if err := tx.QueryRowContext(ctx, `INSERT INTO cmp_kvm_vms(placement_id,requester_revision) VALUES ($1,$2)
-			RETURNING vm_id::text`, changed, member.Revision).Scan(&id); err != nil {
+			RETURNING vm_id::text`, p.ID, member.Revision).Scan(&id); err != nil {
 			return err
 		}
 		result, err = readVM(ctx, tx, actor, site, id, false)
@@ -154,4 +150,15 @@ func (s Store) SubmitVM(ctx context.Context, token string, scope identity.Scope,
 		return recordEvent(ctx, tx, actor, site, p.Host, "vm_submit", p.ID)
 	})
 	return result.VM, err
+}
+
+func consumeVMPlacement(ctx context.Context, tx *sql.Tx, placement, volume, image string) error {
+	var changed string
+	err := tx.QueryRowContext(ctx, `UPDATE cmp_kvm_placements SET consumed_at=clock_timestamp(),boot_volume=$2,image_id=NULLIF($3,'')
+		WHERE placement_id=$1 AND expires_at>clock_timestamp() AND consumed_at IS NULL
+		  AND released_at IS NULL AND expired_at IS NULL RETURNING placement_id`, placement, volume, image).Scan(&changed)
+	if errors.Is(err, sql.ErrNoRows) || uniqueViolation(err) {
+		return ErrConflict
+	}
+	return err
 }

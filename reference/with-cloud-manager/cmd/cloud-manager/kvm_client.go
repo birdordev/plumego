@@ -22,6 +22,10 @@ const kvmUsage = `usage: cloud-manager kvm COMMAND TENANT PROJECT SITE
   get-host HOST
   change-host HOST REVISION < change.json
   get-host-fence HOST
+  list-host-fence-work HOST [AFTER]
+  confirm-evacuation-cleanup HOST REVISION < cleanup.json
+  request-evacuation-batch HOST REVISION < batch.json
+  get-evacuation-batch HOST BATCH_ID
   change-host-fence HOST REVISION < fence.json
   report-capacity HOST < report.json
   observe-host HOST GENERATION < limits.json
@@ -33,6 +37,10 @@ const kvmUsage = `usage: cloud-manager kvm COMMAND TENANT PROJECT SITE
   get-vm-recovery VM
   request-vm-recovery VM REVISION < recovery.json
   review-vm-recovery VM REVISION < review.json
+  get-cold-migration VM
+  request-cold-migration VM REVISION < migration.json
+  review-cold-migration VM REVISION < review.json
+  backup-vm HOST GENERATION VM REVISION IMAGE_ID < agent.json
   shutdown-vm VM REVISION
   retire-vm VM REVISION
   review-vm VM REVISION < review.json
@@ -50,6 +58,11 @@ func runKVMClient(ctx context.Context, args []string, address, token string, inp
 	if args[0] == "mirror-image" {
 		api := kvmVMAPI{target: plan.target, token: token, transport: transport}
 		return runKVMImageMirror(ctx, api, args[3], args[4], input, output)
+	}
+	if args[0] == "backup-vm" {
+		target, _ := parseKVMBackupTarget(args)
+		api := kvmVMAPI{target: plan.target, token: token, transport: transport}
+		return runKVMVMBackup(ctx, api, target, input, output, kvmProbe{read: runLocalVirsh, freeMiB: kvmLocalFreeMiB})
 	}
 	if args[0] == "run-vm" {
 		api := kvmVMAPI{target: plan.target, token: token, transport: transport}
@@ -92,6 +105,26 @@ func planKVMRequest(base *url.URL, args []string) (operationRequestPlan, error) 
 	id := url.PathEscape(args[4])
 	host := site.JoinPath("hosts", id)
 	placement := site.JoinPath("placements", id)
+	if args[0] == "get-evacuation-batch" && len(args) == 6 && operationClientSegment(args[5]) {
+		return operationRequestPlan{target: host.JoinPath("fence", "evacuation-batches", url.PathEscape(args[5])),
+			method: http.MethodGet, status: http.StatusOK}, nil
+	}
+	if args[0] == "backup-vm" {
+		if _, ok := parseKVMBackupTarget(args); !ok {
+			return operationRequestPlan{}, usage
+		}
+		return operationRequestPlan{target: host, method: http.MethodGet, status: http.StatusOK}, nil
+	}
+	if args[0] == "list-host-fence-work" && (len(args) == 5 || len(args) == 6) {
+		target := host.JoinPath("fence", "work")
+		if len(args) == 6 {
+			if !operationClientSegment(args[5]) {
+				return operationRequestPlan{}, usage
+			}
+			target.RawQuery = url.Values{"after": {args[5]}}.Encode()
+		}
+		return operationRequestPlan{target: target, method: http.MethodGet, status: http.StatusOK}, nil
+	}
 	if len(args) == 5 {
 		switch args[0] {
 		case "get-network":
@@ -102,6 +135,8 @@ func planKVMRequest(base *url.URL, args []string) (operationRequestPlan, error) 
 			return operationRequestPlan{target: site.JoinPath("vms", id), method: http.MethodGet, status: http.StatusOK}, nil
 		case "get-vm-recovery":
 			return operationRequestPlan{target: site.JoinPath("vms", id, "fence-recovery"), method: http.MethodGet, status: http.StatusOK}, nil
+		case "get-cold-migration":
+			return operationRequestPlan{target: site.JoinPath("vms", id, "cold-migration"), method: http.MethodGet, status: http.StatusOK}, nil
 		case "get-host":
 			return operationRequestPlan{target: host, method: http.MethodGet, status: http.StatusOK}, nil
 		case "get-host-fence":
@@ -135,6 +170,12 @@ func planKVMRequest(base *url.URL, args []string) (operationRequestPlan, error) 
 		case "change-host-fence":
 			return operationRequestPlan{target: host.JoinPath("fence"), method: http.MethodPost, status: http.StatusOK,
 				inputLimit: 1024, match: strconv.Quote(strconv.FormatInt(revision, 10))}, nil
+		case "confirm-evacuation-cleanup":
+			return operationRequestPlan{target: host.JoinPath("fence", "cleanup"), method: http.MethodPost, status: http.StatusOK,
+				inputLimit: 1024, match: strconv.Quote(strconv.FormatInt(revision, 10))}, nil
+		case "request-evacuation-batch":
+			return operationRequestPlan{target: host.JoinPath("fence", "evacuation-batches"), method: http.MethodPost, status: http.StatusAccepted,
+				inputLimit: kvmEvacuationBatchBodyLimit, match: strconv.Quote(strconv.FormatInt(revision, 10))}, nil
 		case "shutdown-vm":
 			return operationRequestPlan{target: site.JoinPath("vms", id, "shutdown"), method: http.MethodPost,
 				status: http.StatusAccepted, match: strconv.Quote(strconv.FormatInt(revision, 10))}, nil
@@ -149,6 +190,12 @@ func planKVMRequest(base *url.URL, args []string) (operationRequestPlan, error) 
 				inputLimit: 2048, match: strconv.Quote(strconv.FormatInt(revision, 10))}, nil
 		case "review-vm-recovery":
 			return operationRequestPlan{target: site.JoinPath("vms", id, "fence-recovery", "review"), method: http.MethodPost, status: http.StatusOK,
+				inputLimit: 1024, match: strconv.Quote(strconv.FormatInt(revision, 10))}, nil
+		case "request-cold-migration":
+			return operationRequestPlan{target: site.JoinPath("vms", id, "cold-migration"), method: http.MethodPost, status: http.StatusAccepted,
+				inputLimit: 2048, match: strconv.Quote(strconv.FormatInt(revision, 10))}, nil
+		case "review-cold-migration":
+			return operationRequestPlan{target: site.JoinPath("vms", id, "cold-migration", "review"), method: http.MethodPost, status: http.StatusOK,
 				inputLimit: 1024, match: strconv.Quote(strconv.FormatInt(revision, 10))}, nil
 		case "observe-host", "run-vm":
 			return operationRequestPlan{target: host, method: http.MethodGet, status: http.StatusOK}, nil

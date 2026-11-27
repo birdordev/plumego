@@ -259,9 +259,21 @@ func validateKVMVolume(ctx context.Context, runner kvmVMRunner, vm kvm.VM) error
 	if err := validateKVMNetwork(ctx, probe.read, vm); err != nil {
 		return err
 	}
-	info, err := probe.read(ctx, "vol-dumpxml", "--pool", vm.StoragePool, "--vol", vm.Volume)
+	size, err := readKVMRawVolume(ctx, probe.read, vm, path)
 	if err != nil {
 		return err
+	}
+	target := filepath.Join(path, vm.Volume)
+	if err := runner.bootFile(target, size); err != nil {
+		return err
+	}
+	return verifyKVMVolumeExclusive(ctx, probe.read, vm, target)
+}
+
+func readKVMRawVolume(ctx context.Context, read virshReader, vm kvm.VM, pool string) (int64, error) {
+	info, err := read(ctx, "vol-dumpxml", "--pool", vm.StoragePool, "--vol", vm.Volume)
+	if err != nil {
+		return 0, err
 	}
 	var volume struct {
 		XMLName    xml.Name  `xml:"volume"`
@@ -276,17 +288,14 @@ func validateKVMVolume(ctx context.Context, runner kvmVMRunner, vm kvm.VM) error
 		} `xml:"backingStore"`
 	}
 	if xml.Unmarshal(info, &volume) != nil || volume.Name != vm.Volume ||
-		volume.TargetPath != filepath.Join(path, vm.Volume) || volume.Format.Type != "raw" ||
+		volume.TargetPath != filepath.Join(pool, vm.Volume) || volume.Format.Type != "raw" ||
 		(volume.Capacity.Unit != "" && volume.Capacity.Unit != "bytes") ||
 		volume.Capacity.Amount < 1 || volume.Capacity.Amount > vm.Capacity.DiskMiB*(1<<20) ||
 		(vm.ImageID != "" && volume.Capacity.Amount != vm.ImageSizeBytes) ||
 		(volume.Backing != nil && volume.Backing.Path != "") {
-		return errKVMUnsafeTarget
+		return 0, errKVMUnsafeTarget
 	}
-	if err := runner.bootFile(volume.TargetPath, volume.Capacity.Amount); err != nil {
-		return err
-	}
-	return verifyKVMVolumeExclusive(ctx, probe.read, vm, volume.TargetPath)
+	return volume.Capacity.Amount, nil
 }
 
 func verifyKVMVolumeExclusive(ctx context.Context, read virshReader, vm kvm.VM, path string) error {

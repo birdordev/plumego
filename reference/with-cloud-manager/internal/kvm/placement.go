@@ -18,12 +18,12 @@ var placementKey = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$`)
 const placementColumns = `placement_id,site_id,host_id,generation,network_id,storage_pool,gpu_model,
 	vcpu,memory_mib,disk_mib,gpu,
 	CASE WHEN released_at IS NOT NULL THEN 'released' WHEN consumed_at IS NOT NULL THEN 'bound' WHEN expired_at IS NOT NULL OR expires_at<=clock_timestamp() THEN 'expired' ELSE 'held' END,
-	expires_at,boot_volume_retained,COALESCE(host(ipv4),'')`
+	expires_at,boot_volume_retained,COALESCE(host(ipv4),''),COALESCE(evacuation_vm_id::text,'')`
 
 func scanPlacement(row *sql.Row, tail ...any) (Placement, error) {
 	var p Placement
 	targets := []any{&p.ID, &p.Site, &p.Host, &p.Generation, &p.Network, &p.StoragePool, &p.GPUModel,
-		&p.Capacity.VCPU, &p.Capacity.MemoryMiB, &p.Capacity.DiskMiB, &p.Capacity.GPU, &p.State, &p.ExpiresAt, &p.BootVolumeRetained, &p.Address}
+		&p.Capacity.VCPU, &p.Capacity.MemoryMiB, &p.Capacity.DiskMiB, &p.Capacity.GPU, &p.State, &p.ExpiresAt, &p.BootVolumeRetained, &p.Address, &p.EvacuationVM}
 	err := row.Scan(append(targets, tail...)...)
 	p.MAC = IPv4MAC(p.Address)
 	return p, err
@@ -38,9 +38,13 @@ func (s Store) Reserve(ctx context.Context, token string, scope identity.Scope, 
 		return Placement{}, err
 	}
 	digest := sha256.Sum256(body)
+	permission := identity.Execute
+	if input.EvacuationVM != "" {
+		permission = identity.Manage
+	}
 
 	var result Placement
-	err = s.inProject(ctx, token, scope, site, identity.Execute, false, func(tx *sql.Tx, actor identity.Scope, _ identity.Membership) error {
+	err = s.inProject(ctx, token, scope, site, permission, false, func(tx *sql.Tx, actor identity.Scope, _ identity.Membership) error {
 		prior, found, err := replayPlacement(ctx, tx, actor, site, key, digest)
 		if found || err != nil {
 			result = prior
@@ -49,6 +53,11 @@ func (s Store) Reserve(ctx context.Context, token string, scope identity.Scope, 
 		if err := lockIPv4Network(ctx, tx, actor, site, input.Network, false); err != nil {
 			return err
 		}
+		if input.EvacuationVM != "" {
+			if err := checkEvacuationPlacement(ctx, tx, actor, site, input); err != nil {
+				return err
+			}
+		}
 		pool, err := readIPv4Pool(ctx, tx, actor, site, input.Network, true)
 		if err != nil && !errors.Is(err, sql.ErrNoRows) {
 			return err
@@ -56,12 +65,12 @@ func (s Store) Reserve(ctx context.Context, token string, scope identity.Scope, 
 		if pool.Network == "" && input.IPv4 != "" {
 			return ErrNoIPv4
 		}
-		host, err := selectHost(ctx, tx, actor, site, input)
+		host, err := selectHost(ctx, tx, actor, site, input, false)
 		if err != nil {
 			return err
 		}
 		var address string
-		if pool.Network != "" {
+		if pool.Network != "" && input.EvacuationVM == "" {
 			address, err = reserveIPv4(ctx, tx, actor, pool, input.IPv4)
 			if err != nil {
 				return err
@@ -105,11 +114,11 @@ func insertPlacement(ctx context.Context, tx *sql.Tx, actor identity.Scope, host
 	return scanPlacement(tx.QueryRowContext(ctx, `WITH stamp AS (SELECT clock_timestamp() AS at)
 		INSERT INTO cmp_kvm_placements
 			(placement_id,tenant_id,project_id,site_id,host_id,generation,requester_id,idempotency_key,request_hash,
-			network_id,storage_pool,gpu_model,vcpu,memory_mib,disk_mib,gpu,created_at,expires_at,ipv4,ipam_network_id)
+			network_id,storage_pool,gpu_model,vcpu,memory_mib,disk_mib,gpu,created_at,expires_at,ipv4,ipam_network_id,evacuation_vm_id)
 		SELECT $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,at,at+$17*interval '1 second',
-			NULLIF($18,'')::inet,CASE WHEN $18<>'' THEN $10::text END
+			NULLIF($18,'')::inet,CASE WHEN $18<>'' THEN $10::text END,NULLIF($19,'')::uuid
 		FROM stamp RETURNING `+placementColumns, rand.Text(), actor.Tenant, actor.Project, host.Site, host.ID, host.Generation,
-		actor.Principal, key, digest[:], p.Network, p.StoragePool, p.GPUModel, p.VCPU, p.MemoryMiB, p.DiskMiB, p.GPU, p.TTLSeconds, address))
+		actor.Principal, key, digest[:], p.Network, p.StoragePool, p.GPUModel, p.VCPU, p.MemoryMiB, p.DiskMiB, p.GPU, p.TTLSeconds, address, p.EvacuationVM))
 }
 
 func (s Store) GetPlacement(ctx context.Context, token string, scope identity.Scope, site, id string) (Placement, error) {

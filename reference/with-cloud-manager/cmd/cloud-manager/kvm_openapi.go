@@ -30,6 +30,33 @@ func kvmHints(hints map[string]openapi.Op, operation func(string, string, string
 			"evidence_sha256": openapi.String, "replacement_agent": openapi.String})
 	hints["POST "+kvmHostFenceRoute] = fence
 	hints["GET "+kvmHostFenceRoute] = operation("getKVMHostFence", "200", "宿主机当前状态和最近 20 条隔离证据事件", false)
+	work := operation("listKVMHostFenceWork", "200", "阻止宿主机重新接入的虚拟机任务及尚待现场清理的疏散记录", false)
+	work.Params = []openapi.Param{
+		{Name: "after", In: "query", Description: "当前隔离代次上一页返回的 next", Schema: openapi.String},
+		{Name: "limit", In: "query", Description: "默认 50，最大 100", Schema: openapi.Integer},
+	}
+	work.Responses["400"] = openapi.Response{Description: "分页参数无效"}
+	work.Responses["412"] = openapi.Response{Description: "分页游标与当前宿主机或隔离代次不符"}
+	hints["GET "+kvmHostFenceWorkRoute] = work
+	cleanup := operation("confirmKVMEvacuationCleanup", "200", "登记源域和网络清理证据，解除该次疏散的接入阻塞", true)
+	cleanup.Params = change.Params
+	cleanup.Responses["412"] = change.Responses["412"]
+	cleanup.Body = body("独立审批人提交仍隔离的源宿主机版本、VM ID、疏散 ID 和现场清理证据摘要。", map[string]openapi.Schema{
+		"vm_id": openapi.String, "migration_id": openapi.String, "evidence_sha256": openapi.String,
+	})
+	hints["POST "+kvmEvacuationCleanupRoute] = cleanup
+	batch := operation("requestKVMEvacuationBatch", "202", "原子受理一个源宿主机的疏散批次，各虚拟机独立审批", true)
+	batch.Params = change.Params
+	batch.Responses["409"] = openapi.Response{Description: "至少一台虚拟机或候选目标不满足本批要求"}
+	batch.Responses["412"] = openapi.Response{Description: "需要当前源宿主机隔离代次、管理版本和每台虚拟机的版本"}
+	item := openapi.Schema{Type: "object", Properties: map[string]openapi.Schema{
+		"vm_id": openapi.String, "vm_revision": openapi.Integer, "image_id": openapi.String, "evidence_sha256": openapi.String,
+	}}
+	batch.Body = body("提交 1 至 16 个同源宿主机虚拟机及各自备份与现场证据。", map[string]openapi.Schema{
+		"batch_id": openapi.String, "source_fence_generation": openapi.Integer, "items": {Type: "array", Items: &item},
+	})
+	hints["POST "+kvmEvacuationBatchesRoute] = batch
+	hints["GET "+kvmEvacuationBatchRoute] = operation("getKVMEvacuationBatch", "200", "批次回执及每台虚拟机的当前审批与清理状态", false)
 
 	report := operation("reportKVMCapacity", "200", "成功接收的宿主机观测", true)
 	report.Security = []openapi.SecurityRequirement{{"serviceBearer": {}}}
@@ -54,7 +81,8 @@ func kvmHints(hints map[string]openapi.Op, operation func(string, string, string
 	reserve.Body = body("指定 vCPU、内存、磁盘、网络、本地存储池、有效秒数和可选的 GPU、宿主机及故障域约束。", map[string]openapi.Schema{
 		"vcpu": openapi.Integer, "memory_mib": openapi.Integer, "disk_mib": openapi.Integer, "gpu": openapi.Integer,
 		"network": openapi.String, "storage_pool": openapi.String, "gpu_model": openapi.String, "ttl_seconds": openapi.Integer,
-		"required_host": openapi.String, "failure_domain": openapi.String, "excluded_failure_domain": openapi.String, "ipv4": openapi.String,
+		"required_host": openapi.String, "failure_domain": openapi.String, "excluded_failure_domain": openapi.String,
+		"ipv4": openapi.String, "evacuation_vm_id": openapi.String,
 	})
 
 	image := operation("registerKVMBootImage", "201", "项目站点不可变 raw 镜像", true)

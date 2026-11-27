@@ -26,7 +26,7 @@ func TestAcceptanceKVMFencedVMRecovery(t *testing.T) {
 		{"removal failed", "undefining", "defined", "stopped"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			db, first, second, placement, v := prepareKVMVM(t)
+			db, first, second, placement, v := prepareKVMVMWithPool(t, &fixtureIPv4Pool)
 			v = approveKVMVM(t, first, v, 200)
 			prepareFencedVMState(t, db, second, v, tc.state)
 			revision := strconv.Quote(strconv.FormatInt(v.Revision+1, 10))
@@ -85,8 +85,34 @@ func TestAcceptanceKVMFencedVMRecovery(t *testing.T) {
 			}
 			fence(fixtureKVMAdmin, `"3"`, "request-rejoin", strings.Repeat("d", 64), "replacement-agent", 200)
 			fence(fixtureKVMReviewer, `"4"`, "approve-rejoin", "", "", 200)
+			checkFencedVMRecoveryReallocation(t, first, second, placement, vm, wantReleased)
 		})
 	}
+}
+
+func checkFencedVMRecoveryReallocation(t *testing.T, first, second http.Handler, old kvm.Placement, vm kvm.VM, released bool) {
+	t.Helper()
+	if old.Address == "" {
+		t.Fatal("the test VM must have a registered address")
+	}
+	expectKVM(t, kvmRequest(t, first, fixtureKVMAdmin, "PATCH", fixtureVMHostPath, `"5"`, "",
+		kvm.HostChange{Action: "resume"}), 200, nil)
+	report := fixtureKVMReport()
+	report.Generation = 3
+	expectKVM(t, kvmRequest(t, second, fixtureKVMReplacement, "PUT", fixtureVMHostPath+"/capacity", "", "", report), 200, nil)
+	input := fixtureKVMPlacement()
+	input.IPv4 = old.Address
+	if !released {
+		expectKVM(t, kvmRequest(t, first, fixtureKVMOperator, "POST", fixtureVMPlacementPath, "", "reuse-address", input), 409, nil)
+		return
+	}
+	var next kvm.Placement
+	expectKVM(t, kvmRequest(t, first, fixtureKVMOperator, "POST", fixtureVMPlacementPath, "", "reuse-address", input), 201, &next)
+	if next.Address != old.Address {
+		t.Fatalf("address was not reallocated: %+v", next)
+	}
+	expectKVM(t, kvmRequest(t, second, fixtureKVMOperator, "POST", fixtureVMSitePath, "", "",
+		kvm.VMInput{Placement: next.ID, Volume: vm.Volume}), 409, nil)
 }
 
 func prepareFencedVMState(t *testing.T, db *sql.DB, handler http.Handler, v kvm.VM, state string) {

@@ -20,6 +20,10 @@ const IPAMMigration = "0115_kvm_ipam"
 const BootImageMigration = "0116_kvm_boot_images"
 const HostFenceMigration = "0123_kvm_host_fence"
 const FencedVMRecoveryMigration = "0124_kvm_fenced_vm_recovery"
+const ColdMigrationVersion = "0125_kvm_cold_migrations"
+const EvacuationMigration = "0126_kvm_evacuation"
+const AutomaticEvacuationMigration = "0127_kvm_evacuation_placement"
+const EvacuationBatchMigration = "0128_kvm_evacuation_batches"
 
 //go:embed 0111_kvm_placement.sql
 var schema string
@@ -45,12 +49,28 @@ var hostFenceSchema string
 //go:embed 0124_kvm_fenced_vm_recovery.sql
 var fencedVMRecoverySchema string
 
+//go:embed 0125_kvm_cold_migrations.sql
+var coldMigrationSchema string
+
+//go:embed 0126_kvm_evacuation.sql
+var evacuationSchema string
+
+//go:embed 0127_kvm_evacuation_placement.sql
+var automaticEvacuationSchema string
+
+//go:embed 0128_kvm_evacuation_batches.sql
+var evacuationBatchSchema string
+
 func kvmMigrations() []struct{ version, schema string } {
 	return []struct{ version, schema string }{
 		{Migration, schema}, {VMMigration, vmSchema}, {ShutdownMigration, shutdownSchema},
 		{RetirementMigration, retirementSchema}, {IPAMMigration, ipamSchema}, {BootImageMigration, bootImageSchema},
 		{HostFenceMigration, hostFenceSchema},
 		{FencedVMRecoveryMigration, fencedVMRecoverySchema},
+		{ColdMigrationVersion, coldMigrationSchema},
+		{EvacuationMigration, evacuationSchema},
+		{AutomaticEvacuationMigration, automaticEvacuationSchema},
+		{EvacuationBatchMigration, evacuationBatchSchema},
 	}
 }
 

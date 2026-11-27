@@ -21,3 +21,7 @@ func verifyKVMImageVolume(context.Context, string, kvm.VM) error {
 func publishKVMImage(context.Context, string, string, kvm.BootImageSpec, func() error, func() (io.ReadCloser, error)) error {
 	return errors.New("KVM image publication requires a supported Unix filesystem")
 }
+
+func publishKVMBackup(context.Context, string, string, string, string, int64, func() error) (kvm.BootImageSpec, error) {
+	return kvm.BootImageSpec{}, errors.New("KVM VM backup requires a supported Unix filesystem")
+}

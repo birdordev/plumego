@@ -17,6 +17,7 @@ const kvmVMShutdownRoute = kvmVMRoute + "/shutdown"
 const kvmVMRetirementRoute = kvmVMRoute + "/retirement"
 const kvmVMPollRoute = kvmHostRoute + "/vm-work"
 const kvmVMJobRoute = kvmVMPollRoute + "/:vm"
+const kvmVMBackupRoute = kvmVMJobRoute + "/backup-plan"
 
 func (h kvmHTTP) submitVM(ctx context.Context, w http.ResponseWriter, r *http.Request, token string, scope identity.Scope, site string) error {
 	var input kvm.VMInput
@@ -105,6 +106,22 @@ func (h kvmHTTP) armVM(ctx context.Context, w http.ResponseWriter, r *http.Reque
 		return err
 	}
 	vm, err := h.store.ArmVM(ctx, token, scope, site, router.Param(r, "host"), router.Param(r, "vm"), input)
+	if err != nil {
+		return err
+	}
+	h.writeVM(w, r, http.StatusOK, vm)
+	return nil
+}
+
+func (h kvmHTTP) authorizeVMBackup(ctx context.Context, w http.ResponseWriter, r *http.Request, token string, scope identity.Scope, site string) error {
+	if token == "" {
+		return identity.ErrForbidden
+	}
+	var input kvm.VMCommand
+	if err := decodeKVMBody(r, &input, 1024); err != nil {
+		return err
+	}
+	vm, err := h.store.AuthorizeVMBackup(ctx, token, scope, site, router.Param(r, "host"), router.Param(r, "vm"), input)
 	if err != nil {
 		return err
 	}

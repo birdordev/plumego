@@ -12,7 +12,7 @@ import (
 	"with-cloud-manager/internal/identity"
 )
 
-const maxBootImageBytes = 32 << 30
+const MaxBootImageBytes = 32 << 30
 const bootImageVolumePrefix = "cmp-image-"
 
 var bootImageDigest = regexp.MustCompile(`^[0-9a-f]{64}$`)
@@ -25,7 +25,7 @@ type BootImageSpec struct {
 
 func (image BootImageSpec) Valid() bool {
 	return identifier.MatchString(image.ID) && bootImageDigest.MatchString(image.SHA256) &&
-		image.SizeBytes > 0 && image.SizeBytes <= maxBootImageBytes
+		image.SizeBytes > 0 && image.SizeBytes <= MaxBootImageBytes
 }
 
 type BootImage struct {

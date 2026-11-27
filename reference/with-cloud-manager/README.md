@@ -1880,11 +1880,29 @@ cloud-manager kvm release TENANT PROJECT SITE PLACEMENT
 
 站点人员通过带外手段隔离原宿主机，保存可核验的证据原件。已经发到宿主机的命令仍可能完成。独立审批人核对物理身份和现场证据后提交 `action=confirm`、`uuid` 与 `evidence_sha256`，将状态推进为 `fenced`，供后续故障处置核对。项目成员可从 `GET /fence` 查询当前状态及最近 20 条事件。
 
+项目成员可用 `GET /fence/work` 查看阻塞重新接入的虚拟机。清单包含宿主机 UUID、版本和隔离代次，以及各任务的 ID、版本、状态和适用的待审批恢复 ID。按虚拟机 ID 分页，`limit` 默认 50 条、最多 100 条。用 `next` 续读同一宿主机的当前代次，游标所属宿主机或代次不符时返回 412。分页读取实时状态，任务处理完毕后从首页复查。对仍在 `awaiting_approval` 或 `queued` 的创建任务，独立审批人可沿用原虚拟机审批入口拒绝并释放预留。
+
+对已有写入可能的任务，执行迁移 `0124_kvm_fenced_vm_recovery`。宿主机处于 `fenced` 时，项目管理员向站点内的 `/vms/{vm}/fence-recovery` 提交 `recovery_id`、`host_uuid`、`fence_generation`、`observed`、`evidence_sha256`，并通过强 `If-Match` 固定该任务版本。现场确认域缺失时还需提供另一份独立证据的 `second_evidence_sha256`。独立审批人用同一版本向 `/fence-recovery/review` 提交恢复 ID 和 `approve` 或 `reject`。成员可用 GET 查看最新申请与审批结果。同一申请人用原版本、原 ID 和相同正文重试时，返回原记录。
+
+| 任务阶段 | 可接受的现场观测与审批结果 |
+| --- | --- |
+| `staging`、`staged` | `absent` → `rejected` |
+| `defining`、`defined` | `defined` → `stopped`，`absent` → `rejected` |
+| `starting` | `running` → `running`，`defined` → `stopped`，`absent` → `rejected` |
+| `stopping` | `defined` → `stopped`，`running` → `running` |
+| `undefining` | `defined` → `stopped`，`absent` → `retired` |
+
+恢复审批记录现场观测及对应结果。确认缺失进入 `rejected` 或 `retired` 时，事务归还容量和 IPv4 地址预留，继续保留启动卷占用。仍有持久域时保留原预留。若已进入 `rejoin_pending`，需先拒绝该次重新接入申请，回到 `fenced` 再批准虚拟机恢复。
+
 宿主机准备重新接入时，管理员提交 `action=request-rejoin`、`uuid`、`replacement_agent` 与新的 `evidence_sha256`。独立审批人以 `approve-rejoin` 或 `reject-rejoin` 审批该版本。仍有未收敛的创建、写入或观测任务时，平台保留隔离。批准后绑定新的代理服务主体并推进代次，宿主机保持排空。管理员执行原来的 `resume` 并完成新容量上报后，宿主机才能接收新放置。
 
 ```bash
 cloud-manager kvm change-host-fence TENANT PROJECT SITE HOST REVISION < fence.json
 cloud-manager kvm get-host-fence TENANT PROJECT SITE HOST
+cloud-manager kvm list-host-fence-work TENANT PROJECT SITE HOST
+cloud-manager kvm get-vm-recovery TENANT PROJECT SITE VM
+cloud-manager kvm request-vm-recovery TENANT PROJECT SITE VM REVISION < recovery.json
+cloud-manager kvm review-vm-recovery TENANT PROJECT SITE VM REVISION < review.json
 ```
 
 ### 自有 KVM 网络与 IPv4 地址池
@@ -2021,4 +2039,60 @@ cloud-manager kvm get-vm TENANT PROJECT SITE VM
 
 收到回执或断连后，代理都通过完整域清单继续只读核对。第一轮确认缺失后推进观测版本，第二轮必须基于新版本重新读取。期间若再次看到该域，先前的缺失证据失效。平台在同一事务标记 `retired`、释放原放置预留并登记审计。预留显示 `boot_volume_retained: true`，原启动卷保留且继续禁止绑定任何新 VM。文件系统容量采样仍会计入该卷实际占用。退役请求在写入授权登记前发现域已缺失时保持待核对。
 
-撤销未知写入授权、集中镜像分发调度、物理网络和隔离策略编排、共享存储、保留卷清理、迁移及故障疏散仍待开发。真实 KVM 设备、镜像启动、访客关机、退役和网络仍待验收。
+### 自有 KVM 虚拟机冷迁移
+
+执行 `cloud-manager migrate` 应用 `0125_kvm_cold_migrations`。首条路径适用于同一项目和站点、已确认源域缺失且原启动卷仍在保留的虚拟机，以备份恢复到另一宿主机。源虚拟机可经正常退役进入 `retired`，也可经故障隔离后的独立核对收敛为保留启动卷的 `rejected` 或 `retired`。
+
+源宿主机仍可访问时，站点人员用该宿主机绑定的代理凭据执行 `backup-vm`，并传入当前宿主机代次、VM 版本及新的镜像 ID。代理通过 `/hosts/{host}/vm-work/{vm}/backup-plan` 核对项目、物理宿主机和已保留的启动卷，在本机确认域缺失、卷为独占 raw 文件且没有其他域引用。源卷上限为 32 GiB。代理在复制前后复核授权、卷和域状态，校验两次读取的长度及摘要，再以 `0600` 权限发布 `image_root/SHA256.raw`。同一内容可复用已校验的文件。将 `image_root` 设为独立的受控目录。预置启动卷还需列在 `boot_volumes` 中。
+
+```bash
+cloud-manager kvm backup-vm TENANT PROJECT SITE HOST GENERATION VM REVISION IMAGE_ID < agent.json > backup-receipt.json
+jq '.image' backup-receipt.json > image.json
+cloud-manager kvm register-image TENANT PROJECT SITE < image.json
+```
+
+站点人员保存收据原件，核对源 VM、预留和备份时间点，将收据或现场核验记录的 SHA-256 用作迁移证据。站点也可提交已独立核对的外部备份。目标代理从 `image_root` 读取已部署的备份。发起迁移的管理员通过原放置接口在另一宿主机预留等量 CPU、内存及磁盘、相同逻辑网络和原 IPv4。目标主机仍需有效容量与网络配置。源 VM 有 IPv4 时，目标的实际网络要支持原地址和 MAC，代理会核对生效及持久 DHCP 映射。
+
+向站点下的 `/vms/{vm}/cold-migration` 提交 `migration_id`、`target_placement_id`、`image_id` 和关联证据的 `evidence_sha256`。用强 `If-Match` 固定原 VM 版本。独立审批人核对镜像和备份关联证据，再向 `/cold-migration/review` 提交 `migration_id` 与 `decision=approve` 或 `reject`。审批使用原版本。相同申请和审批可以重放。过期的目标预留须经拒绝本次申请后重新申请。项目成员用 GET 查询最新申请。
+
+批准事务绑定目标预留、保留原 VM ID 并推进版本，将虚拟机移交到目标宿主机的 `queued` 状态。源启动卷继续保留，旧宿主机的代理无法领取或上报该 VM。现有 `run-vm` 代理核对备份数据、网络和目标主机，依次准备卷、定义和启动。定义与启动各登记一次写入许可，结果未知时只读核对。迁移审批后，通过普通 VM 查询等到 `running` 并核对访客状态。
+
+```bash
+cloud-manager kvm request-cold-migration TENANT PROJECT SITE VM REVISION < migration.json
+cloud-manager kvm get-cold-migration TENANT PROJECT SITE VM
+cloud-manager kvm review-cold-migration TENANT PROJECT SITE VM REVISION < review.json
+cloud-manager kvm get-vm TENANT PROJECT SITE VM
+```
+
+### 自有 KVM 故障疏散
+
+执行 `cloud-manager migrate` 应用 `0126_kvm_evacuation`。源宿主机失联且仍可能保留原域时，站点人员先通过带外手段确保旧宿主机及其网络不能对外运行，并由独立审批人确认该次隔离。管理员核对已经存在的可信备份、可恢复时间点和源 VM 身份。流程支持已有运行或停机历史的 VM，要求源放置仍绑定。
+
+管理员使用原放置接口申请目标容量，在放置正文中填写 `evacuation_vm_id` 和 `required_host`，沿用源 VM 的网络和 CPU、内存及磁盘规格。平台保留源 IPv4 到审批提交，目标预留只占容量。向 `/vms/{vm}/cold-migration` 提交目标预留、备份、证据，以及已独立确认的 `source_fence_generation`。独立审批再次核对源隔离和目标代次。事务同时转移 VM ID、IPv4 及 MAC，保留原启动卷，并为目标代理入队。即使地址池没有空闲地址，也能使用原地址恢复。
+
+应用 `0127_kvm_evacuation_placement` 后，疏散申请可省略 `target_placement_id`，由控制面在其他故障域内选择可用宿主机。控制面沿用源网络与资源规格，核对目标代理授权、容量观测及剩余容量，并将目标放置与待审批申请同事务写入。候选宿主机须可取得已登记的备份。默认预留 15 分钟，收据包含 `target_host`、`target_placement_id` 和 `automatic_placement=true`。同一申请重试时继续省略目标预留。审批拒绝会释放自动预留。若没有可用目标或候选正被其他事务占用，申请返回 409。预留过期时，拒绝原申请后用新迁移 ID 提交，控制面重新选择目标。
+
+源宿主机保持隔离，直到站点人员确认原域和自动启动配置已清除、遗留网络映射已清理，并确保原域无法再次接入。独立审批人以当前宿主机 `If-Match` 向源宿主机的 `/fence/cleanup` 提交 `vm_id`、`migration_id` 和现场清理证据的 `evidence_sha256`。在该隔离代次内，`GET /fence/work` 将未完成清理的疏散显示为 `cleanup_required`，并提供 `evacuation_id`。所有阻塞清除后，仍需完成原宿主机重新接入审批及新的容量上报。
+
+```bash
+cloud-manager kvm reserve TENANT PROJECT SITE EVACUATION_KEY < target-placement.json
+cloud-manager kvm request-cold-migration TENANT PROJECT SITE VM REVISION < evacuation.json
+cloud-manager kvm review-cold-migration TENANT PROJECT SITE VM REVISION < review.json
+cloud-manager kvm list-host-fence-work TENANT PROJECT SITE SOURCE_HOST
+cloud-manager kvm confirm-evacuation-cleanup TENANT PROJECT SITE SOURCE_HOST HOST_REVISION < cleanup.json
+```
+
+#### 宿主机批量疏散
+
+应用 `0128_kvm_evacuation_batches`。项目管理员向源宿主机的 `/fence/evacuation-batches` 提交 `batch_id`、`source_fence_generation` 和 `items`，并用强 `If-Match` 提交当前宿主机版本。一个批次可包含 1 至 16 台已确认属于该宿主机的 VM，`items` 每项填写 `vm_id`、`vm_revision`、`image_id` 和 `evidence_sha256`。
+
+控制面按清单顺序在其他故障域内预留容量。任一项版本、备份或容量无效时，整个事务回滚，批次和预留都不会生成。成功返回 202、批次地址和各 VM 的迁移 ID。重试使用原宿主机版本和相同清单，包含相同顺序。项目成员可查询原批次地址，查看当时受理的全部 VM 及当前审批和现场清理状态。
+
+独立审批人沿用单 VM 迁移审批逐台批准或拒绝。批准后才转移原 IPv4 并允许目标代理按备份恢复。拒绝会释放该项的自动预留。源宿主机重新接入仍需核对每台已疏散 VM 的源端清理证据。
+
+```bash
+cloud-manager kvm request-evacuation-batch TENANT PROJECT SITE SOURCE_HOST HOST_REVISION < batch.json
+cloud-manager kvm get-evacuation-batch TENANT PROJECT SITE SOURCE_HOST BATCH_ID
+```
+
+实际停机一致性备份、恢复后的访客数据、物理网络连通及带外隔离仍需现场验收。共享存储、实时迁移、故障自动触发及保留卷清理仍待实现。

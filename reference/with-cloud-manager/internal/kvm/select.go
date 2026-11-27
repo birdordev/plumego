@@ -8,10 +8,10 @@ import (
 	"with-cloud-manager/internal/identity"
 )
 
-func selectHost(ctx context.Context, tx *sql.Tx, actor identity.Scope, site string, request PlacementInput) (Host, error) {
+func selectHost(ctx context.Context, tx *sql.Tx, actor identity.Scope, site string, request PlacementInput, skipLocked bool) (Host, error) {
 	var after string
 	for {
-		host, err := nextHost(ctx, tx, actor, site, after, request)
+		host, err := nextHost(ctx, tx, actor, site, after, request, skipLocked)
 		if errors.Is(err, sql.ErrNoRows) {
 			return Host{}, ErrNoCapacity
 		}
@@ -36,17 +36,22 @@ func selectHost(ctx context.Context, tx *sql.Tx, actor identity.Scope, site stri
 	}
 }
 
-func nextHost(ctx context.Context, tx *sql.Tx, actor identity.Scope, site, after string, request PlacementInput) (Host, error) {
-	return scanHost(tx.QueryRowContext(ctx, "SELECT "+hostColumns+` FROM cmp_kvm_hosts AS h
+func nextHost(ctx context.Context, tx *sql.Tx, actor identity.Scope, site, after string, request PlacementInput, skipLocked bool) (Host, error) {
+	query := "SELECT " + hostColumns + ` FROM cmp_kvm_hosts AS h
 		WHERE (h.tenant_id,h.project_id,h.site_id)=($1,$2,$3) AND h.host_id>$4 AND NOT h.draining
+		  AND h.fence_state=''
 		  AND h.reported_at>clock_timestamp()-$5*interval '1 second'
-		  AND h.networks ? $6 AND h.storage_pool=$7
+		  AND h.networks ? $6 AND ($7='' OR h.storage_pool=$7)
 		  AND ($8='' OR h.host_id=$8) AND ($9='' OR h.failure_domain=$9) AND h.failure_domain<>$10
 		  AND ($11='' OR h.gpu_model=$11) AND h.vcpu>=$12 AND h.memory_mib>=$13 AND h.disk_mib>=$14 AND h.gpu>=$15
 		  AND EXISTS (SELECT 1 FROM cmp_principals AS p JOIN cmp_memberships AS m USING (tenant_id,principal_id)
 			WHERE (p.tenant_id,m.project_id,p.principal_id)=(h.tenant_id,h.project_id,h.agent_id)
 			AND p.kind='service' AND p.active AND m.active AND m.role='viewer')
-		ORDER BY h.host_id LIMIT 1 FOR UPDATE OF h`, actor.Tenant, actor.Project, site, after, reportFreshnessSeconds,
+		ORDER BY h.host_id LIMIT 1 FOR UPDATE OF h`
+	if skipLocked {
+		query += " SKIP LOCKED"
+	}
+	return scanHost(tx.QueryRowContext(ctx, query, actor.Tenant, actor.Project, site, after, reportFreshnessSeconds,
 		request.Network, request.StoragePool, request.RequiredHost, request.FailureDomain, request.ExcludedFailureDomain,
 		request.GPUModel, request.VCPU, request.MemoryMiB, request.DiskMiB, request.GPU))
 }

@@ -90,6 +90,8 @@ type Report struct {
 
 var ErrNoIPv4 = errors.New("no matching KVM IPv4 address")
 
+const maxPlacementTTL = 900
+
 type PlacementInput struct {
 	Capacity
 	Network               string `json:"network"`
@@ -100,6 +102,7 @@ type PlacementInput struct {
 	ExcludedFailureDomain string `json:"excluded_failure_domain,omitempty"`
 	TTLSeconds            int    `json:"ttl_seconds"`
 	IPv4                  string `json:"ipv4,omitempty"`
+	EvacuationVM          string `json:"evacuation_vm_id,omitempty"`
 }
 
 func (p PlacementInput) valid() bool {
@@ -107,7 +110,9 @@ func (p PlacementInput) valid() bool {
 		identifier.MatchString(p.Network) && identifier.MatchString(p.StoragePool) &&
 		optionalID(p.GPUModel) && ((p.GPU == 0) == (p.GPUModel == "")) &&
 		optionalID(p.RequiredHost) && optionalID(p.FailureDomain) && optionalID(p.ExcludedFailureDomain) &&
-		(p.FailureDomain == "" || p.FailureDomain != p.ExcludedFailureDomain) && p.TTLSeconds >= 1 && p.TTLSeconds <= 900 && (p.IPv4 == "" || canonicalIPv4(p.IPv4).IsValid())
+		(p.FailureDomain == "" || p.FailureDomain != p.ExcludedFailureDomain) && p.TTLSeconds >= 1 && p.TTLSeconds <= maxPlacementTTL &&
+		(p.IPv4 == "" || canonicalIPv4(p.IPv4).IsValid()) &&
+		(p.EvacuationVM == "" || (hostUUID.MatchString(p.EvacuationVM) && p.RequiredHost != "" && p.IPv4 == ""))
 }
 
 func optionalID(id string) bool { return id == "" || identifier.MatchString(id) }
@@ -125,4 +130,5 @@ type Placement struct {
 	State              string    `json:"state"`
 	ExpiresAt          time.Time `json:"expires_at"`
 	BootVolumeRetained bool      `json:"boot_volume_retained,omitempty"`
+	EvacuationVM       string    `json:"evacuation_vm_id,omitempty"`
 }

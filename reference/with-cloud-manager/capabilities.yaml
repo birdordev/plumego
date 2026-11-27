@@ -10,6 +10,8 @@ platform:
   redfish-target-environment: pending-physical-bmc-validation
   kvm-host-registration: project-bound-unique-libvirt-host-uuid
   kvm-host-fence: generation-revocation-independent-site-evidence-and-reviewed-rejoin
+  kvm-host-fence-work: project-host-rejoin-blockers-and-pending-recovery-ids-with-generation-cursors
+  kvm-fenced-vm-recovery: independent-site-evidence-review-and-atomic-reservation-settlement
   kvm-capacity-report: bound-service-identity-monotonic-sequence-and-agent-generation
   kvm-host-probe: local-read-only-libvirt-and-filesystem-capacity
   kvm-resident-domain-capacity: batched-bound-inventory-check-with-existing-reservations
@@ -23,6 +25,11 @@ platform:
   kvm-vm-create-recovery: single-dispatch-defined-and-running-evidence
   kvm-vm-shutdown: independent-approval-single-acpi-dispatch-and-persistent-offline-evidence
   kvm-vm-retirement: admin-and-independent-approval-two-absence-observations-and-retained-boot-volume
+  kvm-vm-cold-migration: approved-verified-absence-to-target-reservation-with-registered-raw-backup-and-stable-vm-id
+  kvm-vm-backup-export: bound-agent-verified-retained-raw-volume-atomic-digest-publication-and-source-receipt
+  kvm-fenced-vm-evacuation: approved-backup-restore-with-atomic-ipv4-transfer-and-source-cleanup-rejoin-gate
+  kvm-evacuation-placement: atomic-cross-failure-domain-target-reservation-and-idempotent-review-draft
+  kvm-evacuation-batch: atomic-host-scoped-admission-with-independent-vm-reviews-and-live-receipt
   kvm-target-environment: pending-physical-host-validation
   change-ticket-policy: versioned-project-policy-with-frozen-operation-binding
   change-ticket-delivery: signed-project-outbox-opt-in
