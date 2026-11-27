@@ -145,6 +145,13 @@ func exerciseRolloutAndRollback(t *testing.T, baseline, candidate string, target
 	assertRolloutEffectID(t, candidateBody, "cmp-op-final-v1:"+second.ID)
 	pendingRollback := submit(next, "start", cloud.instance, "candidate-queued")
 	assertPITREvidence(t, db, pendingRollback.ID, "queued", "queued", false)
+	window := url.Values{"from": {first.CreatedAt.Format(time.RFC3339Nano)}, "until": {pendingRollback.CreatedAt.Add(time.Minute).Format(time.RFC3339Nano)}}
+	latency := decodeRollout[operations.LatencyReport](t, next, http.MethodGet,
+		rolloutProject+"/operation-latency?"+window.Encode(), "", nil, http.StatusOK)
+	if len(latency.Providers) != 1 || latency.Providers[0].Provider != cloud.provider || latency.Summary.Accepted != 4 ||
+		latency.Summary.QueueWait.Samples != 1 || latency.Summary.Convergence.Samples != 2 {
+		t.Fatalf("mixed-version latency coverage is incorrect: %+v", latency)
+	}
 	if processWorkers {
 		observer := startWorker(candidate, "observe-only")
 		waitRolloutObservationPoll(t, db)
@@ -191,9 +198,18 @@ func exerciseRolloutAndRollback(t *testing.T, baseline, candidate string, target
 		t.Fatal("application rollback modified the candidate delivery")
 	}
 	var migrated bool
-	if err := db.QueryRowContext(t.Context(), "SELECT EXISTS (SELECT 1 FROM cmp_migrations WHERE version=$1)", operations.TerminalEventTimeMigration).
+	if err := db.QueryRowContext(t.Context(), `SELECT count(*)=2 FROM cmp_migrations WHERE version IN ($1,$2)`,
+		operations.TerminalEventTimeMigration, operations.FirstLeaseMigration).
 		Scan(&migrated); err != nil || !migrated {
 		t.Fatalf("candidate migration marker did not survive application rollback: %v", err)
+	}
+	var leaseEvidence bool
+	if err := db.QueryRowContext(t.Context(), `SELECT
+		count(*) FILTER (WHERE id IN ($1,$2) AND first_lease_at IS NULL)=2
+		AND count(*) FILTER (WHERE id IN ($3,$4) AND first_lease_at>=created_at)=2
+		FROM cmp_operation_tasks WHERE id IN ($1,$2,$3,$4)`, first.ID, queued.ID, second.ID, pendingRollback.ID).
+		Scan(&leaseEvidence); err != nil || !leaseEvidence {
+		t.Fatalf("first-lease evidence did not survive the older worker: %v", err)
 	}
 	if cloud.writes.Load() != 3 || !cloud.running.Load() {
 		t.Fatal("rollout or rollback repeated a provider effect")

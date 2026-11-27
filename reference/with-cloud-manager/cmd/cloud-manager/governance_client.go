@@ -28,9 +28,13 @@ const governanceUsage = `usage: cloud-manager governance COMMAND TENANT PROJECT
   inventory-freshness [--provider PROVIDER] [--account ACCOUNT] [--state STATE] [--dispatch-state STATE] [--order next_at] [--window-seconds SECONDS] [--after CURSOR] [--limit LIMIT]
   bucket-protection [--provider PROVIDER] [--account ACCOUNT] [--location REGION] [--finding FINDING] [--window-seconds SECONDS] [--after CURSOR] [--limit LIMIT]
   inventory-sample {--expected-scopes COUNT|--scope-manifest < scopes.json} [--provider PROVIDER] [--account ACCOUNT] [--samples COUNT] [--interval DURATION]
-  asset-capacity < workload.json`
+  asset-capacity < workload.json
+` + dispatchStatsUsage
 
 func runGovernanceClient(ctx context.Context, args []string, address, token string, input io.Reader, output io.Writer, transport http.RoundTripper) error {
+	if len(args) > 0 && args[0] == "inventory-dispatch-stats" {
+		return runDispatchStats(ctx, args[1:], input, output)
+	}
 	usage := errors.New(governanceUsage)
 	if len(args) < 3 || !operationClientSegment(args[1]) || !operationClientSegment(args[2]) {
 		return usage

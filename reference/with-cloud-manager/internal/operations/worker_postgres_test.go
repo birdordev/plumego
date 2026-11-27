@@ -142,13 +142,36 @@ func TestAcceptanceRecoverableInstanceWorker(t *testing.T) {
 		return op
 	}
 	online := submit("online", "start")
+	exec(`ALTER TABLE cmp_operation_tasks ADD CONSTRAINT block_lease_for_test CHECK (status<>'leased')`)
+	if _, err := store.step(ctx, connect); err == nil {
+		t.Fatal("rejected lease unexpectedly succeeded")
+	}
+	var unclaimed bool
+	if err := db.QueryRowContext(ctx, `SELECT first_lease_at IS NULL AND attempts=0 FROM cmp_operation_tasks WHERE id=$1`, online.ID).
+		Scan(&unclaimed); err != nil || !unclaimed {
+		t.Fatalf("failed lease left timing evidence: %t, %v", unclaimed, err)
+	}
+	exec(`ALTER TABLE cmp_operation_tasks DROP CONSTRAINT block_lease_for_test`)
 	step()
+	firstLease := func(operation string) time.Time {
+		t.Helper()
+		var enqueued, leased time.Time
+		err := db.QueryRowContext(ctx, `SELECT created_at,first_lease_at FROM cmp_operation_tasks WHERE id=$1`, operation).Scan(&enqueued, &leased)
+		if err != nil || leased.IsZero() || leased.Before(enqueued) {
+			t.Fatalf("invalid first lease evidence: enqueued=%s lease=%s err=%v", enqueued, leased, err)
+		}
+		return leased
+	}
+	onlineLease := firstLease(online.ID)
 	if op := status(online.ID, "observing"); op.OutcomeReason != "submission_outcome_unknown" {
 		t.Fatalf("wrong outcome: %+v", op)
 	}
 	exec("UPDATE cmp_operation_tasks SET available_at=clock_timestamp() WHERE id=$1", online.ID)
 	step()
 	status(online.ID, "succeeded")
+	if !firstLease(online.ID).Equal(onlineLease) {
+		t.Fatal("observation retry replaced the first lease timestamp")
+	}
 	if client.sends != 1 || client.observations != 1 {
 		t.Fatal("timeouts were not reconciled by observation")
 	}
@@ -162,6 +185,7 @@ func TestAcceptanceRecoverableInstanceWorker(t *testing.T) {
 	if err != nil || len(leases) != 1 || leases[0].ID != crashed.ID {
 		t.Fatalf("failed to claim operation: %v", err)
 	}
+	crashedLease := firstLease(crashed.ID)
 	old := leases[0]
 	if armed, err := store.prepare(ctx, old, true); err != nil || armed.Status != "applying" {
 		t.Fatalf("failed to persist send boundary: %v", err)
@@ -169,6 +193,9 @@ func TestAcceptanceRecoverableInstanceWorker(t *testing.T) {
 	exec("UPDATE cmp_operation_tasks SET lease_until=clock_timestamp()-interval '1 second' WHERE id=$1", crashed.ID)
 	step()
 	status(crashed.ID, "succeeded")
+	if !firstLease(crashed.ID).Equal(crashedLease) {
+		t.Fatal("lease takeover replaced the first lease timestamp")
+	}
 	if client.sends != 1 || client.observations != 2 {
 		t.Fatal("recovered operation resent the provider action")
 	}

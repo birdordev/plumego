@@ -212,7 +212,7 @@ func TestAcceptancePersistentInstanceCreation(t *testing.T) {
 	exec("UPDATE cmp_operation_tasks SET lease_until=clock_timestamp()-interval '1 second' WHERE id=$1", crash.ID)
 	client.object, client.readError = provider.Object{}, &provider.Failure{Kind: provider.OutcomeUnknown}
 	observations := client.discoveries
-	if did, err := store.WithObservationOnly().step(ctx, connect); !did || err != nil {
+	if did, err := store.WithWorkerTenant(scope.Tenant).WithObservationOnly().step(ctx, connect); !did || err != nil {
 		t.Fatalf("read-only takeover processed=%t error=%v", did, err)
 	}
 	status(crash.ID, "observing")

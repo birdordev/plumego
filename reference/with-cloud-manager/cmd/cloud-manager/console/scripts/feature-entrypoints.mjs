@@ -11,6 +11,7 @@ export const featureEntrypoints = new Set([
   'native-console/access/detail.tsx',
   'native-console/labels.ts',
   'operations/detail/open.tsx',
+  'operations/backlog/open.tsx',
   'operations/forms/OperationForm.tsx',
   'operations/labels.ts',
   'operations/forms/schema.ts',

@@ -24,6 +24,7 @@ A high-performance, feature-rich in-process message broker for Go applications.
 ### ✅ Durable Task Queue (SQL-backed)
 
 - **Task leasing**: Reserve/ack with lease timeouts for competitive consumers
+- **Tenant-scoped reservation**: `SQLStore.ReserveTenant` limits both selection and inline expiration to the supplied tenant. Shared workers use `Reserve`.
 - **Retry & DLQ**: Release with backoff, move to dead letter on exhaustion
 - **Pluggable storage**: `TaskStore` interface with SQL and in-memory stores
 - **Schema**: See `[SQL task queue schema](../../../docs/MQ_TASK_QUEUE_SCHEMA.md)` for recommended SQL tables

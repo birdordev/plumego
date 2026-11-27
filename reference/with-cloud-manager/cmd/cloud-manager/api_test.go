@@ -155,13 +155,18 @@ func TestAcceptancePostgresReadiness(t *testing.T) {
 	if err := inventory.MigrateTagPolicyAlerts(t.Context(), db); err != nil {
 		t.Fatal(err)
 	}
+	get("/readyz", http.StatusServiceUnavailable, "storage is unavailable")
+	if err := alerts.MigrateOperationQueue(t.Context(), db); err != nil {
+		t.Fatal(err)
+	}
 	get("/readyz", http.StatusOK, `"ready"`)
 	for _, version := range []string{kvm.HostFenceMigration, kvm.FencedVMRecoveryMigration, kvm.ColdMigrationVersion,
 		kvm.EvacuationMigration, kvm.AutomaticEvacuationMigration, kvm.EvacuationBatchMigration, kvm.EvacuationPlanMigration,
 		kvm.HostImageMigration, kvm.SharedStorageMigration, kvm.LiveMigrationVersion, kvm.VolumeCleanupMigration,
 		inventory.InventoryCompletionMigration, identity.AccountWriteModeMigration, controller.ScheduleConfigMigration,
 		controller.AccountDispatchMigration, controller.TenantDispatchMigration, operations.ObservationWorkerMigration,
-		operations.EffectIDMigration, operations.TerminalEventTimeMigration, alerts.BucketProtectionMigration, inventory.TagPolicyAlertsMigration} {
+		operations.EffectIDMigration, operations.TerminalEventTimeMigration, alerts.BucketProtectionMigration, inventory.TagPolicyAlertsMigration,
+		operations.FirstLeaseMigration, operations.QueueSnapshotMigration, alerts.OperationQueueMigration} {
 		if _, err := db.ExecContext(t.Context(), "DELETE FROM cmp_migrations WHERE version=$1", version); err != nil {
 			t.Fatal(err)
 		}

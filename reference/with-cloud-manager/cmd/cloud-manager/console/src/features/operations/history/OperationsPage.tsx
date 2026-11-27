@@ -4,6 +4,7 @@ import { useCollection } from '../../../shared/collection/useCollection'
 import { OperationsTable } from './OperationsTable'
 import { CollectionFilters } from '../../../shared/collection/CollectionFilters'
 import { OperationFilters } from './filters'
+import { OperationBacklogButton } from '../backlog/OperationBacklogButton'
 
 export default function OperationsPage() {
   const page = useCollection(operationsCollection)
@@ -11,7 +12,7 @@ export default function OperationsPage() {
   const filters = <CollectionFilters values={page.filters} onApply={operationsCollection.applyFilters}>
     {(values) => <OperationFilters values={values} />}
   </CollectionFilters>
-  return <CollectionPage {...page} onLoadNext={operationsCollection.loadNext} filters={filters}>
+  return <CollectionPage {...page} onLoadNext={operationsCollection.loadNext} filters={filters} tools={<OperationBacklogButton />}>
     <OperationsTable items={page.items} />
   </CollectionPage>
 }

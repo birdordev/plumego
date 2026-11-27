@@ -87,7 +87,7 @@ func (s Store) step(ctx context.Context, connect ConnectOperator) (bool, error) 
 	if err != nil {
 		return false, err
 	}
-	tasks, err := s.queue.Reserve(ctx, mq.ReserveOptions{Topics: []string{topic}, Limit: 1, Lease: 90 * time.Second, ConsumerID: rand.Text(), Now: now})
+	tasks, err := s.reserveWorkerTask(ctx, mq.ReserveOptions{Topics: []string{topic}, Limit: 1, Lease: 90 * time.Second, ConsumerID: rand.Text(), Now: now})
 	if err != nil || len(tasks) == 0 {
 		return false, err
 	}
@@ -119,6 +119,13 @@ func (s Store) step(ctx context.Context, connect ConnectOperator) (bool, error) 
 		return true, nil
 	}
 	return true, err
+}
+
+func (s Store) reserveWorkerTask(ctx context.Context, opts mq.ReserveOptions) ([]mq.Task, error) {
+	if s.workerTenant != "" {
+		return s.queue.ReserveTenant(ctx, opts, s.workerTenant)
+	}
+	return s.queue.Reserve(ctx, opts)
 }
 
 func terminal(status string) bool {

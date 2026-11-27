@@ -8,6 +8,7 @@ const statuses = [
 export function OperationFilters({ values }: { values: URLSearchParams }) {
   return <>
     <label>账号<input name="account" defaultValue={values.get('account') ?? ''} maxLength={128} /></label>
+    <label>地域<input name="region" defaultValue={values.get('region') ?? ''} maxLength={128} /></label>
     <SelectField label="状态" name="status" initialValue={values.get('status')} options={statuses} />
   </>
 }

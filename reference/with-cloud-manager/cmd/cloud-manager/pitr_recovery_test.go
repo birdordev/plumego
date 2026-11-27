@@ -27,9 +27,19 @@ const pitrParkedInstance = "ins-parked"
 func TestOperationWorkerRejectsUnknownMode(t *testing.T) {
 	t.Setenv("CLOUD_MANAGER_DATABASE_URL", "postgresql://postgres@127.0.0.1/postgres")
 	t.Setenv("CLOUD_MANAGER_WORKER_MODE", "observer")
+	t.Setenv("CLOUD_MANAGER_WORKER_TENANT", "")
 	if err := run(t.Context(), []string{"worker"}); err == nil ||
 		err.Error() != "CLOUD_MANAGER_WORKER_MODE must be dispatch or observe-only" {
 		t.Fatalf("unexpected worker startup result: %v", err)
+	}
+}
+
+func TestOperationWorkerRejectsInvalidTenant(t *testing.T) {
+	t.Setenv("CLOUD_MANAGER_DATABASE_URL", "postgresql://postgres@127.0.0.1/postgres")
+	t.Setenv("CLOUD_MANAGER_WORKER_MODE", "observe-only")
+	t.Setenv("CLOUD_MANAGER_WORKER_TENANT", "tenant/project")
+	if err := run(t.Context(), []string{"worker"}); err == nil || err.Error() != "CLOUD_MANAGER_WORKER_TENANT must be a tenant ID" {
+		t.Fatalf("unexpected dedicated worker startup result: %v", err)
 	}
 }
 
@@ -245,7 +255,7 @@ func pitrWorkerProfile(t *testing.T, f *powerFixture) string {
 
 func startPITRWorker(t *testing.T, db *sql.DB, profile, mode string, transport http.RoundTripper) func() {
 	t.Helper()
-	store, err := configuredOperationWorkerStore(db, mode)
+	store, err := configuredOperationWorkerStore(db, mode, "")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -607,6 +607,8 @@ func registerOpenAPI(app *core.App, console *consoleConfig) error {
 	hints["GET "+cmdbSnapshotRoute] = cmdbSnapshotOpenAPI()
 	hints["GET "+idleInstancesRoute] = idleReportOpenAPI(readAuth)
 	hints["GET "+inventoryFreshnessRoute] = inventoryFreshnessOpenAPI(readAuth)
+	hints["GET "+operationBacklogRoute] = operationBacklogOpenAPI(readAuth)
+	hints["GET "+operationLatencyRoute] = operationLatencyOpenAPI(readAuth)
 	hints["GET "+bucketProtectionRoute] = bucketProtectionOpenAPI(readAuth)
 	catalogOpenAPI(hints, accountOp)
 	alertOpenAPI(hints, accountOp)
@@ -678,7 +680,7 @@ func alertOpenAPI(hints map[string]openapi.Op, operation func(string, string, st
 	list := operation("listProjectAlerts", "200", "项目告警及按发生时间倒序的续读位置", false)
 	list.Params = []openapi.Param{
 		{Name: "status", In: "query", Description: "active、open、acknowledged、resolved 或 all，默认为 active", Schema: openapi.String},
-		{Name: "rule", In: "query", Description: "operation_review、operation_delayed、scan_failures、scan_stale、bucket_encryption_unconfigured、bucket_versioning_inactive、tag_noncompliant，或管理员可用的 billing_budget_warning、billing_budget_exceeded", Schema: openapi.String},
+		{Name: "rule", In: "query", Description: "operation_review、operation_delayed、operation_queue_recovery、operation_queue_anomaly、scan_failures、scan_stale、bucket_encryption_unconfigured、bucket_versioning_inactive、tag_noncompliant，或管理员可用的 billing_budget_warning、billing_budget_exceeded", Schema: openapi.String},
 		{Name: "after", In: "query", Schema: openapi.String},
 		{Name: "limit", In: "query", Schema: openapi.Integer},
 	}

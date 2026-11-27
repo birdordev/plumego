@@ -111,6 +111,7 @@ type Store struct {
 	db                    *sql.DB
 	queue                 *mqstore.SQLStore
 	observationOnly       bool
+	workerTenant          string
 }
 
 func NewStore(db *sql.DB) Store {
@@ -121,6 +122,12 @@ func NewStore(db *sql.DB) Store {
 func (s Store) WithObservationOnly() Store {
 	s.observationOnly = true
 	s.queue = newOperationQueue(s.db, true)
+	return s
+}
+
+// WithWorkerTenant 将操作 Worker 的领取范围限定在指定租户。
+func (s Store) WithWorkerTenant(tenant string) Store {
+	s.workerTenant = tenant
 	return s
 }
 
@@ -278,7 +285,13 @@ func Migrate(ctx context.Context, db *sql.DB) error {
 	if err := dbschema.Apply(ctx, db, TerminalEventTimeMigration, terminalEventTimeSchema); err != nil {
 		return err
 	}
-	return dbschema.Apply(ctx, db, OperationRolloutMigration, operationRolloutSchema)
+	if err := dbschema.Apply(ctx, db, OperationRolloutMigration, operationRolloutSchema); err != nil {
+		return err
+	}
+	if err := dbschema.Apply(ctx, db, FirstLeaseMigration, firstLeaseSchema); err != nil {
+		return err
+	}
+	return dbschema.Apply(ctx, db, QueueSnapshotMigration, queueSnapshotSchema)
 }
 
 const operationFields = "operation_id,account_id,region,COALESCE(external_id,''),action,status,created_at,updated_at,COALESCE(outcome_reason,''),COALESCE(provider_request_id,''),COALESCE(volume_id,''),device,resource_kind,COALESCE(catalog_id,''),COALESCE(catalog_version,0),COALESCE(ticket_policy_revision,0)"

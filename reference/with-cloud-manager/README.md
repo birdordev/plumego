@@ -1189,6 +1189,8 @@ VALUES ('tenant-id', 'account-id', 'RegionOne', 'instance', 600);
 
 在每个普通盘点控制器上设置 `CLOUD_MANAGER_CONTROLLER_DISPATCH_LOG=1`，可在标准输出采集 `inventory_dispatch_claimed` JSON 事件。事件在领取事务提交后输出，包含租户、账号、厂商、计划类型、计划 ID、租约代次及数据库给出的 `due_at` 和 `claimed_at`。`due_wait_ms` 是计划到期到领取之间的毫秒数，包含等待空闲执行能力、账号租约和厂商退避的时间。该设置默认关闭。日志只面向部署运维人员，采集端需持续读取标准输出并按账号标识管理访问权限。
 
+合并同一部署的副本日志后，可离线运行 `cloud-manager governance inventory-dispatch-stats`。命令按厂商、租户及两者的组合统计领取次数与等待时间，支持检查低流量租户是否获得领取。窗口、阈值与现场归档步骤见[目标环境盘点采样](acceptance.md#目标环境盘点采样)。
+
 成功后从完成时间计算下一次运行。失败按指数退避，厂商提供的限流等待会在 24 小时上限内纳入计算。计划记录最近结果和连续失败数。正常停机主动让出领取，进程异常退出则在租约到期后由其他实例接管。三家优先云的控制器在提交每页时同时核验计划代次与扫描租约。停用计划后晚到页无法发布，再启用沿用停用前已提交的游标。厂商拒绝过期游标时，下次扫描从头开始。通过管理命令发起的独立扫描仍由账号与扫描租约约束。
 
 ## 资产差异历史
@@ -1296,6 +1298,42 @@ go run ./cmd/cloud-manager operations events tenant-id project-id operation-id -
 ```
 
 列表命令也接受 `--account`、`--region`、`--kind`、`--action` 和 `--cursor`。事件命令用结果中的 `next_after` 续读。
+
+### 操作积压
+
+项目成员可在操作中心打开「查看操作积压」，或调用 `GET /v1/tenants/{tenant}/projects/{project}/operation-backlog`。报告以数据库观测时间 `as_of` 为准，在同一只读快照返回项目汇总 `summary` 和厂商分组 `providers`，支持 `account`、`region` 精确筛选。控制台沿用已提交的账号和地域，统计范围涵盖所有非终态操作。
+
+| 状态 | 计入条件 |
+| --- | --- |
+| 待审批、待复核 | 以操作账本状态计入，保留在各自队列之外的阶段 |
+| 可领取 | 已到可领取时间且任务未超期。`earliest_ready_at` 提供最早就绪时间 |
+| 延迟执行 | 下次可领取时间在未来。`next_deferred_at` 提供最早的下次到期时间 |
+| 已有租约 | 当前租约仍有效，Worker 正持有该任务 |
+| 可接管 | 租约已到期且任务可重新领取。`earliest_recovery_at` 提供最早可接管时间 |
+| 队列异常 | 活动操作缺少对应任务，或其队列记录已超期、进入死信或已结束 |
+
+“可领取”反映数据库队列的就绪状态。放量策略、账号模式和授权在实际派发前照常复核。CLI 可输出相同快照，按同一项目连续采样时使用 `as_of` 与最早就绪或接管时间计算等待时长。
+
+```sh
+go run ./cmd/cloud-manager operations backlog tenant-id project-id --account account-id --region region-id
+```
+
+### 操作阶段时延
+
+`GET /v1/tenants/{tenant}/projects/{project}/operation-latency` 按操作受理时间选择 `[from, until)`，以同一数据库快照的 `as_of` 返回项目汇总及厂商分组。`from` 和 `until` 必填，使用带时区、至多微秒精度的 RFC 3339。每个窗口至多 31 天和 10,000 条操作。可用 `account`、`region`、`action` 收窄范围。窗口超出操作上限时返回 422。
+
+`scope` 回显已授权的租户、项目及生效的账号、地域和动作筛选，供自动化核对证据归属。
+
+- `enqueue_to_first_lease` 从队列任务创建到首次成功领取。迁移 `0150_operation_first_lease` 随领取事务写入时间，重新领取沿用首次值，历史数据中缺少领取时间的记录省略耗时样本。
+- `dispatch_to_observed_success` 从首次持久化派发标记 `applying` 到平台记录自动确认成功，包含发送、轮询和结算时间。人工结案、经过待复核阶段或缺少有效事件的操作只计入相应结果数量。
+- 每段提供样本数和整毫秒的最近秩 p50、p95 及最大值。无样本时只返回 `samples: 0`。用 `accepted`、`enqueued` 和各结果数量核对样本覆盖。
+
+```sh
+go run ./cmd/cloud-manager operations latency tenant-id project-id \
+  --from 2026-11-28T08:00:00Z --until 2026-11-28T08:15:00Z --action start
+```
+
+`cloud-manager operations verify-latency TENANT PROJECT < acceptance.json` 使用只读 API 核对批准清单。每项包含预期厂商、精确筛选和各自门槛。输出带清单 SHA-256 的报告，每项失败都使进程返回非零状态。清单及计算口径见[目标环境操作时延验收](acceptance.md#目标环境操作时延验收)。
 
 ### CLI 变更与审批
 
@@ -1712,15 +1750,20 @@ go run ./cmd/cloud-manager catalog retire tenant-id project-id linux-small --if-
 | --- | --- |
 | `operation_review` | 项目操作进入 `needs_review` |
 | `operation_delayed` | 当前 `queued` 状态持续至少 10 分钟，或 `awaiting_approval`、`applying`、`observing` 持续至少 30 分钟 |
+| `operation_queue_recovery` | 活动操作的任务达到可接管条件后至少 2 分钟仍待接管 |
+| `operation_queue_anomaly` | 活动操作缺少队列记录，或队列记录已超期、进入死信或已结束 |
 | `scan_failures` | 同一启用的盘点计划连续失败或限流至少 3 次 |
 | `scan_stale` | 距计划登记时间与最近一次完整盘点时间中的较晚者达到 `max(3 × 扫描间隔, 15 分钟)` |
 
 盘点告警归当前云账号所属项目，只评估启用计划和可读账号。每条规则对同一对象至多保留一条未恢复告警。确认记录管理员及时间，条件解除时评估器自动恢复。恢复后同一问题再次出现时生成新的告警 ID。触发、确认和恢复均写入项目审计。操作超时使用当前状态的最后更新时间，首次受理状态使用创建时间。
 
+两条队列规则与项目操作积压报告共用状态判定，按操作所属项目和云账号聚合所有地域。每个账号每条规则最多保留一条未恢复告警。待审批、待人工复核、租约有效和延后执行的操作不触发这两条规则。同一账号对应的问题全部解除后自动恢复。控制台可从告警详情打开该账号的操作积压。
+
 项目成员可在控制台「项目告警」、CLI 或 `GET /v1/tenants/{tenant}/projects/{project}/alerts` 查看。列表默认返回未恢复告警，可用 `status` 和 `rule` 筛选。状态筛选支持 `active`、`open`、`acknowledged`、`resolved`、`all`。每页默认 50 条，最多 100 条。将响应的 `next` 用作下一页的 `after`。详情 `GET /alerts/{alert}` 返回当前 `ETag`。项目管理员以 `POST /alerts/{alert}/acknowledgement` 和当前 `If-Match` 确认告警，状态或修订号变更时返回 412。
 
 ```sh
 go run ./cmd/cloud-manager alerts list tenant-id project-id --status active --rule scan_stale
+go run ./cmd/cloud-manager alerts list tenant-id project-id --rule operation_queue_recovery
 go run ./cmd/cloud-manager alerts get tenant-id project-id ALERT_ID
 go run ./cmd/cloud-manager alerts acknowledge tenant-id project-id ALERT_ID --if-match 1
 ```
@@ -1728,6 +1771,8 @@ go run ./cmd/cloud-manager alerts acknowledge tenant-id project-id ALERT_ID --if
 在项目 Webhook 配置中将 `include_alerts` 设为 `true` 后重新执行 `event-register`，即可接收后续的 `project.alert.opened` 和 `project.alert.resolved`。通知使用与操作事件相同的签名、退避、失败查询和人工重投机制。接收端用通知 `id` 去重，用 `alert_id` 和 `revision` 关联告警状态。投递重试期间恢复通知可能先到达，接收端应保留同一告警的最新修订号。确认事件记录在审计中。将 `include_alerts` 改回 `false` 并重新登记可停止新增告警投递，已入队的记录继续处理。
 
 部署时先执行 `0028_project_alerts`，再升级事件发布器。确认所有相关发布器已升级后启用告警订阅。回滚旧版本发布器前，先停用告警订阅并排空告警投递。升级前应按实际发件箱和操作表规模评估迁移锁窗口。
+
+启用队列告警前，先运行 `migrate` 应用 `0151_operation_queue_snapshot` 和 `0152_operation_queue_alerts`，再升级 API 与 `alert-controller`。数据库角色分离部署时，API 和告警控制器角色需具备 `cmp_operation_queue_snapshot` 的读取权限。
 
 ### OpenStack 原生控制台访问
 
@@ -1787,6 +1832,12 @@ ssh -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes -i ~/.ssh/serial -p 22 \
 ### 实例操作 Worker
 
 `CLOUD_MANAGER_WORKER_PROFILES` 指向私有 JSON 文件，映射本地凭据引用到厂商配置文件。配置须与账号已校验的远端身份一致。使用独立的授权身份运行 `go run ./cmd/cloud-manager worker`。每个进程逐个领取队列任务，可通过多个进程并行。
+
+应用 `0149_operation_worker_tenant` 后，为选定租户的 Worker 设置 `CLOUD_MANAGER_WORKER_TENANT` 等于租户 ID，即可为该租户预留进程执行容量。专用 Worker 仅领取该租户的新任务与到期租约，并将自动超期清理限制在同一租户。共享 Worker 使用空值，继续服务队列中的所有租户，包括有专用进程的租户。`dispatch` 和 `observe-only` 均可组合租户范围。跨进程租约与提交前权限复核照常生效。恢复时为每个需要对账的租户安排可领取其任务的只读 Worker。
+
+`cloud-manager migrate` 先执行事务内迁移，再用独立的 30 分钟窗口并发建立这两个索引。迁移连接使用 PostgreSQL 直连或会话池模式。构建期间 API 可继续受理，共享 Worker 可继续领取。迁移只在两个索引都可用时记账，专用 Worker 在此之后才能启动。中断后重跑同一命令即可复用已完成的索引，并重建构建中断留下的同定义无效索引。遇到同名异定义时迁移会报冲突，保留现有对象。
+
+上线前在目标队列规模下测量在线构建增加的 CPU、I/O 和写入延迟。回退到支持专用 Worker 之前的版本时，先排空并停止专用副本，再按回退版本的共享容量计划启动 Worker。
 
 ### 恢复期间冻结云端派发
 

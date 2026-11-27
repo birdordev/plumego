@@ -1,6 +1,8 @@
 export const alertRules: Readonly<Partial<Record<string, string>>> = {
   operation_review: '操作待复核',
   operation_delayed: '操作超时',
+  operation_queue_recovery: '租约接管积压',
+  operation_queue_anomaly: '操作队列异常',
   scan_failures: '连续盘点失败',
   scan_stale: '盘点数据过期',
   bucket_encryption_unconfigured: '对象桶未配置默认加密',
@@ -13,4 +15,9 @@ export const alertRules: Readonly<Partial<Record<string, string>>> = {
 export const bucketAlertFindings: Readonly<Partial<Record<string, string>>> = {
   bucket_encryption_unconfigured: 'encryption_unconfigured',
   bucket_versioning_inactive: 'versioning_inactive',
+}
+
+export const queueAlertSources: Readonly<Partial<Record<string, string>>> = {
+  operation_queue_recovery: '到期待接管',
+  operation_queue_anomaly: '活动操作的队列记录异常',
 }

@@ -28,7 +28,10 @@ func evaluateProjectAlerts(ctx context.Context, tx *sql.Tx, tenant, project stri
 	if err := inventory.EvaluateBucketProtectionAlerts(ctx, tx, tenant, project); err != nil {
 		return err
 	}
-	return inventory.EvaluateTagPolicyAlerts(ctx, tx, tenant, project)
+	if err := inventory.EvaluateTagPolicyAlerts(ctx, tx, tenant, project); err != nil {
+		return err
+	}
+	return alerts.EvaluateOperationQueueAlerts(ctx, tx, tenant, project)
 }
 
 func alertHandler(store alerts.Store, logger plumelog.StructuredLogger) http.Handler {

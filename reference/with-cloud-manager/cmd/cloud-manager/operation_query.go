@@ -20,6 +20,19 @@ import (
 const projectOperationsRoute = "/v1/tenants/:tenant/projects/:project/operations"
 
 func operationListHandler(store operations.Store, logger plumelog.StructuredLogger) http.Handler {
+	return serveOperationQuery(operationQuery, store.List, logger)
+}
+
+func operationBacklogHandler(store operations.Store, logger plumelog.StructuredLogger) http.Handler {
+	return serveOperationQuery(parseBacklogQuery, store.Backlog, logger)
+}
+
+func operationLatencyHandler(store operations.Store, logger plumelog.StructuredLogger) http.Handler {
+	return serveOperationQuery(parseLatencyQuery, store.Latency, logger)
+}
+
+func serveOperationQuery[Filter, Result any](parse func(string) (Filter, error),
+	read func(context.Context, string, identity.Scope, Filter) (Result, error), logger plumelog.StructuredLogger) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
 		token, authenticated := requestCredential(r)
@@ -27,7 +40,7 @@ func operationListHandler(store operations.Store, logger plumelog.StructuredLogg
 			writeAccountError(w, r, identity.ErrUnauthenticated, logger)
 			return
 		}
-		q, err := operationQuery(r.URL.RawQuery)
+		q, err := parse(r.URL.RawQuery)
 		if err != nil {
 			writeOperationQueryError(w, r, err, logger)
 			return
@@ -35,13 +48,13 @@ func operationListHandler(store operations.Store, logger plumelog.StructuredLogg
 		ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
 		defer cancel()
 		scope := identity.Scope{Tenant: router.Param(r, "tenant"), Project: router.Param(r, "project")}
-		page, err := store.List(ctx, token, scope, q)
+		page, err := read(ctx, token, scope, q)
 		if err != nil {
 			writeOperationQueryError(w, r, err, logger)
 			return
 		}
 		if err := contract.WriteResponse(w, r, http.StatusOK, page, nil); err != nil {
-			logger.Warn("operation list response write failed", plumelog.Fields{})
+			logger.Warn("operation query response write failed", plumelog.Fields{})
 		}
 	})
 }
@@ -50,6 +63,8 @@ func writeOperationQueryError(w http.ResponseWriter, r *http.Request, err error,
 	switch {
 	case errors.Is(err, operations.ErrInvalidQuery):
 		err = contract.NewErrorBuilder().Type(contract.TypeBadRequest).Message("invalid operation query").Build()
+	case errors.Is(err, operations.ErrLatencyWindowTooLarge):
+		err = contract.NewErrorBuilder().Type(contract.TypeInvalidRequest).Message("operation latency window contains too many operations").Build()
 	case errors.Is(err, identity.ErrForbidden), errors.Is(err, identity.ErrUnauthenticated):
 	default:
 		err = contract.NewErrorBuilder().Type(contract.TypeUnavailable).Message("operation history is unavailable").Build()

@@ -47,7 +47,8 @@ func newAPI(db *sql.DB, addr string, console *consoleConfig) (*core.App, error) 
 		operations.BareMetalPXEMigration, operations.BareMetalDeploymentMigration, operations.BareMetalReclaimsMigration,
 		operations.BareMetalReclaimRecoveriesMigration, operations.ObservationWorkerMigration, operations.EffectIDMigration,
 		operations.TerminalEventTimeMigration, operations.OperationRolloutMigration, inventory.BucketVersioningMigration, inventory.BucketEncryptionMigration)
-	additionalVersions = append(additionalVersions, billing.ProjectBudgetMigration, alerts.BucketProtectionMigration, inventory.TagPolicyAlertsMigration)
+	additionalVersions = append(additionalVersions, billing.ProjectBudgetMigration, alerts.BucketProtectionMigration,
+		inventory.TagPolicyAlertsMigration, operations.FirstLeaseMigration, operations.QueueSnapshotMigration, alerts.OperationQueueMigration)
 	additionalVersionList := strings.Join(additionalVersions, ",")
 	ready := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx, cancel := context.WithTimeout(r.Context(), time.Second)
@@ -166,6 +167,8 @@ func newAPI(db *sql.DB, addr string, console *consoleConfig) (*core.App, error) 
 		app.Get(networkOperationsRoute+"/:operation/events", operationEventsHandler(operationStore, app.Logger())),
 		app.Post(networkOperationsRoute+"/:operation/retry-observation", retryObservation),
 		app.Get(projectOperationsRoute, operationListHandler(operationStore, app.Logger())),
+		app.Get(operationBacklogRoute, operationBacklogHandler(operationStore, app.Logger())),
+		app.Get(operationLatencyRoute, operationLatencyHandler(operationStore, app.Logger())),
 		app.Get(projectOperationsRoute+"/:operation", instanceOps),
 		app.Get(projectOperationsRoute+"/:operation/events", operationEventsHandler(operationStore, app.Logger())),
 		app.Post(projectOperationsRoute+"/:operation/approval", approve),

@@ -38,6 +38,18 @@ func planOperationRequest(base *url.URL, args []string) (operationRequestPlan, e
 	project := base.JoinPath("v1", "tenants", url.PathEscape(args[1]), "projects", url.PathEscape(args[2]))
 	ledger := project.JoinPath("operations")
 	switch args[0] {
+	case "backlog":
+		if query, ok := backlogClientQuery(args[3:]); ok {
+			target := project.JoinPath("operation-backlog")
+			target.RawQuery = query.Encode()
+			return operationRequestPlan{target: target, method: http.MethodGet, status: http.StatusOK}, nil
+		}
+	case "latency":
+		if query, ok := latencyClientQuery(args[3:]); ok {
+			target := project.JoinPath("operation-latency")
+			target.RawQuery = query.Encode()
+			return operationRequestPlan{target: target, method: http.MethodGet, status: http.StatusOK}, nil
+		}
 	case "list", "get", "events":
 		target, err := readOperationTarget(ledger, args)
 		return operationRequestPlan{target: target, method: http.MethodGet, status: http.StatusOK}, err

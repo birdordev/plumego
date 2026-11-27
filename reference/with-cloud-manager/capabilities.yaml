@@ -12,12 +12,19 @@ platform:
   cloud-account-write-mode: verified-provider-mode-switch-with-versioned-dispatch-and-transactional-audit
   cloud-account-operation-rollout: priority-provider-account-region-action-allowlist-with-revision-fenced-dispatch-and-browser-administration
   operation-worker-observation-mode: recovery-readback-without-new-dispatch-or-aws-create-replay
+  operation-worker-tenant: optional-reserved-process-capacity-with-tenant-scoped-leasing-and-inline-expiration
+  operation-worker-tenant-indexes: concurrent-index-build-with-interruption-recovery-and-startup-gate
+  project-operation-backlog: project-scoped-database-snapshot-with-provider-rollups-and-queue-eligibility
+  project-operation-queue-alerts: per-account-overdue-lease-recovery-and-queue-anomaly-alerts-with-audit-and-outbox
+  project-operation-latency: first-lease-transaction-evidence-and-provider-scoped-observed-success-distributions
+  operation-latency-release-gate: approved-cohort-manifest-with-scope-verification-and-independent-success-coverage-p95-checks
   operation-terminal-effect-id: signed-stable-effect-id-across-point-in-time-recovery-and-redelivery
   operation-receipt-reconciliation: read-only-destination-scoped-terminal-receipts-with-optional-bidirectional-window
   priority-cloud-inventory-schedules: versioned-admin-control-and-lease-fenced-checkpoint-publication
   inventory-account-dispatch: cross-replica-single-account-lease-least-recently-claimed-priority-and-shared-throttle-cooldown
   inventory-tenant-dispatch: durable-least-recently-claimed-tenant-rotation-before-account-and-plan-priority
   inventory-dispatch-observation: opt-in-post-commit-structured-claims-with-database-due-and-claim-times
+  inventory-dispatch-stats: offline-claim-evidence-with-replica-deduplication-and-per-tenant-provider-wait-thresholds
   inventory-freshness: project-visible-enabled-schedule-coverage-with-credential-bound-completions
   project-asset-capacity-probe: fixed-arrival-project-query-contract-with-workload-digest-and-per-case-p95
   project-asset-discovery-clients: scoped-list-history-topology-and-csv-with-shared-console-filters

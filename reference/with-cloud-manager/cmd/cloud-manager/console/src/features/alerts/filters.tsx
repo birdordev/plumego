@@ -6,6 +6,7 @@ const states = [
 
 const rules = [
   ['', '全部规则'], ['operation_review', '操作待复核'], ['operation_delayed', '操作超时'],
+  ['operation_queue_recovery', '租约接管积压'], ['operation_queue_anomaly', '操作队列异常'],
   ['scan_failures', '连续盘点失败'], ['scan_stale', '盘点数据过期'],
   ['bucket_encryption_unconfigured', '对象桶未配置默认加密'], ['bucket_versioning_inactive', '对象桶版本控制未启用'],
   ['tag_noncompliant', '缺少必填标签'],

@@ -105,7 +105,8 @@ func run(parent context.Context, args []string) (retErr error) {
 		return runPublicCloud(parent, db, args, name, os.Getenv(variable), nil)
 	}
 	if args[0] == "worker" {
-		return runWorker(parent, db, os.Getenv("CLOUD_MANAGER_WORKER_PROFILES"), os.Getenv("CLOUD_MANAGER_WORKER_MODE"))
+		return runWorker(parent, db, os.Getenv("CLOUD_MANAGER_WORKER_PROFILES"),
+			os.Getenv("CLOUD_MANAGER_WORKER_MODE"), os.Getenv("CLOUD_MANAGER_WORKER_TENANT"))
 	}
 	if args[0] == "controller" || args[0] == "workload-controller" {
 		watchOnly := args[0] == "workload-controller"
@@ -163,11 +164,11 @@ func run(parent context.Context, args []string) (retErr error) {
 		}
 		return app.RunContext(parent, 10*time.Second)
 	}
+	if args[0] == "migrate" {
+		return migrateCloudManager(parent, db)
+	}
 	ctx, cancel := context.WithTimeout(parent, time.Minute)
 	defer cancel()
-	if strings.HasPrefix(args[0], "billing-") {
-		return runBillingStorageCommand(ctx, db, args, os.Stdout)
-	}
 	if args[0] == "sessions-purge" {
 		removed, err := identity.NewBrowserSessions(db).PurgeExpired(ctx)
 		if err != nil {
@@ -176,10 +177,32 @@ func run(parent context.Context, args []string) (retErr error) {
 		_, err = fmt.Fprintln(os.Stdout, removed)
 		return err
 	}
-	return migrateCloudManager(ctx, db)
+	return runBillingStorageCommand(ctx, db, args, os.Stdout)
 }
 
-func migrateCloudManager(ctx context.Context, db *sql.DB) error {
+func migrateCloudManager(parent context.Context, db *sql.DB) error {
+	schemaCtx, cancel := context.WithTimeout(parent, time.Minute)
+	err := migrateCloudManagerSchema(schemaCtx, db)
+	cancel()
+	if err != nil {
+		return err
+	}
+	indexCtx, end := context.WithTimeout(parent, 30*time.Minute)
+	defer end()
+	err = operations.MigrateWorkerTenantIndexes(indexCtx, db)
+	switch {
+	case errors.Is(err, operations.ErrWorkerTenantIndexConflict):
+		return operations.ErrWorkerTenantIndexConflict
+	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
+		return errors.New("tenant worker index migration interrupted")
+	case err != nil:
+		return errors.New("tenant worker index migration failed")
+	default:
+		return nil
+	}
+}
+
+func migrateCloudManagerSchema(ctx context.Context, db *sql.DB) error {
 	if err := identity.Migrate(ctx, db); err != nil {
 		return errors.New("identity migration failed")
 	}
@@ -233,6 +256,9 @@ func migrateCloudManager(ctx context.Context, db *sql.DB) error {
 	}
 	if err := inventory.MigrateTagPolicyAlerts(ctx, db); err != nil {
 		return errors.New("tag policy alert migration failed")
+	}
+	if err := alerts.MigrateOperationQueue(ctx, db); err != nil {
+		return errors.New("operation queue alert migration failed")
 	}
 	if err := inventory.MigrateIdleAnalysis(ctx, db); err != nil {
 		return errors.New("instance idle analysis migration failed")

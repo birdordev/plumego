@@ -70,7 +70,7 @@ func (s *SQLStore) Reserve(ctx context.Context, opts mq.ReserveOptions) ([]mq.Ta
 	return s.reserve(ctx, opts, "")
 }
 
-// ReserveTenant 在原子领取事务中只选择指定租户的任务。
+// ReserveTenant 在原子领取事务中只领取和清理指定租户的任务。
 func (s *SQLStore) ReserveTenant(ctx context.Context, opts mq.ReserveOptions, tenant string) ([]mq.Task, error) {
 	if tenant == "" {
 		return nil, errors.New("task reservation requires a tenant")
@@ -102,7 +102,7 @@ func (s *SQLStore) reserve(ctx context.Context, opts mq.ReserveOptions, tenant s
 	defer func() { _ = tx.Rollback() }()
 
 	if !s.cfg.DeferredExpiration || s.cfg.Dialect != DialectPostgres {
-		if err := s.expireUnavailable(ctx, tx, now); err != nil {
+		if err := s.expireUnavailable(ctx, tx, now, tenant); err != nil {
 			return nil, fmt.Errorf("expire unavailable tasks: %w", err)
 		}
 	}
@@ -481,11 +481,16 @@ func (s *SQLStore) ReplayDLQ(ctx context.Context, opts ReplayOptions) (ReplayRes
 	}, nil
 }
 
-func (s *SQLStore) expireUnavailable(ctx context.Context, tx *sql.Tx, now time.Time) error {
+func (s *SQLStore) expireUnavailable(ctx context.Context, tx *sql.Tx, now time.Time, tenant string) error {
 	query := fmt.Sprintf("UPDATE %s SET status = %s, lease_owner = NULL, lease_until = NULL, updated_at = %s"+
 		" WHERE expires_at IS NOT NULL AND expires_at <= %s AND (status = %s OR (status = %s AND lease_until < %s))",
 		s.cfg.Table, s.placeholder(1), s.placeholder(2), s.placeholder(3), s.placeholder(4), s.placeholder(5), s.placeholder(6))
-	_, err := tx.ExecContext(ctx, query, mq.TaskStatusExpired, now, now, mq.TaskStatusQueued, mq.TaskStatusLeased, now)
+	args := []any{mq.TaskStatusExpired, now, now, mq.TaskStatusQueued, mq.TaskStatusLeased, now}
+	if tenant != "" {
+		query += " AND tenant_id = " + s.placeholder(len(args)+1)
+		args = append(args, tenant)
+	}
+	_, err := tx.ExecContext(ctx, query, args...)
 	return err
 }
 

@@ -55,7 +55,13 @@ func TestAcceptancePublicCloudInstancePower(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	store := operations.NewStore(db)
+	store, err := configuredOperationWorkerStore(db, "dispatch", "tenant")
+	if err != nil {
+		t.Fatal(err)
+	}
+	exec(`INSERT INTO cmp_operation_tasks(id,topic,tenant_id,priority,status,attempts,max_attempts,available_at,created_at,updated_at)
+		SELECT 'hot-' || n,'cmp.instance.v1','hot',0,'queued',0,8,now()-interval '1 hour',now()-interval '1 hour',now()
+		FROM generate_series(1,1000) AS n`)
 	scope := identity.Scope{Tenant: "tenant", Project: "project"}
 
 	for _, item := range []struct{ name, region, account, instance string }{
@@ -271,6 +277,11 @@ func TestAcceptancePublicCloudInstancePower(t *testing.T) {
 			}
 			fixture.exerciseDeletion(t, db, store, app, scope, actorToken, reviewerToken, &deletionEnabled)
 		})
+	}
+	var untouched int
+	if err := db.QueryRowContext(ctx, `SELECT count(*) FROM cmp_operation_tasks
+		WHERE tenant_id='hot' AND status='queued' AND attempts=0`).Scan(&untouched); err != nil || untouched != 1000 {
+		t.Fatalf("dedicated worker changed hot-tenant tasks: untouched=%d error=%v", untouched, err)
 	}
 }
 

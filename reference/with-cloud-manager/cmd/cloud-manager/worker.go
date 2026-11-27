@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"errors"
 	"net/http"
+	"strings"
+	"time"
 
 	"with-cloud-manager/internal/identity"
 	"with-cloud-manager/internal/operations"
@@ -15,10 +17,19 @@ import (
 	"with-cloud-manager/internal/provider/redfish"
 )
 
-func runWorker(ctx context.Context, db *sql.DB, manifest, mode string) error {
-	store, err := configuredOperationWorkerStore(db, mode)
+func runWorker(ctx context.Context, db *sql.DB, manifest, mode, tenant string) error {
+	store, err := configuredOperationWorkerStore(db, mode, tenant)
 	if err != nil {
 		return err
+	}
+	if tenant != "" {
+		check, cancel := context.WithTimeout(ctx, time.Second)
+		var applied bool
+		err := db.QueryRowContext(check, `SELECT EXISTS (SELECT 1 FROM cmp_migrations WHERE version=$1)`, operations.WorkerTenantMigration).Scan(&applied)
+		cancel()
+		if err != nil || !applied {
+			return errors.New("tenant worker indexes are unavailable; run cloud-manager migrate")
+		}
 	}
 	var profiles map[string]string
 	if err := loadPrivateProfile(manifest, &profiles); err != nil {
@@ -37,12 +48,16 @@ func runWorker(ctx context.Context, db *sql.DB, manifest, mode string) error {
 	return nil
 }
 
-func configuredOperationWorkerStore(db *sql.DB, mode string) (operations.Store, error) {
+func configuredOperationWorkerStore(db *sql.DB, mode, tenant string) (operations.Store, error) {
+	if tenant != "" && (!operationClientSegment(tenant) || strings.TrimSpace(tenant) != tenant) {
+		return operations.Store{}, errors.New("CLOUD_MANAGER_WORKER_TENANT must be a tenant ID")
+	}
+	store := operations.NewStore(db).WithWorkerTenant(tenant)
 	switch mode {
 	case "", "dispatch":
-		return operations.NewStore(db), nil
+		return store, nil
 	case "observe-only":
-		return operations.NewStore(db).WithObservationOnly(), nil
+		return store.WithObservationOnly(), nil
 	default:
 		return operations.Store{}, errors.New("CLOUD_MANAGER_WORKER_MODE must be dispatch or observe-only")
 	}

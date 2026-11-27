@@ -1,0 +1,4 @@
+.operation-backlog-table table { min-inline-size: 0; }
+.operation-backlog-table th { min-inline-size: 3rem; white-space: normal; }
+.operation-backlog-table th:first-child { min-inline-size: 4.5rem; }
+.operation-backlog-table :is(th, td) { padding-inline: .4rem; }

@@ -2,7 +2,7 @@ import type { z } from 'zod'
 import type { alertSchema } from './schema'
 import { RowAction, StateBadge } from '../../shared/components/RowAction'
 import { ConsoleTable } from '../../shared/components/ConsoleTable'
-import { alertRules } from './labels'
+import { alertRules, queueAlertSources } from './labels'
 import { kinds } from '../assets/labels'
 import { timestamp } from '../../shared/display/time'
 import { showAlert } from './detail'
@@ -16,7 +16,8 @@ export function AlertsTable({ items }: { items: readonly Alert[] }) {
     cells: [
       timestamp(item.opened_at), alertRules[item.rule as keyof typeof alertRules] || item.rule,
       item.region ? item.account + ' / ' + item.region : item.account,
-      item.rule.startsWith('operation_') ? item.subject_id : kinds[item.resource_kind as keyof typeof kinds] || item.resource_kind,
+      queueAlertSources[item.rule] ? '操作队列'
+        : item.rule.startsWith('operation_') ? item.subject_id : kinds[item.resource_kind as keyof typeof kinds] || item.resource_kind,
       <StateBadge status={item.status} />, <RowAction onClick={() => showAlert(item.id)}>查看</RowAction>,
     ],
   }))

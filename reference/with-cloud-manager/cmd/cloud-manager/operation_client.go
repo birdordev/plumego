@@ -22,6 +22,9 @@ import (
 
 const operationsUsage = `usage: cloud-manager operations COMMAND TENANT PROJECT [OPTIONS]
   list [--status STATUS ...]
+  backlog [--account ACCOUNT] [--region REGION]
+  latency --from TIME --until TIME [--account ACCOUNT] [--region REGION] [--action ACTION]
+  verify-latency < acceptance.json
   get OPERATION
   events OPERATION [--after SEQUENCE] [--limit LIMIT]
   preview-delete --account ACCOUNT --region REGION --asset-id ID
@@ -78,6 +81,12 @@ func runOperationsClient(ctx context.Context, args []string, address, token stri
 	base, err := operationClientBase(address)
 	if err != nil {
 		return err
+	}
+	if len(args) != 0 && args[0] == "verify-latency" {
+		if len(args) != 3 || !operationClientSegment(args[1]) || !operationClientSegment(args[2]) {
+			return errors.New(operationsUsage)
+		}
+		return runOperationLatencyGate(ctx, base, args[1], args[2], token, input, output, transport)
 	}
 	plan, err := planOperationRequest(base, args)
 	if err != nil {
