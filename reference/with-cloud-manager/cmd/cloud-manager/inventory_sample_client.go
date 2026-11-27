@@ -98,35 +98,15 @@ func runInventorySamples(ctx context.Context, plan operationRequestPlan, token s
 			case <-timer.C:
 			}
 		}
-		var body bytes.Buffer
-		if err := runProjectRequest(ctx, plan, token, nil, &body, transport); err != nil {
+		sample, err := readInventorySample(ctx, plan, token, transport, options, scope, previous, i+1)
+		if err != nil {
 			return err
 		}
-		var snapshot struct {
-			AsOf             time.Time                           `json:"as_of"`
-			Window           int                                 `json:"window_seconds"`
-			Summary          *inventory.FreshnessSummary         `json:"summary"`
-			Dispatch         *inventory.FreshnessDispatchSummary `json:"dispatch_summary"`
-			ScopeFingerprint string                              `json:"scope_fingerprint"`
-		}
-		if err := json.Unmarshal(body.Bytes(), &snapshot); err != nil || snapshot.AsOf.IsZero() ||
-			!snapshot.AsOf.After(previous) || snapshot.Window != inventory.DefaultFreshnessWindow ||
-			snapshot.Summary == nil || snapshot.Dispatch == nil || !validSampleCounts(*snapshot.Summary, *snapshot.Dispatch) {
-			return errors.New("invalid or non-increasing inventory freshness snapshot")
-		}
-		previous = snapshot.AsOf
-		if options.manifest && !inventory.ValidFreshnessScopeFingerprint(snapshot.ScopeFingerprint) {
-			return errors.New("inventory freshness snapshot has no valid scope fingerprint")
-		}
-		freshEnough := snapshot.Summary.Fresh >= (options.expected*inventorySamplePercent+99)/100
-		passed := snapshot.Summary.Total == options.expected && freshEnough &&
-			(!options.manifest || snapshot.ScopeFingerprint == options.fingerprint)
-		if passed {
+		previous = sample.AsOf
+		if sample.Passed {
 			result.Passed++
 		}
-		if err := encoder.Encode(inventorySample{Type: "sample", inventorySampleScope: scope, Number: i + 1, AsOf: snapshot.AsOf,
-			Window: snapshot.Window, ExpectedScopes: options.expected, ExpectedFingerprint: options.fingerprint,
-			ScopeFingerprint: snapshot.ScopeFingerprint, Summary: *snapshot.Summary, Dispatch: *snapshot.Dispatch, Passed: passed}); err != nil {
+		if err := encoder.Encode(sample); err != nil {
 			return err
 		}
 	}
@@ -138,6 +118,36 @@ func runInventorySamples(ctx context.Context, plan operationRequestPlan, token s
 		return errors.New("inventory freshness samples did not meet the release threshold")
 	}
 	return nil
+}
+
+func readInventorySample(ctx context.Context, plan operationRequestPlan, token string, transport http.RoundTripper,
+	options inventorySampleConfig, scope inventorySampleScope, previous time.Time, number int,
+) (inventorySample, error) {
+	var body bytes.Buffer
+	if err := runProjectRequest(ctx, plan, token, nil, &body, transport); err != nil {
+		return inventorySample{}, err
+	}
+	var snapshot struct {
+		AsOf             time.Time                           `json:"as_of"`
+		Window           int                                 `json:"window_seconds"`
+		Summary          *inventory.FreshnessSummary         `json:"summary"`
+		Dispatch         *inventory.FreshnessDispatchSummary `json:"dispatch_summary"`
+		ScopeFingerprint string                              `json:"scope_fingerprint"`
+	}
+	if err := json.Unmarshal(body.Bytes(), &snapshot); err != nil || snapshot.AsOf.IsZero() ||
+		!snapshot.AsOf.After(previous) || snapshot.Window != inventory.DefaultFreshnessWindow ||
+		snapshot.Summary == nil || snapshot.Dispatch == nil || !validSampleCounts(*snapshot.Summary, *snapshot.Dispatch) {
+		return inventorySample{}, errors.New("invalid or non-increasing inventory freshness snapshot")
+	}
+	if options.manifest && !inventory.ValidFreshnessScopeFingerprint(snapshot.ScopeFingerprint) {
+		return inventorySample{}, errors.New("inventory freshness snapshot has no valid scope fingerprint")
+	}
+	freshEnough := snapshot.Summary.Fresh >= (options.expected*inventorySamplePercent+99)/100
+	passed := snapshot.Summary.Total == options.expected && freshEnough &&
+		(!options.manifest || snapshot.ScopeFingerprint == options.fingerprint)
+	return inventorySample{Type: "sample", inventorySampleScope: scope, Number: number, AsOf: snapshot.AsOf,
+		Window: snapshot.Window, ExpectedScopes: options.expected, ExpectedFingerprint: options.fingerprint,
+		ScopeFingerprint: snapshot.ScopeFingerprint, Summary: *snapshot.Summary, Dispatch: *snapshot.Dispatch, Passed: passed}, nil
 }
 
 func validSampleCounts(summary inventory.FreshnessSummary, dispatch inventory.FreshnessDispatchSummary) bool {

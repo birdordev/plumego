@@ -191,6 +191,7 @@ func TestAcceptanceProjectAssetAPI(t *testing.T) {
 		graph.Nodes[0].Links[0].ID != "target" || graph.Nodes[0].Links[0].Name != "tenant/owned" {
 		t.Fatalf("incorrect topology: %+v", graph)
 	}
+	checkProjectAssetCLI(t, app, token)
 	exec(`UPDATE cmp_inventory_objects AS o SET removed_at=now() FROM cmp_inventory_scopes AS s
 		WHERE o.scope_id=s.scope_id AND s.tenant_id='tenant' AND s.account_id='owned'
 		  AND s.kind='volume' AND o.external_id='target'`)

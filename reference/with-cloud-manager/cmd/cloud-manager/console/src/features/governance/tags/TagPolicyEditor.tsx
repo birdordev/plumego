@@ -11,6 +11,7 @@ function asDraft(kind: string, keys = ''): RuleDraft {
 
 export function TagPolicyEditor({ policy, save }: Props) {
   const [maxAge, setMaxAge] = useState(String(policy?.max_age_seconds ?? 3600))
+  const [notify, setNotify] = useState(policy?.alert_on_noncompliance ?? false)
   const [rules, setRules] = useState(() => policy?.rules.map((rule) => asDraft(rule.kind, rule.required_keys.join('\n'))) ?? [])
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -21,6 +22,7 @@ export function TagPolicyEditor({ policy, save }: Props) {
     if (busy) return
     const input = tagPolicyInput.safeParse({
       max_age_seconds: Number(maxAge),
+      alert_on_noncompliance: notify,
       rules: rules.map(({ kind, keys }) => ({ kind, required_keys: keys.split('\n').map((key) => key.trim()).filter(Boolean) })),
     })
     if (!input.success) {
@@ -46,6 +48,8 @@ export function TagPolicyEditor({ policy, save }: Props) {
         <input type="number" value={maxAge} min={60} max={604800} required disabled={busy}
           onChange={(event) => setMaxAge(event.target.value)} />
       </label>
+      <label><input type="checkbox" checked={notify} disabled={busy}
+        onChange={(event) => setNotify(event.target.checked)} />缺少必填标签时生成项目告警</label>
       {rules.map((draft, index) => <TagPolicyRuleFields key={draft.id} index={index} draft={draft} disabled={busy}
         onChange={(next) => setRules((current) => current.map((rule) => rule.id === next.id ? next : rule))}
         onRemove={() => setRules((current) => current.filter((rule) => rule.id !== draft.id))} />)}

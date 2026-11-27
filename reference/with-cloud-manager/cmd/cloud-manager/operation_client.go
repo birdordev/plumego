@@ -117,6 +117,9 @@ func runProjectRequest(ctx context.Context, plan operationRequestPlan, token str
 	if plan.csv {
 		expectedMedia, responseLimit = "text/csv", 16<<20
 	}
+	if plan.responseLimit > 0 {
+		responseLimit = plan.responseLimit
+	}
 	request.Header.Set("Accept", expectedMedia)
 	if body != nil {
 		request.Header.Set("Content-Type", "application/json")
@@ -130,9 +133,7 @@ func runProjectRequest(ctx context.Context, plan operationRequestPlan, token str
 	if plan.match != "" {
 		request.Header.Set("If-Match", plan.match)
 	}
-	client := http.Client{Transport: transport, CheckRedirect: func(*http.Request, []*http.Request) error {
-		return http.ErrUseLastResponse
-	}}
+	client := projectAPIClient(transport)
 	response, err := client.Do(request)
 	if err != nil {
 		if ctx.Err() != nil {
@@ -168,6 +169,12 @@ func runProjectRequest(ctx context.Context, plan operationRequestPlan, token str
 	}
 	_, err = fmt.Fprintln(output, compact.String())
 	return err
+}
+
+func projectAPIClient(transport http.RoundTripper) *http.Client {
+	return &http.Client{Transport: transport, CheckRedirect: func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
+	}}
 }
 
 func validProjectClientToken(token string) bool {

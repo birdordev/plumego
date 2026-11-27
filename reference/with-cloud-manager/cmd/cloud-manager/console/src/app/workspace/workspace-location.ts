@@ -1,6 +1,7 @@
 import type { Profile, Session } from '../../features/session/store'
 import { canOpenView, routes, type View } from '../routes/registry'
-import { filterPrefix, filterQuery } from './workspace-filters'
+import { filterPrefix, workspaceHref } from '../../shared/navigation/workspace-link'
+import { filterQuery } from './workspace-filters'
 
 export type HistoryAction = 'pushState' | 'replaceState'
 export const defaultView: View = 'overview'
@@ -18,15 +19,6 @@ export function readWorkspaceLocation(profile: Profile) {
     ? route as View : undefined
   const fallback = !requested || route !== null ? 'assets' : defaultView
   return { scope, view: view ?? fallback, filters: view ? filterQuery(view, query, filterPrefix) : '' }
-}
-
-export function workspaceHref(project: string, view: View, filters = '') {
-  const url = new URL(window.location.href)
-  const query = new URLSearchParams({ project, view })
-  for (const [name, value] of new URLSearchParams(filters)) query.set(filterPrefix + name, value)
-  url.search = query.toString()
-  url.hash = ''
-  return url.href
 }
 
 export function updateWorkspaceLocation(project: string, view: View, filters: string, action: HistoryAction) {

@@ -1,7 +1,7 @@
 import type { View } from '../routes/registry'
 
 const fields: Partial<Record<View, readonly string[]>> = {
-  assets: ['q', 'account', 'kind'],
+  assets: ['q', 'account', 'region', 'kind'],
   kvm: ['kind', 'site'],
   operations: ['account', 'status'],
   alerts: ['status', 'rule'],
@@ -14,7 +14,6 @@ const fields: Partial<Record<View, readonly string[]>> = {
   'project-budget': ['period', 'source', 'currency', 'basis'],
 }
 
-export const filterPrefix = 'filter.'
 
 export function filterQuery(view: View, query: URLSearchParams, prefix = '') {
   const result = new URLSearchParams()

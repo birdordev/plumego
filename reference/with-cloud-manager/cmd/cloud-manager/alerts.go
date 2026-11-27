@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"net/http"
 	"net/url"
@@ -13,10 +14,22 @@ import (
 	"github.com/birdordev/plumego/router"
 
 	"with-cloud-manager/internal/alerts"
+	"with-cloud-manager/internal/billing"
 	"with-cloud-manager/internal/identity"
+	"with-cloud-manager/internal/inventory"
 )
 
 const alertsRoute = "/v1/tenants/:tenant/projects/:project/alerts"
+
+func evaluateProjectAlerts(ctx context.Context, tx *sql.Tx, tenant, project string) error {
+	if err := billing.EvaluateProjectBudgetAlerts(ctx, tx, tenant, project); err != nil {
+		return err
+	}
+	if err := inventory.EvaluateBucketProtectionAlerts(ctx, tx, tenant, project); err != nil {
+		return err
+	}
+	return inventory.EvaluateTagPolicyAlerts(ctx, tx, tenant, project)
+}
 
 func alertHandler(store alerts.Store, logger plumelog.StructuredLogger) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

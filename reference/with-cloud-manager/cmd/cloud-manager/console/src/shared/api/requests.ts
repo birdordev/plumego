@@ -55,7 +55,7 @@ async function send(path: string, options: RequestOptions, schema: z.ZodType | u
     throw new ConsoleRequestError(response.status, messages[response.status] ?? '暂时无法读取服务。请稍后重试。')
   }
   if (csv) {
-    if (response.headers.get('Content-Type')?.split(';')[0] !== 'text/csv') throw new Error('无法读取审计文件。')
+    if (response.headers.get('Content-Type')?.split(';')[0] !== 'text/csv') throw new Error('无法读取导出的 CSV 文件。')
     return response.blob()
   }
   const payload = envelope.safeParse(await response.json().catch(() => undefined))

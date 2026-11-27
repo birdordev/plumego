@@ -9,7 +9,7 @@ import { WorkspaceBatch } from './WorkspaceBatch'
 import { WorkspaceHeader } from './WorkspaceHeader'
 import { WorkspacePage } from './WorkspacePage'
 import type { Theme } from './useWorkspacePreferences'
-import { workspaceHref } from './workspace-location'
+import { workspaceHref } from '../../shared/navigation/workspace-link'
 import { followWorkspaceLink } from './workspace-link'
 
 type Props = {

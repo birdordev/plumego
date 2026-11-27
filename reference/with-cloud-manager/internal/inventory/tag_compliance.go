@@ -78,13 +78,26 @@ func (s Store) TagCompliance(ctx context.Context, token string, q TagComplianceQ
 //go:embed tag_compliance.sql
 var tagComplianceSelect string
 
+func tagObservationReason(maxAge string) string {
+	return `CASE
+		WHEN o.missing_generation IS NOT NULL THEN 'missing_candidate'
+		WHEN a.mode NOT IN ('read_only','write_enabled') THEN 'account_unavailable'
+		WHEN o.tag_observed_at IS NULL THEN 'unobserved'
+		WHEN a.credential_revision<>o.tag_credential_revision
+			OR (parent_scope.scope_id IS NOT NULL AND a.credential_revision<>parent_scope.credential_revision)
+			THEN 'credentials_changed'
+		WHEN o.tag_observed_at<statement_timestamp()-` + maxAge + `*interval '1 second' THEN 'observation_expired'
+		ELSE '' END`
+}
+
 func listTagCompliance(ctx context.Context, tx *sql.Tx, q TagComplianceQuery, p position, policy TagPolicy, rule TagRule, result *TagCompliance) error {
 	keys, err := json.Marshal(rule.RequiredKeys)
 	if err != nil {
 		return err
 	}
 	// 每个盘点范围最多贡献一页候选。缺失键只在全局排序并截取分页后展开。
-	rows, err := tx.QueryContext(ctx, tagComplianceSelect+inventoryOwnershipJoins+`
+	rows, err := tx.QueryContext(ctx, tagComplianceSelect+tagObservationReason("$9")+` AS reason
+				FROM cmp_inventory_objects AS o`+inventoryOwnershipJoins+`
 				WHERE o.scope_id=s.scope_id AND o.removed_at IS NULL
 				  AND `+assetVisibility+`
 				  AND ($6='' OR (s.account_id,s.region,o.external_id)>($6,$7,$8))

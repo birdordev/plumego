@@ -47,7 +47,7 @@ func newAPI(db *sql.DB, addr string, console *consoleConfig) (*core.App, error) 
 		operations.BareMetalPXEMigration, operations.BareMetalDeploymentMigration, operations.BareMetalReclaimsMigration,
 		operations.BareMetalReclaimRecoveriesMigration, operations.ObservationWorkerMigration, operations.EffectIDMigration,
 		operations.TerminalEventTimeMigration, operations.OperationRolloutMigration, inventory.BucketVersioningMigration, inventory.BucketEncryptionMigration)
-	additionalVersions = append(additionalVersions, billing.ProjectBudgetMigration)
+	additionalVersions = append(additionalVersions, billing.ProjectBudgetMigration, alerts.BucketProtectionMigration, inventory.TagPolicyAlertsMigration)
 	additionalVersionList := strings.Join(additionalVersions, ",")
 	ready := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx, cancel := context.WithTimeout(r.Context(), time.Second)

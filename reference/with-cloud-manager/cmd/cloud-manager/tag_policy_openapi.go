@@ -21,10 +21,11 @@ func tagPolicyOpenAPI(hints map[string]openapi.Op, readAuth, writeAuth []openapi
 	rule := openapi.Schema{Type: "object", Properties: map[string]openapi.Schema{
 		"kind": openapi.String, "required_keys": {Type: "array", Items: &openapi.String},
 	}}
-	body := &openapi.RequestBody{Required: true, Description: "必填 rules 和 max_age_seconds。每种资产类型至多一条规则，每条包含 kind 和 required_keys。空规则数组停用评估。证据有效期为 60 至 604800 秒。",
+	body := &openapi.RequestBody{Required: true, Description: "必填 rules 和 max_age_seconds。每种资产类型至多一条规则，每条包含 kind 和 required_keys。空规则数组停用评估。证据有效期为 60 至 604800 秒。可选 alert_on_noncompliance，首版省略时关闭，更新时省略则沿用上一版本。",
 		Content: map[string]openapi.MediaType{"application/json": {Schema: openapi.Schema{Type: "object",
 			Properties: map[string]openapi.Schema{
 				"rules": {Type: "array", Items: &rule}, "max_age_seconds": openapi.Integer,
+				"alert_on_noncompliance": {Type: "boolean"},
 			}}}}}
 	create := openapi.Op{OperationID: "createProjectTagPolicy", Security: writeAuth, Body: body,
 		Responses: responses("201", "由项目管理员发布首版规则和 ETag")}

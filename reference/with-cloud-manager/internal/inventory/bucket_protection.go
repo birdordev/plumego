@@ -88,18 +88,19 @@ func (q BucketProtectionQuery) position() (account, id string, err error) {
 	return account, id, nil
 }
 
+const bucketProtectionSnapshotJoins = `
+	LEFT JOIN cmp_bucket_encryption AS e ON (e.scope_id,e.external_id)=(s.scope_id,o.external_id)
+		AND e.credential_revision=a.credential_revision AND e.location=o.object_bucket->>'location'
+	LEFT JOIN cmp_bucket_versioning AS v ON (v.scope_id,v.external_id)=(s.scope_id,o.external_id)
+		AND v.credential_revision=a.credential_revision AND v.location=o.object_bucket->>'location'`
+
 const bucketProtectionBase = `WITH visible AS (
 	SELECT o.external_id AS id,o.name,s.account_id AS account,a.provider,o.object_bucket->>'location' AS location,
 		COALESCE((` + currentObjectBucket + `),false) AS inventory_available,
 		e.state AS encryption_state,e.observed_at AS encryption_time,v.state AS versioning_state,v.observed_at AS versioning_time
 	FROM cmp_inventory_scopes AS s
 	JOIN cmp_inventory_objects AS o USING (scope_id)
-	JOIN cmp_cloud_accounts AS a USING (tenant_id,account_id)
-	LEFT JOIN cmp_bucket_encryption AS e ON (e.scope_id,e.external_id)=(s.scope_id,o.external_id)
-		AND e.credential_revision=a.credential_revision AND e.location=o.object_bucket->>'location'
-	LEFT JOIN cmp_bucket_versioning AS v ON (v.scope_id,v.external_id)=(s.scope_id,o.external_id)
-		AND v.credential_revision=a.credential_revision AND v.location=o.object_bucket->>'location'
-	` + directInventoryOwnershipJoins + `
+	JOIN cmp_cloud_accounts AS a USING (tenant_id,account_id)` + bucketProtectionSnapshotJoins + directInventoryOwnershipJoins + `
 	WHERE s.tenant_id=$1 AND s.kind='object-bucket' AND s.region='global'
 		AND o.removed_at IS NULL AND o.object_bucket IS NOT NULL
 		AND a.provider IN ('tencent-cvm','alibaba-ecs','huawei-ecs') AND (` + directAssetVisibility + `)

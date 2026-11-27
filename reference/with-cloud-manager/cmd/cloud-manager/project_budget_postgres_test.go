@@ -94,7 +94,7 @@ func TestAcceptanceProjectBillingBudget(t *testing.T) {
 		t.Fatal("outbox failure did not roll back the project budget alert")
 	}
 	execBillingSummary(t, db, `ALTER TABLE cmp_operation_event_outbox DROP CONSTRAINT project_budget_test_failure`)
-	runProjectBudgetEvaluators(t, run)
+	runConcurrentProjectEvaluators(t, run)
 	active := jobs()
 	if len(active) != 1 || active[0].Rule != "billing_budget_warning" ||
 		active[0].ResourceKind != "billing-project-budget" || active[0].SubjectID != out.ID {
@@ -184,7 +184,7 @@ func markProjectBudgetDue(t *testing.T, db *sql.DB) {
 		CASE WHEN (tenant_id,project_id)=('tenant','finance') THEN -interval '1 minute' ELSE interval '1 day' END`)
 }
 
-func runProjectBudgetEvaluators(t *testing.T, run alerts.Store) {
+func runConcurrentProjectEvaluators(t *testing.T, run alerts.Store) {
 	t.Helper()
 	var group sync.WaitGroup
 	outcomes := make(chan bool, 5)

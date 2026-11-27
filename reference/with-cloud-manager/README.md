@@ -67,6 +67,8 @@ cloud-manager governance inventory-freshness TENANT PROJECT --provider huawei-ec
 cloud-manager governance inventory-freshness TENANT PROJECT --dispatch-state ready --order next_at
 ```
 
+目标环境可通过 `cloud-manager governance asset-capacity TENANT PROJECT < workload.json` 验收项目资产查询。它使用同一个只读资产 API，按清单中的预期条数和资源作用域验证响应，并输出带清单摘要的固定到达率报告。清单可加入 `inventory`，把三家优先云的盘点新鲜度与范围指纹纳入同一次验收。配置和发布判定见[目标环境资产查询验收](acceptance.md#目标环境资产查询验收)。
+
 目标环境可使用只读的 `inventory-sample` 收集发布证据。`--expected-scopes` 填该项目和厂商筛选下已批准的作用域数。
 
 ```sh
@@ -402,6 +404,17 @@ cloud-manager governance bucket-protection TENANT PROJECT \
 有效观测窗口默认 86400 秒，可设置 60 至 604800 秒。过期结果保留已知状态和观测时间。资产盘点待确认、凭据不匹配或缺少快照时，对应配置显示为无有效观测。只有有效观测才计入明确未配置默认加密或版本控制未启用，后者包含未开启和已暂停。
 
 `finding` 支持 `inventory_unavailable`、`encryption_unconfigured`、`versioning_inactive`、`encryption_needs_observation`、`versioning_needs_observation`，只影响明细。汇总保留当前厂商、账号和地域范围内的全部可见桶。明细按账号和完整资产 ID 续页，默认每页 50 条，最大 100 条。续页时保留筛选项，并将 `next` 传给 `after`。
+
+#### 对象桶防护告警
+
+执行 `cloud-manager migrate` 应用 `0147_bucket_protection_alerts`，并升级 API 与 `alert-controller`。对应的默认加密或版本控制采集计划启用后，独立告警进程按项目和账号汇总有效观测。最近 24 小时内确认未配置默认加密会触发 `bucket_encryption_unconfigured`。确认版本控制未开启或已暂停会触发 `bucket_versioning_inactive`。两个规则独立。每个项目、账号和规则最多有一条活动告警，多个桶命中时合并。
+
+项目成员可在「项目告警」查看，并从详情打开按账号和关注项筛选的防护报告。只有归属当前项目的桶参与其告警计算，单纯共享账号不会复制告警。已有告警在相关桶的有效观测全部显示防护正常后关闭。缺少快照、快照过期、凭据换代、账号暂不可读或桶待确认时保留该告警。停用对应计划或全部相关桶移出项目范围时结束监控并关闭相应告警。管理员可确认告警。触发、确认与恢复写入审计，已订阅项目告警的接收端可收到触发和恢复通知。
+
+```sh
+cloud-manager alerts list TENANT PROJECT --rule bucket_encryption_unconfigured
+cloud-manager alerts list TENANT PROJECT --rule bucket_versioning_inactive --status all
+```
 
 #### 托管数据库盘点
 
@@ -1140,6 +1153,17 @@ cloud-manager operations release-elastic-ip TENANT PROJECT --idempotency-key KEY
 
 可选查询参数包括 `account`、`region`、`kind`、`q`、`limit` 和 `cursor`。默认每页 50 条，上限 200 条。翻页沿用前页筛选参数。返回厂商状态、本地盘点状态、观测时间及最近完整扫描时间。资源列表为实时分页，期间发生的资产变更可能出现在后续页。合同由 `GET /openapi.json` 提供。
 
+控制台「资源清单」提供资产变化记录、拓扑和 CSV 下载。入口使用已提交的搜索词、账号、地域及资源类型筛选。变化和拓扑在详情抽屉里独立分页，各自使用当前接口返回的游标。CSV 超过 2000 条时提示缩小筛选范围。
+
+配置 `CLOUD_MANAGER_API_URL` 和 `CLOUD_MANAGER_API_TOKEN` 后，可以使用 CLI 执行同一查询。前三条命令输出单页 JSON，继续读取时保持筛选条件并把上一页的 `next` 传给 `--cursor`。拓扑每页最多 50 个源资产。导出命令直接输出 CSV，支持筛选参数。
+
+```sh
+cloud-manager assets list TENANT PROJECT --kind instance --account ACCOUNT --limit 50
+cloud-manager assets changes TENANT PROJECT --kind instance --region REGION
+cloud-manager assets topology TENANT PROJECT --kind instance --q ASSET_ID
+cloud-manager assets export TENANT PROJECT --kind instance --account ACCOUNT > assets.csv
+```
+
 ## 定时盘点控制器
 
 应用 `0136_inventory_schedule_config` 并更新 API 与盘点控制器。腾讯云、阿里云和华为云的项目管理员可在「云账号管理 → 盘点计划」按账号、地域和资源类型登记、调整间隔、停用、恢复或立即排队。启用计划要求账号已完成身份校验。原有计划以版本 1 纳入管理。运维也可通过 `cmp_inventory_schedules` 管理其他厂商和专项计划。间隔为 60 秒至 7 天。`region` 盘点使用空地域，`dns-zone`、`object-bucket` 和两类对象桶配置计划使用 `global`。普通盘点的 `target_id` 为空，节点池快照计划使用父集群 ID。
@@ -1466,7 +1490,11 @@ cloud-manager billing summary TENANT PROJECT 2026-01 2026-11 focus-1.0 USD \
 ]
 ```
 
-`objects` 支持 `csv`、单成员 `gzip` 和显式 CSV 成员列表的 `zip`，可选 `sha256` 固定整个对象的摘要。多对象配置应引用同一个已完成批次的不可变键。对象键和 ZIP 内部路径采用原始名称。任务直接读取配置中的对象键，供应商生成新路径或换月时更新配置后重启拉取进程。改变同一任务的对象、解析规则或调度间隔时递增 `generation`，凭据轮换可以沿用任务代次。每次最多读取 64 MiB 厂商原件，展开后的 CSV 延用账本分卷、大小和行数上限。
+`objects` 支持 `csv`、单成员 `gzip` 和显式 CSV 成员列表的 `zip`。多对象配置应引用同一个已完成批次的不可变键。固定账期任务直接读取配置中的对象键和 ZIP 内部路径，可用 `sha256` 固定整个对象的摘要。改变同一账期任务的对象、解析规则或调度间隔时递增 `generation`，凭据轮换可以沿用任务代次。每次最多读取 64 MiB 厂商原件，展开后的 CSV 沿用账本分卷、大小和行数上限。
+
+订阅按账期使用可预测的对象键时，可将 `period` 替换为 `"month_window":{"utc_offset_minutes":480,"previous_months":1}`，对象键写成 `billing/{period}/export.zip` 或 `billing/{compact_period}/export.zip`。占位符分别展开为 `YYYY-MM` 和 `YYYYMM`，也可用于 ZIP 成员名。每个对象键都必须包含账期占位符。同一个租户、归属项目、账号和账单来源只能配置一个滚动任务，使用固定账期或滚动账期中的一种模式。需要用固定摘要或独立账期控制总额时，使用固定账期配置。
+
+控制器按指定的固定 UTC 偏移计算当前账月，默认偏移为 0 分钟，允许 −720 至 +840 分钟。FOCUS 的 `manifest.offset_minutes` 必须与该偏移一致。`previous_months` 为 0 至 3，默认 0。换月后控制器自动加入新账期，继续轮询窗口内的历史账期，并停止领取退出窗口的账期。期间可用 `billing-pull` 手动拉取窗口内的账期。窗口调整保留历史账本和原件，仍可通过状态、原件和重放命令查询。供应商生成的对象键无法由账期推导时，配置具体的账期和路径。
 
 ```bash
 CLOUD_MANAGER_BILLING_PULL_PROFILES=/run/secrets/cloud-manager/billing.json cloud-manager billing-pull-controller
@@ -1550,6 +1578,10 @@ cloud-manager billing project-budget-update TENANT PROJECT 2026-11 native CNY bi
 ### 资源标签合规
 
 应用 `0097_tag_observations` 和 `0098_tag_policies` 后，重新盘点对应资产。项目成员可以在标签合规页查看规则和结果，管理员可以发布规则。规则按项目保存不可变历史。每类资源配置一组必填标签键，键区分大小写，对应值须含非空白字符。每类最多 24 个键，规则请求体最多 128 KiB。证据有效期为 60 至 604800 秒。发布空规则数组可停用当前项目的评估。
+
+应用 `0148_tag_policy_alerts` 并升级 API 与 `alert-controller`。项目管理员可勾选「缺少必填标签时生成项目告警」，或在发布规则时传入 `"alert_on_noncompliance":true`。已有规则默认关闭告警。更新时省略此项会保留原设置，传入 `false` 关闭。每个项目、规则版本及资源类型最多有一条 `tag_noncompliant` 活动告警，只有归属当前项目且证据有效的违规资产能够触发。仅共享进项目的资产仍可在合规报告查看。
+
+有效证据全部显示合规时关闭告警，证据不足时保留已有告警。规则换版、停用或已无归属该项目的相关资产时关闭原告警，新版按自身规则重新评估。告警详情显示触发时的规则版本，并链接到当前的合规报告。触发与关闭写入审计并可通过项目告警 Webhook 投递，通知不含标签键或值。CLI 可用 `cloud-manager alerts list TENANT PROJECT --rule tag_noncompliant` 查询。
 
 盘点事务只保存标签键、观测时间及凭据版本。报告区分合规、缺少标签和证据不足。厂商未返回标签、资产待确认缺失、账号停用、凭据轮换或观测过期都可能产生证据不足。明确返回的空标签集可以判定缺少标签。报告复用资产归属与账号共享规则，只显示当前项目可见资源。标签值不进入报告及治理存储。
 

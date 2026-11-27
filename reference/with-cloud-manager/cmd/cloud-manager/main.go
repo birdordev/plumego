@@ -37,7 +37,7 @@ func main() {
 
 func run(parent context.Context, args []string) (retErr error) {
 	if !validCommand(args) {
-		return errors.New("usage: cloud-manager billing COMMAND TENANT PROJECT ACCOUNT PERIOD SOURCE ...|billing-{import,replay,source,allocate,allocation-replay} TENANT PROJECT ACCOUNT PERIOD SOURCE ...|cmdb-migrate|cmdb-sync TENANT PROJECT|cmdb-status TENANT PROJECT|kvm COMMAND TENANT PROJECT SITE|migrate|api|controller|workload-controller|kvm-evacuation-controller|alert-controller|idle-controller|idle-schedule TENANT ACCOUNT REGION INSTANCE DURATION_OR_OFF|billing-pull-controller|billing-pull[-status|-source|-replay] TENANT PROJECT ACCOUNT PERIOD SOURCE ...|worker|sessions-purge|operations COMMAND TENANT PROJECT|governance COMMAND TENANT PROJECT|cloud-accounts COMMAND TENANT PROJECT|audit {list,export} TENANT PROJECT|catalog COMMAND TENANT PROJECT|alerts COMMAND TENANT PROJECT|console-grants COMMAND TENANT PROJECT|event-publisher|event-{register,disable,failures,reconcile} SINK|event-retry SINK EVENT_ID|verify-{openstack,aws,tencent,alibaba,huawei,vsphere,redfish} TENANT ACCOUNT|scan-{openstack,aws,tencent,alibaba,huawei,vsphere,redfish} TENANT ACCOUNT REGION KIND (or append ASSET_ID for a public-cloud load-balancer, database-instance, cache-instance, kubernetes-cluster or object-bucket absence check)|refresh-{tencent,alibaba,huawei}-load-balancer TENANT ACCOUNT REGION ASSET_ID [--include-backends]|refresh-{tencent,alibaba,huawei}-dns-zone TENANT ACCOUNT ZONE_ID|refresh-{tencent,alibaba,huawei}-bucket-{versioning,encryption} TENANT ACCOUNT ASSET_ID|refresh-{tencent,alibaba,huawei}-cluster-{node-pools,workloads} TENANT ACCOUNT REGION CLUSTER_ID")
+		return errors.New("usage: cloud-manager billing COMMAND TENANT PROJECT ACCOUNT PERIOD SOURCE ...|billing-{import,replay,source,allocate,allocation-replay} TENANT PROJECT ACCOUNT PERIOD SOURCE ...|cmdb-migrate|cmdb-sync TENANT PROJECT|cmdb-status TENANT PROJECT|kvm COMMAND TENANT PROJECT SITE|migrate|api|controller|workload-controller|kvm-evacuation-controller|alert-controller|idle-controller|idle-schedule TENANT ACCOUNT REGION INSTANCE DURATION_OR_OFF|billing-pull-controller|billing-pull[-status|-source|-replay] TENANT PROJECT ACCOUNT PERIOD SOURCE ...|worker|sessions-purge|operations COMMAND TENANT PROJECT|governance COMMAND TENANT PROJECT|cloud-accounts COMMAND TENANT PROJECT|audit {list,export} TENANT PROJECT|assets {list,changes,topology,export} TENANT PROJECT|catalog COMMAND TENANT PROJECT|alerts COMMAND TENANT PROJECT|console-grants COMMAND TENANT PROJECT|event-publisher|event-{register,disable,failures,reconcile} SINK|event-retry SINK EVENT_ID|verify-{openstack,aws,tencent,alibaba,huawei,vsphere,redfish} TENANT ACCOUNT|scan-{openstack,aws,tencent,alibaba,huawei,vsphere,redfish} TENANT ACCOUNT REGION KIND (or append ASSET_ID for a public-cloud load-balancer, database-instance, cache-instance, kubernetes-cluster or object-bucket absence check)|refresh-{tencent,alibaba,huawei}-load-balancer TENANT ACCOUNT REGION ASSET_ID [--include-backends]|refresh-{tencent,alibaba,huawei}-dns-zone TENANT ACCOUNT ZONE_ID|refresh-{tencent,alibaba,huawei}-bucket-{versioning,encryption} TENANT ACCOUNT ASSET_ID|refresh-{tencent,alibaba,huawei}-cluster-{node-pools,workloads} TENANT ACCOUNT REGION CLUSTER_ID")
 	}
 	if strings.HasPrefix(args[0], "cmdb-") {
 		return runCMDB(parent, args, os.Getenv, os.Stdout)
@@ -59,6 +59,9 @@ func run(parent context.Context, args []string) (retErr error) {
 	}
 	if args[0] == "audit" {
 		return runAuditClient(parent, args[1:], os.Getenv("CLOUD_MANAGER_API_URL"), os.Getenv("CLOUD_MANAGER_API_TOKEN"), os.Stdout, nil)
+	}
+	if args[0] == "assets" {
+		return runAssetsClient(parent, args[1:], os.Getenv("CLOUD_MANAGER_API_URL"), os.Getenv("CLOUD_MANAGER_API_TOKEN"), os.Stdout, nil)
 	}
 	if args[0] == "catalog" {
 		return runCatalogClient(parent, args[1:], os.Getenv("CLOUD_MANAGER_API_URL"), os.Getenv("CLOUD_MANAGER_API_TOKEN"), os.Stdin, os.Stdout, nil)
@@ -135,7 +138,7 @@ func run(parent context.Context, args []string) (retErr error) {
 		return nil
 	}
 	if args[0] == "alert-controller" {
-		if err := alerts.NewStore(db).WithProjectEvaluation(billing.EvaluateProjectBudgetAlerts).Run(parent); err != nil {
+		if err := alerts.NewStore(db).WithProjectEvaluation(evaluateProjectAlerts).Run(parent); err != nil {
 			return errors.New("project alert evaluation unavailable")
 		}
 		return nil
@@ -216,6 +219,9 @@ func migrateCloudManager(ctx context.Context, db *sql.DB) error {
 	if err := billing.MigrateProjectBudgets(ctx, db); err != nil {
 		return errors.New("project billing budget migration failed")
 	}
+	if err := alerts.MigrateBucketProtection(ctx, db); err != nil {
+		return errors.New("object bucket protection alert migration failed")
+	}
 	if err := billing.MigrateAllocations(ctx, db); err != nil {
 		return errors.New("billing allocation migration failed")
 	}
@@ -224,6 +230,9 @@ func migrateCloudManager(ctx context.Context, db *sql.DB) error {
 	}
 	if err := inventory.MigrateTagPolicies(ctx, db); err != nil {
 		return errors.New("tag policy migration failed")
+	}
+	if err := inventory.MigrateTagPolicyAlerts(ctx, db); err != nil {
+		return errors.New("tag policy alert migration failed")
 	}
 	if err := inventory.MigrateIdleAnalysis(ctx, db); err != nil {
 		return errors.New("instance idle analysis migration failed")
@@ -305,7 +314,7 @@ func validCommand(args []string) bool {
 		return len(args) == 8
 	case "billing-allocate":
 		return len(args) == 9
-	case "kvm", "operations", "audit", "catalog", "alerts", "console-grants", "billing", "governance", "cloud-accounts":
+	case "kvm", "operations", "audit", "catalog", "alerts", "console-grants", "billing", "governance", "cloud-accounts", "assets":
 		return len(args) >= 2
 	default:
 		return false

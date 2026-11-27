@@ -25,6 +25,11 @@ var tagObservationsSchema string
 //go:embed 0098_tag_policies.sql
 var tagPoliciesSchema string
 
+const TagPolicyAlertsMigration = "0148_tag_policy_alerts"
+
+//go:embed 0148_tag_policy_alerts.sql
+var tagPolicyAlertsSchema string
+
 var (
 	ErrTagPolicyNotFound = errors.New("tag policy is unavailable")
 	ErrTagPolicyStale    = errors.New("tag policy revision changed")
@@ -42,8 +47,9 @@ type TagRule struct {
 }
 
 type TagPolicyInput struct {
-	MaxAgeSeconds int       `json:"max_age_seconds"`
-	Rules         []TagRule `json:"rules"`
+	MaxAgeSeconds        int       `json:"max_age_seconds"`
+	Rules                []TagRule `json:"rules"`
+	AlertOnNoncompliance *bool     `json:"alert_on_noncompliance,omitempty"`
 }
 
 type TagPolicy struct {
@@ -54,6 +60,10 @@ type TagPolicy struct {
 
 func MigrateTagPolicies(ctx context.Context, db *sql.DB) error {
 	return dbschema.Apply(ctx, db, "0098_tag_policies", tagPoliciesSchema)
+}
+
+func MigrateTagPolicyAlerts(ctx context.Context, db *sql.DB) error {
+	return dbschema.Apply(ctx, db, TagPolicyAlertsMigration, tagPolicyAlertsSchema)
 }
 
 func (key TagPolicyScope) valid() bool {
@@ -99,16 +109,18 @@ func (s Store) GetTagPolicy(ctx context.Context, token string, scope TagPolicySc
 func readTagPolicy(ctx context.Context, tx *sql.Tx, scope TagPolicyScope, revision int64) (TagPolicy, error) {
 	var policy TagPolicy
 	var rules []byte
-	err := tx.QueryRowContext(ctx, `SELECT revision,max_age_seconds,rules,updated_at
+	var notify bool
+	err := tx.QueryRowContext(ctx, `SELECT revision,max_age_seconds,rules,updated_at,alert_on_noncompliance
 		FROM cmp_tag_policies WHERE (tenant_id,project_id)=($1,$2) AND ($3::bigint=0 OR revision=$3)
 		ORDER BY revision DESC LIMIT 1`, scope.Tenant, scope.Project, revision).
-		Scan(&policy.Revision, &policy.MaxAgeSeconds, &rules, &policy.UpdatedAt)
+		Scan(&policy.Revision, &policy.MaxAgeSeconds, &rules, &policy.UpdatedAt, &notify)
 	if errors.Is(err, sql.ErrNoRows) {
 		return TagPolicy{}, ErrTagPolicyNotFound
 	}
 	if err != nil {
 		return TagPolicy{}, err
 	}
+	policy.AlertOnNoncompliance = &notify
 	if err := json.Unmarshal(rules, &policy.Rules); err != nil || !policy.TagPolicyInput.valid() {
 		return TagPolicy{}, errors.New("stored tag policy violated its contract")
 	}
@@ -140,8 +152,10 @@ func (s Store) SaveTagPolicy(ctx context.Context, token string, scope TagPolicyS
 			return err
 		}
 		var current int64
-		if err := tx.QueryRowContext(ctx, `SELECT COALESCE(max(revision),0) FROM cmp_tag_policies
-			WHERE (tenant_id,project_id)=($1,$2)`, scope.Tenant, scope.Project).Scan(&current); err != nil {
+		var notify bool
+		if err := tx.QueryRowContext(ctx, `SELECT revision,alert_on_noncompliance FROM cmp_tag_policies
+			WHERE (tenant_id,project_id)=($1,$2) ORDER BY revision DESC LIMIT 1`, scope.Tenant, scope.Project).
+			Scan(&current, &notify); err != nil && !errors.Is(err, sql.ErrNoRows) {
 			return err
 		}
 		if expected != current {
@@ -150,11 +164,15 @@ func (s Store) SaveTagPolicy(ctx context.Context, token string, scope TagPolicyS
 			}
 			return ErrTagPolicyStale
 		}
+		if input.AlertOnNoncompliance != nil {
+			notify = *input.AlertOnNoncompliance
+		}
 		policy = TagPolicy{TagPolicyInput: input, Revision: expected + 1}
+		policy.AlertOnNoncompliance = &notify
 		if err := tx.QueryRowContext(ctx, `INSERT INTO cmp_tag_policies
-			(tenant_id,project_id,revision,max_age_seconds,rules,updated_by)
-			VALUES ($1,$2,$3,$4,$5::jsonb,$6) RETURNING updated_at`,
-			scope.Tenant, scope.Project, policy.Revision, input.MaxAgeSeconds, string(rules), actor.Principal).Scan(&policy.UpdatedAt); err != nil {
+			(tenant_id,project_id,revision,max_age_seconds,rules,updated_by,alert_on_noncompliance)
+			VALUES ($1,$2,$3,$4,$5::jsonb,$6,$7) RETURNING updated_at`,
+			scope.Tenant, scope.Project, policy.Revision, input.MaxAgeSeconds, string(rules), actor.Principal, notify).Scan(&policy.UpdatedAt); err != nil {
 			return err
 		}
 		_, err = tx.ExecContext(ctx, `INSERT INTO cmp_project_audit

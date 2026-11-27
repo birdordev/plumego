@@ -3,7 +3,7 @@ import { ConsoleIcon } from '../../shared/components/ConsoleIcon'
 import { routes, type View } from '../routes/registry'
 import { PageLink } from './PageLink'
 import { viewPresentation } from './navigation'
-import { workspaceHref } from './workspace-location'
+import { workspaceHref } from '../../shared/navigation/workspace-link'
 
 const roleLabel = { viewer: '查看者', operator: '操作员', approver: '审批人', admin: '管理员' } as const
 

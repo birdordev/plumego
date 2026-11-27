@@ -19,15 +19,16 @@ import (
 )
 
 type operationRequestPlan struct {
-	target     *url.URL
-	method     string
-	status     int
-	key        string
-	match      string
-	body       []byte
-	inputLimit int
-	csv        bool
-	timeout    time.Duration
+	target        *url.URL
+	method        string
+	status        int
+	key           string
+	match         string
+	body          []byte
+	inputLimit    int
+	responseLimit int
+	csv           bool
+	timeout       time.Duration
 }
 
 func planOperationRequest(base *url.URL, args []string) (operationRequestPlan, error) {

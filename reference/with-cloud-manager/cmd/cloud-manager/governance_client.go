@@ -27,7 +27,8 @@ const governanceUsage = `usage: cloud-manager governance COMMAND TENANT PROJECT
   idle [--state STATE] [--account ACCOUNT] [--region REGION] [--cursor CURSOR] [--limit LIMIT]
   inventory-freshness [--provider PROVIDER] [--account ACCOUNT] [--state STATE] [--dispatch-state STATE] [--order next_at] [--window-seconds SECONDS] [--after CURSOR] [--limit LIMIT]
   bucket-protection [--provider PROVIDER] [--account ACCOUNT] [--location REGION] [--finding FINDING] [--window-seconds SECONDS] [--after CURSOR] [--limit LIMIT]
-  inventory-sample {--expected-scopes COUNT|--scope-manifest < scopes.json} [--provider PROVIDER] [--account ACCOUNT] [--samples COUNT] [--interval DURATION]`
+  inventory-sample {--expected-scopes COUNT|--scope-manifest < scopes.json} [--provider PROVIDER] [--account ACCOUNT] [--samples COUNT] [--interval DURATION]
+  asset-capacity < workload.json`
 
 func runGovernanceClient(ctx context.Context, args []string, address, token string, input io.Reader, output io.Writer, transport http.RoundTripper) error {
 	usage := errors.New(governanceUsage)
@@ -38,7 +39,8 @@ func runGovernanceClient(ctx context.Context, args []string, address, token stri
 	if err != nil {
 		return err
 	}
-	target := base.JoinPath("v1", "tenants", url.PathEscape(args[1]), "projects", url.PathEscape(args[2]), "governance")
+	project := base.JoinPath("v1", "tenants", url.PathEscape(args[1]), "projects", url.PathEscape(args[2]))
+	target := project.JoinPath("governance")
 	plan := operationRequestPlan{target: target.JoinPath("tag-policy"), method: http.MethodGet, status: http.StatusOK}
 	switch args[0] {
 	case "policy-get", "ticket-policy-get":
@@ -122,6 +124,11 @@ func runGovernanceClient(ctx context.Context, args []string, address, token stri
 		plan.target = target.JoinPath("inventory-freshness")
 		plan.target.RawQuery = options.query.Encode()
 		return runInventorySamples(ctx, plan, token, output, transport, options, scope)
+	case "asset-capacity":
+		if len(args) != 3 {
+			return usage
+		}
+		return runAssetCapacityClient(ctx, project, args[1], args[2], token, input, output, transport)
 	default:
 		return usage
 	}

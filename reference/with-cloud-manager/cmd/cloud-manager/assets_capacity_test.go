@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"slices"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -58,11 +57,7 @@ func assetCapacityP95(latencies []time.Duration, offset, stride int) time.Durati
 			group = append(group, latencies[i])
 		}
 	}
-	if len(group) == 0 {
-		return 0
-	}
-	slices.Sort(group)
-	return group[len(group)-len(group)/20-1]
+	return assetLatencyP95(group)
 }
 
 func startAssetCapacity(t testing.TB) (*httptest.Server, []assetCapacityCase, *sql.DB) {

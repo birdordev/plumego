@@ -17,7 +17,7 @@ export default function TagCompliancePage({ base, admin }: { base: string; admin
     {result.state === 'error' ? <p role="alert" className="notice" data-error="true">{result.message}</p> : null}
     {canEdit ? <TagPolicyEditor key={policy?.revision ?? 0} policy={policy} save={save} /> : null}
     {policy ? <>
-      <p className="hint">规则版本 {policy.revision}，证据有效期 {policy.max_age_seconds} 秒。</p>
+      <p className="hint">规则版本 {policy.revision}，证据有效期 {policy.max_age_seconds} 秒。标签告警{policy.alert_on_noncompliance && policy.rules.length ? '已启用' : '已关闭'}。</p>
       {policy.rules.length ? <ul>
         {policy.rules.map((rule) => <li key={rule.kind}>{kinds[rule.kind] ?? rule.kind} · {rule.required_keys.join('、')}</li>)}
       </ul> : <p>标签评估已停用。</p>}

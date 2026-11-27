@@ -12,6 +12,7 @@ export function AssetFilters({ values }: { values: URLSearchParams }) {
   return <>
     <label>资源搜索<input name="q" defaultValue={values.get('q') ?? ''} maxLength={256} placeholder="名称、ID、域名或地址" /></label>
     <label>账号<input name="account" defaultValue={values.get('account') ?? ''} maxLength={128} /></label>
+    <label>地域<input name="region" defaultValue={values.get('region') ?? ''} maxLength={256} /></label>
     <SelectField label="类型" name="kind" initialValue={values.get('kind')} options={kinds} />
   </>
 }

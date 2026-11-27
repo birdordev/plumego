@@ -1,19 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import { requestErrorMessage } from '../../shared/api/requests'
+import { downloadBlob } from '../../shared/api/download'
 import { request } from '../session/client'
 import { setWorkspaceNotice } from '../../shared/feedback/notice'
 import { auditCollection } from './collection'
-
-function downloadAudit(blob: Blob) {
-  const url = URL.createObjectURL(blob)
-  const link = document.createElement('a')
-  link.href = url
-  link.download = 'project-audit.csv'
-  document.body.append(link)
-  link.click()
-  link.remove()
-  setTimeout(() => URL.revokeObjectURL(url), 1000)
-}
 
 export function AuditExport() {
   const [downloading, setDownloading] = useState(false)
@@ -34,7 +24,7 @@ export function AuditExport() {
     setDownloading(true)
     try {
       const blob = await request(scope.base + '/audit/export' + (filters ? '?' + filters : ''), { csv: true, signal })
-      if (isCurrent()) downloadAudit(blob)
+      if (isCurrent()) downloadBlob(blob, 'project-audit.csv')
     } catch (error) {
       if (isCurrent()) setWorkspaceNotice(requestErrorMessage(error), true)
     } finally {

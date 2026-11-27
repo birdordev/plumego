@@ -5,7 +5,7 @@ import { ConsoleIcon } from '../../shared/components/ConsoleIcon'
 import { canOpenView, routes, type View } from '../routes/registry'
 import { navigationGroups, viewPresentation } from './navigation'
 import { themeOptions, type Theme } from './useWorkspacePreferences'
-import { workspaceHref } from './workspace-location'
+import { workspaceHref } from '../../shared/navigation/workspace-link'
 import { followWorkspaceLink } from './workspace-link'
 
 type Props = {

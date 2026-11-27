@@ -3,7 +3,10 @@ platform:
   priority-cloud-instance-retirement: independently-approved-system-disk-bound-single-dispatch-and-two-evidence-rounds
   project-billing-summary: owner-scoped-original-currency-monthly-coverage-with-exact-source-revisions
   project-billing-budgets: versioned-account-selection-complete-currency-coverage-and-transactional-project-alerts
+  billing-pull-month-window: offset-based-calendar-rollover-with-per-period-leases-and-late-restatements
   object-bucket-protection-report: project-scoped-sse-and-versioning-freshness-with-independent-summary-and-keyset-pagination
+  object-bucket-protection-alerts: scheduled-owned-bucket-evidence-with-per-account-rule-deduplication-and-transactional-notification
+  tag-compliance-alerts: revision-scoped-opt-in-with-owned-assets-and-fresh-evidence
   object-bucket-setting-schedules: priority-cloud-credential-fenced-batches-with-incarnation-recheck-and-account-cooldown
   cloud-account-administration: project-owned-paged-accounts-and-grants-with-browser-and-cli-lifecycle
   cloud-account-write-mode: verified-provider-mode-switch-with-versioned-dispatch-and-transactional-audit
@@ -16,6 +19,9 @@ platform:
   inventory-tenant-dispatch: durable-least-recently-claimed-tenant-rotation-before-account-and-plan-priority
   inventory-dispatch-observation: opt-in-post-commit-structured-claims-with-database-due-and-claim-times
   inventory-freshness: project-visible-enabled-schedule-coverage-with-credential-bound-completions
+  project-asset-capacity-probe: fixed-arrival-project-query-contract-with-workload-digest-and-per-case-p95
+  project-asset-discovery-clients: scoped-list-history-topology-and-csv-with-shared-console-filters
+  project-asset-capacity-inventory-evidence: same-project-per-provider-fingerprint-and-freshness-before-during-and-after-query-load
   inventory-dispatch-report: project-scoped-schedule-and-account-lease-and-cooldown-snapshot-with-due-time-pagination
   redfish-inventory: readonly-site-scoped-physical-system-discovery-and-durable-schedule
   redfish-power: independently-approved-on-and-graceful-shutdown-with-single-dispatch-and-readback

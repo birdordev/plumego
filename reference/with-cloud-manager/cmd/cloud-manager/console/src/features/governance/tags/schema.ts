@@ -17,6 +17,7 @@ const ruleSchema = z.object({
 
 export const tagPolicyInput = z.object({
   max_age_seconds: z.int().min(60).max(604800),
+  alert_on_noncompliance: z.boolean().optional(),
   rules: z.array(ruleSchema).max(24).refine((rules) => new Set(rules.map((rule) => rule.kind)).size === rules.length),
 })
 
