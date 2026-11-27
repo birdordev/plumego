@@ -1,4 +1,4 @@
-import type { ComponentProps } from 'react'
+import type { WorkspaceLink as Link } from '../../shared/navigation/workspace-link'
 
 type OverviewDestination = 'assets' | 'inventory-freshness' | 'operations' | 'alerts'
-export type WorkspaceLink = (view: OverviewDestination, filters?: string) => Pick<ComponentProps<'a'>, 'href' | 'onClick'>
+export type WorkspaceLink = Link<OverviewDestination>

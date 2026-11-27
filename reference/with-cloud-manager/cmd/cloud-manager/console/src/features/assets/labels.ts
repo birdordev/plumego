@@ -1,5 +1,6 @@
 export const kinds: Readonly<Partial<Record<string, string>>> = {
   'billing-budget': '云预算',
+  'billing-project-budget': '项目预算',
   instance: '实例',
   'bare-metal': '裸金属服务器',
   volume: '卷',

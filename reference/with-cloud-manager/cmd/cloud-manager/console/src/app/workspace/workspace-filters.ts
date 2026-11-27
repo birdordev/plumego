@@ -9,6 +9,9 @@ const fields: Partial<Record<View, readonly string[]>> = {
   'idle-instances': ['state', 'account', 'region'],
   'inventory-freshness': ['provider', 'account', 'state', 'dispatch_state', 'order', 'window_seconds'],
   'bucket-protection': ['provider', 'account', 'location', 'finding', 'window_seconds'],
+  'billing-summary': ['from', 'through', 'source', 'currency', 'provider', 'missing_only'],
+  billing: ['account', 'period', 'source', 'revision'],
+  'project-budget': ['period', 'source', 'currency', 'basis'],
 }
 
 export const filterPrefix = 'filter.'

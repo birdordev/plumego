@@ -1,11 +1,7 @@
 import { useState } from 'react'
 import { useDetailAction } from '../../../shared/detail/useDetailAction'
 import { addSchedule, changeSchedule, type Schedule } from './api'
-
-const kinds = [
-  'region', 'zone', 'instance', 'volume', 'snapshot', 'network', 'subnet', 'image', 'security-group', 'security-group-rule',
-  'elastic-ip', 'load-balancer', 'dns-zone', 'object-bucket', 'database-instance', 'cache-instance', 'kubernetes-cluster',
-]
+import { hasGlobalScheduleScope, scheduleKindLabel, scheduleKinds, scheduleRegionLabel } from './kinds'
 
 export function ScheduleForm({ target, current, readable, stamp, signal, saved, cancel }: {
   target: string; current?: Schedule; readable: boolean; stamp: number; signal: AbortSignal; saved: () => void; cancel: () => void
@@ -15,7 +11,7 @@ export function ScheduleForm({ target, current, readable, stamp, signal, saved, 
   const [interval, setInterval] = useState(String(current?.interval_seconds ?? 600))
   const [enabled, setEnabled] = useState(current?.enabled ?? readable)
   const { busy, run } = useDetailAction(stamp)
-  const global = kind === 'dns-zone' || kind === 'object-bucket'
+  const global = hasGlobalScheduleScope(kind)
   const regional = !global && kind !== 'region'
   const valid = Number.isSafeInteger(Number(interval)) && Number(interval) >= 60 && Number(interval) <= 604800 &&
     (!enabled || readable) && (current || !regional || (/^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/.test(region) && region !== 'global'))
@@ -27,9 +23,9 @@ export function ScheduleForm({ target, current, readable, stamp, signal, saved, 
     void run(() => current ? changeSchedule(target, current, settings, signal)
       : addSchedule(target, { ...settings, kind, region: regional ? region : global ? 'global' : '' }, signal), saved)
   }}>
-    {current ? <p>{current.kind} · {current.region || '全局'} · 版本 {current.revision}</p> : <>
+    {current ? <p>{scheduleKindLabel(current.kind)} · {scheduleRegionLabel(current.region)} · 版本 {current.revision}</p> : <>
       <label>资源类型<select value={kind} onChange={(event) => setKind(event.target.value)}>
-        {kinds.map((value) => <option value={value} key={value}>{value}</option>)}
+        {scheduleKinds.map((value) => <option value={value} key={value}>{scheduleKindLabel(value)}</option>)}
       </select></label>
       {regional && <label>地域<input maxLength={64} required value={region} onChange={(event) => setRegion(event.target.value)} /></label>}
     </>}

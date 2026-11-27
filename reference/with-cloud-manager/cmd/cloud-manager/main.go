@@ -135,7 +135,7 @@ func run(parent context.Context, args []string) (retErr error) {
 		return nil
 	}
 	if args[0] == "alert-controller" {
-		if err := alerts.NewStore(db).Run(parent); err != nil {
+		if err := alerts.NewStore(db).WithProjectEvaluation(billing.EvaluateProjectBudgetAlerts).Run(parent); err != nil {
 			return errors.New("project alert evaluation unavailable")
 		}
 		return nil
@@ -212,6 +212,9 @@ func migrateCloudManager(ctx context.Context, db *sql.DB) error {
 	}
 	if err := billing.MigrateBudgets(ctx, db); err != nil {
 		return errors.New("billing budget migration failed")
+	}
+	if err := billing.MigrateProjectBudgets(ctx, db); err != nil {
+		return errors.New("project billing budget migration failed")
 	}
 	if err := billing.MigrateAllocations(ctx, db); err != nil {
 		return errors.New("billing allocation migration failed")

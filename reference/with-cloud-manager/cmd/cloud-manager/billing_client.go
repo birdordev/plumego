@@ -3,10 +3,12 @@ package main
 import (
 	"context"
 	"errors"
+	"flag"
 	"io"
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 )
 
 const billingClientUsage = `usage: cloud-manager billing COMMAND TENANT PROJECT ACCOUNT PERIOD SOURCE
@@ -14,7 +16,11 @@ const billingClientUsage = `usage: cloud-manager billing COMMAND TENANT PROJECT 
   allocation-get [REPORT_REVISION [ALLOCATION_REVISION]]
   budget-get CURRENCY BASIS
   budget-create CURRENCY BASIS < budget.json
-  budget-update CURRENCY BASIS REVISION < budget.json`
+  budget-update CURRENCY BASIS REVISION < budget.json
+  cloud-manager billing summary TENANT PROJECT FROM THROUGH SOURCE CURRENCY [--provider NAME] [--missing-only] [--limit N] [--after CURSOR]
+  cloud-manager billing project-budget-get TENANT PROJECT PERIOD SOURCE CURRENCY BASIS
+  cloud-manager billing project-budget-create TENANT PROJECT PERIOD SOURCE CURRENCY BASIS < budget.json
+  cloud-manager billing project-budget-update TENANT PROJECT PERIOD SOURCE CURRENCY BASIS REVISION < budget.json`
 
 func runBillingClient(ctx context.Context, args []string, address, token string, input io.Reader, output io.Writer, transport http.RoundTripper) error {
 	if len(args) < 6 || !operationClientSegment(args[1]) || !operationClientSegment(args[2]) {
@@ -25,12 +31,91 @@ func runBillingClient(ctx context.Context, args []string, address, token string,
 		return err
 	}
 	target := base.JoinPath("v1", "tenants", url.PathEscape(args[1]), "projects", url.PathEscape(args[2]), "billing")
+	if args[0] == "summary" {
+		plan, err := planBillingSummaryRequest(target, args)
+		if err != nil {
+			return err
+		}
+		return runProjectRequest(ctx, plan, token, nil, output, transport)
+	}
+	if strings.HasPrefix(args[0], "project-budget-") {
+		plan, err := planProjectBudgetRequest(target, args)
+		if err != nil {
+			return err
+		}
+		return runProjectRequest(ctx, plan, token, input, output, transport)
+	}
 	query := url.Values{"account": {args[3]}, "period": {args[4]}, "source": {args[5]}}
 	plan, err := planBillingRequest(target, query, args)
 	if err != nil {
 		return err
 	}
 	return runProjectRequest(ctx, plan, token, input, output, transport)
+}
+
+func planProjectBudgetRequest(target *url.URL, args []string) (operationRequestPlan, error) {
+	usage := errors.New(billingClientUsage)
+	expected := 7
+	if args[0] == "project-budget-update" {
+		expected++
+	}
+	if len(args) != expected {
+		return operationRequestPlan{}, usage
+	}
+	query := url.Values{"period": {args[3]}, "source": {args[4]}, "currency": {args[5]}, "basis": {args[6]}}
+	route := target.JoinPath("project-budget")
+	route.RawQuery = query.Encode()
+	if _, err := projectBudgetQuery(args[1], args[2], route.RawQuery); err != nil {
+		return operationRequestPlan{}, usage
+	}
+	plan := operationRequestPlan{target: route, method: http.MethodGet, status: http.StatusOK}
+	switch args[0] {
+	case "project-budget-get":
+	case "project-budget-create":
+		plan.method, plan.status, plan.inputLimit = http.MethodPost, http.StatusCreated, 16<<10
+	case "project-budget-update":
+		if _, ok := billingRevision(args[7], false); !ok {
+			return operationRequestPlan{}, usage
+		}
+		plan.method, plan.match, plan.inputLimit = http.MethodPut, strconv.Quote(args[7]), 16<<10
+	default:
+		return operationRequestPlan{}, usage
+	}
+	return plan, nil
+}
+
+func planBillingSummaryRequest(target *url.URL, args []string) (operationRequestPlan, error) {
+	usage := errors.New(billingClientUsage)
+	if len(args) < 7 {
+		return operationRequestPlan{}, usage
+	}
+	flags := flag.NewFlagSet("billing summary", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	provider := flags.String("provider", "", "")
+	missing := flags.Bool("missing-only", false, "")
+	limit := flags.Int("limit", 50, "")
+	after := flags.String("after", "", "")
+	if err := flags.Parse(args[7:]); err != nil || flags.NArg() != 0 {
+		return operationRequestPlan{}, usage
+	}
+	query := url.Values{
+		"from": {args[3]}, "through": {args[4]}, "source": {args[5]}, "currency": {args[6]}, "limit": {strconv.Itoa(*limit)},
+	}
+	if *provider != "" {
+		query.Set("provider", *provider)
+	}
+	if *missing {
+		query.Set("missing_only", "true")
+	}
+	if *after != "" {
+		query.Set("after", *after)
+	}
+	summary := target.JoinPath("summary")
+	summary.RawQuery = query.Encode()
+	if _, err := billingSummaryQuery(args[1], args[2], summary.RawQuery); err != nil {
+		return operationRequestPlan{}, usage
+	}
+	return operationRequestPlan{target: summary, method: http.MethodGet, status: http.StatusOK}, nil
 }
 
 func planBillingRequest(target *url.URL, query url.Values, args []string) (operationRequestPlan, error) {

@@ -14,21 +14,22 @@ import (
 	"with-cloud-manager/internal/provider"
 )
 
-const scheduleFields = "schedule_id::text,region,kind,interval_seconds,enabled,config_revision,next_at,failures,COALESCE(last_outcome,''),last_finished_at"
+const scheduleFields = "schedule_id::text,region,kind,interval_seconds,enabled,config_revision,next_at,failures,COALESCE(last_outcome,''),last_finished_at,bucket_batch_rejected"
 
 var regionIdentifier = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$`)
 
 type Schedule struct {
-	ID           string        `json:"id"`
-	Region       string        `json:"region"`
-	Kind         provider.Kind `json:"kind"`
-	Interval     int           `json:"interval_seconds"`
-	Enabled      bool          `json:"enabled"`
-	Revision     int64         `json:"revision"`
-	NextAt       time.Time     `json:"next_at"`
-	Failures     int           `json:"failures"`
-	LastOutcome  string        `json:"last_outcome,omitempty"`
-	LastFinished *time.Time    `json:"last_finished_at,omitempty"`
+	ID                  string        `json:"id"`
+	Region              string        `json:"region"`
+	Kind                provider.Kind `json:"kind"`
+	Interval            int           `json:"interval_seconds"`
+	Enabled             bool          `json:"enabled"`
+	Revision            int64         `json:"revision"`
+	NextAt              time.Time     `json:"next_at"`
+	Failures            int           `json:"failures"`
+	LastOutcome         string        `json:"last_outcome,omitempty"`
+	LastFinished        *time.Time    `json:"last_finished_at,omitempty"`
+	BucketBatchRejected *int          `json:"bucket_batch_rejected,omitempty"`
 }
 
 type ScheduleSettings struct {
@@ -52,7 +53,13 @@ func (s ScheduleSettings) valid() bool {
 }
 
 func (s RegisterSchedule) valid() bool {
-	if !s.ScheduleSettings.valid() || !s.Kind.Valid() || s.Kind == provider.BareMetal {
+	if !s.ScheduleSettings.valid() {
+		return false
+	}
+	if isBucketSettingSchedule(string(s.Kind)) {
+		return s.Region == provider.ObjectBucketGlobalScope
+	}
+	if !s.Kind.Valid() || s.Kind == provider.BareMetal {
 		return false
 	}
 	switch s.Kind {
@@ -114,7 +121,7 @@ func (s Store) scheduleAccount(ctx context.Context, token string, scope identity
 func scanSchedule(row interface{ Scan(...any) error }) (Schedule, error) {
 	var item Schedule
 	err := row.Scan(&item.ID, &item.Region, &item.Kind, &item.Interval, &item.Enabled, &item.Revision,
-		&item.NextAt, &item.Failures, &item.LastOutcome, &item.LastFinished)
+		&item.NextAt, &item.Failures, &item.LastOutcome, &item.LastFinished, &item.BucketBatchRejected)
 	return item, err
 }
 

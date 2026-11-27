@@ -1,0 +1,5 @@
+.billing-summary-results td:nth-child(1),
+.billing-summary-months td:nth-child(n + 4),
+.billing-summary-accounts td:nth-child(5) {
+  white-space: nowrap;
+}

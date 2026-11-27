@@ -66,7 +66,7 @@ func (s Store) processInstanceRetirement(ctx context.Context, task mq.Task, w wo
 	if !requestIDPattern.MatchString(w.ProviderRequestID) {
 		return false, s.transition(ctx, task, w.Status, "needs_review", "instance_retirement_receipt_required", "")
 	}
-	result, err := retirer.ObserveInstanceRetirement(ctx, scope, w.AssetID)
+	result, err := retirer.ObserveInstanceRetirement(ctx, scope, w.retirement, w.ProviderRequestID)
 	review := result == provider.ActionFailed || task.Attempts >= task.MaxAttempts ||
 		provider.IsFailure(err, provider.Unauthorized) || provider.IsFailure(err, provider.Unsupported) || provider.IsFailure(err, provider.InvalidResponse)
 	return s.recordInstanceRetirementObservation(ctx, task, w, err == nil && result == provider.ActionSucceeded, review)

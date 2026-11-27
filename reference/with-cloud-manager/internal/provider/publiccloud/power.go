@@ -189,11 +189,12 @@ type alibabaInstanceObservation struct {
 		VpcId, VSwitchId string
 		PrivateIpAddress struct{ IpAddress []string }
 	}
-	SecurityGroupIds struct{ SecurityGroupId []string }
-	PublicIpAddress  struct{ IpAddress []string }
-	EipAddress       struct{ AllocationId, IpAddress string }
-	Tags             alibabaECSTags
-	OperationLocks   struct {
+	SecurityGroupIds   struct{ SecurityGroupId []string }
+	PublicIpAddress    struct{ IpAddress []string }
+	EipAddress         struct{ AllocationId, IpAddress string }
+	Tags               alibabaECSTags
+	DeletionProtection *bool
+	OperationLocks     struct {
 		LockReason []struct{ LockReason string }
 	}
 }
@@ -207,9 +208,20 @@ func (c *Client) observeAlibabaInstance(ctx context.Context, region, id string) 
 }
 
 func (c *Client) describeAlibabaInstance(ctx context.Context, region, id string) (alibabaInstanceObservation, error) {
-	ids, err := json.Marshal([]string{id})
+	row, err := c.readAlibabaInstance(ctx, region, id)
 	if err != nil {
 		return alibabaInstanceObservation{}, err
+	}
+	if row == nil {
+		return alibabaInstanceObservation{}, &provider.Failure{Kind: provider.OutcomeUnknown}
+	}
+	return *row, nil
+}
+
+func (c *Client) readAlibabaInstance(ctx context.Context, region, id string) (*alibabaInstanceObservation, error) {
+	ids, err := json.Marshal([]string{id})
+	if err != nil {
+		return nil, err
 	}
 	query := url.Values{
 		"RegionId": {region}, "InstanceIds": {string(ids)}, "MaxResults": {strconv.Itoa(pageSize)},
@@ -221,26 +233,26 @@ func (c *Client) describeAlibabaInstance(ctx context.Context, region, id string)
 		}
 	}
 	if err := c.alibaba(ctx, "ecs."+region+".aliyuncs.com", "DescribeInstances", "2014-05-26", query, &response); err != nil {
-		return alibabaInstanceObservation{}, err
+		return nil, err
 	}
 	if response.Code != "" {
-		return alibabaInstanceObservation{}, cloudFailure(response.Code)
+		return nil, cloudFailure(response.Code)
 	}
 	rows := response.Instances.Instance
 	if rows == nil || response.NextToken != "" || len(rows) > 1 {
-		return alibabaInstanceObservation{}, &provider.Failure{Kind: provider.InvalidResponse}
+		return nil, &provider.Failure{Kind: provider.InvalidResponse}
 	}
 	if len(rows) == 0 {
-		return alibabaInstanceObservation{}, &provider.Failure{Kind: provider.OutcomeUnknown}
+		return nil, nil
 	}
 	row := rows[0]
 	if row.RegionId != region {
-		return alibabaInstanceObservation{}, &provider.Failure{Kind: provider.Unauthorized}
+		return nil, &provider.Failure{Kind: provider.Unauthorized}
 	}
 	if row.InstanceId != id {
-		return alibabaInstanceObservation{}, &provider.Failure{Kind: provider.InvalidResponse}
+		return nil, &provider.Failure{Kind: provider.InvalidResponse}
 	}
-	return row, nil
+	return &row, nil
 }
 
 type huaweiInstanceObservation struct {
@@ -249,6 +261,7 @@ type huaweiInstanceObservation struct {
 	Zone             string `json:"OS-EXT-AZ:availability_zone"`
 	RootDevice       string `json:"OS-EXT-SRV-ATTR:root_device_name"`
 	Locked           *bool  `json:"locked"`
+	TaskState        string `json:"OS-EXT-STS:task_state"`
 	Image, Flavor    struct{ ID string }
 	Metadata         struct {
 		VPC          string `json:"vpc_id"`

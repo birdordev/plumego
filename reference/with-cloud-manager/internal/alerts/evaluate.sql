@@ -39,4 +39,4 @@ WITH due AS (
     FROM project AS p CROSS JOIN candidates AS c
     ON CONFLICT (tenant_id,project_id,rule,subject_id) WHERE resolved_at IS NULL DO NOTHING
 )
-SELECT EXISTS (SELECT 1 FROM project)
+SELECT tenant_id,project_id FROM project

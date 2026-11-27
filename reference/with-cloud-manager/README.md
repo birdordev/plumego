@@ -376,6 +376,20 @@ cloud-manager refresh-huawei-bucket-encryption TENANT ACCOUNT 'BUCKET@UTC_CREATI
 
 腾讯云需要 `cos:GetBucketEncryption`，阿里云需要 `oss:GetBucketEncryption`，华为云需要 `obs:bucket:GetEncryptionConfiguration`。华为云为读取配置申请仅限目标桶的临时凭据。目标沙箱需验证阿里云配置响应的实际状态码和正文，读取算法需要完整 XML。 [腾讯云 COS](https://cloud.tencent.com/document/product/436/40137) · [阿里云 OSS](https://help.aliyun.com/zh/oss/developer-reference/getbucketencryption) · [华为云 OBS](https://support.huaweicloud.com/api-obs/obs_04_0063.html)
 
+#### 定时采集对象桶配置
+
+执行 `cloud-manager migrate` 应用 `0145_bucket_setting_schedules`。升级所有普通盘点控制器后，项目管理员可为腾讯云、阿里云和华为云账号分别登记「对象桶默认加密」与「对象桶版本控制」。计划使用 `global` 范围，并从 `object-bucket` 盘点已发现且当前有效的资产中选择桶。账号仍需具有对应配置的只读权限。
+
+```sh
+cloud-manager cloud-accounts schedule-add TENANT PROJECT ACCOUNT <<'JSON'
+{"region":"global","kind":"object-bucket-encryption","interval_seconds":3600,"enabled":true}
+JSON
+```
+
+版本控制使用 `kind=object-bucket-versioning`。一批最多读取 16 个桶，前后分别用账号清单核对桶创建批次与实际地域。批次间释放账号租约，约 5 秒后可继续领取。扫完当前范围后按配置间隔开始新一轮。单桶拒绝或身份无法确认时保留其原观测，下一轮重新尝试。计划列表的 `bucket_batch_rejected` 表示最近提交批次中未更新观测的桶数。可在防护报告查看具体桶的观测覆盖。
+
+遇到限流时，控制器提交已复核的部分，按厂商退避时间冷却整个账号，从未处理的桶续跑。若复核清单失败，保留上一个已提交游标。停用会拦截在途批次，重新启用或立即排队会从已提交游标继续。换用新凭据后从头采集，当前盘点须先完成新代次的扫描。回退控制器前先停用两类计划。配置采集计划归对象桶防护，不计入全量盘点新鲜度。
+
 #### 对象桶防护报告
 
 控制台「治理 → 对象桶防护」和项目 API `GET /v1/tenants/{tenant}/projects/{project}/governance/bucket-protection` 汇总三家云的桶默认加密、版本控制和观测覆盖。点击桶名可打开带账号和完整资产 ID 筛选的资源清单。报告从本地资产库和已采集快照读取，可按厂商、账号和实际地域筛选。
@@ -1128,7 +1142,7 @@ cloud-manager operations release-elastic-ip TENANT PROJECT --idempotency-key KEY
 
 ## 定时盘点控制器
 
-应用 `0136_inventory_schedule_config` 并更新 API 与盘点控制器。腾讯云、阿里云和华为云的项目管理员可在「云账号管理 → 盘点计划」按账号、地域和资源类型登记、调整间隔、停用、恢复或立即排队。启用计划要求账号已完成身份校验。原有计划以版本 1 纳入管理。运维也可通过 `cmp_inventory_schedules` 管理其他厂商和专项计划。间隔为 60 秒至 7 天。`region` 盘点使用空地域，`dns-zone` 与 `object-bucket` 使用 `global`。普通盘点的 `target_id` 为空，节点池快照计划使用父集群 ID。
+应用 `0136_inventory_schedule_config` 并更新 API 与盘点控制器。腾讯云、阿里云和华为云的项目管理员可在「云账号管理 → 盘点计划」按账号、地域和资源类型登记、调整间隔、停用、恢复或立即排队。启用计划要求账号已完成身份校验。原有计划以版本 1 纳入管理。运维也可通过 `cmp_inventory_schedules` 管理其他厂商和专项计划。间隔为 60 秒至 7 天。`region` 盘点使用空地域，`dns-zone`、`object-bucket` 和两类对象桶配置计划使用 `global`。普通盘点的 `target_id` 为空，节点池快照计划使用父集群 ID。
 
 账号路径下的 `GET /inventory-schedules` 返回分页计划，使用 `limit` 和 `after`。用 `POST /inventory-schedules` 登记，提交 `region`、`kind`、`interval_seconds`、`enabled`。用 `PATCH /inventory-schedules/{id}` 更新，提交 `interval_seconds`、`enabled` 和可选的 `run_now`，同时使用当前版本的强 `If-Match`。立即排队由已部署的控制器领取。计划变更记录进项目审计。
 
@@ -1404,7 +1418,21 @@ cloud-manager billing-source tenant finance cloud-account 2026-11 native 1 1 > v
 cloud-manager billing get tenant finance cloud-account 2026-11 native
 ```
 
-收据包括报表版本、原件编号、SHA-256 和记录数。重放读取原件，以归档清单重新解析并核对明细与汇总。查询通过 `GET /v1/tenants/:tenant/projects/:project/billing/reports`、`billing get` 或控制台「云账单」读取。归属项目管理员可按账号、账期、来源和可选的历史版本查询，账号共享仅授予已有资源访问权限。费用和差额以十进制字符串返回，按原币种汇总。摊销成本或目录价在某币种的任一记录缺失该口径时显示为未提供。提供 `expected_billed` 时，差额为账单金额减该币种控制总额。两种账单来源各自独立发布和查询。
+收据包括报表版本、原件编号、SHA-256 和记录数。重放读取原件，以归档清单重新解析并核对明细与汇总。查询通过 `GET /v1/tenants/:tenant/projects/:project/billing/reports`、`billing get` 或控制台「云账单」读取。归属项目管理员可按账号、账期、来源和可选的历史版本查询，账号共享仅授予已有资源访问权限。响应的 `revision_text` 和 ETag 提供完整版本号。费用和差额以十进制字符串返回，按原币种汇总。摊销成本或目录价在某币种的任一记录缺失该口径时显示为未提供。提供 `expected_billed` 时，差额为账单金额减该币种控制总额。两种账单来源各自独立发布和查询。
+
+### 项目费用汇总
+
+项目管理员可在「费用 → 费用汇总」、CLI 或 `GET /v1/tenants/{tenant}/projects/{project}/billing/summary` 查询三家优先云。填写 `from`、`through`、`source` 和三位大写 `currency`。账期包含起止月，最多连续 12 个月。可用 `provider` 限定厂商。
+
+```sh
+cloud-manager billing summary TENANT PROJECT 2026-01 2026-11 native CNY
+cloud-manager billing summary TENANT PROJECT 2026-01 2026-11 focus-1.0 USD \
+  --provider alibaba-ecs --missing-only --limit 25
+```
+
+每月的覆盖分母是当前归属项目、已完成身份验证且可读的受支持账号。每个账号按账期和所选来源纳入最新发布版本。月度结果分别显示该月已发布账号数和在所选币种有汇总行的账号数。已发布的零记录账单也计入发布覆盖。费用使用发布版本中的原币种金额与十进制精度。只有参与金额汇总的全部账单都提供某一口径时，才显示该口径的合计。没有所选币种汇总行时，金额显示为空。
+
+账号明细附版本、摘要和记录数，可从控制台打开对应历史版本。使用 `missing_only=true` 或 `--missing-only` 查找待导入项。该筛选和分页只影响明细，单次响应的明细和月度汇总使用同一数据库快照。明细按账期和账号排序，默认 50 条，最大 100 条。继续翻页时保留查询条件，并用上一页的 `next` 作为 `after`。每次请求读取当时的当前发布版本。
 
 #### 订阅账单自动拉取
 
@@ -1498,6 +1526,24 @@ cloud-manager billing budget-update tenant finance cloud-account 2026-11 native 
 系统使用该作用域的最新已发布账单，以十进制计算累计费用。达到预警比例或额度时生成当前最高级别告警。重复发布同一报表保留已有告警。账单修正使费用回落时恢复旧告警，费用口径暂不可用时保留已有告警。停用预算、停用账号或转移账号归属会恢复原作用域的预算告警。账单发布与对应告警、审计及待投递事件在同一事务提交。
 
 预算告警在「项目告警」中仅向该项目管理员显示，详情列出账期、原币种、来源和成本口径，确认操作沿用告警版本。订阅项目告警的 Webhook 会收到开启和恢复事件，载荷包含告警级别、账号与预算标识。预算金额和累计费用通过预算查询读取。配置变更可在「项目审计」使用「云预算」类型检索。
+
+### 项目预算
+
+执行 `cloud-manager migrate` 应用 `0146_project_billing_budgets`，并升级 API 和 `alert-controller`。项目管理员可在「费用 → 项目预算」为腾讯云、阿里云和华为云账号配置合计额度。按账期、来源、原币种和成本口径访问 `/v1/tenants/{tenant}/projects/{project}/billing/project-budget`。使用 GET 查询、POST 创建、PUT 替换。PUT 使用当前强 ETag，提交额度、阈值、启用状态和完整账号范围。
+
+```json
+{"limit":"10000","warning_percent":80,"enabled":true,"accounts":["cvm-production","ecs-production","obs-production"]}
+```
+
+```sh
+cloud-manager billing project-budget-create TENANT PROJECT 2026-11 native CNY billed < budget.json
+cloud-manager billing project-budget-get TENANT PROJECT 2026-11 native CNY billed
+cloud-manager billing project-budget-update TENANT PROJECT 2026-11 native CNY billed 1 < budget.json
+```
+
+每项预算可选择 1 至 100 个不同账号。新增账号须为本项目自有的已验证可读账号。已选账号在暂停或转移后仍留在原预算范围内，直到管理员显式替换。费用采用每个账号当前发布的指定来源账单。响应区分待导入、缺少所选费用口径、账号不可读及已计入，提供可用的账单版本。只有所有选定账号均提供所选币种和口径时，才返回累计费用并判断额度。
+
+现有告警控制器按项目轮询预算。完整账单达到阈值时开启告警，完整退款修订后可恢复。观测不完整时保留原告警。显式停用可关闭告警。项目预算沿用项目告警的管理权限、确认和 Webhook 交付。变更按预算 ID 和版本写入项目审计。独立账号预算继续按账号生效。
 
 从旧版本滚动升级时，先完成数据库迁移和所有 API 副本的更新，再创建预算。预算告警的角色过滤由新版 API 提供，预算恢复判定也在数据库中执行，旧告警控制器仍可处理原有规则。
 
@@ -1841,11 +1887,11 @@ WHERE (s.tenant_id, s.account_id, s.region, s.kind, o.external_id) =
 
 厂商检查与删除是两个请求。应通过站点权限或变更窗口避免并发修改挂载与销毁策略。厂商断连、404 和本地盘点移除均不足以确认删除。Worker 核实厂商证据后，在同一事务写入操作结果和资产移除记录。后续扫描忽略该实例的迟到结果。人工处置记录账本结论，资产继续由盘点核实。
 
-### 腾讯云 CVM 单实例退役
+### 三家优先云单实例退役
 
-退役释放按量付费 CVM 及其系统盘。先备份需保留的数据、停止实例并卸载数据盘。执行迁移 `0106_instance_retirement_reservations` 和 `0107_instance_retirement` 后升级 API 与 Worker。账号须处于可写状态，目标账号的 Worker 凭据配置需单独开启 `allow_instance_retirement`，默认关闭。保盘删除与批量操作沿用各自的现有合同。[腾讯云退还实例](https://cloud.tencent.com/document/api/213/15723) · [腾讯云实例销毁影响](https://cloud.tencent.com/document/product/213/4930)
+退役释放按量付费的腾讯云 CVM、阿里云 ECS 或华为云 ECS 及其系统盘。先备份需保留的数据和快照、停止实例并卸载数据盘。执行迁移 `0106_instance_retirement_reservations` 和 `0107_instance_retirement` 后，先升级 Worker，再开放新版 API 和控制台。账号须处于可写状态，目标账号的 Worker 凭据配置需单独开启 `allow_instance_retirement`，默认关闭。保盘删除与批量操作各有独立的配置和合同。[腾讯云退还实例](https://cloud.tencent.com/document/api/213/15723) · [阿里云释放实例](https://www.alibabacloud.com/help/en/ecs/developer-reference/api-ecs-2014-05-26-deleteinstance) · [华为云删除服务器](https://support.huaweicloud.com/api-ecs/ecs_02_0103.html)
 
-控制台在符合本地关机条件的腾讯云实例行提供「申请退役」。预览读取当前实例版本及唯一已盘点的关联盘，Worker 在发送前确认它是系统盘。申请人填写完整实例 ID 确认影响。HTTP 预览路径为 `GET /v1/tenants/{tenant}/projects/{project}/instance-operations/retirement-preview`，查询参数为 `account`、`region` 和 `asset_id`。提交将末尾的 `retirement-preview` 改为 `retire` 并使用 `POST`，`If-Match` 使用预览中的实例版本。
+控制台在满足本地关机条件的已观测实例行提供「申请退役」。预览读取当前实例版本及唯一已盘点的关联盘，Worker 在发送前确认它是系统盘。阿里云和华为云应先盘点实例和云盘，预览可从云盘的反向挂载关系找到关联盘。申请人填写完整实例 ID 确认影响。HTTP 预览路径为 `GET /v1/tenants/{tenant}/projects/{project}/instance-operations/retirement-preview`，查询参数为 `account`、`region` 和 `asset_id`。提交将末尾的 `retirement-preview` 改为 `retire` 并使用 `POST`，`If-Match` 使用预览中的实例版本。
 
 ```bash
 cloud-manager operations preview-retire tenant-id project-id \
@@ -1856,9 +1902,15 @@ cloud-manager operations retire-instance tenant-id project-id \
 JSON
 ```
 
-受理固定实例、盘点系统盘及各自的归属版本。活动操作及待复核状态预约实例和系统盘，拦截归属转移以及冲突的挂盘和快照写入。单次发送前复核平台保护、当前授权、独立审批及适用的外部工单。Worker 使用同账号同地域的 CVM 和 CBS 精确查询确认关机、按小时计费、销毁保护明确关闭且只挂载同一块云系统盘。确认后发送单实例 `TerminateInstances`，并显式保留包年包月数据盘。[实例点查](https://cloud.tencent.com/document/api/213/15728) · [CBS 磁盘点查](https://cloud.tencent.com/document/product/362/16315)
+受理固定实例、盘点系统盘及各自的归属版本。活动操作及待复核状态预约实例和系统盘，拦截归属转移以及冲突的挂盘和快照写入。单次发送前复核平台保护、当前授权、独立审批及适用的外部工单。各厂商核验和回查证据如下。
 
-接收厂商回执后，连续两轮查询的 `DescribeInstances` 与 `DescribeInstancesStatus` 都须返回完整空集，才确认实例释放。回收态、销毁中、点查错误及部分结果会打断连续观测。确认事务记录实例移除、实例配额释放、操作终态、审计和发件箱。系统盘仍通过云盘盘点确认。若厂商回执丢失，操作进入待复核，审批人通过厂商记录核验后登记处置；已有回执时可恢复只读观测。[实例状态查询](https://cloud.tencent.com/document/api/213/15738) · [实例生命周期](https://intl.cloud.tencent.com/zh/document/product/213/4856)
+| 厂商 | 派发前复核 | 接收回执后的每轮证据 |
+| --- | --- | --- |
+| 腾讯云 | 实例关机，按小时计费，销毁保护明确关闭，只挂载确认过的 CBS 系统盘。单次调用 `TerminateInstances`，显式保留包年包月数据盘。 [实例点查](https://cloud.tencent.com/document/api/213/15728) · [CBS 磁盘点查](https://cloud.tencent.com/document/product/362/16315) | `DescribeInstances` 和 `DescribeInstancesStatus` 均返回完整空集。 [实例状态查询](https://cloud.tencent.com/document/api/213/15738) |
+| 阿里云 | 实例关机，按量付费，无操作锁，释放保护明确关闭。唯一系统盘为非共享云盘，随实例释放，自动快照设置为保留。单次调用 `DeleteInstance`，使用常规关机模式并保留订阅释放限制。 [实例点查](https://www.alibabacloud.com/help/en/ecs/developer-reference/api-ecs-2014-05-26-describeinstances) · [云盘点查](https://www.alibabacloud.com/help/en/ecs/developer-reference/api-ecs-2014-05-26-describedisks) | 逐个精确查询实例 ID 与系统盘 ID，两份结果均为空且没有后续页。 |
+| 华为云 | 实例关机，按需付费，无锁且无进行中的任务。实例、挂载列表与 EVS 点查一致，唯一非共享启动盘设置为随实例删除。单次调用 `DeleteServers`，显式保留弹性公网 IP。 [实例点查](https://support.huaweicloud.com/api-ecs/ecs_02_0104.html) · [EVS 云盘点查](https://support.huaweicloud.com/api-evs/evs_04_2007.html) | 厂商任务成功且匹配实例 ID，ECS 和 EVS 点查均返回各自明确的资源不存在状态。 [任务状态](https://support.huaweicloud.com/api-ecs/ecs_02_0901.html) |
+
+收到厂商回执后需要连续两轮满足对应证据。回收态、资源仍存在、限流和部分结果会打断连续观测。确认事务记录实例移除、实例配额释放、操作终态、审计和发件箱。云盘库存随下一次盘点更新。回执丢失时进入待复核，由审批人核验厂商记录后登记处置。已有回执时可恢复只读观测。真实沙箱须验证实际权限、状态、回执和系统盘释放语义。
 
 ### 卷挂载和卸载
 

@@ -89,6 +89,9 @@ func TestAcceptancePostgresReadiness(t *testing.T) {
 	if err := billing.MigrateBudgets(t.Context(), db); err != nil {
 		t.Fatal(err)
 	}
+	if err := billing.MigrateProjectBudgets(t.Context(), db); err != nil {
+		t.Fatal(err)
+	}
 	get("/readyz", http.StatusServiceUnavailable, "storage is unavailable")
 	if err := billing.MigrateAllocations(t.Context(), db); err != nil {
 		t.Fatal(err)

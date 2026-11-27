@@ -12,7 +12,7 @@ import (
 
 type alibabaDiskObservation struct {
 	DiskId, RegionId, ZoneId, InstanceId, Type, Status, Category, MultiAttach string
-	Portable, DeleteWithInstance                                              *bool
+	Portable, DeleteWithInstance, DeleteAutoSnapshot                          *bool
 	Attachments                                                               struct{ Attachment []struct{ InstanceId string } }
 	MountInstances                                                            struct{ MountInstance []struct{ InstanceId string } }
 }

@@ -62,10 +62,14 @@ var inventoryAccountDispatchSchema string
 //go:embed 0138_inventory_tenant_dispatch.sql
 var inventoryTenantDispatchSchema string
 
+//go:embed 0145_bucket_setting_schedules.sql
+var bucketSettingSchedulesSchema string
+
 const RedfishScheduleMigration = "0117_redfish_schedules"
 const ScheduleConfigMigration = "0136_inventory_schedule_config"
 const AccountDispatchMigration = "0137_inventory_account_dispatch"
 const TenantDispatchMigration = "0138_inventory_tenant_dispatch"
+const BucketSettingScheduleMigration = "0145_bucket_setting_schedules"
 
 var ErrStale = errors.New("inventory schedule lease expired or was replaced")
 
@@ -118,7 +122,10 @@ func Migrate(ctx context.Context, db *sql.DB) error {
 	if err := dbschema.Apply(ctx, db, AccountDispatchMigration, inventoryAccountDispatchSchema); err != nil {
 		return err
 	}
-	return dbschema.Apply(ctx, db, TenantDispatchMigration, inventoryTenantDispatchSchema)
+	if err := dbschema.Apply(ctx, db, TenantDispatchMigration, inventoryTenantDispatchSchema); err != nil {
+		return err
+	}
+	return dbschema.Apply(ctx, db, BucketSettingScheduleMigration, bucketSettingSchedulesSchema)
 }
 
 const (
@@ -189,6 +196,8 @@ func scanLeasedSchedule(row *sql.Row) (job, error) {
 		j.task.Key.Kind = provider.KubernetesCluster
 	case IdleScheduleKind:
 		j.task.Key.Kind = provider.Instance
+	case BucketEncryptionScheduleKind, BucketVersioningScheduleKind:
+		j.task.Key.Kind = provider.ObjectBucket
 	}
 	j.interval = time.Duration(period) * time.Second
 	j.task.Lease = inventory.ScheduleLease{ID: j.id, Fence: j.fence}

@@ -1,7 +1,7 @@
 import { projectCanExecute, projectPath } from '../../features/session/project'
-import type { WorkspaceLink } from '../../features/overview/navigation'
 import type { Session } from '../../features/session/store'
 import { WorkspaceNotice } from '../../shared/feedback/WorkspaceNotice'
+import type { WorkspaceLink } from '../../shared/navigation/workspace-link'
 import type { View } from '../routes/registry'
 import { Sidebar } from './Sidebar'
 import { useBatchNavigation } from './useBatchNavigation'
@@ -36,7 +36,7 @@ export function AuthenticatedWorkspace({
 }: Props) {
   const { editor, visited, initialInput, openSelectedBatch } = useBatchNavigation(view, selectView)
   const base = projectPath(session)
-  const link: WorkspaceLink = (target, query = '') => ({
+  const link: WorkspaceLink<View> = (target, query = '') => ({
     href: workspaceHref(session.project.id, target, query),
     onClick: (event) => followWorkspaceLink(event, () => {
       selectView(target, query)

@@ -42,11 +42,12 @@ func newAPI(db *sql.DB, addr string, console *consoleConfig) (*core.App, error) 
 		status(w, r, "ok")
 	})
 	additionalVersions := append(kvm.RequiredMigrations(), controller.RedfishScheduleMigration, controller.ScheduleConfigMigration,
-		controller.AccountDispatchMigration, controller.TenantDispatchMigration,
+		controller.AccountDispatchMigration, controller.TenantDispatchMigration, controller.BucketSettingScheduleMigration,
 		inventory.InventoryCompletionMigration, identity.AccountWriteModeMigration, operations.BareMetalPowerMigration,
 		operations.BareMetalPXEMigration, operations.BareMetalDeploymentMigration, operations.BareMetalReclaimsMigration,
 		operations.BareMetalReclaimRecoveriesMigration, operations.ObservationWorkerMigration, operations.EffectIDMigration,
 		operations.TerminalEventTimeMigration, operations.OperationRolloutMigration, inventory.BucketVersioningMigration, inventory.BucketEncryptionMigration)
+	additionalVersions = append(additionalVersions, billing.ProjectBudgetMigration)
 	additionalVersionList := strings.Join(additionalVersions, ",")
 	ready := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx, cancel := context.WithTimeout(r.Context(), time.Second)
@@ -77,6 +78,7 @@ func newAPI(db *sql.DB, addr string, console *consoleConfig) (*core.App, error) 
 	projectAlerts := alertHandler(alerts.NewStore(db), app.Logger())
 	billingStore := billing.NewStore(db)
 	budgets := budgetHandler(billingStore, app.Logger())
+	projectBudgets := projectBudgetHandler(billingStore, app.Logger())
 	tagPolicy := tagPolicyHandler(store, app.Logger())
 	ticketPolicy := ticketPolicyHandler(operationStore, app.Logger())
 	changeTicket := changeTicketHandler(operationStore, app.Logger())
@@ -95,8 +97,10 @@ func newAPI(db *sql.DB, addr string, console *consoleConfig) (*core.App, error) 
 		app.Get(clusterNodePoolsRoute, clusterNodePoolsHandler(store, app.Logger())),
 		app.Get(clusterWorkloadsRoute, clusterWorkloadsHandler(store, app.Logger())),
 		app.Get(billingRoute, billingHandler(billingStore, app.Logger())),
+		app.Get(billingSummaryRoute, billingSummaryHandler(billingStore, app.Logger())),
 		app.Get(allocationRoute, allocationHandler(billingStore, app.Logger())),
 		app.Get(budgetRoute, budgets), app.Post(budgetRoute, budgets), app.Put(budgetRoute, budgets),
+		app.Get(projectBudgetRoute, projectBudgets), app.Post(projectBudgetRoute, projectBudgets), app.Put(projectBudgetRoute, projectBudgets),
 		app.Get(tagPolicyRoute, tagPolicy), app.Post(tagPolicyRoute, tagPolicy), app.Put(tagPolicyRoute, tagPolicy),
 		app.Get(ticketPolicyRoute, ticketPolicy), app.Post(ticketPolicyRoute, ticketPolicy), app.Put(ticketPolicyRoute, ticketPolicy),
 		app.Get(changeTicketRoute, changeTicket), app.Post(changeTicketRoute, changeTicket),

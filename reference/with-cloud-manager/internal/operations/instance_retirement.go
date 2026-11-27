@@ -70,7 +70,7 @@ func (s Store) PreviewInstanceRetirement(ctx context.Context, token string, scop
 
 func (s Store) SubmitInstanceRetirement(ctx context.Context, token string, scope identity.Scope, key string, revision int64, input InstanceRetirementInput) (Operation, error) {
 	target := provider.InstanceRetirement{InstanceID: input.AssetID, SystemDiskID: input.SystemDiskID}
-	if input.ConfirmID != input.AssetID || !target.ValidFor(provider.TencentCVM) {
+	if input.ConfirmID != input.AssetID || !target.Valid() {
 		return Operation{}, ErrInvalid
 	}
 	data, err := json.Marshal(struct {
@@ -110,7 +110,7 @@ func (s Store) SubmitInstanceRetirement(ctx context.Context, token string, scope
 }
 
 func retirementDiskID(ctx context.Context, tx *sql.Tx, target inventory.MutationTarget, id string) (string, error) {
-	if target.Provider != provider.TencentCVM {
+	if !publicCloudProvider(target.Provider) {
 		return "", ErrInvalid
 	}
 	if err := checkInstanceMutationProtection(ctx, tx, target.ScopeID, id, retireInstance); err != nil {
@@ -118,21 +118,43 @@ func retirementDiskID(ctx context.Context, tx *sql.Tx, target inventory.Mutation
 	}
 	var status, disk string
 	var disks int
-	err := tx.QueryRowContext(ctx, `SELECT o.status, count(DISTINCT link->>'id'), COALESCE(min(link->>'id'),'')
+	query := `SELECT o.status, count(DISTINCT link->>'id'), COALESCE(min(link->>'id'),'')
 		FROM cmp_inventory_objects AS o LEFT JOIN LATERAL jsonb_array_elements(o.links) AS link ON link->>'kind'='volume'
-		WHERE (o.scope_id,o.external_id)=($1,$2) GROUP BY o.status`, target.ScopeID, id).Scan(&status, &disks, &disk)
+		WHERE (o.scope_id,o.external_id)=($1,$2) GROUP BY o.status`
+	if target.Provider != provider.TencentCVM {
+		query = attachedRetirementDisk
+	}
+	err := tx.QueryRowContext(ctx, query, target.ScopeID, id).Scan(&status, &disks, &disk)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", identity.ErrAccountStale
 	}
 	if err != nil {
 		return "", err
 	}
-	if disks != 1 || !strings.EqualFold(status, "stopped") ||
+	stopped := "stopped"
+	if target.Provider == provider.HuaweiECS {
+		stopped = "shutoff"
+	}
+	if disks != 1 || !strings.EqualFold(status, stopped) ||
 		!(provider.InstanceRetirement{InstanceID: id, SystemDiskID: disk}).ValidFor(target.Provider) {
 		return "", ErrConflict
 	}
 	return disk, nil
 }
+
+const attachedRetirementDisk = `SELECT o.status,count(d.external_id),COALESCE(min(d.external_id),'')
+	FROM cmp_inventory_objects AS o JOIN cmp_inventory_scopes AS i USING (scope_id)
+	LEFT JOIN LATERAL (
+		SELECT v.external_id
+		FROM cmp_inventory_scopes AS s JOIN cmp_inventory_objects AS v USING (scope_id)
+		WHERE (s.tenant_id,s.account_id,s.region,s.kind)=(i.tenant_id,i.account_id,i.region,'volume')
+		  AND s.credential_revision=i.credential_revision AND v.missing_generation IS NULL AND v.removed_at IS NULL
+		  AND v.links @> jsonb_build_array(jsonb_build_object('kind','instance','id',o.external_id,'relation','attached_to'))
+		UNION
+		SELECT link->>'id' FROM jsonb_array_elements(o.links) AS link WHERE link->>'kind'='volume'
+		LIMIT 2
+	) AS d ON true
+	WHERE (o.scope_id,o.external_id)=($1,$2) GROUP BY o.status`
 
 func resolveRetirementDisk(ctx context.Context, tx *sql.Tx, actor identity.Scope, account, region, id string) (inventory.MutationTarget, error) {
 	disk, err := inventory.ResolveVolumeMutation(ctx, tx, actor, account, region, id)

@@ -45,6 +45,17 @@ type BucketEncryptionReader interface {
 	ReadBucketEncryption(context.Context, Scope, string, string) (BucketEncryption, error)
 }
 
+const BucketSettingBatchLimit = 16
+
+type BucketSettingTarget struct {
+	ID, Location string
+}
+
+type BucketSettingResult[T ~string] struct {
+	State T
+	Err   error
+}
+
 const ObjectBucketGlobalScope = "global"
 
 const (

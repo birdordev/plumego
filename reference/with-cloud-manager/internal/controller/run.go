@@ -93,7 +93,8 @@ func (s Store) step(ctx context.Context, execute Execute, pool schedulePool) (bo
 	if executionErr == nil {
 		executionErr = attempt.Err()
 	}
-	if executionErr != nil {
+	partialBucketBatch := isBucketSettingSchedule(j.task.ScheduleKind) && provider.IsFailure(executionErr, provider.Throttled) && attempt.Err() == nil
+	if executionErr != nil && !partialBucketBatch {
 		publish = nil
 	}
 	cancel()

@@ -6,7 +6,7 @@ export const navigationGroups = [
   { label: '资源', views: ['assets', 'cloud-accounts', 'kvm', 'service-catalog', 'console-grants'] },
   { label: '运维', views: ['operations', 'batch', 'alerts', 'inventory-freshness', 'idle-instances'] },
   { label: '治理', views: ['bucket-protection', 'tag-compliance', 'ticket-policy', 'audit'] },
-  { label: '费用', views: ['billing', 'billing-budget', 'billing-allocation'] },
+  { label: '费用', views: ['billing-summary', 'billing', 'project-budget', 'billing-budget', 'billing-allocation'] },
 ] as const satisfies readonly { label?: string; views: readonly View[] }[]
 
 export const viewPresentation = {
@@ -26,6 +26,8 @@ export const viewPresentation = {
   'ticket-policy': { icon: 'ticket', intro: '管理变更工单要求及当前策略版本。' },
   audit: { icon: 'audit', intro: '查询项目内的授权、资源变更和访问事件。' },
   billing: { icon: 'bill', intro: '按账号、账期和版本查询云费用。' },
+  'billing-summary': { icon: 'bill', intro: '按账期核对项目原币种费用和账单覆盖。' },
   'billing-budget': { icon: 'budget', intro: '查看预算、用量和费用阈值。' },
+  'project-budget': { icon: 'budget', intro: '为选定云账号设置合计额度，查看各账号费用与缺账状态。' },
   'billing-allocation': { icon: 'allocation', intro: '维护费用分摊规则并读取已归集金额。' },
 } as const satisfies Record<View, { icon: ConsoleIconName; intro: string }>

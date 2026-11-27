@@ -39,7 +39,8 @@ function AlertDetail({ target, admin, stamp, signal, reload, onReload }:
   const alert = result.data
   const fields: DetailField[] = [['规则', alertRules[alert.rule] || alert.rule], ['状态', <StateBadge status={alert.status} />],
     ['触发时间', timestamp(alert.opened_at)], ['触发状态', statuses[alert.source_status] || alert.source_status],
-    ['云账号', alert.account], ['地域', alert.region || '全局'], ['资源类型', kinds[alert.resource_kind] || alert.resource_kind],
+    ['云账号', alert.resource_kind === 'billing-project-budget' ? '项目所选账号' : alert.account],
+    ['地域', alert.region || '全局'], ['资源类型', kinds[alert.resource_kind] || alert.resource_kind],
     ['对象 ID', alert.subject_id]]
   const scope = alert.budget_scope
   if (scope) fields.push(

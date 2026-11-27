@@ -10,6 +10,7 @@ WITH scoped AS (
     LEFT JOIN cmp_inventory_scopes AS i USING (tenant_id,account_id,region,kind)
     LEFT JOIN cmp_inventory_account_dispatch AS d USING (tenant_id,account_id)
     WHERE a.tenant_id=$1 AND a.mode IN ('read_only','write_enabled') AND s.enabled AND s.target_id=''
+        AND s.kind NOT IN ('object-bucket-encryption','object-bucket-versioning')
         AND (a.project_id=$2 OR EXISTS (
             SELECT 1 FROM cmp_cloud_account_grants AS g
             WHERE (g.tenant_id,g.account_id,g.project_id)=(a.tenant_id,a.account_id,$2)

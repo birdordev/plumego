@@ -6,6 +6,7 @@ import { useDetailAction } from '../../../shared/detail/useDetailAction'
 import { timestamp } from '../../../shared/display/time'
 import type { Account } from '../schema'
 import { changeSchedule, listSchedules, type Schedule } from './api'
+import { scheduleKindLabel, scheduleRegionLabel } from './kinds'
 import { ScheduleForm } from './ScheduleForm'
 
 const outcomes = { success: '成功', failure: '失败', throttled: '限流' }
@@ -33,8 +34,10 @@ export function AccountSchedules({ account, target, stamp, signal, back }: {
     <PagedResults key={refresh} target={target} signal={signal} read={listSchedules}>{(items) => items.length
       ? <ConsoleTable columns={['资源类型', '地域', '间隔（秒）', '状态', '最近结果', '下次执行', '操作']}
         rows={items.map((item) => ({ key: item.id, cells: [
-          item.kind, item.region || '全局', item.interval_seconds, item.enabled ? '已启用' : '已停用',
-          item.last_outcome && outcomes[item.last_outcome], item.enabled ? timestamp(item.next_at) : undefined,
+          scheduleKindLabel(item.kind), scheduleRegionLabel(item.region), item.interval_seconds, item.enabled ? '已启用' : '已停用',
+          <>{item.last_outcome === 'success' && item.bucket_batch_rejected ? '有桶未更新' : item.last_outcome && outcomes[item.last_outcome]}
+            {item.bucket_batch_rejected != null && <span className="minor">最近提交批次未更新 {item.bucket_batch_rejected} 个桶</span>}</>,
+          item.enabled ? timestamp(item.next_at) : undefined,
           <div className="row-actions">
             <button type="button" disabled={busy} onClick={() => setSelected(item)}>编辑</button>
             {readable && item.enabled && <button type="button" disabled={busy} onClick={() => void run(
@@ -42,6 +45,6 @@ export function AccountSchedules({ account, target, stamp, signal, back }: {
             )}>立即盘点</button>}
           </div>,
         ] }))} />
-      : <p>暂无全量盘点计划。</p>}</PagedResults>
+      : <p>暂无盘点计划。</p>}</PagedResults>
   </>
 }

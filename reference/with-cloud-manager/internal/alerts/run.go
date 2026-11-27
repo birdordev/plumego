@@ -4,7 +4,10 @@ import (
 	"context"
 	"database/sql"
 	_ "embed"
+	"errors"
 	"time"
+
+	dbutil "github.com/birdordev/plumego/store/db"
 
 	"with-cloud-manager/internal/dbschema"
 )
@@ -49,12 +52,28 @@ func Migrate(ctx context.Context, db *sql.DB) error {
 	return dbschema.Apply(ctx, db, "0092_workload_scale_outbox", workloadScaleOutboxSchema)
 }
 
+type ProjectEvaluation func(context.Context, *sql.Tx, string, string) error
+
+func (s Store) WithProjectEvaluation(evaluate ProjectEvaluation) Store {
+	s.evaluate = evaluate
+	return s
+}
+
 func (s Store) EvaluateNext(ctx context.Context) (bool, error) {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	var worked bool
-	err := s.db.QueryRowContext(ctx, evaluate).Scan(&worked)
-	return worked, err
+	var tenant, project string
+	err := dbutil.WithTransaction(ctx, s.db, nil, func(tx *sql.Tx) error {
+		err := tx.QueryRowContext(ctx, evaluate).Scan(&tenant, &project)
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil
+		}
+		if err != nil || s.evaluate == nil {
+			return err
+		}
+		return s.evaluate(ctx, tx, tenant, project)
+	})
+	return err == nil && project != "", err
 }
 
 func (s Store) Run(ctx context.Context) error {

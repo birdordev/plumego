@@ -8,6 +8,7 @@ const schedule = z.object({
   id: z.string().regex(/^[1-9][0-9]*$/), region: z.string(), kind: z.string().min(1), revision,
   interval_seconds: z.int().min(60).max(604800), enabled: z.boolean(), next_at: time, failures: z.int().nonnegative(),
   last_outcome: z.enum(['success', 'failure', 'throttled']).optional(), last_finished_at: time.optional(),
+  bucket_batch_rejected: z.int().min(0).max(16).optional(),
 })
 const page = pageSchema(schedule)
 export type Schedule = z.infer<typeof schedule>

@@ -108,6 +108,11 @@ func (c *Client) checkHuaweiDeletion(ctx context.Context, region, id string) err
 		}
 		devices[disk.ID] = disk.Device
 	}
+	return c.checkHuaweiVolumeAttachments(ctx, region, id, devices)
+}
+
+func (c *Client) checkHuaweiVolumeAttachments(ctx context.Context, region, id string, devices map[string]string) error {
+	blocked := &provider.Failure{Kind: provider.DeletionBlocked}
 	u := url.URL{Scheme: "https", Host: "ecs." + region + ".myhuaweicloud.com",
 		Path: "/v1/" + c.profile.ProjectID + "/cloudservers/" + id + "/os-volume_attachments"}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)

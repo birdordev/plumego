@@ -183,7 +183,7 @@ func registerOpenAPI(app *core.App, console *consoleConfig) error {
 		Content: map[string]openapi.MediaType{"application/json": {Schema: openapi.Schema{Type: "object",
 			Properties: map[string]openapi.Schema{"account": openapi.String, "region": openapi.String, "asset_id": openapi.String, "action": openapi.String,
 				"volume_id": openapi.String, "volume_revision": openapi.Integer, "device": openapi.String, "guest_unmounted": {Type: "boolean"}}}}}}
-	retire := accountOp("retireTencentInstance", "202", "已登记腾讯云 CVM 退役，释放实例及其系统盘，须独立审批", true)
+	retire := accountOp("retireTencentInstance", "202", "已登记腾讯云 CVM、阿里云 ECS 或华为云 ECS 退役，释放实例及其系统盘，须独立审批", true)
 	retire.Params = submit.Params
 	retire.Responses["412"] = openapi.Response{Description: "需要当前实例归属版本和盘点系统盘"}
 	retire.Responses["429"] = submit.Responses["429"]
@@ -222,7 +222,7 @@ func registerOpenAPI(app *core.App, console *consoleConfig) error {
 	for _, name := range []string{"account", "region", "asset_id"} {
 		preview.Params = append(preview.Params, openapi.Param{Name: name, In: "query", Required: true, Schema: openapi.String})
 	}
-	retirementPreview := accountOp("previewTencentInstanceRetirement", "200", "当前关机实例的归属版本和待云端核验的盘点磁盘 ID", true)
+	retirementPreview := accountOp("previewTencentInstanceRetirement", "200", "三家优先云当前关机实例的归属版本和待云端核验的盘点磁盘 ID", true)
 	retirementPreview.Params = preview.Params
 	events := accountOp("listInstanceOperationEvents", "200", "按序记录的项目操作事件及续读游标", false)
 	events.Responses["400"] = openapi.Response{Description: "事件游标或页大小无效"}
@@ -586,6 +586,7 @@ func registerOpenAPI(app *core.App, console *consoleConfig) error {
 		"GET " + operationBatchesRoute + "/:batch":                         accountOp("getOperationBatch", "200", "项目批次及当前子操作状态", false),
 		"GET " + allocationRoute:                                           allocationOpenAPI(readAuth),
 		"GET " + billingRoute:                                              billingOpenAPI(readAuth),
+		"GET " + billingSummaryRoute:                                       billingSummaryOpenAPI(readAuth),
 		"GET " + auditRoute:                                                auditList,
 		"GET " + auditRoute + "/export":                                    auditExport,
 		"GET /healthz":                                                     {Responses: map[string]openapi.Response{"200": {Description: "进程存活"}}},

@@ -65,6 +65,8 @@ func inventoryScheduleExecutor(db *sql.DB, profiles map[string]string, transport
 			return prepareScheduledNodePools(ctx, db, task, path, transport)
 		case controller.WorkloadScheduleKind, controller.WorkloadWatchScheduleKind:
 			return prepareScheduledWorkloads(ctx, db, task, path)
+		case controller.BucketEncryptionScheduleKind, controller.BucketVersioningScheduleKind:
+			return prepareScheduledBucketSetting(ctx, db, task, path, transport)
 		}
 		key := task.Key
 		region := key.Region

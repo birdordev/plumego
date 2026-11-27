@@ -17,6 +17,27 @@ func (c *Client) PrepareInstanceRetirement(ctx context.Context, scope provider.S
 	if !c.profile.AllowInstanceRetirement {
 		return nil, &provider.Failure{Kind: provider.DeletionDisabled}
 	}
+	switch c.name {
+	case provider.AlibabaECS:
+		if err := c.checkAlibabaRetirement(ctx, scope.Region, target); err != nil {
+			return nil, err
+		}
+		return func(ctx context.Context) (string, error) {
+			return c.deleteAlibabaInstance(ctx, scope.Region, target.InstanceID)
+		}, nil
+	case provider.HuaweiECS:
+		if err := c.checkHuaweiRetirement(ctx, scope.Region, target); err != nil {
+			return nil, err
+		}
+		return func(ctx context.Context) (string, error) {
+			return c.deleteHuaweiInstance(ctx, scope.Region, target.InstanceID)
+		}, nil
+	default:
+		return c.prepareTencentRetirement(ctx, scope, target)
+	}
+}
+
+func (c *Client) prepareTencentRetirement(ctx context.Context, scope provider.Scope, target provider.InstanceRetirement) (func(context.Context) (string, error), error) {
 	row, err := c.readTencentInstance(ctx, scope.Region, target.InstanceID)
 	if err != nil {
 		return nil, err
@@ -84,14 +105,28 @@ func (c *Client) checkTencentRetirementDisks(ctx context.Context, region, zone s
 	return nil
 }
 
-func (c *Client) ObserveInstanceRetirement(ctx context.Context, scope provider.Scope, id string) (provider.ActionResult, error) {
-	if err := c.checkInstanceScope(scope, id); err != nil {
+func (c *Client) ObserveInstanceRetirement(ctx context.Context, scope provider.Scope, target provider.InstanceRetirement, receipt string) (provider.ActionResult, error) {
+	if err := c.checkInstanceScope(scope, target.InstanceID); err != nil {
 		return "", err
 	}
-	if c.name != provider.TencentCVM {
+	if !target.ValidFor(c.name) {
 		return "", &provider.Failure{Kind: provider.Unsupported}
 	}
-	row, err := c.readTencentInstance(ctx, scope.Region, id)
+	switch c.name {
+	case provider.AlibabaECS:
+		return c.observeAlibabaRetirement(ctx, scope.Region, target)
+	case provider.HuaweiECS:
+		if !resourceID.MatchString(receipt) {
+			return "", &provider.Failure{Kind: provider.InvalidResponse}
+		}
+		return c.observeHuaweiRetirement(ctx, scope.Region, target, receipt)
+	default:
+		return c.observeTencentRetirement(ctx, scope.Region, target.InstanceID)
+	}
+}
+
+func (c *Client) observeTencentRetirement(ctx context.Context, region, id string) (provider.ActionResult, error) {
+	row, err := c.readTencentInstance(ctx, region, id)
 	if err != nil {
 		return "", err
 	}
@@ -106,7 +141,7 @@ func (c *Client) ObserveInstanceRetirement(ctx context.Context, scope provider.S
 		TotalCount        *int
 		InstanceStatusSet []struct{ InstanceId, InstanceState string }
 	}
-	if err := c.tencent(ctx, "cvm", scope.Region, "DescribeInstancesStatus", "2017-03-12", body, &result); err != nil {
+	if err := c.tencent(ctx, "cvm", region, "DescribeInstancesStatus", "2017-03-12", body, &result); err != nil {
 		return "", err
 	}
 	if result.TotalCount == nil || result.InstanceStatusSet == nil ||

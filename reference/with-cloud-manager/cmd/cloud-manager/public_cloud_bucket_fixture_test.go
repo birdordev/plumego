@@ -11,6 +11,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -37,6 +38,8 @@ type bucketFixture struct {
 	recreated                        atomic.Bool
 	versionMode                      atomic.Int32
 	encryptionMode                   atomic.Int32
+	names                            []string
+	settingFault                     func(http.ResponseWriter, *http.Request, string) bool
 }
 
 func (f *bucketFixture) serveBuckets(t *testing.T, w http.ResponseWriter, r *http.Request) {
@@ -50,11 +53,13 @@ func (f *bucketFixture) serveBuckets(t *testing.T, w http.ResponseWriter, r *htt
 	if f.vendor == provider.HuaweiECS && r.Host == "iam.myhuaweicloud.com" && r.URL.Path == "/v3.0/OS-CREDENTIAL/securitytokens" {
 		body, err := io.ReadAll(r.Body)
 		list := strings.Contains(string(body), `"Action":["obs:bucket:ListAllMyBuckets"],"Resource":["OBS:*:*:bucket:*"]`)
-		version := strings.Contains(string(body), `"Action":["obs:bucket:GetBucketVersioning"],"Resource":["OBS:*:*:bucket:`+f.name+`"]`)
-		encryption := strings.Contains(string(body), `"Action":["obs:bucket:GetEncryptionConfiguration"],"Resource":["OBS:*:*:bucket:`+f.name+`"]`)
+		setting := slices.ContainsFunc(f.settingNames(), func(name string) bool {
+			return strings.Contains(string(body), `"Action":["obs:bucket:GetBucketVersioning"],"Resource":["OBS:*:*:bucket:`+name+`"]`) ||
+				strings.Contains(string(body), `"Action":["obs:bucket:GetEncryptionConfiguration"],"Resource":["OBS:*:*:bucket:`+name+`"]`)
+		})
 		if err != nil || r.Method != http.MethodPost || r.Header.Get("X-Auth-Token") != fixtureHuaweiIAM ||
 			!strings.Contains(string(body), `"duration_seconds":900`) || strings.Count(string(body), `"Effect":"Allow"`) != 1 ||
-			(!list && !version && !encryption) {
+			(!list && !setting) {
 			t.Error("invalid OBS temporary credential request")
 			w.WriteHeader(http.StatusBadRequest)
 			return
@@ -131,16 +136,42 @@ func (f *bucketFixture) serveBuckets(t *testing.T, w http.ResponseWriter, r *htt
 		kind = "OBJECT"
 	}
 	w.Header().Set("Content-Type", "application/xml")
+	names := []string{name}
+	if len(f.names) > 0 {
+		names = f.names
+		if f.vendor != provider.HuaweiECS {
+			if marker == "" {
+				names = names[:len(names)/2]
+			} else {
+				names = names[len(names)/2:]
+			}
+		}
+	}
+	var buckets strings.Builder
+	for _, item := range names {
+		stamp := created
+		if len(f.names) > 0 && item != f.name {
+			stamp = fixtureBucketOld
+		}
+		_, _ = fmt.Fprintf(&buckets, `<Bucket><Name>%s</Name><Location>%s</Location><Region>%s</Region>
+    <CreationDate>%s</CreationDate><BucketType>%s</BucketType><StorageClass>%s</StorageClass>
+	<ExtranetEndpoint>%s</ExtranetEndpoint></Bucket>`, item, location, region, stamp, kind, class, fixtureBucketHost)
+	}
 	_, err := fmt.Fprintf(w, `<?xml version="1.0"?>
 <ListAllMyBucketsResult><Owner><ID>%s</ID><DisplayName>%s</DisplayName></Owner>
   <Marker>%s</Marker><IsTruncated>%t</IsTruncated><NextMarker>%s</NextMarker>
-  <Buckets><Bucket><Name>%s</Name><Location>%s</Location><Region>%s</Region>
-    <CreationDate>%s</CreationDate><BucketType>%s</BucketType><StorageClass>%s</StorageClass>
-	<ExtranetEndpoint>%s</ExtranetEndpoint></Bucket></Buckets></ListAllMyBucketsResult>`,
-		owner, fixtureBucketHost, marker, next != "", next, name, location, region, created, kind, class, fixtureBucketHost)
+  <Buckets>%s</Buckets></ListAllMyBucketsResult>`,
+		owner, fixtureBucketHost, marker, next != "", next, buckets.String())
 	if err != nil {
 		t.Error(err)
 	}
+}
+
+func (f *bucketFixture) settingNames() []string {
+	if len(f.names) > 0 {
+		return f.names
+	}
+	return []string{f.name}
 }
 
 func fixtureBucketMAC(algorithm func() hash.Hash, key []byte, payload string) []byte {
@@ -226,19 +257,23 @@ func validFixtureOBSSignature(r *http.Request, resource, headers string) bool {
 func (f *bucketFixture) serveBucketSetting(t *testing.T, w http.ResponseWriter, r *http.Request) {
 	t.Helper()
 	query := r.URL.RawQuery
-	valid := r.Method == http.MethodGet && r.URL.Path == "/" && (query == "versioning" || query == "encryption")
+	name, _, _ := strings.Cut(r.Host, ".")
+	valid := slices.Contains(f.settingNames(), name) && r.Method == http.MethodGet && r.URL.Path == "/" && (query == "versioning" || query == "encryption")
 	switch f.vendor {
 	case provider.TencentCVM:
-		valid = valid && r.Host == f.name+".cos."+f.location+".myqcloud.com" && validFixtureCOSSignature(r, query)
+		valid = valid && r.Host == name+".cos."+f.location+".myqcloud.com" && validFixtureCOSSignature(r, query)
 	case provider.AlibabaECS:
-		valid = valid && r.Host == f.name+".oss-"+f.location+".aliyuncs.com" && validFixtureOSSSignature(r, f.location, "/"+f.name+"/")
+		valid = valid && r.Host == name+".oss-"+f.location+".aliyuncs.com" && validFixtureOSSSignature(r, f.location, "/"+name+"/")
 	case provider.HuaweiECS:
-		valid = valid && r.Host == f.name+".obs."+f.location+".myhuaweicloud.com" && r.Header.Get("X-Obs-Bucket-Type") == "" &&
-			validFixtureOBSSignature(r, "/"+f.name+"/?"+query, "")
+		valid = valid && r.Host == name+".obs."+f.location+".myhuaweicloud.com" && r.Header.Get("X-Obs-Bucket-Type") == "" &&
+			validFixtureOBSSignature(r, "/"+name+"/?"+query, "")
 	}
 	if !valid {
 		t.Error("bucket setting host, method or signature was invalid")
 		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+	if f.settingFault != nil && f.settingFault(w, r, name) {
 		return
 	}
 	w.Header().Set("Content-Type", "application/xml")

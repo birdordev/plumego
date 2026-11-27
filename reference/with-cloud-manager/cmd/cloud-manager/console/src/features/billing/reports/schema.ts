@@ -1,14 +1,15 @@
 import { z } from 'zod'
-import { revision, time } from '../../../shared/api/fields'
+import { time } from '../../../shared/api/fields'
 
-import { billingAmount, billingDigest, period, source } from '../schema'
+import { billingAmount, billingDigest, billingRevision, period, source } from '../schema'
 
 export const billingReportSchema = z.object({
   provider: z.string(),
   account: z.string(),
   period,
   source,
-  revision,
+  revision: z.number().positive().refine(Number.isInteger),
+  revision_text: billingRevision.optional(),
   sha256: billingDigest,
   imported_at: time,
   rows: z.number().int().nonnegative(),
@@ -24,6 +25,8 @@ export const billingReportSchema = z.object({
     expected_billed_cost: billingAmount.optional(),
     variance: billingAmount.optional(),
   })).max(64),
-})
+}).refine(({ revision, revision_text }) => revision_text !== undefined
+  ? Number(revision_text) === revision : Number.isSafeInteger(revision))
+  .transform(({ revision, revision_text, ...report }) => ({ ...report, revision: revision_text ?? String(revision) }))
 
 export type BillingReport = z.infer<typeof billingReportSchema>

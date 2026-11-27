@@ -1,14 +1,16 @@
 import { lazy, type ComponentType } from 'react'
 import type { Session } from '../../features/session/store'
 import type { CollectionLifecycle } from '../../shared/collection/store'
-import type { WorkspaceLink } from '../../features/overview/navigation'
+import type { WorkspaceLink } from '../../shared/navigation/workspace-link'
+
+export type ProjectPageLink = WorkspaceLink<'assets' | 'inventory-freshness' | 'operations' | 'alerts' | 'billing'>
 
 type PageContext = {
   session: Session
   filters: string
   commitFilters: (filters: string) => string
   openSelectedBatch: () => void
-  link: WorkspaceLink
+  link: ProjectPageLink
   expireSession: () => void
 }
 

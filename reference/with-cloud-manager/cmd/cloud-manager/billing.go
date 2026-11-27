@@ -39,9 +39,39 @@ func billingHandler(store billing.Store, logger plumelog.StructuredLogger) http.
 			writeBillingError(w, r, err, logger)
 			return
 		}
-		w.Header().Set("ETag", strconv.Quote(strconv.FormatInt(report.Revision, 10)))
-		if err := contract.WriteResponse(w, r, http.StatusOK, report, nil); err != nil {
+		revisionText := strconv.FormatInt(report.Revision, 10)
+		w.Header().Set("ETag", strconv.Quote(revisionText))
+		if err := contract.WriteResponse(w, r, http.StatusOK, struct {
+			billing.Report
+			RevisionText string `json:"revision_text"`
+		}{Report: report, RevisionText: revisionText}, nil); err != nil {
 			logger.Warn("billing report response write failed", plumelog.Fields{})
+		}
+	})
+}
+
+func billingSummaryHandler(store billing.Store, logger plumelog.StructuredLogger) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-store")
+		token, authenticated := requestCredential(r)
+		if !authenticated {
+			writeAccountError(w, r, identity.ErrUnauthenticated, logger)
+			return
+		}
+		query, err := billingSummaryQuery(router.Param(r, "tenant"), router.Param(r, "project"), r.URL.RawQuery)
+		if err != nil {
+			writeBillingError(w, r, err, logger)
+			return
+		}
+		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+		defer cancel()
+		summary, err := store.ReadProjectSummary(ctx, token, query)
+		if err != nil {
+			writeBillingError(w, r, err, logger)
+			return
+		}
+		if err := contract.WriteResponse(w, r, http.StatusOK, summary, nil); err != nil {
+			logger.Warn("billing summary response write failed", plumelog.Fields{})
 		}
 	})
 }
@@ -111,7 +141,7 @@ func billingOpenAPI(readAuth []openapi.SecurityRequirement) openapi.Op {
 			{Name: "revision", In: "query", Schema: openapi.Integer, Description: "指定历史版本，省略时读取当前版本"},
 		},
 		Responses: map[string]openapi.Response{
-			"200": {Description: "当期或历史账单汇总、费用十进制字符串、原文件摘要和对账差额"},
+			"200": {Description: "当期或历史账单汇总、费用十进制字符串、原文件摘要和对账差额。revision_text 为与 ETag 一致的精确版本字符串。"},
 			"400": {Description: "查询参数无效"},
 			"401": {Description: "凭据缺失、过期或无效"},
 			"403": {Description: "当前身份没有归属项目的账号管理权限"},

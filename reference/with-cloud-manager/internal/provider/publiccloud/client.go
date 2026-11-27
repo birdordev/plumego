@@ -299,33 +299,38 @@ func validateRegionalPage(scope provider.Scope, cursor string, page provider.Pag
 }
 
 func (c *Client) request(req *http.Request, dst any, alsoAccept ...int) error {
+	_, err := c.requestStatus(req, dst, alsoAccept...)
+	return err
+}
+
+func (c *Client) requestStatus(req *http.Request, dst any, alsoAccept ...int) (int, error) {
 	if err := req.Context().Err(); err != nil {
-		return err
+		return 0, err
 	}
 	req.Header.Set("Accept", "application/json")
 	res, err := c.http.Do(req)
 	if err != nil {
 		if req.Context().Err() != nil {
-			return req.Context().Err()
+			return 0, req.Context().Err()
 		}
-		return &provider.Failure{Kind: provider.Transient}
+		return 0, &provider.Failure{Kind: provider.Transient}
 	}
 	defer func() { _ = res.Body.Close() }()
 	if res.StatusCode != http.StatusOK && !slices.Contains(alsoAccept, res.StatusCode) {
-		return cloudHTTPFailure(res)
+		return res.StatusCode, cloudHTTPFailure(res)
 	}
 	if dst == nil && res.StatusCode == http.StatusNoContent {
-		return nil
+		return res.StatusCode, nil
 	}
 	limited := &io.LimitedReader{R: res.Body, N: (8 << 20) + 1}
 	decoder := json.NewDecoder(limited)
 	if err := decoder.Decode(dst); err != nil {
-		return &provider.Failure{Kind: provider.InvalidResponse}
+		return res.StatusCode, &provider.Failure{Kind: provider.InvalidResponse}
 	}
 	if decoder.Decode(new(json.RawMessage)) != io.EOF || limited.N == 0 {
-		return &provider.Failure{Kind: provider.InvalidResponse}
+		return res.StatusCode, &provider.Failure{Kind: provider.InvalidResponse}
 	}
-	return nil
+	return res.StatusCode, nil
 }
 
 func cloudHTTPFailure(res *http.Response) error {

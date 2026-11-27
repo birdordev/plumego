@@ -53,6 +53,14 @@ const selectVersionedBucket = ` FROM cmp_inventory_objects AS o
 	JOIN cmp_cloud_accounts AS a USING (tenant_id,account_id)
 	WHERE (s.tenant_id,s.account_id,o.external_id,a.credential_revision)=($1,$2,$3,$4) AND ` + currentObjectBucket
 
+type bucketSettingTarget struct {
+	scopeID        int64
+	scope          provider.Scope
+	id, location   string
+	parentObserved time.Time
+	started        time.Time
+}
+
 func (s Store) RefreshBucketVersioning(ctx context.Context, key Key, id string, revision int64, reader provider.BucketVersioningReader) error {
 	return refreshBucketSetting(ctx, s, key, id, revision, bucketVersioningTable, reader.ReadBucketVersioning)
 }
@@ -68,31 +76,42 @@ func refreshBucketSetting[T bucketSettingValue](ctx context.Context, s Store, ke
 		!validConfigurationQueryValue(key.Tenant, 256) || !validConfigurationQueryValue(key.Account, 256) || !provider.ValidBucketAssetID(id) {
 		return ErrInvalidQuery
 	}
-	scope := provider.Scope{Kind: key.Kind, Region: key.Region}
-	args := []any{key.Tenant, key.Account, id, revision}
-	var scopeID int64
-	var location string
-	var parentObserved, started time.Time
+	target := bucketSettingTarget{id: id, scope: provider.Scope{Kind: key.Kind, Region: key.Region}}
 	err := s.db.QueryRowContext(ctx, `SELECT s.scope_id,a.provider,a.remote_identity,o.object_bucket->>'location',o.observed_at,clock_timestamp()`+
-		selectVersionedBucket, args...).Scan(&scopeID, &scope.Provider, &scope.RemoteIdentity, &location, &parentObserved, &started)
+		selectVersionedBucket, key.Tenant, key.Account, id, revision).Scan(&target.scopeID, &target.scope.Provider,
+		&target.scope.RemoteIdentity, &target.location, &target.parentObserved, &target.started)
 	if errors.Is(err, sql.ErrNoRows) {
 		return ErrStale
 	}
 	if err != nil {
 		return err
 	}
-	state, err := read(ctx, scope, id, location)
+	publish, err := collectBucketSetting(ctx, key, revision, table, target, read)
 	if err != nil {
 		return err
 	}
-	if !state.Valid() {
-		return &provider.Failure{Kind: provider.InvalidResponse}
+	return dbutil.WithTransaction(ctx, s.db, nil, func(tx *sql.Tx) error { return publish(ctx, tx) })
+}
+
+func collectBucketSetting[T bucketSettingValue](ctx context.Context, key Key, revision int64, table string,
+	target bucketSettingTarget, read func(context.Context, provider.Scope, string, string) (T, error),
+) (func(context.Context, *sql.Tx) error, error) {
+	state, err := read(ctx, target.scope, target.id, target.location)
+	if err != nil {
+		return nil, err
 	}
-	return dbutil.WithTransaction(ctx, s.db, nil, func(tx *sql.Tx) error {
+	if !state.Valid() {
+		return nil, &provider.Failure{Kind: provider.InvalidResponse}
+	}
+	return publishBucketSetting(key, revision, table, target, state), nil
+}
+
+func publishBucketSetting[T bucketSettingValue](key Key, revision int64, table string, target bucketSettingTarget, state T) func(context.Context, *sql.Tx) error {
+	return func(ctx context.Context, tx *sql.Tx) error {
 		var found int64
 		err := tx.QueryRowContext(ctx, "SELECT s.scope_id"+selectVersionedBucket+
 			" AND s.scope_id=$5 AND o.observed_at=$6 AND a.remote_identity=$7 AND o.object_bucket->>'location'=$8 FOR SHARE OF a,s,o",
-			append(args, scopeID, parentObserved, scope.RemoteIdentity, location)...).Scan(&found)
+			key.Tenant, key.Account, target.id, revision, target.scopeID, target.parentObserved, target.scope.RemoteIdentity, target.location).Scan(&found)
 		if errors.Is(err, sql.ErrNoRows) {
 			return ErrStale
 		}
@@ -105,7 +124,7 @@ func refreshBucketSetting[T bucketSettingValue](ctx context.Context, s Store, ke
 			ON CONFLICT (scope_id,external_id) DO UPDATE SET credential_revision=EXCLUDED.credential_revision,
 				location=EXCLUDED.location,state=EXCLUDED.state,refresh_started_at=EXCLUDED.refresh_started_at,observed_at=EXCLUDED.observed_at
 			WHERE (previous.credential_revision,previous.refresh_started_at) < (EXCLUDED.credential_revision,EXCLUDED.refresh_started_at)`,
-			scopeID, id, revision, location, state, started)
+			target.scopeID, target.id, revision, target.location, state, target.started)
 		if err != nil {
 			return err
 		}
@@ -114,7 +133,7 @@ func refreshBucketSetting[T bucketSettingValue](ctx context.Context, s Store, ke
 			return ErrStale
 		}
 		return err
-	})
+	}
 }
 
 func (s Store) ReadBucketVersioning(ctx context.Context, token string, query BucketSettingQuery) (BucketVersioningSnapshot, error) {

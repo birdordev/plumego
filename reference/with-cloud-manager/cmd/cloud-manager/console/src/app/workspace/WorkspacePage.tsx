@@ -1,7 +1,7 @@
 import { Suspense } from 'react'
 import type { Session } from '../../features/session/store'
-import type { WorkspaceLink } from '../../features/overview/navigation'
 import { FeatureBoundary } from '../../shared/components/FeatureBoundary'
+import type { ProjectPageLink } from '../routes/project-page'
 import { routes, type PageView } from '../routes/registry'
 
 type Props = {
@@ -10,7 +10,7 @@ type Props = {
   filters: string
   commitFilters: (filters: string) => string
   openSelectedBatch: () => void
-  link: WorkspaceLink
+  link: ProjectPageLink
   expireSession: () => void
 }
 

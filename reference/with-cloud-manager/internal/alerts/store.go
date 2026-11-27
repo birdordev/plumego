@@ -54,7 +54,10 @@ type Page struct {
 	Next  string  `json:"next,omitempty"`
 }
 
-type Store struct{ db *sql.DB }
+type Store struct {
+	db       *sql.DB
+	evaluate ProjectEvaluation
+}
 
 func NewStore(db *sql.DB) Store { return Store{db: db} }
 
