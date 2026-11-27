@@ -99,17 +99,17 @@ func (s Store) step(ctx context.Context, execute Execute, pool schedulePool) (bo
 	cancel()
 	cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 	defer cancel()
-	if ctx.Err() != nil {
-		return true, s.release(cleanup, j)
-	}
 	outcome, delay, failures := nextAttempt(j, executionErr)
+	if ctx.Err() != nil {
+		return true, s.release(cleanup, j, accountCooldown(outcome, delay))
+	}
 	err = s.finish(cleanup, j, outcome, delay, failures, publish)
 	if publish != nil && errors.Is(err, inventory.ErrStale) {
 		outcome, delay, failures = nextAttempt(j, err)
 		err = s.finish(cleanup, j, outcome, delay, failures, nil)
 	}
 	if errors.Is(err, ErrStale) {
-		return true, s.release(cleanup, j)
+		return true, s.release(cleanup, j, accountCooldown(outcome, delay))
 	}
 	return true, err
 }

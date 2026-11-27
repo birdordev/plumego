@@ -61,6 +61,8 @@ type Claim struct {
 	fence      int64
 	generation int64
 	cursor     string
+	schedule   ScheduleLease
+	key        Key
 }
 
 type Store struct {
@@ -82,6 +84,11 @@ var cacheInventorySchema string
 
 //go:embed 0082_kubernetes_inventory.sql
 var kubernetesInventorySchema string
+
+//go:embed 0134_inventory_completion.sql
+var inventoryCompletionSchema string
+
+const InventoryCompletionMigration = "0134_inventory_completion"
 
 func Migrate(ctx context.Context, db *sql.DB) error {
 	if err := dbschema.Apply(ctx, db, "0002_inventory", schema); err != nil {
@@ -165,7 +172,10 @@ func Migrate(ctx context.Context, db *sql.DB) error {
 	if err := dbschema.Apply(ctx, db, "0106_instance_retirement_reservations", instanceRetirementReservationsSchema); err != nil {
 		return err
 	}
-	return dbschema.Apply(ctx, db, "0108_cache_rename_reservations", cacheRenameReservationsSchema)
+	if err := dbschema.Apply(ctx, db, "0108_cache_rename_reservations", cacheRenameReservationsSchema); err != nil {
+		return err
+	}
+	return dbschema.Apply(ctx, db, InventoryCompletionMigration, inventoryCompletionSchema)
 }
 
 func (s Store) Claim(ctx context.Context, key Key, lease time.Duration) (Claim, error) {
@@ -173,13 +183,21 @@ func (s Store) Claim(ctx context.Context, key Key, lease time.Duration) (Claim, 
 }
 
 func (s Store) ClaimWithCredentialRevision(ctx context.Context, key Key, lease time.Duration, revision int64) (Claim, error) {
+	return claimScope(ctx, s.db, key, lease, revision)
+}
+
+type scopeQuerier interface {
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+}
+
+func claimScope(ctx context.Context, db scopeQuerier, key Key, lease time.Duration, revision int64) (Claim, error) {
 	if revision < 0 || lease < time.Millisecond || lease > 15*time.Minute || !key.Kind.Valid() ||
 		(key.Kind == provider.DNSZone && key.Region != provider.DNSGlobalScope) ||
 		(key.Kind == provider.ObjectBucket && key.Region != provider.ObjectBucketGlobalScope) {
 		return Claim{}, ErrUnavailable
 	}
 	var claim Claim
-	err := s.db.QueryRowContext(ctx, `
+	err := db.QueryRowContext(ctx, `
 		WITH account AS (
 			SELECT tenant_id,account_id,credential_revision FROM cmp_cloud_accounts
 			WHERE tenant_id=$1 AND account_id=$2 AND mode IN ('read_only','write_enabled') AND ($6::bigint=0 OR credential_revision=$6) FOR SHARE
@@ -213,6 +231,11 @@ const active = ` FROM cmp_inventory_scopes AS s JOIN cmp_cloud_accounts AS a USI
 	  AND a.mode IN ('read_only','write_enabled') AND a.credential_revision=s.credential_revision`
 
 func (s Store) scope(ctx context.Context, claim Claim) (provider.Scope, error) {
+	if claim.schedule.ID != 0 {
+		if err := checkScheduleLease(ctx, s.db, claim); err != nil {
+			return provider.Scope{}, err
+		}
+	}
 	var scope provider.Scope
 	err := s.db.QueryRowContext(ctx, "SELECT a.provider,a.remote_identity,s.region,s.kind"+active,
 		claim.id, claim.fence, claim.generation, claim.cursor).
@@ -235,6 +258,11 @@ func (s Store) advance(ctx context.Context, claim Claim, page provider.Page, res
 		}
 		if err != nil {
 			return err
+		}
+		if claim.schedule.ID != 0 {
+			if err := checkScheduleLease(ctx, tx, claim); err != nil {
+				return err
+			}
 		}
 		if claim.cursor == "" {
 			if _, err := tx.ExecContext(ctx, "DELETE FROM cmp_inventory_cursors WHERE scope_id=$1", scopeID); err != nil {
@@ -382,7 +410,8 @@ func complete(ctx context.Context, tx *sql.Tx, id, generation int64) error {
 		return err
 	}
 	_, err := tx.ExecContext(ctx, `UPDATE cmp_inventory_scopes SET
-		running=false,cursor='',completed_at=statement_timestamp() WHERE scope_id=$1`, id)
+		running=false,cursor='',completed_at=statement_timestamp(),completed_credential_revision=credential_revision
+		WHERE scope_id=$1`, id)
 	return err
 }
 

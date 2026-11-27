@@ -47,7 +47,8 @@ func (f *fixtureCreator) FindCreatedInstance(_ context.Context, scope provider.S
 
 func TestAcceptancePersistentInstanceCreation(t *testing.T) {
 	db, ctx := dbtest.Open(t), t.Context()
-	if err := errors.Join(identity.Migrate(ctx, db), identity.MigrateServiceTokens(ctx, db), inventory.Migrate(ctx, db), Migrate(ctx, db)); err != nil {
+	if err := errors.Join(identity.Migrate(ctx, db), identity.MigrateServiceTokens(ctx, db), identity.MigrateAccounts(ctx, db),
+		identity.MigrateAccountWriteMode(ctx, db), inventory.Migrate(ctx, db), Migrate(ctx, db)); err != nil {
 		t.Fatal(err)
 	}
 	exec := func(query string, values ...any) {
@@ -59,9 +60,11 @@ func TestAcceptancePersistentInstanceCreation(t *testing.T) {
 	exec(`INSERT INTO cmp_tenants VALUES ('tenant');
 		INSERT INTO cmp_projects VALUES ('tenant','project'),('tenant','other');
 		INSERT INTO cmp_principals (tenant_id,principal_id,kind,issuer,subject) VALUES
-		('tenant','operator','service','fixture','operator'),('tenant','reviewer','service','fixture','reviewer');
+		('tenant','operator','service','fixture','operator'),('tenant','reviewer','service','fixture','reviewer'),
+		('tenant','administrator','service','fixture','administrator');
 		INSERT INTO cmp_memberships (tenant_id,project_id,principal_id,role) VALUES
-		('tenant','project','operator','operator'),('tenant','project','reviewer','approver');
+		('tenant','project','operator','operator'),('tenant','project','reviewer','approver'),
+		('tenant','project','administrator','admin');
 		INSERT INTO cmp_cloud_accounts (tenant_id,account_id,project_id,provider,credential_ref,remote_identity,mode)
 		VALUES ('tenant','account','project','aws-ec2','fixture/ref','aws:fixture','write_enabled');
 		INSERT INTO cmp_inventory_scopes (tenant_id,account_id,region,kind,credential_revision,lease_until)
@@ -81,6 +84,7 @@ func TestAcceptancePersistentInstanceCreation(t *testing.T) {
 		exec("INSERT INTO cmp_service_tokens(token_hash,tenant_id,principal_id,expires_at) VALUES ($1,'tenant',$2,now()+interval '5 minutes')", hash[:], principal)
 	}
 	scope := identity.Scope{Tenant: "tenant", Project: "project"}
+	registerWriteModeAdministrator(t, db)
 	store := NewStore(db)
 	config := CreateInput{Account: "account", Region: "us-east-1", InstanceSpec: provider.InstanceSpec{
 		Name: "fixture VM", ImageID: "ami-01234567", Size: "t3.micro", NetworkID: "subnet-01234567", SecurityGroup: "sg-01234567",
@@ -273,12 +277,16 @@ func TestAcceptancePersistentInstanceCreation(t *testing.T) {
 	if client.launches != 3 {
 		t.Fatal("Nova was replayed after an ambiguous send")
 	}
-	exec("UPDATE cmp_operation_tasks SET available_at=clock_timestamp() WHERE id=$1", nova.ID)
-	client.object, client.readError = provider.Object{ID: novaID, Name: config.Name, Status: "ERROR"}, nil
-	step()
-	status(nova.ID, "needs_review")
 	create("next-nova", ErrQuota)
-	exec(`UPDATE cmp_cloud_accounts SET mode='read_only',credential_ref='fixture/nova-v2' WHERE account_id='nova';
+	changeFixtureWriteMode(t, db, scope, "nova", "disable-write")
+	exec("UPDATE cmp_operation_tasks SET available_at=clock_timestamp() WHERE id=$1", nova.ID)
+	priorReads := client.discoveries
+	step()
+	if op := status(nova.ID, "needs_review"); op.OutcomeReason != "observation_unavailable" || client.discoveries != priorReads || client.launches != 3 {
+		t.Fatalf("old-generation work crossed the freeze: %+v", op)
+	}
+	client.object, client.readError = provider.Object{ID: novaID, Name: config.Name, Status: "ERROR"}, nil
+	exec(`UPDATE cmp_cloud_accounts SET credential_ref='fixture/nova-v2' WHERE account_id='nova';
 		UPDATE cmp_memberships SET role='viewer' WHERE principal_id='operator'`)
 	if _, err := store.RetryCreationObservation(ctx, reviewer, scope, nova.ID, request); err != nil {
 		t.Fatal(err)
@@ -301,8 +309,8 @@ func TestAcceptancePersistentInstanceCreation(t *testing.T) {
 		t.Fatalf("Nova did not recover by correlation: %+v", op)
 	}
 	expectedRef = ""
+	changeFixtureWriteMode(t, db, scope, "nova", "enable-write")
 	exec(`UPDATE cmp_instance_operation_budgets SET max_managed_instances=3;
-		UPDATE cmp_cloud_accounts SET mode='write_enabled' WHERE account_id='nova';
 		UPDATE cmp_memberships SET role='operator' WHERE principal_id='operator'`)
 	const pinned = "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee"
 	receipted := create("next-nova", nil)

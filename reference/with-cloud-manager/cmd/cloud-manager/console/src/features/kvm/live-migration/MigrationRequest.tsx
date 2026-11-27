@@ -5,7 +5,7 @@ import { setDetailNotice } from '../../../shared/detail/store'
 import { useDetailAction } from '../../../shared/detail/useDetailAction'
 import type { VMDetail } from '../schema'
 import { listTargets, requestMigration } from './api'
-import { PagedResults } from '../detail/PagedResults'
+import { PagedResults } from '../../../shared/collection/PagedResults'
 import type { Target } from './schema'
 
 type Props = {

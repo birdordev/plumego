@@ -28,11 +28,13 @@ func TestAcceptanceKVMEvacuationPlanDispatch(t *testing.T) {
 	vm1 = startEvacuationSourceVM(t, first, vm1)
 	backup := []byte("planned recovery image")
 	input := evacuationPlanInput(t, first, backup, vm1, vm2)
+	checkEvacuationCandidates(t, first, second, vm1, vm2)
 	plan := evacuationPlanCLI(t, first, "arm-evacuation-plan", "1", fixtureKVMAdmin, input)
 	if plan.Status != "armed" || plan.ActivatedAt != nil || plan.NextAttemptAt != nil || plan.SourceFenceGeneration != 2 || len(plan.Items) != 2 {
 		t.Fatalf("invalid armed plan: %+v", plan)
 	}
 	location := evacuationFixturePlansPath + "/" + plan.ID
+	assertEvacuationInventory(t, second, "plan", 1, 0, "", "armed", plan.ID)
 	replay := kvmRequest(t, second, fixtureKVMAdmin, "POST", evacuationFixturePlansPath, `"1"`, "", input)
 	var recorded kvm.EvacuationPlan
 	expectKVM(t, replay, 201, &recorded)
@@ -82,6 +84,7 @@ func TestAcceptanceKVMEvacuationPlanDispatch(t *testing.T) {
 		submitted.NextAttemptAt != nil || submitted.LastResult != "" {
 		t.Fatalf("invalid submitted plan: %+v", submitted)
 	}
+	assertEvacuationInventory(t, second, "batch", 5, 0, submitted.BatchID, "submitted", plan.ID)
 	queried := evacuationPlanCLI(t, second, "get-evacuation-plan", plan.ID, fixtureKVMOperator, nil)
 	if queried.BatchID != submitted.BatchID {
 		t.Fatalf("CLI read a different batch: %+v", queried)

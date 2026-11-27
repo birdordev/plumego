@@ -34,7 +34,7 @@ func TestAcceptanceWorkloadWatchIsolatesControllerPools(t *testing.T) {
 	if err != nil || normal.task.ScheduleKind != "instance" {
 		t.Fatalf("ordinary inventory pool claimed a watch: %+v err=%v", normal.task, err)
 	}
-	if err := store.release(ctx, normal); err != nil {
+	if err := store.release(ctx, normal, 0); err != nil {
 		t.Fatal(err)
 	}
 

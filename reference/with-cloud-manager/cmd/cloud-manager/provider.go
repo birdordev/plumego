@@ -205,6 +205,10 @@ func runInventoryCommand(parent context.Context, db *sql.DB, args []string, prov
 	if err != nil {
 		return inventory.ErrUnavailable
 	}
+	return scanInventoryPages(ctx, store, claim, client)
+}
+
+func scanInventoryPages(ctx context.Context, store inventory.Store, claim inventory.Claim, client provider.Discovery) error {
 	for {
 		next, done, err := store.ScanPage(ctx, claim, client)
 		if err != nil {

@@ -146,6 +146,16 @@ func registerOpenAPI(app *core.App, console *consoleConfig) error {
 		return openapi.Op{OperationID: id, Security: auth, Responses: responses}
 	}
 	patchAccount := accountOp("changeCloudAccount", "200", "变更后的账号", true)
+	patchAccount.Body = &openapi.RequestBody{
+		Required:    true,
+		Description: "账号操作包括 rotate、suspend、resume、share、unshare、transfer。已完成身份核验的通用云账号支持 enable-write 和 disable-write。Redfish 使用独立的 enable-bare-metal-power 和 disable-bare-metal-power。",
+		Content: map[string]openapi.MediaType{"application/json": {Schema: openapi.Schema{
+			Type: "object", Properties: map[string]openapi.Schema{
+				"action": openapi.String, "credential_ref": openapi.String, "target_project": openapi.String,
+			},
+		}}},
+	}
+	patchAccount.Responses["409"] = openapi.Response{Description: "当前账号状态或厂商不允许该动作"}
 	patchAccount.Responses["412"] = openapi.Response{Description: "需要当前账号 ETag"}
 	patchAccount.Params = []openapi.Param{{Name: "If-Match", In: "header", Required: true, Schema: openapi.String}}
 	ownership := accountOp("transferAssetOwnership", "200", "资源的新项目归属", true)
@@ -582,8 +592,11 @@ func registerOpenAPI(app *core.App, console *consoleConfig) error {
 	changeTicketOpenAPI(hints, readAuth, writeAuth)
 	hints["GET "+cmdbSnapshotRoute] = cmdbSnapshotOpenAPI()
 	hints["GET "+idleInstancesRoute] = idleReportOpenAPI(readAuth)
+	hints["GET "+inventoryFreshnessRoute] = inventoryFreshnessOpenAPI(readAuth)
 	catalogOpenAPI(hints, accountOp)
 	alertOpenAPI(hints, accountOp)
+	accountInventoryOpenAPI(hints, accountOp)
+	inventoryScheduleOpenAPI(hints, accountOp)
 	bareMetalDeploymentHints(hints, accountOp)
 	bareMetalReclaimHints(hints, accountOp)
 	kvmHints(hints, accountOp)

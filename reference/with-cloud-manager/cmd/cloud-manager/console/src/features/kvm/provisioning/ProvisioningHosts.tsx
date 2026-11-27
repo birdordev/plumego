@@ -1,6 +1,6 @@
 import { useCallback } from 'react'
 import { ConsoleTable } from '../../../shared/components/ConsoleTable'
-import { PagedResults } from '../detail/PagedResults'
+import { PagedResults } from '../../../shared/collection/PagedResults'
 import { listHosts } from './api'
 import type { HostOption } from './schema'
 

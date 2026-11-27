@@ -36,7 +36,7 @@ func main() {
 
 func run(parent context.Context, args []string) (retErr error) {
 	if !validCommand(args) {
-		return errors.New("usage: cloud-manager billing COMMAND TENANT PROJECT ACCOUNT PERIOD SOURCE ...|billing-{import,replay,source,allocate,allocation-replay} TENANT PROJECT ACCOUNT PERIOD SOURCE ...|cmdb-migrate|cmdb-sync TENANT PROJECT|cmdb-status TENANT PROJECT|kvm COMMAND TENANT PROJECT SITE|migrate|api|controller|workload-controller|kvm-evacuation-controller|alert-controller|idle-controller|idle-schedule TENANT ACCOUNT REGION INSTANCE DURATION_OR_OFF|billing-pull-controller|billing-pull[-status|-source|-replay] TENANT PROJECT ACCOUNT PERIOD SOURCE ...|worker|sessions-purge|operations COMMAND TENANT PROJECT|governance COMMAND TENANT PROJECT|audit {list,export} TENANT PROJECT|catalog COMMAND TENANT PROJECT|alerts COMMAND TENANT PROJECT|console-grants COMMAND TENANT PROJECT|event-publisher|event-{register,disable,failures} SINK|event-retry SINK EVENT_ID|verify-{openstack,aws,tencent,alibaba,huawei,vsphere,redfish} TENANT ACCOUNT|scan-{openstack,aws,tencent,alibaba,huawei,vsphere,redfish} TENANT ACCOUNT REGION KIND (or append ASSET_ID for a public-cloud load-balancer, database-instance, cache-instance, kubernetes-cluster or object-bucket absence check)|refresh-{tencent,alibaba,huawei}-load-balancer TENANT ACCOUNT REGION ASSET_ID [--include-backends]|refresh-{tencent,alibaba,huawei}-dns-zone TENANT ACCOUNT ZONE_ID|refresh-{tencent,alibaba,huawei}-cluster-{node-pools,workloads} TENANT ACCOUNT REGION CLUSTER_ID")
+		return errors.New("usage: cloud-manager billing COMMAND TENANT PROJECT ACCOUNT PERIOD SOURCE ...|billing-{import,replay,source,allocate,allocation-replay} TENANT PROJECT ACCOUNT PERIOD SOURCE ...|cmdb-migrate|cmdb-sync TENANT PROJECT|cmdb-status TENANT PROJECT|kvm COMMAND TENANT PROJECT SITE|migrate|api|controller|workload-controller|kvm-evacuation-controller|alert-controller|idle-controller|idle-schedule TENANT ACCOUNT REGION INSTANCE DURATION_OR_OFF|billing-pull-controller|billing-pull[-status|-source|-replay] TENANT PROJECT ACCOUNT PERIOD SOURCE ...|worker|sessions-purge|operations COMMAND TENANT PROJECT|governance COMMAND TENANT PROJECT|cloud-accounts COMMAND TENANT PROJECT|audit {list,export} TENANT PROJECT|catalog COMMAND TENANT PROJECT|alerts COMMAND TENANT PROJECT|console-grants COMMAND TENANT PROJECT|event-publisher|event-{register,disable,failures} SINK|event-retry SINK EVENT_ID|verify-{openstack,aws,tencent,alibaba,huawei,vsphere,redfish} TENANT ACCOUNT|scan-{openstack,aws,tencent,alibaba,huawei,vsphere,redfish} TENANT ACCOUNT REGION KIND (or append ASSET_ID for a public-cloud load-balancer, database-instance, cache-instance, kubernetes-cluster or object-bucket absence check)|refresh-{tencent,alibaba,huawei}-load-balancer TENANT ACCOUNT REGION ASSET_ID [--include-backends]|refresh-{tencent,alibaba,huawei}-dns-zone TENANT ACCOUNT ZONE_ID|refresh-{tencent,alibaba,huawei}-cluster-{node-pools,workloads} TENANT ACCOUNT REGION CLUSTER_ID")
 	}
 	if strings.HasPrefix(args[0], "cmdb-") {
 		return runCMDB(parent, args, os.Getenv, os.Stdout)
@@ -52,6 +52,9 @@ func run(parent context.Context, args []string) (retErr error) {
 	}
 	if args[0] == "governance" {
 		return runGovernanceClient(parent, args[1:], os.Getenv("CLOUD_MANAGER_API_URL"), os.Getenv("CLOUD_MANAGER_API_TOKEN"), os.Stdin, os.Stdout, nil)
+	}
+	if args[0] == "cloud-accounts" {
+		return runCloudAccountsClient(parent, args[1:], os.Getenv("CLOUD_MANAGER_API_URL"), os.Getenv("CLOUD_MANAGER_API_TOKEN"), os.Stdin, os.Stdout, nil)
 	}
 	if args[0] == "audit" {
 		return runAuditClient(parent, args[1:], os.Getenv("CLOUD_MANAGER_API_URL"), os.Getenv("CLOUD_MANAGER_API_TOKEN"), os.Stdout, nil)
@@ -229,6 +232,9 @@ func migrateCloudManager(ctx context.Context, db *sql.DB) error {
 	if err := operations.MigrateBareMetalPower(ctx, db); err != nil {
 		return errors.New("bare-metal power migration failed")
 	}
+	if err := identity.MigrateAccountWriteMode(ctx, db); err != nil {
+		return errors.New("account write mode migration failed")
+	}
 	if err := operations.MigrateBareMetalPXE(ctx, db); err != nil {
 		return errors.New("bare-metal PXE migration failed")
 	}
@@ -289,7 +295,7 @@ func validCommand(args []string) bool {
 		return len(args) == 8
 	case "billing-allocate":
 		return len(args) == 9
-	case "kvm", "operations", "audit", "catalog", "alerts", "console-grants", "billing", "governance":
+	case "kvm", "operations", "audit", "catalog", "alerts", "console-grants", "billing", "governance", "cloud-accounts":
 		return len(args) >= 2
 	default:
 		return false

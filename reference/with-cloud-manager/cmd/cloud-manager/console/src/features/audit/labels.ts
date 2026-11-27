@@ -16,6 +16,11 @@ export const auditKinds: Readonly<Partial<Record<string, string>>> = {
 export const auditActions: Readonly<Partial<Record<string, string>>> = {
   register: '登记',
   rotate: '轮换凭据',
+  'enable-write': '启用云端写入',
+  'disable-write': '关闭云端写入',
+  'inventory-schedule-register': '登记盘点计划',
+  'inventory-schedule-update': '更新盘点计划',
+  'inventory-schedule-run-now': '盘点计划重新排队',
   suspend: '停用',
   resume: '恢复',
   transfer: '转移归属',

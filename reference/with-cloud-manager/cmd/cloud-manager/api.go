@@ -41,7 +41,9 @@ func newAPI(db *sql.DB, addr string, console *consoleConfig) (*core.App, error) 
 	health := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		status(w, r, "ok")
 	})
-	additionalVersions := append(kvm.RequiredMigrations(), controller.RedfishScheduleMigration, operations.BareMetalPowerMigration,
+	additionalVersions := append(kvm.RequiredMigrations(), controller.RedfishScheduleMigration, controller.ScheduleConfigMigration,
+		controller.AccountDispatchMigration, controller.TenantDispatchMigration,
+		inventory.InventoryCompletionMigration, identity.AccountWriteModeMigration, operations.BareMetalPowerMigration,
 		operations.BareMetalPXEMigration, operations.BareMetalDeploymentMigration, operations.BareMetalReclaimsMigration,
 		operations.BareMetalReclaimRecoveriesMigration)
 	additionalVersionList := strings.Join(additionalVersions, ",")
@@ -75,7 +77,9 @@ func newAPI(db *sql.DB, addr string, console *consoleConfig) (*core.App, error) 
 	tagPolicy := tagPolicyHandler(store, app.Logger())
 	ticketPolicy := ticketPolicyHandler(operationStore, app.Logger())
 	changeTicket := changeTicketHandler(operationStore, app.Logger())
-	accounts := accountHandler(identity.NewAccountAdmin(db), app.Logger())
+	accountAdmin := identity.NewAccountAdmin(db)
+	accounts := accountHandler(accountAdmin, app.Logger())
+	accountSchedules := inventorySchedulesHandler(controller.NewStore(db), app.Logger())
 	if err := errors.Join(app.Get("/healthz", health), app.Get("/readyz", ready),
 		app.Get(assetsRoute, assetHandler(store.List, app.Logger())),
 		app.Get(assetsRoute+"/changes", assetHandler(store.History, app.Logger())),
@@ -94,6 +98,7 @@ func newAPI(db *sql.DB, addr string, console *consoleConfig) (*core.App, error) 
 		app.Get(cmdbSnapshotRoute, cmdbSnapshotHandler(store, app.Logger())),
 		app.Get(tagComplianceRoute, tagComplianceHandler(store, app.Logger())),
 		app.Get(idleInstancesRoute, idleInstancesHandler(store, app.Logger())),
+		app.Get(inventoryFreshnessRoute, inventoryFreshnessHandler(store, app.Logger())),
 		app.Get(auditRoute, projectAuditHandler(auditStore, app.Logger(), false)),
 		app.Get(auditRoute+"/export", projectAuditHandler(auditStore, app.Logger(), true)),
 		app.Get(alertsRoute, projectAlerts), app.Get(alertsRoute+"/:alert", projectAlerts),
@@ -159,6 +164,11 @@ func newAPI(db *sql.DB, addr string, console *consoleConfig) (*core.App, error) 
 		app.Post(operationBatchesRoute+"/preview", operationBatchHandler(operationStore, app.Logger(), true)),
 		app.Post(operationBatchesRoute, operationBatchHandler(operationStore, app.Logger(), false)),
 		app.Get(operationBatchesRoute+"/:batch", operationBatchHandler(operationStore, app.Logger(), false)),
+		app.Get(accountSchedulesRoute, accountSchedules),
+		app.Post(accountSchedulesRoute, accountSchedules),
+		app.Patch(accountScheduleRoute, accountSchedules),
+		app.Get(accountsRoute, accountInventoryHandler(accountAdmin, app.Logger(), false)),
+		app.Get(accountGrantsRoute, accountInventoryHandler(accountAdmin, app.Logger(), true)),
 		app.Post(accountsRoute, accounts), app.Get(accountsRoute+"/:account", accounts), app.Patch(accountsRoute+"/:account", accounts)); err != nil {
 		return nil, err
 	}

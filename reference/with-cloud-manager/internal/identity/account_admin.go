@@ -16,6 +16,11 @@ import (
 //go:embed 0007_account_events.sql
 var accountEventSchema string
 
+//go:embed 0135_account_write_mode.sql
+var accountWriteModeSchema string
+
+const AccountWriteModeMigration = "0135_account_write_mode"
+
 var (
 	ErrAccountInvalid  = errors.New("invalid account administration request")
 	ErrAccountConflict = errors.New("account action conflicts with current state")
@@ -53,6 +58,10 @@ func MigrateAccounts(ctx context.Context, db *sql.DB) error {
 	return dbschema.Apply(ctx, db, "0007_account_events", accountEventSchema)
 }
 
+func MigrateAccountWriteMode(ctx context.Context, db *sql.DB) error {
+	return dbschema.Apply(ctx, db, AccountWriteModeMigration, accountWriteModeSchema)
+}
+
 func (a AccountAdmin) project(ctx context.Context, token string, scope Scope, write bool, fn func(*sql.Tx, Scope) error) error {
 	return dbutil.WithTransaction(ctx, a.db, &sql.TxOptions{ReadOnly: !write}, func(tx *sql.Tx) error {
 		store := NewStore(tx)
@@ -73,7 +82,7 @@ func (a AccountAdmin) project(ctx context.Context, token string, scope Scope, wr
 
 const accountFields = "account_id,project_id,provider,mode,credential_revision"
 
-func scanAccount(row *sql.Row) (Account, error) {
+func scanAccount(row interface{ Scan(...any) error }) (Account, error) {
 	var value Account
 	err := row.Scan(&value.ID, &value.Project, &value.Provider, &value.Mode, &value.Revision)
 	return value, err
@@ -155,7 +164,7 @@ func validAccountChange(change AccountChange) bool {
 	switch change.Action {
 	case "rotate":
 		return change.TargetProject == "" && credentialReference.MatchString(change.CredentialRef)
-	case "suspend", "resume", "enable-bare-metal-power", "disable-bare-metal-power":
+	case "suspend", "resume", "enable-write", "disable-write", "enable-bare-metal-power", "disable-bare-metal-power":
 		return change.TargetProject == "" && change.CredentialRef == ""
 	case "transfer", "share", "unshare":
 		return accountIdentifier.MatchString(change.TargetProject) && change.CredentialRef == ""
@@ -174,16 +183,11 @@ func updateAccount(ctx context.Context, tx *sql.Tx, actor Scope, account Account
 		if mode != "suspended" {
 			mode = "pending"
 		}
-	case "enable-bare-metal-power", "disable-bare-metal-power":
-		if account.Provider != provider.Redfish {
-			return Account{}, ErrAccountConflict
-		}
-		if change.Action == "enable-bare-metal-power" && mode == "read_only" {
-			mode = "write_enabled"
-		} else if change.Action == "disable-bare-metal-power" && mode == "write_enabled" {
-			mode = "read_only"
-		} else {
-			return Account{}, ErrAccountConflict
+	case "enable-write", "disable-write", "enable-bare-metal-power", "disable-bare-metal-power":
+		var err error
+		mode, err = changeAccountWriteMode(account, change.Action)
+		if err != nil {
+			return Account{}, err
 		}
 	case "suspend":
 		if mode == "suspended" {
@@ -207,6 +211,29 @@ func updateAccount(ctx context.Context, tx *sql.Tx, actor Scope, account Account
 		credential_ref=COALESCE(NULLIF($5,''),credential_ref),credential_revision=credential_revision+1
 		WHERE tenant_id=$1 AND account_id=$2 RETURNING `+accountFields,
 		actor.Tenant, account.ID, mode, project, change.CredentialRef))
+}
+
+func changeAccountWriteMode(account Account, action string) (string, error) {
+	switch action {
+	case "enable-write", "disable-write":
+		switch account.Provider {
+		case "aws-ec2", "openstack", provider.TencentCVM, provider.AlibabaECS, provider.HuaweiECS:
+		default:
+			return "", ErrAccountConflict
+		}
+	case "enable-bare-metal-power", "disable-bare-metal-power":
+		if account.Provider != provider.Redfish {
+			return "", ErrAccountConflict
+		}
+	}
+	switch {
+	case (action == "enable-write" || action == "enable-bare-metal-power") && account.Mode == "read_only":
+		return "write_enabled", nil
+	case (action == "disable-write" || action == "disable-bare-metal-power") && account.Mode == "write_enabled":
+		return "read_only", nil
+	default:
+		return "", ErrAccountConflict
+	}
 }
 
 func changeAccountProjects(ctx context.Context, tx *sql.Tx, actor Scope, id string, change AccountChange) error {

@@ -80,7 +80,8 @@ func testClusterSchedulePublication(t *testing.T, kind string) {
 			task.Provider != provider.TencentCVM || task.CredentialRef != "profiles/reader" || task.CredentialRevision != 1 {
 			t.Fatalf("wrong child task: %+v", task)
 		}
-		exec(`UPDATE cmp_inventory_schedules SET lease_until=clock_timestamp()-interval '1 second' WHERE target_id='cls-first'`)
+		exec(`UPDATE cmp_inventory_schedules SET lease_until=clock_timestamp()-interval '1 second' WHERE target_id='cls-first';
+			UPDATE cmp_inventory_account_dispatch SET lease_until=clock_timestamp()-interval '1 second'`)
 		var err error
 		replacement, err = NewStore(db).claim(ctx, time.Minute, pool)
 		if err != nil {

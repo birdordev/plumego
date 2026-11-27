@@ -73,7 +73,8 @@ func TestAcceptanceDurableInventorySchedule(t *testing.T) {
 	if _, err := NewStore(db).claim(ctx, time.Minute, inventoryPool); !errors.Is(err, sql.ErrNoRows) {
 		t.Fatalf("duplicate active claim: %v", err)
 	}
-	exec("UPDATE cmp_inventory_schedules SET lease_until=clock_timestamp()-interval '1 second'")
+	exec(`UPDATE cmp_inventory_schedules SET lease_until=clock_timestamp()-interval '1 second';
+		UPDATE cmp_inventory_account_dispatch SET lease_until=clock_timestamp()-interval '1 second'`)
 	second, err := NewStore(db).claim(ctx, time.Minute, inventoryPool)
 	if err != nil || second.id != first.id || second.fence <= first.fence {
 		t.Fatalf("failed to recover expired lease: %+v %v", second, err)
@@ -81,7 +82,7 @@ func TestAcceptanceDurableInventorySchedule(t *testing.T) {
 	if err := store.finish(ctx, first, "success", time.Minute, 0, nil); !errors.Is(err, ErrStale) {
 		t.Fatalf("old owner finished: %v", err)
 	}
-	if err := store.release(ctx, second); err != nil {
+	if err := store.release(ctx, second, 0); err != nil {
 		t.Fatal(err)
 	}
 
@@ -116,7 +117,8 @@ func TestAcceptanceDurableInventorySchedule(t *testing.T) {
 	}, inventoryPool); worked || err != nil {
 		t.Fatalf("early retry: %t %v", worked, err)
 	}
-	exec("UPDATE cmp_inventory_schedules SET next_at=clock_timestamp()")
+	exec(`UPDATE cmp_inventory_schedules SET next_at=clock_timestamp();
+		UPDATE cmp_inventory_account_dispatch SET cooldown_until=clock_timestamp()`)
 	worked, err = store.step(ctx, func(ctx context.Context, task Task) (Publish, error) {
 		inv := inventory.NewStore(db)
 		claim, err := inv.Claim(ctx, task.Key, time.Minute)

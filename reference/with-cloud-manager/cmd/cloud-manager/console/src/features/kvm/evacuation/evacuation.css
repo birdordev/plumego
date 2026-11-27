@@ -1,0 +1,7 @@
+.evacuation-list {
+  display: grid;
+  gap: .65rem;
+  padding-inline-start: 1.3rem;
+  overflow-wrap: anywhere;
+}
+.evacuation-list button { margin-inline-start: .35rem; }

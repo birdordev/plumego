@@ -3,6 +3,7 @@ package operations
 import (
 	"context"
 	"crypto/sha256"
+	"database/sql"
 	"errors"
 	"testing"
 	"time"
@@ -72,6 +73,8 @@ func TestAcceptanceRecoverableInstanceWorker(t *testing.T) {
 	for _, migrate := range []func() error{
 		func() error { return identity.Migrate(ctx, db) },
 		func() error { return identity.MigrateServiceTokens(ctx, db) },
+		func() error { return identity.MigrateAccounts(ctx, db) },
+		func() error { return identity.MigrateAccountWriteMode(ctx, db) },
 		func() error { return inventory.Migrate(ctx, db) },
 		func() error { return Migrate(ctx, db) },
 	} {
@@ -88,9 +91,11 @@ func TestAcceptanceRecoverableInstanceWorker(t *testing.T) {
 	exec(`INSERT INTO cmp_tenants VALUES ('tenant');
 		INSERT INTO cmp_projects VALUES ('tenant','project');
 		INSERT INTO cmp_principals (tenant_id,principal_id,kind,issuer,subject) VALUES
-		  ('tenant','operator','service','fixture','operator'),('tenant','reviewer','service','fixture','reviewer');
+		  ('tenant','operator','service','fixture','operator'),('tenant','reviewer','service','fixture','reviewer'),
+		  ('tenant','administrator','service','fixture','administrator');
 		INSERT INTO cmp_memberships (tenant_id,project_id,principal_id,role) VALUES
-		  ('tenant','project','operator','operator'),('tenant','project','reviewer','approver');
+		  ('tenant','project','operator','operator'),('tenant','project','reviewer','approver'),
+		  ('tenant','project','administrator','admin');
 		INSERT INTO cmp_cloud_accounts (tenant_id,account_id,project_id,provider,credential_ref,remote_identity,mode)
 		  VALUES ('tenant','account','project','aws-ec2','fixture/ref','aws:fixture','write_enabled');
 		INSERT INTO cmp_inventory_scopes (tenant_id,account_id,region,kind,credential_revision,lease_until)
@@ -286,4 +291,60 @@ func TestAcceptanceRecoverableInstanceWorker(t *testing.T) {
 	if err := db.QueryRowContext(ctx, "SELECT count(*) FROM cmp_operation_tasks WHERE status='done'").Scan(&done); err != nil || done != 10 {
 		t.Fatalf("queue acknowledgments %d error=%v", done, err)
 	}
+	exec(`INSERT INTO cmp_inventory_objects (scope_id,external_id,name,status,seen_generation)
+		SELECT scope_id,asset,asset,'stopped',generation FROM cmp_inventory_scopes
+		CROSS JOIN (VALUES ('frozen-queue'),('frozen-during-connect')) AS v(asset)`)
+	registerWriteModeAdministrator(t, db)
+	frozen := submit("frozen-queue", "start")
+	changeFixtureWriteMode(t, db, scope, "account", "disable-write")
+	_, err = store.Submit(ctx, token, scope, "blocked-new", 1, Input{Account: "account", Region: "us-east-1", AssetID: "frozen-queue", Action: "start"})
+	if !errors.Is(err, identity.ErrForbidden) {
+		t.Fatalf("disabled account admitted new work: %v", err)
+	}
+	reopened := changeFixtureWriteMode(t, db, scope, "account", "enable-write")
+	previousSends, previousConnects := client.sends, connects
+	step()
+	status(frozen.ID, "failed")
+	if client.sends != previousSends || connects != previousConnects {
+		t.Fatal("re-enabled account revived work admitted under the old version")
+	}
+	preflight, err := store.Submit(ctx, token, scope, "frozen-during-connect", reopened.Revision,
+		Input{Account: "account", Region: "us-east-1", AssetID: "frozen-during-connect", Action: "start"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if processed, err := store.step(ctx, func(ctx context.Context, binding identity.CloudAccountBinding) (provider.InstanceOperator, error) {
+		changeFixtureWriteMode(t, db, scope, "account", "disable-write")
+		return connect(ctx, binding)
+	}); !processed || err != nil {
+		t.Fatalf("worker processed=%t error=%v", processed, err)
+	}
+	if op := status(preflight.ID, "failed"); op.OutcomeReason != "dispatch_unavailable" || client.sends != previousSends {
+		t.Fatalf("freeze did not block a worker between claim and dispatch: %+v", op)
+	}
+}
+
+const writeModeAdministratorToken = "fixture-worker-write-mode-admin-token"
+
+func registerWriteModeAdministrator(t *testing.T, db *sql.DB) {
+	t.Helper()
+	digest := sha256.Sum256([]byte(writeModeAdministratorToken))
+	if _, err := db.ExecContext(t.Context(), `INSERT INTO cmp_service_tokens(token_hash,tenant_id,principal_id,expires_at)
+		VALUES ($1,'tenant','administrator',now()+interval '5 minutes')`, digest[:]); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func changeFixtureWriteMode(t *testing.T, db *sql.DB, scope identity.Scope, account, action string) identity.Account {
+	t.Helper()
+	binding, err := identity.NewStore(db).CloudAccountBinding(t.Context(), scope.Tenant, account)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := identity.NewAccountAdmin(db).Change(t.Context(), writeModeAdministratorToken, scope, account, binding.Revision,
+		identity.AccountChange{Action: action})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return result
 }

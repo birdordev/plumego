@@ -8,9 +8,12 @@ import (
 	"time"
 
 	"with-cloud-manager/internal/controller"
+	"with-cloud-manager/internal/identity"
+	"with-cloud-manager/internal/inventory"
 	"with-cloud-manager/internal/provider"
 	"with-cloud-manager/internal/provider/awsec2"
 	"with-cloud-manager/internal/provider/openstack"
+	"with-cloud-manager/internal/provider/publiccloud"
 )
 
 func runController(ctx context.Context, db *sql.DB, path string, watchOnly bool) error {
@@ -61,11 +64,36 @@ func inventoryScheduleExecutor(db *sql.DB, profiles map[string]string, transport
 		case openstack.Name:
 			return nil, runOpenStack(ctx, db, args, path, nil)
 		case provider.TencentCVM, provider.AlibabaECS, provider.HuaweiECS:
-			return nil, runPublicCloud(ctx, db, args, task.Provider, path, transport)
+			return nil, scanScheduledPublicCloud(ctx, db, task, path, transport)
 		default:
 			return nil, errors.New("controller provider unavailable")
 		}
 	}
+}
+
+func scanScheduledPublicCloud(ctx context.Context, db *sql.DB, task controller.Task, path string, transport http.RoundTripper) error {
+	var profile publicCloudProfile
+	if err := loadPrivateProfile(path, &profile); err != nil {
+		return err
+	}
+	binding, err := identity.NewStore(db).CloudAccountBinding(ctx, task.Key.Tenant, task.Key.Account)
+	if err != nil || binding.Provider != task.Provider || binding.CredentialRef != profile.Ref ||
+		binding.Revision != task.CredentialRevision || binding.RemoteIdentity == "" {
+		return inventory.ErrStale
+	}
+	client, err := publiccloud.Connect(ctx, task.Provider, profile.Config, transport)
+	if err != nil {
+		return err
+	}
+	if client.Identity() != binding.RemoteIdentity {
+		return inventory.ErrStale
+	}
+	store := inventory.NewStore(db)
+	claim, err := store.ClaimScheduled(ctx, task.Key, 10*time.Minute, binding.Revision, task.Lease)
+	if err != nil {
+		return err
+	}
+	return scanInventoryPages(ctx, store, claim, client)
 }
 
 func migrateController(ctx context.Context, db *sql.DB) error {

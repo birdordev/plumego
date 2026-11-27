@@ -4,6 +4,7 @@ import { useResourceRead } from '../../../shared/api/useResourceRead'
 import { DetailFields } from '../../../shared/components/DetailFields'
 import { setDetailNotice } from '../../../shared/detail/store'
 import { sessionSnapshot } from '../../session/store'
+import { openEvacuation } from '../evacuation/open'
 import { hostStatus } from '../labels'
 import { openMigrationReceipt } from '../live-migration/open'
 import { openHostCleanups } from '../volume-cleanup/open'
@@ -56,6 +57,9 @@ function FenceWorkspace({ history, context, stamp, signal, refresh }: Props & { 
     <div className="row-actions">
       <button type="button" onClick={context.backToHost}>返回宿主机</button>
       <button type="button" onClick={refresh}>刷新隔离工作台</button>
+      <button type="button" onClick={() => openEvacuation({
+        target: context.target, sitePath: context.sitePath, role: context.role, back: refresh,
+      })}>宿主机疏散</button>
       {work && !snapshotChanged && work.dispatched_volume_cleanups > 0 && <button type="button" onClick={() => openHostCleanups({
         target: context.target, sitePath: context.sitePath, role: context.role, back: refresh, backLabel: '返回宿主机隔离',
       })}>查看阻塞的保留卷清理</button>}

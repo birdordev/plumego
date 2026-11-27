@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strconv"
 
+	"with-cloud-manager/internal/inventory"
 	"with-cloud-manager/internal/provider"
 )
 
@@ -23,7 +24,8 @@ const governanceUsage = `usage: cloud-manager governance COMMAND TENANT PROJECT
   ticket-get OPERATION
   ticket-record OPERATION < evidence.json
   compliance KIND [--state STATE] [--account ACCOUNT] [--region REGION] [--cursor CURSOR] [--limit LIMIT]
-  idle [--state STATE] [--account ACCOUNT] [--region REGION] [--cursor CURSOR] [--limit LIMIT]`
+  idle [--state STATE] [--account ACCOUNT] [--region REGION] [--cursor CURSOR] [--limit LIMIT]
+  inventory-freshness [--provider PROVIDER] [--account ACCOUNT] [--state STATE] [--dispatch-state STATE] [--window-seconds SECONDS] [--after ID] [--limit LIMIT]`
 
 func runGovernanceClient(ctx context.Context, args []string, address, token string, input io.Reader, output io.Writer, transport http.RoundTripper) error {
 	usage := errors.New(governanceUsage)
@@ -88,10 +90,39 @@ func runGovernanceClient(ctx context.Context, args []string, address, token stri
 		}
 		plan.target = target.JoinPath("idle-instances")
 		plan.target.RawQuery = query.Encode()
+	case "inventory-freshness":
+		query, ok := inventoryFreshnessOptions(args[3:])
+		if !ok {
+			return usage
+		}
+		plan.target = target.JoinPath("inventory-freshness")
+		plan.target.RawQuery = query.Encode()
 	default:
 		return usage
 	}
 	return runProjectRequest(ctx, plan, token, input, output, transport)
+}
+
+func inventoryFreshnessOptions(args []string) (url.Values, bool) {
+	flags := flag.NewFlagSet("inventory-freshness", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	cloud := flags.String("provider", "", "")
+	account := flags.String("account", "", "")
+	state := flags.String("state", "", "")
+	dispatch := flags.String("dispatch-state", "", "")
+	window := flags.Int("window-seconds", inventory.DefaultFreshnessWindow, "")
+	after := flags.String("after", "", "")
+	limit := flags.Int("limit", inventory.DefaultFreshnessLimit, "")
+	if flags.Parse(args) != nil || flags.NArg() != 0 || *limit < 1 || *limit > 100 || *window < 60 || *window > 604800 {
+		return nil, false
+	}
+	query := url.Values{"limit": {strconv.Itoa(*limit)}, "window_seconds": {strconv.Itoa(*window)}}
+	for key, value := range map[string]string{"provider": *cloud, "account": *account, "state": *state, "dispatch_state": *dispatch, "after": *after} {
+		if value != "" {
+			query.Set(key, value)
+		}
+	}
+	return query, true
 }
 
 func validTagRevision(value string) bool {

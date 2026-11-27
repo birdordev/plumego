@@ -264,6 +264,10 @@ func TestAcceptancePublicCloudInventory(t *testing.T) {
 			if firstPage.Load() != 1 || secondPage.Load() != 2 {
 				t.Fatalf("did not resume from committed checkpoint: %d %d", firstPage.Load(), secondPage.Load())
 			}
+			runProviderScheduleWithTransport(t, db, inventory.Key{Tenant: "tenant", Account: item.cli, Region: item.region, Kind: provider.Instance}, ref, path, transport)
+			if firstPage.Load() != 2 || secondPage.Load() != 3 {
+				t.Fatalf("scheduled instance scan did not read both pages: %d %d", firstPage.Load(), secondPage.Load())
+			}
 			w := httptest.NewRecorder()
 			request = httptest.NewRequest(http.MethodGet, base+"/assets?kind=instance&account="+item.cli, nil)
 			request.Header.Set("Authorization", "Bearer "+bearer)

@@ -1,7 +1,7 @@
 import { DetailFields } from '../../../shared/components/DetailFields'
 import { listImages } from '../provisioning/api'
 import type { Image } from '../provisioning/schema'
-import { PagedResults } from './PagedResults'
+import { PagedResults } from '../../../shared/collection/PagedResults'
 
 export function SiteImagePicker({ sitePath, signal, chosen, choose }: {
   sitePath: string; signal: AbortSignal; chosen?: Image; choose: (image?: Image) => void

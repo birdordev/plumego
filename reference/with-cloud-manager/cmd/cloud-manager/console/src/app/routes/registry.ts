@@ -6,10 +6,12 @@ import { resourceRoutes } from './resources'
 
 export const routes = {
   assets: resourceRoutes.assets,
+  'cloud-accounts': resourceRoutes['cloud-accounts'],
   kvm: resourceRoutes.kvm,
   operations: operationRoutes.operations,
   'service-catalog': resourceRoutes['service-catalog'],
   alerts: governanceRoutes.alerts,
+  'inventory-freshness': governanceRoutes['inventory-freshness'],
   'console-grants': resourceRoutes['console-grants'],
   batch: operationRoutes.batch,
   audit: operationRoutes.audit,

@@ -1,7 +1,7 @@
 import { ConsoleTable } from '../../../shared/components/ConsoleTable'
 import { DetailFields } from '../../../shared/components/DetailFields'
 import { timestamp } from '../../../shared/display/time'
-import { PagedResults } from '../detail/PagedResults'
+import { PagedResults } from '../../../shared/collection/PagedResults'
 import { listCleanups } from './api'
 import { isActive, statuses, type Cleanup, type RetainedVolume } from './schema'
 

@@ -28,6 +28,22 @@ go test -race -timeout 60s ./...
 
 首发合同见 [范围](scope.md)、[能力矩阵](capabilities.yaml)、[提交边界](state-transitions.md) 和 [验收](acceptance.md)。
 
+### 盘点新鲜度
+
+控制台「盘点新鲜度」和 `GET /v1/tenants/{tenant}/projects/{project}/governance/inventory-freshness` 提供项目可见的启用全量盘点计划。只读角色可查询自有和有效共享账号。各作用域按账号、地域和资源种类区分。停用计划、不可读账号、未排程的临时扫描和集群内专项计划不计入分母。
+
+默认以最近 900 秒内、使用当前账号凭据版本完成的全量盘点为新鲜。较早的有效结果标为 `stale`，当前版本尚无完整结果标为 `pending`。进行中的同凭据盘点可以保留上次完成的状态，凭据轮换后须等新一轮完整提交。报告包含观测时间、汇总计数、最近完整盘点及下次执行计划。近期完成比例使用 `fresh / total`，没有启用范围时无比例。
+
+API 支持 `provider`、`account`、`state`、`window_seconds`、`limit` 和 `after`。状态只筛选明细。窗口为 60 至 604800 秒，分页默认 50 条且最多 100 条。查询下一页时保留筛选条件，并把 `next` 原样传入 `after`。每页的汇总和明细共享同一数据库快照。连续翻页使用各请求的最新快照。
+
+```sh
+cloud-manager governance inventory-freshness TENANT PROJECT --provider tencent-cvm --window-seconds 900
+cloud-manager governance inventory-freshness TENANT PROJECT --provider alibaba-ecs --state stale
+cloud-manager governance inventory-freshness TENANT PROJECT --provider huawei-ecs --state pending
+```
+
+升级时先运行 `cloud-manager migrate` 应用 `0134_inventory_completion`，再升级盘点进程和 API。早期完成记录缺少凭据版本，升级后从应用新逻辑后的首次完整扫描开始统计。报告可以用于实际负载下的持续观测，95% 目标须在真实厂商环境运行并采样。
+
 ## OpenStack 只读盘点
 
 以安装角色完成迁移，再建立租户、项目并通过下方账号 API 登记 `openstack` 类型的待校验账号。账号的凭据引用必须和只读应用凭据文件的 `credential_ref` 相同。文件路径由 `CLOUD_MANAGER_OPENSTACK_PROFILE` 指定，文件权限为 `0600` 或更严格。
@@ -1020,7 +1036,15 @@ cloud-manager operations release-elastic-ip TENANT PROJECT --idempotency-key KEY
 
 ## 定时盘点控制器
 
-完成迁移后，运维可在 `cmp_inventory_schedules` 中按云账号、地域和资源类型登记扫描计划。间隔范围为 60 秒至 7 天。全局 `region` 盘点使用空地域。普通盘点使用默认的空 `target_id`，节点池快照计划使用父集群 ID。
+应用 `0136_inventory_schedule_config` 并更新 API 与盘点控制器。腾讯云、阿里云和华为云的项目管理员可在「云账号管理 → 盘点计划」按账号、地域和资源类型登记、调整间隔、停用、恢复或立即排队。启用计划要求账号已完成身份校验。原有计划以版本 1 纳入管理。运维也可通过 `cmp_inventory_schedules` 管理其他厂商和专项计划。间隔为 60 秒至 7 天。`region` 盘点使用空地域，`dns-zone` 与 `object-bucket` 使用 `global`。普通盘点的 `target_id` 为空，节点池快照计划使用父集群 ID。
+
+账号路径下的 `GET /inventory-schedules` 返回分页计划，使用 `limit` 和 `after`。用 `POST /inventory-schedules` 登记，提交 `region`、`kind`、`interval_seconds`、`enabled`。用 `PATCH /inventory-schedules/{id}` 更新，提交 `interval_seconds`、`enabled` 和可选的 `run_now`，同时使用当前版本的强 `If-Match`。立即排队由已部署的控制器领取。计划变更记录进项目审计。
+
+```sh
+cloud-manager cloud-accounts schedules TENANT PROJECT ACCOUNT
+cloud-manager cloud-accounts schedule-add TENANT PROJECT ACCOUNT < schedule.json
+cloud-manager cloud-accounts schedule-change TENANT PROJECT ACCOUNT ID REVISION < change.json
+```
 
 ```sql
 INSERT INTO cmp_inventory_schedules (tenant_id, account_id, region, kind, interval_seconds)
@@ -1029,7 +1053,11 @@ VALUES ('tenant-id', 'account-id', 'RegionOne', 'instance', 600);
 
 `CLOUD_MANAGER_CONTROLLER_PROFILES` 指向私有 JSON 文件，格式为凭据引用到对应厂商私有配置文件路径的映射。以 `go run ./cmd/cloud-manager controller` 运行。每个控制器进程串行执行盘点，可由多个进程共享数据库领取不同计划。
 
-成功后从完成时间计算下一次运行。失败按指数退避，厂商提供的限流等待会在 24 小时上限内纳入计算。计划记录最近结果和连续失败数。正常停机主动让出领取，进程异常退出则在租约到期后由其他实例接管。盘点沿用已提交的游标。停用计划或账号会停止后续领取。
+应用 `0137_inventory_account_dispatch` 后，先排空旧版普通盘点控制器，再启动新版副本。同一租户的同一云账号在所有新版副本中同时领取至多一项普通盘点计划。空闲账号按最久未领取优先，账号内仍按计划到期时间领取。收到厂商限流后，该账号的其他普通计划也等待退避窗口，其他账号保持可领取。同一账号的节点池及工作负载周期快照也使用此限制。独立 CLI 扫描、闲置采集和 Kubernetes 实时订阅仍沿原执行路径。列表的 `next_at` 是单条计划的计划时间，实际领取还受共享冷却及当前租约约束。
+
+应用 `0138_inventory_tenant_dispatch` 并升级普通盘点控制器后，下一次领取先按租户最久未领取排序，再按该租户的账号和计划排序。轮次与账号及计划租约一同提交。暂时被锁定的候选会跳过，可用执行能力可继续分配给其他候选。只有一个租户可领取时仍可同时处理多个独立账号。轮转在执行能力释放时生效，已领取的计划继续执行。
+
+成功后从完成时间计算下一次运行。失败按指数退避，厂商提供的限流等待会在 24 小时上限内纳入计算。计划记录最近结果和连续失败数。正常停机主动让出领取，进程异常退出则在租约到期后由其他实例接管。三家优先云的控制器在提交每页时同时核验计划代次与扫描租约。停用计划后晚到页无法发布，再启用沿用停用前已提交的游标。厂商拒绝过期游标时，下次扫描从头开始。通过管理命令发起的独立扫描仍由账号与扫描租约约束。
 
 ## 资产差异历史
 
@@ -1051,6 +1079,18 @@ VALUES ('tenant-id', 'account-id', 'RegionOne', 'instance', 600);
 
 项目管理员通过 `POST /v1/tenants/{tenant}/projects/{project}/cloud-accounts` 登记账号。正文提供 `id`、`provider` 和 `credential_ref`。程序返回账号元数据、`Location` 和 `ETag`。账号详情通过 `GET {Location}` 读取，凭据引用和厂商凭据不会出现在响应里。
 
+控制台「云账号管理」分页列出当前项目的自有账号，可登记账号、核对校验状态、轮换凭据引用、停用或恢复，并管理共享与转移。共享给当前项目的账号仍通过资产列表访问，由来源项目管理。添加共享和转移时，控制台仅提供当前身份可管理的其他项目。撤销已有共享由来源项目发起。
+
+`GET /cloud-accounts` 按账号 ID 排序，`GET /cloud-accounts/{account}/grants` 按共享项目 ID 排序。使用项目 API 前缀，默认 50 条，最多 100 条，续页使用上一页返回的 `next` 作为 `after`。共享列表返回项目 ID 和 `allow_write`。两种列表均需要来源项目管理员权限。
+
+```sh
+cloud-manager cloud-accounts list TENANT PROJECT
+cloud-manager cloud-accounts get TENANT PROJECT ACCOUNT
+cloud-manager cloud-accounts grants TENANT PROJECT ACCOUNT
+cloud-manager cloud-accounts register TENANT PROJECT < account.json
+cloud-manager cloud-accounts change TENANT PROJECT ACCOUNT REVISION < change.json
+```
+
 `PATCH {Location}` 要求当前的强 `If-Match`。正文的 `action` 支持以下取值。
 
 | 操作 | 行为 |
@@ -1058,11 +1098,17 @@ VALUES ('tenant-id', 'account-id', 'RegionOne', 'instance', 600);
 | `rotate` | 提供新 `credential_ref`。账号进入待校验，已停用账号保持停用。 |
 | `suspend` | 停止下一次盘点领取，并拒绝旧代次提交。 |
 | `resume` | 已停用账号重新进入待校验。 |
+| `enable-write` | 项目管理员为已验证且当前只读的腾讯云、阿里云、华为云、AWS 或 OpenStack 账号开启写入受理。 |
+| `disable-write` | 将已开启写入的通用云账号恢复为只读并递增账号版本。 |
 | `share` | 提供 `target_project` 并需要源、目标项目管理权，添加只读共享。 |
 | `unshare` | 提供 `target_project`，由来源项目撤销共享。 |
 | `transfer` | 提供同租户的 `target_project` 并需要双方管理权。转移归属时清除既有共享授权。 |
 
-首次登记、轮换或恢复后，使用相应的 `verify-openstack` 或 `verify-aws` 命令验证绑定。验证成功后进入只读，已固定的远端标识须与厂商返回一致。账号 API 变更与脱敏审计记录同事务提交。缺少当前 ETag 或提交旧版本返回 412。
+首次登记、轮换或恢复后，在管理端使用厂商对应的 `verify-tencent`、`verify-alibaba`、`verify-huawei`、`verify-openstack`、`verify-aws`、`verify-vsphere` 或 `verify-redfish` 命令验证绑定。验证成功后进入只读，已固定的远端标识须与厂商返回一致。控制台的待校验详情会显示对应命令。账号 API 变更与脱敏审计记录同事务提交。缺少当前 ETag 或提交旧版本返回 412，重新读取账号后再确认变更。
+
+使用通用云账号写入开关前执行 `cloud-manager migrate`，应用 `0135_account_write_mode`。管理员可在账号详情确认开启或关闭，也可用 `cloud-accounts change` 提交相应动作。写入受理仍须满足每项操作的资源归属、审批、配额和 Worker 厂商开关。共享的只读授权仍保持只读，Redfish 使用独立的电源操作开关，VMware vSphere 只读纳管。
+
+关闭后可继续盘点。Worker 在记录派发前复查账号版本和尚可使用的写入权限，旧版本任务即使在重新开启后也无法通过。已越过派发记录点的请求仍可能在厂商侧完成。对结果不明的操作，按该动作的证据要求由独立审批人续查或登记人工处置。开关变更在项目审计的 `account` 类别可查询。
 
 ## 资源归属
 
@@ -1844,6 +1890,8 @@ Worker 对已持久记录的撤销最多发送一次。连续两轮只读观测�
 
 在宿主机详情打开“宿主机隔离与重新接入”可查看隔离事件和分代次的阻塞清单。管理员可以停止或恢复新放置、申请隔离及重新接入。独立审批人可确认带外隔离、登记疏散源端清理证据，以及批准或拒绝重新接入。清单可打开相关虚拟机、现场恢复记录或实时迁移回执。
 
+在隔离工作台打开“宿主机疏散”可分页查看批次、预案和逐台迁移回执。宿主机正常或隔离待确认时，管理员可登记预案。确认隔离后可提交手工批次。按候选清单为同一宿主机选取 1 至 16 台 VM，逐项核对站点备份镜像和证据摘要，再确认提交。浏览器在同一标签页按项目、宿主机和身份保存提交快照，刷新后可按原 ID、版本和成员顺序重试。项目成员可追踪预案及其生成的批次，管理员可撤销仍处于已登记状态的预案，独立审批人可从批次打开逐台迁移回执审批。
+
 虚拟机详情中的“保留卷与清理历史”按原放置显示退役卷、迁移源卷及清理回执。宿主机详情和隔离工作台可进入进行中的保留卷清理列表。
 
 API 提供 `GET /v1/tenants/{tenant}/projects/{project}/kvm/hosts` 和 `GET /v1/tenants/{tenant}/projects/{project}/kvm/vms`。两者需要项目查看权限，按站点和资源 ID 排序，默认 50 条且最多 100 条。可传 `site` 限定站点。存在后续记录时，将响应 `data.next` 原样传给同一列表的 `after`，并保留原站点筛选。虚拟机清单使用稳定的 VM ID，放置迁移后仍显示该 VM 的当前宿主机。
@@ -2205,6 +2253,10 @@ cloud-manager kvm confirm-evacuation-cleanup TENANT PROJECT SITE SOURCE_HOST HOS
 应用 `0128_kvm_evacuation_batches`。项目管理员向源宿主机的 `/fence/evacuation-batches` 提交 `batch_id`、`source_fence_generation` 和 `items`，并用强 `If-Match` 提交当前宿主机版本。一个批次可包含 1 至 16 台已确认属于该宿主机的 VM，`items` 每项填写 `vm_id`、`vm_revision`、`image_id` 和 `evidence_sha256`。
 
 控制面按清单顺序在其他故障域内预留容量。任一项版本、备份或容量无效时，整个事务回滚，批次和预留都不会生成。成功返回 202、批次地址和各 VM 的迁移 ID。重试使用原宿主机版本和相同清单，包含相同顺序。项目成员可查询原批次地址，查看当时受理的全部 VM 及当前审批和现场清理状态。
+
+项目管理员可通过 `GET /fence/evacuation-candidates` 读取该宿主机的候选 VM 和提交所需的 `host_revision`、`source_fence_generation`。响应的 `mode` 表明可以登记预案（`plan`）、申请批次（`batch`）或当前仅可查看历史（`unavailable`）。候选快照包含 VM 版本、网络和磁盘预算。服务在提交时重新校验宿主机、VM、备份及目标容量。
+
+具有项目查看权限的成员可使用 `GET /fence/evacuation-batches` 和 `GET /fence/evacuation-plans` 读取当前宿主机的历史摘要，按受理时间倒序查询。候选和两个历史列表默认 50 条，最多 100 条，使用同一列表上一页的 `next` 作为 `after`。
 
 独立审批人沿用单 VM 迁移审批逐台批准或拒绝。批准后才转移原 IPv4 并允许目标代理按备份恢复。拒绝会释放该项的自动预留。源宿主机重新接入仍需核对每台已疏散 VM 的源端清理证据。
 

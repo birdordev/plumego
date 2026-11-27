@@ -1,9 +1,9 @@
 import { useCallback, useState, type ReactNode } from 'react'
-import { requestErrorMessage } from '../../../shared/api/requests'
-import { useResourceRead } from '../../../shared/api/useResourceRead'
+import { requestErrorMessage } from '../api/requests'
+import { useResourceRead } from '../api/useResourceRead'
 
 type Props<Item> = {
-  target: string; signal: AbortSignal
+  target: string; signal?: AbortSignal
   read: (target: string, cursor: string, signal: AbortSignal) => Promise<{ items: Item[]; next?: string }>
   children: (items: Item[], first: boolean) => ReactNode
 }

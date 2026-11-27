@@ -1,5 +1,11 @@
 # 首发采购与验收范围，发布由实际厂商证据授权。
 platform:
+  cloud-account-administration: project-owned-paged-accounts-and-grants-with-browser-and-cli-lifecycle
+  cloud-account-write-mode: verified-provider-mode-switch-with-versioned-dispatch-and-transactional-audit
+  priority-cloud-inventory-schedules: versioned-admin-control-and-lease-fenced-checkpoint-publication
+  inventory-account-dispatch: cross-replica-single-account-lease-least-recently-claimed-priority-and-shared-throttle-cooldown
+  inventory-tenant-dispatch: durable-least-recently-claimed-tenant-rotation-before-account-and-plan-priority
+  inventory-freshness: project-visible-enabled-schedule-coverage-with-credential-bound-completions
   redfish-inventory: readonly-site-scoped-physical-system-discovery-and-durable-schedule
   redfish-power: independently-approved-on-and-graceful-shutdown-with-single-dispatch-and-readback
   redfish-one-time-pxe: independently-approved-conditional-stage-and-cancel-with-readback
@@ -43,6 +49,7 @@ platform:
   kvm-verified-backup-placement: optional-verified-host-image-gate-on-migration-admission-and-approval
   kvm-evacuation-batch: atomic-host-scoped-admission-with-independent-vm-reviews-and-live-receipt
   kvm-evacuation-plan: durable-fence-confirmation-trigger-with-grant-revalidation-and-atomic-batch-submission
+  kvm-evacuation-console: scoped-paged-candidates-and-history-with-replayable-submission-and-member-review
   kvm-target-environment: pending-physical-host-validation
   change-ticket-policy: versioned-project-policy-with-frozen-operation-binding
   change-ticket-delivery: signed-project-outbox-opt-in

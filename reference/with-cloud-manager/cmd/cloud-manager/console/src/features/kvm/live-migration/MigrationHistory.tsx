@@ -2,7 +2,7 @@ import { ConsoleTable } from '../../../shared/components/ConsoleTable'
 import { timestamp } from '../../../shared/display/time'
 import { listMigrations } from './api'
 import type { MigrationContext } from './open'
-import { PagedResults } from '../detail/PagedResults'
+import { PagedResults } from '../../../shared/collection/PagedResults'
 import { canRequest, isActive, statuses } from './state'
 
 type Props = {

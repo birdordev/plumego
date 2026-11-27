@@ -1,6 +1,6 @@
 import { projectCanExecute } from '../../features/session/project'
 import type { Session } from '../../features/session/store'
-import { adminProps, consoleFlags, noProps } from './project-context'
+import { adminProps, consoleFlags, isAdmin, noProps, projectProps } from './project-context'
 import { projectPage } from './project-page'
 
 function hasConsole(session: Session) {
@@ -9,6 +9,10 @@ function hasConsole(session: Session) {
 }
 
 export const resourceRoutes = {
+  'cloud-accounts': projectPage('云账号管理', () => import('../../features/accounts/AccountsPage'),
+    (context) => ({ ...projectProps(context), project: context.session.project.id,
+      projects: context.session.profile.projects.filter(({ id, role }) => role === 'admin' && id !== context.session.project.id).map(({ id }) => id),
+    }), { allowed: isAdmin }),
   assets: projectPage('资源清单', () => import('../../features/assets/inventory/AssetsPage'),
     ({ session, openSelectedBatch }) => ({
       canExecute: projectCanExecute(session), ...consoleFlags(session), onBatch: openSelectedBatch,

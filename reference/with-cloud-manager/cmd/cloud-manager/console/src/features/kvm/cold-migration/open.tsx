@@ -11,6 +11,7 @@ const MigrationSubmission = lazy(() => import('./MigrationSubmission'))
 const MigrationReceipt = lazy(() => import('./MigrationReceipt'))
 
 export type Context = { base: string; site: string; sitePath: string; target: string; role: Project['role']; backToVM: () => void }
+export type ReceiptContext = Pick<Context, 'target' | 'sitePath' | 'role'>
 
 export function openColdMigrations(context: Context) {
   const principal = sessionSnapshot()?.profile.principal ?? ''
@@ -46,8 +47,12 @@ function openSubmission(context: Context, keyName: string, attempt: Attempt) {
 }
 
 function openReceipt(context: Context, id: string) {
+  openColdMigrationReceipt(context, id, () => openColdMigrations(context), '返回迁移记录')
+}
+
+export function openColdMigrationReceipt(context: ReceiptContext, id: string, back: () => void, backLabel: string) {
   openDetail('KVM 冷迁移回执', (stamp, signal) => <Suspense fallback={<p role="status">正在加载迁移回执…</p>}>
     <MigrationReceipt context={context} id={id} stamp={stamp} signal={signal}
-      back={() => openColdMigrations(context)} refresh={() => openReceipt(context, id)} />
+      back={back} backLabel={backLabel} refresh={() => openColdMigrationReceipt(context, id, back, backLabel)} />
   </Suspense>)
 }

@@ -8,12 +8,12 @@ import { timestamp } from '../../../shared/display/time'
 import { sessionSnapshot } from '../../session/store'
 import { readPlacement, releasePlacement } from '../provisioning/api'
 import { readColdReceipt, reviewColdMigration } from './api'
-import type { Context } from './open'
+import type { ReceiptContext } from './open'
 import { statuses, type Receipt } from './schema'
 
-type Props = { context: Context; id: string; stamp: number; signal: AbortSignal; back: () => void; refresh: () => void }
+type Props = { context: ReceiptContext; id: string; stamp: number; signal: AbortSignal; back: () => void; backLabel: string; refresh: () => void }
 
-export default function MigrationReceipt({ context, id, stamp, signal, back, refresh }: Props) {
+export default function MigrationReceipt({ context, id, stamp, signal, back, backLabel, refresh }: Props) {
   const read = useCallback(async (target: string, requestSignal: AbortSignal) => {
     const receipt = await readColdReceipt(target, requestSignal)
     const placementPath = context.sitePath + '/placements/' + encodeURIComponent(receipt.target_placement_id)
@@ -29,7 +29,7 @@ export default function MigrationReceipt({ context, id, stamp, signal, back, ref
     setDecision(next)
   }
   const toolbar = <div className="row-actions">
-    <button type="button" onClick={back} disabled={busy}>返回迁移记录</button>
+    <button type="button" onClick={back} disabled={busy}>{backLabel}</button>
     <button type="button" onClick={refresh} disabled={busy}>刷新迁移回执</button>
   </div>
   if (result.state !== 'ready') return <>

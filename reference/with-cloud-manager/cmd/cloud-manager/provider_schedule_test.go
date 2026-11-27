@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"database/sql"
+	"net/http"
 	"testing"
 	"time"
 
@@ -11,6 +12,11 @@ import (
 )
 
 func runProviderScheduledInventory(t *testing.T, db *sql.DB, key inventory.Key, ref, path string) {
+	t.Helper()
+	runProviderScheduleWithTransport(t, db, key, ref, path, nil)
+}
+
+func runProviderScheduleWithTransport(t *testing.T, db *sql.DB, key inventory.Key, ref, path string, transport http.RoundTripper) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(t.Context(), 7*time.Second)
 	defer cancel()
@@ -22,7 +28,7 @@ func runProviderScheduledInventory(t *testing.T, db *sql.DB, key inventory.Key, 
 	}
 	done := make(chan error, 1)
 	go func() {
-		done <- controller.NewStore(db).Run(ctx, inventoryScheduleExecutor(db, map[string]string{ref: path}, nil))
+		done <- controller.NewStore(db).Run(ctx, inventoryScheduleExecutor(db, map[string]string{ref: path}, transport))
 	}()
 	defer func() {
 		cancel()

@@ -128,6 +128,9 @@ func verifyKVMBrowserReview(t *testing.T, db *sql.DB, vm kvm.VM) {
 	viewer, reviewer := login("browser-viewer"), login("browser-reviewer")
 	path := fixtureVMSitePath + "/" + vm.ID + "/review"
 	expectKVM(t, send("GET", fixtureKVMProject+"/vms", viewer, "", ""), 200, nil)
+	expectKVM(t, send("GET", evacuationBatchesPath, viewer, "", ""), 200, nil)
+	expectKVM(t, send("GET", evacuationFixturePlansPath, viewer, "", ""), 200, nil)
+	expectKVM(t, send("GET", evacuationCandidatesPath, viewer, "", ""), 403, nil)
 	expectKVM(t, send("POST", path, viewer, consoleCSRF(viewer), `"1"`), 403, nil)
 	expectKVM(t, send("POST", path, reviewer, "", `"1"`), 403, nil)
 	expectKVM(t, send("POST", path, reviewer, consoleCSRF(reviewer), `"2"`), 412, nil)
@@ -151,5 +154,14 @@ func verifyKVMBrowserReview(t *testing.T, db *sql.DB, vm kvm.VM) {
 	page := list.Responses["200"].Content["application/json"].Schema.Properties["data"].Properties
 	if page["items"].Items == nil || page["items"].Items.Properties["id"].Format != "uuid" || page["next"].Type != "string" {
 		t.Fatalf("unexpected OpenAPI inventory page schema: %+v", page)
+	}
+	candidates := spec.Paths["/v1/tenants/{tenant}/projects/{project}/kvm/sites/{site}/hosts/{host}/fence/evacuation-candidates"].Get
+	if candidates == nil || candidates.OperationID != "listKVMEvacuationCandidates" || len(candidates.Security) != 2 {
+		t.Fatalf("unexpected OpenAPI evacuation candidate contract: %+v", candidates)
+	}
+	page = candidates.Responses["200"].Content["application/json"].Schema.Properties["data"].Properties
+	if page["items"].Items == nil || page["items"].Items.Properties["vm_id"].Format != "uuid" ||
+		page["mode"].Type != "string" || page["host_revision"].Type != "integer" || page["source_fence_generation"].Type != "integer" {
+		t.Fatalf("unexpected OpenAPI evacuation candidate page schema: %+v", page)
 	}
 }

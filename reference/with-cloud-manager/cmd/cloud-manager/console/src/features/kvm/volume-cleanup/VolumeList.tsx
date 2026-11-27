@@ -1,5 +1,5 @@
 import { ConsoleTable } from '../../../shared/components/ConsoleTable'
-import { PagedResults } from '../detail/PagedResults'
+import { PagedResults } from '../../../shared/collection/PagedResults'
 import { listVolumes } from './api'
 import { statuses, type RetainedVolume } from './schema'
 
