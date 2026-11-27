@@ -20,7 +20,7 @@ func (s Store) confirmInstancePower(ctx context.Context, task mq.Task, w work, s
 		if err := checkOperationTarget(ctx, tx, &w); err != nil {
 			return err
 		}
-		if err := inventory.RecordInstanceStatus(ctx, tx, scopeID, w.AssetID, status); err != nil {
+		if err := inventory.RecordObservedAssetStatus(ctx, tx, scopeID, w.AssetID, status); err != nil {
 			return err
 		}
 		return writeTransition(ctx, tx, task.ID, w.Status, "succeeded", "desired_state_observed", "")

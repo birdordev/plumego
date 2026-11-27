@@ -1,5 +1,5 @@
 import { isAbsolute, relative, sep } from 'node:path'
-import { featureEntrypoints } from './feature-entrypoints.mjs'
+import { appFeatureEntrypoints, featureEntrypoints } from './feature-entrypoints.mjs'
 
 const layers = {
   entry: new Set(['app']),
@@ -15,8 +15,18 @@ export function sourceArea(source, file) {
   return parts.length ? { layer, parts } : { layer: 'entry', parts: [] }
 }
 
-export function canImport(from, to) {
+export function canImport(from, to, kind) {
   if (!layers[from.layer]?.has(to.layer)) return false
-  if (from.layer !== 'features' || to.layer !== 'features') return true
-  return from.parts[0] === to.parts[0] || featureEntrypoints.has(to.parts.join('/'))
+  if (to.layer !== 'features') return true
+
+  const target = to.parts.join('/')
+  if (from.layer === 'features') {
+    return from.parts[0] === to.parts[0] || featureEntrypoints.has(target)
+  }
+  if (featureEntrypoints.has(target) || appFeatureEntrypoints.has(target)) return true
+  if (from.parts[0] === 'routes' && kind === 'dynamic') {
+    const file = to.parts.at(-1)
+    return file.endsWith('Page.tsx') || file === 'collection.ts'
+  }
+  return from.parts[0] === 'workspace' && target === 'batches/BatchPage.tsx' && (kind === 'dynamic' || kind === 'type')
 }

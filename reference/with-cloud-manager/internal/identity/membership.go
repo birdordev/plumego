@@ -15,10 +15,11 @@ type Scope struct {
 type Permission string
 
 const (
-	View    Permission = "view"
-	Execute Permission = "execute"
-	Approve Permission = "approve"
-	Manage  Permission = "manage"
+	View             Permission = "view"
+	Execute          Permission = "execute"
+	ExecuteBareMetal Permission = "execute_bare_metal"
+	Approve          Permission = "approve"
+	Manage           Permission = "manage"
 )
 
 type Role string
@@ -27,7 +28,7 @@ func (r Role) allows(permission Permission) bool {
 	switch permission {
 	case View:
 		return r == "viewer" || r == "operator" || r == "approver" || r == "admin"
-	case Execute:
+	case Execute, ExecuteBareMetal:
 		return r == "operator" || r == "admin"
 	case Approve:
 		return r == "approver"

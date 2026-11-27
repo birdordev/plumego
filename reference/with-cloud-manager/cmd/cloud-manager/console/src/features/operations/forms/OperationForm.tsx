@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 import { DetailForm } from '../../../shared/detail/DetailForm'
 import { showOperation } from '../detail/open'
-import { requestVersionedOperation } from '../submission'
+import { requestVersionedOperation } from './submission'
 
 type Props = {
   stamp: number

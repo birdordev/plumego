@@ -18,8 +18,8 @@ export const resourceRoutes = {
   'service-catalog': projectPage('服务目录', () => import('../../features/catalog/CatalogPage'), adminProps, {
     loadCollection: () => import('../../features/catalog/collection').then(({ catalogCollection }) => catalogCollection),
   }),
-  'console-grants': projectPage('原生控制台', () => import('../../features/native-console/GrantsPage'), noProps, {
+  'console-grants': projectPage('原生控制台', () => import('../../features/native-console/grants/GrantsPage'), noProps, {
     allowed: hasConsole,
-    loadCollection: () => import('../../features/native-console/collection').then(({ grantsCollection }) => grantsCollection),
+    loadCollection: () => import('../../features/native-console/grants/collection').then(({ grantsCollection }) => grantsCollection),
   }),
 }

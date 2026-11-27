@@ -43,6 +43,9 @@ func (s Store) Report(ctx context.Context, token string, scope identity.Scope, s
 			(report.Sequence == host.Sequence && (host.ReportedAt == nil || report.Capacity != host.Capacity)) {
 			return ErrStale
 		}
+		if host.FenceState != "" {
+			return ErrConflict
+		}
 		if report.Inventory != nil {
 			if err := verifyCapacityInventory(ctx, tx, actor, host, *report.Inventory); err != nil {
 				return err

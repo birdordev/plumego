@@ -1,1 +1,0 @@
-import{r as e}from"./react-runtime-Br0ptrPz.js";var t=e();function n(e,n,r){let[i,a]=(0,t.useState)({state:`loading`});return(0,t.useEffect)(()=>{let t=new AbortController,i=AbortSignal.any([n,t.signal]);return i.aborted||r(e,i).then(e=>{i.aborted||a({state:`ready`,data:e})}).catch(e=>{i.aborted||a({state:`error`,error:e})}),()=>t.abort()},[e,n,r]),i}export{n as t};

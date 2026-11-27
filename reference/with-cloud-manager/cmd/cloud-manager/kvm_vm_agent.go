@@ -72,6 +72,9 @@ func runKVMVMJob(ctx context.Context, api kvmVMAPI, hostID, generation string, i
 	if host.ID != hostID || host.Generation != expected || !kvmMachineUUID.MatchString(host.UUID) {
 		return errors.New("KVM host or agent generation does not match")
 	}
+	if host.FenceState != "" {
+		return kvm.ErrConflict
+	}
 	caps, err := runner.read(ctx, "capabilities")
 	if err != nil {
 		return err

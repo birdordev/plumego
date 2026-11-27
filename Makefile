@@ -5,11 +5,12 @@ BOUNDARY_CHECKS := dependency-rules cross-extension-deps agent-workflow module-m
 	reference-layout extension-maturity extension-beta-evidence public-entrypoints-sync
 TASK_TARGETS := milestone check-spec check-plan check-verify check-card new-milestone \
 	new-plan new-card new-verify run-card milestone-status
+CLOUD_MANAGER_CONSOLE := reference/with-cloud-manager/cmd/cloud-manager/console
 export M C N TITLE ID SLUG R TASK MODULE COVERAGE_FILE
 
 .PHONY: help validate-diff validate-diff-dry bundle $(TASK_TARGETS) \
 	gates go-gates check boundary-check api-check doc-check fmt fmt-check vet lint test test-race \
-	reference-vet reference-test stable-coverage cli-check website-check-generated \
+	reference-vet reference-test cloud-manager-console stable-coverage cli-check website-check-generated \
 	website-gates website-sync setup-hooks tooling-test pre-push-check
 
 help: ## Show available commands
@@ -69,11 +70,15 @@ doc-check: ## Compile and run documentation snippets
 
 reference-vet: ## Run go vet for standalone reference modules
 reference-test: ## Test standalone reference modules
-reference-vet reference-test:
+reference-vet reference-test: $(if $(wildcard $(CLOUD_MANAGER_CONSOLE)/package.json),cloud-manager-console)
 	@set -e; for mod in reference/*/go.mod; do \
 	  dir=$$(dirname "$$mod"); echo "==> $$dir"; \
 	  go -C "$$dir" $(patsubst reference-%,%,$@) ./...; \
 	done
+
+cloud-manager-console: ## Build the console assets embedded in cloud-manager
+	npm --prefix "$(CLOUD_MANAGER_CONSOLE)" ci --include=dev
+	npm --prefix "$(CLOUD_MANAGER_CONSOLE)" run build
 
 stable-coverage: ## Require 90% stable coverage; optionally save COVERAGE_FILE=<path>
 	@set -e; tmp=$$(mktemp -d "$${TMPDIR:-/tmp}/plumego-coverage.XXXXXX"); \

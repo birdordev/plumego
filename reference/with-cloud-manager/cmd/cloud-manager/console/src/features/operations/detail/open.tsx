@@ -10,7 +10,7 @@ export function showOperation(id: string) {
   const target = base + '/operations/' + operation
   openDetail('操作详情', (stamp, signal) => (
     <Suspense fallback={<p role="status">正在加载…</p>}>
-      <OperationPanel target={target} ticketTarget={base + '/governance/change-tickets/' + operation}
+      <OperationPanel project={base} target={target} ticketTarget={base + '/governance/change-tickets/' + operation}
         stamp={stamp} signal={signal} reload={() => showOperation(id)} />
     </Suspense>
   ))

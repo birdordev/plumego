@@ -1,4 +1,5 @@
 import { nativeAssetActions } from '../instances/console-actions'
+import { bareMetalActions } from '../bare-metal/row-actions'
 import { cacheActions } from '../caches/row-actions'
 import { clusterActions } from '../clusters/row-actions'
 import { databaseActions } from '../databases/row-actions'
@@ -17,6 +18,7 @@ const actions: Partial<Record<string, ListAssetActions>> = {
   'dns-zone': dnsActions,
   'database-instance': databaseActions,
   'cache-instance': cacheActions,
+  'bare-metal': bareMetalActions,
   'elastic-ip': elasticIPActions,
   'load-balancer': loadBalancerActions,
   volume: snapshotCreationActions,

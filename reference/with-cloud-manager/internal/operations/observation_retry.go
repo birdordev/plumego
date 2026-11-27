@@ -8,6 +8,7 @@ import (
 	dbutil "github.com/birdordev/plumego/store/db"
 
 	"with-cloud-manager/internal/identity"
+	"with-cloud-manager/internal/inventory"
 	"with-cloud-manager/internal/provider"
 )
 
@@ -32,7 +33,7 @@ func (s Store) RetryCreationObservation(ctx context.Context, token string, scope
 			JOIN cmp_instance_operations AS o ON (t.tenant_id,t.id)=(o.tenant_id,o.operation_id)
 			WHERE (o.tenant_id,o.project_id,o.operation_id)=($1,$2,$3)
 			AND o.action IN ('create','create-network','create-subnet','create-security-group','create-security-group-rule',
-			    'create-elastic-ip','create-snapshot','delete-snapshot','restore-snapshot','rollback-snapshot','create-image','copy-image','delete-image','delete-network','delete-subnet','delete-security-group','revoke-security-group-rule','release-elastic-ip','bind-elastic-ip','unbind-elastic-ip','rename-load-balancer','rename-load-balancer-listener','rename-load-balancer-target-group','set-load-balancer-backend-weight','detach-load-balancer-backend','attach-load-balancer-backend','set-dns-record-status','create-dns-record','delete-dns-record','scale-workload','rename-database-instance','rename-cache-instance','retire-instance') FOR UPDATE OF t`,
+			    'create-elastic-ip','create-snapshot','delete-snapshot','restore-snapshot','rollback-snapshot','create-image','copy-image','delete-image','delete-network','delete-subnet','delete-security-group','revoke-security-group-rule','release-elastic-ip','bind-elastic-ip','unbind-elastic-ip','rename-load-balancer','rename-load-balancer-listener','rename-load-balancer-target-group','set-load-balancer-backend-weight','detach-load-balancer-backend','attach-load-balancer-backend','set-dns-record-status','create-dns-record','delete-dns-record','scale-workload','rename-database-instance','rename-cache-instance','retire-instance','power-on-bare-metal','shutdown-bare-metal','stage-bare-metal-pxe','cancel-bare-metal-pxe') FOR UPDATE OF t`,
 			actor.Tenant, actor.Project, id).Scan(&queueStatus)
 		if errors.Is(err, sql.ErrNoRows) {
 			return identity.ErrForbidden
@@ -69,7 +70,7 @@ func (s Store) RetryCreationObservation(ctx context.Context, token string, scope
 			return ErrConflict
 		}
 		var access identity.AccountAccess
-		if op.Action == retireInstance || op.Action == revokeSecurityRule || op.Action == deleteImage || isNetworkDeletion(op.Action) || op.Action == deleteSnapshot || op.Action == rollbackSnapshot || op.Action == releaseElasticIP || isElasticIPBinding(op.Action) || isLoadBalancerMutation(op.Action) || isDNSRecordMutation(op.Action) || op.Action == scaleWorkload || op.Action == renameDatabaseInstance || op.Action == renameCacheInstance {
+		if op.ResourceKind == provider.BareMetal || op.Action == retireInstance || op.Action == revokeSecurityRule || op.Action == deleteImage || isNetworkDeletion(op.Action) || op.Action == deleteSnapshot || op.Action == rollbackSnapshot || op.Action == releaseElasticIP || isElasticIPBinding(op.Action) || isLoadBalancerMutation(op.Action) || isDNSRecordMutation(op.Action) || op.Action == scaleWorkload || op.Action == renameDatabaseInstance || op.Action == renameCacheInstance {
 			access, err = identity.NewStore(tx).AuthorizeAccount(ctx, actor, op.Account, identity.View)
 		} else {
 			access, err = authorizeLaunchObservation(ctx, tx, actor, op.Account)
@@ -161,7 +162,11 @@ func (s Store) RetryCreationObservation(ctx context.Context, token string, scope
 			query = `UPDATE cmp_dns_record_creation_intents SET observation_reviewer=$2,
 				observation_membership_revision=$3,observation_credential_revision=$4 WHERE operation_id=$1`
 		}
-		if _, err := tx.ExecContext(ctx, query, id, actor.Principal,
+		if op.ResourceKind == provider.BareMetal {
+			if _, err := inventory.ResolveBareMetalObservation(ctx, tx, actor, op.Account, op.Region, op.AssetID); err != nil {
+				return err
+			}
+		} else if _, err := tx.ExecContext(ctx, query, id, actor.Principal,
 			access.MembershipRevision, access.CredentialRevision); err != nil {
 			return err
 		}

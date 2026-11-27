@@ -1,10 +1,6 @@
-type Summary = {
-  product?: string
-  dns_name?: string
-  private_addresses?: string[]
-}
+import type { LoadBalancerSummaryData } from './summary-schema'
 
-export function LoadBalancerSummary({ product, dns_name, private_addresses }: Summary) {
+export function LoadBalancerSummary({ product, dns_name, private_addresses }: LoadBalancerSummaryData) {
   return <>
     {product ? <span className="minor">{product}</span> : null}
     {dns_name ? <span className="minor">{dns_name}</span> : null}

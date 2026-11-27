@@ -10,8 +10,17 @@ export const featureEntrypoints = new Set([
   'operations/detail/open.tsx',
   'operations/forms/OperationForm.tsx',
   'operations/labels.ts',
-  'operations/schema.ts',
+  'operations/forms/schema.ts',
   'session/client.ts',
   'session/project.ts',
   'session/store.ts',
+])
+
+export const appFeatureEntrypoints = new Set([
+  'batches/request/selection-format.ts',
+  'catalog/launch/attempts.ts',
+  'operations/forms/attempts.ts',
+  'session/login/LoginPage.tsx',
+  'session/api.ts',
+  'session/useSessionRestore.ts',
 ])

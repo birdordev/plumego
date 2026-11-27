@@ -5,28 +5,30 @@ import { useResourceRead } from '../../../shared/api/useResourceRead'
 import { actions } from '../labels'
 import { request } from '../../session/client'
 import { sessionSnapshot } from '../../session/store'
-import { ChangeTicketReview } from './ChangeTicketReview'
-import { OperationDecisions } from './OperationDecisions'
-import { OperationTimeline } from './OperationTimeline'
+import { ChangeTicketReview } from './review/ChangeTicketReview'
+import { OperationDecisions } from './review/OperationDecisions'
+import { OperationTimeline } from './events/OperationTimeline'
+import { BareMetalDeploymentSection } from './bare-metal-deployment/BareMetalDeploymentSection'
 import { assetRenameFields } from './fields/asset-rename'
 import { dnsOperationFields } from './fields/dns'
 import { imageOperationFields } from './fields/image'
 import { loadBalancerOperationFields } from './fields/load-balancer'
 import { retirementFields } from './fields/retirement'
 import { networkOperationFields } from './fields/network'
-import { operationDetailSchema, operationEventsSchema } from './schema'
+import { readOperationEvents } from './events/api'
+import { operationDetailSchema } from './schema'
 import { workloadScaleFields } from './fields/workload'
 import { snapshotOperationFields } from './fields/snapshot'
 
 function readDetails(target: string, signal: AbortSignal) {
   return Promise.all([
     request(target, { signal }, operationDetailSchema),
-    request(target + '/events', { signal }, operationEventsSchema),
+    readOperationEvents(target, signal),
   ])
 }
 
-export default function OperationPanel({ target, ticketTarget, stamp, signal, reload }:
-  { target: string; ticketTarget: string; stamp: number; signal: AbortSignal; reload: () => void }) {
+export default function OperationPanel({ project, target, ticketTarget, stamp, signal, reload }:
+  { project: string; target: string; ticketTarget: string; stamp: number; signal: AbortSignal; reload: () => void }) {
   const result = useResourceRead(target, readDetails, signal)
   if (result.state === 'error') return <p role="alert" className="notice" data-error="true">{requestErrorMessage(result.error)}</p>
   if (result.state === 'loading') return <p role="status">正在加载…</p>
@@ -42,6 +44,7 @@ export default function OperationPanel({ target, ticketTarget, stamp, signal, re
 
   return <>
     <DetailFields fields={fields} />
+    <BareMetalDeploymentSection operation={op} project={project} stamp={stamp} reload={reload} />
     <OperationTimeline initial={events} target={target} signal={signal} />
     {op.ticket_policy_revision ? <ChangeTicketReview target={ticketTarget} signal={signal} reload={reload}>
       {(ready) => canReview ? <OperationDecisions operation={op} target={target} stamp={stamp}

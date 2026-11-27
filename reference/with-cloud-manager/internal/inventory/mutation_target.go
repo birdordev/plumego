@@ -31,6 +31,50 @@ func ResolveMutationPreview(ctx context.Context, tx *sql.Tx, actor identity.Scop
 	return resolveMutation(ctx, tx, actor, account, region, id, kind, true, identity.Execute, false)
 }
 
+func ResolveBareMetalMutation(ctx context.Context, tx *sql.Tx, actor identity.Scope, account, site, id string) (MutationTarget, error) {
+	return resolveBareMetalMutation(ctx, tx, actor, account, site, id, true)
+}
+
+func PreviewBareMetalMutation(ctx context.Context, tx *sql.Tx, actor identity.Scope, account, site, id string) (MutationTarget, error) {
+	return resolveBareMetalMutation(ctx, tx, actor, account, site, id, false)
+}
+
+func resolveBareMetalMutation(ctx context.Context, tx *sql.Tx, actor identity.Scope, account, site, id string, lock bool) (MutationTarget, error) {
+	target, err := resolveMutation(ctx, tx, actor, account, site, id, provider.BareMetal, true, identity.ExecuteBareMetal, lock)
+	if err != nil {
+		return target, err
+	}
+	if lock {
+		if err := lockBareMetalCustody(ctx, tx, id); err != nil {
+			return target, err
+		}
+	}
+	var current bool
+	err = tx.QueryRowContext(ctx, `SELECT s.credential_revision=$2 AND s.completed_at IS NOT NULL AND o.seen_generation=s.generation
+		FROM cmp_inventory_scopes AS s JOIN cmp_inventory_objects AS o USING (scope_id)
+		WHERE s.scope_id=$1 AND o.external_id=$3`, target.ScopeID, target.CredentialRevision, id).Scan(&current)
+	if err == nil && !current {
+		return target, identity.ErrAccountStale
+	}
+	return target, err
+}
+
+func ResolveBareMetalObservation(ctx context.Context, tx *sql.Tx, actor identity.Scope, account, site, id string) (MutationTarget, error) {
+	target, err := resolveMutation(ctx, tx, actor, account, site, id, provider.BareMetal, true, identity.View, true)
+	if err != nil {
+		return target, err
+	}
+	return target, lockBareMetalCustody(ctx, tx, id)
+}
+
+func ReadBareMetalTarget(ctx context.Context, tx *sql.Tx, actor identity.Scope, account, site, id string) (MutationTarget, error) {
+	return resolveMutation(ctx, tx, actor, account, site, id, provider.BareMetal, true, identity.View, false)
+}
+
+func LockBareMetalScope(ctx context.Context, tx *sql.Tx, tenant, account, site string) (int64, error) {
+	return lockInventoryScope(ctx, tx, tenant, account, site, provider.BareMetal)
+}
+
 func ResolveNetworkMutation(ctx context.Context, tx *sql.Tx, actor identity.Scope, account, region, id string, kind provider.Kind) (MutationTarget, error) {
 	return resolveMutation(ctx, tx, actor, account, region, id, kind, true, identity.Execute, true)
 }
@@ -95,7 +139,7 @@ func lockInventoryScope(ctx context.Context, tx *sql.Tx, tenant, account, region
 	return scopeID, err
 }
 
-func RecordInstanceStatus(ctx context.Context, tx *sql.Tx, scopeID int64, instance, status string) error {
+func RecordObservedAssetStatus(ctx context.Context, tx *sql.Tx, scopeID int64, instance, status string) error {
 	var id string
 	err := tx.QueryRowContext(ctx, `UPDATE cmp_inventory_objects SET status=$3,observed_at=statement_timestamp()
 		WHERE (scope_id,external_id)=($1,$2) AND removed_at IS NULL AND missing_generation IS NULL

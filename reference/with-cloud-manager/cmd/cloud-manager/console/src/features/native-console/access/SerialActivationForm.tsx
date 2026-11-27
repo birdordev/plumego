@@ -1,7 +1,7 @@
 import { DetailForm } from '../../../shared/detail/DetailForm'
 import { formText } from '../../../shared/detail/form-values'
 import { openDetail } from '../../../shared/detail/store'
-import { grantsCollection } from '../collection'
+import { grantsCollection } from '../grants/collection'
 import { SerialKeyField } from '../SerialKeyField'
 import { activateSerialKey } from './api'
 

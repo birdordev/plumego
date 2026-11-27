@@ -67,15 +67,15 @@ func (r kvmImageReader) Read(p []byte) (int, error) {
 	return r.Reader.Read(p)
 }
 
-func copyKVMImage(ctx context.Context, dst io.Writer, src io.Reader, vm kvm.VM) error {
+func copyKVMImage(ctx context.Context, dst io.Writer, src io.Reader, image kvm.BootImageSpec) error {
 	digest := sha256.New()
-	reader := kvmImageReader{ctx: ctx, Reader: io.LimitReader(src, vm.ImageSizeBytes+1)}
+	reader := kvmImageReader{ctx: ctx, Reader: io.LimitReader(src, image.SizeBytes+1)}
 	n, err := io.CopyBuffer(io.MultiWriter(dst, digest), reader, make([]byte, 1<<20))
 	if err != nil {
 		return err
 	}
-	if n != vm.ImageSizeBytes || hex.EncodeToString(digest.Sum(nil)) != vm.ImageSHA256 {
-		return errors.New("KVM boot image size or SHA-256 mismatch")
+	if n != image.SizeBytes || hex.EncodeToString(digest.Sum(nil)) != image.SHA256 {
+		return errKVMImageMismatch
 	}
 	return nil
 }
@@ -94,7 +94,7 @@ func verifyKVMImageVolume(ctx context.Context, pool string, vm kvm.VM) (err erro
 	if info.Size() != vm.ImageSizeBytes || kvmImageLinkCount(info) != 1 {
 		return errKVMUnsafeTarget
 	}
-	return copyKVMImage(ctx, io.Discard, file, vm)
+	return copyKVMImage(ctx, io.Discard, file, kvm.BootImageSpec{SHA256: vm.ImageSHA256, SizeBytes: vm.ImageSizeBytes})
 }
 
 func lockKVMImageSpool(root *os.Root, volume string) (*os.File, error) {
@@ -118,7 +118,7 @@ func lockKVMImageSpool(root *os.Root, volume string) (*os.File, error) {
 		return nil, err
 	}
 	if err := syscall.Flock(int(file.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
-		return nil, errors.Join(errors.New("KVM boot volume staging is already in progress"), file.Close())
+		return nil, errors.Join(errors.New("KVM image publication is already in progress"), file.Close())
 	}
 	return file, nil
 }
@@ -127,24 +127,48 @@ func stageKVMImage(ctx context.Context, imageRoot, pool string, vm kvm.VM, autho
 	if !validKVMImageSpec(vm) || vm.ImageID == "" {
 		return errKVMUnsafeTarget
 	}
-	root, err := openKVMImageRoot(pool)
+	image := kvm.BootImageSpec{ID: vm.ImageID, SHA256: vm.ImageSHA256, SizeBytes: vm.ImageSizeBytes}
+	return publishKVMImage(ctx, pool, vm.Volume, image, authorize, func() (io.ReadCloser, error) {
+		root, err := openKVMImageRoot(imageRoot)
+		if err != nil {
+			return nil, err
+		}
+		source, info, openErr := openKVMImageFile(root, image.SHA256+".raw")
+		if err := errors.Join(openErr, root.Close()); err != nil {
+			if source != nil {
+				err = errors.Join(err, source.Close())
+			}
+			return nil, err
+		}
+		if info.Size() != image.SizeBytes {
+			return nil, errors.Join(errKVMImageMismatch, source.Close())
+		}
+		return source, nil
+	})
+}
+
+func publishKVMImage(ctx context.Context, directory, name string, image kvm.BootImageSpec, authorize func() error, openSource func() (io.ReadCloser, error)) (err error) {
+	if !image.Valid() || (name != image.SHA256+".raw" && !kvmUnitName.MatchString(name)) {
+		return errKVMUnsafeTarget
+	}
+	root, err := openKVMImageRoot(directory)
 	if err != nil {
 		return err
 	}
 	defer func() { err = errors.Join(err, root.Close()) }()
-	lock, err := lockKVMImageSpool(root, vm.Volume)
+	lock, err := lockKVMImageSpool(root, name)
 	if err != nil {
 		return err
 	}
 	defer func() { err = errors.Join(err, lock.Close()) }()
 
-	temp := filepath.Join(kvmImageSpool, vm.Volume+".part")
-	existing, info, err := openKVMImageFile(root, vm.Volume)
+	temp := filepath.Join(kvmImageSpool, name+".part")
+	existing, info, err := openKVMImageFile(root, name)
 	if err == nil {
-		if info.Size() != vm.ImageSizeBytes {
-			return errors.Join(errKVMUnsafeTarget, existing.Close())
+		if info.Size() != image.SizeBytes {
+			return errors.Join(errKVMImageMismatch, existing.Close())
 		}
-		if err := errors.Join(copyKVMImage(ctx, io.Discard, existing, vm), existing.Close()); err != nil {
+		if err := errors.Join(copyKVMImage(ctx, io.Discard, existing, image), existing.Close()); err != nil {
 			return err
 		}
 		return sealKVMImageLink(root, info, temp, authorize)
@@ -155,23 +179,15 @@ func stageKVMImage(ctx context.Context, imageRoot, pool string, vm kvm.VM, autho
 	if err := authorize(); err != nil {
 		return err
 	}
-	return copyKVMImageIntoPool(ctx, root, imageRoot, temp, vm, authorize)
-}
-
-func copyKVMImageIntoPool(ctx context.Context, root *os.Root, imageRoot, temp string, vm kvm.VM, authorize func() error) (err error) {
-	sourceRoot, err := openKVMImageRoot(imageRoot)
-	if err != nil {
-		return err
-	}
-	defer func() { err = errors.Join(err, sourceRoot.Close()) }()
-	source, info, err := openKVMImageFile(sourceRoot, vm.ImageSHA256+".raw")
+	source, err := openSource()
 	if err != nil {
 		return err
 	}
 	defer func() { err = errors.Join(err, source.Close()) }()
-	if info.Size() != vm.ImageSizeBytes {
-		return errKVMUnsafeTarget
-	}
+	return writeKVMImage(ctx, root, name, temp, image, source, authorize)
+}
+
+func writeKVMImage(ctx context.Context, root *os.Root, name, temp string, image kvm.BootImageSpec, source io.Reader, authorize func() error) (err error) {
 	prior, err := root.Lstat(temp)
 	if err == nil {
 		if !prior.Mode().IsRegular() || kvmImageLinkCount(prior) != 1 {
@@ -193,7 +209,7 @@ func copyKVMImageIntoPool(ctx context.Context, root *os.Root, imageRoot, temp st
 			err = errors.Join(err, root.Remove(temp))
 		}
 	}()
-	if err := copyKVMImage(ctx, dst, source, vm); err != nil {
+	if err := copyKVMImage(ctx, dst, source, image); err != nil {
 		return errors.Join(err, dst.Close())
 	}
 	if err := errors.Join(dst.Sync(), dst.Close()); err != nil {
@@ -202,12 +218,12 @@ func copyKVMImageIntoPool(ctx context.Context, root *os.Root, imageRoot, temp st
 	if err := authorize(); err != nil {
 		return err
 	}
-	if err := root.Link(temp, vm.Volume); err != nil {
+	if err := root.Link(temp, name); err != nil {
 		return err
 	}
 	// 链接存在后保留私有别名，直到目标路径持久化。崩溃后可验证并收尾。
 	cleanup = false
-	published, err := root.Lstat(vm.Volume)
+	published, err := root.Lstat(name)
 	if err != nil {
 		return err
 	}

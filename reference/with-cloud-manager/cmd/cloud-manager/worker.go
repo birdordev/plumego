@@ -12,6 +12,7 @@ import (
 	"with-cloud-manager/internal/provider/awsec2"
 	"with-cloud-manager/internal/provider/openstack"
 	"with-cloud-manager/internal/provider/publiccloud"
+	"with-cloud-manager/internal/provider/redfish"
 )
 
 func runWorker(ctx context.Context, db *sql.DB, manifest string) error {
@@ -66,6 +67,8 @@ func connectOperator(ctx context.Context, binding identity.CloudAccountBinding, 
 			return nil, identity.ErrForbidden
 		}
 		return client, nil
+	case provider.Redfish:
+		return connectRedfishPower(ctx, binding, path)
 	case provider.TencentCVM, provider.AlibabaECS, provider.HuaweiECS:
 		return connectPublicCloudOperator(ctx, binding, path, nil)
 	default:
@@ -92,4 +95,22 @@ func connectPublicCloudOperator(ctx context.Context, binding identity.CloudAccou
 		return nil, identity.ErrForbidden
 	}
 	return client.InstanceOperator(), nil
+}
+
+func connectRedfishPower(ctx context.Context, binding identity.CloudAccountBinding, path string) (provider.InstanceOperator, error) {
+	var profile redfishProfile
+	if err := loadPrivateProfile(path, &profile); err != nil {
+		return nil, err
+	}
+	if profile.Ref != binding.CredentialRef || binding.RemoteIdentity != profile.Config.Identity() {
+		return nil, identity.ErrForbidden
+	}
+	client, err := redfish.Connect(ctx, profile.Config, nil)
+	if provider.IsFailure(err, provider.Unauthorized) {
+		return nil, identity.ErrForbidden
+	}
+	if err != nil {
+		return nil, err
+	}
+	return redfish.PowerOperator{Client: client}, nil
 }

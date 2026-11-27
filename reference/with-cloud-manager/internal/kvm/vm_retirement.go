@@ -64,7 +64,7 @@ func reviewVMRetirement(ctx context.Context, tx *sql.Tx, actor identity.Scope, s
 	return recordEvent(ctx, tx, actor, site, v.Host, event, v.Placement)
 }
 
-func retainRetiredBootVolume(ctx context.Context, tx *sql.Tx, placement string) error {
+func retainReleasedBootVolume(ctx context.Context, tx *sql.Tx, placement string) error {
 	var id string
 	err := tx.QueryRowContext(ctx, `UPDATE cmp_kvm_placements SET released_at=clock_timestamp(),boot_volume_retained=true
 		WHERE placement_id=$1 AND consumed_at IS NOT NULL AND released_at IS NULL RETURNING placement_id`, placement).Scan(&id)

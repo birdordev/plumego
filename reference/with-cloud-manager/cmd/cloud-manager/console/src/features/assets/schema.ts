@@ -5,6 +5,8 @@ import { objectBucketSchema } from './buckets/schema'
 import { cacheSchema } from './caches/schema'
 import { clusterSchema } from './clusters/schema'
 import { databaseSchema } from './databases/schema'
+import { loadBalancerSummarySchema } from './load-balancers/summary-schema'
+import { snapshotSummarySchema } from './snapshots/schema'
 
 export const assetSchema = z.object({
   id: assetId,
@@ -18,16 +20,12 @@ export const assetSchema = z.object({
   ownership_revision: z.number().int().nonnegative(),
   parent_id: z.string().optional(),
   public_addresses: z.array(z.string()).optional(),
-  load_balancer: z.object({
-    product: z.string().optional(),
-    dns_name: z.string().optional(),
-    private_addresses: z.array(z.string()).optional(),
-  }).optional(),
+  load_balancer: loadBalancerSummarySchema.optional(),
   database_instance: databaseSchema.optional(),
   cache_instance: cacheSchema.optional(),
   kubernetes_cluster: clusterSchema.optional(),
   object_bucket: objectBucketSchema.optional(),
-  snapshot: z.object({ class: z.string().optional(), size_gib: z.number().int().nonnegative().optional() }).optional(),
+  snapshot: snapshotSummarySchema.optional(),
 })
 
 export const assetPageSchema = pageSchema(assetSchema)

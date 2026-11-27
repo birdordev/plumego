@@ -41,11 +41,11 @@ func planOperationRequest(base *url.URL, args []string) (operationRequestPlan, e
 		target, err := readOperationTarget(ledger, args)
 		return operationRequestPlan{target: target, method: http.MethodGet, status: http.StatusOK}, err
 	case "preview-retire":
-		return planOperationPreview(project.JoinPath("instance-operations", "retirement-preview"), args[3:])
+		return planOperationAssetRead(project.JoinPath("instance-operations", "retirement-preview"), "asset_id", args[3:])
 	case "retire-instance":
 		return planOperationSubmission(project.JoinPath("instance-operations", "retire"), args[0], args[3:])
 	case "preview-delete":
-		return planOperationPreview(project.JoinPath("instance-operations", "deletion-preview"), args[3:])
+		return planOperationAssetRead(project.JoinPath("instance-operations", "deletion-preview"), "asset_id", args[3:])
 	case "submit":
 		return planOperationSubmission(project.JoinPath("instance-operations"), args[0], args[3:])
 	case "create-instance":
@@ -84,6 +84,30 @@ func planOperationRequest(base *url.URL, args []string) (operationRequestPlan, e
 		return planOperationSubmission(project.JoinPath("load-balancers", "rename-target-group"), args[0], args[3:])
 	case "rename-load-balancer-listener":
 		return planOperationSubmission(project.JoinPath("load-balancers", "rename-listener"), args[0], args[3:])
+	case "register-deployment":
+		if len(args) == 3 {
+			return operationRequestPlan{target: project.JoinPath("bare-metal", "deployments"),
+				method: http.MethodPost, status: http.StatusCreated, inputLimit: 2048}, nil
+		}
+	case "get-deployment", "report-deployment":
+		if len(args) == 4 && operationClientSegment(args[3]) {
+			target := project.JoinPath("bare-metal", "deployments", url.PathEscape(args[3]))
+			if args[0] == "get-deployment" {
+				return operationRequestPlan{target: target, method: http.MethodGet, status: http.StatusOK}, nil
+			}
+			return operationRequestPlan{target: target.JoinPath("receipt"), method: http.MethodPost,
+				status: http.StatusOK, inputLimit: 2048}, nil
+		}
+	case "bare-metal-pxe":
+		return planOperationSubmission(project.JoinPath("bare-metal", "pxe"), args[0], args[3:])
+	case "bare-metal-power":
+		return planOperationSubmission(project.JoinPath("bare-metal", "power"), args[0], args[3:])
+	case "request-reclaim":
+		return planOperationSubmission(project.JoinPath("bare-metal", "reclaims"), args[0], args[3:])
+	case "current-reclaim":
+		return planOperationAssetRead(project.JoinPath("bare-metal", "reclaims", "current"), "system_id", args[3:])
+	case "get-reclaim", "review-reclaim", "claim-reclaim", "report-reclaim", "recover-reclaim", "review-reclaim-recovery":
+		return planBareMetalReclaim(project.JoinPath("bare-metal", "reclaims"), args[0], args[3:])
 	case "rename-cache-instance":
 		return planOperationSubmission(project.JoinPath("caches", "rename"), args[0], args[3:])
 	case "rename-database-instance":
@@ -117,16 +141,40 @@ func planOperationRequest(base *url.URL, args []string) (operationRequestPlan, e
 	return operationRequestPlan{}, errors.New(operationsUsage)
 }
 
-func planOperationPreview(target *url.URL, args []string) (operationRequestPlan, error) {
-	flags := flag.NewFlagSet("operations instance preview", flag.ContinueOnError)
+func planBareMetalReclaim(base *url.URL, command string, args []string) (operationRequestPlan, error) {
+	if len(args) != 1 || !operationClientSegment(args[0]) {
+		return operationRequestPlan{}, errors.New(operationsUsage)
+	}
+	target := base.JoinPath(url.PathEscape(args[0]))
+	if command == "get-reclaim" {
+		return operationRequestPlan{target: target, method: http.MethodGet, status: http.StatusOK}, nil
+	}
+	var suffix string
+	switch command {
+	case "review-reclaim":
+		suffix = "approval"
+	case "claim-reclaim":
+		suffix = "claim"
+	case "report-reclaim":
+		suffix = "receipt"
+	case "recover-reclaim":
+		suffix = "recovery"
+	case "review-reclaim-recovery":
+		suffix = "recovery/approval"
+	}
+	return operationRequestPlan{target: target.JoinPath(suffix), method: http.MethodPost, status: http.StatusOK, inputLimit: 2048}, nil
+}
+
+func planOperationAssetRead(target *url.URL, idField string, args []string) (operationRequestPlan, error) {
+	flags := flag.NewFlagSet("operations asset query", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 	account := flags.String("account", "", "")
 	region := flags.String("region", "", "")
-	asset := flags.String("asset-id", "", "")
+	asset := flags.String(strings.ReplaceAll(idField, "_", "-"), "", "")
 	if flags.Parse(args) != nil || flags.NArg() != 0 || *account == "" || *region == "" || *asset == "" {
 		return operationRequestPlan{}, errors.New(operationsUsage)
 	}
-	target.RawQuery = url.Values{"account": {*account}, "region": {*region}, "asset_id": {*asset}}.Encode()
+	target.RawQuery = url.Values{"account": {*account}, "region": {*region}, idField: {*asset}}.Encode()
 	return operationRequestPlan{target: target, method: http.MethodGet, status: http.StatusOK}, nil
 }
 
@@ -135,7 +183,7 @@ func planOperationSubmission(target *url.URL, command string, args []string) (op
 	flags.SetOutput(io.Discard)
 	key := flags.String("idempotency-key", "", "")
 	var match string
-	requireMatch := command == "retire-instance" || command == "rename-database-instance" || command == "rename-cache-instance" || command == "scale-workload" || command == "create-dns-record" || command == "delete-dns-record" || command == "set-dns-record-status" || command == "submit" || command == "delete-network" || command == "rename-load-balancer" || command == "rename-load-balancer-listener" || command == "rename-load-balancer-target-group" || command == "set-load-balancer-backend-weight" || command == "detach-load-balancer-backend" || command == "attach-load-balancer-backend" || command == "revoke-security-rule" || command == "release-elastic-ip" ||
+	requireMatch := command == "request-reclaim" || command == "bare-metal-pxe" || command == "bare-metal-power" || command == "retire-instance" || command == "rename-database-instance" || command == "rename-cache-instance" || command == "scale-workload" || command == "create-dns-record" || command == "delete-dns-record" || command == "set-dns-record-status" || command == "submit" || command == "delete-network" || command == "rename-load-balancer" || command == "rename-load-balancer-listener" || command == "rename-load-balancer-target-group" || command == "set-load-balancer-backend-weight" || command == "detach-load-balancer-backend" || command == "attach-load-balancer-backend" || command == "revoke-security-rule" || command == "release-elastic-ip" ||
 		command == "bind-elastic-ip" || command == "unbind-elastic-ip" || command == "create-snapshot" || command == "delete-snapshot" || command == "delete-image" || command == "create-image" || command == "copy-image" || command == "restore-snapshot" || command == "rollback-snapshot"
 	if requireMatch || command == "create-network" {
 		flags.Func("if-match", "", func(value string) error {
@@ -153,8 +201,11 @@ func planOperationSubmission(target *url.URL, command string, args []string) (op
 		return operationRequestPlan{}, errors.New(operationsUsage)
 	}
 	bodyLimit := 4096
-	if command == "submit-batch" {
+	switch command {
+	case "submit-batch":
 		bodyLimit = batchBodyLimit
+	case "request-reclaim":
+		bodyLimit = 2048
 	}
 	return operationRequestPlan{target: target, method: http.MethodPost, status: http.StatusAccepted,
 		key: *key, match: match, inputLimit: bodyLimit}, nil
@@ -170,7 +221,9 @@ func planOperationDecision(target *url.URL, command string, args []string) (oper
 	case "approve":
 		var input operations.Approval
 		flags.StringVar(&input.Decision, "decision", "", "")
-		if flags.Parse(args) != nil || flags.NArg() != 0 || (input.Decision != "approve" && input.Decision != "reject") {
+		flags.StringVar(&input.DeploymentID, "deployment-id", "", "")
+		if flags.Parse(args) != nil || flags.NArg() != 0 || (input.Decision != "approve" && input.Decision != "reject") ||
+			(input.DeploymentID != "" && input.Decision != "approve") {
 			return operationRequestPlan{}, usage
 		}
 		body, path = input, "approval"

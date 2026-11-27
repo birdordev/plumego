@@ -118,7 +118,7 @@ func (a AccountAdmin) Register(ctx context.Context, token string, scope Scope, i
 
 func supportedAccountProvider(name string) bool {
 	switch name {
-	case "aws-ec2", "openstack", provider.TencentCVM, provider.AlibabaECS, provider.HuaweiECS, provider.VSphere:
+	case "aws-ec2", "openstack", provider.TencentCVM, provider.AlibabaECS, provider.HuaweiECS, provider.VSphere, provider.Redfish:
 		return true
 	default:
 		return false
@@ -155,7 +155,7 @@ func validAccountChange(change AccountChange) bool {
 	switch change.Action {
 	case "rotate":
 		return change.TargetProject == "" && credentialReference.MatchString(change.CredentialRef)
-	case "suspend", "resume":
+	case "suspend", "resume", "enable-bare-metal-power", "disable-bare-metal-power":
 		return change.TargetProject == "" && change.CredentialRef == ""
 	case "transfer", "share", "unshare":
 		return accountIdentifier.MatchString(change.TargetProject) && change.CredentialRef == ""
@@ -173,6 +173,17 @@ func updateAccount(ctx context.Context, tx *sql.Tx, actor Scope, account Account
 	case "rotate":
 		if mode != "suspended" {
 			mode = "pending"
+		}
+	case "enable-bare-metal-power", "disable-bare-metal-power":
+		if account.Provider != provider.Redfish {
+			return Account{}, ErrAccountConflict
+		}
+		if change.Action == "enable-bare-metal-power" && mode == "read_only" {
+			mode = "write_enabled"
+		} else if change.Action == "disable-bare-metal-power" && mode == "write_enabled" {
+			mode = "read_only"
+		} else {
+			return Account{}, ErrAccountConflict
 		}
 	case "suspend":
 		if mode == "suspended" {

@@ -1,7 +1,7 @@
 import { relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import ts from 'typescript'
-import { featureEntrypoints } from './feature-entrypoints.mjs'
+import { appFeatureEntrypoints, featureEntrypoints } from './feature-entrypoints.mjs'
 import { firstImportCycle } from './import-cycles.mjs'
 import { canImport, sourceArea } from './import-policy.mjs'
 import { moduleReferences } from './module-references.mjs'
@@ -25,7 +25,7 @@ function report(message) {
   violations++
 }
 
-for (const entry of featureEntrypoints) {
+for (const entry of [...featureEntrypoints, ...appFeatureEntrypoints]) {
   if (!ts.sys.fileExists(resolve(source, 'features', entry))) report(`模块入口不存在：${entry}`)
 }
 
@@ -35,7 +35,7 @@ for (const file of project.fileNames) {
   const parsed = ts.createSourceFile(file, ts.sys.readFile(file), ts.ScriptTarget.Latest, true)
   const dependencies = []
   runtimeImports.set(file, dependencies)
-  for (const { name, line, eager } of moduleReferences(parsed)) {
+  for (const { name, line, kind } of moduleReferences(parsed)) {
     const location = `${relative(root, file)}:${line}`
     if (!name) {
       report(`${location} 模块路径必须为显式的字符串字面量`)
@@ -47,8 +47,8 @@ for (const file of project.fileNames) {
     const dependency = resolvedModule.resolvedFileName
     const target = sourceArea(source, dependency)
     if (!target) continue
-    if (!canImport(from, target)) report(`${location} 导入 "${name}" 超出模块边界`)
-    if (eager) dependencies.push(dependency)
+    if (!canImport(from, target, kind)) report(`${location} 导入 "${name}" 超出模块边界`)
+    if (kind === 'static') dependencies.push(dependency)
   }
 }
 

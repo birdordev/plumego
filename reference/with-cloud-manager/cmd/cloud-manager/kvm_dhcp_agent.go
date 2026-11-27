@@ -42,7 +42,7 @@ func runKVMDHCP(ctx context.Context, api kvmVMAPI, target kvmDHCPTarget, output 
 	if err := api.request(ctx, api.target, http.MethodGet, nil, &host); err != nil {
 		return err
 	}
-	if host.ID != target.host || host.Generation != generation || !kvmMachineUUID.MatchString(host.UUID) {
+	if host.ID != target.host || host.Generation != generation || host.FenceState != "" || !kvmMachineUUID.MatchString(host.UUID) {
 		return errKVMNetworkMapping
 	}
 	caps, err := read(ctx, "capabilities")

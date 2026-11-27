@@ -11,6 +11,8 @@ import (
 	"with-cloud-manager/internal/kvm"
 )
 
+var errKVMImageMismatch = errors.New("KVM boot image size or SHA-256 mismatch")
+
 func validKVMImageSpec(vm kvm.VM) bool {
 	if vm.ImageID == "" {
 		return vm.ImageSHA256 == "" && vm.ImageSizeBytes == 0
@@ -63,7 +65,10 @@ func runKVMImageStage(ctx context.Context, api kvmVMAPI, target *url.URL, agent 
 		return err
 	}
 	if err := stageKVMImage(ctx, profile.ImageRoot, pool, job, authorize); err != nil {
-		return errors.Join(err, submitKVMObservation(ctx, api, target, agent, job, "mismatch", output))
+		if errors.Is(err, errKVMImageMismatch) {
+			return errors.Join(err, submitKVMObservation(ctx, api, target, agent, job, "mismatch", output))
+		}
+		return err
 	}
 	if err := authorize(); err != nil {
 		return err

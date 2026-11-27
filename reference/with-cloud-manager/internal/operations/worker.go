@@ -20,10 +20,11 @@ import (
 type ConnectOperator func(context.Context, identity.CloudAccountBinding) (provider.InstanceOperator, error)
 
 type work struct {
-	retirement     provider.InstanceRetirement
-	cacheRename    provider.CacheRename
-	databaseRename provider.DatabaseRename
-	workloadScale  provider.WorkloadScaleChange
+	bareMetalDeployment bool
+	retirement          provider.InstanceRetirement
+	cacheRename         provider.CacheRename
+	databaseRename      provider.DatabaseRename
+	workloadScale       provider.WorkloadScaleChange
 	Operation
 	actor                             identity.Scope
 	binding                           identity.CloudAccountBinding
@@ -144,6 +145,13 @@ func (s Store) process(ctx context.Context, task mq.Task, connect ConnectOperato
 		return true, nil
 	}
 	scope := provider.Scope{Provider: w.binding.Provider, RemoteIdentity: w.binding.RemoteIdentity, Region: w.Region, Kind: provider.Instance}
+	if w.ResourceKind == provider.BareMetal {
+		if closer, ok := client.(interface{ Close() }); ok {
+			defer closer.Close()
+		}
+		scope.Kind = provider.BareMetal
+		return s.processBareMetalPower(ctx, task, w, client, scope)
+	}
 	if w.Action == retireInstance {
 		return s.processInstanceRetirement(ctx, task, w, client, scope)
 	}
@@ -259,7 +267,7 @@ func (s Store) dispatchInstance(ctx context.Context, task mq.Task, w work, clien
 		prepareSend = func() (func(context.Context) (string, error), error) {
 			return preparer.PrepareInstanceDeletion(ctx, scope, w.AssetID)
 		}
-	} else if preparer, ok := client.(provider.InstancePowerPreparer); ok && instancePowerAction(w.Action) {
+	} else if preparer, ok := client.(provider.InstancePowerPreparer); ok && (instancePowerAction(w.Action) || w.ResourceKind == provider.BareMetal) {
 		prepareSend = func() (func(context.Context) (string, error), error) {
 			return preparer.PrepareInstancePower(ctx, scope, w.AssetID, w.Action)
 		}
@@ -295,6 +303,9 @@ func (s Store) dispatchInstance(ctx context.Context, task mq.Task, w work, clien
 	}
 	if armed.Status != "applying" {
 		return false, mq.ErrLeaseLost
+	}
+	if armed.bareMetalDeployment {
+		return false, s.transition(ctx, task, "applying", "failed", "deployment_binding_changed", "")
 	}
 	requestID, callErr := send(ctx)
 	state, reason := "observing", "provider_accepted"
@@ -435,6 +446,9 @@ func (s Store) prepare(ctx context.Context, task mq.Task, arm bool) (work, error
 }
 
 func checkOperationTarget(ctx context.Context, tx *sql.Tx, w *work) error {
+	if w.ResourceKind == provider.BareMetal {
+		return checkBareMetalPower(ctx, tx, w)
+	}
 	if w.Action == retireInstance {
 		return checkInstanceRetirement(ctx, tx, w)
 	}
@@ -577,6 +591,9 @@ func (s Store) dispatchSingleMutation(ctx context.Context, task mq.Task, w work,
 	defer cancel()
 	if w.Action == scaleWorkload && (provider.IsFailure(callErr, provider.PreconditionFailed) || provider.IsFailure(callErr, provider.Unauthorized)) {
 		return false, s.transition(cleanup, task, "applying", "failed", "workload_scale_rejected", "")
+	}
+	if w.bareMetalDeployment && provider.IsFailure(callErr, provider.PreconditionFailed) {
+		return false, s.transition(cleanup, task, "applying", "failed", "bare_metal_deployment_preconditions_unconfirmed", "")
 	}
 	reason = "provider_accepted"
 	if callErr != nil {

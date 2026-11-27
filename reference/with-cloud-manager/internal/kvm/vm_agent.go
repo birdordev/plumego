@@ -53,6 +53,9 @@ func (s Store) withVMHost(ctx context.Context, token string, scope identity.Scop
 		if host.Generation != agent.Generation {
 			return ErrStale
 		}
+		if host.FenceState != "" {
+			return ErrConflict
+		}
 		if err := checkAgent(ctx, tx, actor, host.Agent); err != nil {
 			return err
 		}
@@ -203,7 +206,7 @@ func (s Store) ObserveVM(ctx context.Context, token string, scope identity.Scope
 		case "undefining":
 			if sample.Observed == "absent" && v.Observation == "absent" {
 				next = "retired"
-				if err := retainRetiredBootVolume(ctx, tx, v.Placement); err != nil {
+				if err := retainReleasedBootVolume(ctx, tx, v.Placement); err != nil {
 					return err
 				}
 			}

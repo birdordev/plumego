@@ -134,6 +134,11 @@ func (s Store) TransferOwnership(ctx context.Context, token string, source ident
 				return identity.ErrAccountConflict
 			}
 		}
+		if input.Kind == provider.BareMetal {
+			if err := checkBareMetalTransfer(ctx, tx, actor, scopeID, before.Revision, input.Account, input.Region, input.AssetID); err != nil {
+				return err
+			}
+		}
 		if input.Kind == provider.LoadBalancer {
 			active, err := loadBalancerChangeActive(ctx, tx, scopeID, input.AssetID)
 			if err != nil {

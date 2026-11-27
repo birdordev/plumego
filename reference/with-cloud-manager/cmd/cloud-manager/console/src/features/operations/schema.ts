@@ -1,6 +1,5 @@
 import { z } from 'zod'
 import { time } from '../../shared/api/fields'
-import { pageSchema } from '../../shared/api/page'
 
 export const operationSchema = z.object({
   id: z.string(),
@@ -10,6 +9,4 @@ export const operationSchema = z.object({
   created_at: time,
 })
 
-export const operationPageSchema = pageSchema(operationSchema)
-
-export const operationReceiptSchema = z.object({ id: z.string().min(1) })
+export type Operation = z.infer<typeof operationSchema>

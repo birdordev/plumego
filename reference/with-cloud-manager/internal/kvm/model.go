@@ -70,6 +70,7 @@ type Host struct {
 	Generation int64      `json:"generation"`
 	Sequence   int64      `json:"sequence"`
 	Draining   bool       `json:"draining"`
+	FenceState string     `json:"fence_state,omitempty"`
 	ReportedAt *time.Time `json:"reported_at,omitempty"`
 	Capacity   Capacity   `json:"capacity"`
 }

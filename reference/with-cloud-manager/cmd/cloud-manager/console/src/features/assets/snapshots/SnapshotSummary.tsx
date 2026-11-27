@@ -1,4 +1,6 @@
-type Props = { parentID?: string; snapshot?: { class?: string; size_gib?: number } }
+import type { SnapshotSummaryData } from './schema'
+
+type Props = { parentID?: string; snapshot?: SnapshotSummaryData }
 
 export function SnapshotSummary({ parentID, snapshot }: Props) {
   const summary = [

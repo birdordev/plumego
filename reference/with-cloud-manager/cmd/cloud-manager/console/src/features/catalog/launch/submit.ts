@@ -1,5 +1,5 @@
 import { ConsoleRequestError } from '../../../shared/api/requests'
-import { operationReceiptSchema } from '../../operations/schema'
+import { operationReceiptSchema } from '../../operations/forms/schema'
 import { request } from '../../session/client'
 import { notifyCatalogRetry, removeCatalogAttempt, type LaunchAttempt } from './attempts'
 

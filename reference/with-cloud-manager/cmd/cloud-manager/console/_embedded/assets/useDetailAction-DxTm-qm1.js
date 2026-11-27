@@ -1,1 +1,0 @@
-import{r as e}from"./react-runtime-Br0ptrPz.js";import{r as t,x as n,y as r}from"../app.js";var i=e();function a(e){let a=(0,i.useRef)(!1),[o,s]=(0,i.useState)(!1);async function c(i,o){if(!a.current&&r(e)){a.current=!0,s(!0),n(e);try{let t=await i();r(e)&&o?.(t)}catch(r){n(e,t(r),!0)}finally{a.current=!1,r(e)&&s(!1)}}}return{busy:o,run:c}}export{a as t};

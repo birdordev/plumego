@@ -76,7 +76,8 @@ mixed Go/website diffs retain both gate families.
 
 The pre-push hook uses `make pre-push-check` for every branch: formatting, vet,
 snippets, and standard tests. Full validation belongs to CI or an explicit local
-`make gates` run. Go checks do not require Node/pnpm; website checks do.
+`make gates` run. The cloud manager reference uses Node.js and npm to build its
+embedded console before the reference Go checks. Website checks use Node.js and pnpm.
 CI invokes `make go-gates` and `make cli-check` in separate jobs, and also runs
 fuzz, lint, cross-platform, website, and CodeQL checks.
 

@@ -1,1 +1,0 @@
-import{d as e}from"./labels-DfXLiRy3.js";import{t}from"./react-runtime-Br0ptrPz.js";var n=t();function r({children:e,onClick:t}){return(0,n.jsx)(`button`,{type:`button`,onClick:t,children:e})}function i({status:t}){return(0,n.jsx)(`span`,{className:`state`,"data-state":t,children:t in e?e[t]:t||`未知`})}export{i as n,r as t};

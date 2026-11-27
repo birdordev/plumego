@@ -50,6 +50,11 @@ var clusterWorkloadSchedulesSchema string
 //go:embed 0089_cluster_workload_watch_schedules.sql
 var clusterWorkloadWatchSchedulesSchema string
 
+//go:embed 0117_redfish_schedules.sql
+var redfishSchedulesSchema string
+
+const RedfishScheduleMigration = "0117_redfish_schedules"
+
 var ErrStale = errors.New("inventory schedule lease expired or was replaced")
 
 func Migrate(ctx context.Context, db *sql.DB) error {
@@ -89,7 +94,10 @@ func Migrate(ctx context.Context, db *sql.DB) error {
 	if err := dbschema.Apply(ctx, db, "0089_cluster_workload_watch_schedules", clusterWorkloadWatchSchedulesSchema); err != nil {
 		return err
 	}
-	return dbschema.Apply(ctx, db, "0099_idle_schedules", idleScheduleSchema)
+	if err := dbschema.Apply(ctx, db, "0099_idle_schedules", idleScheduleSchema); err != nil {
+		return err
+	}
+	return dbschema.Apply(ctx, db, RedfishScheduleMigration, redfishSchedulesSchema)
 }
 
 const (

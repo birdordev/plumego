@@ -191,9 +191,11 @@ func registerOpenAPI(app *core.App, console *consoleConfig) error {
 		Content: map[string]openapi.MediaType{"application/json": {Schema: openapi.Schema{Type: "object", Properties: map[string]openapi.Schema{"evidence_ref": openapi.String, "provider_resource_id": openapi.String}}}}}
 	approval := accountOp("decideInstanceApproval", "200", "已记录发送前审批决定", true)
 	approval.Responses["412"] = openapi.Response{Description: "申请所依据的资源或授权版本已失效"}
-	approval.Responses["409"] = openapi.Response{Description: "审批决定冲突、实例受删除保护或外部工单批准无效"}
-	approval.Body = &openapi.RequestBody{Required: true, Description: "提交 approve 或 reject",
-		Content: map[string]openapi.MediaType{"application/json": {Schema: openapi.Schema{Type: "object", Properties: map[string]openapi.Schema{"decision": openapi.String}}}}}
+	approval.Responses["409"] = openapi.Response{Description: "审批决定冲突、部署未核对或已过期、实例受删除保护或外部工单批准无效"}
+	approval.Body = &openapi.RequestBody{Required: true, Description: "提交 approve 或 reject。批准已关联部署的开机操作时须提交已核对的 deployment_id。",
+		Content: map[string]openapi.MediaType{"application/json": {Schema: openapi.Schema{Type: "object", Properties: map[string]openapi.Schema{
+			"decision": openapi.String, "deployment_id": openapi.String,
+		}}}}}
 	preview := accountOp("previewInstanceDeletion", "200", "实例本地删除影响预览，含归属版本、保护状态、已知卷关联数、审批要求与厂商支持状态", false)
 	preview.Responses["400"] = openapi.Response{Description: "无效的实例坐标"}
 	for _, name := range []string{"account", "region", "asset_id"} {
@@ -338,6 +340,18 @@ func registerOpenAPI(app *core.App, console *consoleConfig) error {
 				"current_name": openapi.String, "name": openapi.String,
 			},
 		}}}}
+	bareMetalPower := accountOp("requestBareMetalPower", "202", "已持久受理的裸金属电源操作，需独立审批", true)
+	bareMetalPower.Params = submit.Params
+	bareMetalPower.Responses["412"] = openapi.Response{Description: "需要当前资产归属版本和有效盘点"}
+	bareMetalPower.Responses["429"] = submit.Responses["429"]
+	bareMetalPower.Body = serviceCatalogBody([]string{"account", "region", "asset_id", "action"}, false)
+	bareMetalPower.Body.Description = "裸金属系统 UUID、站点和账号，以及 power-on-bare-metal 或 shutdown-bare-metal。"
+	bareMetalPXE := accountOp("requestBareMetalPXE", "202", "已持久受理的裸金属一次性 PXE 配置申请，需独立审批", true)
+	bareMetalPXE.Params = submit.Params
+	bareMetalPXE.Responses["412"] = bareMetalPower.Responses["412"]
+	bareMetalPXE.Responses["429"] = submit.Responses["429"]
+	bareMetalPXE.Body = serviceCatalogBody([]string{"account", "region", "asset_id", "action"}, false)
+	bareMetalPXE.Body.Description = "裸金属系统 UUID、站点和账号，以及 stage-bare-metal-pxe 或 cancel-bare-metal-pxe。"
 	cacheRename := accountOp("renameCacheInstance", "202", "已持久受理的托管缓存实例改名申请，需独立审批", true)
 	cacheRename.Params = submit.Params
 	cacheRename.Responses["412"] = openapi.Response{Description: "需要当前缓存名称、归属版本和有效的盘点"}
@@ -502,6 +516,8 @@ func registerOpenAPI(app *core.App, console *consoleConfig) error {
 		"POST " + dnsRecordDeletionRoute:                                   dnsRecordDeletion,
 		"POST " + workloadScaleRoute:                                       workloadScale,
 		"POST " + dnsRecordStatusRoute:                                     dnsRecordStatus,
+		"POST " + bareMetalPXERoute:                                        bareMetalPXE,
+		"POST " + bareMetalPowerRoute:                                      bareMetalPower,
 		"POST " + cacheRenameRoute:                                         cacheRename,
 		"POST " + databaseRenameRoute:                                      databaseRename,
 		"POST " + loadBalancerRenameRoute:                                  balancerRename,
@@ -537,7 +553,7 @@ func registerOpenAPI(app *core.App, console *consoleConfig) error {
 		"GET " + networkOperationsRoute + "/:operation/events":             networkEvents,
 		"POST " + networkOperationsRoute + "/:operation/retry-observation": networkRetry,
 		"GET " + projectOperationsRoute:                                    projectOperations,
-		"GET " + projectOperationsRoute + "/:operation":                    accountOp("getProjectOperation", "200", "项目操作状态，安全组规则操作附带不可变的 network_intent", false),
+		"GET " + projectOperationsRoute + "/:operation":                    accountOp("getProjectOperation", "200", "项目操作状态，安全组规则附带 network_intent，裸金属开机可附带 bare_metal_deployment", false),
 		"GET " + projectOperationsRoute + "/:operation/events":             projectEvents,
 		"POST " + projectOperationsRoute + "/:operation/approval":          projectApproval,
 		"POST " + projectOperationsRoute + "/:operation/resolution":        projectReview,
@@ -568,6 +584,8 @@ func registerOpenAPI(app *core.App, console *consoleConfig) error {
 	hints["GET "+idleInstancesRoute] = idleReportOpenAPI(readAuth)
 	catalogOpenAPI(hints, accountOp)
 	alertOpenAPI(hints, accountOp)
+	bareMetalDeploymentHints(hints, accountOp)
+	bareMetalReclaimHints(hints, accountOp)
 	kvmHints(hints, accountOp)
 	doc, err := generator.GenerateStrict(app.Routes(), hints)
 	if err != nil {

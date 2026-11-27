@@ -5,4 +5,5 @@ const (
 	AlibabaECS = "alibaba-ecs"
 	HuaweiECS  = "huawei-ecs"
 	VSphere    = "vmware-vsphere"
+	Redfish    = "redfish"
 )

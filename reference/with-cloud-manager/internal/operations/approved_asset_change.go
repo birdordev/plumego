@@ -21,11 +21,15 @@ func (s Store) submitApprovedAssetChange(ctx context.Context, token string, scop
 	}
 	var op Operation
 	err := dbutil.WithTransaction(ctx, s.db, nil, func(tx *sql.Tx) error {
-		actor, err := operationActor(ctx, tx, token, scope, identity.Execute)
+		permission := identity.Execute
+		if kind == provider.BareMetal {
+			permission = identity.ExecuteBareMetal
+		}
+		actor, err := operationActor(ctx, tx, token, scope, permission)
 		if err != nil {
 			return err
 		}
-		if _, err := identity.NewStore(tx).AuthorizeAccount(ctx, actor, account, identity.Execute); err != nil {
+		if _, err := identity.NewStore(tx).AuthorizeAccount(ctx, actor, account, permission); err != nil {
 			return err
 		}
 		if err := lockBudget(ctx, tx, actor); err != nil {
@@ -42,16 +46,29 @@ func (s Store) submitApprovedAssetChange(ctx context.Context, token string, scop
 				return err
 			}
 		}
-		target, err := inventory.ResolveNetworkMutation(ctx, tx, actor, account, region, assetID, kind)
+		var target inventory.MutationTarget
+		if kind == provider.BareMetal {
+			target, err = inventory.ResolveBareMetalMutation(ctx, tx, actor, account, region, assetID)
+		} else {
+			target, err = inventory.ResolveNetworkMutation(ctx, tx, actor, account, region, assetID, kind)
+		}
 		if err != nil {
 			return err
+		}
+		if kind == provider.BareMetal {
+			if err := checkBareMetalDeploymentFence(ctx, tx, assetID, ""); err != nil {
+				return err
+			}
 		}
 		if target.OwnershipRevision != revision {
 			return identity.ErrAccountStale
 		}
-		persistIntent, err := prepareIntent(ctx, tx, actor, target)
-		if err != nil {
-			return err
+		var persistIntent func(string) error
+		if prepareIntent != nil {
+			persistIntent, err = prepareIntent(ctx, tx, actor, target)
+			if err != nil {
+				return err
+			}
 		}
 		if groupID != "" {
 			if err := checkActiveTargetGroupMutation(ctx, tx, target.ScopeID, groupID); err != nil {
@@ -72,8 +89,10 @@ func (s Store) submitApprovedAssetChange(ctx context.Context, token string, scop
 		if err != nil {
 			return err
 		}
-		if err := persistIntent(id); err != nil {
-			return err
+		if persistIntent != nil {
+			if err := persistIntent(id); err != nil {
+				return err
+			}
 		}
 		return s.recordSubmission(ctx, tx, actor.Tenant, op)
 	})

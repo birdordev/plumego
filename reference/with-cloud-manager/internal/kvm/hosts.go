@@ -10,14 +10,14 @@ import (
 )
 
 const hostColumns = `host_id,host_uuid::text,agent_id,failure_domain,networks,storage_pool,gpu_model,site_id,
-	revision,generation,sequence,draining,reported_at,vcpu,memory_mib,disk_mib,gpu`
+	revision,generation,sequence,draining,reported_at,vcpu,memory_mib,disk_mib,gpu,fence_state`
 
 func scanHost(row *sql.Row) (Host, error) {
 	var host Host
 	var networks []byte
 	err := row.Scan(&host.ID, &host.UUID, &host.Agent, &host.FailureDomain, &networks, &host.StoragePool,
 		&host.GPUModel, &host.Site, &host.Revision, &host.Generation, &host.Sequence, &host.Draining, &host.ReportedAt,
-		&host.Capacity.VCPU, &host.Capacity.MemoryMiB, &host.Capacity.DiskMiB, &host.Capacity.GPU)
+		&host.Capacity.VCPU, &host.Capacity.MemoryMiB, &host.Capacity.DiskMiB, &host.Capacity.GPU, &host.FenceState)
 	if err != nil {
 		return Host{}, err
 	}
@@ -101,6 +101,9 @@ func (s Store) ChangeHost(ctx context.Context, token string, scope identity.Scop
 		}
 		if host.Revision != revision {
 			return ErrStale
+		}
+		if host.FenceState != "" {
+			return ErrConflict
 		}
 		if change.Action == "rebind" {
 			result, err = rebindHost(ctx, tx, actor, host, change.Agent)

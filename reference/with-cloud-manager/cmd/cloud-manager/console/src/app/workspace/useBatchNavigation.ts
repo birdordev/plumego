@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react'
 import type { BatchEditor } from '../../features/batches/BatchPage'
-import { formatSelectedInstances } from '../../features/batches/selection-format'
+import { formatSelectedInstances } from '../../features/batches/request/selection-format'
 import type { View } from '../routes/registry'
 
 export function useBatchNavigation(selectView: (view: View) => void) {

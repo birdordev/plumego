@@ -8,6 +8,7 @@
     "strict": true,
     "noEmit": true,
     "isolatedModules": true,
+    "verbatimModuleSyntax": true,
     "allowImportingTsExtensions": true,
     "skipLibCheck": true,
     "types": ["vite/client", "node"]

@@ -22,6 +22,14 @@ func kvmHints(hints map[string]openapi.Op, operation func(string, string, string
 	change.Body = body("管理员执行 drain、resume 或 rebind。rebind 需要新的代理服务主体。", map[string]openapi.Schema{
 		"action": openapi.String, "agent": openapi.String,
 	})
+	fence := operation("changeKVMHostFence", "200", "按宿主机版本转换隔离状态并记录证据", true)
+	fence.Params = change.Params
+	fence.Responses["412"] = change.Responses["412"]
+	fence.Body = body("管理员 request 或 request-rejoin，独立审批人 confirm、approve-rejoin 或 reject-rejoin。confirm 及 request-rejoin 需要现场证据摘要，request-rejoin 还需替换代理。",
+		map[string]openapi.Schema{"action": openapi.String, "uuid": openapi.String,
+			"evidence_sha256": openapi.String, "replacement_agent": openapi.String})
+	hints["POST "+kvmHostFenceRoute] = fence
+	hints["GET "+kvmHostFenceRoute] = operation("getKVMHostFence", "200", "宿主机当前状态和最近 20 条隔离证据事件", false)
 
 	report := operation("reportKVMCapacity", "200", "成功接收的宿主机观测", true)
 	report.Security = []openapi.SecurityRequirement{{"serviceBearer": {}}}

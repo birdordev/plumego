@@ -23,6 +23,19 @@ func kvmVMHints(hints map[string]openapi.Op, operation func(string, string, stri
 	hints["POST "+kvmVMsRoute] = submit
 	hints["GET "+kvmVMRoute] = operation("getKVMVM", "200", "项目虚拟机的任务状态和观测", false)
 	hints["POST "+kvmVMRoute+"/review"] = review
+	fenced := operation("requestKVMFencedVMRecovery", "202", "记录隔离宿主机上的未决虚拟机现场观测", true)
+	fenced.Params = review.Params
+	fenced.Responses["412"] = openapi.Response{Description: "需要当前虚拟机版本和隔离代次"}
+	fenced.Body = serviceCatalogBody([]string{"recovery_id", "host_uuid", "observed", "evidence_sha256", "second_evidence_sha256"}, false)
+	fenced.Body.Content["application/json"].Schema.Properties["fence_generation"] = openapi.Integer
+	fenced.Body.Description = "提交恢复 ID、宿主机 UUID、隔离代次、观测和证据摘要。缺失观测另需独立的第二份证据摘要。"
+	hints["POST "+kvmFencedVMRecoveryRoute] = fenced
+	hints["GET "+kvmFencedVMRecoveryRoute] = operation("getKVMFencedVMRecovery", "200", "本虚拟机最新恢复证据与审批结果", false)
+	fenceReview := operation("reviewKVMFencedVMRecovery", "200", "批准时原子提交虚拟机观测和恢复决定", true)
+	fenceReview.Params = review.Params
+	fenceReview.Responses["412"] = fenced.Responses["412"]
+	fenceReview.Body = serviceCatalogBody([]string{"recovery_id", "decision"}, false)
+	hints["POST "+kvmFencedVMRecoveryRoute+"/review"] = fenceReview
 
 	for _, item := range []struct{ method, path, id, description string }{
 		{"POST", kvmVMPollRoute, "pollKVMVM", "宿主机代理领取一个任务描述。返回空对象表示没有任务。"},

@@ -26,7 +26,7 @@ const vSphereFixtureBearer = "fixture-vsphere-project-administrator-token"
 
 func TestAcceptanceVSphereInventory(t *testing.T) {
 	ctx, db := t.Context(), dbtest.Open(t)
-	seedVSphereProject(t, db)
+	seedInventoryProviderProject(t, db)
 	f := &vSphereFixture{}
 	upstream := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { f.serve(t, w, r) }))
 	t.Cleanup(upstream.Close)
@@ -131,7 +131,7 @@ func TestAcceptanceVSphereInventory(t *testing.T) {
 		t.Fatalf("changed image reused its previous checkpoint: %v", err)
 	}
 	assertVSphereInstances(t, db, 251, 0)
-	runVSphereScheduledScan(t, db, assetScope, path)
+	runProviderScheduledInventory(t, db, assetScope, vSphereFixtureRef, path)
 	if err := scan(assetScope.Region, provider.Network); err != nil {
 		t.Fatal(err)
 	}
@@ -207,7 +207,7 @@ func checkVSphereCredentialFence(t *testing.T, db *sql.DB, cfg vsphere.Config, k
 	}
 }
 
-func seedVSphereProject(t *testing.T, db *sql.DB) {
+func seedInventoryProviderProject(t *testing.T, db *sql.DB) {
 	t.Helper()
 	ctx := t.Context()
 	if err := migrateCloudManager(ctx, db); err != nil {

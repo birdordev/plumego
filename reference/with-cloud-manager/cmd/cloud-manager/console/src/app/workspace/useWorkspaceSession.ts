@@ -1,7 +1,7 @@
 import { useCallback, useState, useSyncExternalStore } from 'react'
 import { clearSelection } from '../../features/assets/instances/selection-store'
 import { clearCatalogAttempts } from '../../features/catalog/launch/attempts'
-import { clearOperationAttempts } from '../../features/operations/attempts'
+import { clearOperationAttempts } from '../../features/operations/forms/attempts'
 import { endSession, readSession, startSession } from '../../features/session/api'
 import { sessionSnapshot, setSession, subscribeSession, type Profile, type Session } from '../../features/session/store'
 import { useSessionRestore } from '../../features/session/useSessionRestore'

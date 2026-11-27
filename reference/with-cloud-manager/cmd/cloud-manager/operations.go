@@ -27,6 +27,8 @@ const dnsRecordDeletionRoute = "/v1/tenants/:tenant/projects/:project/dns-zones/
 const workloadScaleRoute = "/v1/tenants/:tenant/projects/:project/kubernetes-workloads/scale"
 const dnsRecordStatusRoute = "/v1/tenants/:tenant/projects/:project/dns-zones/record-status"
 const databaseRenameRoute = "/v1/tenants/:tenant/projects/:project/databases/rename"
+const bareMetalPXERoute = "/v1/tenants/:tenant/projects/:project/bare-metal/pxe"
+const bareMetalPowerRoute = "/v1/tenants/:tenant/projects/:project/bare-metal/power"
 const cacheRenameRoute = "/v1/tenants/:tenant/projects/:project/caches/rename"
 const loadBalancerRenameRoute = "/v1/tenants/:tenant/projects/:project/load-balancers/rename"
 const loadBalancerListenerRenameRoute = "/v1/tenants/:tenant/projects/:project/load-balancers/rename-listener"
@@ -107,6 +109,171 @@ func creationHandler(store operations.Store, logger plumelog.StructuredLogger) h
 	})
 }
 
+func bareMetalDeploymentHandler(store operations.Store, logger plumelog.StructuredLogger) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-store")
+		token, ok := requestCredential(r)
+		if !ok {
+			writeAccountError(w, r, identity.ErrUnauthenticated, logger)
+			return
+		}
+		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+		defer cancel()
+		scope := identity.Scope{Tenant: router.Param(r, "tenant"), Project: router.Param(r, "project")}
+		id := router.Param(r, "deployment")
+		var d operations.BareMetalDeployment
+		var err error
+		status := http.StatusOK
+		switch {
+		case r.Method == http.MethodGet || r.Method == http.MethodHead:
+			d, err = store.GetBareMetalDeployment(ctx, token, scope, id)
+		case id == "":
+			var input operations.BareMetalDeploymentInput
+			if err = contract.DecodeUniqueJSONRequest(r, &input, contract.JSONRequestOptions{MaxBytes: 2048}); err == nil {
+				d, err = store.RegisterBareMetalDeployment(ctx, token, scope, input)
+			}
+			status = http.StatusCreated
+		default:
+			var input operations.BareMetalDeploymentReceipt
+			if err = contract.DecodeUniqueJSONRequest(r, &input, contract.JSONRequestOptions{MaxBytes: 2048}); err == nil {
+				d, err = store.RecordBareMetalDeployment(ctx, token, scope, id, input)
+			}
+		}
+		switch {
+		case errors.Is(err, operations.ErrConflict):
+			err = identity.ErrAccountConflict
+		case errors.Is(err, operations.ErrInvalid):
+			err = identity.ErrAccountInvalid
+		}
+		if err != nil {
+			writeAccountError(w, r, err, logger)
+			return
+		}
+		if status == http.StatusCreated {
+			w.Header().Set("Location", "/v1/tenants/"+url.PathEscape(scope.Tenant)+"/projects/"+url.PathEscape(scope.Project)+"/bare-metal/deployments/"+d.ID)
+			err = contract.WriteResponse(w, r, http.StatusCreated, d, nil)
+		} else {
+			err = contract.WriteResponse(w, r, http.StatusOK, d, nil)
+		}
+		if err != nil {
+			logger.Warn("bare-metal deployment response write failed", plumelog.Fields{})
+		}
+	})
+}
+
+func bareMetalReclaimHandler(store operations.Store, logger plumelog.StructuredLogger, create bool) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-store")
+		token, ok := requestCredential(r)
+		if !ok {
+			writeAccountError(w, r, identity.ErrUnauthenticated, logger)
+			return
+		}
+		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+		defer cancel()
+		scope := identity.Scope{Tenant: router.Param(r, "tenant"), Project: router.Param(r, "project")}
+		if !create {
+			result, err := store.GetBareMetalReclaim(ctx, token, scope, router.Param(r, "reclaim"))
+			writeBareMetalReclaim(w, r, http.StatusOK, result, err, logger)
+			return
+		}
+		revision, ok := accountRevision(r)
+		if !ok {
+			writeAccountError(w, r, identity.ErrAccountStale, logger)
+			return
+		}
+		keys := r.Header.Values("Idempotency-Key")
+		if len(keys) != 1 {
+			writeAccountError(w, r, identity.ErrAccountInvalid, logger)
+			return
+		}
+		var input operations.BareMetalReclaimInput
+		if err := contract.DecodeUniqueJSONRequest(r, &input, contract.JSONRequestOptions{MaxBytes: 2048}); err != nil {
+			writeAccountError(w, r, err, logger)
+			return
+		}
+		result, err := store.RequestBareMetalReclaim(ctx, token, scope, keys[0], revision, input)
+		if err == nil {
+			w.Header().Set("Location", "/v1/tenants/"+url.PathEscape(scope.Tenant)+"/projects/"+url.PathEscape(scope.Project)+"/bare-metal/reclaims/"+result.ID)
+		}
+		writeBareMetalReclaim(w, r, http.StatusAccepted, result, err, logger)
+	})
+}
+
+func bareMetalCurrentReclaimHandler(store operations.Store, logger plumelog.StructuredLogger) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-store")
+		token, ok := requestCredential(r)
+		if !ok {
+			writeAccountError(w, r, identity.ErrUnauthenticated, logger)
+			return
+		}
+		query, err := url.ParseQuery(r.URL.RawQuery)
+		if err != nil || len(query) != 3 || len(query["account"]) != 1 || len(query["region"]) != 1 || len(query["system_id"]) != 1 {
+			writeAccountError(w, r, identity.ErrAccountInvalid, logger)
+			return
+		}
+		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+		defer cancel()
+		scope := identity.Scope{Tenant: router.Param(r, "tenant"), Project: router.Param(r, "project")}
+		input := operations.BareMetalReclaimTarget{Account: query.Get("account"), Site: query.Get("region"), SystemID: query.Get("system_id")}
+		result, err := store.CurrentBareMetalReclaim(ctx, token, scope, input)
+		if errors.Is(err, operations.ErrInvalid) {
+			err = identity.ErrAccountInvalid
+		}
+		if err != nil {
+			writeAccountError(w, r, err, logger)
+			return
+		}
+		if err := contract.WriteResponse(w, r, http.StatusOK, result, nil); err != nil {
+			logger.Warn("current bare-metal reclaim response write failed", plumelog.Fields{})
+		}
+	})
+}
+
+func bareMetalReclaimTransitionHandler[T any](apply func(context.Context, string, identity.Scope, string, T) (operations.BareMetalReclaim, error),
+	logger plumelog.StructuredLogger) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-store")
+		token, ok := requestCredential(r)
+		if !ok {
+			writeAccountError(w, r, identity.ErrUnauthenticated, logger)
+			return
+		}
+		var input T
+		if err := contract.DecodeUniqueJSONRequest(r, &input, contract.JSONRequestOptions{MaxBytes: 2048}); err != nil {
+			writeAccountError(w, r, err, logger)
+			return
+		}
+		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+		defer cancel()
+		scope := identity.Scope{Tenant: router.Param(r, "tenant"), Project: router.Param(r, "project")}
+		result, err := apply(ctx, token, scope, router.Param(r, "reclaim"), input)
+		writeBareMetalReclaim(w, r, http.StatusOK, result, err, logger)
+	})
+}
+
+func writeBareMetalReclaim(w http.ResponseWriter, r *http.Request, status int, result operations.BareMetalReclaim, err error, logger plumelog.StructuredLogger) {
+	switch {
+	case errors.Is(err, operations.ErrConflict):
+		err = identity.ErrAccountConflict
+	case errors.Is(err, operations.ErrInvalid):
+		err = identity.ErrAccountInvalid
+	}
+	if err != nil {
+		writeAccountError(w, r, err, logger)
+		return
+	}
+	if status == http.StatusAccepted {
+		err = contract.WriteResponse(w, r, http.StatusAccepted, result, nil)
+	} else {
+		err = contract.WriteResponse(w, r, http.StatusOK, result, nil)
+	}
+	if err != nil {
+		logger.Warn("bare-metal reclaim response write failed", plumelog.Fields{})
+	}
+}
+
 func writeOperationReceipt(w http.ResponseWriter, r *http.Request, scope identity.Scope, op operations.Operation, err error, logger plumelog.StructuredLogger) {
 	switch {
 	case errors.Is(err, operations.ErrVolumeStale):
@@ -124,7 +291,7 @@ func writeOperationReceipt(w http.ResponseWriter, r *http.Request, scope identit
 	}
 	collection := "instance-operations"
 	switch op.ResourceKind {
-	case provider.Snapshot, provider.Volume, provider.Image, provider.LoadBalancer, provider.DNSZone, provider.KubernetesCluster, provider.DatabaseInstance, provider.CacheInstance:
+	case provider.Snapshot, provider.Volume, provider.Image, provider.LoadBalancer, provider.DNSZone, provider.KubernetesCluster, provider.DatabaseInstance, provider.CacheInstance, provider.BareMetal:
 		collection = "operations"
 	case provider.Network, provider.Subnet, provider.SecurityGroup, provider.SecurityGroupRule, provider.ElasticIP:
 		collection = "network-operations"
@@ -269,6 +436,10 @@ func loadBalancerListenerRenameRevisionError() error {
 func retirementRevisionError() error {
 	return contract.NewErrorBuilder().Type(contract.TypePreconditionFailed).
 		Message("current Tencent instance ownership revision and observed system disk required").Build()
+}
+
+func bareMetalPowerRevisionError() error {
+	return contract.NewErrorBuilder().Type(contract.TypePreconditionFailed).Message("current bare-metal ownership revision and inventory required").Build()
 }
 
 func cacheRenameRevisionError() error {

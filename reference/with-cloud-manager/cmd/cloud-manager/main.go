@@ -36,7 +36,7 @@ func main() {
 
 func run(parent context.Context, args []string) (retErr error) {
 	if !validCommand(args) {
-		return errors.New("usage: cloud-manager billing COMMAND TENANT PROJECT ACCOUNT PERIOD SOURCE ...|billing-{import,replay,source,allocate,allocation-replay} TENANT PROJECT ACCOUNT PERIOD SOURCE ...|cmdb-migrate|cmdb-sync TENANT PROJECT|cmdb-status TENANT PROJECT|kvm COMMAND TENANT PROJECT SITE|migrate|api|controller|workload-controller|alert-controller|idle-controller|idle-schedule TENANT ACCOUNT REGION INSTANCE DURATION_OR_OFF|billing-pull-controller|billing-pull[-status|-source|-replay] TENANT PROJECT ACCOUNT PERIOD SOURCE ...|worker|sessions-purge|operations COMMAND TENANT PROJECT|governance COMMAND TENANT PROJECT|audit {list,export} TENANT PROJECT|catalog COMMAND TENANT PROJECT|alerts COMMAND TENANT PROJECT|console-grants COMMAND TENANT PROJECT|event-publisher|event-{register,disable,failures} SINK|event-retry SINK EVENT_ID|verify-{openstack,aws,tencent,alibaba,huawei,vsphere} TENANT ACCOUNT|scan-{openstack,aws,tencent,alibaba,huawei,vsphere} TENANT ACCOUNT REGION KIND (or append ASSET_ID for a public-cloud load-balancer, database-instance, cache-instance, kubernetes-cluster or object-bucket absence check)|refresh-{tencent,alibaba,huawei}-load-balancer TENANT ACCOUNT REGION ASSET_ID [--include-backends]|refresh-{tencent,alibaba,huawei}-dns-zone TENANT ACCOUNT ZONE_ID|refresh-{tencent,alibaba,huawei}-cluster-{node-pools,workloads} TENANT ACCOUNT REGION CLUSTER_ID")
+		return errors.New("usage: cloud-manager billing COMMAND TENANT PROJECT ACCOUNT PERIOD SOURCE ...|billing-{import,replay,source,allocate,allocation-replay} TENANT PROJECT ACCOUNT PERIOD SOURCE ...|cmdb-migrate|cmdb-sync TENANT PROJECT|cmdb-status TENANT PROJECT|kvm COMMAND TENANT PROJECT SITE|migrate|api|controller|workload-controller|alert-controller|idle-controller|idle-schedule TENANT ACCOUNT REGION INSTANCE DURATION_OR_OFF|billing-pull-controller|billing-pull[-status|-source|-replay] TENANT PROJECT ACCOUNT PERIOD SOURCE ...|worker|sessions-purge|operations COMMAND TENANT PROJECT|governance COMMAND TENANT PROJECT|audit {list,export} TENANT PROJECT|catalog COMMAND TENANT PROJECT|alerts COMMAND TENANT PROJECT|console-grants COMMAND TENANT PROJECT|event-publisher|event-{register,disable,failures} SINK|event-retry SINK EVENT_ID|verify-{openstack,aws,tencent,alibaba,huawei,vsphere,redfish} TENANT ACCOUNT|scan-{openstack,aws,tencent,alibaba,huawei,vsphere,redfish} TENANT ACCOUNT REGION KIND (or append ASSET_ID for a public-cloud load-balancer, database-instance, cache-instance, kubernetes-cluster or object-bucket absence check)|refresh-{tencent,alibaba,huawei}-load-balancer TENANT ACCOUNT REGION ASSET_ID [--include-backends]|refresh-{tencent,alibaba,huawei}-dns-zone TENANT ACCOUNT ZONE_ID|refresh-{tencent,alibaba,huawei}-cluster-{node-pools,workloads} TENANT ACCOUNT REGION CLUSTER_ID")
 	}
 	if strings.HasPrefix(args[0], "cmdb-") {
 		return runCMDB(parent, args, os.Getenv, os.Stdout)
@@ -81,6 +81,9 @@ func run(parent context.Context, args []string) (retErr error) {
 	}()
 	if strings.HasPrefix(args[0], "event-") {
 		return runEventCommand(parent, db, args, os.Getenv("CLOUD_MANAGER_EVENT_PROFILES"), os.Stdout)
+	}
+	if args[0] == "verify-redfish" || args[0] == "scan-redfish" {
+		return runRedfish(parent, db, args, os.Getenv("CLOUD_MANAGER_REDFISH_PROFILE"), nil)
 	}
 	if args[0] == "verify-vsphere" || args[0] == "scan-vsphere" {
 		return runVSphere(parent, db, args, os.Getenv("CLOUD_MANAGER_VSPHERE_PROFILE"), nil)
@@ -215,6 +218,21 @@ func migrateCloudManager(ctx context.Context, db *sql.DB) error {
 	if err := operations.MigrateCacheRenameEvents(ctx, db); err != nil {
 		return errors.New("cache rename events migration failed")
 	}
+	if err := operations.MigrateBareMetalPower(ctx, db); err != nil {
+		return errors.New("bare-metal power migration failed")
+	}
+	if err := operations.MigrateBareMetalPXE(ctx, db); err != nil {
+		return errors.New("bare-metal PXE migration failed")
+	}
+	if err := operations.MigrateBareMetalDeployments(ctx, db); err != nil {
+		return errors.New("bare-metal deployment migration failed")
+	}
+	if err := operations.MigrateBareMetalReclaims(ctx, db); err != nil {
+		return errors.New("bare-metal reclaim migration failed")
+	}
+	if err := operations.MigrateBareMetalReclaimRecoveries(ctx, db); err != nil {
+		return errors.New("bare-metal reclaim recovery migration failed")
+	}
 	if err := kvm.Migrate(ctx, db); err != nil {
 		return errors.New("KVM placement migration failed")
 	}
@@ -234,9 +252,9 @@ func validCommand(args []string) bool {
 		return len(args) == 1
 	case "event-register", "event-disable", "event-failures":
 		return len(args) == 2
-	case "verify-vsphere", "verify-openstack", "verify-aws", "verify-tencent", "verify-alibaba", "verify-huawei", "event-retry":
+	case "verify-redfish", "verify-vsphere", "verify-openstack", "verify-aws", "verify-tencent", "verify-alibaba", "verify-huawei", "event-retry":
 		return len(args) == 3
-	case "scan-openstack", "scan-aws", "scan-vsphere":
+	case "scan-openstack", "scan-aws", "scan-vsphere", "scan-redfish":
 		return len(args) == 5
 	case "scan-tencent", "scan-alibaba", "scan-huawei":
 		return len(args) == 5 || (len(args) == 6 && publicCloudMissingKind(provider.Kind(args[4])) && args[5] != "")

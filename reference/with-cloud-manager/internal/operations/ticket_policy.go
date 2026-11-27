@@ -13,6 +13,7 @@ import (
 
 	"with-cloud-manager/internal/dbschema"
 	"with-cloud-manager/internal/identity"
+	"with-cloud-manager/internal/provider"
 )
 
 //go:embed 0101_change_tickets.sql
@@ -148,7 +149,7 @@ func validTicketPolicy(input TicketPolicyInput) bool {
 
 func ticketPolicyAction(action string) bool {
 	switch action {
-	case "start", "stop", "reboot", "delete", "create", "attach-volume", "detach-volume", retireInstance,
+	case provider.StageBareMetalPXE, provider.CancelBareMetalPXE, powerOnBareMetal, shutdownBareMetal, "start", "stop", "reboot", "delete", "create", "attach-volume", "detach-volume", retireInstance,
 		"create-network", "delete-network", "create-subnet", "delete-subnet", "create-security-group",
 		"delete-security-group", "create-security-group-rule", "revoke-security-group-rule",
 		createElasticIP, releaseElasticIP, bindElasticIP, unbindElasticIP,

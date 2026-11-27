@@ -1,8 +1,9 @@
 import { useImperativeHandle, useState, type Ref } from 'react'
-import { BatchReceiptLookup } from './BatchReceiptLookup'
-import { BatchPreviewReport, BatchReceiptReport } from './BatchReport'
-import { BatchRequestForm } from './BatchRequestForm'
-import { formatSelectedInstances } from './selection-format'
+import { BatchPreviewReport } from './preview/BatchPreviewReport'
+import { BatchReceiptLookup } from './receipt/BatchReceiptLookup'
+import { BatchReceiptReport } from './receipt/BatchReceiptReport'
+import { BatchRequestForm } from './request/BatchRequestForm'
+import { formatSelectedInstances } from './request/selection-format'
 import { useBatchEditor } from './useBatchEditor'
 import './styles.css'
 

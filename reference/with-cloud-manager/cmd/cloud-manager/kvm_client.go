@@ -16,10 +16,13 @@ const kvmUsage = `usage: cloud-manager kvm COMMAND TENANT PROJECT SITE
   get-network NETWORK
   register-image < image.json
   get-image IMAGE
+  mirror-image IMAGE < mirror.json
   plan-network-dhcp HOST GENERATION NETWORK NETWORK_UUID
   apply-network-dhcp HOST GENERATION NETWORK NETWORK_UUID
   get-host HOST
   change-host HOST REVISION < change.json
+  get-host-fence HOST
+  change-host-fence HOST REVISION < fence.json
   report-capacity HOST < report.json
   observe-host HOST GENERATION < limits.json
   reserve IDEMPOTENCY_KEY < placement.json
@@ -27,6 +30,9 @@ const kvmUsage = `usage: cloud-manager kvm COMMAND TENANT PROJECT SITE
   release PLACEMENT
   submit-vm < vm.json
   get-vm VM
+  get-vm-recovery VM
+  request-vm-recovery VM REVISION < recovery.json
+  review-vm-recovery VM REVISION < review.json
   shutdown-vm VM REVISION
   retire-vm VM REVISION
   review-vm VM REVISION < review.json
@@ -40,6 +46,10 @@ func runKVMClient(ctx context.Context, args []string, address, token string, inp
 	plan, err := planKVMRequest(base, args)
 	if err != nil {
 		return err
+	}
+	if args[0] == "mirror-image" {
+		api := kvmVMAPI{target: plan.target, token: token, transport: transport}
+		return runKVMImageMirror(ctx, api, args[3], args[4], input, output)
 	}
 	if args[0] == "run-vm" {
 		api := kvmVMAPI{target: plan.target, token: token, transport: transport}
@@ -86,12 +96,16 @@ func planKVMRequest(base *url.URL, args []string) (operationRequestPlan, error) 
 		switch args[0] {
 		case "get-network":
 			return operationRequestPlan{target: site.JoinPath("networks", id), method: http.MethodGet, status: http.StatusOK}, nil
-		case "get-image":
+		case "get-image", "mirror-image":
 			return operationRequestPlan{target: site.JoinPath("images", id), method: http.MethodGet, status: http.StatusOK}, nil
 		case "get-vm":
 			return operationRequestPlan{target: site.JoinPath("vms", id), method: http.MethodGet, status: http.StatusOK}, nil
+		case "get-vm-recovery":
+			return operationRequestPlan{target: site.JoinPath("vms", id, "fence-recovery"), method: http.MethodGet, status: http.StatusOK}, nil
 		case "get-host":
 			return operationRequestPlan{target: host, method: http.MethodGet, status: http.StatusOK}, nil
+		case "get-host-fence":
+			return operationRequestPlan{target: host.JoinPath("fence"), method: http.MethodGet, status: http.StatusOK}, nil
 		case "report-capacity":
 			return operationRequestPlan{target: host.JoinPath("capacity"), method: http.MethodPut, status: http.StatusOK, inputLimit: 16 << 10}, nil
 		case "reserve":
@@ -118,6 +132,9 @@ func planKVMRequest(base *url.URL, args []string) (operationRequestPlan, error) 
 		case "change-host":
 			return operationRequestPlan{target: host, method: http.MethodPatch, status: http.StatusOK,
 				inputLimit: 1024, match: strconv.Quote(strconv.FormatInt(revision, 10))}, nil
+		case "change-host-fence":
+			return operationRequestPlan{target: host.JoinPath("fence"), method: http.MethodPost, status: http.StatusOK,
+				inputLimit: 1024, match: strconv.Quote(strconv.FormatInt(revision, 10))}, nil
 		case "shutdown-vm":
 			return operationRequestPlan{target: site.JoinPath("vms", id, "shutdown"), method: http.MethodPost,
 				status: http.StatusAccepted, match: strconv.Quote(strconv.FormatInt(revision, 10))}, nil
@@ -126,6 +143,12 @@ func planKVMRequest(base *url.URL, args []string) (operationRequestPlan, error) 
 				status: http.StatusAccepted, match: strconv.Quote(strconv.FormatInt(revision, 10))}, nil
 		case "review-vm":
 			return operationRequestPlan{target: site.JoinPath("vms", id, "review"), method: http.MethodPost, status: http.StatusOK,
+				inputLimit: 1024, match: strconv.Quote(strconv.FormatInt(revision, 10))}, nil
+		case "request-vm-recovery":
+			return operationRequestPlan{target: site.JoinPath("vms", id, "fence-recovery"), method: http.MethodPost, status: http.StatusAccepted,
+				inputLimit: 2048, match: strconv.Quote(strconv.FormatInt(revision, 10))}, nil
+		case "review-vm-recovery":
+			return operationRequestPlan{target: site.JoinPath("vms", id, "fence-recovery", "review"), method: http.MethodPost, status: http.StatusOK,
 				inputLimit: 1024, match: strconv.Quote(strconv.FormatInt(revision, 10))}, nil
 		case "observe-host", "run-vm":
 			return operationRequestPlan{target: host, method: http.MethodGet, status: http.StatusOK}, nil

@@ -1,4 +1,4 @@
-import { LoginPage } from '../features/session/LoginPage'
+import { LoginPage } from '../features/session/login/LoginPage'
 import { projectPath } from '../features/session/project'
 import { DetailDialog } from '../shared/detail/DetailDialog'
 import { AuthenticatedWorkspace } from './workspace/AuthenticatedWorkspace'

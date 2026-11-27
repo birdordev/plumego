@@ -41,6 +41,9 @@ func observeKVMHost(ctx context.Context, target *url.URL, hostID, generation, to
 		host.Generation != expected || host.Revision < 1 || host.Sequence < 0 || host.Sequence == math.MaxInt64 {
 		return errors.New("KVM host or agent generation does not match")
 	}
+	if host.FenceState != "" {
+		return kvm.ErrConflict
+	}
 	sampling, stopSampling := context.WithTimeout(ctx, 12*time.Second)
 	defer stopSampling()
 	capacity, err := probe.capacity(sampling, host, limits)

@@ -11,6 +11,7 @@ type Kind string
 
 const (
 	Instance          Kind = "instance"
+	BareMetal         Kind = "bare-metal"
 	Volume            Kind = "volume"
 	Snapshot          Kind = "snapshot"
 	Network           Kind = "network"
@@ -162,7 +163,7 @@ func IsFailure(err error, kind FailureKind) bool {
 
 func (k Kind) Valid() bool {
 	switch k {
-	case Instance, Volume, Snapshot, Network, Subnet, Image, SecurityGroup, SecurityGroupRule, ElasticIP, LoadBalancer, DNSZone, DatabaseInstance, CacheInstance, KubernetesCluster, ObjectBucket, Region, Zone:
+	case Instance, BareMetal, Volume, Snapshot, Network, Subnet, Image, SecurityGroup, SecurityGroupRule, ElasticIP, LoadBalancer, DNSZone, DatabaseInstance, CacheInstance, KubernetesCluster, ObjectBucket, Region, Zone:
 		return true
 	default:
 		return false

@@ -16,7 +16,8 @@ import (
 var approvalSchema string
 
 type Approval struct {
-	Decision string `json:"decision"`
+	Decision     string `json:"decision"`
+	DeploymentID string `json:"deployment_id,omitempty"`
 }
 
 func migrateApproval(ctx context.Context, db *sql.DB) error {
@@ -24,7 +25,8 @@ func migrateApproval(ctx context.Context, db *sql.DB) error {
 }
 
 func (s Store) Approve(ctx context.Context, token string, scope identity.Scope, id string, input Approval) (Operation, error) {
-	if !operationKey.MatchString(id) || (input.Decision != "approve" && input.Decision != "reject") {
+	if !operationKey.MatchString(id) || (input.Decision != "approve" && input.Decision != "reject") ||
+		(input.DeploymentID != "" && (input.Decision != "approve" || !operationKey.MatchString(input.DeploymentID))) {
 		return Operation{}, ErrInvalid
 	}
 	var op Operation
@@ -45,6 +47,11 @@ func (s Store) Approve(ctx context.Context, token string, scope identity.Scope, 
 		}
 		if reviewer.Principal == original.actor.Principal {
 			return identity.ErrForbidden
+		}
+		if input.Decision == "approve" {
+			if err := checkBareMetalApproval(ctx, tx, reviewer, op, input.DeploymentID); err != nil {
+				return err
+			}
 		}
 		if op.Status != "awaiting_approval" {
 			var recorded, decision string

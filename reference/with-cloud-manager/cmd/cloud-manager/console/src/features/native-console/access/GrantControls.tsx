@@ -1,7 +1,7 @@
 import { useDetailAction } from '../../../shared/detail/useDetailAction'
 import type { Session } from '../../session/store'
-import { grantsCollection } from '../collection'
-import type { GrantDetail } from '../schema'
+import { grantsCollection } from '../grants/collection'
+import type { GrantDetail } from './schema'
 import { decideGrant, revokeGrant } from './api'
 import { SerialActivationForm } from './SerialActivationForm'
 

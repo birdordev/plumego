@@ -56,6 +56,7 @@ type Input struct {
 }
 
 type Operation struct {
+	BareMetalDeployment             *BareMetalDeploymentView       `json:"bare_metal_deployment,omitempty"`
 	InstanceRetirementIntent        *InstanceRetirementView        `json:"instance_retirement_intent,omitempty"`
 	CacheRenameIntent               *CacheRenameView               `json:"cache_rename_intent,omitempty"`
 	DatabaseRenameIntent            *DatabaseRenameView            `json:"database_rename_intent,omitempty"`
@@ -461,6 +462,9 @@ func (s Store) Get(ctx context.Context, token string, scope identity.Scope, id s
 				return err
 			}
 			op.LoadBalancerBackendAttachIntent = &intent
+		}
+		if err == nil && op.Action == powerOnBareMetal {
+			op.BareMetalDeployment, err = bareMetalDeploymentForBoot(ctx, tx, actor, op)
 		}
 		return err
 	})

@@ -162,6 +162,22 @@ class WorkflowTest(unittest.TestCase):
             "-C reference/second test ./...",
         ])
 
+    def test_cloud_manager_console_is_built_once_before_reference_go_checks(self):
+        module = self.root / "reference/with-cloud-manager"
+        console_path = "reference/with-cloud-manager/cmd/cloud-manager/console"
+        console = self.root / console_path
+        console.mkdir(parents=True)
+        (module / "go.mod").touch()
+        (console / "package.json").touch()
+        self.stub("bin/npm", 'printf "npm %s\n" "$*" >> "$CALLS"')
+        self.make("reference-vet", "reference-test")
+        self.assertEqual(self.calls(), [
+            f"npm --prefix {console_path} ci --include=dev",
+            f"npm --prefix {console_path} run build",
+            "-C reference/with-cloud-manager vet ./...",
+            "-C reference/with-cloud-manager test ./...",
+        ])
+
     def test_coverage_exports_only_a_passing_profile(self):
         self.stub("bin/go", r'''case "$1" in
   test)

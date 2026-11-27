@@ -2,7 +2,11 @@
 
 本目录是独立的 PostgreSQL 产品模块。目前提供项目与云账号授权、可恢复的多云盘点、具备审批和对账的资源操作，以及项目操作查询。
 
+自有 KVM 的宿主机登记、容量上报与预留见[站点与宿主机放置](#自有-kvm-站点与宿主机放置)。
+
 ## PostgreSQL 本地验证
+
+首次检出和更新控制台源码后，用 Node.js 22.12 或更新版本在仓库根目录运行 `make cloud-manager-console`，生成 Go 编译所需的控制台嵌入资源。仓库的 `make reference-vet` 和 `make reference-test` 会执行这一步。
 
 在当前目录运行。应用迁移使用专用数据库；测试使用有建 schema 权限的一次性数据库连接，并为每个测试创建及清理独立 schema。
 
@@ -49,6 +53,138 @@ go run ./cmd/cloud-manager scan-openstack tenant-id account-id RegionOne instanc
 地域从已授权的 Keystone 服务目录提取。区域内可盘点 `zone`、`instance`、`volume`、`network`、`subnet`、`security-group`、`security-group-rule` 和 `image`。站点标识由运维分配，在同一 Keystone 部署的全部配置中保持一致。服务目录仅使用允许的 HTTPS 源。账号校验成功后固定站点和 Keystone 项目身份，待校验账号转为只读。轮换时发布新版本文件、通过账号 API 更新凭据引用，再校验远端身份。
 
 失败会退出并让出领取，后续执行从已提交游标续跑。调用失败、权限不足以及可能掩盖未授权结果的 404 保持原有资产记录。相关协议参见 [Keystone](https://docs.openstack.org/api-ref/identity/v3/) 与 [Nova](https://docs.openstack.org/api-ref/compute/)。
+
+## VMware vSphere 只读盘点
+
+通过项目云账号 API 登记 `vmware-vsphere`。使用 vCenter 只读服务主体，在 `CLOUD_MANAGER_VSPHERE_PROFILE` 指定的私有 JSON 文件写入 `credential_ref`、`endpoint`、`username`、`password`、`vcenter_uuid` 和 `datacenters`。`endpoint` 是受部署方管理的 HTTPS 源，`datacenters` 是允许读取的数据中心托管对象 ID 数组。私有 CA 可通过 `ca_pem` 提供。凭据文件权限为 `0600` 或更严格。
+
+适配器先验证 TLS 证书和 vCenter UUID，再登录。每次连接复核配置中的所有数据中心可见。会话及容器视图随任务退出关闭，服务端会话 Cookie 与分页令牌只存在于当前任务内存。[vSphere ServiceInstance](https://developer.broadcom.com/xapis/vsphere-web-services-api/latest/vim.ServiceInstance.html) · [ContainerView](https://developer.broadcom.com/xapis/vsphere-web-services-api/latest/vim.view.ContainerView.html)
+
+```bash
+cloud-manager verify-vsphere tenant-id vcenter-account
+cloud-manager scan-vsphere tenant-id vcenter-account - region
+cloud-manager scan-vsphere tenant-id vcenter-account datacenter-7 instance
+cloud-manager scan-vsphere tenant-id vcenter-account datacenter-7 image
+cloud-manager scan-vsphere tenant-id vcenter-account datacenter-7 network
+```
+
+数据中心映射为地域，虚拟机映射为实例，VM 模板映射为镜像。VM 和模板以 `config.instanceUuid` 标识，网络使用已核验数据中心内的托管对象 ID。虚拟机关联的标准网络、分布式端口组及不透明网络可通过现有项目拓扑查询。平台控制台支持按类型和账号查看这些资产。定时控制器可使用同一凭据引用和数据中心范围。[VirtualMachine 属性](https://developer.broadcom.com/xapis/vsphere-web-services-api/latest/vim.VirtualMachine.html)
+
+适配器先完整消费 PropertyCollector 分页，再将排序后的本地盘点数据分批提交。跨进程使用内容指纹和偏移续跑，结果发生变化时使旧代次重启。权限收缩后未看到的资源保留为缺失候选。项目仍按原有账号和资产归属授权；实例写入由账号授权层拒绝。单次采集上限为 100,000 个远端对象，另有响应体与内存预算，超限使采集失败。[PropertyCollector](https://developer.broadcom.com/xapis/vsphere-web-services-api/latest/vmodl.query.PropertyCollector.html)
+
+## Redfish 裸金属只读盘点
+
+执行 `cloud-manager migrate` 应用 `0117_redfish_schedules`。通过项目云账号 API 登记 `redfish`，用 `CLOUD_MANAGER_REDFISH_PROFILE` 指向私有 JSON 文件。站点运维在受控管理网配置 BMC 的 HTTPS 地址、专用只读账号、已知服务 UUID 和站点标识。凭据文件使用 `0600` 或更严格的权限，私有证书链通过 `ca_pem` 配置。
+
+```json
+{
+  "credential_ref": "redfish/site-a/reader",
+  "endpoint": "https://bmc-site-a.example.net",
+  "service_uuid": "6dfa9bd0-98bf-49a1-ad93-a98567937e16",
+  "site": "site-a",
+  "username": "inventory-reader",
+  "password": "<BMC 只读账号密码>"
+}
+```
+
+```bash
+cloud-manager verify-redfish tenant-id bmc-account
+cloud-manager scan-redfish tenant-id bmc-account - region
+cloud-manager scan-redfish tenant-id bmc-account site-a bare-metal
+```
+
+先用 TLS 读取服务根并核对 UUID，再发送 HTTP Basic 凭据给同源资源。校验账号时还核对是否能完整读取 Systems 集合。已校验的账号同时绑定服务 UUID 与站点，变更其中任一字段会被拒绝。适配器只跟随同源的 Redfish 路径，拒绝重定向。资产只纳入 `SystemType=Physical`，以系统 UUID 标识，显示电源状态，使用资产的地域字段记录站点。[DMTF Redfish 协议](https://www.dmtf.org/sites/default/files/standards/documents/DSP0266_1.21.0.pdf)
+
+单个 BMC 每轮至多接受 64 页、1,000 个 Systems 集合成员。所有页和成员都通过检查后，才向资产盘点提交一批结果。响应失败、重复成员或集合计数不一致时保留原资产。可在持久控制器配置同一凭据引用，并为账号及站点安排 `bare-metal` 类型的扫描。项目资产 API 和控制台可按裸金属类型筛选。真实设备兼容性与管理网验收仍待完成。
+
+### 裸金属电源操作
+
+先应用迁移 `0118_bare_metal_power` 并更新 API 和 Worker。管理员使用账号当前 ETag 对 `/cloud-accounts/{account}` 提交 `{"action":"enable-bare-metal-power"}`，再对该站点执行完整盘点。账号初次校验、凭据轮换和恢复后进入待校验或只读状态，需重新启用。可用 `disable-bare-metal-power` 关闭派发。两种操作均递增账号代次并记录审计。
+
+将同一凭据引用配置到 `CLOUD_MANAGER_WORKER_PROFILES`，指向启用了 `"allow_power":true` 的私有配置。Worker 配置使用 BMC 上具备相应电源权限的专用主体，盘点配置可继续使用只读主体。控制台资产行或 `POST /v1/tenants/{tenant}/projects/{project}/bare-metal/power` 受理申请。使用资产归属版本作为 `If-Match`，并提供 `Idempotency-Key`。
+
+```bash
+cloud-manager operations bare-metal-power TENANT PROJECT --idempotency-key KEY --if-match REVISION < power.json
+```
+
+```json
+{"account":"bmc-account","region":"site-a","asset_id":"11112222-3333-4444-8666-777788889999","action":"power-on-bare-metal"}
+```
+
+动作包括 `power-on-bare-metal` 开机和 `shutdown-bare-metal` 优雅关机。须由独立审批人批准。队列派发前复核账号和资产代次、审批与工单，并检查同一物理系统 UUID、动作地址与允许的 ResetType。已经处于目标电源状态时只读确认。相同物理 UUID 同时只保留一项活动电源操作。
+
+每个申请至多提交一次 BMC 写入。连接中断或异步受理后继续只读核对，确认同一系统达到目标状态时原子更新资产、操作状态和发件箱。观测耗尽则保留待复核状态。审批人可用现有 `/operations/{id}/retry-observation` 带证据引用恢复只读对账。真实 BMC 执行和访客关机仍待现场验收。[DMTF ComputerSystem Reset](https://redfish.dmtf.org/schemas/v1/DSP2046_2025.2.html)
+
+### 裸金属一次性 PXE 启动配置
+
+应用 `0119_bare_metal_pxe` 并更新 API 和 Worker。沿用裸金属账号写入开关，在 Worker 的私有 BMC 配置中设置 `"allow_pxe":true`。控制台可从关机资产提交申请，API 为 `POST /v1/tenants/{tenant}/projects/{project}/bare-metal/pxe`。提交使用资产归属版本、幂等键和独立审批。
+
+```bash
+cloud-manager operations bare-metal-pxe TENANT PROJECT --idempotency-key KEY --if-match REVISION < pxe.json
+```
+
+```json
+{"account":"bmc-account","region":"site-a","asset_id":"11112222-3333-4444-8666-777788889999","action":"stage-bare-metal-pxe"}
+```
+
+`stage-bare-metal-pxe` 设置下一次启动为 PXE，`cancel-bare-metal-pxe` 取消当前的一次性 PXE。Worker 仅在同一物理系统处于关机状态时处理。设置前须确认 BMC 声明支持 PXE，已有其他启动覆盖时拒绝变更。BMC 须提供强 ETag，更新携带 `If-Match`。目标状态已经满足时直接进入只读确认。PATCH 回执丢失时只观察，不重发。结果以关机状态下读回的启动配置为准。
+
+该操作的终态表示启动配置已核对。开机仍走独立的电源审批。站点部署方负责 PXE 服务、隔离网络和安装内容，系统安装结果与清理回收另行验收。[DMTF BootSourceOverride](https://redfish.dmtf.org/schemas/v1/DSP2046_2025.2.html)
+
+### 裸金属部署与安装收据
+
+应用迁移 `0120_bare_metal_deployments`。先确认一次性 PXE 配置成功，再提交开机申请。在独立开机审批前，由项目管理员关联这两项操作、已选安装镜像的 SHA-256，以及本项目具有只读成员身份的专用安装器服务主体。两个操作必须属于同一账号、站点、物理 UUID 和资产代次。
+
+项目管理员从操作记录打开待审批的裸金属开机，在「裸金属部署」核对系统与预填的 PXE 操作，输入安装器服务主体 ID 和镜像摘要。项目成员可在同一详情刷新部署状态，独立审批人在批准前核对系统 UUID、PXE 操作、安装器和镜像摘要。安装器回报后，详情显示证据摘要和收到回报的时间。
+
+```bash
+cloud-manager operations register-deployment TENANT PROJECT < deployment.json
+cloud-manager operations approve TENANT PROJECT BOOT_OPERATION --decision approve --deployment-id DEPLOYMENT
+cloud-manager operations get-deployment TENANT PROJECT DEPLOYMENT
+cloud-manager operations report-deployment TENANT PROJECT DEPLOYMENT < receipt.json
+```
+
+登记字段为 `stage_operation`、`boot_operation`、`image_sha256`、`installer_id`。安装器使用自己的服务令牌提交 `system_id`、`image_sha256`、`result` 和 `evidence_sha256`。结果为 `installed` 或 `failed`。API 集合路径为 `/v1/tenants/{tenant}/projects/{project}/bare-metal/deployments`，收据写入路径为 `/{deployment}/receipt`。
+
+项目操作详情的可选字段 `bare_metal_deployment` 包含管理员可登记的 `stage_operation` 或已关联的 `deployment`。批准已关联部署的开机操作时，在 `POST /operations/{operation}/approval` 的正文提供已核对的 `deployment_id`。遗漏、ID 不匹配或待审批部署已过期会返回 409。控制台会随批准发送 ID。
+
+登记保留两小时。Worker 开机前再次校验安装器代次和一次性 PXE 设置，确认同机上电且一次性覆盖已消费才完成开机操作。部署等待安装回报期间，其他平台电源或 PXE 变更及资产归属转移被拒绝。开机明确失败时展示 `boot_failed` 并解除部署保留；待回报任务到期显示 `expired`。开机确认后，指定安装器可登记终态。重复提交相同结果与证据摘要返回原回执，冲突结果被拒绝。账号、资产或安装器代次变化会拦截回报。
+
+站点部署方负责 PXE 网络、镜像供给和安装器。安装收据记录由已绑定安装器提交的证据摘要，现场验收还需核对实际介质、网络隔离、系统启动和清理回收。
+
+### 裸金属清理与回收
+
+应用迁移 `0121_bare_metal_reclaims` 后更新 API 和 Worker。平台开机操作一旦进入派发或确认成功，即使派发之后超时或结果未知，设备的每次跨项目转移都要取得本次清理凭证。管理员先关机并确认当前站点盘点显示关机，随后提交账号、地域、物理 UUID 和站点清理服务主体。后者须是项目内启用的只读服务主体。申请需要当前资产归属版本和幂等键。
+
+项目独立审批人批准后，指定服务在 30 分钟内领取一次授权。领取请求与证据回报均携带同一物理 UUID，并使用该服务主体的 Bearer 凭据。站点执行全盘清理及网络隔离，保存可供核验的证据原件，再触发一次同账号、同站点的完整关机盘点。服务端校验领取后的关机观测和当前授权代次，登记证据 SHA-256。重复提交相同证据返回原记录。
+
+申请至归属转移完成期间，平台阻止该物理 UUID 的电源和 PXE 变更。独立审批人在领取前可拒绝。授权被领取后，失败或回报缺失会继续保留操作限制，不能通过再次领取解除。管理员完成归属转移时，系统复核本次凭证、归属版本和最近 10 分钟内的关机观测，并原子消费凭证。转移失败保留原凭证和归属。
+
+在控制台的资产列表打开裸金属行的「回收与归属」。项目成员可查看当前回收和证据摘要，管理员可发起回收或登记恢复申请，独立审批人可提交相应决定。凭证验证后，管理员可选择自己同样有管理权限的目标项目并确认转移。转移成功后刷新原项目资产列表。
+
+```bash
+cloud-manager operations request-reclaim TENANT PROJECT --idempotency-key KEY --if-match REVISION < request.json
+cloud-manager operations current-reclaim TENANT PROJECT --account ACCOUNT --region SITE --system-id UUID
+cloud-manager operations review-reclaim TENANT PROJECT RECLAIM < decision.json
+cloud-manager operations claim-reclaim TENANT PROJECT RECLAIM < claim.json
+cloud-manager operations report-reclaim TENANT PROJECT RECLAIM < receipt.json
+cloud-manager operations get-reclaim TENANT PROJECT RECLAIM
+```
+
+API 集合路径为 `/v1/tenants/{tenant}/projects/{project}/bare-metal/reclaims`。用 `POST` 申请并用 `GET /{reclaim}` 查询。审批、领取和回报依次用 `POST /{reclaim}/approval`、`POST /{reclaim}/claim`、`POST /{reclaim}/receipt`。申请正文包含 `account`、`region`、`system_id`、`sanitizer_id`。审批正文包含 `decision`，值为 `approve` 或 `reject`。领取正文包含 `system_id`，回报正文包含 `system_id` 和 `evidence_sha256`。平台记录站点服务的清理回报与关机观测。站点须保管证据并验证实际擦除和网络隔离。
+
+用 `GET /current?account=ACCOUNT&region=SITE&system_id=UUID` 查询设备当前的回收。仅当前归属项目可查询，设备没有活动记录时返回 `{"reclaim":null}`。已消费的回收可继续用原 ID 在来源项目追溯。
+
+#### 恢复已领取的回收任务
+
+应用迁移 `0122_bare_metal_reclaim_recoveries`。若站点服务领取后失联，管理员须先使原服务授权代次失效，并取得现场证据，确认旧服务已隔离且对应物理设备已清理。管理员随后通过 `POST /{reclaim}/recovery` 登记 `recovery_id`、`system_id`、`isolation_sha256` 和 `evidence_sha256`。恢复 ID 由调用方生成。同一申请人以相同 ID 和正文重试会返回原记录。拒绝后可用新 ID 提交新证据。
+
+在申请后完成一次显示关机的站点盘点。独立审批人核对原始证据，通过 `POST /{reclaim}/recovery/approval` 提交该申请的 `recovery_id` 与 `decision`。批准时平台复核当前账号和申请人代次、原清理授权及关机盘点，并记录审批与证据摘要。查询回收时可读到最新恢复申请。恢复过程保持设备操作限制，经过验证的凭证由原归属转移流程消费。
+
+```bash
+cloud-manager operations recover-reclaim TENANT PROJECT RECLAIM < recovery.json
+cloud-manager operations review-reclaim-recovery TENANT PROJECT RECLAIM < decision.json
+```
 
 ## AWS EC2 只读盘点
 
@@ -171,6 +307,27 @@ cloud-manager scan-alibaba tenant-id account-id cn-hangzhou database-instance rm
 
 使用签名 TLS 夹具及 PostgreSQL 验证了三家盘点链路。真实厂商地域支持、IAM 和限流仍需沙箱验证。
 
+#### 托管数据库实例改名
+
+腾讯云 MySQL、PostgreSQL、SQL Server，阿里云 ApsaraDB RDS 和华为云 RDS v3 共用项目操作账本。改名修改实例显示名。Worker 账号配置的 `allow_database_rename` 默认关闭，沙箱验收后按账号启用。迁移至 `0105_database_rename_events` 后升级 API、Worker 和事件发布器。
+
+| 厂商 | 执行与观测权限 |
+|---|---|
+| 腾讯云 | 按产品使用 `ModifyDBInstanceName` 和对应的 `DescribeDBInstances`。[MySQL](https://www.tencentcloud.com/document/product/236/15877) · [PostgreSQL](https://www.tencentcloud.com/document/product/409/18101) · [SQL Server](https://intl.cloud.tencent.com/pt/document/product/238/32104) |
+| 阿里云 | 使用 `rds:ModifyDBInstanceDescription` 和 `rds:DescribeDBInstances`。[改名接口](https://www.alibabacloud.com/help/en/rds/developer-reference/api-rds-2014-08-15-modifydbinstancedescription) |
+| 华为云 | 使用 IAM 项目内的 `UpdateInstanceName` 和实例列表权限。[改名接口](https://support.huaweicloud.com/api-rds/rds_05_0005.html) |
+
+从资产行选择「申请改名」，或调用 `POST /v1/tenants/{tenant}/projects/{project}/databases/rename`。请求体必填 `account`、`region`、`asset_id`、`current_name` 和 `name`。`If-Match` 使用盘点中的归属版本，`Idempotency-Key` 标识本次申请。新名称采用五种产品的统一平台规则，长 4 至 59 个字符且最多 64 个 UTF-8 字节，以英文字母或汉字开头，其余字符可为英文字母、汉字、数字或下划线。
+
+```bash
+cloud-manager operations rename-database-instance tenant-id project-id \
+  --if-match 1 --idempotency-key rename-example-1 <<'JSON'
+{"account":"prod-db","region":"cn-hangzhou","asset_id":"rm-example","current_name":"Original_db","name":"New_db"}
+JSON
+```
+
+`202` 表示已登记待审批操作，`Location` 指向项目操作详情。`database_rename_intent` 保留厂商产品、原名称、新名称和归属版本。独立审批及适用的外部工单通过后，Worker 点查同一 ID 并核对当前名称和可操作状态，然后登记发送，至多提交一次。厂商 API 受理、回执丢失和目标返回异常都通过只读点查收敛。观察到同一实例在可操作状态下具有期望名称后，事务同时更新资产、操作终态、审计与发件箱。对账未确认时保留资产变更预约，由独立审批人通过 `operations retry-observation` 恢复观测。
+
 #### 托管缓存盘点
 
 执行 `cloud-manager migrate` 后，通过已核验的账号按地域扫描 `cache-instance`。定时控制器可以使用同一地域和资源类型。
@@ -194,6 +351,29 @@ cloud-manager scan-huawei tenant-id account-id cn-north-4 cache-instance
 ```bash
 cloud-manager scan-alibaba tenant-id account-id cn-hangzhou cache-instance r-example
 ```
+
+#### 托管缓存改名
+
+腾讯云 Redis、阿里云 Tair 和华为云 DCS 的 Redis 兼容实例支持单资源显示名变更。执行 `cloud-manager migrate` 后部署 API、Worker 和事件发布器。Worker 的私有账号配置项 `"allow_cache_rename": true` 默认关闭，按账号完成沙箱验收后启用。
+
+| 厂商 | 改名调用 |
+| --- | --- |
+| 腾讯云 Redis | `redis:ModifyInstance`，`Operation=rename`，固定发送单实例 ID 与名称。[API](https://cloud.tencent.com/document/api/239/31785) |
+| 阿里云 Tair | `kvstore:ModifyInstanceAttribute`，发送 `InstanceId` 与 `InstanceName`。[API](https://help.aliyun.com/zh/redis/developer-reference/api-r-kvstore-2015-01-01-modifyinstanceattribute-redis) |
+| 华为云 DCS | 在已绑定 IAM 项目内调用 `UpdateInstance`，请求体仅含 `name`。[API](https://support.huaweicloud.com/api-dcs/UpdateInstance.html) |
+
+在资产清单选择“申请改名”，或调用 `POST /v1/tenants/{tenant}/projects/{project}/caches/rename`。请求使用 `If-Match` 的资产归属版本和 `Idempotency-Key`。新名称以英文字母开头，长度 4–60 位，可包含字母、数字、下划线和连字符。以下示例中的账号、地域、实例 ID、当前名称和归属版本取自项目资产。
+
+```bash
+cloud-manager operations rename-cache-instance tenant-id project-id \
+  --idempotency-key cache-rename-2026-01 --if-match 1 < request.json
+```
+
+```json
+{"account":"account-id","region":"cn-hangzhou","asset_id":"r-example","current_name":"old-cache","name":"new-cache"}
+```
+
+`202` 返回待审批操作，`Location` 指向操作详情，详情的 `cache_rename_intent` 保存变更范围和预期。独立审批及适用的外部工单通过后，Worker 核对同一实例的当前名称和可操作状态，再登记发送。发送后只读对账。回执不明时，独立审批人可以恢复观测。确认期望名称后，事务写入本地库存、操作终态、审计和 `cache-instance.operation.succeeded`，并使已启动的旧盘点领取失效。
 
 #### Kubernetes 集群盘点
 
@@ -983,23 +1163,27 @@ go run ./cmd/cloud-manager operations get-batch tenant-id project-id batch-id
 | 目录 | 职责 |
 | --- | --- |
 | `main.tsx` | 挂载 React 应用和载入基础样式 |
-| `app/` | 应用入口和 `routes.ts` 页面注册。页面标题、导航权限、按需加载和列表入口在此装配 |
-| `app/workspace/` | 工作区布局、会话恢复、项目切换和当前页面的请求生命周期 |
+| `app/routes/` | `resources.ts`、`operations.ts`、`governance.ts` 和 `billing.ts` 分别声明业务页面、导航权限及列表加载器。`registry.ts` 负责页面标识与侧栏顺序，`project-page.tsx` 封装按需渲染 |
+| `app/workspace/` | `AuthenticatedWorkspace.tsx` 装配工作区。会话与项目切换、列表导航及批次草稿的挂载分别由各自的模块管理 |
 | `features/<业务>/` | 页面、表格、筛选、`api.ts`、`schema.ts` 和该业务的 `collection.ts`。复杂详情和表单按工作流分目录，业务专用样式随模块维护 |
-| `features/session/` | 会话接口、当前项目和请求客户端。客户端向共用传输层提供 CSRF 信息 |
-| `features/assets/` | 资源清单与资产选择状态。DNS、负载均衡、节点池和快照等各自维护摘要、契约和行操作 |
-| `features/operations/` | 变更请求与幂等键、操作详情、审批、事件分页及各资源类型的字段展示 |
-| `features/batches/` | 从资产选择生成批次，维护批量表单、收据查询、提交状态与请求取消 |
-| `features/billing/` | 账期与版本筛选、原币种费用、对账差额和归档摘要 |
+| `features/session/` | 会话接口、当前项目和请求客户端。`login/` 管理登录页和专用样式。客户端向共用传输层提供 CSRF 信息 |
+| `features/assets/` | 共用资产契约与资源专用操作。`inventory/` 管理清单页面、筛选和表格，`instances/` 管理实例选择、核对及实例行操作 |
+| `features/catalog/` | 服务目录列表。`templates/` 管理模板发布、停用和历史版本，`launch/` 管理实例申请、收据及幂等重试 |
+| `features/native-console/` | `grants/` 管理授权列表，`request/` 管理访问申请，`access/` 管理授权详情、审批、撤销及串口公钥发放 |
+| `features/operations/` | `history/` 管理操作列表和筛选，`forms/` 管理变更请求与幂等键。`detail/review/` 管理审批、工单和人工复核，`detail/events/` 管理状态事件与分页，`detail/intents/` 按资源领域存放变更意图契约 |
+| `features/batches/` | 页面和编辑流程装配。 `request/` 管理草稿表单、实例选择转换和输入契约，`preview/` 管理预览请求、结果契约和视图，`receipt/` 管理幂等提交、收据查询和结果视图 |
+| `features/billing/reports/` | 账期与版本筛选、原币种费用、对账差额和归档摘要。账单、预算与分摊共用的查询字段在 `billing/schema.ts` |
 | `features/billing/budgets/` | 月度预算查询、配置、版本校验和费用口径状态 |
 | `features/billing/allocation/` | 历史分摊查询、按币种查看成本中心及版本追溯 |
-| `shared/` | 同源传输、通用 Zod 契约、`collection/` 分页与筛选组件、`feedback/` 状态提示，以及 `detail/` 弹窗和表单生命周期 |
+| `shared/` | 同源传输、通用 Zod 契约、`collection/` 分页与筛选组件、`feedback/` 状态提示，以及 `detail/` 弹窗和表单生命周期。`display/` 提供日期格式和跨业务状态文案 |
 
-新增列表时，在业务目录用 `schema.ts` 定义响应结构，由 `api.ts` 负责请求和校验，再在 `collection.ts` 用读取器创建类型化列表。页面通过 `useCollection` 订阅，并在 `app/routes.ts` 注册页面、列表加载器和导航权限。会话、批次和详情也在请求边界通过 Zod 校验，组件从对应契约推导类型。
+新增列表时，在业务目录用 `schema.ts` 定义响应结构，由 `api.ts` 负责请求和校验，再在 `collection.ts` 用读取器创建类型化列表。页面通过 `useCollection` 订阅。页面、导航权限和列表加载器在 `app/routes/` 对应的业务模块声明，菜单位置在 `registry.ts` 登记。路由只向页面传递实际所需的属性。会话、批次和详情也在请求边界通过 Zod 校验，组件从对应契约推导类型。
 
-应用层负责装配业务与共用层，业务层可使用共用层。跨业务复用时，从能力所属模块直接导入已声明的文件入口，以 `scripts/feature-entrypoints.mjs` 为准。`npm run check` 同时检查 TypeScript 类型和模块导入，类型引用及动态导入也受检查。
+应用层负责装配业务与共用层。页面、交互 Hook、请求和 Zod 契约放在对应工作流目录，页面组装视图，Hook 管理交互及请求生命周期，`api.ts` 调用共用客户端，`schema.ts` 定义运行时契约并推导类型。同一业务内多条工作流共用的契约放在业务根目录。负载均衡和快照摘要由资源目录定义契约并推导组件属性，清单组合这些契约。资源类型、操作名称、授权用途等文案由各自业务的 `labels.ts` 维护。
 
-新增资产行操作时，在资源目录定义 `row-actions.ts`，通过资产模块的 `asset-actions.ts` 按资源类型接入。业务组件负责字段和校验，通过 `OperationForm` 提交带资源版本和幂等键的变更。共用弹窗通过 React 渲染内容，通过浏览器原生对话框管理焦点。
+跨业务复用时，从能力所属模块直接导入 `scripts/feature-entrypoints.mjs` 登记的入口。应用装配可额外使用同一文件列出的应用入口。项目路由用显式字符串路径按需导入 `*Page.tsx` 和 `collection.ts`，批次页面在工作区按需装配。使用 `import type` 和 `export type` 声明纯类型依赖。`npm run check` 分别检查静态依赖、动态加载和类型引用，并报告静态运行时循环依赖。
+
+新增资产行操作时，在资源目录定义 `row-actions.ts`，通过资产清单的 `inventory/asset-actions.ts` 按资源类型接入。业务组件负责字段和校验，通过 `OperationForm` 提交带资源版本和幂等键的变更。共用弹窗通过 React 渲染内容，通过浏览器原生对话框管理焦点。
 
 页面和列表读取器按访问加载，操作、负载均衡、DNS 和 Kubernetes 详情按打开加载。离开列表时会取消进行中的列表请求，迟到的分包也不会为旧页面发起请求。批量操作在同一项目内保留草稿。项目切换和会话退出会清空当前选择和草稿，关闭旧详情并取消旧项目的列表、批次、详情和审计导出读请求。已经发出的写请求仍可能在服务端完成，结果仅在发起请求的弹窗仍打开时展示。留在同一项目重试结果不明确的批次时，控制台对同一表单内容复用幂等键。分页和审计导出按已提交的筛选条件请求。Kubernetes 分页中途发现快照更新时要求重新加载。
 
@@ -1011,7 +1195,7 @@ npm run check
 npm run build
 ```
 
-`npm run build` 会生成供 Go 嵌入的 `_embedded` 产物及第三方许可证。提交前端更改时一起提交源码、锁文件和对应产物。生产访问 `/console`，使用同源会话和现有 CSP。入口脚本和样式保持禁用缓存，带内容散列的分包使用不可变缓存。
+`npm run build` 会生成供 Go 嵌入的 `_embedded` 产物及第三方许可证。Git 跟踪前端源码、构建配置和锁文件，`_embedded` 由本地或 CI 构建生成。生产访问 `/console`，使用同源会话和现有 CSP。入口脚本和样式禁用缓存。React 运行时、Zod 和业务代码按分包输出，带内容散列的分包使用不可变缓存。
 
 使用 `npm run dev` 启动本地开发服务，访问 Vite 的 `/console/` 路径。可用 `CLOUD_MANAGER_DEV_API` 指向受控测试后端，代理仅转发项目 API 和会话接口。真实登录仍由受信 OIDC 网关完成，后端按配置验证请求源和 CSRF。
 
@@ -1196,11 +1380,50 @@ cloud-manager idle-schedule TENANT ACCOUNT REGION INSTANCE off
 
 腾讯云与阿里云均限制监控接口调用量，腾讯云超出免费额度时需要开通计费。各厂商的真实凭据、地域覆盖、指标口径和调用预算仍需针对目标环境验收。[腾讯云监控 API](https://cloud.tencent.com/document/api/248/31014) · [腾讯云 CVM 指标](https://cloud.tencent.com/document/product/248/6843//) · [阿里云实例监控](https://help.aliyun.com/en/ecs/developer-reference/api-ecs-2014-05-26-describeinstancemonitordata) · [华为云 CES API](https://support.huaweicloud.com/intl/zh-cn/api-ces/ces_03_0034.html) · [华为云 ECS 基础指标](https://support.huaweicloud.com/intl/zh-cn/usermanual-ecs/ecs_03_1002.html)
 
+### 外部变更工单
+
+应用 `0101_change_tickets` 和 `0102_change_ticket_events`，升级 API、Worker 和事件发布器后再启用项目策略。为工单桥接器分配项目内仅有 `viewer` 角色的独立服务主体。桥接器持有该主体的服务凭据，用于向平台报告外部工单结果。
+
+项目管理员可在控制台的「工单策略」页发布、修改或停用规则，也可调用 `/v1/tenants/{tenant}/projects/{project}/governance/ticket-policy`。首版使用 POST，后续使用 PUT 并携带当前强 `If-Match`。GET 可选 `revision` 读历史版本。策略的 `actions` 使用操作记录中的动作名，例如 `start`、`create` 和 `scale-workload`。单独的 `*` 覆盖全部操作，更新为 `{"actions":[]}` 停用新操作的工单要求，历史操作始终使用受理时固定的策略。
+
+```sh
+printf '%s\n' '{"actions":["start","scale-workload"],"verifier":"itsm-bridge"}' \
+  | go run ./cmd/cloud-manager governance ticket-policy-create TENANT PROJECT
+go run ./cmd/cloud-manager governance ticket-policy-get TENANT PROJECT
+go run ./cmd/cloud-manager governance ticket-get TENANT PROJECT OPERATION
+```
+
+在项目 Webhook 接收端 JSON 配置中设置 `"include_change_tickets": true`，重新执行 `event-register` 后即可接收新申请的签名事件 `change.ticket.requested`。订阅登记从后续事件生效。桥接器使用 `operation_id` 关联外部工单，按事件 `id` 去重，并校验签名、时间戳及正文的租户和项目。事件包含动作、资源类型、账号、地域、固定策略版本及可用的资源 ID。投递使用现有事务发件箱、退避、失败查询和人工重投。
+
+外部系统核验工单后，桥接器以指定服务主体向 `POST /v1/tenants/{tenant}/projects/{project}/governance/change-tickets/{operation}` 登记结果。也可运行 `go run ./cmd/cloud-manager governance ticket-record TENANT PROJECT OPERATION < evidence.json`。正文包含不透明的 `ticket_id`、递增的十进制字符串 `source_revision`，以及 `decision`。有效的 `approved` 必须携带 24 小时内的 RFC 3339 `valid_until`，`revoked` 省略该字段。同一项目的工单 ID 只绑定一次操作。当前回执完全相同的重放返回已有状态，旧版本、同版本变更及更换工单 ID 返回 409。
+
+项目成员可用 GET 查询固定策略版本、最新证据和当前有效性。操作详情在外部批准有效后开放「批准」，独立审批人可在等待期间拒绝申请。外部批准失效时尝试平台批准返回 409，错误详情的 `reason` 为 `change_ticket_required`。Worker 在首次发送及 AWS 创建同键重放前复核有效期、最新回执和核验主体代次。批准撤回或失效后，已发送的请求继续只读对账，仍未发送的排队操作以 `dispatch_unavailable` 终结。恢复核验主体的权限后需要新的回执版本才能重新满足闸门。
+
+工单策略发布和工单回执与项目审计同事务提交。可用 `category=change_ticket` 筛选审计。企业特定工单系统的工作流映射、凭据轮换和生产投递由目标环境验收。
+
+### CMDB 资产同步
+
+CMDB 同步使用来源 API 的项目快照和独立 PostgreSQL 镜像。准备具有目标项目 `viewer` 权限的服务主体，将 `CLOUD_MANAGER_API_URL` 设为来源 API 的 HTTPS 地址，通过 `CLOUD_MANAGER_API_TOKEN` 提供服务凭据，并用 `CLOUD_MANAGER_CMDB_DATABASE_URL` 指向镜像库。
+
+```sh
+go run ./cmd/cloud-manager cmdb-migrate
+go run ./cmd/cloud-manager cmdb-sync TENANT PROJECT
+go run ./cmd/cloud-manager cmdb-status TENANT PROJECT
+```
+
+`cmdb-sync` 可以作为调度器中的单次任务运行。每次从 `GET /v1/tenants/{tenant}/projects/{project}/governance/cmdb-snapshot` 读取当前项目的完整清单。接口只接受服务凭据，每个 API 副本最多同时读取两个快照，读取预算为 25 秒。繁忙时返回 429 和 `Retry-After`。CLI 单次运行的预算为 45 秒。
+
+响应媒体类型为 `application/x-ndjson`。首行 `manifest` 含租户、项目、`schema_version=1` 和数据库快照时间。之后每行 `asset` 含资产稳定坐标、厂商、名称、状态、归属版本及项目可见的拓扑边。凭据、网络地址和原始标签留在来源系统。末行 `complete` 含资产条数和此前所有行原始字节的 SHA-256，哈希包含每行的换行符。单次快照上限为 25 万条资产、256 MiB，每行上限为 256 KiB。服务在写末行前复核服务凭据和成员代次。HTTP 200 后断开或缺少完整末行时，接收端丢弃该轮快照。
+
+镜像以来源 URL、租户、项目隔离，资产以账号、地域、类型和资产 ID 去重。接收端校验边界、条数和哈希，再在同一事务中更新变化行、移除已不可见或确认移除的行，并保存发布回执。`missing_candidate` 继续在镜像中保留。截断、校验失败、超时、来源授权失败和发布事务失败时，最近一次已发布数据仍可用。旧领取代次或早于当前发布的来源快照无法覆盖已有版本。
+
+消费端从 `cmp_cmdb_assets` 按 `source_url`、`tenant_id` 和 `project_id` 读取 JSONB 资产投影，也可以读取 `cmdb-status` 返回的发布代次、来源时间、变更和移除数。镜像库由接收端管理，消费进程应使用与其来源、租户和项目范围对应的数据库授权。更换来源 URL 建立新的镜像范围，现有镜像可继续追溯。
+
 ### 项目审计与导出
 
 项目管理员可通过浏览器的「项目审计」、CLI 或 `GET /v1/tenants/{tenant}/projects/{project}/audit` 查询审计账本。记录涵盖云账号变更、资产归属、操作状态、审批、人工处置、创建续查和服务目录变更。归属转移或账号共享的双方项目各有一份记录。操作申请记载申请人，审批和处置记载实际审批人，系统状态事件留空主体字段。
 
-可按 `category`、`account`、`subject_id` 和 RFC 3339 时间范围筛选。类别为 `account`、`ownership`、`operation`、`approval`、`resolution`、`observation`、`catalog`、`alert`、`console_access`、`billing_budget` 和 `tag_policy`。时间区间含 `from`，截止于 `until` 之前。列表按发生时间和审计 ID 倒序返回，`limit` 默认 50，范围为 1 至 200。续读使用 `next` 及原筛选条件。操作类记录的 `subject_id` 可直接查询项目操作详情，目录、告警和原生控制台记录分别使用模板 ID、告警 ID 与访问授权 ID。标签规则发布记录使用项目 ID 作为对象，并包含发布版本。
+可按 `category`、`account`、`subject_id` 和 RFC 3339 时间范围筛选。类别为 `account`、`ownership`、`operation`、`approval`、`resolution`、`observation`、`catalog`、`alert`、`console_access`、`billing_budget`、`tag_policy` 和 `change_ticket`。时间区间含 `from`，截止于 `until` 之前。列表按发生时间和审计 ID 倒序返回，`limit` 默认 50，范围为 1 至 200。续读使用 `next` 及原筛选条件。操作和工单回执记录的 `subject_id` 可直接查询项目操作详情，目录、告警和原生控制台记录分别使用模板 ID、告警 ID 与访问授权 ID。标签规则和工单策略发布记录使用项目 ID 作为对象，并包含发布版本。
 
 `GET /v1/tenants/{tenant}/projects/{project}/audit/export` 使用同样的筛选条件，在一个数据库快照内导出最多 2000 条 CSV。超限返回 422，可用时间或类别缩小范围。输出字段为事件 ID、时间、类别、动作、对象、账号、地域、主体、关联项目、结果及适用的修订号。可能被电子表格识别为公式的文本单元格会转成文本。凭据、请求指纹和原始证据引用保留在各自的存储边界。
 
@@ -1418,6 +1641,25 @@ WHERE (s.tenant_id, s.account_id, s.region, s.kind, o.external_id) =
 
 厂商检查与删除是两个请求。应通过站点权限或变更窗口避免并发修改挂载与销毁策略。厂商断连、404 和本地盘点移除均不足以确认删除。Worker 核实厂商证据后，在同一事务写入操作结果和资产移除记录。后续扫描忽略该实例的迟到结果。人工处置记录账本结论，资产继续由盘点核实。
 
+### 腾讯云 CVM 单实例退役
+
+退役释放按量付费 CVM 及其系统盘。先备份需保留的数据、停止实例并卸载数据盘。执行迁移 `0106_instance_retirement_reservations` 和 `0107_instance_retirement` 后升级 API 与 Worker。账号须处于可写状态，目标账号的 Worker 凭据配置需单独开启 `allow_instance_retirement`，默认关闭。保盘删除与批量操作沿用各自的现有合同。[腾讯云退还实例](https://cloud.tencent.com/document/api/213/15723) · [腾讯云实例销毁影响](https://cloud.tencent.com/document/product/213/4930)
+
+控制台在符合本地关机条件的腾讯云实例行提供「申请退役」。预览读取当前实例版本及唯一已盘点的关联盘，Worker 在发送前确认它是系统盘。申请人填写完整实例 ID 确认影响。HTTP 预览路径为 `GET /v1/tenants/{tenant}/projects/{project}/instance-operations/retirement-preview`，查询参数为 `account`、`region` 和 `asset_id`。提交将末尾的 `retirement-preview` 改为 `retire` 并使用 `POST`，`If-Match` 使用预览中的实例版本。
+
+```bash
+cloud-manager operations preview-retire tenant-id project-id \
+  --account tencent-account --region ap-guangzhou --asset-id ins-example
+cloud-manager operations retire-instance tenant-id project-id \
+  --if-match 1 --idempotency-key retire-example <<'JSON'
+{"account":"tencent-account","region":"ap-guangzhou","asset_id":"ins-example","system_disk_id":"disk-example","confirm_asset_id":"ins-example"}
+JSON
+```
+
+受理固定实例、盘点系统盘及各自的归属版本。活动操作及待复核状态预约实例和系统盘，拦截归属转移以及冲突的挂盘和快照写入。单次发送前复核平台保护、当前授权、独立审批及适用的外部工单。Worker 使用同账号同地域的 CVM 和 CBS 精确查询确认关机、按小时计费、销毁保护明确关闭且只挂载同一块云系统盘。确认后发送单实例 `TerminateInstances`，并显式保留包年包月数据盘。[实例点查](https://cloud.tencent.com/document/api/213/15728) · [CBS 磁盘点查](https://cloud.tencent.com/document/product/362/16315)
+
+接收厂商回执后，连续两轮查询的 `DescribeInstances` 与 `DescribeInstancesStatus` 都须返回完整空集，才确认实例释放。回收态、销毁中、点查错误及部分结果会打断连续观测。确认事务记录实例移除、实例配额释放、操作终态、审计和发件箱。系统盘仍通过云盘盘点确认。若厂商回执丢失，操作进入待复核，审批人通过厂商记录核验后登记处置；已有回执时可恢复只读观测。[实例状态查询](https://cloud.tencent.com/document/api/213/15738) · [实例生命周期](https://intl.cloud.tencent.com/zh/document/product/213/4856)
+
 ### 卷挂载和卸载
 
 通过 `instance-operations` 提交 `attach-volume` 或 `detach-volume`，并提供 `volume_id` 和 `volume_revision`。`volume_revision` 取自卷当前的 `ownership_revision`。实例和卷必须在同一账号、区域和归属项目。每个动作同时占用实例与卷，直到确认完成、失败或经人工处置。挂载可按项目策略要求审批。卸载始终要求独立审批，申请人须在来宾系统完成文件系统卸载，再提交 `guest_unmounted: true`。此字段记录申请人的确认。
@@ -1587,3 +1829,196 @@ cloud-manager operations approve TENANT PROJECT OPERATION_ID --decision approve
 | 华为云 | 核对同一 IAM 项目的非默认父组及目标规则，按 V3 规则 ID 删除。父组列表缺失且目标点查返回 404 才形成一轮缺失证据。[DeleteSecurityGroupRule](https://support.huaweicloud.com/api-vpc/vpc_apiv3_0019.html) |
 
 Worker 对已持久记录的撤销最多发送一次。连续两轮只读观测都确认缺失后，才一并提交资产移除和终态事件。规则仍可见时继续等待，读取范围冲突或证据耗尽时进入待复核。审批人可以恢复只读观测。已确认撤销的本地记录会阻止迟到盘点复活该规则 ID。对在平台外独立删除的规则，普通盘点仍保留待确认缺失状态。
+
+### 自有 KVM 站点与宿主机放置
+
+执行 `cloud-manager migrate`，待 `0111_kvm_placement` 完成后启动 API。宿主机按租户、项目和站点绑定。每台物理机的 libvirt UUID 全局唯一，每个代理服务主体在租户内只绑定一台宿主机。代理在该项目中使用独立的 `viewer` 服务身份，使用短期 Bearer 凭据通过 HTTPS 上报。
+
+```bash
+cloud-manager kvm register-host TENANT PROJECT SITE < host.json
+cloud-manager kvm get-host TENANT PROJECT SITE HOST
+cloud-manager kvm change-host TENANT PROJECT SITE HOST REVISION < change.json
+```
+
+```json
+{"id":"host-01","uuid":"feaa8a19-4765-4bb4-a383-3a1011ba0001","agent":"host-01-agent","failure_domain":"rack-a","networks":["tenant-net"],"storage_pool":"vm-local"}
+```
+
+登记和排空需要项目管理员。变更主体接受 `{"action":"drain"}`、`{"action":"resume"}` 或 `{"action":"rebind","agent":"host-01-next"}`。CLI 将当前管理版本送入 `If-Match`。换绑提升代理代次并进入排空，恢复后须有新上报才能再次放置。换绑后撤销旧服务身份或令牌。已撤销项目成员权限的代理立即失去上报和放置资格。
+
+在受控的 Linux KVM 宿主机上使用 `observe-host`。为运行账号授予 libvirt 只读权限，并配置 `CLOUD_MANAGER_API_URL` 与代理自己的 `CLOUD_MANAGER_API_TOKEN`。预先核对宿主机 UUID、活动 libvirt 网络名称、专用本地存储目录和分配上限。代理仅读取本地 `qemu:///system`，以 NUMA 内存、在线逻辑 CPU 及目录卷的实时可用空间限制上报值。目录池支持 ext 系列、XFS 和 Btrfs。磁盘池须归宿主机独占，系统与其他项目的预留由运维留在配置上限之外。[virsh](https://www.libvirt.org/manpages/virsh.html) · [libvirt 能力 XML](https://libvirt.org/formatcaps.html)
+
+非空宿主机通过 `POST /v1/tenants/{tenant}/projects/{project}/kvm/sites/{site}/hosts/{host}/vm-inventory` 一次核对最多 256 个域 UUID。只有当前宿主机绑定的服务身份可查到本站、同项目且仍有持久预留的域。代理最多并行核验四个域，核对持久配置和运行中配置中的归属、vCPU、内存、启动卷及网络。域清单前后必须一致。发现未知域、配置漂移、对账失败或所需网络未激活时，本轮上报零可放置容量。采样开始时无法验证宿主机身份或无法提交报告时，平台依照最近一次报告的有效期判定。站点应维持对 libvirt 和卷池的独占管理。
+
+域全部核验通过后，仍可使用宿主机剩余容量。平台在宿主机锁下扣除所有代次的未释放有效预留，已绑定虚拟机也继续占用。磁盘以配置上限和文件系统实时可用量中较小者作为预算，再扣除预留，避免在稀疏卷或共享区块上提前计入空间。
+
+```bash
+cloud-manager kvm observe-host TENANT PROJECT SITE HOST 1 < limits.json
+```
+
+```json
+{"vcpu":24,"memory_mib":65536,"disk_mib":512000}
+```
+
+先升级 API 副本，再更新内置站点代理。按 30 秒采样并串行运行同一宿主机的采样进程。90 秒内没有新报告会失去放置资格。重复提交同代次、同序号、同容量且证据有效的报告返回原观测时间。内置采样器会上报 `inventory.host_revision` 和 `inventory.domains`，平台在宿主机锁下复核版本及已核验域是否仍有有效记录。代次、序号、版本或域证据过期返回 412。受信外部站点代理可以通过 `report-capacity HOST < report.json` 提交 `uuid`、`generation`、`sequence` 和 `capacity`，也可附带 `inventory`。内置采样器提供 CPU、内存和本地磁盘。使用 GPU 放置需登记 `gpu_model`，并由受信外部代理上报 GPU 数量。
+
+```bash
+cloud-manager kvm reserve TENANT PROJECT SITE request-042 < placement.json
+cloud-manager kvm get TENANT PROJECT SITE PLACEMENT
+cloud-manager kvm release TENANT PROJECT SITE PLACEMENT
+```
+
+```json
+{"vcpu":2,"memory_mib":4096,"disk_mib":20480,"network":"tenant-net","storage_pool":"vm-local","excluded_failure_domain":"rack-b","ttl_seconds":300}
+```
+
+放置需要项目执行权限，匹配网络、存储池、剩余容量，以及可选的 `required_host`、`failure_domain`、`excluded_failure_domain` 和 GPU 型号。预留有效期为 1–900 秒，无合适容量返回 409。同一请求人、项目、站点用相同幂等键和输入重试时返回原记录，包括过期或已释放的状态。原请求人和项目管理员可以主动释放。登记、主机管理变更、预留和释放与 `cmp_kvm_events` 在同一事务提交。严格 OpenAPI 见 `/openapi.json` 下的 `/kvm/sites/` 路径。
+
+#### 宿主机故障隔离与重新接入
+
+应用迁移 `0123_kvm_host_fence`，升级处理 KVM 请求的 API 副本及宿主机代理。宿主机疑似失联或已有命令结果未知时，管理员向宿主机路径下的 `/fence` 提交 `action=request` 和物理宿主机 UUID。所有隔离变更需要当前宿主机版本 `If-Match`。申请会进入 `pending`，推进代理代次、清空容量样本并阻止放置、代理上报、DHCP 配置和 VM 派发。现有预留和未决 VM 状态继续保留。
+
+站点人员通过带外手段隔离原宿主机，保存可核验的证据原件。已经发到宿主机的命令仍可能完成。独立审批人核对物理身份和现场证据后提交 `action=confirm`、`uuid` 与 `evidence_sha256`，将状态推进为 `fenced`，供后续故障处置核对。项目成员可从 `GET /fence` 查询当前状态及最近 20 条事件。
+
+宿主机准备重新接入时，管理员提交 `action=request-rejoin`、`uuid`、`replacement_agent` 与新的 `evidence_sha256`。独立审批人以 `approve-rejoin` 或 `reject-rejoin` 审批该版本。仍有未收敛的创建、写入或观测任务时，平台保留隔离。批准后绑定新的代理服务主体并推进代次，宿主机保持排空。管理员执行原来的 `resume` 并完成新容量上报后，宿主机才能接收新放置。
+
+```bash
+cloud-manager kvm change-host-fence TENANT PROJECT SITE HOST REVISION < fence.json
+cloud-manager kvm get-host-fence TENANT PROJECT SITE HOST
+```
+
+### 自有 KVM 网络与 IPv4 地址池
+
+执行 `cloud-manager migrate` 应用 `0115_kvm_ipam`，更新 API 副本和站点代理。管理员在 `POST /v1/tenants/{tenant}/projects/{project}/kvm/sites/{site}/networks` 登记项目站点网络。在宿主机登记的 `networks` 中使用相同网络名。地址池不可变，规范 IPv4 子网为 /16 至 /30，连续地址段包含 1 至 4096 个可用地址，排除网关、网络地址和广播地址。同一项目站点的地址池子网不得重叠。启用前现有网络的有效预留和已绑定虚拟机须先结算。
+
+```json
+{"network":"app","subnet":"10.77.0.0/29","gateway":"10.77.0.1","first_ip":"10.77.0.2","last_ip":"10.77.0.4"}
+```
+
+```bash
+cloud-manager kvm register-network TENANT PROJECT SITE < ipv4-pool.json
+cloud-manager kvm get-network TENANT PROJECT SITE app
+```
+
+在已登记网络放置时，IPv4 和宿主机资源在同一事务中预留。默认取最低可用 IPv4，也可在原放置请求中指定 `ipv4`。已占用、越界或地址池耗尽返回 409。收据与 VM 记录包含 `ipv4` 和 `mac`，同键重放返回原地址和状态。未绑定的预留到期或主动释放后可跨宿主机重分配。已绑定地址在关机时保留，在退役确认时随放置预留一起释放。无地址池的网络继续支持原放置流程。
+
+站点管理员在每个候选宿主机预建同名、已激活的持久 libvirt 网络，配置地址池的网关与 IPv4 子网，并从动态 DHCP 范围中排除整段池地址。MAC 由前缀 `02:00` 和 IPv4 的四个十六进制字节组成。例如 `10.77.0.2` 对应 `02:00:0a:4d:00:02`。现场网络须按项目及站点隔离，避免同一二层域的外部地址分配重叠。
+
+```xml
+<network>
+  <name>app</name>
+  <ip address="10.77.0.1" prefix="29">
+    <dhcp>
+      <host mac="02:00:0a:4d:00:02" name="app-2" ip="10.77.0.2"/>
+      <host mac="02:00:0a:4d:00:03" name="app-3" ip="10.77.0.3"/>
+      <host mac="02:00:0a:4d:00:04" name="app-4" ip="10.77.0.4"/>
+    </dhcp>
+  </ip>
+</network>
+```
+
+#### 宿主机静态 DHCP 预览与配置
+
+升级 API 副本后，在绑定的 Linux 宿主机使用当前代理的短期服务凭据，并明确传入站点核实过的本地网络 UUID。预览查询两个配置视图、动态范围和活动 DHCP 租约。仅绑定该宿主机的服务主体可以从 `POST /v1/tenants/{tenant}/projects/{project}/kvm/sites/{site}/hosts/{host}/dhcp-plan/{network}` 取得对应地址池，旧代次返回 412。
+
+```bash
+cloud-manager kvm plan-network-dhcp TENANT PROJECT SITE HOST GENERATION NETWORK NETWORK_UUID
+cloud-manager kvm apply-network-dhcp TENANT PROJECT SITE HOST GENERATION NETWORK NETWORK_UUID
+```
+
+应用命令需要本地 libvirt 网络写权限，每次最多补齐 16 个地址。只向缺失的生效或持久视图增加静态映射，保留已匹配的条目及现场其他配置。申请作用域、网络 UUID、网关或子网不符，池地址与动态范围重叠，或者既有条目、租约与预期归属冲突时停止。代理在每次调用 `net-update` 前重新校验绑定和代次。站点须独占管理该 libvirt 网络，确保写入期间仅有受控的配置变更。[libvirt net-update](https://www.libvirt.org/manpages/virsh.html#net-update)
+
+输出的 `remaining` 是仍需补齐的地址数，`next` 列出下一批及其缺失视图，`verified_updates` 按已核实的配置视图计数。回执丢失后通过只读核对确认效果。部分写入或中断时，重新执行会从两个视图读取当前状态，仅补齐剩余条目。对于池中已完全配置的网络，预览和应用都返回 `remaining: 0`。
+
+代理为 VM 网卡写入预留 MAC，在定义、启动和启动后确认时都检查本地 libvirt 生效与持久配置，阻止漂移的地址映射进入运行态。现场还需验证真实 DHCP 发放、访客网络可达性和网络隔离。[libvirt 网络 XML](https://libvirt.org/formatnetwork.html#ip-addresses)
+
+### 自有 KVM 虚拟机创建
+
+执行 `cloud-manager migrate` 应用 `0112_kvm_vms`。从项目里已有的有效预留提交创建。首条创建路径使用专用本地目录池里的已预置 raw 启动卷，以及预留中指定的 libvirt 网络。启动卷须供该实例独占，由站点管理员核对操作系统镜像和数据归属。内置创建代理支持 CPU、内存和本地磁盘。
+
+```bash
+cloud-manager kvm submit-vm TENANT PROJECT SITE < vm.json
+cloud-manager kvm get-vm TENANT PROJECT SITE VM
+cloud-manager kvm review-vm TENANT PROJECT SITE VM REVISION < review.json
+```
+
+```json
+{"placement_id":"PLACEMENT_ID","boot_volume":"boot-ready"}
+```
+
+预留原申请人提交创建。同一预留和启动卷重放返回同一 VM，改用其他卷返回 409。受理把原预留转为 `bound`，原 TTL 到期后仍计入宿主机用量。独立审批人发出 `{"decision":"approve"}` 或 `{"decision":"reject"}`。未登记外部写入的任务可拒绝并释放预留。代理领取写入前，API 复核宿主机代次、排空状态以及申请人和审批人的成员版本。
+
+在绑定的 Linux 宿主机上，运行账号须具备实际定义和启动本地 libvirt 域的权限。站点管理员在本地配置可用启动卷，并使用本项目代理的短期 Bearer 凭据。读取仍走本地 `qemu:///system` 的只读连接。每次运行至多执行一步，按固定间隔重复运行。
+
+```bash
+cloud-manager kvm run-vm TENANT PROJECT SITE HOST GENERATION < agent.json
+```
+
+```json
+{"boot_volumes":["boot-ready"]}
+```
+
+代理从任务生成域定义，核对宿主机 UUID、网络、启动卷大小和独占关系。仅在站点有独占 libvirt 管理权且磁盘由受控流程准备时启用。定义与启动各自先登记一次性授权。断连后轮询只点查同一个 UUID、域归属、vCPU、内存、磁盘和网络。已定义的任务可领取启动授权。缺失或属性不符时继续保留容量和启动卷，禁止换绑正在执行的宿主机代理。操作记录的 `running` 表示已观测到 libvirt 域运行，访客操作系统启动仍由站点验证。[libvirt 域 XML](https://libvirt.org/formatdomain.html) · [virsh](https://www.libvirt.org/manpages/virsh.html)
+
+### 自有 KVM 镜像与启动卷
+
+执行 `cloud-manager migrate` 应用 `0116_kvm_boot_images`，更新 API 副本和代理。项目管理员在 `POST /v1/tenants/{tenant}/projects/{project}/kvm/sites/{site}/images` 登记不可变 raw 镜像。登记包含镜像 ID、小写 SHA-256 和精确字节数，字节数的上限为 32 GiB。镜像 ID 按项目与站点隔离，重复登记返回 409。
+
+```bash
+cloud-manager kvm register-image TENANT PROJECT SITE < image.json
+cloud-manager kvm get-image TENANT PROJECT SITE IMAGE
+```
+
+```json
+{"image_id":"base-linux","image_sha256":"0000000000000000000000000000000000000000000000000000000000000000","image_size_bytes":1073741824}
+```
+
+站点管理员维护镜像目录，在目录中以 `SHA256.raw` 存放对应文件。也可在 Linux 或 macOS 上用已具备该项目读权限的凭据，从站点维护的 HTTPS 镜像源拉取。
+
+```bash
+cloud-manager kvm mirror-image TENANT PROJECT SITE IMAGE < mirror.json
+```
+
+```json
+{"mirror_url":"https://images.example.net/kvm","image_root":"/srv/kvm-images"}
+```
+
+镜像源按文件名提供 `/kvm/SHA256.raw` 原始字节，使用宿主机信任的 TLS 证书。命令拒绝重定向和内容编码，控制面令牌仅用于读取登记合同。数据流到磁盘，校验长度和摘要后重新查询登记与读权限，再原子发布。相同摘要的有效文件可就地复用，损坏目标保留供运维检查。要启动使用此镜像的 VM，各候选宿主机的 `image_root` 都应能读到该文件。
+
+提交 VM 时可以传入 `{"placement_id":"PLACEMENT_ID","image_id":"base-linux"}`，或者使用原来的 `boot_volume`，两者择一。预留磁盘容量须覆盖镜像字节数。系统按预留生成独占启动卷名，`cmp-image-` 前缀用于管理生成的卷。提交回执包含镜像摘要、大小和目标卷，同预留同镜像重试返回原 VM。
+
+需要准备镜像的宿主机在 `run-vm` 的本地配置中设置规范绝对路径 `{"image_root":"/srv/kvm-images"}`。也可同时提供 `boot_volumes`。目录池和镜像目录由站点独占管理，程序校验路径和文件类型。镜像准备在临时文件中写入，经精确长度和 SHA-256 校验、授权复核和持久化后，原子发布目标卷。已有目标仅在内容与镜像完全一致且链接状态可以核验时采用。
+
+独立审批后的镜像任务先进入 `staging`。只有发布目标卷、刷新 libvirt 池且核验卷后才成为 `staged`。刷新回执丢失时，下一轮核对已有目标再刷新。准备阶段只有长度或摘要不符才报告 `mismatch`，锁竞争保留原观测供后续重试。代理在定义和首次启动前复查启动卷内容，虚拟机运行后的写入属于该实例。实际宿主机还需验收 raw 镜像启动、存储目录权限与 QEMU 访问。[libvirt 池刷新](https://libvirt.org/formatstorage.html)
+
+### 自有 KVM 虚拟机优雅关机
+
+执行 `cloud-manager migrate` 应用 `0113_kvm_vm_shutdown`，更新 API 副本和宿主机代理。项目操作者对运行中的 VM 提交关机申请。API 为 `POST /v1/tenants/{tenant}/projects/{project}/kvm/sites/{site}/vms/{vm}/shutdown`，使用当前 VM 版本作为 `If-Match`，持久受理返回 202 和 VM 地址。相同版本并发提交只有一次受理，旧版本返回 412。请求结果不明确时可读取 VM 当前状态。
+
+```bash
+cloud-manager kvm shutdown-vm TENANT PROJECT SITE VM REVISION
+cloud-manager kvm review-vm TENANT PROJECT SITE VM REVISION < review.json
+cloud-manager kvm get-vm TENANT PROJECT SITE VM
+```
+
+独立审批人批准后，已绑定的代理通过现有 `run-vm` 领取任务。代理可在宿主机排空期间执行关机，并可处理同一台宿主机上早期代次创建的域。领取关机授权前，API 复核请求者、审批者和代理的有效身份及代次。审批人可在写入授权登记前拒绝申请，VM 恢复为 `running`。
+
+代理核对宿主机 UUID、持久域、所有权和运行配置。运行中的域需要启用 ACPI，代理仅发送一次 `virsh shutdown VM --mode acpi`。新版代理为在 x86 宿主机上新定义的域启用 ACPI。既有运行域缺少 ACPI 时，申请保留在 `shutdown_queued` 并记录 `mismatch`。管理员可在受控维护窗口核对既有域配置和访客支持。已经匹配且关机的持久域可直接完成观测。[libvirt ACPI 配置](https://libvirt.org/formatdomain.html#hypervisor-features) · [virsh shutdown](https://www.libvirt.org/manpages/virsh.html#shutdown)
+
+代理认领后进入 `stopping`。命令回执丢失或访客异步处理关机时，后续轮询只点查。只有确认同一个持久域处于 `shut off` 才更新为 `stopped` 并同事务登记审计。缺失、不符或仍运行时继续保留占用，待观测的关机也会阻止代理换绑。关机后保留域、启动卷和原容量预留，供后续恢复或回收。
+
+### 自有 KVM 虚拟机退役
+
+执行 `cloud-manager migrate` 应用 `0114_kvm_vm_retirement`，更新 API 副本和宿主机代理。项目管理员可对已确认关机的 VM 提交退役。API 为 `POST /v1/tenants/{tenant}/projects/{project}/kvm/sites/{site}/vms/{vm}/retirement`，使用当前 VM 版本作为 `If-Match`，持久受理返回 202 和 VM 地址。独立审批人批准后，现有 `run-vm` 代理才可领取任务。登记写入授权前可拒绝申请并返回 `stopped`。
+
+```bash
+cloud-manager kvm retire-vm TENANT PROJECT SITE VM REVISION
+cloud-manager kvm review-vm TENANT PROJECT SITE VM REVISION < review.json
+cloud-manager kvm get-vm TENANT PROJECT SITE VM
+```
+
+代理在授权前后均核对宿主机、持久域归属和关机状态，检查自动启动、托管保存、快照、检查点、NVRAM、varstore 和 TPM。已有依赖、配置不符或身份无法核验时保留域和预留。授权后最多执行一次 `virsh undefine VM`。调用保留 libvirt 默认依赖保护和存储。站点必须维持对 libvirt 与卷池的独占管理。[libvirt undefine 合同](https://libvirt.org/html/libvirt-libvirt-domain.html#virDomainUndefineFlags)
+
+收到回执或断连后，代理都通过完整域清单继续只读核对。第一轮确认缺失后推进观测版本，第二轮必须基于新版本重新读取。期间若再次看到该域，先前的缺失证据失效。平台在同一事务标记 `retired`、释放原放置预留并登记审计。预留显示 `boot_volume_retained: true`，原启动卷保留且继续禁止绑定任何新 VM。文件系统容量采样仍会计入该卷实际占用。退役请求在写入授权登记前发现域已缺失时保持待核对。
+
+撤销未知写入授权、集中镜像分发调度、物理网络和隔离策略编排、共享存储、保留卷清理、迁移及故障疏散仍待开发。真实 KVM 设备、镜像启动、访客关机、退役和网络仍待验收。

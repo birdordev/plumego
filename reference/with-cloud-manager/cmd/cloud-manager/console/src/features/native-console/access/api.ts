@@ -1,5 +1,6 @@
 import { request } from '../../session/client'
-import { grantDetailSchema, grantSchema, serialReceiptSchema } from '../schema'
+import { grantSchema } from '../schema'
+import { grantDetailSchema, serialReceiptSchema } from './schema'
 
 export function readGrant(target: string, signal: AbortSignal) {
   return request(target, { signal }, grantDetailSchema)

@@ -18,6 +18,7 @@ import (
 const kvmSiteRoute = "/v1/tenants/:tenant/projects/:project/kvm/sites/:site"
 const kvmHostsRoute = kvmSiteRoute + "/hosts"
 const kvmHostRoute = kvmHostsRoute + "/:host"
+const kvmHostFenceRoute = kvmHostRoute + "/fence"
 const kvmCapacityRoute = kvmHostRoute + "/capacity"
 const kvmPlacementsRoute = kvmSiteRoute + "/placements"
 const kvmPlacementRoute = kvmPlacementsRoute + "/:placement"
@@ -33,6 +34,8 @@ func registerKVM(app *core.App, store kvm.Store) error {
 		app.Post(kvmHostsRoute, h.endpoint(h.registerHost)),
 		app.Get(kvmHostRoute, h.endpoint(h.getHost)),
 		app.Patch(kvmHostRoute, h.endpoint(h.changeHost)),
+		app.Get(kvmHostFenceRoute, h.endpoint(h.getHostFence)),
+		app.Post(kvmHostFenceRoute, h.endpoint(h.changeHostFence)),
 		app.Put(kvmCapacityRoute, h.endpoint(h.report)),
 		app.Post(kvmIPv4PoolsRoute, h.endpoint(h.registerIPv4Pool)),
 		app.Get(kvmIPv4PoolRoute, h.endpoint(h.getIPv4Pool)),
@@ -44,6 +47,9 @@ func registerKVM(app *core.App, store kvm.Store) error {
 		app.Delete(kvmPlacementRoute, h.endpoint(h.release)),
 		app.Post(kvmVMsRoute, h.endpoint(h.submitVM)),
 		app.Get(kvmVMRoute, h.endpoint(h.getVM)),
+		app.Get(kvmFencedVMRecoveryRoute, h.endpoint(h.getFencedVMRecovery)),
+		app.Post(kvmFencedVMRecoveryRoute, h.endpoint(h.requestFencedVMRecovery)),
+		app.Post(kvmFencedVMRecoveryRoute+"/review", h.endpoint(h.reviewFencedVMRecovery)),
 		app.Post(kvmVMShutdownRoute, h.endpoint(h.requestVMShutdown)),
 		app.Post(kvmVMRetirementRoute, h.endpoint(h.requestVMRetirement)),
 		app.Post(kvmVMRoute+"/review", h.endpoint(h.reviewVM)),

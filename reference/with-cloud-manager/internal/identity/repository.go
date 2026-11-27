@@ -48,7 +48,7 @@ func (s Store) AuthorizeProject(ctx context.Context, scope Scope, permission Per
 }
 
 func (s Store) AuthorizeAccount(ctx context.Context, scope Scope, id string, permission Permission) (AccountAccess, error) {
-	if permission != View && permission != Execute {
+	if permission != View && permission != Execute && permission != ExecuteBareMetal {
 		return AccountAccess{}, ErrForbidden
 	}
 	var access AccountAccess
@@ -71,7 +71,8 @@ func (s Store) AuthorizeAccount(ctx context.Context, scope Scope, id string, per
 	if err != nil {
 		return AccountAccess{}, err
 	}
-	if !role.allows(permission) || (permission == Execute && (mode != "write_enabled" || !writeGrant || access.Provider == provider.VSphere)) {
+	if !role.allows(permission) || (permission == Execute && (mode != "write_enabled" || !writeGrant || access.Provider == provider.VSphere || access.Provider == provider.Redfish)) ||
+		(permission == ExecuteBareMetal && (mode != "write_enabled" || !writeGrant || access.Provider != provider.Redfish)) {
 		return AccountAccess{}, ErrForbidden
 	}
 	return access, nil

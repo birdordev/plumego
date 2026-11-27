@@ -34,6 +34,19 @@ const operationsUsage = `usage: cloud-manager operations COMMAND TENANT PROJECT 
   retire-instance --idempotency-key KEY --if-match REVISION < request.json
   preview-retire --account ACCOUNT --region REGION --asset-id ID
   rename-database-instance --idempotency-key KEY --if-match REVISION < request.json
+  register-deployment < deployment.json
+  get-deployment DEPLOYMENT
+  report-deployment DEPLOYMENT < receipt.json
+  request-reclaim --idempotency-key KEY --if-match REVISION < request.json
+  current-reclaim --account ACCOUNT --region SITE --system-id UUID
+  get-reclaim RECLAIM
+  review-reclaim RECLAIM < decision.json
+  claim-reclaim RECLAIM < claim.json
+  report-reclaim RECLAIM < receipt.json
+  recover-reclaim RECLAIM < recovery.json
+  review-reclaim-recovery RECLAIM < decision.json
+  bare-metal-pxe --idempotency-key KEY --if-match REVISION < request.json
+  bare-metal-power --idempotency-key KEY --if-match REVISION < request.json
   rename-cache-instance --idempotency-key KEY --if-match REVISION < request.json
   rename-load-balancer --idempotency-key KEY --if-match REVISION < request.json
   rename-load-balancer-listener --idempotency-key KEY --if-match REVISION < request.json
@@ -57,7 +70,7 @@ const operationsUsage = `usage: cloud-manager operations COMMAND TENANT PROJECT 
   preview-batch < request.json
   submit-batch --idempotency-key KEY < request.json
   get-batch BATCH
-  approve OPERATION --decision approve|reject
+  approve OPERATION --decision approve|reject [--deployment-id ID]
   resolve OPERATION --decision succeeded|failed --evidence-ref REF [--provider-request-id ID]
   retry-observation OPERATION --evidence-ref REF [--provider-resource-id RECORD_ID]`
 
