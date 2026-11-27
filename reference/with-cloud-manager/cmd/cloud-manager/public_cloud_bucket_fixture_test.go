@@ -35,6 +35,8 @@ type bucketFixture struct {
 	firstReads                       atomic.Int32
 	mode                             atomic.Int32
 	recreated                        atomic.Bool
+	versionMode                      atomic.Int32
+	encryptionMode                   atomic.Int32
 }
 
 func (f *bucketFixture) serveBuckets(t *testing.T, w http.ResponseWriter, r *http.Request) {
@@ -47,9 +49,12 @@ func (f *bucketFixture) serveBuckets(t *testing.T, w http.ResponseWriter, r *htt
 
 	if f.vendor == provider.HuaweiECS && r.Host == "iam.myhuaweicloud.com" && r.URL.Path == "/v3.0/OS-CREDENTIAL/securitytokens" {
 		body, err := io.ReadAll(r.Body)
+		list := strings.Contains(string(body), `"Action":["obs:bucket:ListAllMyBuckets"],"Resource":["OBS:*:*:bucket:*"]`)
+		version := strings.Contains(string(body), `"Action":["obs:bucket:GetBucketVersioning"],"Resource":["OBS:*:*:bucket:`+f.name+`"]`)
+		encryption := strings.Contains(string(body), `"Action":["obs:bucket:GetEncryptionConfiguration"],"Resource":["OBS:*:*:bucket:`+f.name+`"]`)
 		if err != nil || r.Method != http.MethodPost || r.Header.Get("X-Auth-Token") != fixtureHuaweiIAM ||
-			!strings.Contains(string(body), `"duration_seconds":900`) ||
-			!strings.Contains(string(body), `"Action":["obs:bucket:ListAllMyBuckets"]`) {
+			!strings.Contains(string(body), `"duration_seconds":900`) || strings.Count(string(body), `"Effect":"Allow"`) != 1 ||
+			(!list && !version && !encryption) {
 			t.Error("invalid OBS temporary credential request")
 			w.WriteHeader(http.StatusBadRequest)
 			return
@@ -63,6 +68,10 @@ func (f *bucketFixture) serveBuckets(t *testing.T, w http.ResponseWriter, r *htt
 	}
 
 	query := r.URL.Query()
+	if query.Has("versioning") || query.Has("encryption") {
+		f.serveBucketSetting(t, w, r)
+		return
+	}
 	marker := query.Get("marker")
 	valid := r.Method == http.MethodGet && r.URL.Path == "/"
 	if f.vendor != provider.HuaweiECS {
@@ -168,7 +177,7 @@ func validFixtureCOSSignature(r *http.Request, queryNames string) bool {
 		auth.Get("q-header-list") != "host;x-cos-security-token" {
 		return false
 	}
-	hash := sha1.Sum([]byte(strings.ToLower(r.Method) + "\n" + r.URL.Path + "\n" + r.URL.RawQuery + "\nhost=" + r.Host + "&x-cos-security-token=" + url.QueryEscape(fixtureLaunchSession) + "\n"))
+	hash := sha1.Sum([]byte(strings.ToLower(r.Method) + "\n" + r.URL.Path + "\n" + r.URL.Query().Encode() + "\nhost=" + r.Host + "&x-cos-security-token=" + url.QueryEscape(fixtureLaunchSession) + "\n"))
 	key := []byte(hex.EncodeToString(fixtureBucketMAC(sha1.New, []byte(fixtureLaunchSecret), window)))
 	want := hex.EncodeToString(fixtureBucketMAC(sha1.New, key, "sha1\n"+window+"\n"+hex.EncodeToString(hash[:])+"\n"))
 	return auth.Get("q-url-param-list") == queryNames && hmac.Equal([]byte(want), []byte(auth.Get("q-signature")))
@@ -199,13 +208,117 @@ func validFixtureOSSSignature(r *http.Request, region, resource string) bool {
 }
 
 func validFixtureOBSBucketSignature(r *http.Request) bool {
+	return r.Header.Get("X-Obs-Bucket-Type") == "OBJECT" && validFixtureOBSSignature(r, "/", "x-obs-bucket-type:OBJECT\n")
+}
+
+func validFixtureOBSSignature(r *http.Request, resource, headers string) bool {
 	date := r.Header.Get("Date")
 	stamp, err := http.ParseTime(date)
 	if err != nil || time.Since(stamp).Abs() > time.Minute || r.Header.Get("X-Auth-Token") != "" ||
-		r.Header.Get("X-Obs-Security-Token") != fixtureOBSToken || r.Header.Get("X-Obs-Bucket-Type") != "OBJECT" {
+		r.Header.Get("X-Obs-Security-Token") != fixtureOBSToken {
 		return false
 	}
-	signed := "GET\n\n\n" + date + "\nx-obs-bucket-type:OBJECT\nx-obs-security-token:" + fixtureOBSToken + "\n/"
+	signed := "GET\n\n\n" + date + "\n" + headers + "x-obs-security-token:" + fixtureOBSToken + "\n" + resource
 	want := "OBS " + fixtureOBSAccess + ":" + base64.StdEncoding.EncodeToString(fixtureBucketMAC(sha1.New, []byte(fixtureOBSSecret), signed))
 	return hmac.Equal([]byte(want), []byte(r.Header.Get("Authorization")))
+}
+
+func (f *bucketFixture) serveBucketSetting(t *testing.T, w http.ResponseWriter, r *http.Request) {
+	t.Helper()
+	query := r.URL.RawQuery
+	valid := r.Method == http.MethodGet && r.URL.Path == "/" && (query == "versioning" || query == "encryption")
+	switch f.vendor {
+	case provider.TencentCVM:
+		valid = valid && r.Host == f.name+".cos."+f.location+".myqcloud.com" && validFixtureCOSSignature(r, query)
+	case provider.AlibabaECS:
+		valid = valid && r.Host == f.name+".oss-"+f.location+".aliyuncs.com" && validFixtureOSSSignature(r, f.location, "/"+f.name+"/")
+	case provider.HuaweiECS:
+		valid = valid && r.Host == f.name+".obs."+f.location+".myhuaweicloud.com" && r.Header.Get("X-Obs-Bucket-Type") == "" &&
+			validFixtureOBSSignature(r, "/"+f.name+"/?"+query, "")
+	}
+	if !valid {
+		t.Error("bucket setting host, method or signature was invalid")
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+	w.Header().Set("Content-Type", "application/xml")
+	if query == "encryption" {
+		f.serveBucketEncryption(t, w)
+		return
+	}
+	const enabled = "<VersioningConfiguration><Status>Enabled</Status></VersioningConfiguration>"
+	body := enabled
+	switch f.versionMode.Load() {
+	case 1:
+		w.WriteHeader(http.StatusTooManyRequests)
+		return
+	case 2:
+		body = "<VersioningConfiguration/>"
+		if f.vendor == provider.HuaweiECS {
+			body = ""
+		}
+	case 3:
+		body = "<VersioningConfiguration><Status>Suspended</Status></VersioningConfiguration>"
+	case 4:
+		body = "<VersioningConfiguration><Status>Enabled</Status><Status>Suspended</Status></VersioningConfiguration>"
+	case 5:
+		f.recreated.Store(true)
+	}
+	if _, err := io.WriteString(w, body); err != nil {
+		t.Error(err)
+	}
+}
+
+const fixtureBucketKeyID = "fixture-redacted-kms-key-id"
+
+func (f *bucketFixture) serveBucketEncryption(t *testing.T, w http.ResponseWriter) {
+	t.Helper()
+	mode := f.encryptionMode.Load()
+	errorStatus, errorCode := http.StatusNotFound, "NoSuchEncryptionConfiguration"
+	if f.vendor == provider.AlibabaECS {
+		errorStatus, errorCode = http.StatusBadRequest, "NoSuchServerSideEncryptionRule"
+	}
+	switch mode {
+	case 1:
+		errorStatus = http.StatusForbidden
+	case 3:
+		errorCode = "NoSuchBucket"
+	case 4:
+		errorStatus = http.StatusTooManyRequests
+	case 5:
+		f.recreated.Store(true)
+	case 9:
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	if mode >= 1 && mode <= 4 {
+		w.WriteHeader(errorStatus)
+		if _, err := fmt.Fprintf(w, "<Error><Code>%s</Code><Message>%s</Message></Error>", errorCode, fixtureBucketKeyID); err != nil {
+			t.Error(err)
+		}
+		return
+	}
+	algorithm := "KMS"
+	if f.vendor == provider.HuaweiECS {
+		algorithm = "kms"
+	}
+	if mode == 6 {
+		algorithm = "AES256"
+	}
+	if mode == 7 {
+		algorithm = "SM4"
+	}
+	encryption := "<SSEAlgorithm>" + algorithm + "</SSEAlgorithm>"
+	if mode == 8 {
+		encryption += encryption
+	}
+	rule := "<ApplyServerSideEncryptionByDefault>" + encryption + "<KMSMasterKeyID>" + fixtureBucketKeyID +
+		"</KMSMasterKeyID><ProjectID>discarded-project</ProjectID></ApplyServerSideEncryptionByDefault>"
+	body := "<ServerSideEncryptionRule>" + rule + "</ServerSideEncryptionRule>"
+	if f.vendor != provider.AlibabaECS {
+		body = "<ServerSideEncryptionConfiguration><Rule>" + rule + "<BucketKeyEnabled>true</BucketKeyEnabled></Rule></ServerSideEncryptionConfiguration>"
+	}
+	if _, err := io.WriteString(w, body); err != nil {
+		t.Error(err)
+	}
 }

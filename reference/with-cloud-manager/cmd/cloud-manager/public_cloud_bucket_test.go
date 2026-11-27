@@ -2,8 +2,10 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"encoding/csv"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -26,7 +28,7 @@ func TestAcceptancePublicCloudBucketInventory(t *testing.T) {
 		{vpcCreationFixture: vpcCreationFixture{vendor: provider.AlibabaECS, account: "1000000000000002", region: "cn-hangzhou"},
 			command: "alibaba", product: provider.AlibabaOSS, name: "fixture-first-oss", location: "cn-shanghai"},
 		{vpcCreationFixture: vpcCreationFixture{vendor: provider.HuaweiECS, account: "1234567890abcdef1234567890abcdef", region: "cn-north-4"},
-			command: "huawei", product: provider.HuaweiOBS, name: "fixture-first-obs", location: "cn-north-1"},
+			command: "huawei", product: provider.HuaweiOBS, name: "fixture-first-obs", location: "cn-north-4"},
 	} {
 		t.Run(f.command, func(t *testing.T) {
 			t.Parallel()
@@ -56,6 +58,7 @@ func testPublicCloudBucketInventory(t *testing.T, f *bucketFixture) {
 	if f.vendor == provider.HuaweiECS {
 		config.ProjectID, config.IAMToken = fixtureHuaweiProject, fixtureHuaweiIAM
 	} else {
+		config.Regions = append(config.Regions, f.location)
 		config.AccessKeyID, config.AccessKeySecret, config.SecurityToken = fixtureLaunchKey, fixtureLaunchSecret, fixtureLaunchSession
 	}
 	path := filepath.Join(t.TempDir(), "profile.json")
@@ -160,10 +163,22 @@ func testPublicCloudBucketInventory(t *testing.T, f *bucketFixture) {
 		t.Fatalf("bad bucket export %v %v", records, err)
 	}
 
+	versioningPath := testPublicCloudBucketVersioning(t, db, app, f, actor, retiredID, path, transport)
+	encryptionPath := testPublicCloudBucketEncryption(t, db, app, f, actor, retiredID, path, transport)
+	var retained inventory.BucketVersioningSnapshot
+	decodeProjectData(t, scheduleResponse(t, app, http.MethodGet, versioningPath, actor, "", "", http.StatusOK), &retained)
+	if retained.State != provider.BucketVersioningEnabled {
+		t.Fatalf("bucket encryption refresh changed the versioning snapshot: %+v", retained)
+	}
+
 	if _, err := db.ExecContext(ctx, `INSERT INTO cmp_asset_ownership(tenant_id,scope_id,external_id,project_id,revision)
 		SELECT tenant_id,scope_id,$1,'other',2 FROM cmp_inventory_scopes WHERE kind='object-bucket'`, retiredID); err != nil {
 		t.Fatal(err)
 	}
+	scheduleResponse(t, app, http.MethodGet, strings.Replace(versioningPath, "/project/", "/other/", 1), actor, "", "", http.StatusOK)
+	scheduleResponse(t, app, http.MethodGet, versioningPath, actor, "", "", http.StatusNotFound)
+	scheduleResponse(t, app, http.MethodGet, strings.Replace(encryptionPath, "/project/", "/other/", 1), actor, "", "", http.StatusOK)
+	scheduleResponse(t, app, http.MethodGet, encryptionPath, actor, "", "", http.StatusNotFound)
 	f.recreated.Store(true)
 	runFixtureScheduledScan(t, db, inventory.Key{Tenant: "tenant", Account: f.vendor, Region: "global", Kind: provider.ObjectBucket}, f.vendor, ref, scan)
 	lookup := func(project, id, state string) {
@@ -209,5 +224,123 @@ func testPublicCloudBucketInventory(t *testing.T, f *bucketFixture) {
 			change.Bucket.CreatedAt.Format("2006-01-02T15:04:05Z07:00") == fixtureBucketOld
 	}) {
 		t.Fatal("old bucket removal lacked a scoped history record")
+	}
+	replacedPaths := make([]string, 0, 2)
+	for setting, target := range map[string]string{"versioning": versioningPath, "encryption": encryptionPath} {
+		scheduleResponse(t, app, http.MethodGet, strings.Replace(target, "/project/", "/other/", 1), actor, "", "", http.StatusNotFound)
+		newPath := strings.Replace(target, url.PathEscape(retiredID), url.PathEscape(newID), 1)
+		scheduleResponse(t, app, http.MethodGet, newPath, actor, "", "", http.StatusNotFound)
+		refresh := []string{"refresh-" + f.command + "-bucket-" + setting, "tenant", f.vendor, newID}
+		if err := runPublicCloud(ctx, db, refresh, f.vendor, path, transport); err != nil {
+			t.Fatal(err)
+		}
+		scheduleResponse(t, app, http.MethodGet, newPath, actor, "", "", http.StatusOK)
+		replacedPaths = append(replacedPaths, newPath)
+	}
+	pitrExec(t, db, `WITH rotated AS (
+		UPDATE cmp_cloud_accounts SET credential_revision=credential_revision+1 WHERE account_id=$1
+		RETURNING tenant_id,account_id,credential_revision)
+		UPDATE cmp_inventory_scopes s SET credential_revision=rotated.credential_revision
+		FROM rotated WHERE (s.tenant_id,s.account_id)=(rotated.tenant_id,rotated.account_id)`, f.vendor)
+	for _, target := range replacedPaths {
+		scheduleResponse(t, app, http.MethodGet, target, actor, "", "", http.StatusNotFound)
+	}
+}
+
+func testPublicCloudBucketVersioning(t *testing.T, db *sql.DB, app http.Handler, f *bucketFixture, actor, id, profile string, transport http.RoundTripper) string {
+	t.Helper()
+	args := []string{"refresh-" + f.command + "-bucket-versioning", "tenant", f.vendor, id}
+	if name, _ := publicCloudCommand(args[0]); !validCommand(args) || name != f.vendor {
+		t.Fatalf("bucket versioning command is not wired: %q", args[0])
+	}
+	path := "/v1/tenants/tenant/projects/project/assets/object-buckets/" + url.PathEscape(id) + "/versioning?account=" + url.QueryEscape(f.vendor)
+	read := func(code int) inventory.BucketVersioningSnapshot {
+		t.Helper()
+		response := scheduleResponse(t, app, http.MethodGet, path, actor, "", "", code)
+		var state inventory.BucketVersioningSnapshot
+		if code == http.StatusOK {
+			decodeProjectData(t, response, &state)
+		}
+		return state
+	}
+	refresh := func() error { return runPublicCloud(t.Context(), db, args, f.vendor, profile, transport) }
+	read(http.StatusNotFound)
+	scheduleResponse(t, app, http.MethodGet, path+"&account=duplicate", actor, "", "", http.StatusBadRequest)
+	if err := refresh(); err != nil {
+		t.Fatal(err)
+	}
+	first := read(http.StatusOK)
+	if first.State != provider.BucketVersioningEnabled || first.ObservedAt.IsZero() {
+		t.Fatalf("invalid first bucket versioning snapshot: %+v", first)
+	}
+	scheduleResponse(t, app, http.MethodGet, strings.Replace(path, "/project/", "/other/", 1), actor, "", "", http.StatusNotFound)
+	for _, failed := range []struct {
+		mode int32
+		kind provider.FailureKind
+	}{{1, provider.Throttled}, {4, provider.InvalidResponse}, {5, provider.OutcomeUnknown}} {
+		f.versionMode.Store(failed.mode)
+		if err := refresh(); !provider.IsFailure(err, failed.kind) {
+			t.Fatalf("bucket versioning mode %d returned %v", failed.mode, err)
+		}
+		f.recreated.Store(false)
+		if latest := read(http.StatusOK); latest.State != first.State || !latest.ObservedAt.Equal(first.ObservedAt) {
+			t.Fatalf("failed refresh overwrote previous bucket versioning: %+v", latest)
+		}
+	}
+	f.versionMode.Store(2)
+	if err := refresh(); err != nil || read(http.StatusOK).State != provider.BucketVersioningDisabled {
+		t.Fatalf("never enabled response was not decoded: %v", err)
+	}
+	f.versionMode.Store(3)
+	if err := refresh(); err != nil || read(http.StatusOK).State != provider.BucketVersioningSuspended {
+		t.Fatalf("suspended bucket was not decoded: %v", err)
+	}
+	f.versionMode.Store(0)
+	testConcurrentBucketVersioning(t, db, f, id)
+	if got := read(http.StatusOK); got.State != provider.BucketVersioningEnabled {
+		t.Fatalf("older snapshot overwrote the concurrent winner: %+v", got)
+	}
+	return path
+}
+
+type bucketVersioningTestReader func(context.Context, provider.Scope, string, string) (provider.BucketVersioning, error)
+
+func (read bucketVersioningTestReader) ReadBucketVersioning(ctx context.Context, scope provider.Scope, id, location string) (provider.BucketVersioning, error) {
+	return read(ctx, scope, id, location)
+}
+
+func testConcurrentBucketVersioning(t *testing.T, db *sql.DB, f *bucketFixture, id string) {
+	t.Helper()
+	store := inventory.NewStore(db)
+	key := inventory.Key{Tenant: "tenant", Account: f.vendor, Region: "global", Kind: provider.ObjectBucket}
+	started, release := make(chan struct{}), make(chan struct{})
+	done := make(chan error, 1)
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	go func() {
+		done <- store.RefreshBucketVersioning(ctx, key, id, 1, bucketVersioningTestReader(func(ctx context.Context, _ provider.Scope, _, _ string) (provider.BucketVersioning, error) {
+			close(started)
+			select {
+			case <-release:
+				return provider.BucketVersioningSuspended, nil
+			case <-ctx.Done():
+				return "", ctx.Err()
+			}
+		}))
+	}()
+	select {
+	case <-started:
+	case err := <-done:
+		t.Fatalf("older refresh failed before reading bucket: %v", err)
+	}
+	err := store.RefreshBucketVersioning(ctx, key, id, 1, bucketVersioningTestReader(func(context.Context, provider.Scope, string, string) (provider.BucketVersioning, error) {
+		return provider.BucketVersioningEnabled, nil
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	close(release)
+	if err := <-done; !errors.Is(err, inventory.ErrStale) {
+		t.Fatalf("older refresh failed to yield to newer snapshot: %v", err)
 	}
 }

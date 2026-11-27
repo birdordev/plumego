@@ -40,7 +40,7 @@ func (c *Client) signCOS(req *http.Request, queryNames string, now time.Time) {
 	}
 
 	window := strconv.FormatInt(now.Unix()-5, 10) + ";" + strconv.FormatInt(now.Unix()+300, 10)
-	canonical := strings.ToLower(req.Method) + "\n" + req.URL.Path + "\n" + req.URL.RawQuery + "\n" + headers.Encode() + "\n"
+	canonical := strings.ToLower(req.Method) + "\n" + req.URL.Path + "\n" + req.URL.Query().Encode() + "\n" + headers.Encode() + "\n"
 	digest := sha1.Sum([]byte(canonical))
 	payload := "sha1\n" + window + "\n" + hex.EncodeToString(digest[:]) + "\n"
 	key := hex.EncodeToString(bucketHMACSHA1(c.profile.AccessKeySecret, window))

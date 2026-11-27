@@ -8,6 +8,7 @@ const fields: Partial<Record<View, readonly string[]>> = {
   audit: ['category', 'account', 'subject_id', 'from', 'until'],
   'idle-instances': ['state', 'account', 'region'],
   'inventory-freshness': ['provider', 'account', 'state', 'dispatch_state', 'order', 'window_seconds'],
+  'bucket-protection': ['provider', 'account', 'location', 'finding', 'window_seconds'],
 }
 
 export const filterPrefix = 'filter.'

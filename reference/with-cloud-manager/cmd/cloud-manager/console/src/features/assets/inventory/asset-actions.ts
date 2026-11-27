@@ -1,5 +1,6 @@
 import { nativeAssetActions } from '../instances/console-actions'
 import { bareMetalActions } from '../bare-metal/row-actions'
+import { bucketActions } from '../buckets/row-actions'
 import { cacheActions } from '../caches/row-actions'
 import { clusterActions } from '../clusters/row-actions'
 import { databaseActions } from '../databases/row-actions'
@@ -16,6 +17,7 @@ import type { Asset } from '../types'
 const actions: Partial<Record<string, ListAssetActions>> = {
   'kubernetes-cluster': clusterActions,
   'dns-zone': dnsActions,
+  'object-bucket': bucketActions,
   'database-instance': databaseActions,
   'cache-instance': cacheActions,
   'bare-metal': bareMetalActions,

@@ -11,7 +11,8 @@ const commands = new Map([
 ])
 
 export const verifyCommand = (id: string) => commands.get(id)
-export const writableClouds = new Set<string>(['tencent-cvm', 'alibaba-ecs', 'huawei-ecs', 'aws-ec2', 'openstack'])
+export const priorityClouds = new Set<string>(['tencent-cvm', 'alibaba-ecs', 'huawei-ecs'])
+export const writableClouds = new Set<string>([...priorityClouds, 'aws-ec2', 'openstack'])
 
 export const modes: Record<Account['mode'], string> = {
   pending: '待身份校验', read_only: '只读', write_enabled: '已启用写入', suspended: '已停用', revoked: '已撤销',

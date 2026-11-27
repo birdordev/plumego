@@ -20,6 +20,26 @@ import (
 const assetsRoute = "/v1/tenants/:tenant/projects/:project/assets"
 const loadBalancerConfigurationRoute = assetsRoute + "/load-balancers/:asset/configuration"
 const dnsRecordsRoute = assetsRoute + "/dns-zones/:asset/records"
+const bucketVersioningRoute = assetsRoute + "/object-buckets/:asset/versioning"
+const bucketEncryptionRoute = assetsRoute + "/object-buckets/:asset/encryption"
+
+func bucketSettingHandler[T any](read func(context.Context, string, inventory.BucketSettingQuery) (T, error), logger plumelog.StructuredLogger) http.Handler {
+	return serveInventory(func(r *http.Request) (inventory.BucketSettingQuery, error) {
+		if len(r.URL.RawQuery) > 8192 {
+			return inventory.BucketSettingQuery{}, inventory.ErrInvalidQuery
+		}
+		values, err := url.ParseQuery(r.URL.RawQuery)
+		if err != nil || len(values) != 1 || len(values["account"]) != 1 {
+			return inventory.BucketSettingQuery{}, inventory.ErrInvalidQuery
+		}
+		return inventory.BucketSettingQuery{
+			Tenant: router.Param(r, "tenant"), Project: router.Param(r, "project"),
+			ID: router.Param(r, "asset"), Account: values.Get("account"),
+		}, nil
+	}, read, func(w http.ResponseWriter, r *http.Request, snapshot T) error {
+		return contract.WriteResponse(w, r, http.StatusOK, snapshot, nil)
+	}, logger)
+}
 
 func assetHandler[T any](queryInventory func(context.Context, string, inventory.Query) (T, error), logger plumelog.StructuredLogger) http.Handler {
 	return inventoryHandler(queryInventory, func(w http.ResponseWriter, r *http.Request, assets T) error {
@@ -84,6 +104,8 @@ func serveInventory[Q, T any](parse func(*http.Request) (Q, error), queryInvento
 			reply(contract.TypeNotFound, "cluster workloads are unavailable")
 		case errors.Is(err, inventory.ErrDNSRecordsNotFound):
 			reply(contract.TypeNotFound, "DNS zone records are unavailable")
+		case errors.Is(err, inventory.ErrBucketSettingNotFound):
+			reply(contract.TypeNotFound, "object bucket setting snapshot is unavailable")
 		case errors.Is(err, inventory.ErrTagPolicyNotFound):
 			reply(contract.TypeNotFound, "tag policy is unavailable")
 		case errors.Is(err, inventory.ErrExportTooLarge):

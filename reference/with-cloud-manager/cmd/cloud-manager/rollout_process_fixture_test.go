@@ -173,6 +173,14 @@ func (a rolloutAPI) waitProbe(t *testing.T, path string, want int) {
 }
 
 func (a rolloutAPI) request(ctx context.Context, method, path, key string, payload []byte) (int, []byte, error) {
+	revision := ""
+	if key != "" {
+		revision = `"1"`
+	}
+	return a.requestWithRevision(ctx, method, path, key, revision, payload)
+}
+
+func (a rolloutAPI) requestWithRevision(ctx context.Context, method, path, key, revision string, payload []byte) (int, []byte, error) {
 	req, err := http.NewRequestWithContext(ctx, method, "http://"+a.address+path, bytes.NewReader(payload))
 	if err != nil {
 		return 0, nil, err
@@ -180,7 +188,11 @@ func (a rolloutAPI) request(ctx context.Context, method, path, key string, paylo
 	req.Header.Set("Authorization", "Bearer "+a.credential)
 	if key != "" {
 		req.Header.Set("Idempotency-Key", key)
-		req.Header.Set("If-Match", `"1"`)
+	}
+	if revision != "" {
+		req.Header.Set("If-Match", revision)
+	}
+	if len(payload) != 0 {
 		req.Header.Set("Content-Type", "application/json")
 	}
 	resp, err := a.client.Do(req)

@@ -1,0 +1,12 @@
+.account-rollout .catalog-form > :is(h4, p) {
+  margin: 0;
+}
+
+.account-rollout table {
+  min-inline-size: 0;
+}
+
+.account-rollout td:last-child {
+  inline-size: 1%;
+  white-space: nowrap;
+}

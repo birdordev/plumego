@@ -1,10 +1,49 @@
 package provider
 
 import (
+	"context"
 	"regexp"
 	"strings"
 	"time"
 )
+
+type BucketVersioning string
+
+const (
+	BucketVersioningDisabled  BucketVersioning = "disabled"
+	BucketVersioningEnabled   BucketVersioning = "enabled"
+	BucketVersioningSuspended BucketVersioning = "suspended"
+)
+
+func (state BucketVersioning) Valid() bool {
+	return state == BucketVersioningDisabled || state == BucketVersioningEnabled || state == BucketVersioningSuspended
+}
+
+type BucketVersioningReader interface {
+	ReadBucketVersioning(context.Context, Scope, string, string) (BucketVersioning, error)
+}
+
+type BucketEncryption string
+
+const (
+	BucketEncryptionUnconfigured BucketEncryption = "unconfigured"
+	BucketEncryptionAES256       BucketEncryption = "aes256"
+	BucketEncryptionSM4          BucketEncryption = "sm4"
+	BucketEncryptionKMS          BucketEncryption = "kms"
+)
+
+func (state BucketEncryption) Valid() bool {
+	switch state {
+	case BucketEncryptionUnconfigured, BucketEncryptionAES256, BucketEncryptionSM4, BucketEncryptionKMS:
+		return true
+	default:
+		return false
+	}
+}
+
+type BucketEncryptionReader interface {
+	ReadBucketEncryption(context.Context, Scope, string, string) (BucketEncryption, error)
+}
 
 const ObjectBucketGlobalScope = "global"
 

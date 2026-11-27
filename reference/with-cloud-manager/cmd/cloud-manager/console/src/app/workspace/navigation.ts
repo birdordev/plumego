@@ -5,7 +5,7 @@ export const navigationGroups = [
   { views: ['overview'] },
   { label: '资源', views: ['assets', 'cloud-accounts', 'kvm', 'service-catalog', 'console-grants'] },
   { label: '运维', views: ['operations', 'batch', 'alerts', 'inventory-freshness', 'idle-instances'] },
-  { label: '治理', views: ['tag-compliance', 'ticket-policy', 'audit'] },
+  { label: '治理', views: ['bucket-protection', 'tag-compliance', 'ticket-policy', 'audit'] },
   { label: '费用', views: ['billing', 'billing-budget', 'billing-allocation'] },
 ] as const satisfies readonly { label?: string; views: readonly View[] }[]
 
@@ -22,6 +22,7 @@ export const viewPresentation = {
   'inventory-freshness': { icon: 'time', intro: '查看盘点覆盖率、调度积压和各范围的最近完成时间。' },
   'idle-instances': { icon: 'gauge', intro: '核对实例近期负载和样本覆盖，识别闲置候选。' },
   'tag-compliance': { icon: 'shield', intro: '按资源类型检查必填标签和观测证据。' },
+  'bucket-protection': { icon: 'shield', intro: '查看默认加密、版本控制及观测覆盖。' },
   'ticket-policy': { icon: 'ticket', intro: '管理变更工单要求及当前策略版本。' },
   audit: { icon: 'audit', intro: '查询项目内的授权、资源变更和访问事件。' },
   billing: { icon: 'bill', intro: '按账号、账期和版本查询云费用。' },

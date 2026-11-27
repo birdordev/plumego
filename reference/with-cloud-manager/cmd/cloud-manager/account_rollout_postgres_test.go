@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -21,6 +22,115 @@ func TestAcceptanceAccountOperationRollout(t *testing.T) {
 	for _, target := range priorityRolloutTargets() {
 		t.Run(target.provider, func(t *testing.T) {
 			exerciseAccountOperationRollout(t, target)
+		})
+	}
+}
+
+func TestAcceptanceAccountRolloutApproval(t *testing.T) {
+	for _, target := range priorityRolloutTargets() {
+		t.Run(target.provider, func(t *testing.T) {
+			exerciseRolloutApproval(t, target)
+		})
+	}
+}
+
+func exerciseRolloutApproval(t *testing.T, target rolloutPowerTarget) {
+	t.Helper()
+	db := dbtest.Open(t)
+	if err := migrateCloudManager(t.Context(), db); err != nil {
+		t.Fatal(err)
+	}
+	seedPowerDrillData(t, db, target.fixture(), target.parked)
+	seedRolloutAuditReader(t, db)
+	const reviewer = "fixture-rollout-approval-token-over-32-bytes"
+	pitrExec(t, db, `INSERT INTO cmp_instance_approval_rules (tenant_id,project_id,action) VALUES ('tenant','project','start');
+		INSERT INTO cmp_principals (tenant_id,principal_id,kind,issuer,subject) VALUES ('tenant','reviewer','service','fixture','reviewer');
+		INSERT INTO cmp_memberships (tenant_id,project_id,principal_id,role) VALUES ('tenant','project','reviewer','approver')`)
+	hash := sha256.Sum256([]byte(reviewer))
+	pitrExec(t, db, `INSERT INTO cmp_service_tokens (token_hash,tenant_id,principal_id,expires_at)
+		VALUES ($1,'tenant','reviewer',now()+interval '1 hour')`, hash[:])
+	app, err := newAPI(db, "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := rolloutProject + "/cloud-accounts/" + target.provider + "/operation-rollout"
+	rule := `{"region":"` + target.region + `","action":"start"}`
+	policy := `{"rules":[` + rule + `]}`
+	active := `{"rules":[` + rule + `,{"region":"` + target.region + `","action":"stop"}]}`
+	const frozen = `{"rules":[]}`
+	update := func(revision, body string) {
+		t.Helper()
+		scheduleResponse(t, app, http.MethodPut, path, rolloutAuditToken, revision, body, http.StatusOK)
+	}
+	submit := func(key string) string {
+		t.Helper()
+		op := submitFixturePower(t, app, target.provider, target.region, target.parked, pitrServiceToken, "start", key, http.StatusAccepted)
+		if op.Status != "awaiting_approval" {
+			t.Fatalf("operation did not wait for independent approval: %+v", op)
+		}
+		return op.ID
+	}
+	review := func(id, decision string, status int) {
+		t.Helper()
+		scheduleResponse(t, app, http.MethodPost, rolloutProject+"/operations/"+id+"/approval",
+			reviewer, "", `{"decision":"`+decision+`"}`, status)
+	}
+	update(`"0"`, policy)
+	old := submit("rollout-before-revision-change")
+	update(`"1"`, active)
+	review(old, "approve", http.StatusForbidden)
+	update(`"2"`, frozen)
+	review(old, "approve", http.StatusForbidden)
+	update(`"3"`, policy)
+	review(old, "approve", http.StatusForbidden)
+	review(old, "reject", http.StatusOK)
+	review(old, "reject", http.StatusOK)
+
+	fresh := submit("rollout-after-revision-change")
+	review(fresh, "approve", http.StatusOK)
+	update(`"4"`, frozen)
+	review(fresh, "approve", http.StatusOK)
+	var oldState, decision, freshState string
+	var oldTasks, freshTasks int
+	err = db.QueryRowContext(t.Context(), `SELECT old.status,a.decision,fresh.status,
+		(SELECT count(*) FROM cmp_operation_tasks WHERE id=old.operation_id),
+		(SELECT count(*) FROM cmp_operation_tasks WHERE id=fresh.operation_id)
+		FROM cmp_instance_operations old JOIN cmp_instance_operation_approvals a USING (operation_id)
+		JOIN cmp_instance_operations fresh ON fresh.operation_id=$2 WHERE old.operation_id=$1`, old, fresh).
+		Scan(&oldState, &decision, &freshState, &oldTasks, &freshTasks)
+	if err != nil || oldState != "failed" || decision != "reject" || freshState != "queued" || oldTasks != 0 || freshTasks != 1 {
+		t.Fatalf("rollout approval state: old=%s/%s/%d fresh=%s/%d: %v", oldState, decision, oldTasks, freshState, freshTasks, err)
+	}
+}
+
+func TestAcceptanceAccountRolloutBrowserSession(t *testing.T) {
+	_, app, cookie := setupAccountInventory(t)
+	const origin = "https://accounts.example.test"
+	const rule = `{"rules":[{"region":"global","action":"create-dns-record"}]}`
+	for _, account := range []string{"tc", "ali", "hw"} {
+		t.Run(account, func(t *testing.T) {
+			path := accountSourcePath + "/" + account + "/operation-rollout"
+			call := func(method, requestOrigin, csrf, revision string, status int) *httptest.ResponseRecorder {
+				t.Helper()
+				req := httptest.NewRequestWithContext(t.Context(), method, path, strings.NewReader(rule))
+				req.Header.Set("Origin", requestOrigin)
+				req.Header.Set("Content-Type", "application/json")
+				req.Header.Set("If-Match", revision)
+				req.Header.Set(consoleCSRFHeader, csrf)
+				req.AddCookie(&http.Cookie{Name: consoleCookie, Value: cookie})
+				response := httptest.NewRecorder()
+				app.ServeHTTP(response, req)
+				if response.Code != status || strings.Contains(response.Body.String(), "fixture/ref/") {
+					t.Fatalf("account rollout browser %s: status=%d response=%s", method, response.Code, response.Body)
+				}
+				return response
+			}
+			assertAccountRollout(t, call(http.MethodGet, "", "", "", http.StatusOK), `"0"`, 0)
+			call(http.MethodPut, origin, "", `"0"`, http.StatusForbidden)
+			call(http.MethodPut, "https://untrusted.example.test", consoleCSRF(cookie), `"0"`, http.StatusForbidden)
+			assertAccountRollout(t, call(http.MethodPut, origin, consoleCSRF(cookie), `"0"`, http.StatusOK), `"1"`, 1)
+			call(http.MethodPut, origin, consoleCSRF(cookie), `"0"`, http.StatusPreconditionFailed)
+			assertAccountRollout(t, call(http.MethodGet, "", "", "", http.StatusOK), `"1"`, 1)
 		})
 	}
 }

@@ -348,6 +348,47 @@ cloud-manager scan-alibaba tenant-id account-id global object-bucket \
   'example-bucket@2025-01-01T10:00:00Z'
 ```
 
+#### 对象桶版本控制
+
+执行 `cloud-manager migrate` 应用 `0143_bucket_versioning`，先盘点对象桶，再用资产的完整 ID 刷新版本控制状态。桶所在地域须在厂商配置的 `regions` 中。刷新使用厂商的虚拟主机端点，桶名须为单个 DNS 标签。
+
+```sh
+cloud-manager refresh-tencent-bucket-versioning TENANT ACCOUNT 'BUCKET@UTC_CREATION_TIME'
+cloud-manager refresh-alibaba-bucket-versioning TENANT ACCOUNT 'BUCKET@UTC_CREATION_TIME'
+cloud-manager refresh-huawei-bucket-versioning TENANT ACCOUNT 'BUCKET@UTC_CREATION_TIME'
+```
+
+在资源清单的对象桶操作中选择「查看版本控制」，或调用 `GET /v1/tenants/{tenant}/projects/{project}/assets/object-buckets/{asset}/versioning?account={account}`。返回值 `disabled`、`enabled`、`suspended` 分别表示未开启、已开启、已暂停，并附观测时间。未采集或已失效的快照返回 404。刷新在查询前后核对桶名、创建时间、地域和已验证的远端账号。失败保留有效的旧快照，缺失或更换凭据代次的桶隐藏旧结果。
+
+刷新另需目标桶的版本状态读取权限。腾讯云使用 `cos:GetBucketVersioning`，阿里云使用 `oss:GetBucketVersioning`，华为云使用 `obs:bucket:GetBucketVersioning`，华为云为本次读取申请仅限目标桶的临时凭据。当前功能只读。 [腾讯云 COS](https://cloud.tencent.com/document/product/436/19888) · [阿里云 OSS](https://www.alibabacloud.com/help/en/oss/developer-reference/getbucketversioning) · [华为云 OBS](https://support.huaweicloud.com/api-obs/obs_04_0038.html)
+
+#### 对象桶默认加密
+
+执行 `cloud-manager migrate` 应用 `0144_bucket_encryption`。先盘点对象桶，再按完整资产 ID 刷新默认服务端加密。地域和桶名使用与版本控制查询相同的约束。
+
+```sh
+cloud-manager refresh-tencent-bucket-encryption TENANT ACCOUNT 'BUCKET@UTC_CREATION_TIME'
+cloud-manager refresh-alibaba-bucket-encryption TENANT ACCOUNT 'BUCKET@UTC_CREATION_TIME'
+cloud-manager refresh-huawei-bucket-encryption TENANT ACCOUNT 'BUCKET@UTC_CREATION_TIME'
+```
+
+控制台资源清单提供「查看默认加密」，项目 API 为 `GET /v1/tenants/{tenant}/projects/{project}/assets/object-buckets/{asset}/encryption?account={account}`。快照只保存配置状态和观测时间。状态为 `aes256`、`sm4`、`kms` 或 `unconfigured`。厂商明确返回缺少加密配置的错误码时，记录为 `unconfigured`。还未观测、资产不可见或观测已失效时返回 404。桶内对象的实际加密状态需按对象核对。
+
+腾讯云需要 `cos:GetBucketEncryption`，阿里云需要 `oss:GetBucketEncryption`，华为云需要 `obs:bucket:GetEncryptionConfiguration`。华为云为读取配置申请仅限目标桶的临时凭据。目标沙箱需验证阿里云配置响应的实际状态码和正文，读取算法需要完整 XML。 [腾讯云 COS](https://cloud.tencent.com/document/product/436/40137) · [阿里云 OSS](https://help.aliyun.com/zh/oss/developer-reference/getbucketencryption) · [华为云 OBS](https://support.huaweicloud.com/api-obs/obs_04_0063.html)
+
+#### 对象桶防护报告
+
+控制台「治理 → 对象桶防护」和项目 API `GET /v1/tenants/{tenant}/projects/{project}/governance/bucket-protection` 汇总三家云的桶默认加密、版本控制和观测覆盖。点击桶名可打开带账号和完整资产 ID 筛选的资源清单。报告从本地资产库和已采集快照读取，可按厂商、账号和实际地域筛选。
+
+```sh
+cloud-manager governance bucket-protection TENANT PROJECT \
+  --provider alibaba-ecs --location cn-hangzhou --finding encryption_unconfigured
+```
+
+有效观测窗口默认 86400 秒，可设置 60 至 604800 秒。过期结果保留已知状态和观测时间。资产盘点待确认、凭据不匹配或缺少快照时，对应配置显示为无有效观测。只有有效观测才计入明确未配置默认加密或版本控制未启用，后者包含未开启和已暂停。
+
+`finding` 支持 `inventory_unavailable`、`encryption_unconfigured`、`versioning_inactive`、`encryption_needs_observation`、`versioning_needs_observation`，只影响明细。汇总保留当前厂商、账号和地域范围内的全部可见桶。明细按账号和完整资产 ID 续页，默认每页 50 条，最大 100 条。续页时保留筛选项，并将 `next` 传给 `after`。
+
 #### 托管数据库盘点
 
 执行 `cloud-manager migrate` 后，用已核验的云账号按地域扫描 `database-instance`。定时控制器使用同一资源类型和账号配置。
@@ -1167,7 +1208,11 @@ cloud-manager cloud-accounts change TENANT PROJECT ACCOUNT REVISION < change.jso
 
 迁移 `0142_operation_rollout` 后，腾讯云、阿里云和华为云的自有账号支持按地域与动作配置白名单。项目管理员在 `{Location}/operation-rollout` 使用 GET 查询和 PUT 替换。PUT 携带策略的当前 `If-Match`，首次配置使用 `"0"`，正文示例为 `{"rules":[{"region":"ap-guangzhou","action":"start"}]}`。当前版本为 `"0"` 时沿用已有账号写入规则。提交空数组冻结新的受理和派发，已有策略的版本与变更记录保留在数据库和项目审计。
 
-Worker 派发前核对受理时保存的策略版本，镜像复制同时核对源和目标。策略变更前尚未派发的任务必须重新受理才能使用新版本。已登记派发的操作继续按现有授权只读观测。启用策略前先升级所有 API 和 Worker 副本。回退到早于该迁移的程序前，先用账号写入开关关闭受影响账号的写入，再排空 Worker。
+浏览器入口为「云账号管理 → 账号详情 → 操作放量策略」。管理员可查看生效版本、添加或移除规则、保存白名单，或确认冻结。地域与动作按操作记录的原始值精确匹配。实例开机、关机和重启分别使用 `start`、`stop` 和 `reboot`，全局 DNS 的地域使用 `global`。遇到版本冲突时，先读取最新策略，再按需编辑。冻结后可添加白名单并保存，逐项恢复受理和派发资格。
+
+审批人批准时与 Worker 派发前均核对受理时保存的策略版本，镜像复制同时核对源和目标。旧版待审批申请可由审批人拒绝，再按当前策略提交新申请。此前已经完成的审批仍可读取原回执。旧版已入队的任务不会派发，已登记派发的操作继续按现有授权只读观测。
+
+启用策略前先升级所有 API 和 Worker 副本。回退到早于该迁移的程序前，先将放量策略设为空并关闭受影响账号的写入，再排空 Worker。恢复候选程序时，保留空策略直至所有 API 和 Worker 副本就绪，随后按批准范围重新放行。
 
 ```sh
 cloud-manager cloud-accounts rollout TENANT PROJECT ACCOUNT

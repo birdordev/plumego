@@ -418,7 +418,7 @@ func (s Store) prepare(ctx context.Context, task mq.Task, arm bool) (work, error
 			return mq.ErrLeaseLost
 		}
 		if w.Status == "queued" {
-			if err := authorizeRolloutDispatch(ctx, tx, w.ID); err != nil {
+			if err := authorizeCapturedRollout(ctx, tx, w.ID); err != nil {
 				return err
 			}
 			if err := requireChangeTicket(ctx, tx, w.actor, w.Operation); err != nil {

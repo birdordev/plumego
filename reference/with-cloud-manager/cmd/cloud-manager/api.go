@@ -46,7 +46,7 @@ func newAPI(db *sql.DB, addr string, console *consoleConfig) (*core.App, error) 
 		inventory.InventoryCompletionMigration, identity.AccountWriteModeMigration, operations.BareMetalPowerMigration,
 		operations.BareMetalPXEMigration, operations.BareMetalDeploymentMigration, operations.BareMetalReclaimsMigration,
 		operations.BareMetalReclaimRecoveriesMigration, operations.ObservationWorkerMigration, operations.EffectIDMigration,
-		operations.TerminalEventTimeMigration, operations.OperationRolloutMigration)
+		operations.TerminalEventTimeMigration, operations.OperationRolloutMigration, inventory.BucketVersioningMigration, inventory.BucketEncryptionMigration)
 	additionalVersionList := strings.Join(additionalVersions, ",")
 	ready := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx, cancel := context.WithTimeout(r.Context(), time.Second)
@@ -90,6 +90,8 @@ func newAPI(db *sql.DB, addr string, console *consoleConfig) (*core.App, error) 
 		app.Get(assetsRoute+"/topology", assetHandler(store.Topology, app.Logger())),
 		app.Get(loadBalancerConfigurationRoute, loadBalancerConfigurationHandler(store, app.Logger())),
 		app.Get(dnsRecordsRoute, dnsRecordsHandler(store, app.Logger())),
+		app.Get(bucketVersioningRoute, bucketSettingHandler(store.ReadBucketVersioning, app.Logger())),
+		app.Get(bucketEncryptionRoute, bucketSettingHandler(store.ReadBucketEncryption, app.Logger())),
 		app.Get(clusterNodePoolsRoute, clusterNodePoolsHandler(store, app.Logger())),
 		app.Get(clusterWorkloadsRoute, clusterWorkloadsHandler(store, app.Logger())),
 		app.Get(billingRoute, billingHandler(billingStore, app.Logger())),
@@ -102,6 +104,7 @@ func newAPI(db *sql.DB, addr string, console *consoleConfig) (*core.App, error) 
 		app.Get(tagComplianceRoute, tagComplianceHandler(store, app.Logger())),
 		app.Get(idleInstancesRoute, idleInstancesHandler(store, app.Logger())),
 		app.Get(inventoryFreshnessRoute, inventoryFreshnessHandler(store, app.Logger())),
+		app.Get(bucketProtectionRoute, bucketProtectionHandler(store, app.Logger())),
 		app.Get(auditRoute, projectAuditHandler(auditStore, app.Logger(), false)),
 		app.Get(auditRoute+"/export", projectAuditHandler(auditStore, app.Logger(), true)),
 		app.Get(alertsRoute, projectAlerts), app.Get(alertsRoute+"/:alert", projectAlerts),

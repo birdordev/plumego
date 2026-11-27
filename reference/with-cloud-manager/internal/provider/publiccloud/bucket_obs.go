@@ -16,9 +16,10 @@ type obsCredential struct {
 	Expires        time.Time `json:"expires_at"`
 }
 
-// OBS 列桶使用仅有列桶权限的临时签名凭据。IAM Token 只发送给 IAM。
-func (c *Client) obsListCredential(ctx context.Context) (obsCredential, error) {
-	const body = `{"auth":{"identity":{"methods":["token"],"token":{"duration_seconds":900},"policy":{"Version":"1.1","Statement":[{"Effect":"Allow","Action":["obs:bucket:ListAllMyBuckets"],"Resource":["OBS:*:*:bucket:*"]}]}}}}`
+// OBS 临时凭据只包含当前请求所需的动作和资源。IAM Token 只发送给 IAM。
+func (c *Client) obsScopedCredential(ctx context.Context, action, bucket string) (obsCredential, error) {
+	body := `{"auth":{"identity":{"methods":["token"],"token":{"duration_seconds":900},"policy":{"Version":"1.1","Statement":[{"Effect":"Allow","Action":["obs:bucket:` +
+		action + `"],"Resource":["OBS:*:*:bucket:` + bucket + `"]}]}}}}`
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
 		"https://iam.myhuaweicloud.com/v3.0/OS-CREDENTIAL/securitytokens", strings.NewReader(body))
 	if err != nil {
@@ -40,7 +41,7 @@ func (c *Client) obsListCredential(ctx context.Context) (obsCredential, error) {
 }
 
 func (c *Client) listOBSBuckets(ctx context.Context, result *bucketList) error {
-	key, err := c.obsListCredential(ctx)
+	key, err := c.obsScopedCredential(ctx, "ListAllMyBuckets", "*")
 	if err != nil {
 		return err
 	}

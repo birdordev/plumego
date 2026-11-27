@@ -1,7 +1,9 @@
 # 首发采购与验收范围，发布由实际厂商证据授权。
 platform:
+  object-bucket-protection-report: project-scoped-sse-and-versioning-freshness-with-independent-summary-and-keyset-pagination
   cloud-account-administration: project-owned-paged-accounts-and-grants-with-browser-and-cli-lifecycle
   cloud-account-write-mode: verified-provider-mode-switch-with-versioned-dispatch-and-transactional-audit
+  cloud-account-operation-rollout: priority-provider-account-region-action-allowlist-with-revision-fenced-dispatch-and-browser-administration
   operation-worker-observation-mode: recovery-readback-without-new-dispatch-or-aws-create-replay
   operation-terminal-effect-id: signed-stable-effect-id-across-point-in-time-recovery-and-redelivery
   operation-receipt-reconciliation: read-only-destination-scoped-terminal-receipts-with-optional-bidirectional-window
@@ -92,6 +94,8 @@ providers:
     cache-rename-config: allow_cache_rename
     cache-rename-local-evidence: tls-protocol-fixture-and-postgresql
     object-bucket-inventory: tencent-cos-owned-paginated
+    object-bucket-default-encryption: read-only-sse-mode-with-incarnation-check
+    object-bucket-versioning: read-only-incarnation-checked-snapshot
     object-bucket-missing-evidence: account-wide-owner-checked-list-and-creation-instant
     database-inventory: [tencent-cdb, tencent-postgresql, tencent-sqlserver]
     database-missing-evidence: scoped-exact-id-and-complete-empty-page
@@ -171,6 +175,8 @@ providers:
     cache-rename-config: allow_cache_rename
     cache-rename-local-evidence: tls-protocol-fixture-and-postgresql
     object-bucket-inventory: alibaba-oss-owned-paginated
+    object-bucket-default-encryption: read-only-sse-mode-with-incarnation-check
+    object-bucket-versioning: read-only-incarnation-checked-snapshot
     object-bucket-missing-evidence: account-wide-owner-checked-list-and-creation-instant
     database-inventory: [alibaba-rds]
     database-missing-evidence: scoped-exact-id-and-complete-empty-page
@@ -248,6 +254,8 @@ providers:
     cache-rename-config: allow_cache_rename
     cache-rename-local-evidence: tls-protocol-fixture-and-postgresql
     object-bucket-inventory: huawei-obs-owned-object-buckets
+    object-bucket-default-encryption: read-only-sse-mode-with-bucket-scoped-temporary-credentials
+    object-bucket-versioning: read-only-incarnation-checked-snapshot-with-bucket-scoped-temporary-credentials
     object-bucket-missing-evidence: account-wide-owner-checked-list-and-creation-instant
     database-inventory: [huawei-rds]
     database-missing-evidence: scoped-exact-id-and-complete-empty-page

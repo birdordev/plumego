@@ -12,7 +12,7 @@
   background: var(--paper);
 }
 .workspace-page section > form.filters { margin-block-end: .85rem; }
-.collection-page { display: grid; gap: .85rem; }
+.collection-page { display: grid; grid-template-columns: minmax(0, 1fr); gap: .85rem; }
 .collection-toolbar { display: grid; gap: .7rem; min-inline-size: 0; }
 .collection-toolbar > form.filters { padding: .85rem; }
 .collection-tools { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: .65rem; }

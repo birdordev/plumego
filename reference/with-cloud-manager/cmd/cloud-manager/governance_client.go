@@ -26,6 +26,7 @@ const governanceUsage = `usage: cloud-manager governance COMMAND TENANT PROJECT
   compliance KIND [--state STATE] [--account ACCOUNT] [--region REGION] [--cursor CURSOR] [--limit LIMIT]
   idle [--state STATE] [--account ACCOUNT] [--region REGION] [--cursor CURSOR] [--limit LIMIT]
   inventory-freshness [--provider PROVIDER] [--account ACCOUNT] [--state STATE] [--dispatch-state STATE] [--order next_at] [--window-seconds SECONDS] [--after CURSOR] [--limit LIMIT]
+  bucket-protection [--provider PROVIDER] [--account ACCOUNT] [--location REGION] [--finding FINDING] [--window-seconds SECONDS] [--after CURSOR] [--limit LIMIT]
   inventory-sample {--expected-scopes COUNT|--scope-manifest < scopes.json} [--provider PROVIDER] [--account ACCOUNT] [--samples COUNT] [--interval DURATION]`
 
 func runGovernanceClient(ctx context.Context, args []string, address, token string, input io.Reader, output io.Writer, transport http.RoundTripper) error {
@@ -98,6 +99,13 @@ func runGovernanceClient(ctx context.Context, args []string, address, token stri
 		}
 		plan.target = target.JoinPath("inventory-freshness")
 		plan.target.RawQuery = query.Encode()
+	case "bucket-protection":
+		query, ok := bucketProtectionOptions(args[3:])
+		if !ok {
+			return usage
+		}
+		plan.target = target.JoinPath("bucket-protection")
+		plan.target.RawQuery = query.Encode()
 	case "inventory-sample":
 		options, ok := inventorySampleOptions(args[3:])
 		if !ok {
@@ -118,6 +126,30 @@ func runGovernanceClient(ctx context.Context, args []string, address, token stri
 		return usage
 	}
 	return runProjectRequest(ctx, plan, token, input, output, transport)
+}
+
+func bucketProtectionOptions(args []string) (url.Values, bool) {
+	flags := flag.NewFlagSet("bucket-protection", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	cloud := flags.String("provider", "", "")
+	account := flags.String("account", "", "")
+	location := flags.String("location", "", "")
+	finding := flags.String("finding", "", "")
+	window := flags.Int("window-seconds", inventory.DefaultBucketProtectionWindow, "")
+	after := flags.String("after", "", "")
+	limit := flags.Int("limit", inventory.DefaultBucketProtectionLimit, "")
+	if flags.Parse(args) != nil || flags.NArg() != 0 || *limit < 1 || *limit > 100 || *window < 60 || *window > 604800 {
+		return nil, false
+	}
+	query := url.Values{"limit": {strconv.Itoa(*limit)}, "window_seconds": {strconv.Itoa(*window)}}
+	for key, value := range map[string]string{
+		"provider": *cloud, "account": *account, "location": *location, "finding": *finding, "after": *after,
+	} {
+		if value != "" {
+			query.Set(key, value)
+		}
+	}
+	return query, true
 }
 
 func inventoryFreshnessOptions(args []string) (url.Values, bool) {

@@ -13,6 +13,7 @@ export const routes = {
   'service-catalog': resourceRoutes['service-catalog'],
   alerts: governanceRoutes.alerts,
   'inventory-freshness': governanceRoutes['inventory-freshness'],
+  'bucket-protection': governanceRoutes['bucket-protection'],
   'console-grants': resourceRoutes['console-grants'],
   batch: operationRoutes.batch,
   audit: operationRoutes.audit,

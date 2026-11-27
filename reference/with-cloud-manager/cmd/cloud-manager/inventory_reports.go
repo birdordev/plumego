@@ -14,6 +14,93 @@ import (
 )
 
 const inventoryFreshnessRoute = governanceRoute + "/inventory-freshness"
+const bucketProtectionRoute = governanceRoute + "/bucket-protection"
+
+func bucketProtectionHandler(store inventory.Store, logger plumelog.StructuredLogger) http.Handler {
+	return serveInventory(bucketProtectionQuery, store.BucketProtection,
+		func(w http.ResponseWriter, r *http.Request, result inventory.BucketProtectionReport) error {
+			return contract.WriteResponse(w, r, http.StatusOK, result, nil)
+		}, logger)
+}
+
+func bucketProtectionQuery(r *http.Request) (inventory.BucketProtectionQuery, error) {
+	q := inventory.BucketProtectionQuery{
+		Tenant: router.Param(r, "tenant"), Project: router.Param(r, "project"),
+		Window: inventory.DefaultBucketProtectionWindow, Limit: inventory.DefaultBucketProtectionLimit,
+	}
+	if len(r.URL.RawQuery) > 8192 {
+		return q, inventory.ErrInvalidQuery
+	}
+	params, err := url.ParseQuery(r.URL.RawQuery)
+	if err != nil {
+		return q, inventory.ErrInvalidQuery
+	}
+	for name, values := range params {
+		if len(values) != 1 || values[0] == "" {
+			return q, inventory.ErrInvalidQuery
+		}
+		switch value := values[0]; name {
+		case "provider":
+			q.Provider = value
+		case "account":
+			q.Account = value
+		case "location":
+			q.Location = value
+		case "finding":
+			q.Finding = value
+		case "after":
+			q.After = value
+		case "window_seconds":
+			q.Window, err = strconv.Atoi(value)
+		case "limit":
+			q.Limit, err = strconv.Atoi(value)
+		default:
+			return q, inventory.ErrInvalidQuery
+		}
+		if err != nil {
+			return q, inventory.ErrInvalidQuery
+		}
+	}
+	return q, nil
+}
+
+func bucketProtectionOpenAPI(readAuth []openapi.SecurityRequirement) openapi.Op {
+	dateTime := openapi.Schema{Type: "string", Format: "date-time"}
+	observation := openapi.Schema{Type: "object", Properties: map[string]openapi.Schema{
+		"status": openapi.String, "state": openapi.String, "observed_at": dateTime,
+	}}
+	item := openapi.Schema{Type: "object", Properties: map[string]openapi.Schema{
+		"id": openapi.String, "name": openapi.String, "account": openapi.String,
+		"provider": openapi.String, "location": openapi.String, "inventory_available": openapi.Boolean,
+		"encryption": observation, "versioning": observation,
+	}}
+	counts := openapi.Schema{Type: "object", Properties: map[string]openapi.Schema{
+		"fresh": openapi.Integer, "stale": openapi.Integer, "unobserved": openapi.Integer, "flagged": openapi.Integer,
+	}}
+	report := openapi.Schema{Type: "object", Properties: map[string]openapi.Schema{
+		"as_of": dateTime, "window_seconds": openapi.Integer, "items": {Type: "array", Items: &item}, "next": openapi.String,
+		"summary": {Type: "object", Properties: map[string]openapi.Schema{
+			"total": openapi.Integer, "inventory_unavailable": openapi.Integer, "encryption": counts, "versioning": counts,
+		}},
+	}}
+	return openapi.Op{OperationID: "listBucketProtection", Security: readAuth, Params: []openapi.Param{
+		{Name: "provider", In: "query", Schema: openapi.String},
+		{Name: "account", In: "query", Schema: openapi.String},
+		{Name: "location", In: "query", Schema: openapi.String, Description: "桶的实际地域。"},
+		{Name: "finding", In: "query", Schema: openapi.String,
+			Description: "仅筛选明细。支持 inventory_unavailable、encryption_unconfigured、versioning_inactive、encryption_needs_observation 和 versioning_needs_observation。"},
+		{Name: "window_seconds", In: "query", Schema: openapi.Integer, Description: "60 至 604800 秒，默认 86400 秒。"},
+		{Name: "after", In: "query", Schema: openapi.String, Description: "保留筛选项并传入上一页的 next。"},
+		{Name: "limit", In: "query", Schema: openapi.Integer, Description: "默认 50，最大 100。"},
+	}, Responses: map[string]openapi.Response{
+		"200": {Description: "同一数据库快照中的桶配置汇总和分页明细。汇总独立于问题筛选和游标。",
+			Content: map[string]openapi.MediaType{"application/json": {Schema: openapi.Schema{
+				Type: "object", Properties: map[string]openapi.Schema{"data": report},
+			}}}},
+		"400": {Description: "筛选项或游标无效"}, "401": {Description: "凭据缺失、过期或无效"},
+		"403": {Description: "项目权限不足"}, "503": {Description: "资产存储不可用"},
+	}}
+}
 
 func inventoryFreshnessHandler(store inventory.Store, logger plumelog.StructuredLogger) http.Handler {
 	return serveInventory(inventoryFreshnessQuery, store.Freshness,

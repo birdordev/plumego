@@ -175,7 +175,7 @@ func captureRollout(ctx context.Context, tx *sql.Tx, id string) error {
 	return err
 }
 
-func authorizeRolloutDispatch(ctx context.Context, tx *sql.Tx, id string) error {
+func authorizeCapturedRollout(ctx context.Context, tx *sql.Tx, id string) error {
 	var allowed bool
 	err := tx.QueryRowContext(ctx, `SELECT current.revisions=o.rollout_revisions AND -1<>ALL(current.revisions)
 		FROM cmp_instance_operations o CROSS JOIN LATERAL (SELECT cmp_operation_rollout_revisions(o) AS revisions) current

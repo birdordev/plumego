@@ -11,11 +11,13 @@ import (
 	"os"
 	"runtime"
 	"slices"
+	"strconv"
 	"testing"
 	"time"
 
 	"with-cloud-manager/internal/audit"
 	"with-cloud-manager/internal/delivery"
+	"with-cloud-manager/internal/identity"
 	"with-cloud-manager/internal/operations"
 	"with-cloud-manager/internal/provider"
 )
@@ -197,6 +199,96 @@ func exerciseRolloutAndRollback(t *testing.T, baseline, candidate string, target
 		t.Fatal("rollout or rollback repeated a provider effect")
 	}
 	t.Logf("candidate work completed after rollback; independent worker processes=%t", processWorkers)
+	if processWorkers {
+		old.stop()
+		exerciseFrozenAccountRollback(t, db, candidate, baseline, primary.dsn(), rolledBack, cloud, startWorker)
+	}
+}
+
+func exerciseFrozenAccountRollback(t *testing.T, db *sql.DB, candidate, baseline, dsn string, rolledBack rolloutAPI,
+	cloud *powerFixture, startWorker func(string, string) func(),
+) {
+	t.Helper()
+	path := rolloutProject + "/cloud-accounts/" + cloud.provider
+	policyPath := path + "/operation-rollout"
+	allowStop := `{"rules":[{"region":"` + cloud.region + `","action":"stop"}]}`
+	const frozen = `{"rules":[]}`
+	candidateAPI := startRolloutAPI(t, candidate, dsn, rolloutAddress(t))
+	candidateAPI.waitProbe(t, "/readyz", http.StatusOK)
+	admin := candidateAPI
+	admin.credential = rolloutAuditToken
+	payload, err := json.Marshal(operations.Input{Account: cloud.provider, Region: cloud.region, AssetID: cloud.instance, Action: "stop"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	submit := func(api rolloutAPI, key, revision string, want int) operations.Operation {
+		t.Helper()
+		status, body, err := api.requestWithRevision(t.Context(), http.MethodPost, rolloutOperations, key, revision, payload)
+		if err != nil || status != want {
+			t.Fatalf("rollout operation %s: status=%d want=%d body=%s: %v", key, status, want, body, err)
+		}
+		var receipt struct{ Data operations.Operation }
+		if want == http.StatusAccepted {
+			if err := json.Unmarshal(body, &receipt); err != nil {
+				t.Fatal(err)
+			}
+		}
+		return receipt.Data
+	}
+
+	setRolloutAccount(t, admin, http.MethodPut, policyPath, `"0"`, allowStop)
+	stale := submit(candidateAPI, "queued-before-freeze", `"1"`, http.StatusAccepted)
+	assertUnclaimedRolloutTask(t, db, stale.ID, true)
+	setRolloutAccount(t, admin, http.MethodPut, policyPath, `"1"`, frozen)
+	account := decodeRollout[identity.Account](t, admin, http.MethodGet, path, "", nil, http.StatusOK)
+	setRolloutAccount(t, admin, http.MethodPatch, path, strconv.Quote(strconv.FormatInt(account.Revision, 10)), `{"action":"disable-write"}`)
+	candidateAPI.stop()
+
+	submit(rolledBack, "blocked-during-rollback", `"1"`, http.StatusForbidden)
+	worker := startWorker(baseline, "dispatch")
+	waitPITRDone(t, db, stale.ID)
+	worker()
+	assertRolloutOperation(t, rolledBack, stale.ID, "failed")
+	if cloud.writes.Load() != 3 || !cloud.running.Load() {
+		t.Fatal("rolled-back worker sent a provider request after account writes were disabled")
+	}
+	rolledBack.stop()
+
+	resumed := startRolloutAPI(t, candidate, dsn, candidateAPI.address)
+	resumed.waitProbe(t, "/readyz", http.StatusOK)
+	admin = resumed
+	admin.credential = rolloutAuditToken
+	account = decodeRollout[identity.Account](t, admin, http.MethodGet, path, "", nil, http.StatusOK)
+	if account.Mode != "read_only" {
+		t.Fatalf("rollback altered account write mode: %s", account.Mode)
+	}
+	setRolloutAccount(t, admin, http.MethodPatch, path, strconv.Quote(strconv.FormatInt(account.Revision, 10)), `{"action":"enable-write"}`)
+	account = decodeRollout[identity.Account](t, admin, http.MethodGet, path, "", nil, http.StatusOK)
+	// 夹具资产继承账号归属，资产版本随账号版本更新。
+	assetRevision := strconv.Quote(strconv.FormatInt(account.Revision, 10))
+	submit(resumed, "blocked-during-rollback", assetRevision, http.StatusForbidden)
+	setRolloutAccount(t, admin, http.MethodPut, policyPath, `"2"`, allowStop)
+	replay := submit(resumed, "queued-before-freeze", `"1"`, http.StatusAccepted)
+	if replay.ID != stale.ID || replay.Status != "failed" {
+		t.Fatalf("forward restart revived an operation from an obsolete rollout: %+v", replay)
+	}
+	fresh := submit(resumed, "blocked-during-rollback", assetRevision, http.StatusAccepted)
+	worker = startWorker(candidate, "dispatch")
+	waitPITRDone(t, db, fresh.ID)
+	worker()
+	assertRolloutOperation(t, resumed, fresh.ID, "succeeded")
+	if cloud.writes.Load() != 4 || cloud.running.Load() {
+		t.Fatal("forward restart did not emit exactly one newly authorized provider effect")
+	}
+	t.Log("frozen account rejected new writes and settled stale work during executable rollback; forward restart sent one fresh effect")
+}
+
+func setRolloutAccount(t *testing.T, api rolloutAPI, method, path, revision, data string) {
+	t.Helper()
+	status, body, err := api.requestWithRevision(t.Context(), method, path, "", revision, []byte(data))
+	if err != nil || status != http.StatusOK {
+		t.Fatalf("change rollout account %s %s: status=%d body=%s: %v", method, path, status, body, err)
+	}
 }
 
 func rolloutWorkerStarter(t *testing.T, db *sql.DB, dsn, profile string, cloud *powerFixture, hosts []string, processWorkers bool) func(string, string) func() {

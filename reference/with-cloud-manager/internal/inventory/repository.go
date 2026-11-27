@@ -175,7 +175,13 @@ func Migrate(ctx context.Context, db *sql.DB) error {
 	if err := dbschema.Apply(ctx, db, "0108_cache_rename_reservations", cacheRenameReservationsSchema); err != nil {
 		return err
 	}
-	return dbschema.Apply(ctx, db, InventoryCompletionMigration, inventoryCompletionSchema)
+	if err := dbschema.Apply(ctx, db, InventoryCompletionMigration, inventoryCompletionSchema); err != nil {
+		return err
+	}
+	if err := dbschema.Apply(ctx, db, BucketVersioningMigration, bucketVersioningSchema); err != nil {
+		return err
+	}
+	return dbschema.Apply(ctx, db, BucketEncryptionMigration, bucketEncryptionSchema)
 }
 
 func (s Store) Claim(ctx context.Context, key Key, lease time.Duration) (Claim, error) {

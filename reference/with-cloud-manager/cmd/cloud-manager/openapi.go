@@ -145,6 +145,17 @@ func registerOpenAPI(app *core.App, console *consoleConfig) error {
 		}
 		return openapi.Op{OperationID: id, Security: auth, Responses: responses}
 	}
+	bucketSetting := func(id, description string) openapi.Op {
+		op := accountOp(id, "200", description, false)
+		op.Params = []openapi.Param{{Name: "account", In: "query", Required: true, Schema: openapi.String}}
+		op.Responses["200"] = openapi.Response{Description: description,
+			Content: map[string]openapi.MediaType{"application/json": {Schema: openapi.Schema{Type: "object", Properties: map[string]openapi.Schema{
+				"data": {Type: "object", Properties: map[string]openapi.Schema{"state": openapi.String, "observed_at": {Type: "string", Format: "date-time"}}},
+			}}}}}
+		op.Responses["400"] = openapi.Response{Description: "对象桶标识或账号参数无效"}
+		op.Responses["404"] = openapi.Response{Description: "对象桶不可见或没有有效观测"}
+		return op
+	}
 	patchAccount := accountOp("changeCloudAccount", "200", "变更后的账号", true)
 	patchAccount.Body = &openapi.RequestBody{
 		Required:    true,
@@ -514,6 +525,8 @@ func registerOpenAPI(app *core.App, console *consoleConfig) error {
 		"PATCH " + assetsRoute + "/ownership":                              ownership,
 		"GET " + assetsRoute + "/topology":                                 topology,
 		"GET " + dnsRecordsRoute:                                           dnsRecords,
+		"GET " + bucketVersioningRoute:                                     bucketSetting("readProjectBucketVersioning", "版本控制状态为 disabled、enabled 或 suspended。"),
+		"GET " + bucketEncryptionRoute:                                     bucketSetting("readProjectBucketEncryption", "默认服务端加密方式为 unconfigured、aes256、sm4 或 kms。"),
 		"GET " + clusterNodePoolsRoute:                                     clusterNodePoolsOpenAPI(readAuth),
 		"GET " + clusterWorkloadsRoute:                                     clusterWorkloadsOpenAPI(readAuth),
 		"GET " + loadBalancerConfigurationRoute:                            lbConfiguration,
@@ -593,6 +606,7 @@ func registerOpenAPI(app *core.App, console *consoleConfig) error {
 	hints["GET "+cmdbSnapshotRoute] = cmdbSnapshotOpenAPI()
 	hints["GET "+idleInstancesRoute] = idleReportOpenAPI(readAuth)
 	hints["GET "+inventoryFreshnessRoute] = inventoryFreshnessOpenAPI(readAuth)
+	hints["GET "+bucketProtectionRoute] = bucketProtectionOpenAPI(readAuth)
 	catalogOpenAPI(hints, accountOp)
 	alertOpenAPI(hints, accountOp)
 	accountInventoryOpenAPI(hints, accountOp)

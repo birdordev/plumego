@@ -18,6 +18,7 @@ export const auditActions: Readonly<Partial<Record<string, string>>> = {
   rotate: '轮换凭据',
   'enable-write': '启用云端写入',
   'disable-write': '关闭云端写入',
+  'replace-operation-rollout': '更改操作放量策略',
   'inventory-schedule-register': '登记盘点计划',
   'inventory-schedule-update': '更新盘点计划',
   'inventory-schedule-run-now': '盘点计划重新排队',
@@ -44,4 +45,6 @@ export const auditOutcomes: Readonly<Partial<Record<string, string>>> = {
   restarted: '已恢复观测',
   approved: '外部批准',
   revoked: '已撤回',
+  restricted: '已设置白名单',
+  frozen: '已冻结写入',
 }

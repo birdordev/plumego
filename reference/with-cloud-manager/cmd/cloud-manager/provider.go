@@ -105,11 +105,14 @@ func runPublicCloud(parent context.Context, db *sql.DB, args []string, name, pat
 
 func publicCloudCommand(command string) (name, variable string) {
 	switch command {
-	case "verify-tencent", "scan-tencent", "refresh-tencent-load-balancer", "refresh-tencent-dns-zone", "refresh-tencent-cluster-node-pools", "refresh-tencent-cluster-workloads":
+	case "verify-tencent", "scan-tencent", "refresh-tencent-load-balancer", "refresh-tencent-dns-zone", "refresh-tencent-cluster-node-pools", "refresh-tencent-cluster-workloads",
+		"refresh-tencent-bucket-versioning", "refresh-tencent-bucket-encryption":
 		return provider.TencentCVM, "CLOUD_MANAGER_TENCENT_PROFILE"
-	case "verify-alibaba", "scan-alibaba", "refresh-alibaba-load-balancer", "refresh-alibaba-dns-zone", "refresh-alibaba-cluster-node-pools", "refresh-alibaba-cluster-workloads":
+	case "verify-alibaba", "scan-alibaba", "refresh-alibaba-load-balancer", "refresh-alibaba-dns-zone", "refresh-alibaba-cluster-node-pools", "refresh-alibaba-cluster-workloads",
+		"refresh-alibaba-bucket-versioning", "refresh-alibaba-bucket-encryption":
 		return provider.AlibabaECS, "CLOUD_MANAGER_ALIBABA_PROFILE"
-	case "verify-huawei", "scan-huawei", "refresh-huawei-load-balancer", "refresh-huawei-dns-zone", "refresh-huawei-cluster-node-pools", "refresh-huawei-cluster-workloads":
+	case "verify-huawei", "scan-huawei", "refresh-huawei-load-balancer", "refresh-huawei-dns-zone", "refresh-huawei-cluster-node-pools", "refresh-huawei-cluster-workloads",
+		"refresh-huawei-bucket-versioning", "refresh-huawei-bucket-encryption":
 		return provider.HuaweiECS, "CLOUD_MANAGER_HUAWEI_PROFILE"
 	default:
 		return "", ""
@@ -120,11 +123,15 @@ func runInventoryCommand(parent context.Context, db *sql.DB, args []string, prov
 	verify := len(args) == 3
 	refreshLoadBalancer := args[0] == "refresh-tencent-load-balancer" || args[0] == "refresh-alibaba-load-balancer" || args[0] == "refresh-huawei-load-balancer"
 	refreshDNS := strings.HasPrefix(args[0], "refresh-") && strings.HasSuffix(args[0], "-dns-zone")
+	refreshVersioning := strings.HasSuffix(args[0], "-bucket-versioning")
+	refreshEncryption := strings.HasSuffix(args[0], "-bucket-encryption")
 	refreshCluster := strings.HasPrefix(args[0], "refresh-") && strings.HasSuffix(args[0], "-cluster-node-pools")
 	var kind provider.Kind
 	var region string
 	if refreshDNS {
 		kind, region = provider.DNSZone, provider.DNSGlobalScope
+	} else if refreshVersioning || refreshEncryption {
+		kind, region = provider.ObjectBucket, provider.ObjectBucketGlobalScope
 	} else if !verify {
 		kind, region = provider.Kind(args[4]), args[3]
 		if refreshLoadBalancer {
@@ -168,6 +175,20 @@ func runInventoryCommand(parent context.Context, db *sql.DB, args []string, prov
 	}
 	store := inventory.NewStore(db)
 	key := inventory.Key{Tenant: tenant, Account: account, Region: region, Kind: kind}
+	if refreshVersioning {
+		reader, ok := client.(provider.BucketVersioningReader)
+		if !ok {
+			return &provider.Failure{Kind: provider.Unsupported}
+		}
+		return inventoryCommandError(store.RefreshBucketVersioning(ctx, key, args[3], binding.Revision, reader))
+	}
+	if refreshEncryption {
+		reader, ok := client.(provider.BucketEncryptionReader)
+		if !ok {
+			return &provider.Failure{Kind: provider.Unsupported}
+		}
+		return inventoryCommandError(store.RefreshBucketEncryption(ctx, key, args[3], binding.Revision, reader))
+	}
 	if refreshDNS {
 		reader, ok := client.(provider.DNSRecordReader)
 		if !ok {
