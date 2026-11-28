@@ -164,7 +164,7 @@ class WorkflowTest(unittest.TestCase):
 
     def test_cloud_manager_console_is_built_once_before_reference_go_checks(self):
         module = self.root / "reference/with-cloud-manager"
-        console_path = "reference/with-cloud-manager/cmd/cloud-manager/console"
+        console_path = "reference/with-cloud-manager/app/handlers/console/web"
         console = self.root / console_path
         console.mkdir(parents=True)
         (module / "go.mod").touch()

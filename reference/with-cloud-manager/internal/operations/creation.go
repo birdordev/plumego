@@ -169,10 +169,8 @@ func authorizeLaunchObservation(ctx context.Context, tx *sql.Tx, actor identity.
 
 func checkLaunchCapacity(ctx context.Context, tx *sql.Tx, actor identity.Scope) error {
 	var available bool
-	err := tx.QueryRowContext(ctx, `SELECT b.max_managed_instances>(SELECT count(*) FROM cmp_instance_launches AS l
-		JOIN cmp_instance_operations AS o USING (operation_id)
-		WHERE (o.tenant_id,o.project_id)=(b.tenant_id,b.project_id) AND l.released_at IS NULL)
-		FROM cmp_instance_operation_budgets AS b WHERE tenant_id=$1 AND project_id=$2`, actor.Tenant, actor.Project).Scan(&available)
+	err := tx.QueryRowContext(ctx, `SELECT max_managed_instances>`+projectInstanceReservations+`
+		FROM cmp_instance_operation_budgets WHERE (tenant_id,project_id)=($1,$2)`, actor.Tenant, actor.Project).Scan(&available)
 	if err == nil && !available {
 		return ErrQuota
 	}

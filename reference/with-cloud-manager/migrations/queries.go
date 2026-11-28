@@ -17,6 +17,16 @@ var databaseProtectionSQL string
 
 func DatabaseProtection() string { return databaseProtectionSQL }
 
+//go:embed sql/database_protection_posture.sql
+var databaseProtectionPostureSQL string
+
+func DatabaseProtectionPosture() string { return databaseProtectionPostureSQL }
+
+//go:embed sql/database_protection_alerts.sql
+var databaseProtectionAlertsSQL string
+
+func DatabaseProtectionAlerts() string { return databaseProtectionAlertsSQL }
+
 //go:embed sql/evaluate.sql
 var evaluateSQL string
 

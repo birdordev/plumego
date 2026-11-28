@@ -24,7 +24,7 @@ func (s Store) ReviewBareMetalReclaimRecovery(ctx context.Context, token string,
 		if actor.Principal == recovery.Requester || actor.Principal == r.Requester {
 			return identity.ErrForbidden
 		}
-		if _, err := lockReclaimMember(ctx, tx, actor, actor.Principal, "approver"); err != nil {
+		if _, err := lockProjectRole(ctx, tx, actor, actor.Principal, "approver"); err != nil {
 			return err
 		}
 		next := "rejected"
@@ -57,7 +57,7 @@ func verifyReclaimRecovery(ctx context.Context, tx *sql.Tx, actor identity.Scope
 	if recovery.credential != target.CredentialRevision {
 		return identity.ErrAccountStale
 	}
-	member, err := lockReclaimMember(ctx, tx, actor, recovery.Requester, "admin")
+	member, err := lockProjectRole(ctx, tx, actor, recovery.Requester, "admin")
 	if err != nil {
 		return err
 	}

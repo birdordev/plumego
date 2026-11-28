@@ -76,7 +76,7 @@ func (s Store) RequestBareMetalReclaimRecovery(ctx context.Context, token string
 		if input.SystemID != r.SystemID {
 			return ErrConflict
 		}
-		member, err := lockReclaimMember(ctx, tx, actor, actor.Principal, "admin")
+		member, err := lockProjectRole(ctx, tx, actor, actor.Principal, "admin")
 		if err != nil {
 			return err
 		}

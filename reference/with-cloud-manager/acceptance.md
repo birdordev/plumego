@@ -136,10 +136,13 @@ CLOUD_MANAGER_TEST_PITR=1 go test -race -count=1 -timeout=120s \
 
 在基线和候选各自的源码根目录运行 `make cloud-manager-console`，再各自执行 `go -C reference/with-cloud-manager build -o "$ROLLOUT_BINARY" ./cmd/cloud-manager`。为两次构建分别指定不同的输出路径，记录源码版本、构建配置和产物 SHA-256。使用非 root 环境，并将同版本 PostgreSQL 的 `initdb`、`pg_ctl` 和 `pg_basebackup` 加入 PATH。进入候选源码的云管模块后运行。
 
+该用例校验终态事件首次引入 `effect_id` 时的兼容性，使用已验证的历史基线 `1c2e1e45`。在 Linux 上用独立进程运行两版 Worker，使各自使用与迁移匹配的 SQL。
+
 ```sh
 CLOUD_MANAGER_TEST_ROLLOUT_BASELINE=/absolute/path/baseline/cloud-manager \
 CLOUD_MANAGER_TEST_ROLLOUT_CANDIDATE=/absolute/path/candidate/cloud-manager \
-  go test -race -count=2 -timeout=120s -v ./cmd/cloud-manager \
+CLOUD_MANAGER_TEST_ROLLOUT_PROCESS_WORKERS=1 \
+  go test -race -count=2 -timeout=150s -v ./app/integration/cloud \
   -run '^TestAcceptanceCloudManagerAPIRolloutAndRollback$'
 ```
 
@@ -147,7 +150,7 @@ CLOUD_MANAGER_TEST_ROLLOUT_CANDIDATE=/absolute/path/candidate/cloud-manager \
 
 核对两个版本的操作时间线、管理员审计及项目隔离。比较已有终态事件的投递 ID 和原始正文，候选迁移后生成的终态在回退后保留原效果标识。候选留下一项已到期的开机请求，基线 API 用原幂等键找回同一操作，随后由回退后的 Worker 结算。三次预期写入各发生一次。一项到期时间更晚的基线请求贯穿演练并保留零尝试次数。
 
-常规测试使用进程内 Worker 和腾讯云 TLS 夹具。在 Linux 上为同一命令额外设置 `CLOUD_MANAGER_TEST_ROLLOUT_PROCESS_WORKERS=1`，并将 `-timeout` 调整为 `150s`。该模式启动基线和候选各自的 `worker` 子命令，分别在腾讯云、阿里云和华为云协议夹具上执行。启动基线 Worker 之前，先让候选的 `observe-only` Worker 完成一次 PostgreSQL 队列轮询并退出，再检查已到期的未派发操作仍处于排队状态且尝试次数为零。
+演练启动基线和候选各自的 `worker` 子命令，分别在腾讯云、阿里云和华为云协议夹具上执行。启动基线 Worker 之前，先让候选的 `observe-only` Worker 完成一次 PostgreSQL 队列轮询并退出，再检查已到期的未派发操作仍处于排队状态且尝试次数为零。
 
 独立进程模式也演练启用放量策略后的回退。候选先设置白名单、受理一笔操作，再冻结策略并关闭账号写入。基线 API 拒绝新申请，基线 Worker 将原排队任务结算为失败，厂商写入计数保持不变。恢复候选后，先验证空策略继续拒绝新申请，再逐项放行并核对旧操作回执未复活，新请求只产生一次厂商效果。
 
@@ -264,7 +267,7 @@ cloud-manager governance asset-capacity lab compute < workload.json > asset-capa
 将 `CLOUD_MANAGER_TEST_DATABASE_URL` 指向允许创建临时 schema 的 PostgreSQL 测试数据库。构建控制台资源后，在云管模块运行基准。
 
 ```sh
-go test ./cmd/cloud-manager -run '^$' -bench '^BenchmarkProjectAssets$' -benchtime=96x -cpu=4 -count=1
+go test ./app/integration/cloud -run '^$' -bench '^BenchmarkProjectAssets$' -benchtime=96x -cpu=4 -count=1
 ```
 
 基准生成三家优先厂商共 50 个云账号，每账号 4 个地域，每地域 500 条实例资产。8 路请求混合查询普通首页、指定账号、稀有关键词和零匹配。基准检查 HTTP 状态和返回行数，分别记录四类请求的 p95 和总吞吐。
@@ -272,7 +275,7 @@ go test ./cmd/cloud-manager -run '^$' -bench '^BenchmarkProjectAssets$' -benchti
 使用同一数据集运行 30 秒固定到达率验收。
 
 ```sh
-CLOUD_MANAGER_TEST_ASSET_TARGET_RATE=1 go test ./cmd/cloud-manager \
+CLOUD_MANAGER_TEST_ASSET_TARGET_RATE=1 go test ./app/integration/cloud \
   -run '^TestCapacityProjectAssetsAtTargetRate$' -cpu=4 -count=1 -v
 ```
 
@@ -281,7 +284,7 @@ CLOUD_MANAGER_TEST_ASSET_TARGET_RATE=1 go test ./cmd/cloud-manager \
 使用同一固定到达率验证查询与盘点并行。
 
 ```sh
-CLOUD_MANAGER_TEST_ASSET_TARGET_RATE=1 go test ./cmd/cloud-manager \
+CLOUD_MANAGER_TEST_ASSET_TARGET_RATE=1 go test ./app/integration/cloud \
   -run '^TestCapacityProjectAssetsWithInventoryWrites$' -cpu=4 -count=1 -v
 ```
 

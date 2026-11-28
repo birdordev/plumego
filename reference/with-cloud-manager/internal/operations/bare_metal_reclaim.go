@@ -184,7 +184,7 @@ func requestReclaim(ctx context.Context, tx *sql.Tx, actor identity.Scope, targe
 	if err := inventory.CheckBareMetalOffline(ctx, tx, target.ScopeID, target.CredentialRevision, input.SystemID, nil); err != nil {
 		return r, err
 	}
-	requesterRevision, err := lockReclaimMember(ctx, tx, actor, actor.Principal, "admin")
+	requesterRevision, err := lockProjectRole(ctx, tx, actor, actor.Principal, "admin")
 	if err != nil {
 		return r, err
 	}

@@ -5,7 +5,7 @@ BOUNDARY_CHECKS := dependency-rules cross-extension-deps agent-workflow module-m
 	reference-layout extension-maturity extension-beta-evidence public-entrypoints-sync
 TASK_TARGETS := milestone check-spec check-plan check-verify check-card new-milestone \
 	new-plan new-card new-verify run-card milestone-status
-CLOUD_MANAGER_CONSOLE := reference/with-cloud-manager/cmd/cloud-manager/console
+CLOUD_MANAGER_CONSOLE := reference/with-cloud-manager/app/handlers/console/web
 export M C N TITLE ID SLUG R TASK MODULE COVERAGE_FILE
 
 .PHONY: help validate-diff validate-diff-dry bundle $(TASK_TARGETS) \

@@ -104,7 +104,18 @@ func (q DatabaseProtectionQuery) position() (account, region, id string, err err
 	return account, region, id, nil
 }
 
-const databaseProtectionBase = `WITH visible AS (
+const databaseProtectionSnapshots = `
+	LEFT JOIN cmp_database_backups AS b ON (b.scope_id,b.external_id)=(s.scope_id,o.external_id)
+		AND b.credential_revision=a.credential_revision AND b.product=o.database_instance->>'product'
+		AND b.engine=o.database_instance->>'engine'
+	LEFT JOIN cmp_database_restore_windows AS w ON (w.scope_id,w.external_id)=(s.scope_id,o.external_id)
+		AND w.credential_revision=a.credential_revision AND w.product=o.database_instance->>'product'
+		AND w.engine=o.database_instance->>'engine'`
+
+const databaseProtectionBase = `WITH limits AS (
+	SELECT transaction_timestamp()-make_interval(secs=>$6::integer) AS observed_after,
+		transaction_timestamp()-make_interval(secs=>$7::integer) AS evidence_after
+), visible AS (
 	SELECT o.external_id AS id,o.name,s.account_id AS account,s.region,a.provider,
 		o.database_instance->>'product' AS product,o.database_instance->>'engine' AS engine,
 		COALESCE((` + currentObservedDatabase + `),false) AS inventory_available,
@@ -114,13 +125,7 @@ const databaseProtectionBase = `WITH visible AS (
 		ws.enabled AS restore_schedule,ws.last_outcome AS restore_outcome,ws.last_finished_at AS restore_finished_at
 	FROM cmp_inventory_scopes AS s
 	JOIN cmp_inventory_objects AS o USING (scope_id)
-	JOIN cmp_cloud_accounts AS a USING (tenant_id,account_id)
-	LEFT JOIN cmp_database_backups AS b ON (b.scope_id,b.external_id)=(s.scope_id,o.external_id)
-		AND b.credential_revision=a.credential_revision AND b.product=o.database_instance->>'product'
-		AND b.engine=o.database_instance->>'engine'
-	LEFT JOIN cmp_database_restore_windows AS w ON (w.scope_id,w.external_id)=(s.scope_id,o.external_id)
-		AND w.credential_revision=a.credential_revision AND w.product=o.database_instance->>'product'
-		AND w.engine=o.database_instance->>'engine'
+	JOIN cmp_cloud_accounts AS a USING (tenant_id,account_id)` + databaseProtectionSnapshots + `
 	LEFT JOIN cmp_inventory_schedules AS bs ON
 		(bs.tenant_id,bs.account_id,bs.region,bs.kind,bs.target_id)=(s.tenant_id,s.account_id,s.region,'database-backups',o.external_id)
 		AND a.project_id=$2
@@ -140,7 +145,7 @@ func (s Store) DatabaseProtection(ctx context.Context, token string, q DatabaseP
 	report := DatabaseProtectionReport{Window: q.Window, MaxAge: q.MaxAge}
 	var summary, items []byte
 	err = s.readProject(ctx, token, Query{Tenant: q.Tenant, Project: q.Project}, func(tx *sql.Tx) error {
-		return tx.QueryRowContext(ctx, databaseProtectionBase+migrations.DatabaseProtection(),
+		return tx.QueryRowContext(ctx, databaseProtectionBase+migrations.DatabaseProtectionPosture()+migrations.DatabaseProtection(),
 			q.Tenant, q.Project, q.Provider, q.Account, q.Region, q.Window, q.MaxAge, q.Finding, account, region, id, q.Limit+1).
 			Scan(&report.AsOf, &summary, &items)
 	})

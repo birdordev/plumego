@@ -318,6 +318,19 @@ func operationActor(ctx context.Context, tx *sql.Tx, token string, scope identit
 	return actor, err
 }
 
+func lockProjectRole(ctx context.Context, tx *sql.Tx, actor identity.Scope, id, role string) (int64, error) {
+	var revision int64
+	err := tx.QueryRowContext(ctx, `SELECT m.revision FROM cmp_memberships AS m
+		JOIN cmp_principals AS p USING (tenant_id,principal_id)
+		WHERE (m.tenant_id,m.project_id,m.principal_id)=($1,$2,$3)
+		  AND m.active AND p.active AND m.role=$4 FOR SHARE OF m,p`,
+		actor.Tenant, actor.Project, id, role).Scan(&revision)
+	if errors.Is(err, sql.ErrNoRows) {
+		err = identity.ErrForbidden
+	}
+	return revision, err
+}
+
 func (s Store) Get(ctx context.Context, token string, scope identity.Scope, id string) (Operation, error) {
 	var op Operation
 	err := dbutil.WithTransaction(ctx, s.db, &sql.TxOptions{ReadOnly: true, Isolation: sql.LevelRepeatableRead}, func(tx *sql.Tx) error {
@@ -709,8 +722,7 @@ const activeOperationStatuses = "('awaiting_approval','queued','applying','obser
 func remainingBudget(ctx context.Context, tx *sql.Tx, actor identity.Scope) (int, error) {
 	var remaining int
 	err := tx.QueryRowContext(ctx, `SELECT greatest(COALESCE((SELECT max_active FROM cmp_instance_operation_budgets
-		WHERE (tenant_id,project_id)=($1,$2)),100)-(SELECT count(*) FROM cmp_instance_operations
-		WHERE (tenant_id,project_id)=($1,$2) AND status IN `+activeOperationStatuses+`),0)`, actor.Tenant, actor.Project).Scan(&remaining)
+		WHERE (tenant_id,project_id)=($1,$2)),$3)-`+projectActiveCount+`,0)`, actor.Tenant, actor.Project, defaultProjectBudget).Scan(&remaining)
 	return remaining, err
 }
 

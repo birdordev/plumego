@@ -38,7 +38,7 @@ jobs:
         with:
           node-version: 24
           cache: npm
-          cache-dependency-path: reference/with-cloud-manager/cmd/cloud-manager/console/package-lock.json
+          cache-dependency-path: reference/with-cloud-manager/app/handlers/console/web/package-lock.json
 
       - name: Run Go gates and save the measured coverage profile
         run: make go-gates COVERAGE_FILE="${{ runner.temp }}/plumego-stable.cover"

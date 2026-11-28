@@ -4,6 +4,7 @@ platform:
   priority-cloud-database-restore-windows: provider-reported-utc-windows-with-credential-fenced-project-read
   priority-cloud-database-observation-schedules: independent-instance-backup-and-restore-window-plans-with-account-cooldown-and-fenced-publication
   priority-cloud-database-protection-report: project-visible-backup-and-restore-evidence-freshness-with-schedule-status-and-keyset-pagination
+  priority-cloud-database-protection-alerts: per-owned-instance-backup-and-restore-coverage-alerts-from-enabled-schedules-and-transactional-notification
   billing-allocation-publication: owner-admin-preview-report-and-policy-digest-revision-fence-and-transactional-audit
   priority-cloud-dns-record-update: approved-active-address-and-ttl-update-with-exact-readback
   priority-cloud-bucket-encryption-enable: approved-unconfigured-to-provider-managed-aes256-with-authoritative-observation
@@ -23,6 +24,8 @@ platform:
   operation-worker-tenant: optional-reserved-process-capacity-with-tenant-scoped-leasing-and-inline-expiration
   operation-worker-tenant-indexes: concurrent-index-build-with-interruption-recovery-and-startup-gate
   project-operation-backlog: project-scoped-database-snapshot-with-provider-rollups-and-queue-eligibility
+  project-operation-event-stream: bounded-sse-with-exact-cursor-resume-and-project-reauthorization
+  project-operation-budget: administrator-versioned-active-and-instance-reservation-limits-with-shared-admission-lock-and-audit
   project-operation-queue-alerts: per-account-overdue-lease-recovery-and-queue-anomaly-alerts-with-audit-and-outbox
   project-operation-queue-findings: scoped-keyset-pagination-with-typed-queue-reasons-and-alert-drilldown
   operation-observation-queue-repair: reviewer-authorized-transactional-task-repair-for-read-only-convergence

@@ -4,6 +4,23 @@
 
 自有 KVM 的宿主机登记、容量上报与预留见[站点与宿主机放置](#自有-kvm-站点与宿主机放置)。
 
+## 工程结构
+
+| 目录 | 职责 |
+| --- | --- |
+| [cmd/cloud-manager](cmd/cloud-manager) | 进程入口、信号和退出状态 |
+| [app](app) | 启动、命令分发和依赖装配 |
+| [app/routers](app/routers) | HTTP 路由注册、探针与 OpenAPI 装配 |
+| [app/handlers](app/handlers) | 账号、资产、账单、控制台、治理和资源操作的 HTTP 处理 |
+| [app/services](app/services) | 云适配器装配、控制器、Worker、告警、账单导入和事件投递 |
+| [app/kvm](app/kvm) | 自有虚拟化的 HTTP 接口、命令和宿主机代理 |
+| [app/commands](app/commands) · [app/clients](app/clients) | 命令参数解析、请求构造和项目 API 客户端 |
+| [app/models](app/models) | 应用入口共用的标识符规则 |
+| [app/integration](app/integration) | 按场景运行的集成测试和共用夹具 |
+| [internal](internal) · [migrations/sql](migrations/sql) | 可供应用复用的领域模型、存储实现和 SQL 源文件 |
+
+控制台前端位于 [app/handlers/console/web](app/handlers/console/web)。构建产物写入该目录下的 `_embedded`，由 Go 包在编译时嵌入。
+
 ## PostgreSQL 本地验证
 
 首次检出和更新控制台源码后，用 Node.js 22.12 或更新版本在仓库根目录运行 `make cloud-manager-console`，生成 Go 编译所需的控制台嵌入资源。仓库的 `make reference-vet` 和 `make reference-test` 会执行这一步。
@@ -13,7 +30,7 @@
 ```sh
 go run ./cmd/cloud-manager migrate
 go run ./cmd/cloud-manager api
-go test -race -timeout 60s ./...
+go test -race -timeout 25m ./...
 ```
 
 迁移读取 `CLOUD_MANAGER_DATABASE_URL`，集成测试读取 `CLOUD_MANAGER_TEST_DATABASE_URL`。同一数据库可重复执行迁移。API 默认监听 `127.0.0.1:8096`，可用 `CLOUD_MANAGER_LISTEN_ADDR` 设置。`/healthz` 报告进程状态，`/readyz` 同时检查迁移、主库角色和当前连接的读写状态。测试输出中的 `TestAcceptancePostgresAuthorization` 和 `TestAcceptancePostgresInventory` 应为通过，跳过无法证明 PostgreSQL 语义。
@@ -529,6 +546,12 @@ cloud-manager governance database-protection TENANT PROJECT \
   --provider tencent-cvm --region ap-guangzhou --finding recovery_attention \
   --window-seconds 86400 --max-age-seconds 86400
 ```
+
+#### 数据库恢复保障告警
+
+先运行 `migrate` 应用 `0172_database_protection_alerts`，再升级 API 和 `alert-controller`。评估器按数据库归属项目处理已启用的备份和恢复窗口采集计划。两项规则各自要求当前凭据的观测在 24 小时内，并检查最新可用备份的起始时间或恢复窗口末端是否在过去 24 小时内。确定无证据或证据过旧时触发，过期观测、待确认资产和凭据轮换期间保留已有告警。取得新鲜的健康证据、计划停用或资产离开当前项目后，评估器会关闭相应告警。
+
+告警主体为 `账号/地域/实例 ID`。同一规则对同一主体最多保留一条未恢复告警。控制台可按规则筛选，并从详情打开对应账号和地域的恢复保障报表。告警事件沿用项目 Webhook 的 `include_alerts` 订阅。
 
 #### 华为云 RDS MySQL 时间点恢复到新实例
 
@@ -1540,6 +1563,30 @@ go run ./cmd/cloud-manager operations events tenant-id project-id operation-id -
 
 列表命令也接受 `--account`、`--region`、`--kind`、`--action` 和 `--cursor`。事件命令用结果中的 `next_after` 续读。
 
+### 项目操作配额
+
+运行 `migrate` 应用 `0173_operation_budget` 后，项目成员可在操作记录中打开「查看项目配额」，或请求 `GET /v1/tenants/{tenant}/projects/{project}/operation-budget`。响应从同一数据库快照返回活跃操作数、受管实例预留数和各自上限。未配置时两项上限均为 100，已有账本数值在升级时保留。
+
+项目管理员使用同一路径的 `PUT` 整体更新两项限额，并在 `If-Match` 中传入当前策略 ETag。活跃操作上限为 1 到 10000，受管实例预留上限为 0 到 100000。活跃操作包含待审批、排队、执行、观测和待复核。实例占用来自尚未释放的创建预留。调低限额后，既有操作与预留继续保留。后续新增请求超过限额时返回 429，符合原幂等键及请求指纹的重试仍可读取原回执。并发修改时版本过期返回 412，原值重复保存沿用当前版本。实际修改与审计事件在同一事务提交。
+
+```sh
+cloud-manager operations budget TENANT PROJECT
+cloud-manager operations set-budget TENANT PROJECT --if-match 1 < limits.json
+cloud-manager audit list TENANT PROJECT --category operation_budget
+```
+
+```json
+{"max_active": 60, "max_managed_instances": 200}
+```
+
+### 操作事件实时续读
+
+项目操作详情的「实时跟踪」从当前时间线的最后一条事件继续读取。先加载完已有分页，再开启跟踪。收到成功或失败事件、关闭详情或切换项目时结束跟踪。收到新事件后，可用「读取最新详情」刷新操作及关联审批信息。
+
+项目 API 提供 `GET /v1/tenants/{tenant}/projects/{project}/operations/{operation}/events/stream`。首次连接用 `after` 指定已读取序号，重连可发送 `Last-Event-ID`，它优先于查询参数。每个 `operation` 事件携带十进制字符串序号、状态和记录时间。`id` 对应相同序号。JSON 事件分页继续使用原路径。
+
+单次流最多持续 8 秒、最多返回 100 条事件。连接中每 2 秒查询一次事件并重新检查凭据和项目授权。连接建立后检测到撤权时发送 `access-revoked` 并关闭。原生 EventSource 使用服务端设置的 2 秒重连间隔。服务每进程最多同时处理 32 条流，满载时返回 503。反向代理需及时转发 `text/event-stream`，以免缓冲延迟。
+
 ### 操作积压
 
 项目成员可在操作中心打开「查看操作积压」，或调用 `GET /v1/tenants/{tenant}/projects/{project}/operation-backlog`。报告以数据库观测时间 `as_of` 为准，在同一只读快照返回项目汇总 `summary` 和厂商分组 `providers`，支持 `account`、`region` 精确筛选。控制台沿用已提交的账号和地域，统计范围涵盖所有非终态操作。
@@ -1652,7 +1699,7 @@ go run ./cmd/cloud-manager operations get-batch tenant-id project-id batch-id
 
 #### 前端开发
 
-控制台使用 React、Vite、严格模式 TypeScript 和 Zod，源码位于 `cmd/cloud-manager/console/src`。
+控制台使用 React、Vite、严格模式 TypeScript 和 Zod，源码位于 `app/handlers/console/web/src`。
 
 | 目录 | 职责 |
 | --- | --- |
@@ -1688,7 +1735,7 @@ go run ./cmd/cloud-manager operations get-batch tenant-id project-id batch-id
 
 页面和列表读取器按访问加载，操作、负载均衡、DNS 和 Kubernetes 详情按打开加载。离开列表时会取消进行中的列表请求，迟到的分包也不会为旧页面发起请求。批量操作在同一项目内保留草稿。项目切换和会话退出会清空当前选择和草稿，关闭旧详情并取消旧项目的列表、批次、详情和审计导出读请求。已经发出的写请求仍可能在服务端完成，结果仅在发起请求的弹窗仍打开时展示。留在同一项目重试结果不明确的批次时，控制台对同一表单内容复用幂等键。分页和审计导出按已提交的筛选条件请求。Kubernetes 分页中途发现快照更新时要求重新加载。
 
-在 `cmd/cloud-manager/console` 目录使用 Node.js 22.12 或更新版本运行配置命令。
+在 `app/handlers/console/web` 目录使用 Node.js 22.12 或更新版本运行配置命令。
 
 ```bash
 npm ci
@@ -2030,6 +2077,8 @@ go run ./cmd/cloud-manager catalog retire tenant-id project-id linux-small --if-
 | `operation_queue_anomaly` | 活动操作缺少队列记录，或队列记录已超期、进入死信或已结束 |
 | `scan_failures` | 同一启用的盘点计划连续失败或限流至少 3 次 |
 | `scan_stale` | 距计划登记时间与最近一次完整盘点时间中的较晚者达到 `max(3 × 扫描间隔, 15 分钟)` |
+| `database_backup_coverage` | 启用备份采集的实例，经新鲜观测确认近期备份证据缺失或过旧 |
+| `database_restore_coverage` | 启用恢复窗口采集的实例，经新鲜观测确认最近可恢复时间缺失或过旧 |
 
 盘点告警归当前云账号所属项目，只评估启用计划和可读账号。每条规则对同一对象至多保留一条未恢复告警。确认记录管理员及时间，条件解除时评估器自动恢复。恢复后同一问题再次出现时生成新的告警 ID。触发、确认和恢复均写入项目审计。操作超时使用当前状态的最后更新时间，首次受理状态使用创建时间。
 
@@ -2040,6 +2089,7 @@ go run ./cmd/cloud-manager catalog retire tenant-id project-id linux-small --if-
 ```sh
 go run ./cmd/cloud-manager alerts list tenant-id project-id --status active --rule scan_stale
 go run ./cmd/cloud-manager alerts list tenant-id project-id --rule operation_queue_recovery
+go run ./cmd/cloud-manager alerts list tenant-id project-id --rule database_restore_coverage
 go run ./cmd/cloud-manager alerts get tenant-id project-id ALERT_ID
 go run ./cmd/cloud-manager alerts acknowledge tenant-id project-id ALERT_ID --if-match 1
 ```

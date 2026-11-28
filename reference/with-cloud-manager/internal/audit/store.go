@@ -78,7 +78,7 @@ func auditPosition(scope identity.Scope, q Query) (position, error) {
 		return position{}, ErrInvalidQuery
 	}
 	switch q.Category {
-	case "", "account", "ownership", "operation", "approval", "resolution", "observation", "catalog", "alert", "console_access", "billing_budget", "tag_policy", "change_ticket", "billing_allocation":
+	case "", "account", "ownership", "operation", "approval", "resolution", "observation", "catalog", "alert", "console_access", "billing_budget", "tag_policy", "change_ticket", "billing_allocation", "operation_budget":
 	default:
 		return position{}, ErrInvalidQuery
 	}

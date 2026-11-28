@@ -104,7 +104,8 @@ func alertStatusCondition(status string) (string, error) {
 func validAlertRule(rule string) bool {
 	switch rule {
 	case "", "operation_review", "operation_delayed", "scan_failures", "scan_stale", "billing_budget_warning", "billing_budget_exceeded",
-		"bucket_encryption_unconfigured", "bucket_versioning_inactive", "tag_noncompliant", "operation_queue_anomaly", "operation_queue_recovery":
+		"bucket_encryption_unconfigured", "bucket_versioning_inactive", "tag_noncompliant", "operation_queue_anomaly", "operation_queue_recovery",
+		"database_backup_coverage", "database_restore_coverage":
 		return true
 	default:
 		return false

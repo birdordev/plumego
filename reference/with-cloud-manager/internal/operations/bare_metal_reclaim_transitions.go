@@ -36,7 +36,7 @@ func (s Store) ReviewBareMetalReclaim(ctx context.Context, token string, scope i
 		if input.Decision == "reject" {
 			next = "rejected"
 		}
-		revision, err := lockReclaimMember(ctx, tx, actor, actor.Principal, "approver")
+		revision, err := lockProjectRole(ctx, tx, actor, actor.Principal, "approver")
 		if err != nil {
 			return r, err
 		}
