@@ -41,10 +41,12 @@ type Config struct {
 	AllowInstancePower                 bool     `json:"allow_instance_power,omitempty"`
 	AllowInstanceReboot                bool     `json:"allow_instance_reboot,omitempty"`
 	AllowInstanceDelete                bool     `json:"allow_instance_delete,omitempty"`
+	AllowBucketVersioningChanges       bool     `json:"allow_bucket_versioning_changes,omitempty"`
 	AllowInstanceRetirement            bool     `json:"allow_instance_retirement,omitempty"`
 	VolumeCreateMaxGiB                 int      `json:"volume_create_max_gib,omitempty"`
 	HuaweiVolumeKMSKeyID               string   `json:"huawei_volume_kms_key_id,omitempty"`
 	AllowVolumeChanges                 bool     `json:"allow_volume_changes,omitempty"`
+	InstanceResizeSizes                []string `json:"instance_resize_sizes,omitempty"`
 	InstanceCreateSizes                []string `json:"instance_create_sizes,omitempty"`
 	HuaweiRootVolumeType               string   `json:"huawei_root_volume_type,omitempty"`
 	HuaweiSnapshotAPI                  string   `json:"huawei_snapshot_api,omitempty"`
@@ -103,6 +105,15 @@ func Connect(ctx context.Context, name string, profile Config, transport http.Ro
 	}
 	profile.Regions = slices.Clone(profile.Regions)
 	profile.InstanceCreateSizes = slices.Clone(profile.InstanceCreateSizes)
+	profile.InstanceResizeSizes = slices.Clone(profile.InstanceResizeSizes)
+	if len(profile.InstanceResizeSizes) > 128 {
+		return nil, errors.New("invalid instance resize sizes")
+	}
+	for i, size := range profile.InstanceResizeSizes {
+		if !provider.ValidInstanceType(size) || slices.Contains(profile.InstanceResizeSizes[:i], size) {
+			return nil, errors.New("invalid instance resize sizes")
+		}
+	}
 	for i, region := range profile.Regions {
 		if len(region) > 40 || !regionID.MatchString(region) || slices.Contains(profile.Regions[:i], region) {
 			return nil, errors.New("invalid cloud regions")

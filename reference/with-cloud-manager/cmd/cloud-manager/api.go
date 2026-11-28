@@ -50,7 +50,8 @@ func newAPI(db *sql.DB, addr string, console *consoleConfig) (*core.App, error) 
 	additionalVersions = append(additionalVersions, billing.ProjectBudgetMigration, alerts.BucketProtectionMigration,
 		inventory.TagPolicyAlertsMigration, operations.FirstLeaseMigration, operations.QueueSnapshotMigration, alerts.OperationQueueMigration,
 		operations.QueueFindingsMigration, operations.ObservationQueueRepairMigration, operations.PowerObservationMigration,
-		inventory.VolumeInventoryMigration, operations.VolumeResizeMigration, operations.VolumeCreationMigration, operations.VolumeReleaseMigration)
+		inventory.VolumeInventoryMigration, operations.VolumeResizeMigration, operations.VolumeCreationMigration, operations.VolumeReleaseMigration,
+		inventory.InstanceTypeInventoryMigration, operations.InstanceResizeMigration, inventory.InstanceResizeOptionsMigration, operations.BucketVersioningMigration)
 	additionalVersionList := strings.Join(additionalVersions, ",")
 	ready := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx, cancel := context.WithTimeout(r.Context(), time.Second)
@@ -96,6 +97,7 @@ func newAPI(db *sql.DB, addr string, console *consoleConfig) (*core.App, error) 
 		app.Get(loadBalancerConfigurationRoute, loadBalancerConfigurationHandler(store, app.Logger())),
 		app.Get(dnsRecordsRoute, dnsRecordsHandler(store, app.Logger())),
 		app.Get(bucketVersioningRoute, bucketSettingHandler(store.ReadBucketVersioning, app.Logger())),
+		app.Post(bucketVersioningChangeRoute, versionedOperationHandler(operationStore.SubmitBucketVersioning, bucketVersioningRevisionError, app.Logger())),
 		app.Get(bucketEncryptionRoute, bucketSettingHandler(store.ReadBucketEncryption, app.Logger())),
 		app.Get(clusterNodePoolsRoute, clusterNodePoolsHandler(store, app.Logger())),
 		app.Get(clusterWorkloadsRoute, clusterWorkloadsHandler(store, app.Logger())),
@@ -118,6 +120,9 @@ func newAPI(db *sql.DB, addr string, console *consoleConfig) (*core.App, error) 
 		app.Post(alertsRoute+"/:alert/acknowledgement", projectAlerts),
 		app.Patch(assetsRoute+"/ownership", ownershipHandler(store, app.Logger())),
 		app.Post(instancesRoute, creationHandler(operationStore.SubmitCreation, app.Logger())),
+		app.Get(instanceResizeOptionsRoute, instanceResizeOptionsHandler(store, false, app.Logger())),
+		app.Post(instanceResizeOptionsRoute, instanceResizeOptionsHandler(store, true, app.Logger())),
+		app.Post(instanceResizeRoute, versionedOperationHandler(operationStore.SubmitInstanceResize, instanceResizeRevisionError, app.Logger())),
 		app.Get(operationsRoute+"/retirement-preview", assetOperationPreviewHandler(operationStore.PreviewInstanceRetirement, app.Logger())),
 		app.Post(operationsRoute+"/retire", versionedOperationHandler(operationStore.SubmitInstanceRetirement, retirementRevisionError, app.Logger())),
 		app.Post(operationsRoute, instanceOps), app.Get(operationsRoute+"/deletion-preview", deletionPreviewHandler(operationStore, app.Logger())), app.Get(operationsRoute+"/:operation", instanceOps),

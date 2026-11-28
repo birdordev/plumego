@@ -11,6 +11,8 @@ import { OperationTimeline } from './events/OperationTimeline'
 import { BareMetalDeploymentSection } from './bare-metal-deployment/BareMetalDeploymentSection'
 import { assetRenameFields } from './fields/asset-rename'
 import { dnsOperationFields } from './fields/dns'
+import { bucketVersioningFields } from './fields/bucket-versioning'
+import { instanceResizeFields } from './fields/instance-resize'
 import { imageOperationFields } from './fields/image'
 import { loadBalancerOperationFields } from './fields/load-balancer'
 import { retirementFields } from './fields/retirement'
@@ -40,7 +42,7 @@ export default function OperationPanel({ project, target, ticketTarget, stamp, s
   ]
   if (op.catalog_template) fields.push(['模板版本', op.catalog_template + ' / ' + op.catalog_version])
   fields.push(...assetRenameFields(op), ...dnsOperationFields(op), ...loadBalancerOperationFields(op), ...networkOperationFields(op),
-    ...retirementFields(op), ...imageOperationFields(op), ...snapshotOperationFields(op), ...workloadScaleFields(op), ...volumeOperationFields(op))
+    ...retirementFields(op), ...instanceResizeFields(op), ...bucketVersioningFields(op), ...imageOperationFields(op), ...snapshotOperationFields(op), ...workloadScaleFields(op), ...volumeOperationFields(op))
   const canReview = sessionSnapshot()?.project.role === 'approver'
 
   return <>

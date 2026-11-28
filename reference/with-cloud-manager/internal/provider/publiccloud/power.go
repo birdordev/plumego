@@ -122,6 +122,8 @@ func (c *Client) ApplyInstance(ctx context.Context, scope provider.Scope, id, ac
 	return send(ctx)
 }
 
+type tencentInstanceDisk struct{ DiskId, DiskType string }
+
 type tencentInstanceObservation struct {
 	DisableApiTermination                                           *bool
 	PrivateIpAddresses                                              []string
@@ -130,8 +132,8 @@ type tencentInstanceObservation struct {
 	ImageId, InstanceType, InstanceChargeType                       string
 	Placement                                                       struct{ Zone string }
 	VirtualPrivateCloud                                             struct{ VpcId, SubnetId string }
-	SystemDisk                                                      struct{ DiskId string }
-	DataDisks                                                       []struct{ DiskId string }
+	SystemDisk                                                      tencentInstanceDisk
+	DataDisks                                                       []tencentInstanceDisk
 	SecurityGroupIds                                                []string
 	PublicIpAddresses                                               []string
 	Tags                                                            []*tag
@@ -142,7 +144,7 @@ func (c *Client) observeTencentInstance(ctx context.Context, region, id string) 
 	if err != nil {
 		return provider.Object{}, err
 	}
-	return provider.Object{ID: row.InstanceId, Name: row.InstanceName, Status: row.InstanceState}, nil
+	return provider.Object{ID: row.InstanceId, Name: row.InstanceName, Status: row.InstanceState, InstanceType: row.InstanceType}, nil
 }
 
 func (c *Client) describeTencentInstance(ctx context.Context, region, id string) (tencentInstanceObservation, error) {
@@ -184,7 +186,7 @@ func (c *Client) readTencentInstance(ctx context.Context, region, id string) (*t
 
 type alibabaInstanceObservation struct {
 	InstanceId, InstanceName, RegionId, ZoneId, Status, InstanceChargeType string
-	ImageId, InstanceType                                                  string
+	ImageId, InstanceType, SpotStrategy, StoppedMode                       string
 	VpcAttributes                                                          struct {
 		VpcId, VSwitchId string
 		PrivateIpAddress struct{ IpAddress []string }
@@ -204,7 +206,7 @@ func (c *Client) observeAlibabaInstance(ctx context.Context, region, id string) 
 	if err != nil {
 		return provider.Object{}, err
 	}
-	return provider.Object{ID: row.InstanceId, Name: row.InstanceName, Status: row.Status}, nil
+	return provider.Object{ID: row.InstanceId, Name: row.InstanceName, Status: row.Status, InstanceType: row.InstanceType}, nil
 }
 
 func (c *Client) describeAlibabaInstance(ctx context.Context, region, id string) (alibabaInstanceObservation, error) {
@@ -280,7 +282,7 @@ func (c *Client) observeHuaweiInstance(ctx context.Context, region, id string) (
 	if err != nil {
 		return provider.Object{}, err
 	}
-	return provider.Object{ID: row.ID, Name: row.Name, Status: row.Status}, nil
+	return provider.Object{ID: row.ID, Name: row.Name, Status: row.Status, InstanceType: row.Flavor.ID}, nil
 }
 
 func (c *Client) describeHuaweiInstance(ctx context.Context, region, id string) (huaweiInstanceObservation, error) {

@@ -12,6 +12,8 @@ export const actions: Readonly<Partial<Record<string, string>>> = {
   'retire-instance': '退役腾讯云 CVM',
   'create-volume': '创建云盘',
   'release-volume': '释放云盘',
+  'set-bucket-versioning': '对象桶版本控制变更',
+  'resize-instance': '实例规格变更',
   'resize-volume': '云盘扩容',
   'rename-database-instance': '托管数据库改名',
   'rename-cache-instance': '托管缓存改名',

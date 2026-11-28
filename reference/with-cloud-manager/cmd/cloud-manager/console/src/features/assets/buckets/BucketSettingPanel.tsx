@@ -5,12 +5,15 @@ import { DetailFields } from '../../../shared/components/DetailFields'
 import { bucketEncryptionLabels, bucketVersioningLabels } from '../../../shared/display/bucket-settings'
 import { timestamp } from '../../../shared/display/time'
 import { request } from '../../session/client'
+import { VersioningChangeForm, type VersioningWriteTarget } from './VersioningChangeForm'
 import { bucketEncryptionSchema, bucketVersioningSchema } from './schema'
+
+type Snapshot = { state: string; observedAt: string; versioning?: keyof typeof bucketVersioningLabels }
 
 const readers = {
   versioning: async (target: string, signal: AbortSignal) => {
     const snapshot = await request(target, { signal }, bucketVersioningSchema)
-    return { state: bucketVersioningLabels[snapshot.state], observedAt: snapshot.observed_at }
+    return { state: bucketVersioningLabels[snapshot.state], observedAt: snapshot.observed_at, versioning: snapshot.state }
   },
   encryption: async (target: string, signal: AbortSignal) => {
     const snapshot = await request(target, { signal }, bucketEncryptionSchema)
@@ -18,7 +21,7 @@ const readers = {
   },
 }
 
-type Props = { target: string; name: string; signal: AbortSignal; setting: keyof typeof readers }
+type Props = { target: string; name: string; signal: AbortSignal; setting: keyof typeof readers; mutation?: VersioningWriteTarget; stamp: number }
 const headings = { versioning: '版本控制', encryption: '默认加密' }
 
 export default function BucketSettingPanel(props: Props) {
@@ -29,8 +32,8 @@ export default function BucketSettingPanel(props: Props) {
   </>
 }
 
-function BucketSettingSnapshot({ target, name, setting, signal }: Props) {
-  const result = useResourceRead<{ state: string; observedAt: string }>(target, readers[setting], signal)
+function BucketSettingSnapshot({ target, name, setting, signal, mutation, stamp }: Props) {
+  const result = useResourceRead<Snapshot>(target, readers[setting], signal)
   const heading = headings[setting]
   if (result.state === 'loading') return <p role="status">正在读取{heading}状态…</p>
   if (result.state === 'error') {
@@ -39,7 +42,12 @@ function BucketSettingSnapshot({ target, name, setting, signal }: Props) {
     }
     return <p role="alert">{requestErrorMessage(result.error)}</p>
   }
-  return <DetailFields fields={[
-    ['对象桶', name], [heading, result.data.state], ['观测时间', timestamp(result.data.observedAt)],
-  ]} />
+  return <>
+    <DetailFields fields={[
+      ['对象桶', name], [heading, result.data.state], ['观测时间', timestamp(result.data.observedAt)],
+    ]} />
+    {mutation && result.data.versioning
+      ? <VersioningChangeForm mutation={mutation} current={result.data.versioning} stamp={stamp} />
+      : null}
+  </>
 }

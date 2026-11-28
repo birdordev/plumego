@@ -5,6 +5,7 @@ import { objectBucketSchema } from './buckets/schema'
 import { cacheSchema } from './caches/schema'
 import { clusterSchema } from './clusters/schema'
 import { databaseSchema } from './databases/schema'
+import { instanceType } from './instances/schema'
 import { loadBalancerSummarySchema } from './load-balancers/summary-schema'
 import { snapshotSummarySchema } from './snapshots/schema'
 import { volumeSchema } from './volumes/schema'
@@ -27,6 +28,7 @@ export const assetSchema = z.object({
   kubernetes_cluster: clusterSchema.optional(),
   object_bucket: objectBucketSchema.optional(),
   snapshot: snapshotSummarySchema.optional(),
+  instance_type: instanceType.optional(),
   volume: volumeSchema.optional(),
 })
 

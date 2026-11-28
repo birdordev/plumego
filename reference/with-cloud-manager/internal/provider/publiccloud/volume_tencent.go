@@ -23,7 +23,7 @@ func (c *Client) tencentVolumeEvidence(ctx context.Context, region string, chang
 		available: disk.DiskState == "UNATTACHED", attached: disk.DiskState == "ATTACHED", retained: retained,
 		safe: disk.DiskUsage == "DATA_DISK" && disk.Portable != nil && *disk.Portable &&
 			disk.Shareable != nil && !*disk.Shareable && retained && instance.SystemDisk.DiskId != change.VolumeID,
-		instanceHasVolume: slices.ContainsFunc(instance.DataDisks, func(item struct{ DiskId string }) bool {
+		instanceHasVolume: slices.ContainsFunc(instance.DataDisks, func(item tencentInstanceDisk) bool {
 			return item.DiskId == change.VolumeID
 		}),
 		hosts: distinctVolumeHosts(append(disk.InstanceIdList, disk.InstanceId)),

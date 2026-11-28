@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { time } from '../../../../shared/api/fields'
 import { pageSchema } from '../../../../shared/api/page'
+import { instanceType } from '../../instances/schema'
 import { assetSchema } from '../../schema'
 import { volumeSchema } from '../../volumes/schema'
 
@@ -8,6 +9,7 @@ const assetChange = z.object({
   account: z.string(), region: z.string(), kind: z.string(), asset_id: z.string(), action: z.string(),
   name: z.string(), status: z.string(), occurred_at: time,
   previous_name: z.string().optional(), previous_status: z.string().optional(),
+  instance_type: instanceType.optional(), previous_instance_type: instanceType.optional(),
   volume: volumeSchema.optional(), previous_volume: volumeSchema.optional(),
 })
 

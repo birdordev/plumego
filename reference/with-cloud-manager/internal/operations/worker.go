@@ -26,6 +26,8 @@ type work struct {
 	databaseRename      provider.DatabaseRename
 	volumeRelease       provider.VolumeRelease
 	volumeSpec          provider.VolumeSpec
+	bucketVersioning    provider.BucketVersioningChange
+	instanceResize      provider.InstanceResize
 	volumeResize        provider.VolumeResize
 	workloadScale       provider.WorkloadScaleChange
 	Operation
@@ -230,6 +232,12 @@ func (s Store) process(ctx context.Context, task mq.Task, connect ConnectOperato
 	}
 	if w.Action == releaseVolume {
 		return s.processVolumeRelease(ctx, task, w, client, scope)
+	}
+	if w.Action == setBucketVersioning {
+		return s.processBucketVersioning(ctx, task, w, client, scope)
+	}
+	if w.Action == resizeInstance {
+		return s.processInstanceResize(ctx, task, w, client, scope)
 	}
 	if w.Action == resizeVolume {
 		return s.processVolumeResize(ctx, task, w, client, scope)
@@ -547,6 +555,13 @@ func checkOperationTarget(ctx context.Context, tx *sql.Tx, w *work) error {
 	}
 	if w.Action == releaseVolume {
 		return checkVolumeRelease(ctx, tx, w)
+	}
+	if w.Action == setBucketVersioning {
+		_, err := checkBucketVersioning(ctx, tx, w)
+		return err
+	}
+	if w.Action == resizeInstance {
+		return checkInstanceResize(ctx, tx, w)
 	}
 	if w.Action == resizeVolume {
 		return checkVolumeResize(ctx, tx, w)

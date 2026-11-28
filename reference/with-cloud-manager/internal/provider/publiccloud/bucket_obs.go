@@ -66,7 +66,7 @@ func signOBS(req *http.Request, key obsCredential, resource string, now time.Tim
 		req.Header.Set("X-Obs-Security-Token", key.Token)
 		headers += "x-obs-security-token:" + key.Token + "\n"
 	}
-	payload := req.Method + "\n\n\n" + date + "\n" + headers + resource
+	payload := req.Method + "\n" + req.Header.Get("Content-MD5") + "\n" + req.Header.Get("Content-Type") + "\n" + date + "\n" + headers + resource
 	signature := base64.StdEncoding.EncodeToString(bucketHMACSHA1(key.Secret, payload))
 	req.Header.Set("Authorization", "OBS "+key.Access+":"+signature)
 }

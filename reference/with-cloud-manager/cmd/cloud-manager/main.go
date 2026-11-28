@@ -290,6 +290,15 @@ func migrateCloudManagerSchema(ctx context.Context, db *sql.DB) error {
 	if err := operations.MigrateVolumeRelease(ctx, db); err != nil {
 		return errors.New("volume release migration failed")
 	}
+	if err := operations.MigrateInstanceResize(ctx, db); err != nil {
+		return errors.New("instance resize migration failed")
+	}
+	if err := inventory.MigrateInstanceResizeOptions(ctx, db); err != nil {
+		return errors.New("instance resize options migration failed")
+	}
+	if err := operations.MigrateBucketVersioning(ctx, db); err != nil {
+		return errors.New("bucket versioning change migration failed")
+	}
 	if err := operations.MigrateBareMetalDeployments(ctx, db); err != nil {
 		return errors.New("bare-metal deployment migration failed")
 	}

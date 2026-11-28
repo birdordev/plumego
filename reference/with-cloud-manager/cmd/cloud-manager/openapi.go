@@ -34,7 +34,7 @@ func registerOpenAPI(app *core.App, console *consoleConfig) error {
 		OperationID: "listProjectAssets",
 		Security:    readAuth,
 		Responses: map[string]openapi.Response{
-			"200": {Description: "项目可见的资产页和后续游标。已分配的弹性公网 IP 包含 public_addresses。云盘可包含 volume 的容量、存储类型、用途和可启动信息。云盘快照包含 parent_id 和已知的 snapshot.class、snapshot.size_gib。负载均衡包含 load_balancer 的产品、地址类型、已知域名及私网地址，也可返回多个公网地址。托管数据库包含 database_instance 的产品、引擎和已知版本。对象存储桶包含 object_bucket 的产品、实际地域、可用存储类型和创建时间。托管缓存包含 cache_instance 的产品、引擎、已知版本和容量。Kubernetes 集群包含 kubernetes_cluster 的产品、类型和已知版本及节点数。"},
+			"200": {Description: "项目可见的资产页和后续游标。实例可包含厂商规格 instance_type。已分配的弹性公网 IP 包含 public_addresses。云盘可包含 volume 的容量、存储类型、用途和可启动信息。云盘快照包含 parent_id 和已知的 snapshot.class、snapshot.size_gib。负载均衡包含 load_balancer 的产品、地址类型、已知域名及私网地址，也可返回多个公网地址。托管数据库包含 database_instance 的产品、引擎和已知版本。对象存储桶包含 object_bucket 的产品、实际地域、可用存储类型和创建时间。托管缓存包含 cache_instance 的产品、引擎、已知版本和容量。Kubernetes 集群包含 kubernetes_cluster 的产品、类型和已知版本及节点数。"},
 			"400": {Description: "查询参数或游标无效"},
 			"401": {Description: "服务凭据缺失、无效、过期或撤销"},
 			"403": {Description: "项目不可访问"},
@@ -51,7 +51,7 @@ func registerOpenAPI(app *core.App, console *consoleConfig) error {
 	for status, response := range list.Responses {
 		history.Responses[status] = response
 	}
-	history.Responses["200"] = openapi.Response{Description: "项目可见的资产差异和后续游标，包含适用的前后公网地址、云盘属性、快照属性、负载均衡详情、托管数据库、对象存储桶、托管缓存或 Kubernetes 集群详情。"}
+	history.Responses["200"] = openapi.Response{Description: "项目可见的资产差异和后续游标，包含适用的前后实例规格、公网地址、云盘属性、快照属性、负载均衡详情、托管数据库、对象存储桶、托管缓存或 Kubernetes 集群详情。"}
 	export := list
 	export.OperationID = "exportProjectAssets"
 	export.Params = export.Params[:4]
@@ -384,6 +384,51 @@ func registerOpenAPI(app *core.App, console *consoleConfig) error {
 				"size_gib": openapi.Integer, "confirm_asset_id": openapi.String,
 			},
 		}}}}
+	resizeOptions := accountOp("readInstanceResizeOptions", "200", "当前实例的本地候选规格，返回 pending、ready 或 unavailable", false)
+	refreshResizeOptions := accountOp("refreshInstanceResizeOptions", "202", "请求控制器采集实例候选规格", true)
+	delete(refreshResizeOptions.Responses, "409")
+	delete(refreshResizeOptions.Responses, "415")
+	resizeOptionsBody := map[string]openapi.MediaType{"application/json": {Schema: openapi.Schema{
+		Type: "object", Properties: map[string]openapi.Schema{"data": {Type: "object", Properties: map[string]openapi.Schema{
+			"state": openapi.String, "current_type": openapi.String, "ownership_revision": openapi.Integer,
+			"zone": openapi.String, "target_types": {Type: "array", Items: &openapi.Schema{Type: "string"}},
+			"observed_at": {Type: "string", Format: "date-time"}, "expires_at": {Type: "string", Format: "date-time"},
+		}}},
+	}}}
+	resizeOptions.Responses["200"] = openapi.Response{Description: "当前实例的本地候选规格，返回 pending、ready 或 unavailable", Content: resizeOptionsBody}
+	refreshResizeOptions.Responses["202"] = openapi.Response{Description: "已登记采集或复用现有候选规格", Content: resizeOptionsBody}
+	for _, op := range []*openapi.Op{&resizeOptions, &refreshResizeOptions} {
+		op.Responses["400"] = openapi.Response{Description: "作用域参数无效或厂商不支持"}
+		op.Responses["412"] = openapi.Response{Description: "需要当前凭据代次的实例规格盘点"}
+		for _, name := range []string{"account", "region", "asset_id"} {
+			op.Params = append(op.Params, openapi.Param{Name: name, In: "query", Required: true, Schema: openapi.String})
+		}
+	}
+	bucketVersioningChange := accountOp("setBucketVersioning", "202", "对象桶版本控制变更已受理并等待独立审批", true)
+	bucketVersioningChange.Params = submit.Params
+	bucketVersioningChange.Responses["412"] = openapi.Response{Description: "需要当前桶归属版本和已确认的版本控制状态"}
+	bucketVersioningChange.Responses["429"] = submit.Responses["429"]
+	bucketVersioningChange.Body = &openapi.RequestBody{
+		Required: true, Description: "account、asset_id、current_state 与 target_state。asset_id 包含桶名和创建时间。",
+		Content: map[string]openapi.MediaType{"application/json": {Schema: openapi.Schema{
+			Type: "object", Properties: map[string]openapi.Schema{
+				"account": openapi.String, "asset_id": openapi.String, "current_state": openapi.String, "target_state": openapi.String,
+			},
+		}}},
+	}
+	instanceResize := accountOp("resizeInstance", "202", "已持久受理的实例规格变更申请，需独立审批", true)
+	instanceResize.Params = submit.Params
+	instanceResize.Responses["412"] = openapi.Response{Description: "需要当前实例规格、归属版本和有效盘点"}
+	instanceResize.Responses["429"] = submit.Responses["429"]
+	instanceResize.Body = &openapi.RequestBody{Required: true,
+		Description: "必填 account、region、asset_id、current_type 和 target_type。腾讯云必须设置 accept_auto_start=true，厂商会启动实例。If-Match 使用实例归属版本。",
+		Content: map[string]openapi.MediaType{"application/json": {Schema: openapi.Schema{
+			Type: "object",
+			Properties: map[string]openapi.Schema{
+				"account": openapi.String, "region": openapi.String, "asset_id": openapi.String,
+				"current_type": openapi.String, "target_type": openapi.String, "accept_auto_start": {Type: "boolean"},
+			},
+		}}}}
 	volumeResize := accountOp("resizeVolume", "202", "已持久受理的按量数据盘扩容申请，需独立审批", true)
 	volumeResize.Params = submit.Params
 	volumeResize.Responses["412"] = openapi.Response{Description: "需要当前云盘容量、归属版本和有效的盘点"}
@@ -576,6 +621,7 @@ func registerOpenAPI(app *core.App, console *consoleConfig) error {
 		"PATCH " + assetsRoute + "/ownership":                              ownership,
 		"GET " + assetsRoute + "/topology":                                 topology,
 		"GET " + dnsRecordsRoute:                                           dnsRecords,
+		"POST " + bucketVersioningChangeRoute:                              bucketVersioningChange,
 		"GET " + bucketVersioningRoute:                                     bucketSetting("readProjectBucketVersioning", "版本控制状态为 disabled、enabled 或 suspended。"),
 		"GET " + bucketEncryptionRoute:                                     bucketSetting("readProjectBucketEncryption", "默认服务端加密方式为 unconfigured、aes256、sm4 或 kms。"),
 		"GET " + clusterNodePoolsRoute:                                     clusterNodePoolsOpenAPI(readAuth),
@@ -596,6 +642,9 @@ func registerOpenAPI(app *core.App, console *consoleConfig) error {
 		"POST " + volumesRoute:                                             volumeCreate,
 		"GET " + volumeReleasePreviewRoute:                                 volumeReleasePreview,
 		"POST " + volumeReleaseRoute:                                       volumeRelease,
+		"GET " + instanceResizeOptionsRoute:                                resizeOptions,
+		"POST " + instanceResizeOptionsRoute:                               refreshResizeOptions,
+		"POST " + instanceResizeRoute:                                      instanceResize,
 		"POST " + volumeResizeRoute:                                        volumeResize,
 		"POST " + databaseRenameRoute:                                      databaseRename,
 		"POST " + loadBalancerRenameRoute:                                  balancerRename,

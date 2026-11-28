@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 )
 
@@ -25,7 +26,13 @@ func (c *Client) signOSS(req *http.Request, region, canonicalPath string, now ti
 	scope := date + "/" + region + "/oss/aliyun_v4_request"
 	req.Header.Set("X-Oss-Date", stamp)
 	req.Header.Set("X-Oss-Content-Sha256", "UNSIGNED-PAYLOAD")
-	headers := "host:" + req.URL.Host + "\nx-oss-content-sha256:UNSIGNED-PAYLOAD\nx-oss-date:" + stamp + "\n"
+	var headers string
+	for _, name := range []string{"Content-MD5", "Content-Type"} {
+		if value := req.Header.Get(name); value != "" {
+			headers += strings.ToLower(name) + ":" + strings.TrimSpace(value) + "\n"
+		}
+	}
+	headers += "host:" + req.URL.Host + "\nx-oss-content-sha256:UNSIGNED-PAYLOAD\nx-oss-date:" + stamp + "\n"
 	if token := c.profile.SecurityToken; token != "" {
 		req.Header.Set("X-Oss-Security-Token", token)
 		headers += "x-oss-security-token:" + token + "\n"

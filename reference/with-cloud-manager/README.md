@@ -364,6 +364,22 @@ cloud-manager refresh-huawei-bucket-versioning TENANT ACCOUNT 'BUCKET@UTC_CREATI
 
 刷新另需目标桶的版本状态读取权限。腾讯云使用 `cos:GetBucketVersioning`，阿里云使用 `oss:GetBucketVersioning`，华为云使用 `obs:bucket:GetBucketVersioning`，华为云为本次读取申请仅限目标桶的临时凭据。当前功能只读。 [腾讯云 COS](https://cloud.tencent.com/document/product/436/19888) · [阿里云 OSS](https://www.alibabacloud.com/help/en/oss/developer-reference/getbucketversioning) · [华为云 OBS](https://support.huaweicloud.com/api-obs/obs_04_0038.html)
 
+#### 对象桶版本控制变更
+
+腾讯云 COS、阿里云 OSS 和华为云 OBS 支持启用、恢复及暂停已盘点对象桶的版本控制。控制台在「查看版本控制」中使用当前观测发起申请。项目 API 为 `POST /v1/tenants/{tenant}/projects/{project}/object-buckets/versioning`，须提供 `Idempotency-Key` 和包含桶归属版本的 `If-Match`。请求体提供 `account`、完整的 `asset_id`、`current_state` 和 `target_state`。例如将 `disabled` 改为 `enabled`。
+
+```json
+{"account":"example-cos","asset_id":"examplebucket-1250000000@2025-01-01T10:00:00Z","current_state":"disabled","target_state":"enabled"}
+```
+
+```sh
+cloud-manager operations set-bucket-versioning TENANT PROJECT --idempotency-key REQUEST_KEY --if-match REVISION < request.json
+```
+
+应用迁移 `0163_bucket_versioning_change` 并更新 API 和 Worker。派发要求账号启用写入、Worker 私有配置设置 `allow_bucket_versioning_changes`，且请求获得独立审批。厂商凭据须允许在受管地域列举自有桶、读取桶版本控制和更新该配置。启用过的桶采用 `suspended` 暂停后续版本行为，已有对象版本按厂商规则保留。 [腾讯云 PUT Bucket versioning](https://cloud.tencent.com/document/product/436/19889) · [阿里云 PutBucketVersioning](https://help.aliyun.com/en/oss/developer-reference/putbucketversioning) · [华为云 SetBucketVersioning](https://support.huaweicloud.com/api-obs/obs_04_0037.html)
+
+平台在派发前复核远端桶身份和原状态，随后最多发送一次配置写入。桶标识包含创建时间，避免对已经观测到的同名重建桶发送旧请求。厂商写入接口按桶名寻址，应协调厂商侧并行变化。结果未知时只读对账，证据不足时进入待复核。确认目标状态后，版本控制观测、操作终态和事件发件箱同事务提交。版本控制观测服务与操作观测按采集开始时间排序，防止迟到结果覆盖较新观测。
+
 #### 对象桶默认加密
 
 执行 `cloud-manager migrate` 应用 `0144_bucket_encryption`。先盘点对象桶，再按完整资产 ID 刷新默认服务端加密。地域和桶名使用与版本控制查询相同的约束。
@@ -1973,6 +1989,41 @@ Worker 发送前核对账号写权限、请求人的当前成员代次及实例�
 重启采用软重启，每项任务只发送一次。腾讯云核对同一实例的最新操作名和操作请求 ID，华为云核对项目内的任务 ID 和任务中的目标实例。阿里云保留请求回执，由独立审批人提供与回执匹配的完成证据并处置。无法确认匹配回执或观测证据的重启进入 `needs_review`。 [腾讯云重启](https://cloud.tencent.com/document/api/213/15742) · [腾讯云实例详情](https://cloud.tencent.com/document/api/213/15728) · [阿里云重启](https://www.alibabacloud.com/help/zh/ecs/developer-reference/api-ecs-2014-05-26-rebootinstance) · [华为云重启](https://support.huaweicloud.com/api-ecs/ecs_02_0302.html) · [华为云任务详情](https://support.huaweicloud.com/api-ecs/ecs_02_0901.html)
 
 TLS 协议夹具和真实 PostgreSQL 已覆盖发送前撤权、断连后只读恢复、旧盘点隔离、重启证据匹配和人工复核。真实账号沙箱验收保持待验证。
+
+#### 腾讯云、阿里云和华为云实例规格变更
+
+实例盘点和变化历史返回厂商规格 ID，例如腾讯云的 `S5.LARGE8`、阿里云的 `ecs.g6.xlarge` 或华为云的 `c6.xlarge.2`。在项目资产列表中可按规格检索，并为已关机且归属明确的实例提交申请。Worker 私有凭据配置使用 `instance_resize_sizes` 列出允许的目标规格，空列表关闭变更。云端身份须具备实例点查、规格变更及相应任务读取权限。执行前应协调厂商侧的其他操作方，厂商写接口没有提供原规格比较条件。
+
+`POST /v1/tenants/{tenant}/projects/{project}/instances/resize` 需要 `Idempotency-Key` 和实例归属版本 `If-Match`。请求体填写 `account`、`region`、`asset_id`、`current_type` 和 `target_type`。腾讯云还须设置 `accept_auto_start: true`。以下示例是腾讯云请求体和对应 CLI 调用。
+
+```json
+{"account":"tencent-prod","region":"ap-guangzhou","asset_id":"ins-example","current_type":"S5.MEDIUM4","target_type":"S5.LARGE8","accept_auto_start":true}
+```
+
+```sh
+cloud-manager operations resize-instance TENANT PROJECT --idempotency-key REQUEST_KEY --if-match 7 < resize-instance.json
+```
+
+| 厂商 | 前置条件和验收证据 |
+|---|---|
+| 腾讯云 CVM | 使用受支持云硬盘的已停止按小时实例。发送 `ResetInstancesType` 时指定 `ForceStop=false`。厂商变更完成后会启动实例。核对实例最新变更操作、已知请求 ID、目标规格和运行状态。 [调整实例配置](https://cloud.tencent.com/document/product/213/15744) |
+| 阿里云 ECS | 普通停机模式下的按量非抢占实例。使用 `ModifyInstanceSpec`，关闭跨可用区变配。确认点查返回目标规格，后续单独启动实例时应用新规格。 [修改实例规格](https://help.aliyun.com/zh/ecs/developer-reference/api-ecs-2014-05-26-modifyinstancespec) |
+| 华为云 ECS | 已关机、未锁定且无活动任务的按需实例。使用 `ResizePostPaidServer`，带回执时核对项目内的 ECS 任务，再核对已关机实例的目标规格。 [变更按需实例规格](https://support.huaweicloud.com/api-ecs/ecs_02_0210.html) · [查询任务](https://support.huaweicloud.com/api-ecs/ecs_02_0901.html) |
+
+申请需独立审批。平台在派发前重新检查权限、归属、原规格、停机、厂商计费条件及当前可变配列表，持久登记后最多派发一次。与同实例其他活动操作及系统盘镜像制作预约互斥。回执丢失时只读检查目标实例，证据不足进入 `needs_review`，独立复核可以重新触发只读核验。确认后同事务写入当前规格、电源状态、差异历史、终态和发件箱，并废弃先前的盘点领取。
+
+##### 查询可变配规格
+
+控制台打开规格申请时，控制器按当前停机实例查询厂商支持的目标规格。控制器和派发 Worker 的对应私有配置需设置相同的 `instance_resize_sizes`，两类角色都需具备规格查询权限。腾讯云读取同可用区可售规格，阿里云读取同可用区可用且无需调整系统盘的规格，华为云按 ECS 实例分页查询兼容规格。返回值与各进程配置的目标规格取交集。 [腾讯云查询实例可调整配置](https://cloud.tencent.com/document/product/213/60294) · [阿里云查询可变配资源](https://help.aliyun.com/en/ecs/developer-reference/api-ecs-2014-05-26-describeresourcesmodification) · [华为云查询支持的变更规格](https://support.huaweicloud.com/api-ecs/ecs_02_0402.html)
+
+使用 `POST /v1/tenants/{tenant}/projects/{project}/instances/resize-options?account=…&region=…&asset_id=…` 请求采集，使用同地址的 `GET` 读取本地结果。接口返回 `pending`、`ready` 或 `unavailable`，结果含当前规格、归属版本及候选规格。就绪结果含可用区、观测时间和有效期。两种方法均要求项目操作者角色和当前实例归属。控制器在发送厂商请求前和发布结果前分别核对作用域，凭据变更会使旧结果失效。
+
+```sh
+cloud-manager operations refresh-instance-resize-options TENANT PROJECT --account ACCOUNT --region REGION --asset-id ID
+cloud-manager operations resize-instance-options TENANT PROJECT --account ACCOUNT --region REGION --asset-id ID
+```
+
+同一实例的进行中查询与两分钟内的有效结果可重复使用。候选规格反映查询时的状态。审批后派发前会再次查询厂商，目标规格不再出现在厂商候选列表中时会阻止写入。
 
 ### 操作事件与 Webhook 投递
 

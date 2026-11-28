@@ -66,6 +66,8 @@ type Operation struct {
 	CacheRenameIntent               *CacheRenameView               `json:"cache_rename_intent,omitempty"`
 	VolumeReleaseIntent             *VolumeReleaseView             `json:"volume_release_intent,omitempty"`
 	VolumeCreationIntent            *provider.VolumeSpec           `json:"volume_creation_intent,omitempty"`
+	BucketVersioningIntent          *BucketVersioningView          `json:"bucket_versioning_intent,omitempty"`
+	InstanceResizeIntent            *InstanceResizeView            `json:"instance_resize_intent,omitempty"`
 	VolumeResizeIntent              *VolumeResizeView              `json:"volume_resize_intent,omitempty"`
 	DatabaseRenameIntent            *DatabaseRenameView            `json:"database_rename_intent,omitempty"`
 	WorkloadScaleIntent             *provider.WorkloadScaleChange  `json:"workload_scale_intent,omitempty"`
@@ -451,6 +453,23 @@ func (s Store) Get(ctx context.Context, token string, scope identity.Scope, id s
 				return err
 			}
 			op.VolumeReleaseIntent = &intent
+		}
+		if err == nil && op.Action == setBucketVersioning {
+			var intent BucketVersioningView
+			if err := tx.QueryRowContext(ctx, `SELECT location,current_state,target_state FROM cmp_bucket_versioning_intents
+				WHERE operation_id=$1`, id).Scan(&intent.Location, &intent.Current, &intent.Target); err != nil {
+				return err
+			}
+			op.BucketVersioningIntent = &intent
+		}
+		if err == nil && op.Action == resizeInstance {
+			var intent InstanceResizeView
+			if err := tx.QueryRowContext(ctx, `SELECT i.current_type,i.target_type,i.accept_auto_start,o.ownership_revision
+				FROM cmp_instance_resize_intents AS i JOIN cmp_instance_operations AS o USING(operation_id)
+				WHERE operation_id=$1`, id).Scan(&intent.CurrentType, &intent.TargetType, &intent.AcceptAutoStart, &intent.OwnershipRevision); err != nil {
+				return err
+			}
+			op.InstanceResizeIntent = &intent
 		}
 		if err == nil && op.Action == resizeVolume {
 			var intent VolumeResizeView

@@ -41,6 +41,7 @@ type Object struct {
 	ID              string
 	Name            string
 	Status          string
+	InstanceType    string               `json:"instance_type,omitempty"`
 	Links           []Link               `json:"links,omitempty"`
 	Tags            map[string]string    `json:"tags"`
 	PublicAddresses []string             `json:"public_addresses,omitempty"`
@@ -84,7 +85,7 @@ func (p Page) Validate(cursor string) error {
 		if object.ID == "" || len(object.ID) > MaxObjectIDSize || len(object.Name) > 1024 || len(object.Status) > 256 || len(object.Links) > 256 {
 			return &Failure{Kind: InvalidResponse}
 		}
-		if len(object.Tags) > 256 {
+		if len(object.Tags) > 256 || (object.InstanceType != "" && !ValidInstanceType(object.InstanceType)) {
 			return &Failure{Kind: InvalidResponse}
 		}
 		if object.Bucket != nil && !object.ValidBucket() {

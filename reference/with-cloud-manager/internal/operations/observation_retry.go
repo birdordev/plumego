@@ -91,7 +91,7 @@ func (s Store) RetryCreationObservation(ctx context.Context, token string, scope
 				return ErrConflict
 			}
 			access, err = authorizePowerObservation(ctx, tx, actor, op, ownership, credential)
-		} else if op.ResourceKind == provider.BareMetal || op.Action == retireInstance || op.Action == revokeSecurityRule || op.Action == deleteImage || isNetworkDeletion(op.Action) || op.Action == deleteSnapshot || op.Action == rollbackSnapshot || op.Action == releaseElasticIP || isElasticIPBinding(op.Action) || isLoadBalancerMutation(op.Action) || isDNSRecordMutation(op.Action) || op.Action == scaleWorkload || op.Action == renameDatabaseInstance || op.Action == renameCacheInstance || op.Action == resizeVolume || op.Action == releaseVolume {
+		} else if op.ResourceKind == provider.BareMetal || op.Action == retireInstance || op.Action == revokeSecurityRule || op.Action == deleteImage || isNetworkDeletion(op.Action) || op.Action == deleteSnapshot || op.Action == rollbackSnapshot || op.Action == releaseElasticIP || isElasticIPBinding(op.Action) || isLoadBalancerMutation(op.Action) || isDNSRecordMutation(op.Action) || op.Action == scaleWorkload || op.Action == renameDatabaseInstance || op.Action == renameCacheInstance || op.Action == resizeVolume || op.Action == resizeInstance || op.Action == setBucketVersioning || op.Action == releaseVolume {
 			access, err = identity.NewStore(tx).AuthorizeAccount(ctx, actor, op.Account, identity.View)
 		} else {
 			access, err = authorizeLaunchObservation(ctx, tx, actor, op.Account)
@@ -124,6 +124,14 @@ func (s Store) RetryCreationObservation(ctx context.Context, token string, scope
 		if op.Action == retireInstance {
 			query = `UPDATE cmp_instance_retirement_intents SET observation_reviewer=$2,
 				observation_membership_revision=$3,observation_credential_revision=$4,absence_observations=0,last_absence_attempt=0 WHERE operation_id=$1`
+		}
+		if op.Action == setBucketVersioning {
+			query = `UPDATE cmp_bucket_versioning_intents SET observation_reviewer=$2,
+				observation_membership_revision=$3,observation_credential_revision=$4 WHERE operation_id=$1`
+		}
+		if op.Action == resizeInstance {
+			query = `UPDATE cmp_instance_resize_intents SET observation_reviewer=$2,
+				observation_membership_revision=$3,observation_credential_revision=$4 WHERE operation_id=$1`
 		}
 		if op.Action == resizeVolume {
 			query = `UPDATE cmp_volume_resize_intents SET observation_reviewer=$2,

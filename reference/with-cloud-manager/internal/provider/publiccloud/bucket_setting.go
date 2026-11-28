@@ -2,6 +2,7 @@ package publiccloud
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"net/url"
 	"slices"
@@ -23,7 +24,7 @@ func readBucketSetting[T ~string](ctx context.Context, c *Client, scope provider
 	if err := c.checkBucketIncarnation(ctx, scope, id, region); err != nil {
 		return "", err
 	}
-	req, err := c.bucketSettingRequest(ctx, name, region, query, obsAction)
+	req, err := c.bucketSettingRequest(ctx, http.MethodGet, name, region, query, obsAction, nil)
 	if err != nil {
 		return "", err
 	}
@@ -48,7 +49,7 @@ func (c *Client) checkBucketIncarnation(ctx context.Context, scope provider.Scop
 	return nil
 }
 
-func (c *Client) bucketSettingRequest(ctx context.Context, name, region, query, obsAction string) (*http.Request, error) {
+func (c *Client) bucketSettingRequest(ctx context.Context, method, name, region, query, obsAction string, body io.Reader) (*http.Request, error) {
 	endpoint := url.URL{Scheme: "https", Path: "/", RawQuery: query}
 	switch c.name {
 	case provider.TencentCVM:
@@ -60,9 +61,12 @@ func (c *Client) bucketSettingRequest(ctx context.Context, name, region, query, 
 	default:
 		return nil, &provider.Failure{Kind: provider.Unsupported}
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint.String(), nil)
+	req, err := http.NewRequestWithContext(ctx, method, endpoint.String(), body)
 	if err != nil {
 		return nil, err
+	}
+	if body != nil {
+		req.Header.Set("Content-Type", "application/xml")
 	}
 	now := time.Now().UTC()
 	switch c.name {

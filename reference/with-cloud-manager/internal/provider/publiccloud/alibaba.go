@@ -105,6 +105,7 @@ func (c *Client) alibabaInstances(ctx context.Context, region, cursor string) (p
 
 func (row alibabaInstanceObservation) object() provider.Object {
 	item := tagObject(row.InstanceId, row.InstanceName, row.Status, row.Tags.normalized())
+	item.InstanceType = row.InstanceType
 	item.Link(provider.Zone, row.ZoneId, "in_zone")
 	item.Link(provider.Network, row.VpcAttributes.VpcId, "in_network")
 	item.Link(provider.Subnet, row.VpcAttributes.VSwitchId, "in_subnet")

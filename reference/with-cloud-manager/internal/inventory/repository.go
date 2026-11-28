@@ -95,6 +95,11 @@ var volumeInventorySchema string
 
 const VolumeInventoryMigration = "0156_volume_inventory_details"
 
+//go:embed 0160_instance_type_inventory.sql
+var instanceTypeInventorySchema string
+
+const InstanceTypeInventoryMigration = "0160_instance_type_inventory"
+
 func Migrate(ctx context.Context, db *sql.DB) error {
 	if err := dbschema.Apply(ctx, db, "0002_inventory", schema); err != nil {
 		return err
@@ -189,7 +194,10 @@ func Migrate(ctx context.Context, db *sql.DB) error {
 	if err := dbschema.Apply(ctx, db, BucketEncryptionMigration, bucketEncryptionSchema); err != nil {
 		return err
 	}
-	return dbschema.Apply(ctx, db, VolumeInventoryMigration, volumeInventorySchema)
+	if err := dbschema.Apply(ctx, db, VolumeInventoryMigration, volumeInventorySchema); err != nil {
+		return err
+	}
+	return dbschema.Apply(ctx, db, InstanceTypeInventoryMigration, instanceTypeInventorySchema)
 }
 
 func (s Store) Claim(ctx context.Context, key Key, lease time.Duration) (Claim, error) {
@@ -342,16 +350,16 @@ func upsert(ctx context.Context, tx *sql.Tx, id, generation int64, kind provider
 		}
 	}
 	_, err = tx.ExecContext(ctx, `INSERT INTO cmp_inventory_objects AS existing
-		(scope_id,external_id,name,status,seen_generation,links,public_addresses,snapshot,load_balancer,database_instance,object_bucket,cache_instance,kubernetes_cluster,volume_details,tag_keys,tag_observed_at,tag_credential_revision)
-		SELECT $1, "ID", "Name", "Status", $2, COALESCE(links,'[]'::jsonb), COALESCE(public_addresses,'[]'::jsonb), snapshot, load_balancer, database_instance, object_bucket, cache_instance, kubernetes_cluster, volume,
+		(scope_id,external_id,name,status,seen_generation,links,public_addresses,snapshot,load_balancer,database_instance,object_bucket,cache_instance,kubernetes_cluster,volume_details,instance_type,tag_keys,tag_observed_at,tag_credential_revision)
+		SELECT $1, "ID", "Name", "Status", $2, COALESCE(links,'[]'::jsonb), COALESCE(public_addresses,'[]'::jsonb), snapshot, load_balancer, database_instance, object_bucket, cache_instance, kubernetes_cluster, volume, COALESCE(instance_type,''),
 			CASE WHEN jsonb_typeof(tags)='object' THEN ARRAY(
 				SELECT tag.key FROM jsonb_each_text(tags) AS tag WHERE tag.value !~ '^[[:space:]]*$' ORDER BY tag.key
 			) END,
 			CASE WHEN jsonb_typeof(tags)='object' THEN statement_timestamp() END,
 			CASE WHEN jsonb_typeof(tags)='object' THEN (SELECT credential_revision FROM cmp_inventory_scopes WHERE scope_id=$1) END
 		FROM (
-			SELECT DISTINCT ON ("ID") "ID", "Name", "Status", links, public_addresses, snapshot, load_balancer, database_instance, object_bucket, cache_instance, kubernetes_cluster, volume, tags
-			FROM ROWS FROM(jsonb_to_recordset($3::jsonb) AS ("ID" text, "Name" text, "Status" text, links jsonb, public_addresses jsonb, snapshot jsonb, load_balancer jsonb, database_instance jsonb, object_bucket jsonb, cache_instance jsonb, kubernetes_cluster jsonb, volume jsonb, tags jsonb))
+			SELECT DISTINCT ON ("ID") "ID", "Name", "Status", links, public_addresses, snapshot, load_balancer, database_instance, object_bucket, cache_instance, kubernetes_cluster, volume, instance_type, tags
+			FROM ROWS FROM(jsonb_to_recordset($3::jsonb) AS ("ID" text, "Name" text, "Status" text, links jsonb, public_addresses jsonb, snapshot jsonb, load_balancer jsonb, database_instance jsonb, object_bucket jsonb, cache_instance jsonb, kubernetes_cluster jsonb, volume jsonb, instance_type text, tags jsonb))
 				WITH ORDINALITY AS records
 			ORDER BY "ID", ordinality DESC
 		) AS deduplicated
@@ -376,7 +384,7 @@ func upsert(ctx context.Context, tx *sql.Tx, id, generation int64, kind provider
 					WHERE link->>'kind'='instance' AND link->>'relation'='created_from'),'[]'::jsonb)
 				ELSE '[]'::jsonb END,public_addresses=EXCLUDED.public_addresses,
 			missing_generation=NULL,removed_at=NULL,snapshot=EXCLUDED.snapshot,load_balancer=EXCLUDED.load_balancer,database_instance=EXCLUDED.database_instance,object_bucket=EXCLUDED.object_bucket,cache_instance=EXCLUDED.cache_instance,kubernetes_cluster=EXCLUDED.kubernetes_cluster,
-			volume_details=EXCLUDED.volume_details,tag_keys=EXCLUDED.tag_keys,tag_observed_at=EXCLUDED.tag_observed_at,tag_credential_revision=EXCLUDED.tag_credential_revision
+			volume_details=EXCLUDED.volume_details,instance_type=EXCLUDED.instance_type,tag_keys=EXCLUDED.tag_keys,tag_observed_at=EXCLUDED.tag_observed_at,tag_credential_revision=EXCLUDED.tag_credential_revision
 	WHERE existing.deletion_confirmed_at IS NULL`, id, generation, string(data), kind)
 	if err != nil {
 		return err

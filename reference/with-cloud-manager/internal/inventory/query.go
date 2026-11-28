@@ -49,6 +49,7 @@ type Asset struct {
 	Cache             *provider.CacheDetails        `json:"cache_instance,omitempty"`
 	Cluster           *provider.ClusterDetails      `json:"kubernetes_cluster,omitempty"`
 	Snapshot          *provider.SnapshotDetails     `json:"snapshot,omitempty"`
+	InstanceType      string                        `json:"instance_type,omitempty"`
 	Volume            *provider.VolumeDetails       `json:"volume,omitempty"`
 }
 
@@ -165,7 +166,7 @@ const assetListProjection = `
 	` + projectedInventoryState + `,o.observed_at,s.completed_at,` + projectedOwner + `,` + projectedRevision + `,
 	CASE WHEN s.kind='security-group-rule' THEN 'security_group' WHEN s.kind='snapshot' THEN 'source_volume'
 		ELSE ` + ownershipSource + ` END,
-	o.public_addresses,o.snapshot,o.load_balancer,o.database_instance,o.object_bucket,o.cache_instance,o.kubernetes_cluster,o.volume_details`
+	o.public_addresses,o.snapshot,o.load_balancer,o.database_instance,o.object_bucket,o.cache_instance,o.kubernetes_cluster,o.volume_details,o.instance_type`
 
 // 无关联子查询复用已折叠的搜索词，同时保留数据库排序规则。
 const foldedAssetSearch = `(SELECT needle FROM search_term)`
@@ -176,6 +177,7 @@ const assetSearchText = `strpos(lower(o.name),` + foldedAssetSearch + `)>0
 
 const (
 	searchAssetSnapshot = `strpos(lower(parent.external_id),` + foldedAssetSearch + `)>0`
+	searchInstanceType  = `strpos(lower(o.instance_type),` + foldedAssetSearch + `)>0`
 	searchAssetVolume   = `strpos(lower(concat_ws(' ',o.volume_details->>'storage_class',o.volume_details->>'usage')),` + foldedAssetSearch + `)>0`
 	searchAssetBalancer = `strpos(lower(COALESCE(o.load_balancer->>'dns_name','') || ' ' ||
 		COALESCE(o.load_balancer->>'private_addresses','')),` + foldedAssetSearch + `)>0`
@@ -189,6 +191,7 @@ const (
 		o.kubernetes_cluster->>'version',o.kubernetes_cluster->>'product')),` + foldedAssetSearch + `)>0`
 	searchAssetAll = `CASE s.kind
 		WHEN 'snapshot' THEN ` + searchAssetSnapshot + `
+		WHEN 'instance' THEN ` + searchInstanceType + `
 		WHEN 'volume' THEN ` + searchAssetVolume + `
 		WHEN 'load-balancer' THEN ` + searchAssetBalancer + `
 		WHEN 'database-instance' THEN ` + searchAssetDatabase + `
@@ -233,6 +236,8 @@ func assetMetadataSearch(kind provider.Kind) string {
 		return searchAssetAll
 	case provider.Snapshot:
 		return searchAssetSnapshot
+	case provider.Instance:
+		return searchInstanceType
 	case provider.Volume:
 		return searchAssetVolume
 	case provider.LoadBalancer:
@@ -271,7 +276,7 @@ func listAssets(ctx context.Context, tx *sql.Tx, q Query, p position, result *As
 		var a Asset
 		var addresses, snapshot, loadBalancer, database, bucket, cache, cluster, volume []byte
 		if err := rows.Scan(&a.Account, &a.Provider, &a.Region, &a.Kind, &a.ID, &a.ParentID, &a.Name, &a.Status, &a.State, &a.ObservedAt,
-			&a.LastFullSync, &a.Project, &a.OwnershipRevision, &a.OwnershipSource, &addresses, &snapshot, &loadBalancer, &database, &bucket, &cache, &cluster, &volume); err != nil {
+			&a.LastFullSync, &a.Project, &a.OwnershipRevision, &a.OwnershipSource, &addresses, &snapshot, &loadBalancer, &database, &bucket, &cache, &cluster, &volume, &a.InstanceType); err != nil {
 			return err
 		}
 		if err := json.Unmarshal(addresses, &a.PublicAddresses); err != nil {

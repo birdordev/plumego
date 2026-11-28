@@ -32,11 +32,22 @@ func runController(ctx context.Context, db *sql.DB, path string, watchOnly bool,
 		store = store.WithDispatchObserver(inventoryDispatchLogger(dispatchLog))
 	}
 	execute := inventoryScheduleExecutor(db, profiles, nil)
-	run := store.Run
 	if watchOnly {
-		run = store.RunWorkloadWatch
+		if err := store.RunWorkloadWatch(ctx, execute); err != nil {
+			return errors.New("inventory controller storage unavailable")
+		}
+		return nil
 	}
-	if err := run(ctx, execute); err != nil {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	results := make(chan error, 2)
+	go func() { results <- store.Run(ctx, execute) }()
+	go func() {
+		results <- inventory.NewStore(db).RunInstanceResizeOptions(ctx, instanceResizeOptionsReader(profiles, nil))
+	}()
+	first := <-results
+	cancel()
+	if err := errors.Join(first, <-results); err != nil {
 		return errors.New("inventory controller storage unavailable")
 	}
 	return nil

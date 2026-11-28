@@ -52,7 +52,12 @@ func assetOperationPreviewHandler[T any](read func(context.Context, string, iden
 			writeAccountError(w, r, err, logger)
 			return
 		}
-		if err := contract.WriteResponse(w, r, http.StatusOK, value, nil); err != nil {
+		if r.Method == http.MethodPost {
+			err = contract.WriteResponse(w, r, http.StatusAccepted, value, nil)
+		} else {
+			err = contract.WriteResponse(w, r, http.StatusOK, value, nil)
+		}
+		if err != nil {
 			logger.Warn("asset operation preview response write failed", plumelog.Fields{})
 		}
 	})

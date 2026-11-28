@@ -12,6 +12,9 @@ export const computeIntents = {
   volume_resize_intent: z.object({
     current_gib: integer.positive(), target_gib: integer.positive(), ownership_revision: integer.positive(),
   }).optional(),
+  instance_resize_intent: z.object({
+    current_type: text, target_type: text, accept_auto_start: flag, ownership_revision: integer.positive(),
+  }).optional(),
   instance_retirement_intent: z.object({ system_disk_id: text, disk_ownership_revision: integer.positive() }).optional(),
   workload_scale_intent: z.object({
     uid: text, namespace: text, kind: text, name: text, current_replicas: integer, replicas: integer,

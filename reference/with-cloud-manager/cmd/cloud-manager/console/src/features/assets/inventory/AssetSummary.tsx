@@ -12,6 +12,7 @@ export function AssetSummary({ asset }: { asset: Asset }) {
   return <div className="asset-summary">
     <strong>{asset.name || asset.id}</strong>
     {asset.name && asset.name !== asset.id ? <span className="minor">{asset.id}</span> : null}
+    {asset.instance_type ? <span className="minor">{asset.instance_type}</span> : null}
     {asset.public_addresses?.length ? <span className="minor">{asset.public_addresses.join(' · ')}</span> : null}
     {asset.load_balancer ? <LoadBalancerSummary {...asset.load_balancer} /> : null}
     {asset.object_bucket ? <BucketSummary bucket={asset.object_bucket} /> : null}

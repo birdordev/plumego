@@ -116,14 +116,14 @@ func RegisterCreatedAsset(ctx context.Context, tx *sql.Tx, actor identity.Scope,
 			return 0, err
 		}
 	} else if _, err := tx.ExecContext(ctx, `INSERT INTO cmp_inventory_objects AS existing
-		(scope_id,external_id,name,status,seen_generation,links,public_addresses)
-		VALUES ($1,$2,$3,$4,$5,COALESCE(NULLIF($6::jsonb,'null'::jsonb),'[]'::jsonb),COALESCE(NULLIF($7::jsonb,'null'::jsonb),'[]'::jsonb))
+		(scope_id,external_id,name,status,seen_generation,links,public_addresses,instance_type)
+		VALUES ($1,$2,$3,$4,$5,COALESCE(NULLIF($6::jsonb,'null'::jsonb),'[]'::jsonb),COALESCE(NULLIF($7::jsonb,'null'::jsonb),'[]'::jsonb),$8)
 		ON CONFLICT (scope_id,external_id) DO UPDATE SET name=EXCLUDED.name,status=EXCLUDED.status,
 			seen_generation=EXCLUDED.seen_generation,links=EXCLUDED.links,observed_at=EXCLUDED.observed_at,
-			public_addresses=EXCLUDED.public_addresses,
+			public_addresses=EXCLUDED.public_addresses,instance_type=EXCLUDED.instance_type,
 			missing_generation=NULL,removed_at=NULL
 		WHERE existing.deletion_confirmed_at IS NULL AND (existing.removed_at IS NOT NULL OR existing.missing_generation IS NOT NULL)`,
-		scope, object.ID, object.Name, object.Status, generation, string(links), string(addresses)); err != nil {
+		scope, object.ID, object.Name, object.Status, generation, string(links), string(addresses), object.InstanceType); err != nil {
 		return 0, err
 	}
 	var locked, parentID string

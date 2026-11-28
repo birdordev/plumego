@@ -71,7 +71,7 @@ func (c *Client) huaweiInstances(ctx context.Context, region, cursor string) (pr
 			ID, Name, Status string
 			Tenant           string `json:"tenant_id"`
 			Zone             string `json:"availability_zone"`
-			Image            struct{ ID string }
+			Image, Flavor    struct{ ID string }
 			SecurityGroups   []struct{ ID string } `json:"security_groups"`
 			Addresses        map[string]json.RawMessage
 		}
@@ -90,7 +90,7 @@ func (c *Client) huaweiInstances(ctx context.Context, region, cursor string) (pr
 		if !huaweiResourceID.MatchString(row.ID) {
 			return provider.Page{}, &provider.Failure{Kind: provider.InvalidResponse}
 		}
-		item := provider.Object{ID: row.ID, Name: row.Name, Status: row.Status}
+		item := provider.Object{ID: row.ID, Name: row.Name, Status: row.Status, InstanceType: row.Flavor.ID}
 		item.Link(provider.Zone, row.Zone, "in_zone")
 		item.Link(provider.Image, row.Image.ID, "uses_image")
 		for _, network := range slices.Sorted(maps.Keys(row.Addresses)) {

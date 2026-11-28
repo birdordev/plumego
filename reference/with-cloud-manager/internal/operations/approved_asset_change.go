@@ -15,8 +15,12 @@ import (
 
 func (s Store) submitApprovedAssetChange(ctx context.Context, token string, scope identity.Scope, key string, revision int64, kind provider.Kind,
 	account, region, assetID, action, groupID string, digest [32]byte, prepareIntent func(context.Context, *sql.Tx, identity.Scope, inventory.MutationTarget) (func(string) error, error)) (Operation, error) {
+	validAsset := operationKey.MatchString(assetID)
+	if kind == provider.ObjectBucket {
+		validAsset = provider.ValidBucketAssetID(assetID)
+	}
 	if revision < 1 || !operationKey.MatchString(key) || !operationKey.MatchString(account) ||
-		!operationKey.MatchString(region) || !operationKey.MatchString(assetID) {
+		!operationKey.MatchString(region) || !validAsset {
 		return Operation{}, ErrInvalid
 	}
 	var op Operation

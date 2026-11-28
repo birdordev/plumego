@@ -53,7 +53,7 @@ func readBucketSettingBatch[T ~string](ctx context.Context, c *Client, scope pro
 			continue
 		}
 		name, _, _ := strings.Cut(target.ID, "@")
-		req, err := c.bucketSettingRequest(ctx, name, target.Location, query, action)
+		req, err := c.bucketSettingRequest(ctx, http.MethodGet, name, target.Location, query, action, nil)
 		if err == nil {
 			results[i].State, err = read(req)
 		}

@@ -101,6 +101,7 @@ func (c *Client) tencentInstances(ctx context.Context, region, cursor string) (p
 
 func (row tencentInstanceObservation) object() provider.Object {
 	item := tagObject(row.InstanceId, row.InstanceName, row.InstanceState, row.Tags)
+	item.InstanceType = row.InstanceType
 	item.Link(provider.Zone, row.Placement.Zone, "in_zone")
 	item.Link(provider.Network, row.VirtualPrivateCloud.VpcId, "in_network")
 	item.Link(provider.Subnet, row.VirtualPrivateCloud.SubnetId, "in_subnet")

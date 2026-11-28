@@ -18,6 +18,8 @@ import (
 
 const operationsRoute = "/v1/tenants/:tenant/projects/:project/instance-operations"
 const instancesRoute = "/v1/tenants/:tenant/projects/:project/instances"
+const instanceResizeRoute = instancesRoute + "/resize"
+const bucketVersioningChangeRoute = "/v1/tenants/:tenant/projects/:project/object-buckets/versioning"
 const imagesRoute = "/v1/tenants/:tenant/projects/:project/images"
 
 const snapshotsRoute = "/v1/tenants/:tenant/projects/:project/snapshots"
@@ -449,6 +451,16 @@ func bareMetalPowerRevisionError() error {
 func cacheRenameRevisionError() error {
 	return contract.NewErrorBuilder().Type(contract.TypePreconditionFailed).
 		Message("current cache name, ownership revision and inventory required").Build()
+}
+
+func bucketVersioningRevisionError() error {
+	return contract.NewErrorBuilder().Type(contract.TypePreconditionFailed).
+		Message("current bucket revision and versioning observation required").Build()
+}
+
+func instanceResizeRevisionError() error {
+	return contract.NewErrorBuilder().Type(contract.TypePreconditionFailed).
+		Message("current instance type, ownership revision and inventory required").Build()
 }
 
 func volumeRevisionAndCapacityError() error {

@@ -39,6 +39,10 @@ const operationsUsage = `usage: cloud-manager operations COMMAND TENANT PROJECT 
   create-volume --idempotency-key KEY < request.json
   preview-volume-release --account ACCOUNT --region REGION --asset-id ID
   release-volume --idempotency-key KEY --if-match REVISION < request.json
+  resize-instance-options --account ACCOUNT --region REGION --asset-id ID
+  refresh-instance-resize-options --account ACCOUNT --region REGION --asset-id ID
+  set-bucket-versioning --idempotency-key KEY --if-match REVISION < request.json
+  resize-instance --idempotency-key KEY --if-match REVISION < request.json
   resize-volume --idempotency-key KEY --if-match REVISION < request.json
   rename-database-instance --idempotency-key KEY --if-match REVISION < request.json
   register-deployment < deployment.json

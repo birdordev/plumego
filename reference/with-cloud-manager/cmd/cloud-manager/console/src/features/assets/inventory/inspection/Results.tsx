@@ -16,12 +16,15 @@ export function AssetHistory({ page }: { page: AssetHistoryPage }) {
       const before = volumeSummaryText(row.previous_volume)
       const after = volumeSummaryText(row.volume)
       const volume = before && before !== after ? `${before} → ${after || '暂无属性'}` : after
+      const type = row.previous_instance_type && row.previous_instance_type !== row.instance_type
+        ? `${row.previous_instance_type} → ${row.instance_type || '暂无规格'}` : row.instance_type
       return <tr key={JSON.stringify([row.account, row.region, row.kind, row.asset_id, row.occurred_at, index])}>
         <td>{timestamp(row.occurred_at)}</td>
         <td>{changes[row.action] ?? row.action}</td>
         <td>{row.previous_name && row.previous_name !== row.name ? `${row.previous_name} → ` : ''}{row.name || row.asset_id}
           <div className="minor">{row.account} / {row.region || '全局'} · {row.asset_id}</div>
-          {volume ? <div className="minor">{volume}</div> : null}</td>
+          {volume ? <div className="minor">{volume}</div> : null}
+          {type ? <div className="minor">{type}</div> : null}</td>
         <td>{row.previous_status && row.previous_status !== row.status ? `${statuses[row.previous_status] ?? row.previous_status} → ` : ''}{(statuses[row.status] ?? row.status) || '—'}</td>
       </tr>
     })}</tbody>

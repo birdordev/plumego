@@ -39,7 +39,7 @@ func validateObservationPage(kind provider.Kind, page provider.Page, cursor stri
 			(kind == provider.ObjectBucket) != (object.Bucket != nil) ||
 			(kind == provider.CacheInstance) != (object.Cache != nil) ||
 			(kind == provider.KubernetesCluster) != (object.Cluster != nil) ||
-			(object.Volume != nil && kind != provider.Volume) {
+			(object.Volume != nil && kind != provider.Volume) || (object.InstanceType != "" && kind != provider.Instance) {
 			return &provider.Failure{Kind: provider.InvalidResponse}
 		}
 	}

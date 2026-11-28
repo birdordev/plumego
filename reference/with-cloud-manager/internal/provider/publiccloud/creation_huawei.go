@@ -187,6 +187,7 @@ func (c *Client) findHuaweiCreation(ctx context.Context, region string, spec pro
 		return provider.Object{}, err
 	}
 	object := tagObject(row.ID, row.Name, row.Status, response.Tags)
+	object.InstanceType = row.Flavor.ID
 	object.Link(provider.Zone, row.Zone, "in_zone")
 	object.Link(provider.Network, subnet.VPC, "in_network")
 	object.Link(provider.Subnet, subnet.ID, "in_subnet")

@@ -7,6 +7,7 @@ import { databaseActions } from '../databases/row-actions'
 import { dnsActions } from '../dns/row-actions'
 import { elasticIPActions } from '../elastic-ips/row-actions'
 import { imageCreationActions, imageActions } from '../images/row-actions'
+import { instanceResizeActions } from '../instances/resize'
 import { instanceRetirementActions } from '../instances/retirement'
 import { loadBalancerActions } from '../load-balancers/row-actions'
 import { networkActions } from '../network/row-actions'
@@ -29,7 +30,8 @@ const actions: Partial<Record<string, ListAssetActions>> = {
   snapshot: snapshotActions,
   image: imageActions,
   instance: (asset, context) => [
-    ...nativeAssetActions(asset, context), ...imageCreationActions(asset, context), ...instanceRetirementActions(asset, context),
+    ...nativeAssetActions(asset, context), ...imageCreationActions(asset, context),
+    ...instanceResizeActions(asset, context), ...instanceRetirementActions(asset, context),
   ],
   network: networkActions,
   subnet: networkActions,
