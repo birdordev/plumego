@@ -53,6 +53,9 @@ func testPublicCloudDatabaseBackups(t *testing.T, f *databaseBackupsFixture) {
 	seedSnapshotDeletion(t, db, &snapshotDeletionFixture{vendor: f.vendor, region: f.region,
 		volume: "fixture-volume", id: "fixture-snapshot", class: "standard"}, f.remoteIdentity(), actor, reviewer)
 	f.pointRow = func(family string) map[string]any {
+		if f.restoreParentDrift.Load() {
+			return f.databaseRow(family, f.id+"-outside", "outside", fixtureDatabaseVersion, f.region)
+		}
 		return f.databaseRow(family, f.id, "backup-parent", fixtureDatabaseVersion, f.region)
 	}
 	cfg := publicCloudProfile{Ref: "fixture/snapshot-delete", Config: publiccloud.Config{AccountID: f.account, Regions: []string{f.region}}}
@@ -173,10 +176,14 @@ func testPublicCloudDatabaseBackups(t *testing.T, f *databaseBackupsFixture) {
 	if empty.Backups == nil || empty.Total != 0 || len(empty.Backups) != 0 {
 		t.Fatalf("empty native snapshot was not visible: %+v", empty)
 	}
-	if _, err := db.ExecContext(ctx, `UPDATE cmp_cloud_accounts SET credential_revision=2 WHERE account_id=$1`, f.vendor); err != nil {
-		t.Fatal(err)
-	}
-	get(path, http.StatusNotFound)
+	t.Run("restore-windows", func(t *testing.T) {
+		restorePath := testPublicCloudDatabaseRestoreWindows(t, db, f, run, app, local.URL, actor)
+		if _, err := db.ExecContext(t.Context(), `UPDATE cmp_cloud_accounts SET credential_revision=2 WHERE account_id=$1`, f.vendor); err != nil {
+			t.Fatal(err)
+		}
+		scheduleResponse(t, app, http.MethodGet, path, actor, "", "", http.StatusNotFound)
+		scheduleResponse(t, app, http.MethodGet, restorePath, actor, "", "", http.StatusNotFound)
+	})
 }
 
 type fixtureBackupReader func(context.Context, provider.Scope, string, provider.DatabaseDetails, time.Time) ([]provider.DatabaseBackup, error)

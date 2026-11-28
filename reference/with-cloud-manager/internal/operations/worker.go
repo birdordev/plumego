@@ -24,6 +24,7 @@ type work struct {
 	retirement               provider.InstanceRetirement
 	cacheRename              provider.CacheRename
 	databaseRename           provider.DatabaseRename
+	databaseRecovery         provider.DatabaseRecovery
 	volumeRelease            provider.VolumeRelease
 	volumeSpec               provider.VolumeSpec
 	bucketVersioning         provider.BucketVersioningChange
@@ -252,6 +253,9 @@ func (s Store) process(ctx context.Context, task mq.Task, connect ConnectOperato
 	}
 	if w.Action == renameDatabaseInstance {
 		return s.processDatabaseRename(ctx, task, w, client, scope)
+	}
+	if w.Action == recoverDatabaseInstance {
+		return s.processDatabaseRecovery(ctx, task, w, client, scope)
 	}
 	if volumeAction(w.Action) {
 		return s.processVolume(ctx, task, w, client, scope)
@@ -584,6 +588,9 @@ func checkOperationTarget(ctx context.Context, tx *sql.Tx, w *work) error {
 	}
 	if w.Action == renameDatabaseInstance {
 		return checkDatabaseRename(ctx, tx, w)
+	}
+	if w.Action == recoverDatabaseInstance {
+		return checkDatabaseRecovery(ctx, tx, w)
 	}
 	resolve := inventory.ResolveInstanceMutation
 	if w.Action == "delete" && w.Status != "queued" && w.Status != "awaiting_approval" {

@@ -27,3 +27,9 @@ export const databaseBackupPageSchema = z.object({
 })
 
 export type DatabaseBackupPage = z.infer<typeof databaseBackupPageSchema>
+
+export const databaseRestoreWindowsSchema = z.object({
+  observed_at: time,
+  scope: z.enum(['instance', 'source_instance']),
+  windows: z.array(z.object({ start_at: time, end_at: time })).max(512),
+})

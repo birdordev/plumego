@@ -10,6 +10,7 @@ import { OperationDecisions } from './review/OperationDecisions'
 import { OperationTimeline } from './events/OperationTimeline'
 import { BareMetalDeploymentSection } from './bare-metal-deployment/BareMetalDeploymentSection'
 import { assetRenameFields } from './fields/asset-rename'
+import { databaseRecoveryFields } from './fields/database-recovery'
 import { dnsOperationFields } from './fields/dns'
 import { bucketSettingFields } from './fields/bucket-settings'
 import { instanceResizeFields } from './fields/instance-resize'
@@ -41,7 +42,7 @@ export default function OperationPanel({ project, target, ticketTarget, stamp, s
     ['资源', op.asset_id || '待分配'], ['厂商请求', op.provider_request_id || '—'],
   ]
   if (op.catalog_template) fields.push(['模板版本', op.catalog_template + ' / ' + op.catalog_version])
-  fields.push(...assetRenameFields(op), ...dnsOperationFields(op), ...loadBalancerOperationFields(op), ...networkOperationFields(op),
+  fields.push(...assetRenameFields(op), ...databaseRecoveryFields(op), ...dnsOperationFields(op), ...loadBalancerOperationFields(op), ...networkOperationFields(op),
     ...retirementFields(op), ...instanceResizeFields(op), ...bucketSettingFields(op), ...imageOperationFields(op), ...snapshotOperationFields(op), ...workloadScaleFields(op), ...volumeOperationFields(op))
   const canReview = sessionSnapshot()?.project.role === 'approver'
 

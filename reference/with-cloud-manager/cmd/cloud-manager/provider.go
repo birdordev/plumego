@@ -106,13 +106,13 @@ func runPublicCloud(parent context.Context, db *sql.DB, args []string, name, pat
 func publicCloudCommand(command string) (name, variable string) {
 	switch command {
 	case "verify-tencent", "scan-tencent", "refresh-tencent-load-balancer", "refresh-tencent-database-backups", "refresh-tencent-dns-zone", "refresh-tencent-cluster-node-pools", "refresh-tencent-cluster-workloads",
-		"refresh-tencent-bucket-versioning", "refresh-tencent-bucket-encryption":
+		"refresh-tencent-bucket-versioning", "refresh-tencent-bucket-encryption", "refresh-tencent-database-restore-windows":
 		return provider.TencentCVM, "CLOUD_MANAGER_TENCENT_PROFILE"
 	case "verify-alibaba", "scan-alibaba", "refresh-alibaba-load-balancer", "refresh-alibaba-database-backups", "refresh-alibaba-dns-zone", "refresh-alibaba-cluster-node-pools", "refresh-alibaba-cluster-workloads",
-		"refresh-alibaba-bucket-versioning", "refresh-alibaba-bucket-encryption":
+		"refresh-alibaba-bucket-versioning", "refresh-alibaba-bucket-encryption", "refresh-alibaba-database-restore-windows":
 		return provider.AlibabaECS, "CLOUD_MANAGER_ALIBABA_PROFILE"
 	case "verify-huawei", "scan-huawei", "refresh-huawei-load-balancer", "refresh-huawei-database-backups", "refresh-huawei-dns-zone", "refresh-huawei-cluster-node-pools", "refresh-huawei-cluster-workloads",
-		"refresh-huawei-bucket-versioning", "refresh-huawei-bucket-encryption":
+		"refresh-huawei-bucket-versioning", "refresh-huawei-bucket-encryption", "refresh-huawei-database-restore-windows":
 		return provider.HuaweiECS, "CLOUD_MANAGER_HUAWEI_PROFILE"
 	default:
 		return "", ""
@@ -123,6 +123,7 @@ func runInventoryCommand(parent context.Context, db *sql.DB, args []string, prov
 	verify := len(args) == 3
 	refreshLoadBalancer := args[0] == "refresh-tencent-load-balancer" || args[0] == "refresh-alibaba-load-balancer" || args[0] == "refresh-huawei-load-balancer"
 	refreshDatabaseBackups := strings.HasSuffix(args[0], "-database-backups")
+	refreshDatabaseRestoreWindows := strings.HasSuffix(args[0], "-database-restore-windows")
 	refreshDNS := strings.HasPrefix(args[0], "refresh-") && strings.HasSuffix(args[0], "-dns-zone")
 	refreshVersioning := strings.HasSuffix(args[0], "-bucket-versioning")
 	refreshEncryption := strings.HasSuffix(args[0], "-bucket-encryption")
@@ -138,7 +139,7 @@ func runInventoryCommand(parent context.Context, db *sql.DB, args []string, prov
 		if refreshLoadBalancer {
 			kind = provider.LoadBalancer
 		}
-		if refreshDatabaseBackups {
+		if refreshDatabaseBackups || refreshDatabaseRestoreWindows {
 			kind = provider.DatabaseInstance
 		}
 		if refreshCluster {
@@ -199,6 +200,13 @@ func runInventoryCommand(parent context.Context, db *sql.DB, args []string, prov
 			return &provider.Failure{Kind: provider.Unsupported}
 		}
 		return inventoryCommandError(store.RefreshDatabaseBackups(ctx, key, args[4], binding.Revision, reader))
+	}
+	if refreshDatabaseRestoreWindows {
+		reader, ok := client.(provider.DatabaseRestoreWindowReader)
+		if !ok {
+			return &provider.Failure{Kind: provider.Unsupported}
+		}
+		return inventoryCommandError(store.RefreshDatabaseRestoreWindows(ctx, key, args[4], binding.Revision, reader))
 	}
 	if refreshDNS {
 		reader, ok := client.(provider.DNSRecordReader)

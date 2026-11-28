@@ -111,6 +111,16 @@ func RegisterCreatedAsset(ctx context.Context, tx *sql.Tx, actor identity.Scope,
 		if err := registerProvisionedVolume(ctx, tx, scope, generation, object); err != nil {
 			return 0, err
 		}
+	} else if kind == provider.DatabaseInstance {
+		if !object.ValidDatabase() {
+			return 0, identity.ErrForbidden
+		}
+		if err := upsert(ctx, tx, scope, generation, kind, []provider.Object{object}); err != nil {
+			return 0, err
+		}
+		if err := restartActiveInventoryScan(ctx, tx, scope); err != nil {
+			return 0, err
+		}
 	} else if kind == provider.Image {
 		if err := registerImageOrigin(ctx, tx, scope, generation, object, string(links)); err != nil {
 			return 0, err

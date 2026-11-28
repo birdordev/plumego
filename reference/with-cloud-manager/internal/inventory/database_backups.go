@@ -41,41 +41,17 @@ type DatabaseBackupPage struct {
 	NextOffset int                       `json:"next_offset,omitempty"`
 }
 
-const currentBackupDatabase = `s.kind='database-instance' AND o.database_instance IS NOT NULL
-	AND o.removed_at IS NULL AND o.missing_generation IS NULL
-	AND a.mode IN ('read_only','write_enabled') AND a.credential_revision=s.credential_revision
-	AND a.remote_identity<>''`
-
-const selectBackupDatabase = ` FROM cmp_inventory_objects AS o
-	JOIN cmp_inventory_scopes AS s USING (scope_id)
-	JOIN cmp_cloud_accounts AS a USING (tenant_id,account_id)
-	WHERE (s.tenant_id,s.account_id,s.region,o.external_id,a.credential_revision)=($1,$2,$3,$4,$5) AND ` + currentBackupDatabase
-
 func (s Store) RefreshDatabaseBackups(ctx context.Context, key Key, id string, revision int64, reader provider.DatabaseBackupReader) error {
-	if key.Kind != provider.DatabaseInstance || revision < 1 || !validConfigurationQueryValue(key.Tenant, 256) ||
-		!validConfigurationQueryValue(key.Account, 256) || !validConfigurationQueryValue(key.Region, 128) || !validConfigurationQueryValue(id, 128) {
-		return ErrInvalidQuery
-	}
-	var scopeID int64
-	var parentObserved, started time.Time
-	var details provider.DatabaseDetails
-	scope := provider.Scope{Kind: key.Kind, Region: key.Region}
-	args := []any{key.Tenant, key.Account, key.Region, id, revision}
-	err := s.db.QueryRowContext(ctx, `SELECT s.scope_id,a.provider,a.remote_identity,o.database_instance->>'product',
-		o.database_instance->>'engine',o.observed_at,clock_timestamp()`+selectBackupDatabase, args...).
-		Scan(&scopeID, &scope.Provider, &scope.RemoteIdentity, &details.Product, &details.Engine, &parentObserved, &started)
-	if errors.Is(err, sql.ErrNoRows) {
-		return ErrStale
-	}
+	target, err := s.databaseObservation(ctx, key, id, revision)
 	if err != nil {
 		return err
 	}
-	if !provider.ValidDatabaseBackupTarget(scope.Provider, id, details) {
+	if !provider.ValidDatabaseBackupTarget(target.scope.Provider, id, target.details) {
 		return &provider.Failure{Kind: provider.Unsupported}
 	}
-	end := started.UTC().Truncate(time.Minute)
+	end := target.started.UTC().Truncate(time.Minute)
 	start := end.Add(-provider.DatabaseBackupWindow)
-	backups, err := reader.ReadDatabaseBackups(ctx, scope, id, details, end)
+	backups, err := reader.ReadDatabaseBackups(ctx, target.scope, id, target.details, end)
 	if err != nil {
 		return err
 	}
@@ -87,15 +63,7 @@ func (s Store) RefreshDatabaseBackups(ctx context.Context, key Key, id string, r
 		return err
 	}
 	return dbutil.WithTransaction(ctx, s.db, nil, func(tx *sql.Tx) error {
-		var found int64
-		err := tx.QueryRowContext(ctx, "SELECT s.scope_id"+selectBackupDatabase+
-			` AND s.scope_id=$6 AND o.observed_at=$7 AND a.remote_identity=$8 AND o.database_instance->>'product'=$9
-			AND o.database_instance->>'engine'=$10 FOR SHARE OF a,s,o`,
-			append(args, scopeID, parentObserved, scope.RemoteIdentity, details.Product, details.Engine)...).Scan(&found)
-		if errors.Is(err, sql.ErrNoRows) {
-			return ErrStale
-		}
-		if err != nil {
+		if err := target.lock(ctx, tx); err != nil {
 			return err
 		}
 		result, err := tx.ExecContext(ctx, `INSERT INTO cmp_database_backups AS saved
@@ -105,21 +73,13 @@ func (s Store) RefreshDatabaseBackups(ctx context.Context, key Key, id string, r
 				credential_revision=EXCLUDED.credential_revision,refresh_started_at=EXCLUDED.refresh_started_at,observed_at=EXCLUDED.observed_at,
 				window_start=EXCLUDED.window_start,window_end=EXCLUDED.window_end,backups=EXCLUDED.backups
 			WHERE (saved.credential_revision,saved.refresh_started_at) < (EXCLUDED.credential_revision,EXCLUDED.refresh_started_at)`,
-			scopeID, id, details.Product, details.Engine, revision, started, start, end, string(data))
-		if err != nil {
-			return err
-		}
-		count, err := result.RowsAffected()
-		if err == nil && count != 1 {
-			return ErrStale
-		}
-		return err
+			target.scopeID, id, target.details.Product, target.details.Engine, revision, target.started, start, end, string(data))
+		return checkDatabaseObservationWrite(result, err)
 	})
 }
 
 func (s Store) ReadDatabaseBackups(ctx context.Context, token string, q DatabaseBackupQuery) (DatabaseBackupPage, error) {
-	if !validConfigurationQueryValue(q.Tenant, 256) || !validConfigurationQueryValue(q.Project, 256) ||
-		!validConfigurationQueryValue(q.Account, 256) || !validConfigurationQueryValue(q.Region, 128) || !validConfigurationQueryValue(q.ID, 128) ||
+	if !(DatabaseAssetQuery{q.Tenant, q.Project, q.Account, q.Region, q.ID}).valid() ||
 		q.Offset < 0 || q.Offset > provider.MaxDatabaseBackups || q.Limit < 1 || q.Limit > 100 || (q.Offset > 0 && q.ObservedAt.IsZero()) {
 		return DatabaseBackupPage{}, ErrInvalidQuery
 	}
@@ -134,8 +94,7 @@ func (s Store) ReadDatabaseBackups(ctx context.Context, token string, q Database
 			JOIN cmp_inventory_objects AS o USING (scope_id)
 			JOIN cmp_database_backups AS snapshot ON (snapshot.scope_id,snapshot.external_id)=(o.scope_id,o.external_id)
 				AND snapshot.credential_revision=a.credential_revision AND snapshot.product=o.database_instance->>'product'
-				AND snapshot.engine=o.database_instance->>'engine'`+inventoryOwnershipJoins+
-			" WHERE "+assetVisibility+" AND "+currentBackupDatabase+" AND (s.account_id,s.region,o.external_id)=($3,$4,$5)",
+				AND snapshot.engine=o.database_instance->>'engine'`+ownedObservedDatabase,
 			q.Tenant, q.Project, q.Account, q.Region, q.ID, q.Offset, q.Limit).
 			Scan(&result.ObservedAt, &result.Start, &result.End, &result.Total, &records)
 		if errors.Is(err, sql.ErrNoRows) {

@@ -71,6 +71,7 @@ type Operation struct {
 	InstanceResizeIntent            *InstanceResizeView            `json:"instance_resize_intent,omitempty"`
 	VolumeResizeIntent              *VolumeResizeView              `json:"volume_resize_intent,omitempty"`
 	DatabaseRenameIntent            *DatabaseRenameView            `json:"database_rename_intent,omitempty"`
+	DatabaseRecoveryIntent          *DatabaseRecoveryView          `json:"database_recovery_intent,omitempty"`
 	WorkloadScaleIntent             *provider.WorkloadScaleChange  `json:"workload_scale_intent,omitempty"`
 	ID                              string                         `json:"id"`
 	Account                         string                         `json:"account"`
@@ -488,6 +489,16 @@ func (s Store) Get(ctx context.Context, token string, scope identity.Scope, id s
 				return err
 			}
 			op.VolumeResizeIntent = &intent
+		}
+		if err == nil && op.Action == recoverDatabaseInstance {
+			var intent DatabaseRecoveryView
+			var spec []byte
+			err = tx.QueryRowContext(ctx, `SELECT spec,observed_at,provider_resource_id
+				FROM cmp_database_recovery_intents WHERE operation_id=$1`, id).Scan(&spec, &intent.ObservedAt, &intent.TargetID)
+			if err == nil {
+				err = json.Unmarshal(spec, &intent.DatabaseRecovery)
+			}
+			op.DatabaseRecoveryIntent = &intent
 		}
 		if err == nil && op.Action == renameDatabaseInstance {
 			var intent DatabaseRenameView

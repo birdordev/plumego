@@ -46,6 +46,7 @@ const operationsUsage = `usage: cloud-manager operations COMMAND TENANT PROJECT 
   resize-instance --idempotency-key KEY --if-match REVISION < request.json
   resize-volume --idempotency-key KEY --if-match REVISION < request.json
   rename-database-instance --idempotency-key KEY --if-match REVISION < request.json
+  recover-database-instance --idempotency-key KEY --if-match REVISION < request.json
   register-deployment < deployment.json
   get-deployment DEPLOYMENT
   report-deployment DEPLOYMENT < receipt.json

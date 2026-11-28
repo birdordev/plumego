@@ -119,13 +119,18 @@ func startDatabaseRenameWorker(t *testing.T, store operations.Store, f *database
 
 func retryNameChangeObservation(t *testing.T, store operations.Store, scope identity.Scope, reviewer, id string) {
 	t.Helper()
+	retryFixtureObservation(t, store, scope, reviewer, id, "fixture/verified-instance")
+}
+
+func retryFixtureObservation(t *testing.T, store operations.Store, scope identity.Scope, reviewer, id, evidence string) {
+	t.Helper()
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
 	ticker := time.NewTicker(20 * time.Millisecond)
 	defer ticker.Stop()
 	for {
 		result, err := store.RetryCreationObservation(ctx, reviewer, scope, id, operations.ObservationRetry{
-			EvidenceRef: "fixture/verified-instance",
+			EvidenceRef: evidence,
 		})
 		if err == nil && result.Status == "observing" {
 			return

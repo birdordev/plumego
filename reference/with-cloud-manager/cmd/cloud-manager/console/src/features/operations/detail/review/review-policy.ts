@@ -11,10 +11,12 @@ const observationActions = new Set([
 
 export function reviewChoices(op: OperationDetail) {
   const observationOnly = op.action.startsWith('create') || observationActions.has(op.action)
-  const observe = observationOnly || Boolean(op.can_retry_power_observation) ||
+  const recovery = op.action === 'recover-database-instance'
+  const observe = observationOnly || (recovery && Boolean(op.provider_request_id && op.database_recovery_intent?.target_id)) ||
+    Boolean(op.can_retry_power_observation) ||
     (op.action === 'copy-image' && op.image_copy_intent?.can_retry_observation) ||
     (op.action === 'rollback-snapshot' && op.snapshot_intent?.can_retry_observation) ||
     (op.action === 'retire-instance' && Boolean(op.provider_request_id))
-  const succeed = !observationOnly && op.action !== 'copy-image'
+  const succeed = !observationOnly && !recovery && op.action !== 'copy-image'
   return { observe, succeed, needsRecordID: Boolean(op.dns_record_creation_intent?.needs_record_id) }
 }

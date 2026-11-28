@@ -18,12 +18,16 @@ const backupFixtureURL = "https://fixture-download.invalid/backup?signature=fixt
 
 type databaseBackupsFixture struct {
 	*databaseFixture
-	mode  atomic.Int32
-	start time.Time
+	mode, restoreMode  atomic.Int32
+	restoreParentDrift atomic.Bool
+	start              time.Time
 }
 
 func (f *databaseBackupsFixture) serve(t *testing.T, w http.ResponseWriter, r *http.Request) {
 	t.Helper()
+	if f.serveRestoreWindows(t, w, r) {
+		return
+	}
 	action := r.Header.Get("X-TC-Action")
 	if action != "DescribeBackups" && action != "DescribeBaseBackups" && r.Header.Get("X-ACS-Action") != "DescribeBackups" &&
 		!strings.HasSuffix(r.URL.Path, "/backups") {

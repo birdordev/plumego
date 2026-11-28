@@ -17,6 +17,7 @@ export const actions: Readonly<Partial<Record<string, string>>> = {
   'resize-instance': '实例规格变更',
   'resize-volume': '云盘扩容',
   'rename-database-instance': '托管数据库改名',
+  'recover-database-instance': '托管数据库恢复到新实例',
   'rename-cache-instance': '托管缓存改名',
   'rename-load-balancer': '负载均衡改名',
   'create-dns-record': '添加公网 DNS 记录',

@@ -20,6 +20,7 @@ import (
 const assetsRoute = "/v1/tenants/:tenant/projects/:project/assets"
 const loadBalancerConfigurationRoute = assetsRoute + "/load-balancers/:asset/configuration"
 const databaseBackupsRoute = assetsRoute + "/databases/:asset/backups"
+const databaseRestoreWindowsRoute = assetsRoute + "/databases/:asset/restore-windows"
 const dnsRecordsRoute = assetsRoute + "/dns-zones/:asset/records"
 const bucketVersioningRoute = assetsRoute + "/object-buckets/:asset/versioning"
 const bucketEncryptionRoute = assetsRoute + "/object-buckets/:asset/encryption"
@@ -57,6 +58,13 @@ func databaseBackupsHandler(store inventory.Store, logger plumelog.StructuredLog
 	return serveInventory(databaseBackupsQuery, store.ReadDatabaseBackups,
 		func(w http.ResponseWriter, r *http.Request, page inventory.DatabaseBackupPage) error {
 			return contract.WriteResponse(w, r, http.StatusOK, page, nil)
+		}, logger)
+}
+
+func databaseRestoreWindowsHandler(store inventory.Store, logger plumelog.StructuredLogger) http.Handler {
+	return serveInventory(databaseRestoreWindowsQuery, store.ReadDatabaseRestoreWindows,
+		func(w http.ResponseWriter, r *http.Request, snapshot inventory.DatabaseRestoreWindows) error {
+			return contract.WriteResponse(w, r, http.StatusOK, snapshot, nil)
 		}, logger)
 }
 
@@ -114,6 +122,8 @@ func serveInventory[Q, T any](parse func(*http.Request) (Q, error), queryInvento
 			reply(contract.TypeConflict, "database backup snapshot changed")
 		case errors.Is(err, inventory.ErrDatabaseBackupsNotFound):
 			reply(contract.TypeNotFound, "database backup snapshot is unavailable")
+		case errors.Is(err, inventory.ErrDatabaseRestoreWindowsNotFound):
+			reply(contract.TypeNotFound, "database restore window snapshot is unavailable")
 		case errors.Is(err, inventory.ErrDNSRecordsNotFound):
 			reply(contract.TypeNotFound, "DNS zone records are unavailable")
 		case errors.Is(err, inventory.ErrBucketSettingNotFound):

@@ -495,6 +495,66 @@ cloud-manager assets database-backups TENANT PROJECT ASSET_ID --account ACCOUNT 
 
 仅存储备份 ID、状态、类型、方式、时间和厂商提供的大小。签名下载链接、备份名和库名均在采集时丢弃。快照显示的是查询时可见的备份元数据，恢复前仍需核对厂商的有效备份和实际可恢复范围。
 
+#### 托管数据库可恢复时间
+
+应用迁移 `0168_database_restore_windows`。运维对已盘点实例单独刷新可恢复时间，采集前后均点查同一实例并核对产品与引擎。凭据轮换会使旧快照不可见。限流、结果不完整或迟到采集均不会覆盖最近一次完整结果。
+
+```sh
+cloud-manager refresh-tencent-database-restore-windows TENANT ACCOUNT REGION ASSET_ID
+cloud-manager refresh-alibaba-database-restore-windows TENANT ACCOUNT REGION ASSET_ID
+cloud-manager refresh-huawei-database-restore-windows TENANT ACCOUNT REGION ASSET_ID
+cloud-manager assets database-restore-windows TENANT PROJECT ASSET_ID --account ACCOUNT --region REGION
+```
+
+| 产品 | 厂商接口与时间解释 |
+|---|---|
+| 腾讯云 MySQL | 使用 `DescribeRollbackRangeTime`。未带偏移的时间默认按北京时间解析，可通过 `database_backup_time_zones` 指定实例时区。 [接口](https://cloud.tencent.com/document/product/236/18726) |
+| 腾讯云 PostgreSQL | 使用 `DescribeAvailableRecoveryTime`，其时间固定为 UTC+8。 [接口](https://cloud.tencent.com/document/api/409/68070) |
+| 腾讯云 SQL Server | 使用 `DescribeRestoreTimeRange` 的源实例默认目标，响应范围为 `source_instance`。未带偏移的时间使用上述腾讯云实例时区配置。这是厂商报告的回档范围，单个数据库的可恢复性仍须另行核对。 [接口](https://cloud.tencent.cn/document/api/238/105136) |
+| 阿里云 RDS | MySQL、PostgreSQL 和 MariaDB 使用 `rds:DescribeLocalAvailableRecoveryTime`。阿里云 RDS SQL Server 保留备份元数据查询，当前无此恢复窗口入口。 [接口](https://help.aliyun.com/zh/rds/developer-reference/api-rds-2014-08-15-describelocalavailablerecoverytime) |
+| 华为云 RDS | MySQL、PostgreSQL 和 SQL Server 使用 `rds:instance:getRestoreTime`。厂商返回的 UTC 毫秒时间戳保持原有精度。 [接口](https://support.huaweicloud.com/api-rds/rds_09_0011.html) |
+
+项目成员可点击「查看可恢复时间」，或调用 `GET /v1/tenants/{tenant}/projects/{project}/assets/databases/{asset}/restore-windows?account=ACCOUNT&region=REGION`。返回快照时间、厂商报告范围和按起始时间排序的 UTC 时间窗，最多 512 段。厂商报告的间隔原样保留。无有效快照或不可见返回 404，明确报告无可恢复时间时返回 200 和空数组。该入口用于恢复规划，实际恢复需在目标云环境核验产品、目标与授权。
+
+#### 华为云 RDS MySQL 时间点恢复到新实例
+
+应用迁移 `0169_database_recovery`。项目操作员从可恢复时间详情发起申请，或调用 `POST /v1/tenants/{tenant}/projects/{project}/databases/recover`。申请固定源实例归属版本、观测快照、UTC 恢复点、目标名称和放置参数。恢复点必须落在一个连续时间段内。独立审批和适用的变更工单通过后，Worker 重新向厂商核对恢复点和可用区中的单机规格。
+
+Worker 在华为云私有配置中通过 `huawei_database_recovery_placements` 按地域设置允许的目标，未配置的地域关闭恢复派发。每项包含 `vpc_id`、`subnet_id`、`security_group_id`、`zone`、`flavor`、`storage_type` 和 `storage_gib`。目标 VPC 须与源实例不同，子网字段使用网络 ID。VPC、子网和安全组必须在同一项目和账号下有效盘点，提交与派发均核对归属。运维在启用前需验收目标子网和安全组的隔离。当前支持同地域的按需单机和 `CLOUDSSD`，申请参数须和 Worker 配置一致。
+
+```bash
+cloud-manager operations recover-database-instance TENANT PROJECT \
+  --idempotency-key recovery-001 --if-match 1 < request.json
+```
+
+```json
+{
+  "account": "huawei-rds-lab",
+  "region": "cn-north-4",
+  "source_id": "97000000000040008000000000000001in01",
+  "observed_at": "2026-11-28T02:00:00.123456Z",
+  "restore_time": "2026-11-28T01:50:02.125Z",
+  "name": "isolated-restore-test",
+  "vpc_id": "70000000-0000-4000-8000-000000000012",
+  "subnet_id": "70000000-0000-4000-8000-000000000013",
+  "security_group_id": "70000000-0000-4000-8000-000000000014",
+  "zone": "cn-north-4a",
+  "flavor": "rds.mysql.s1.large",
+  "storage_type": "CLOUDSSD",
+  "storage_gib": 40
+}
+```
+
+派发只执行一次，保持源实例的磁盘加密密钥配置。Worker 保存厂商任务和目标实例 ID，对账验证任务终态、目标网络、规格、容量、加密与无公网地址，再同事务登记项目归属、操作审计和终态发件箱。响应丢失时进入待复核。已保存完整回执的操作可由独立审批人只读续查。权限和响应字段见 [CreateRestoreInstance](https://support.huaweicloud.com/api-rds/rds_09_0008.html)、[ListFlavors](https://support.huaweicloud.com/api-rds/rds_06_0002.html) 和 [ListInstances](https://support.huaweicloud.com/api-rds/rds_01_0004.html)。
+
+#### 阿里云 RDS MySQL 时间点恢复到新实例
+
+阿里云使用相同的项目 API、CLI 和审批流程。当前覆盖同地域的 MySQL 基础版主实例与 ESSD PL1，目标使用按量付费和释放保护。通过 Worker 私有配置 `alibaba_database_recovery_placements` 按地域启用，配置字段包括 `vpc_id`、`subnet_id`、`zone`、`flavor`、`storage_type` 和 `storage_gib`。提交中 `storage_type` 为 `cloud_essd`，`security_group_id` 省略。目标 VPC 与源实例不同，vSwitch 必须属于目标 VPC 和申请的可用区。目标保留源规格，容量不得小于源实例。恢复点使用精确到秒的 UTC 时间。 [CloneDBInstance](https://help.aliyun.com/zh/rds/developer-reference/api-rds-2014-08-15-clonedbinstance)
+
+阿里云会继承源实例的白名单。派发前核对源连接地址均为私网、无附加 ECS 安全组、白名单仅含私网或回环地址，并核对 TDE 关闭及云盘加密状态明确。启用 RDS 服务密钥加密的 ESSD 克隆会校验目标使用同一服务密钥。当前受理范围不含客户密钥和 TDE。 [MySQL 整实例恢复](https://help.aliyun.com/en/rds/apsaradb-rds-for-mysql/restore-full-data-of-an-apsaradb-rds-for-mysql-instance) · [云盘加密](https://help.aliyun.com/zh/rds/apsaradb-rds-for-mysql/configure-the-disk-encryption-feature-for-an-apsaradb-rds-for-mysql-instance/)
+
+派发使用持久操作 ID 作为 `ClientToken`。对账按厂商返回的新实例 ID 精确查询，核对地域、实例状态、计费、放置、规格、容量、释放保护、私网端点、白名单和磁盘加密。回执不完整时进入待复核，完整回执可由独立审批人只读续查。启用前须在实际地域核验 IAM 权限、VPC 隔离、计费及恢复的数据。 [实例详情](https://help.aliyun.com/en/rds/developer-reference/api-rds-2014-08-15-describedbinstanceattribute) · [连接地址](https://help.aliyun.com/zh/rds/developer-reference/api-rds-2014-08-15-describedbinstancenetinfo)
+
 #### 托管数据库实例改名
 
 腾讯云 MySQL、PostgreSQL、SQL Server，阿里云 ApsaraDB RDS 和华为云 RDS v3 共用项目操作账本。改名修改实例显示名。Worker 账号配置的 `allow_database_rename` 默认关闭，沙箱验收后按账号启用。迁移至 `0105_database_rename_events` 后升级 API、Worker 和事件发布器。

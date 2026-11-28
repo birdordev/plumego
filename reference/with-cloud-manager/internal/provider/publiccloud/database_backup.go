@@ -31,15 +31,9 @@ func (c *Client) ReadDatabaseBackups(ctx context.Context, scope provider.Scope, 
 	if err := c.checkDatabaseBackupParent(ctx, scope, id, details); err != nil {
 		return nil, err
 	}
-	zone := databaseBackupChinaZone
-	if c.name == provider.TencentCVM {
-		if name := c.profile.DatabaseBackupTimeZones[id]; name != "" {
-			location, err := time.LoadLocation(name)
-			if err != nil || name == "Local" {
-				return nil, &provider.Failure{Kind: provider.Unsupported}
-			}
-			zone = location
-		}
+	zone, err := c.databaseBackupTimeZone(id)
+	if err != nil {
+		return nil, err
 	}
 	query := databaseBackupQuery{region: scope.Region, id: id, details: details, start: at.Add(-provider.DatabaseBackupWindow), end: at, zone: zone}
 	var reader func(context.Context, databaseBackupQuery, int) (databaseBackupPage, error)
@@ -91,6 +85,17 @@ func (c *Client) checkDatabaseBackupParent(ctx context.Context, scope provider.S
 
 // 腾讯云中国站备份接口使用未带时区的时间字段。
 var databaseBackupChinaZone = time.FixedZone("UTC+08", 8*60*60)
+
+func (c *Client) databaseBackupTimeZone(id string) (*time.Location, error) {
+	if name := c.profile.DatabaseBackupTimeZones[id]; c.name == provider.TencentCVM && name != "" {
+		location, err := time.LoadLocation(name)
+		if err != nil || name == "Local" {
+			return nil, &provider.Failure{Kind: provider.Unsupported}
+		}
+		return location, nil
+	}
+	return databaseBackupChinaZone, nil
+}
 
 func backupTime(raw string, zone *time.Location) (time.Time, error) {
 	for _, layout := range []string{time.RFC3339Nano, "2006-01-02T15:04Z07:00", "2006-01-02T15:04:05-0700", time.DateTime} {

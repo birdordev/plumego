@@ -51,32 +51,46 @@ func databaseBackupsQuery(r *http.Request) (inventory.DatabaseBackupQuery, error
 	return query, nil
 }
 
-func runDatabaseBackupsClient(ctx context.Context, args []string, address, token string, output io.Writer, transport http.RoundTripper) error {
+func runDatabaseSnapshotClient(ctx context.Context, args []string, address, token string, output io.Writer, transport http.RoundTripper) error {
 	usage := errors.New(assetsUsage)
 	if len(args) < 4 || !operationClientSegment(args[3]) {
 		return usage
 	}
-	flags := flag.NewFlagSet("assets database-backups", flag.ContinueOnError)
+	flags := flag.NewFlagSet("assets "+args[0], flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 	account, region := flags.String("account", "", ""), flags.String("region", "", "")
-	limit, offset := flags.Int("limit", 50, ""), flags.Int("offset", 0, "")
-	stamp := flags.String("observed-at", "", "")
-	if flags.Parse(args[4:]) != nil || flags.NArg() != 0 || !operationClientSegment(*account) || !operationClientSegment(*region) ||
-		*limit < 1 || *limit > 100 || *offset < 0 || *offset > provider.MaxDatabaseBackups || (*offset > 0 && *stamp == "") {
+	var limit, offset int
+	var stamp string
+	backups := args[0] == "database-backups"
+	if backups {
+		flags.IntVar(&limit, "limit", 50, "")
+		flags.IntVar(&offset, "offset", 0, "")
+		flags.StringVar(&stamp, "observed-at", "", "")
+	}
+	if flags.Parse(args[4:]) != nil || flags.NArg() != 0 || !operationClientSegment(*account) || !operationClientSegment(*region) {
 		return usage
 	}
-	params := url.Values{"account": {*account}, "region": {*region}, "offset": {strconv.Itoa(*offset)}, "limit": {strconv.Itoa(*limit)}}
-	if *stamp != "" {
-		if _, err := time.Parse(time.RFC3339Nano, *stamp); err != nil {
+	params := url.Values{"account": {*account}, "region": {*region}}
+	resource := "restore-windows"
+	if backups {
+		resource = "backups"
+		if limit < 1 || limit > 100 || offset < 0 || offset > provider.MaxDatabaseBackups || (offset > 0 && stamp == "") {
 			return usage
 		}
-		params.Set("observed_at", *stamp)
+		params.Set("offset", strconv.Itoa(offset))
+		params.Set("limit", strconv.Itoa(limit))
+		if stamp != "" {
+			if _, err := time.Parse(time.RFC3339Nano, stamp); err != nil {
+				return usage
+			}
+			params.Set("observed_at", stamp)
+		}
 	}
 	base, err := operationClientBase(address)
 	if err != nil {
 		return err
 	}
-	target := base.JoinPath("v1", "tenants", url.PathEscape(args[1]), "projects", url.PathEscape(args[2]), "assets", "databases", url.PathEscape(args[3]), "backups")
+	target := base.JoinPath("v1", "tenants", url.PathEscape(args[1]), "projects", url.PathEscape(args[2]), "assets", "databases", url.PathEscape(args[3]), resource)
 	target.RawQuery = params.Encode()
 	return runProjectRequest(ctx, operationRequestPlan{target: target, method: http.MethodGet, status: http.StatusOK}, token, nil, output, transport)
 }

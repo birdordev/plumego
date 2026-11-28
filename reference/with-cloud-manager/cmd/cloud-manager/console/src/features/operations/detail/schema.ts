@@ -3,6 +3,7 @@ import { operationSchema } from '../schema'
 import { deploymentViewSchema } from './bare-metal-deployment/schema'
 import { computeIntents } from './intents/compute'
 import { renameIntents } from './intents/asset-rename'
+import { databaseRecoveryIntent } from './intents/database-recovery'
 import { dnsIntents } from './intents/dns'
 import { loadBalancerIntents } from './intents/load-balancer'
 import { networkIntents } from './intents/network'
@@ -26,6 +27,7 @@ export const operationDetailSchema = operationSchema.extend({
     target_state: z.enum(['enabled', 'suspended']),
   }).optional(),
   bare_metal_deployment: deploymentViewSchema.optional(),
+  database_recovery_intent: databaseRecoveryIntent.optional(),
   ...computeIntents,
   ...renameIntents,
   ...dnsIntents,

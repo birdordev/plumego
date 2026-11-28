@@ -35,6 +35,7 @@ const volumeResizeRoute = volumesRoute + "/resize"
 const volumeReleaseRoute = volumesRoute + "/release"
 const volumeReleasePreviewRoute = volumesRoute + "/release-preview"
 const databaseRenameRoute = "/v1/tenants/:tenant/projects/:project/databases/rename"
+const databaseRecoveryRoute = "/v1/tenants/:tenant/projects/:project/databases/recover"
 const bareMetalPXERoute = "/v1/tenants/:tenant/projects/:project/bare-metal/pxe"
 const bareMetalPowerRoute = "/v1/tenants/:tenant/projects/:project/bare-metal/power"
 const cacheRenameRoute = "/v1/tenants/:tenant/projects/:project/caches/rename"
@@ -478,6 +479,10 @@ func volumeRevisionAndCapacityError() error {
 func databaseRenameRevisionError() error {
 	return contract.NewErrorBuilder().Type(contract.TypePreconditionFailed).
 		Message("current database name, ownership revision and inventory required").Build()
+}
+
+func databaseRecoveryRevisionError() error {
+	return contract.NewErrorBuilder().Type(contract.TypePreconditionFailed).Message("current database ownership, recovery window and target placement required").Build()
 }
 
 func loadBalancerRenameRevisionError() error {

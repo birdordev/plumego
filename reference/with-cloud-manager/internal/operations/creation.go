@@ -394,6 +394,9 @@ func (s Store) recordLaunchReceipt(ctx context.Context, task mq.Task, kind provi
 			case provider.DNSZone:
 				query = `UPDATE cmp_dns_record_creation_intents SET record_id=$2
 					WHERE operation_id=$1 AND (record_id='' OR record_id=$2) RETURNING operation_id`
+			case provider.DatabaseInstance:
+				query = `UPDATE cmp_database_recovery_intents SET provider_resource_id=$2
+					WHERE operation_id=$1 AND (provider_resource_id='' OR provider_resource_id=$2) RETURNING operation_id`
 			default:
 				query = `UPDATE cmp_network_intents SET provider_resource_id=$2
 					WHERE operation_id=$1 AND (provider_resource_id='' OR provider_resource_id=$2) RETURNING operation_id`

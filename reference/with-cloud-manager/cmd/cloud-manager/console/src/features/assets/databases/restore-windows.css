@@ -1,0 +1,12 @@
+.database-restore-windows .table-scroll {
+  margin-block-end: .75rem;
+}
+
+.database-restore-windows table {
+  min-inline-size: 0;
+  table-layout: fixed;
+}
+
+.database-restore-windows th {
+  white-space: normal;
+}

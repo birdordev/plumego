@@ -145,6 +145,19 @@ func (s Store) RetryCreationObservation(ctx context.Context, token string, scope
 			query = `UPDATE cmp_database_rename_intents SET observation_reviewer=$2,
 				observation_membership_revision=$3,observation_credential_revision=$4 WHERE operation_id=$1`
 		}
+		if op.Action == recoverDatabaseInstance {
+			var asset string
+			if err := tx.QueryRowContext(ctx, `SELECT provider_resource_id FROM cmp_database_recovery_intents
+				WHERE operation_id=$1 FOR UPDATE`, id).Scan(&asset); err != nil {
+				return err
+			}
+			if !provider.ValidDatabaseRecoveryInstanceID(access.Provider, asset) || !requestIDPattern.MatchString(op.ProviderRequestID) ||
+				access.CredentialRevision != credential {
+				return ErrConflict
+			}
+			query = `UPDATE cmp_database_recovery_intents SET observation_reviewer=$2,
+				observation_membership_revision=$3,observation_credential_revision=$4 WHERE operation_id=$1`
+		}
 		if op.Action == renameCacheInstance {
 			query = `UPDATE cmp_cache_rename_intents SET observation_reviewer=$2,
 				observation_membership_revision=$3,observation_credential_revision=$4 WHERE operation_id=$1`

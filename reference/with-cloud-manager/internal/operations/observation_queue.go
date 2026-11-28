@@ -24,7 +24,7 @@ func supportsObservationRetry(action string) bool {
 		"copy-image", "delete-image", "delete-network", "delete-subnet", "delete-security-group", "revoke-security-group-rule",
 		"release-elastic-ip", "bind-elastic-ip", "unbind-elastic-ip", "rename-load-balancer", "rename-load-balancer-listener",
 		"rename-load-balancer-target-group", "set-load-balancer-backend-weight", "detach-load-balancer-backend", "attach-load-balancer-backend",
-		setDNSRecordStatus, createDNSRecord, deleteDNSRecord, updateDNSRecord, "scale-workload", "rename-database-instance", "rename-cache-instance",
+		setDNSRecordStatus, createDNSRecord, deleteDNSRecord, updateDNSRecord, "scale-workload", renameDatabaseInstance, recoverDatabaseInstance, "rename-cache-instance",
 		resizeVolume, resizeInstance, setBucketVersioning, enableBucketEncryption, releaseVolume, "retire-instance", "power-on-bare-metal", "shutdown-bare-metal", "stage-bare-metal-pxe", "cancel-bare-metal-pxe":
 		return true
 	default:

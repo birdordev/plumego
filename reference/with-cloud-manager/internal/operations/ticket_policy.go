@@ -155,7 +155,7 @@ func ticketPolicyAction(action string) bool {
 		createElasticIP, releaseElasticIP, bindElasticIP, unbindElasticIP,
 		createSnapshot, deleteSnapshot, rollbackSnapshot, restoreSnapshot, resizeVolume, resizeInstance, setBucketVersioning, enableBucketEncryption, createVolume, releaseVolume, createImage, copyImage, deleteImage,
 		scaleWorkload, createDNSRecord, setDNSRecordStatus, updateDNSRecord, deleteDNSRecord,
-		renameLoadBalancer, renameLoadBalancerListener, renameLoadBalancerTargetGroup, renameDatabaseInstance, renameCacheInstance,
+		renameLoadBalancer, renameLoadBalancerListener, renameLoadBalancerTargetGroup, renameDatabaseInstance, recoverDatabaseInstance, renameCacheInstance,
 		setLoadBalancerBackendWeight, detachLoadBalancerBackend, attachLoadBalancerBackend:
 		return true
 	default:

@@ -51,7 +51,7 @@ func newAPI(db *sql.DB, addr string, console *consoleConfig) (*core.App, error) 
 		inventory.TagPolicyAlertsMigration, operations.FirstLeaseMigration, operations.QueueSnapshotMigration, alerts.OperationQueueMigration,
 		operations.QueueFindingsMigration, operations.ObservationQueueRepairMigration, operations.PowerObservationMigration,
 		inventory.VolumeInventoryMigration, operations.VolumeResizeMigration, operations.VolumeCreationMigration, operations.VolumeReleaseMigration,
-		inventory.InstanceTypeInventoryMigration, operations.InstanceResizeMigration, inventory.InstanceResizeOptionsMigration, operations.BucketVersioningMigration, operations.BucketEncryptionEnableMigration, operations.DNSRecordUpdateMigration, billing.AllocationPublishMigration, inventory.DatabaseBackupsMigration)
+		inventory.InstanceTypeInventoryMigration, operations.InstanceResizeMigration, inventory.InstanceResizeOptionsMigration, operations.BucketVersioningMigration, operations.BucketEncryptionEnableMigration, operations.DNSRecordUpdateMigration, billing.AllocationPublishMigration, inventory.DatabaseBackupsMigration, inventory.DatabaseRestoreWindowsMigration, operations.DatabaseRecoveryMigration)
 	additionalVersionList := strings.Join(additionalVersions, ",")
 	ready := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx, cancel := context.WithTimeout(r.Context(), time.Second)
@@ -96,6 +96,7 @@ func newAPI(db *sql.DB, addr string, console *consoleConfig) (*core.App, error) 
 		app.Get(assetsRoute+"/topology", assetHandler(store.Topology, app.Logger())),
 		app.Get(loadBalancerConfigurationRoute, loadBalancerConfigurationHandler(store, app.Logger())),
 		app.Get(databaseBackupsRoute, databaseBackupsHandler(store, app.Logger())),
+		app.Get(databaseRestoreWindowsRoute, databaseRestoreWindowsHandler(store, app.Logger())),
 		app.Get(dnsRecordsRoute, dnsRecordsHandler(store, app.Logger())),
 		app.Get(bucketVersioningRoute, bucketSettingHandler(store.ReadBucketVersioning, app.Logger())),
 		app.Post(bucketEncryptionEnableRoute, versionedOperationHandler(operationStore.SubmitBucketEncryption, bucketEncryptionRevisionError, app.Logger())),
@@ -147,6 +148,7 @@ func newAPI(db *sql.DB, addr string, console *consoleConfig) (*core.App, error) 
 		app.Post(volumeReleaseRoute, versionedOperationHandler(operationStore.SubmitVolumeRelease, volumeRevisionAndCapacityError, app.Logger())),
 		app.Post(volumeResizeRoute, versionedOperationHandler(operationStore.SubmitVolumeResize, volumeRevisionAndCapacityError, app.Logger())),
 		app.Post(databaseRenameRoute, versionedOperationHandler(operationStore.SubmitDatabaseRename, databaseRenameRevisionError, app.Logger())),
+		app.Post(databaseRecoveryRoute, versionedOperationHandler(operationStore.SubmitDatabaseRecovery, databaseRecoveryRevisionError, app.Logger())),
 		app.Post(deploymentsRoute, deploymentHandler),
 		app.Get(deploymentRoute, deploymentHandler),
 		app.Post(deploymentReceiptRoute, deploymentHandler),
