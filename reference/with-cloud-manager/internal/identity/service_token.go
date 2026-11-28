@@ -4,19 +4,15 @@ import (
 	"context"
 	"crypto/sha256"
 	"database/sql"
-	_ "embed"
 	"errors"
 
 	"with-cloud-manager/internal/dbschema"
 )
 
-//go:embed 0003_service_tokens.sql
-var tokenSchema string
-
 var ErrUnauthenticated = errors.New("authentication required")
 
 func MigrateServiceTokens(ctx context.Context, db *sql.DB) error {
-	return dbschema.Apply(ctx, db, "0003_service_tokens", tokenSchema)
+	return dbschema.Apply(ctx, db, "0003_service_tokens")
 }
 
 func (s Store) AuthenticateService(ctx context.Context, token string) (Scope, error) {

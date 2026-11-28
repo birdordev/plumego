@@ -3,16 +3,12 @@ package inventory
 import (
 	"context"
 	"database/sql"
-	_ "embed"
 	"encoding/json"
 	"errors"
 	"time"
 
 	"with-cloud-manager/internal/provider"
 )
-
-//go:embed 0088_cluster_workload_checkpoints.sql
-var workloadCheckpointSchema string
 
 type workloadBaseline struct {
 	snapshot    string

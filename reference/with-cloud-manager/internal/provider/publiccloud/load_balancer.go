@@ -260,7 +260,7 @@ func (row huaweiLoadBalancer) asset() (provider.Object, error) {
 	byID := make(map[string]string, len(row.PublicIPs)+len(row.EIPs))
 	allocated := row.PublicIPs
 	for _, eip := range row.EIPs {
-		allocated = append(allocated, huaweiLBPublicIP{ID: eip.ID, Address: eip.Address})
+		allocated = append(allocated, huaweiLBPublicIP(eip))
 	}
 	for _, ip := range allocated {
 		if !huaweiResourceID.MatchString(ip.ID) || ip.Address == "" {

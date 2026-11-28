@@ -109,7 +109,8 @@ func (b *soapBody) UnmarshalXML(decoder *xml.Decoder, start xml.StartElement) er
 				return &provider.Failure{Kind: provider.InvalidResponse}
 			}
 			b.found = true
-			if element.Name == (xml.Name{Space: soapNamespace, Local: "Fault"}) {
+			switch element.Name {
+			case xml.Name{Space: soapNamespace, Local: "Fault"}:
 				var fault struct {
 					Detail struct {
 						Type struct{ XMLName xml.Name } `xml:",any"`
@@ -122,11 +123,11 @@ func (b *soapBody) UnmarshalXML(decoder *xml.Decoder, start xml.StartElement) er
 				if b.fault == "" {
 					b.fault = "unknown"
 				}
-			} else if element.Name == (xml.Name{Space: vimNamespace, Local: b.expected}) {
+			case xml.Name{Space: vimNamespace, Local: b.expected}:
 				if err := decoder.DecodeElement(b.out, &element); err != nil {
 					return err
 				}
-			} else {
+			default:
 				return &provider.Failure{Kind: provider.InvalidResponse}
 			}
 		}

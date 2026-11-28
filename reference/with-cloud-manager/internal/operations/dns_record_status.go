@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"database/sql"
-	_ "embed"
 	"encoding/json"
 	"errors"
 	"time"
@@ -15,9 +14,6 @@ import (
 	"with-cloud-manager/internal/inventory"
 	"with-cloud-manager/internal/provider"
 )
-
-//go:embed 0072_dns_record_status.sql
-var dnsRecordStatusSchema string
 
 const setDNSRecordStatus = "set-dns-record-status"
 

@@ -95,13 +95,13 @@ func checkSchedulePublicationFence(t *testing.T, db *sql.DB, app http.Handler, p
 	wait()
 	assertScheduleAssets(t, db, "first", false)
 	scheduleResponse(t, app, "PATCH", path, inventoryAdminToken, `"2"`, `{"interval_seconds":600,"enabled":true}`, 200)
-	finished := make(chan error, 1)
+	finished := make(chan struct{}, 1)
 	stop, wait = runManagedSchedule(t, db, func(ctx context.Context, task controller.Task) (controller.Publish, error) {
 		return nil, scanManagedFixture(ctx, db, task, func(_ context.Context, cursor string) (provider.Page, error) {
 			if cursor != "next" {
 				return provider.Page{}, errors.New("managed plan did not resume its checkpoint")
 			}
-			defer func() { finished <- nil }()
+			finished <- struct{}{}
 			return provider.Page{Objects: []provider.Object{{ID: "second"}}}, nil
 		})
 	})

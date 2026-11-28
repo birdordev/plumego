@@ -3,16 +3,12 @@ package inventory
 import (
 	"context"
 	"database/sql"
-	_ "embed"
 
 	"with-cloud-manager/internal/dbschema"
 )
 
-//go:embed 0009_tag_assignment.sql
-var tagAssignmentSchema string
-
 func migrateTagAssignment(ctx context.Context, db *sql.DB) error {
-	return dbschema.Apply(ctx, db, "0009_tag_assignment", tagAssignmentSchema)
+	return dbschema.Apply(ctx, db, "0009_tag_assignment")
 }
 
 const eligibleRuleProject = `rule.state='mapped' AND (rule.project_id=a.project_id OR EXISTS (

@@ -5,7 +5,6 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"database/sql"
-	_ "embed"
 	"encoding/json"
 	"errors"
 
@@ -18,14 +17,11 @@ import (
 	"with-cloud-manager/internal/provider"
 )
 
-//go:embed 0159_volume_release.sql
-var volumeReleaseSchema string
-
 const VolumeReleaseMigration = "0159_volume_release"
 const releaseVolume = "release-volume"
 
 func MigrateVolumeRelease(ctx context.Context, db *sql.DB) error {
-	return dbschema.Apply(ctx, db, VolumeReleaseMigration, volumeReleaseSchema)
+	return dbschema.Apply(ctx, db, VolumeReleaseMigration)
 }
 
 const volumeChangeConflict = `EXISTS (

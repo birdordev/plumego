@@ -3,18 +3,14 @@ package alerts
 import (
 	"context"
 	"database/sql"
-	_ "embed"
 
 	"with-cloud-manager/internal/dbschema"
 )
 
 const OperationQueueMigration = "0152_operation_queue_alerts"
 
-//go:embed 0152_operation_queue_alerts.sql
-var operationQueueSchema string
-
 func MigrateOperationQueue(ctx context.Context, db *sql.DB) error {
-	return dbschema.Apply(ctx, db, OperationQueueMigration, operationQueueSchema)
+	return dbschema.Apply(ctx, db, OperationQueueMigration)
 }
 
 // EvaluateOperationQueueAlerts 在已领取的项目检查事务内写入队列告警。

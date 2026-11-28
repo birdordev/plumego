@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"database/sql"
-	_ "embed"
 	"encoding/json"
 	"errors"
 	"time"
@@ -17,14 +16,11 @@ import (
 	"with-cloud-manager/internal/provider"
 )
 
-//go:embed 0164_bucket_encryption_enable.sql
-var bucketEncryptionEnableSchema string
-
 const BucketEncryptionEnableMigration = "0164_bucket_encryption_enable"
 const enableBucketEncryption = "enable-bucket-encryption"
 
 func MigrateBucketEncryptionEnable(ctx context.Context, db *sql.DB) error {
-	return dbschema.Apply(ctx, db, BucketEncryptionEnableMigration, bucketEncryptionEnableSchema)
+	return dbschema.Apply(ctx, db, BucketEncryptionEnableMigration)
 }
 
 type BucketEncryptionInput struct {

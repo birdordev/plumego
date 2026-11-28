@@ -3,7 +3,6 @@ package operations
 import (
 	"context"
 	"database/sql"
-	_ "embed"
 	"encoding/json"
 	"errors"
 	"slices"
@@ -15,12 +14,6 @@ import (
 	"with-cloud-manager/internal/identity"
 	"with-cloud-manager/internal/provider"
 )
-
-//go:embed 0101_change_tickets.sql
-var changeTicketSchema string
-
-//go:embed 0102_change_ticket_events.sql
-var changeTicketEventsSchema string
 
 var (
 	ErrTicketNotFound = errors.New("change ticket policy not found")
@@ -41,11 +34,11 @@ type TicketPolicy struct {
 }
 
 func migrateChangeTickets(ctx context.Context, db *sql.DB) error {
-	return dbschema.Apply(ctx, db, "0101_change_tickets", changeTicketSchema)
+	return dbschema.Apply(ctx, db, "0101_change_tickets")
 }
 
 func MigrateChangeTicketEvents(ctx context.Context, db *sql.DB) error {
-	return dbschema.Apply(ctx, db, "0102_change_ticket_events", changeTicketEventsSchema)
+	return dbschema.Apply(ctx, db, "0102_change_ticket_events")
 }
 
 func (s Store) GetTicketPolicy(ctx context.Context, token string, scope identity.Scope, revision int64) (policy TicketPolicy, err error) {

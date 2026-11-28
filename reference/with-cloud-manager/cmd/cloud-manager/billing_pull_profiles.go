@@ -98,7 +98,8 @@ func newBillingPullSource(profile billingPullProfile, transport http.RoundTrippe
 		return billingPullSource{}, errBillingPullProfiles
 	}
 	for _, object := range profile.Objects {
-		if object.SHA256 != "" || !(strings.Contains(object.Key, billingPeriodToken) || strings.Contains(object.Key, billingCompactPeriodToken)) {
+		hasPeriod := strings.Contains(object.Key, billingPeriodToken) || strings.Contains(object.Key, billingCompactPeriodToken)
+		if object.SHA256 != "" || !hasPeriod {
 			return billingPullSource{}, errBillingPullProfiles
 		}
 	}

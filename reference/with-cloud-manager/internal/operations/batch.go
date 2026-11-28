@@ -7,7 +7,6 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	"database/sql"
-	_ "embed"
 	"encoding/json"
 	"errors"
 	"slices"
@@ -19,9 +18,6 @@ import (
 	"with-cloud-manager/internal/inventory"
 	"with-cloud-manager/internal/provider"
 )
-
-//go:embed 0023_operation_batches.sql
-var operationBatchSchema string
 
 const MaxBatchItems = 25
 

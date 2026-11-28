@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"database/sql"
-	_ "embed"
 	"encoding/json"
 	"errors"
 
@@ -14,9 +13,6 @@ import (
 	"with-cloud-manager/internal/inventory"
 	"with-cloud-manager/internal/provider"
 )
-
-//go:embed 0064_load_balancer_backend_weight.sql
-var loadBalancerBackendWeightSchema string
 
 const setLoadBalancerBackendWeight = "set-load-balancer-backend-weight"
 

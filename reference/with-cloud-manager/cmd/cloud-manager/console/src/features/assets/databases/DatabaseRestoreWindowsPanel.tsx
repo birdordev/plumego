@@ -7,6 +7,7 @@ import { timestamp } from '../../../shared/display/time'
 import { request } from '../../session/client'
 import type { Asset } from '../types'
 import { showDatabaseRecovery } from './recovery'
+import { recoveryPlacement } from './recovery-placement'
 import { databaseRestoreWindowsSchema } from './schema'
 import './restore-windows.css'
 
@@ -32,6 +33,7 @@ function RestoreWindows({ target, asset, canExecute, signal }: Props) {
     return <p role="alert">{requestErrorMessage(result.error)}</p>
   }
   const snapshot = result.data
+  const placement = canExecute && asset.ownership_revision > 0 && snapshot.scope === 'instance' ? recoveryPlacement(asset) : undefined
   return <>
     <DetailFields fields={[
       ['数据库实例', asset.name], ['观测时间', timestamp(snapshot.observed_at)],
@@ -45,9 +47,8 @@ function RestoreWindows({ target, asset, canExecute, signal }: Props) {
           <time dateTime={window.end_at}>{formatUTC(window.end_at)}</time>,
         ],
       }))} /> : <p>厂商当前报告无可恢复时间段。</p>}
-    {canExecute && asset.ownership_revision > 0 && (asset.provider === 'huawei-ecs' || asset.provider === 'alibaba-ecs') &&
-      asset.database_instance?.engine === 'mysql' && snapshot.windows.length > 0
-      ? <button type="button" onClick={() => showDatabaseRecovery(asset, snapshot)}>申请恢复到新实例</button>
+    {placement && snapshot.windows.length > 0
+      ? <button type="button" onClick={() => showDatabaseRecovery(asset, snapshot, placement)}>申请恢复到新实例</button>
       : null}
   </>
 }

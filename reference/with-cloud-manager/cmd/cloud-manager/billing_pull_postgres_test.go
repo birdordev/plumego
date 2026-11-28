@@ -83,9 +83,10 @@ func TestBillingPullSignedProviderExports(t *testing.T) {
 			const encodedObject = "/2026-11/%E8%B4%A6%E5%8D%95%20%2B%E5%88%86%E5%8D%B7%231"
 			key := object + "." + test.format
 			host := test.bucket + ".cos." + test.region + ".myqcloud.com"
-			if test.vendor == provider.AlibabaECS {
+			switch test.vendor {
+			case provider.AlibabaECS:
 				host = test.bucket + ".oss-" + test.region + ".aliyuncs.com"
-			} else if test.vendor == provider.HuaweiECS {
+			case provider.HuaweiECS:
 				host = test.bucket + ".obs." + test.region + ".myhuaweicloud.com"
 			}
 			server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -55,6 +55,9 @@ func (c *Client) PrepareDatabaseRecovery(ctx context.Context, scope provider.Sco
 	if c.name == provider.AlibabaECS {
 		return c.prepareAlibabaDatabaseRecovery(ctx, scope.Region, spec, token)
 	}
+	if c.name == provider.TencentCVM {
+		return c.prepareTencentDatabaseRecovery(ctx, scope, spec, token)
+	}
 	return c.prepareHuaweiDatabaseRecovery(ctx, scope.Region, spec)
 }
 
@@ -159,9 +162,12 @@ func (c *Client) createHuaweiRecoveryInstance(ctx context.Context, region string
 	return provider.LaunchReceipt{RequestID: result.JobID, ResourceID: result.Instance.ID}, nil
 }
 
-func (c *Client) ObserveDatabaseRecovery(ctx context.Context, scope provider.Scope, spec provider.DatabaseRecovery, receipt provider.LaunchReceipt) (provider.Object, error) {
+func (c *Client) ObserveDatabaseRecovery(ctx context.Context, scope provider.Scope, spec provider.DatabaseRecovery, token string, receipt provider.LaunchReceipt) (provider.Object, error) {
 	if err := c.checkDatabaseRecoveryScope(scope, spec); err != nil {
 		return provider.Object{}, err
+	}
+	if c.name == provider.TencentCVM {
+		return c.observeTencentDatabaseRecovery(ctx, scope, spec, token, receipt)
 	}
 	if !resourceID.MatchString(receipt.RequestID) || !provider.ValidDatabaseRecoveryInstanceID(c.name, receipt.ResourceID) || receipt.ResourceID == spec.SourceID {
 		return provider.Object{}, &provider.Failure{Kind: provider.InvalidResponse}

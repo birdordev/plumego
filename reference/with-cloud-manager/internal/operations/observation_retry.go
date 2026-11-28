@@ -151,8 +151,9 @@ func (s Store) RetryCreationObservation(ctx context.Context, token string, scope
 				WHERE operation_id=$1 FOR UPDATE`, id).Scan(&asset); err != nil {
 				return err
 			}
-			if !provider.ValidDatabaseRecoveryInstanceID(access.Provider, asset) || !requestIDPattern.MatchString(op.ProviderRequestID) ||
-				access.CredentialRevision != credential {
+			validAsset := provider.ValidDatabaseRecoveryInstanceID(access.Provider, asset) || (access.Provider == provider.TencentCVM && asset == "")
+			validReceipt := requestIDPattern.MatchString(op.ProviderRequestID) || (access.Provider == provider.TencentCVM && op.ProviderRequestID == "")
+			if !validAsset || !validReceipt || access.CredentialRevision != credential {
 				return ErrConflict
 			}
 			query = `UPDATE cmp_database_recovery_intents SET observation_reviewer=$2,

@@ -3,7 +3,6 @@ package operations
 import (
 	"context"
 	"database/sql"
-	_ "embed"
 	"errors"
 	"time"
 
@@ -16,11 +15,8 @@ import (
 
 const BareMetalReclaimRecoveriesMigration = "0122_bare_metal_reclaim_recoveries"
 
-//go:embed 0122_bare_metal_reclaim_recoveries.sql
-var bareMetalReclaimRecoveriesSchema string
-
 func MigrateBareMetalReclaimRecoveries(ctx context.Context, db *sql.DB) error {
-	return dbschema.Apply(ctx, db, BareMetalReclaimRecoveriesMigration, bareMetalReclaimRecoveriesSchema)
+	return dbschema.Apply(ctx, db, BareMetalReclaimRecoveriesMigration)
 }
 
 type BareMetalReclaimRecoveryInput struct {

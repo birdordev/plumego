@@ -5,7 +5,6 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"database/sql"
-	_ "embed"
 	"encoding/json"
 	"errors"
 
@@ -16,15 +15,6 @@ import (
 	"with-cloud-manager/internal/inventory"
 	"with-cloud-manager/internal/provider"
 )
-
-//go:embed 0052_network_deletion.sql
-var networkDeletionSchema string
-
-//go:embed 0053_security_group_deletion.sql
-var securityGroupDeletionSchema string
-
-//go:embed 0055_network_deletion_backfill.sql
-var networkDeletionBackfillSchema string
 
 const deleteNetwork = "delete-network"
 const deleteSubnet = "delete-subnet"

@@ -3,13 +3,13 @@ package inventory
 import (
 	"context"
 	"database/sql"
-	_ "embed"
 	"encoding/json"
 	"regexp"
 	"strings"
 	"time"
 
 	"with-cloud-manager/internal/provider"
+	"with-cloud-manager/migrations"
 )
 
 const DefaultBucketProtectionWindow = 86400
@@ -108,9 +108,6 @@ const bucketProtectionBase = `WITH visible AS (
 		AND ($5='' OR o.object_bucket->>'location'=$5)
 )`
 
-//go:embed bucket_protection.sql
-var bucketProtectionSQL string
-
 func (s Store) BucketProtection(ctx context.Context, token string, q BucketProtectionQuery) (BucketProtectionReport, error) {
 	account, id, err := q.position()
 	if err != nil {
@@ -120,7 +117,7 @@ func (s Store) BucketProtection(ctx context.Context, token string, q BucketProte
 	var items []byte
 	err = s.readProject(ctx, token, Query{Tenant: q.Tenant, Project: q.Project}, func(tx *sql.Tx) error {
 		summary := &report.Summary
-		return tx.QueryRowContext(ctx, bucketProtectionBase+bucketProtectionSQL,
+		return tx.QueryRowContext(ctx, bucketProtectionBase+migrations.BucketProtection(),
 			q.Tenant, q.Project, q.Provider, q.Account, q.Location, q.Window, q.Finding, account, id, q.Limit+1).Scan(
 			&report.AsOf, &summary.Total, &summary.InventoryUnavailable,
 			&summary.Encryption.Fresh, &summary.Encryption.Stale, &summary.Encryption.Unobserved, &summary.Encryption.Flagged,

@@ -3,7 +3,6 @@ package billing
 import (
 	"context"
 	"database/sql"
-	_ "embed"
 	"encoding/json"
 	"errors"
 	"slices"
@@ -13,9 +12,6 @@ import (
 	"with-cloud-manager/internal/dbschema"
 	"with-cloud-manager/internal/provider"
 )
-
-//go:embed 0096_billing_pull.sql
-var pullSchema string
 
 var ErrPullProfile = errors.New("billing pull profile generation conflicts with the active configuration")
 var ErrPullLease = errors.New("billing pull lease expired or was replaced")
@@ -61,7 +57,7 @@ type PullStatus struct {
 }
 
 func MigratePulls(ctx context.Context, db *sql.DB) error {
-	return dbschema.Apply(ctx, db, "0096_billing_pull", pullSchema)
+	return dbschema.Apply(ctx, db, "0096_billing_pull")
 }
 
 func pullJobID(key Key) string {
@@ -69,7 +65,7 @@ func pullJobID(key Key) string {
 }
 
 func NewPuller(store Store, job PullJob, reader PullReader) (Puller, error) {
-	if !job.Key.Valid() || job.Generation < 1 || job.IntervalSeconds < MinPullInterval || job.IntervalSeconds > MaxPullInterval ||
+	if !job.Valid() || job.Generation < 1 || job.IntervalSeconds < MinPullInterval || job.IntervalSeconds > MaxPullInterval ||
 		!validID(job.Region) || !validID(job.Bucket) || reader == nil || len(job.Objects) < 1 || len(job.Objects) > MaxParts ||
 		job.Manifest.validate(job.Source) != nil {
 		return Puller{}, ErrInvalid

@@ -3,15 +3,11 @@ package inventory
 import (
 	"context"
 	"database/sql"
-	_ "embed"
 	"errors"
 
 	"with-cloud-manager/internal/identity"
 	"with-cloud-manager/internal/provider"
 )
-
-//go:embed 0108_cache_rename_reservations.sql
-var cacheRenameReservationsSchema string
 
 func LockCacheScope(ctx context.Context, tx *sql.Tx, tenant, account, region string) (int64, error) {
 	return lockInventoryScope(ctx, tx, tenant, account, region, provider.CacheInstance)

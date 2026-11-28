@@ -6,6 +6,7 @@ import { request } from '../../session/client'
 const collection = '/inventory-schedules'
 const schedule = z.object({
   id: z.string().regex(/^[1-9][0-9]*$/), region: z.string(), kind: z.string().min(1), revision,
+  target_id: z.string().optional(),
   interval_seconds: z.int().min(60).max(604800), enabled: z.boolean(), next_at: time, failures: z.int().nonnegative(),
   last_outcome: z.enum(['success', 'failure', 'throttled']).optional(), last_finished_at: time.optional(),
   bucket_batch_rejected: z.int().min(0).max(16).optional(),
@@ -13,7 +14,7 @@ const schedule = z.object({
 const page = pageSchema(schedule)
 export type Schedule = z.infer<typeof schedule>
 export type Settings = { interval_seconds: number; enabled: boolean; run_now?: boolean }
-export type NewSchedule = Settings & { kind: string; region: string }
+export type NewSchedule = Settings & { kind: string; region: string; target_id?: string }
 
 export function listSchedules(target: string, after: string, signal: AbortSignal) {
   const params = new URLSearchParams({ limit: '20' })

@@ -5,7 +5,6 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"database/sql"
-	_ "embed"
 	"encoding/json"
 	"errors"
 
@@ -16,9 +15,6 @@ import (
 	"with-cloud-manager/internal/inventory"
 	"with-cloud-manager/internal/provider"
 )
-
-//go:embed 0038_elastic_ip_release.sql
-var elasticIPReleaseSchema string
 
 const releaseElasticIP = "release-elastic-ip"
 

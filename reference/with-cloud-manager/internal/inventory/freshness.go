@@ -3,15 +3,13 @@ package inventory
 import (
 	"context"
 	"database/sql"
-	_ "embed"
 	"regexp"
 	"strconv"
 	"strings"
 	"time"
-)
 
-//go:embed freshness.sql
-var freshnessSQL string
+	"with-cloud-manager/migrations"
+)
 
 const DefaultFreshnessWindow = 900
 const DefaultFreshnessLimit = 50
@@ -114,7 +112,7 @@ func (s Store) Freshness(ctx context.Context, token string, q FreshnessQuery) (F
 	err = s.readProject(ctx, token, Query{Tenant: q.Tenant, Project: q.Project}, func(tx *sql.Tx) error {
 		args := []any{q.Tenant, q.Project, q.Provider, q.Account, q.Window}
 		dispatch := &report.DispatchSummary
-		err := tx.QueryRowContext(ctx, freshnessSQL+`
+		err := tx.QueryRowContext(ctx, migrations.Freshness()+`
 			SELECT transaction_timestamp(),count(*),count(*) FILTER (WHERE state='fresh'),
 				count(*) FILTER (WHERE state='stale'),count(*) FILTER (WHERE state='pending'),
 				count(*) FILTER (WHERE dispatch_state='scheduled'),count(*) FILTER (WHERE dispatch_state='ready'),
@@ -138,7 +136,7 @@ func (s Store) Freshness(ctx context.Context, token string, q FreshnessQuery) (F
 			pageArgs = append(pageArgs, afterTime)
 			pageOrder = "AND ($10::timestamptz IS NULL OR (next_at,schedule_id)>($10,$9)) ORDER BY next_at,schedule_id LIMIT $8"
 		}
-		rows, err := tx.QueryContext(ctx, freshnessSQL+`
+		rows, err := tx.QueryContext(ctx, migrations.Freshness()+`
 			SELECT schedule_id,account_id,provider,region,kind,state,running,completed_at,next_at,
 				dispatch_state,schedule_lease_until,account_lease_until,account_cooldown_until
 			FROM freshness WHERE ($6='' OR state=$6) AND ($7='' OR dispatch_state=$7)

@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/rand"
 	"database/sql"
-	_ "embed"
 	"errors"
 	"regexp"
 	"time"
@@ -18,13 +17,10 @@ import (
 
 const BareMetalDeploymentMigration = "0120_bare_metal_deployments"
 
-//go:embed 0120_bare_metal_deployments.sql
-var bareMetalDeploymentSchema string
-
 var deploymentDigest = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
 func MigrateBareMetalDeployments(ctx context.Context, db *sql.DB) error {
-	return dbschema.Apply(ctx, db, BareMetalDeploymentMigration, bareMetalDeploymentSchema)
+	return dbschema.Apply(ctx, db, BareMetalDeploymentMigration)
 }
 
 type BareMetalDeploymentInput struct {

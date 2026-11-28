@@ -3,14 +3,10 @@ package inventory
 import (
 	"context"
 	"database/sql"
-	_ "embed"
 
 	"with-cloud-manager/internal/identity"
 	"with-cloud-manager/internal/provider"
 )
-
-//go:embed 0106_instance_retirement_reservations.sql
-var instanceRetirementReservationsSchema string
 
 func instanceRetirementActive(ctx context.Context, tx *sql.Tx, kind provider.Kind, scopeID int64, id string) (bool, error) {
 	query := `SELECT EXISTS(SELECT 1 FROM cmp_instance_retirement_reservations WHERE (instance_scope,instance_id)=($1,$2))`

@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"database/sql"
-	_ "embed"
 	"encoding/json"
 	"errors"
 
@@ -14,9 +13,6 @@ import (
 	"with-cloud-manager/internal/inventory"
 	"with-cloud-manager/internal/provider"
 )
-
-//go:embed 0065_load_balancer_backend_detach.sql
-var loadBalancerBackendDetachSchema string
 
 const detachLoadBalancerBackend = "detach-load-balancer-backend"
 

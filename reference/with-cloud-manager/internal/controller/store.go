@@ -3,7 +3,6 @@ package controller
 import (
 	"context"
 	"database/sql"
-	_ "embed"
 	"errors"
 	"time"
 
@@ -14,124 +13,79 @@ import (
 	"with-cloud-manager/internal/provider"
 )
 
-//go:embed 0004_inventory_schedules.sql
-var schema string
-
-//go:embed 0036_network_asset_schedules.sql
-var networkAssetSchedulesSchema string
-
-//go:embed 0041_snapshot_schedules.sql
-var snapshotSchedulesSchema string
-
-//go:embed 0057_load_balancer_schedules.sql
-var loadBalancerSchedulesSchema string
-
-//go:embed 0068_dns_zone_schedules.sql
-var dnsZoneSchedulesSchema string
-
-//go:embed 0077_database_schedules.sql
-var databaseSchedulesSchema string
-
-//go:embed 0079_object_bucket_schedules.sql
-var objectBucketSchedulesSchema string
-
-//go:embed 0081_cache_schedules.sql
-var cacheSchedulesSchema string
-
-//go:embed 0083_kubernetes_schedules.sql
-var kubernetesSchedulesSchema string
-
-//go:embed 0085_cluster_node_pool_schedules.sql
-var clusterNodePoolSchedulesSchema string
-
-//go:embed 0087_cluster_workload_schedules.sql
-var clusterWorkloadSchedulesSchema string
-
-//go:embed 0089_cluster_workload_watch_schedules.sql
-var clusterWorkloadWatchSchedulesSchema string
-
-//go:embed 0117_redfish_schedules.sql
-var redfishSchedulesSchema string
-
-//go:embed 0136_inventory_schedule_config.sql
-var inventoryScheduleConfigSchema string
-
-//go:embed 0137_inventory_account_dispatch.sql
-var inventoryAccountDispatchSchema string
-
-//go:embed 0138_inventory_tenant_dispatch.sql
-var inventoryTenantDispatchSchema string
-
-//go:embed 0145_bucket_setting_schedules.sql
-var bucketSettingSchedulesSchema string
-
 const RedfishScheduleMigration = "0117_redfish_schedules"
 const ScheduleConfigMigration = "0136_inventory_schedule_config"
 const AccountDispatchMigration = "0137_inventory_account_dispatch"
 const TenantDispatchMigration = "0138_inventory_tenant_dispatch"
 const BucketSettingScheduleMigration = "0145_bucket_setting_schedules"
+const DatabaseObservationScheduleMigration = "0170_database_observation_schedules"
 
 var ErrStale = errors.New("inventory schedule lease expired or was replaced")
 
 func Migrate(ctx context.Context, db *sql.DB) error {
-	if err := dbschema.Apply(ctx, db, "0004_inventory_schedules", schema); err != nil {
+	if err := dbschema.Apply(ctx, db, "0004_inventory_schedules"); err != nil {
 		return err
 	}
-	if err := dbschema.Apply(ctx, db, "0036_network_asset_schedules", networkAssetSchedulesSchema); err != nil {
+	if err := dbschema.Apply(ctx, db, "0036_network_asset_schedules"); err != nil {
 		return err
 	}
-	if err := dbschema.Apply(ctx, db, "0041_snapshot_schedules", snapshotSchedulesSchema); err != nil {
+	if err := dbschema.Apply(ctx, db, "0041_snapshot_schedules"); err != nil {
 		return err
 	}
-	if err := dbschema.Apply(ctx, db, "0057_load_balancer_schedules", loadBalancerSchedulesSchema); err != nil {
+	if err := dbschema.Apply(ctx, db, "0057_load_balancer_schedules"); err != nil {
 		return err
 	}
-	if err := dbschema.Apply(ctx, db, "0068_dns_zone_schedules", dnsZoneSchedulesSchema); err != nil {
+	if err := dbschema.Apply(ctx, db, "0068_dns_zone_schedules"); err != nil {
 		return err
 	}
-	if err := dbschema.Apply(ctx, db, "0077_database_schedules", databaseSchedulesSchema); err != nil {
+	if err := dbschema.Apply(ctx, db, "0077_database_schedules"); err != nil {
 		return err
 	}
-	if err := dbschema.Apply(ctx, db, "0079_object_bucket_schedules", objectBucketSchedulesSchema); err != nil {
+	if err := dbschema.Apply(ctx, db, "0079_object_bucket_schedules"); err != nil {
 		return err
 	}
-	if err := dbschema.Apply(ctx, db, "0081_cache_schedules", cacheSchedulesSchema); err != nil {
+	if err := dbschema.Apply(ctx, db, "0081_cache_schedules"); err != nil {
 		return err
 	}
-	if err := dbschema.Apply(ctx, db, "0083_kubernetes_schedules", kubernetesSchedulesSchema); err != nil {
+	if err := dbschema.Apply(ctx, db, "0083_kubernetes_schedules"); err != nil {
 		return err
 	}
-	if err := dbschema.Apply(ctx, db, "0085_cluster_node_pool_schedules", clusterNodePoolSchedulesSchema); err != nil {
+	if err := dbschema.Apply(ctx, db, "0085_cluster_node_pool_schedules"); err != nil {
 		return err
 	}
-	if err := dbschema.Apply(ctx, db, "0087_cluster_workload_schedules", clusterWorkloadSchedulesSchema); err != nil {
+	if err := dbschema.Apply(ctx, db, "0087_cluster_workload_schedules"); err != nil {
 		return err
 	}
-	if err := dbschema.Apply(ctx, db, "0089_cluster_workload_watch_schedules", clusterWorkloadWatchSchedulesSchema); err != nil {
+	if err := dbschema.Apply(ctx, db, "0089_cluster_workload_watch_schedules"); err != nil {
 		return err
 	}
-	if err := dbschema.Apply(ctx, db, "0099_idle_schedules", idleScheduleSchema); err != nil {
+	if err := dbschema.Apply(ctx, db, "0099_idle_schedules"); err != nil {
 		return err
 	}
-	if err := dbschema.Apply(ctx, db, RedfishScheduleMigration, redfishSchedulesSchema); err != nil {
+	if err := dbschema.Apply(ctx, db, RedfishScheduleMigration); err != nil {
 		return err
 	}
-	if err := dbschema.Apply(ctx, db, ScheduleConfigMigration, inventoryScheduleConfigSchema); err != nil {
+	if err := dbschema.Apply(ctx, db, ScheduleConfigMigration); err != nil {
 		return err
 	}
-	if err := dbschema.Apply(ctx, db, AccountDispatchMigration, inventoryAccountDispatchSchema); err != nil {
+	if err := dbschema.Apply(ctx, db, AccountDispatchMigration); err != nil {
 		return err
 	}
-	if err := dbschema.Apply(ctx, db, TenantDispatchMigration, inventoryTenantDispatchSchema); err != nil {
+	if err := dbschema.Apply(ctx, db, TenantDispatchMigration); err != nil {
 		return err
 	}
-	return dbschema.Apply(ctx, db, BucketSettingScheduleMigration, bucketSettingSchedulesSchema)
+	if err := dbschema.Apply(ctx, db, BucketSettingScheduleMigration); err != nil {
+		return err
+	}
+	return dbschema.Apply(ctx, db, DatabaseObservationScheduleMigration)
 }
 
 const (
-	NodePoolScheduleKind      = "kubernetes-node-pools"
-	WorkloadScheduleKind      = "kubernetes-workloads"
-	WorkloadWatchScheduleKind = "kubernetes-workload-watch"
+	NodePoolScheduleKind              = "kubernetes-node-pools"
+	WorkloadScheduleKind              = "kubernetes-workloads"
+	WorkloadWatchScheduleKind         = "kubernetes-workload-watch"
+	DatabaseBackupScheduleKind        = "database-backups"
+	DatabaseRestoreWindowScheduleKind = "database-restore-windows"
 )
 
 type Task struct {
@@ -198,6 +152,8 @@ func scanLeasedSchedule(row *sql.Row) (job, error) {
 		j.task.Key.Kind = provider.Instance
 	case BucketEncryptionScheduleKind, BucketVersioningScheduleKind:
 		j.task.Key.Kind = provider.ObjectBucket
+	case DatabaseBackupScheduleKind, DatabaseRestoreWindowScheduleKind:
+		j.task.Key.Kind = provider.DatabaseInstance
 	}
 	j.interval = time.Duration(period) * time.Second
 	j.task.Lease = inventory.ScheduleLease{ID: j.id, Fence: j.fence}

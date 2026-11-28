@@ -51,7 +51,8 @@ func (s Store) ReviewVM(ctx context.Context, token string, scope identity.Scope,
 		if review.Decision == "reject" {
 			next, event = "rejected", "vm_reject"
 		}
-		if v.State != "awaiting_approval" && !(v.State == "queued" && next == "rejected") {
+		canRejectQueued := v.State == "queued" && next == "rejected"
+		if v.State != "awaiting_approval" && !canRejectQueued {
 			return ErrConflict
 		}
 		if next == "queued" {

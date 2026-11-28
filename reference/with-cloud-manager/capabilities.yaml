@@ -2,6 +2,8 @@
 platform:
   priority-cloud-database-backups: credential-fenced-instance-snapshot-with-scope-and-pagination-evidence
   priority-cloud-database-restore-windows: provider-reported-utc-windows-with-credential-fenced-project-read
+  priority-cloud-database-observation-schedules: independent-instance-backup-and-restore-window-plans-with-account-cooldown-and-fenced-publication
+  priority-cloud-database-protection-report: project-visible-backup-and-restore-evidence-freshness-with-schedule-status-and-keyset-pagination
   billing-allocation-publication: owner-admin-preview-report-and-policy-digest-revision-fence-and-transactional-audit
   priority-cloud-dns-record-update: approved-active-address-and-ttl-update-with-exact-readback
   priority-cloud-bucket-encryption-enable: approved-unconfigured-to-provider-managed-aes256-with-authoritative-observation
@@ -133,6 +135,7 @@ providers:
     database-inventory: [tencent-cdb, tencent-postgresql, tencent-sqlserver]
     database-backup-inventory: tencent-cdb-postgresql-and-sqlserver
     database-restore-windows: [tencent-cdb, tencent-postgresql, tencent-sqlserver-to-source-instance]
+    database-recovery: approved-tencent-cdb-local-ssd-point-in-time-clone-with-operation-tag-and-native-clone-history
     database-missing-evidence: scoped-exact-id-and-complete-empty-page
     database-rename: independently-approved-single-write-with-scoped-name-observation
     database-rename-config: allow_database_rename
@@ -160,7 +163,7 @@ providers:
     instance-retirement-local-evidence: tc3-signed-tls-fixture-and-postgresql
     instance-resize-config: instance_resize_sizes
     instance-resize-observation: latest-operation-and-target-type-with-provider-auto-start-consent
-    actions: [create-instance, resize-instance, start-instance, stop-instance, reboot-instance, retire-instance, attach-volume, detach-volume, create-volume, resize-volume, release-volume, create-network, delete-network, create-subnet, delete-subnet, create-security-group, delete-security-group, create-security-group-rule, revoke-security-group-rule, create-elastic-ip, bind-elastic-ip, unbind-elastic-ip, release-elastic-ip, create-snapshot, delete-snapshot, restore-snapshot, rollback-snapshot, create-image, copy-image, delete-image, rename-load-balancer, rename-load-balancer-listener, rename-load-balancer-target-group, set-load-balancer-backend-weight, detach-load-balancer-backend, attach-load-balancer-backend, set-dns-record-status, update-dns-record, create-dns-record, delete-dns-record, scale-workload, rename-database-instance, rename-cache-instance, set-bucket-versioning, enable-bucket-encryption]
+    actions: [create-instance, resize-instance, start-instance, stop-instance, reboot-instance, retire-instance, attach-volume, detach-volume, create-volume, resize-volume, release-volume, create-network, delete-network, create-subnet, delete-subnet, create-security-group, delete-security-group, create-security-group-rule, revoke-security-group-rule, create-elastic-ip, bind-elastic-ip, unbind-elastic-ip, release-elastic-ip, create-snapshot, delete-snapshot, restore-snapshot, rollback-snapshot, create-image, copy-image, delete-image, rename-load-balancer, rename-load-balancer-listener, rename-load-balancer-target-group, set-load-balancer-backend-weight, detach-load-balancer-backend, attach-load-balancer-backend, set-dns-record-status, update-dns-record, create-dns-record, delete-dns-record, scale-workload, rename-database-instance, recover-database-instance, rename-cache-instance, set-bucket-versioning, enable-bucket-encryption]
     security-group-local-evidence: tc3-signed-tls-protocol-fixture-and-postgresql
     elastic-ip-create-recovery: observe-scoped-allocation-marker-or-manual-review
     elastic-ip-release-confirmation: two-scoped-absence-observations
@@ -186,7 +189,7 @@ providers:
     snapshot-deletion-confirmation: two-scoped-absence-observations
     snapshot-create-recovery: observe-scoped-source-and-marker-or-manual-review
     snapshot-create-local-evidence: tc3-signed-tls-protocol-fixture-and-postgresql
-    approvals: [resize-instance, detach-volume, create-volume, resize-volume, release-volume, create-security-group-rule, revoke-security-group-rule, delete-network, delete-subnet, delete-security-group, create-elastic-ip, bind-elastic-ip, unbind-elastic-ip, release-elastic-ip, create-snapshot, delete-snapshot, restore-snapshot, rollback-snapshot, create-image, copy-image, delete-image, rename-load-balancer, rename-load-balancer-listener, rename-load-balancer-target-group, set-load-balancer-backend-weight, detach-load-balancer-backend, attach-load-balancer-backend, set-dns-record-status, update-dns-record, create-dns-record, delete-dns-record, scale-workload, rename-database-instance, rename-cache-instance, set-bucket-versioning, enable-bucket-encryption]
+    approvals: [resize-instance, detach-volume, create-volume, resize-volume, release-volume, create-security-group-rule, revoke-security-group-rule, delete-network, delete-subnet, delete-security-group, create-elastic-ip, bind-elastic-ip, unbind-elastic-ip, release-elastic-ip, create-snapshot, delete-snapshot, restore-snapshot, rollback-snapshot, create-image, copy-image, delete-image, rename-load-balancer, rename-load-balancer-listener, rename-load-balancer-target-group, set-load-balancer-backend-weight, detach-load-balancer-backend, attach-load-balancer-backend, set-dns-record-status, update-dns-record, create-dns-record, delete-dns-record, scale-workload, rename-database-instance, recover-database-instance, rename-cache-instance, set-bucket-versioning, enable-bucket-encryption]
   alibaba-ecs:
     verification: pending-sandbox
     idle-analysis: ecs-native-ten-minute-cpu-and-network

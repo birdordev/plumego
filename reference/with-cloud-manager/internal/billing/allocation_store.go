@@ -3,7 +3,6 @@ package billing
 import (
 	"context"
 	"database/sql"
-	_ "embed"
 	"encoding/json"
 	"errors"
 	"reflect"
@@ -14,9 +13,6 @@ import (
 
 	"with-cloud-manager/internal/dbschema"
 )
-
-//go:embed 0095_billing_allocations.sql
-var allocationSchema string
 
 const MaxAllocationPolicyBytes = 64 << 10
 
@@ -64,7 +60,7 @@ type allocationEntry struct {
 }
 
 func MigrateAllocations(ctx context.Context, db *sql.DB) error {
-	return dbschema.Apply(ctx, db, "0095_billing_allocations", allocationSchema)
+	return dbschema.Apply(ctx, db, "0095_billing_allocations")
 }
 
 func selectAllocation(ctx context.Context, tx *sql.Tx, report reportEntry, revision int64) (allocationEntry, error) {

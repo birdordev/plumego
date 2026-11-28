@@ -42,7 +42,7 @@ func newAPI(db *sql.DB, addr string, console *consoleConfig) (*core.App, error) 
 		status(w, r, "ok")
 	})
 	additionalVersions := append(kvm.RequiredMigrations(), controller.RedfishScheduleMigration, controller.ScheduleConfigMigration,
-		controller.AccountDispatchMigration, controller.TenantDispatchMigration, controller.BucketSettingScheduleMigration,
+		controller.AccountDispatchMigration, controller.TenantDispatchMigration, controller.BucketSettingScheduleMigration, controller.DatabaseObservationScheduleMigration,
 		inventory.InventoryCompletionMigration, identity.AccountWriteModeMigration, operations.BareMetalPowerMigration,
 		operations.BareMetalPXEMigration, operations.BareMetalDeploymentMigration, operations.BareMetalReclaimsMigration,
 		operations.BareMetalReclaimRecoveriesMigration, operations.ObservationWorkerMigration, operations.EffectIDMigration,
@@ -51,7 +51,7 @@ func newAPI(db *sql.DB, addr string, console *consoleConfig) (*core.App, error) 
 		inventory.TagPolicyAlertsMigration, operations.FirstLeaseMigration, operations.QueueSnapshotMigration, alerts.OperationQueueMigration,
 		operations.QueueFindingsMigration, operations.ObservationQueueRepairMigration, operations.PowerObservationMigration,
 		inventory.VolumeInventoryMigration, operations.VolumeResizeMigration, operations.VolumeCreationMigration, operations.VolumeReleaseMigration,
-		inventory.InstanceTypeInventoryMigration, operations.InstanceResizeMigration, inventory.InstanceResizeOptionsMigration, operations.BucketVersioningMigration, operations.BucketEncryptionEnableMigration, operations.DNSRecordUpdateMigration, billing.AllocationPublishMigration, inventory.DatabaseBackupsMigration, inventory.DatabaseRestoreWindowsMigration, operations.DatabaseRecoveryMigration)
+		inventory.InstanceTypeInventoryMigration, operations.InstanceResizeMigration, inventory.InstanceResizeOptionsMigration, operations.BucketVersioningMigration, operations.BucketEncryptionEnableMigration, operations.DNSRecordUpdateMigration, billing.AllocationPublishMigration, inventory.DatabaseBackupsMigration, inventory.DatabaseRestoreWindowsMigration, operations.DatabaseRecoveryMigration, inventory.DatabaseProtectionMigration)
 	additionalVersionList := strings.Join(additionalVersions, ",")
 	ready := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx, cancel := context.WithTimeout(r.Context(), time.Second)
@@ -119,6 +119,7 @@ func newAPI(db *sql.DB, addr string, console *consoleConfig) (*core.App, error) 
 		app.Get(idleInstancesRoute, idleInstancesHandler(store, app.Logger())),
 		app.Get(inventoryFreshnessRoute, inventoryFreshnessHandler(store, app.Logger())),
 		app.Get(bucketProtectionRoute, bucketProtectionHandler(store, app.Logger())),
+		app.Get(databaseProtectionRoute, databaseProtectionHandler(store, app.Logger())),
 		app.Get(auditRoute, projectAuditHandler(auditStore, app.Logger(), false)),
 		app.Get(auditRoute+"/export", projectAuditHandler(auditStore, app.Logger(), true)),
 		app.Get(alertsRoute, projectAlerts), app.Get(alertsRoute+"/:alert", projectAlerts),

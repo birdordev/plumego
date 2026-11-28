@@ -3,16 +3,14 @@ package billing
 import (
 	"context"
 	"database/sql"
-	_ "embed"
 	"encoding/json"
 	"strings"
 	"time"
 
 	dbutil "github.com/birdordev/plumego/store/db"
-)
 
-//go:embed project_summary.sql
-var projectSummarySQL string
+	"with-cloud-manager/migrations"
+)
 
 type ProjectSummaryQuery struct {
 	Tenant, Project, From, Through, Source, Currency, Provider string
@@ -95,7 +93,7 @@ func (s Store) ReadProjectSummary(ctx context.Context, token string, q ProjectSu
 			return err
 		}
 		var months, accounts []byte
-		err := tx.QueryRowContext(ctx, projectSummarySQL, q.Tenant, q.Project, q.From+"-01", q.Through+"-01",
+		err := tx.QueryRowContext(ctx, migrations.ProjectSummary(), q.Tenant, q.Project, q.From+"-01", q.Through+"-01",
 			q.Source, q.Currency, q.Provider, afterPeriod, afterAccount, q.MissingOnly, q.Limit+1).
 			Scan(&result.AsOf, &months, &accounts)
 		if err != nil {

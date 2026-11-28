@@ -2,7 +2,6 @@ package controller
 
 import (
 	"context"
-	_ "embed"
 	"errors"
 	"regexp"
 	"time"
@@ -10,9 +9,6 @@ import (
 	"with-cloud-manager/internal/inventory"
 	"with-cloud-manager/internal/provider"
 )
-
-//go:embed 0099_idle_schedules.sql
-var idleScheduleSchema string
 
 const IdleScheduleKind = "instance-idle"
 

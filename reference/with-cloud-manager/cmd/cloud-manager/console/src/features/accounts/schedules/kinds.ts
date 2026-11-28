@@ -3,14 +3,23 @@ const bucketSettingKinds: Record<string, string> = {
   'object-bucket-versioning': '对象桶版本控制',
 }
 
+const databaseObservationKinds: Record<string, string> = {
+  'database-backups': '数据库备份',
+  'database-restore-windows': '数据库可恢复时间',
+}
+
 export const scheduleKinds = [
   'region', 'zone', 'instance', 'volume', 'snapshot', 'network', 'subnet', 'image', 'security-group', 'security-group-rule',
   'elastic-ip', 'load-balancer', 'dns-zone', 'object-bucket', ...Object.keys(bucketSettingKinds),
-  'database-instance', 'cache-instance', 'kubernetes-cluster',
+  'database-instance', ...Object.keys(databaseObservationKinds), 'cache-instance', 'kubernetes-cluster',
 ]
 
 export function scheduleKindLabel(kind: string) {
-  return bucketSettingKinds[kind] ?? kind
+  return bucketSettingKinds[kind] ?? databaseObservationKinds[kind] ?? kind
+}
+
+export function needsDatabaseTarget(kind: string) {
+  return Object.hasOwn(databaseObservationKinds, kind)
 }
 
 export function hasGlobalScheduleScope(kind: string) {

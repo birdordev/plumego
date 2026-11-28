@@ -3,7 +3,8 @@ package inventory
 import (
 	"context"
 	"database/sql"
-	_ "embed"
+
+	"with-cloud-manager/migrations"
 )
 
 const bucketProtectionAlertBase = `WITH observations AS (
@@ -24,10 +25,7 @@ const bucketProtectionAlertBase = `WITH observations AS (
 		AND a.provider IN ('tencent-cvm','alibaba-ecs','huawei-ecs') AND (` + projectedOwner + `)=$2
 )`
 
-//go:embed bucket_protection_alerts.sql
-var bucketProtectionAlertChanges string
-
 func EvaluateBucketProtectionAlerts(ctx context.Context, tx *sql.Tx, tenant, project string) error {
-	_, err := tx.ExecContext(ctx, bucketProtectionAlertBase+bucketProtectionAlertChanges, tenant, project, DefaultBucketProtectionWindow)
+	_, err := tx.ExecContext(ctx, bucketProtectionAlertBase+migrations.BucketProtectionAlerts(), tenant, project, DefaultBucketProtectionWindow)
 	return err
 }

@@ -3,7 +3,6 @@ package inventory
 import (
 	"context"
 	"database/sql"
-	_ "embed"
 	"errors"
 	"strings"
 
@@ -13,9 +12,6 @@ import (
 	"with-cloud-manager/internal/identity"
 	"with-cloud-manager/internal/provider"
 )
-
-//go:embed 0008_asset_ownership.sql
-var ownershipSchema string
 
 // 子规则和快照沿用父资源的归属。列表、历史和拓扑使用相同的授权条件。
 const inventoryOwnershipJoins = `
@@ -66,7 +62,7 @@ type Ownership struct {
 }
 
 func MigrateOwnership(ctx context.Context, db *sql.DB) error {
-	return dbschema.Apply(ctx, db, "0008_asset_ownership", ownershipSchema)
+	return dbschema.Apply(ctx, db, "0008_asset_ownership")
 }
 
 func (s Store) TransferOwnership(ctx context.Context, token string, source identity.Scope, expected int64, input OwnershipTransfer) (Ownership, error) {

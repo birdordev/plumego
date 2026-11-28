@@ -3,13 +3,13 @@ package inventory
 import (
 	"context"
 	"database/sql"
-	_ "embed"
 	"encoding/base64"
 	"encoding/json"
 	"strings"
 	"time"
 
 	"with-cloud-manager/internal/provider"
+	"with-cloud-manager/migrations"
 )
 
 type IdleQuery struct {
@@ -70,12 +70,9 @@ func (s Store) IdleInstances(ctx context.Context, token string, q IdleQuery) (Id
 	return result, nil
 }
 
-//go:embed idle_report.sql
-var idleReportSelect string
-
 var idleReportFacts = strings.NewReplacer(
 	"/* PROJECT_OWNER */", projectedOwner, "/* OWNERSHIP_VERSION */", projectedRevision,
-).Replace(idleReportSelect)
+).Replace(migrations.IdleReport())
 
 const idleScopeFilter = `s.tenant_id=$1 AND s.kind='instance' AND a.provider IN ('tencent-cvm','alibaba-ecs','huawei-ecs')
 	AND ($3='' OR s.account_id=$3) AND ($4='' OR s.region=$4)

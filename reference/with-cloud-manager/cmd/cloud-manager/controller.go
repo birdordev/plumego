@@ -78,6 +78,8 @@ func inventoryScheduleExecutor(db *sql.DB, profiles map[string]string, transport
 			return prepareScheduledWorkloads(ctx, db, task, path)
 		case controller.BucketEncryptionScheduleKind, controller.BucketVersioningScheduleKind:
 			return prepareScheduledBucketSetting(ctx, db, task, path, transport)
+		case controller.DatabaseBackupScheduleKind, controller.DatabaseRestoreWindowScheduleKind:
+			return prepareScheduledDatabaseObservation(ctx, db, task, path, transport)
 		}
 		key := task.Key
 		region := key.Region
@@ -134,4 +136,26 @@ func migrateController(ctx context.Context, db *sql.DB) error {
 		return errors.New("inventory schedule migration failed")
 	}
 	return nil
+}
+
+func connectScheduledPublicCloud(ctx context.Context, db *sql.DB, task controller.Task, path string, transport http.RoundTripper) (*publiccloud.Client, error) {
+	var profile publicCloudProfile
+	if err := loadPrivateProfile(path, &profile); err != nil {
+		return nil, err
+	}
+	binding, err := identity.NewStore(db).CloudAccountBinding(ctx, task.Key.Tenant, task.Key.Account)
+	if err != nil || (binding.Mode != "read_only" && binding.Mode != "write_enabled") ||
+		binding.Provider != task.Provider || binding.Revision != task.CredentialRevision ||
+		task.CredentialRef == "" || binding.CredentialRef != task.CredentialRef || profile.Ref != task.CredentialRef ||
+		binding.RemoteIdentity == "" {
+		return nil, inventory.ErrStale
+	}
+	client, err := publiccloud.Connect(ctx, binding.Provider, profile.Config, transport)
+	if err != nil {
+		return nil, err
+	}
+	if client.Identity() != binding.RemoteIdentity {
+		return nil, &provider.Failure{Kind: provider.Unauthorized}
+	}
+	return client, nil
 }

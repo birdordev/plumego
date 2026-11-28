@@ -62,7 +62,7 @@ func runKVMDHCP(ctx context.Context, api kvmVMAPI, target kvmDHCPTarget, output 
 	if err != nil {
 		return err
 	}
-	if pool.Site != host.Site || pool.Network != target.network || !pool.IPv4PoolSpec.Valid() {
+	if pool.Site != host.Site || pool.Network != target.network || !pool.Valid() {
 		return errKVMNetworkMapping
 	}
 	desired := newKVMDHCPDesired(pool.IPv4PoolSpec)

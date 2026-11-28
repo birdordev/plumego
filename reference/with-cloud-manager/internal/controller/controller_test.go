@@ -34,7 +34,7 @@ func TestAcceptanceDurableInventorySchedule(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if err := dbschema.Apply(ctx, db, "0004_inventory_schedules", schema); err != nil {
+	if err := dbschema.Apply(ctx, db, "0004_inventory_schedules"); err != nil {
 		t.Fatal(err)
 	}
 	exec(`INSERT INTO cmp_tenants VALUES ('tenant');

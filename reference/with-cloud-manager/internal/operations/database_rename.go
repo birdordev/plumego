@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"database/sql"
-	_ "embed"
 	"encoding/json"
 	"errors"
 	"strings"
@@ -16,12 +15,6 @@ import (
 	"with-cloud-manager/internal/inventory"
 	"with-cloud-manager/internal/provider"
 )
-
-//go:embed 0104_database_rename.sql
-var databaseRenameSchema string
-
-//go:embed 0105_database_rename_events.sql
-var databaseRenameEventsSchema string
 
 const renameDatabaseInstance = "rename-database-instance"
 
@@ -41,7 +34,7 @@ type DatabaseRenameView struct {
 }
 
 func MigrateDatabaseRenameEvents(ctx context.Context, db *sql.DB) error {
-	return dbschema.Apply(ctx, db, "0105_database_rename_events", databaseRenameEventsSchema)
+	return dbschema.Apply(ctx, db, "0105_database_rename_events")
 }
 
 func (s Store) SubmitDatabaseRename(ctx context.Context, token string, scope identity.Scope, key string, revision int64, input DatabaseRenameInput) (Operation, error) {

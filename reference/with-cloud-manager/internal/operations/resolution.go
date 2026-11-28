@@ -3,7 +3,6 @@ package operations
 import (
 	"context"
 	"database/sql"
-	_ "embed"
 	"errors"
 	"regexp"
 
@@ -14,9 +13,6 @@ import (
 	"with-cloud-manager/internal/provider"
 )
 
-//go:embed 0012_operation_resolution.sql
-var resolutionSchema string
-
 var evidenceReference = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_.:/-]{0,199}$`)
 
 type Resolution struct {
@@ -26,7 +22,7 @@ type Resolution struct {
 }
 
 func migrateResolution(ctx context.Context, db *sql.DB) error {
-	return dbschema.Apply(ctx, db, "0012_operation_resolution", resolutionSchema)
+	return dbschema.Apply(ctx, db, "0012_operation_resolution")
 }
 
 func (s Store) Resolve(ctx context.Context, token string, scope identity.Scope, id string, input Resolution) (Operation, error) {

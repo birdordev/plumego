@@ -3,7 +3,6 @@ package inventory
 import (
 	"context"
 	"database/sql"
-	_ "embed"
 	"encoding/json"
 	"errors"
 	"time"
@@ -12,9 +11,6 @@ import (
 
 	"with-cloud-manager/internal/provider"
 )
-
-//go:embed 0067_dns_zone_records.sql
-var dnsZoneRecordsSchema string
 
 var ErrDNSRecordsNotFound = errors.New("DNS zone records unavailable")
 

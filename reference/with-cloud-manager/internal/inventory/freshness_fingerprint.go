@@ -9,6 +9,8 @@ import (
 	"encoding/json"
 	"slices"
 	"strings"
+
+	"with-cloud-manager/migrations"
 )
 
 type FreshnessScopeKey struct {
@@ -54,7 +56,7 @@ func encodeFreshnessScope(encoder *json.Encoder, key FreshnessScopeKey) error {
 
 func readFreshnessFingerprint(ctx context.Context, tx *sql.Tx, args []any) (string, error) {
 	// C 排序与 Go 的字节顺序一致，确保异地核对同一清单时指纹相同。
-	rows, err := tx.QueryContext(ctx, freshnessSQL+`
+	rows, err := tx.QueryContext(ctx, migrations.Freshness()+`
 		SELECT provider,account_id,region,kind FROM freshness
 		ORDER BY provider COLLATE "C",account_id COLLATE "C",region COLLATE "C",kind COLLATE "C"`, args...)
 	if err != nil {

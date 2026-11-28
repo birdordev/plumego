@@ -3,7 +3,6 @@ package operations
 import (
 	"context"
 	"database/sql"
-	_ "embed"
 	"encoding/json"
 	"errors"
 	"math"
@@ -14,9 +13,6 @@ import (
 
 	"with-cloud-manager/internal/identity"
 )
-
-//go:embed 0142_operation_rollout.sql
-var operationRolloutSchema string
 
 const OperationRolloutMigration = "0142_operation_rollout"
 

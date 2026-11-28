@@ -6,7 +6,6 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	"database/sql"
-	_ "embed"
 	"encoding/json"
 	"errors"
 	"regexp"
@@ -21,21 +20,6 @@ import (
 	"with-cloud-manager/internal/inventory"
 	"with-cloud-manager/internal/provider"
 )
-
-//go:embed 0010_instance_operations.sql
-var schema string
-
-//go:embed queue.sql
-var queueSchema string
-
-//go:embed 0011_operation_worker.sql
-var workerSchema string
-
-//go:embed 0014_instance_deletion.sql
-var deletionSchema string
-
-//go:embed 0139_operation_observation_worker.sql
-var observationWorkerSchema string
 
 const ObservationWorkerMigration = "0139_operation_observation_worker"
 
@@ -154,10 +138,10 @@ func newOperationQueue(db *sql.DB, observationOnly bool) *mqstore.SQLStore {
 }
 
 func Migrate(ctx context.Context, db *sql.DB) error {
-	if err := dbschema.Apply(ctx, db, "0010_instance_operations", schema+queueSchema); err != nil {
+	if err := dbschema.Apply(ctx, db, "0010_instance_operations", "0010_instance_operations.sql", "queue.sql"); err != nil {
 		return err
 	}
-	if err := dbschema.Apply(ctx, db, "0011_operation_worker", workerSchema); err != nil {
+	if err := dbschema.Apply(ctx, db, "0011_operation_worker"); err != nil {
 		return err
 	}
 	if err := migrateResolution(ctx, db); err != nil {
@@ -166,7 +150,7 @@ func Migrate(ctx context.Context, db *sql.DB) error {
 	if err := migrateApproval(ctx, db); err != nil {
 		return err
 	}
-	if err := dbschema.Apply(ctx, db, "0014_instance_deletion", deletionSchema); err != nil {
+	if err := dbschema.Apply(ctx, db, "0014_instance_deletion"); err != nil {
 		return err
 	}
 	if err := migrateCreation(ctx, db); err != nil {
@@ -181,136 +165,136 @@ func Migrate(ctx context.Context, db *sql.DB) error {
 	if err := migrateNetwork(ctx, db); err != nil {
 		return err
 	}
-	if err := dbschema.Apply(ctx, db, "0021_security_group_creation", securityGroupSchema); err != nil {
+	if err := dbschema.Apply(ctx, db, "0021_security_group_creation"); err != nil {
 		return err
 	}
-	if err := dbschema.Apply(ctx, db, "0022_operation_queries", operationQuerySchema); err != nil {
+	if err := dbschema.Apply(ctx, db, "0022_operation_queries"); err != nil {
 		return err
 	}
-	if err := dbschema.Apply(ctx, db, "0023_operation_batches", operationBatchSchema); err != nil {
+	if err := dbschema.Apply(ctx, db, "0023_operation_batches"); err != nil {
 		return err
 	}
-	if err := dbschema.Apply(ctx, db, "0026_instance_catalog", catalogSchema); err != nil {
+	if err := dbschema.Apply(ctx, db, "0026_instance_catalog"); err != nil {
 		return err
 	}
-	if err := dbschema.Apply(ctx, db, "0031_security_group_rules", securityRuleSchema); err != nil {
+	if err := dbschema.Apply(ctx, db, "0031_security_group_rules"); err != nil {
 		return err
 	}
-	if err := dbschema.Apply(ctx, db, "0032_security_rule_revocation", securityRuleRevocationSchema); err != nil {
+	if err := dbschema.Apply(ctx, db, "0032_security_rule_revocation"); err != nil {
 		return err
 	}
-	if err := dbschema.Apply(ctx, db, "0033_subnet_zone", subnetZoneSchema); err != nil {
+	if err := dbschema.Apply(ctx, db, "0033_subnet_zone"); err != nil {
 		return err
 	}
-	if err := dbschema.Apply(ctx, db, "0037_elastic_ip_creation", elasticIPCreationSchema); err != nil {
+	if err := dbschema.Apply(ctx, db, "0037_elastic_ip_creation"); err != nil {
 		return err
 	}
-	if err := dbschema.Apply(ctx, db, "0038_elastic_ip_release", elasticIPReleaseSchema); err != nil {
+	if err := dbschema.Apply(ctx, db, "0038_elastic_ip_release"); err != nil {
 		return err
 	}
-	if err := dbschema.Apply(ctx, db, "0039_elastic_ip_binding", elasticIPBindingSchema); err != nil {
+	if err := dbschema.Apply(ctx, db, "0039_elastic_ip_binding"); err != nil {
 		return err
 	}
-	if err := dbschema.Apply(ctx, db, "0042_snapshot_creation", snapshotCreationSchema); err != nil {
+	if err := dbschema.Apply(ctx, db, "0042_snapshot_creation"); err != nil {
 		return err
 	}
-	if err := dbschema.Apply(ctx, db, "0043_snapshot_deletion", snapshotDeletionSchema); err != nil {
+	if err := dbschema.Apply(ctx, db, "0043_snapshot_deletion"); err != nil {
 		return err
 	}
-	if err := dbschema.Apply(ctx, db, "0044_snapshot_restore", snapshotRestoreSchema); err != nil {
+	if err := dbschema.Apply(ctx, db, "0044_snapshot_restore"); err != nil {
 		return err
 	}
-	if err := dbschema.Apply(ctx, db, "0045_snapshot_rollback", snapshotRollbackSchema); err != nil {
+	if err := dbschema.Apply(ctx, db, "0045_snapshot_rollback"); err != nil {
 		return err
 	}
-	if err := dbschema.Apply(ctx, db, "0046_image_deletion", imageDeletionSchema); err != nil {
+	if err := dbschema.Apply(ctx, db, "0046_image_deletion"); err != nil {
 		return err
 	}
-	if err := dbschema.Apply(ctx, db, "0049_image_creation", imageCreationSchema); err != nil {
+	if err := dbschema.Apply(ctx, db, "0049_image_creation"); err != nil {
 		return err
 	}
-	if err := dbschema.Apply(ctx, db, "0051_image_copy", imageCopySchema); err != nil {
+	if err := dbschema.Apply(ctx, db, "0051_image_copy"); err != nil {
 		return err
 	}
-	if err := dbschema.Apply(ctx, db, "0052_network_deletion", networkDeletionSchema); err != nil {
+	if err := dbschema.Apply(ctx, db, "0052_network_deletion"); err != nil {
 		return err
 	}
-	if err := dbschema.Apply(ctx, db, "0053_security_group_deletion", securityGroupDeletionSchema); err != nil {
+	if err := dbschema.Apply(ctx, db, "0053_security_group_deletion"); err != nil {
 		return err
 	}
-	if err := dbschema.Apply(ctx, db, "0055_network_deletion_backfill", networkDeletionBackfillSchema); err != nil {
+	if err := dbschema.Apply(ctx, db, "0055_network_deletion_backfill"); err != nil {
 		return err
 	}
-	if err := dbschema.Apply(ctx, db, "0059_load_balancer_rename", loadBalancerRenameSchema); err != nil {
+	if err := dbschema.Apply(ctx, db, "0059_load_balancer_rename"); err != nil {
 		return err
 	}
-	if err := dbschema.Apply(ctx, db, "0061_load_balancer_listener_rename", loadBalancerListenerRenameSchema); err != nil {
+	if err := dbschema.Apply(ctx, db, "0061_load_balancer_listener_rename"); err != nil {
 		return err
 	}
-	if err := dbschema.Apply(ctx, db, "0062_load_balancer_target_group_rename", loadBalancerTargetGroupRenameSchema); err != nil {
+	if err := dbschema.Apply(ctx, db, "0062_load_balancer_target_group_rename"); err != nil {
 		return err
 	}
-	if err := dbschema.Apply(ctx, db, "0064_load_balancer_backend_weight", loadBalancerBackendWeightSchema); err != nil {
+	if err := dbschema.Apply(ctx, db, "0064_load_balancer_backend_weight"); err != nil {
 		return err
 	}
-	if err := dbschema.Apply(ctx, db, "0065_load_balancer_backend_detach", loadBalancerBackendDetachSchema); err != nil {
+	if err := dbschema.Apply(ctx, db, "0065_load_balancer_backend_detach"); err != nil {
 		return err
 	}
-	if err := dbschema.Apply(ctx, db, "0066_load_balancer_backend_attach", loadBalancerBackendAttachSchema); err != nil {
+	if err := dbschema.Apply(ctx, db, "0066_load_balancer_backend_attach"); err != nil {
 		return err
 	}
-	if err := dbschema.Apply(ctx, db, "0070_load_balancer_change_backfill", loadBalancerChangeBackfillSchema); err != nil {
+	if err := dbschema.Apply(ctx, db, "0070_load_balancer_change_backfill"); err != nil {
 		return err
 	}
-	if err := dbschema.Apply(ctx, db, "0072_dns_record_status", dnsRecordStatusSchema); err != nil {
+	if err := dbschema.Apply(ctx, db, "0072_dns_record_status"); err != nil {
 		return err
 	}
-	if err := dbschema.Apply(ctx, db, "0074_dns_record_creation", dnsRecordCreationSchema); err != nil {
+	if err := dbschema.Apply(ctx, db, "0074_dns_record_creation"); err != nil {
 		return err
 	}
-	if err := dbschema.Apply(ctx, db, "0075_dns_record_deletion", dnsRecordDeletionSchema); err != nil {
+	if err := dbschema.Apply(ctx, db, "0075_dns_record_deletion"); err != nil {
 		return err
 	}
-	if err := dbschema.Apply(ctx, db, "0091_workload_scale", workloadScaleSchema); err != nil {
+	if err := dbschema.Apply(ctx, db, "0091_workload_scale"); err != nil {
 		return err
 	}
 	if err := migrateChangeTickets(ctx, db); err != nil {
 		return err
 	}
-	if err := dbschema.Apply(ctx, db, "0104_database_rename", databaseRenameSchema); err != nil {
+	if err := dbschema.Apply(ctx, db, "0104_database_rename"); err != nil {
 		return err
 	}
-	if err := dbschema.Apply(ctx, db, "0107_instance_retirement", instanceRetirementSchema); err != nil {
+	if err := dbschema.Apply(ctx, db, "0107_instance_retirement"); err != nil {
 		return err
 	}
-	if err := dbschema.Apply(ctx, db, "0109_cache_rename", cacheRenameSchema); err != nil {
+	if err := dbschema.Apply(ctx, db, "0109_cache_rename"); err != nil {
 		return err
 	}
-	if err := dbschema.Apply(ctx, db, ObservationWorkerMigration, observationWorkerSchema); err != nil {
+	if err := dbschema.Apply(ctx, db, ObservationWorkerMigration); err != nil {
 		return err
 	}
-	if err := dbschema.Apply(ctx, db, EffectIDMigration, effectIDSchema); err != nil {
+	if err := dbschema.Apply(ctx, db, EffectIDMigration); err != nil {
 		return err
 	}
-	if err := dbschema.Apply(ctx, db, TerminalEventTimeMigration, terminalEventTimeSchema); err != nil {
+	if err := dbschema.Apply(ctx, db, TerminalEventTimeMigration); err != nil {
 		return err
 	}
-	if err := dbschema.Apply(ctx, db, OperationRolloutMigration, operationRolloutSchema); err != nil {
+	if err := dbschema.Apply(ctx, db, OperationRolloutMigration); err != nil {
 		return err
 	}
-	if err := dbschema.Apply(ctx, db, FirstLeaseMigration, firstLeaseSchema); err != nil {
+	if err := dbschema.Apply(ctx, db, FirstLeaseMigration); err != nil {
 		return err
 	}
-	if err := dbschema.Apply(ctx, db, QueueSnapshotMigration, queueSnapshotSchema); err != nil {
+	if err := dbschema.Apply(ctx, db, QueueSnapshotMigration); err != nil {
 		return err
 	}
-	if err := dbschema.Apply(ctx, db, QueueFindingsMigration, queueFindingsSchema); err != nil {
+	if err := dbschema.Apply(ctx, db, QueueFindingsMigration); err != nil {
 		return err
 	}
-	if err := dbschema.Apply(ctx, db, ObservationQueueRepairMigration, observationQueueRepairSchema); err != nil {
+	if err := dbschema.Apply(ctx, db, ObservationQueueRepairMigration); err != nil {
 		return err
 	}
-	return dbschema.Apply(ctx, db, PowerObservationMigration, powerObservationSchema)
+	return dbschema.Apply(ctx, db, PowerObservationMigration)
 }
 
 const operationFields = "operation_id,account_id,region,COALESCE(external_id,''),action,status,created_at,updated_at,COALESCE(outcome_reason,''),COALESCE(provider_request_id,''),COALESCE(volume_id,''),device,resource_kind,COALESCE(catalog_id,''),COALESCE(catalog_version,0),COALESCE(ticket_policy_revision,0)"
@@ -498,6 +482,7 @@ func (s Store) Get(ctx context.Context, token string, scope identity.Scope, id s
 			if err == nil {
 				err = json.Unmarshal(spec, &intent.DatabaseRecovery)
 			}
+			intent.CanRetryObservation = intent.ValidFor(provider.TencentCVM)
 			op.DatabaseRecoveryIntent = &intent
 		}
 		if err == nil && op.Action == renameDatabaseInstance {

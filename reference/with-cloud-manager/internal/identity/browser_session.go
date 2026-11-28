@@ -5,7 +5,6 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"database/sql"
-	_ "embed"
 	"encoding/base64"
 	"errors"
 	"time"
@@ -14,9 +13,6 @@ import (
 
 	"with-cloud-manager/internal/dbschema"
 )
-
-//go:embed 0024_browser_sessions.sql
-var browserSessionSchema string
 
 const BrowserSessionTTL = time.Hour
 
@@ -72,7 +68,7 @@ type BrowserSessions struct{ db *sql.DB }
 func NewBrowserSessions(db *sql.DB) BrowserSessions { return BrowserSessions{db: db} }
 
 func MigrateBrowserSessions(ctx context.Context, db *sql.DB) error {
-	return dbschema.Apply(ctx, db, "0024_browser_sessions", browserSessionSchema)
+	return dbschema.Apply(ctx, db, "0024_browser_sessions")
 }
 
 func (s BrowserSessions) Login(ctx context.Context, tenant, issuer, subject, previous string) (string, error) {

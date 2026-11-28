@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"database/sql"
-	_ "embed"
 	"encoding/json"
 	"errors"
 	"time"
@@ -17,14 +16,11 @@ import (
 	"with-cloud-manager/internal/provider"
 )
 
-//go:embed 0169_database_recovery.sql
-var databaseRecoverySchema string
-
 const DatabaseRecoveryMigration = "0169_database_recovery"
 const recoverDatabaseInstance = "recover-database-instance"
 
 func MigrateDatabaseRecovery(ctx context.Context, db *sql.DB) error {
-	return dbschema.Apply(ctx, db, DatabaseRecoveryMigration, databaseRecoverySchema)
+	return dbschema.Apply(ctx, db, DatabaseRecoveryMigration)
 }
 
 type DatabaseRecoveryInput struct {
@@ -36,13 +32,14 @@ type DatabaseRecoveryInput struct {
 
 type DatabaseRecoveryView struct {
 	provider.DatabaseRecovery
-	ObservedAt time.Time `json:"observed_at"`
-	TargetID   string    `json:"target_id,omitempty"`
+	ObservedAt          time.Time `json:"observed_at"`
+	TargetID            string    `json:"target_id,omitempty"`
+	CanRetryObservation bool      `json:"can_retry_observation,omitempty"`
 }
 
 func (s Store) SubmitDatabaseRecovery(ctx context.Context, token string, scope identity.Scope, key string, revision int64, input DatabaseRecoveryInput) (Operation, error) {
 	input.ObservedAt, input.RestoreTime = input.ObservedAt.UTC(), input.RestoreTime.UTC()
-	if input.ObservedAt.IsZero() || (!input.ValidFor(provider.HuaweiECS) && !input.ValidFor(provider.AlibabaECS)) {
+	if input.ObservedAt.IsZero() || (!input.ValidFor(provider.HuaweiECS) && !input.ValidFor(provider.AlibabaECS) && !input.ValidFor(provider.TencentCVM)) {
 		return Operation{}, ErrInvalid
 	}
 	data, err := json.Marshal(struct {
@@ -140,13 +137,20 @@ func (s Store) processDatabaseRecovery(ctx context.Context, task mq.Task, w work
 			return send(ctx)
 		})
 	}
-	if w.Status == "applying" || w.ProviderRequestID == "" || w.network.resourceID == "" {
+	canLocateTarget := scope.Provider == provider.TencentCVM
+	if !canLocateTarget && (w.Status == "applying" || w.ProviderRequestID == "" || w.network.resourceID == "") {
 		return false, s.transition(ctx, task, w.Status, "needs_review", "database_recovery_receipt_unavailable", "")
 	}
+	if w.Status == "applying" {
+		if err := s.transition(ctx, task, w.Status, "observing", "submission_outcome_unknown", ""); err != nil {
+			return false, err
+		}
+		w.Status = "observing"
+	}
 	receipt := provider.LaunchReceipt{RequestID: w.ProviderRequestID, ResourceID: w.network.resourceID}
-	target, err := recoverer.ObserveDatabaseRecovery(ctx, scope, w.databaseRecovery, receipt)
+	target, err := recoverer.ObserveDatabaseRecovery(ctx, scope, w.databaseRecovery, w.ID, receipt)
 	if err == nil && target.ID != "" {
-		if target.ID != receipt.ResourceID || target.ID == w.AssetID || !target.ValidDatabase() {
+		if (receipt.ResourceID != "" && target.ID != receipt.ResourceID) || target.ID == w.AssetID || !target.ValidDatabase() {
 			return false, s.transition(ctx, task, w.Status, "needs_review", "database_recovery_requires_evidence", "")
 		}
 		return false, s.confirmDatabaseRecovery(ctx, task, w, target)
@@ -180,9 +184,10 @@ func (s Store) confirmDatabaseRecovery(ctx context.Context, task mq.Task, w work
 			return err
 		}
 		var id string
-		if err := tx.QueryRowContext(ctx, `UPDATE cmp_database_recovery_intents SET registered_scope_id=$2
-			WHERE operation_id=$1 AND provider_resource_id=$3 AND registered_scope_id IS NULL RETURNING operation_id`,
-			w.ID, registered, object.ID).Scan(&id); err != nil {
+		if err := tx.QueryRowContext(ctx, `UPDATE cmp_database_recovery_intents SET registered_scope_id=$2,provider_resource_id=$3
+			WHERE operation_id=$1 AND (provider_resource_id=$3 OR ($4 AND provider_resource_id=''))
+			  AND registered_scope_id IS NULL RETURNING operation_id`,
+			w.ID, registered, object.ID, w.binding.Provider == provider.TencentCVM).Scan(&id); err != nil {
 			return err
 		}
 		return writeTransition(ctx, tx, w.ID, w.Status, "succeeded", "database_recovery_observed", "")

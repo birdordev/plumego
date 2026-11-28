@@ -3,16 +3,12 @@ package operations
 import (
 	"context"
 	"database/sql"
-	_ "embed"
 
 	"github.com/birdordev/plumego/x/messaging/mq"
 
 	"with-cloud-manager/internal/identity"
 	"with-cloud-manager/internal/provider"
 )
-
-//go:embed 0049_image_creation.sql
-var imageCreationSchema string
 
 const createImage = "create-image"
 

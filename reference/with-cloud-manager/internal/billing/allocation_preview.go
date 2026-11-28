@@ -3,7 +3,6 @@ package billing
 import (
 	"context"
 	"database/sql"
-	_ "embed"
 	"errors"
 	"strconv"
 
@@ -12,13 +11,10 @@ import (
 	"with-cloud-manager/internal/dbschema"
 )
 
-//go:embed 0166_billing_allocation_publish.sql
-var allocationPublishSchema string
-
 const AllocationPublishMigration = "0166_billing_allocation_publish"
 
 func MigrateAllocationPublish(ctx context.Context, db *sql.DB) error {
-	return dbschema.Apply(ctx, db, AllocationPublishMigration, allocationPublishSchema)
+	return dbschema.Apply(ctx, db, AllocationPublishMigration)
 }
 
 type AllocationPreview struct {

@@ -34,7 +34,8 @@ export function AccountSchedules({ account, target, stamp, signal, back }: {
     <PagedResults key={refresh} target={target} signal={signal} read={listSchedules}>{(items) => items.length
       ? <ConsoleTable columns={['资源类型', '地域', '间隔（秒）', '状态', '最近结果', '下次执行', '操作']}
         rows={items.map((item) => ({ key: item.id, cells: [
-          scheduleKindLabel(item.kind), scheduleRegionLabel(item.region), item.interval_seconds, item.enabled ? '已启用' : '已停用',
+          <>{scheduleKindLabel(item.kind)}{item.target_id && <span className="minor">{item.target_id}</span>}</>,
+          scheduleRegionLabel(item.region), item.interval_seconds, item.enabled ? '已启用' : '已停用',
           <>{item.last_outcome === 'success' && item.bucket_batch_rejected ? '有桶未更新' : item.last_outcome && outcomes[item.last_outcome]}
             {item.bucket_batch_rejected != null && <span className="minor">最近提交批次未更新 {item.bucket_batch_rejected} 个桶</span>}</>,
           item.enabled ? timestamp(item.next_at) : undefined,

@@ -204,7 +204,8 @@ func TestBillingBudgetLifecycle(t *testing.T) {
 	}
 	close(start)
 	a, b := <-results, <-results
-	if !(a == nil && errors.Is(b, billing.ErrBudgetStale) || b == nil && errors.Is(a, billing.ErrBudgetStale)) {
+	oneUpdateWon := a == nil && errors.Is(b, billing.ErrBudgetStale) || b == nil && errors.Is(a, billing.ErrBudgetStale)
+	if !oneUpdateWon {
 		t.Fatalf("concurrent writes should choose one revision: %v %v", a, b)
 	}
 	checkBudget(route, "exceeded", 3)

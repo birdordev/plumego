@@ -199,7 +199,7 @@ func testPublicCloudBucketInventory(t *testing.T, f *bucketFixture) {
 		t.Fatalf("a potentially filtered listing confirmed absence: %v", err)
 	}
 	lookup("other", retiredID, "missing_candidate")
-	config.Config.BucketListAccountWide = true
+	config.BucketListAccountWide = true
 	writeProfile()
 
 	f.mode.Store(3)

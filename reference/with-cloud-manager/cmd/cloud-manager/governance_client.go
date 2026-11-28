@@ -26,6 +26,7 @@ const governanceUsage = `usage: cloud-manager governance COMMAND TENANT PROJECT
   compliance KIND [--state STATE] [--account ACCOUNT] [--region REGION] [--cursor CURSOR] [--limit LIMIT]
   idle [--state STATE] [--account ACCOUNT] [--region REGION] [--cursor CURSOR] [--limit LIMIT]
   inventory-freshness [--provider PROVIDER] [--account ACCOUNT] [--state STATE] [--dispatch-state STATE] [--order next_at] [--window-seconds SECONDS] [--after CURSOR] [--limit LIMIT]
+  database-protection [--provider PROVIDER] [--account ACCOUNT] [--region REGION] [--finding FINDING] [--window-seconds SECONDS] [--max-age-seconds SECONDS] [--after CURSOR] [--limit COUNT]
   bucket-protection [--provider PROVIDER] [--account ACCOUNT] [--location REGION] [--finding FINDING] [--window-seconds SECONDS] [--after CURSOR] [--limit LIMIT]
   inventory-sample {--expected-scopes COUNT|--scope-manifest < scopes.json} [--provider PROVIDER] [--account ACCOUNT] [--samples COUNT] [--interval DURATION]
   asset-capacity < workload.json
@@ -111,6 +112,13 @@ func runGovernanceClient(ctx context.Context, args []string, address, token stri
 			return usage
 		}
 		plan.target = target.JoinPath("bucket-protection")
+		plan.target.RawQuery = query.Encode()
+	case "database-protection":
+		query, ok := databaseProtectionOptions(args[3:])
+		if !ok {
+			return usage
+		}
+		plan.target = target.JoinPath("database-protection")
 		plan.target.RawQuery = query.Encode()
 	case "inventory-sample":
 		options, ok := inventorySampleOptions(args[3:])

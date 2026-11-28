@@ -3,7 +3,6 @@ package operations
 import (
 	"context"
 	"database/sql"
-	_ "embed"
 	"errors"
 
 	"github.com/birdordev/plumego/x/messaging/mq"
@@ -12,9 +11,6 @@ import (
 	"with-cloud-manager/internal/inventory"
 	"with-cloud-manager/internal/provider"
 )
-
-//go:embed 0045_snapshot_rollback.sql
-var snapshotRollbackSchema string
 
 const rollbackSnapshot = "rollback-snapshot"
 

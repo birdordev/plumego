@@ -14,6 +14,7 @@ export const routes = {
   alerts: governanceRoutes.alerts,
   'inventory-freshness': governanceRoutes['inventory-freshness'],
   'bucket-protection': governanceRoutes['bucket-protection'],
+  'database-protection': governanceRoutes['database-protection'],
   'console-grants': resourceRoutes['console-grants'],
   batch: operationRoutes.batch,
   audit: operationRoutes.audit,

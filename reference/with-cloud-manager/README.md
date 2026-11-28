@@ -18,6 +18,8 @@ go test -race -timeout 60s ./...
 
 迁移读取 `CLOUD_MANAGER_DATABASE_URL`，集成测试读取 `CLOUD_MANAGER_TEST_DATABASE_URL`。同一数据库可重复执行迁移。API 默认监听 `127.0.0.1:8096`，可用 `CLOUD_MANAGER_LISTEN_ADDR` 设置。`/healthz` 报告进程状态，`/readyz` 同时检查迁移、主库角色和当前连接的读写状态。测试输出中的 `TestAcceptancePostgresAuthorization` 和 `TestAcceptancePostgresInventory` 应为通过，跳过无法证明 PostgreSQL 语义。
 
+模块的 SQL 源文件集中在 [migrations/sql](migrations/sql)。编号文件用于版本化迁移，`queue.sql` 随操作迁移执行，其余命名文件由各业务组件用于运行时查询。SQL 随二进制嵌入，部署只需运行原有迁移命令。
+
 高可用部署可使用写入端点，或在连接串中列出候选节点并设置 `target_session_attrs=read-write`。提升备库前先隔离旧主。发布前可执行 [PostgreSQL 同步备库提升演练](acceptance.md#postgresql-同步备库提升演练) 和 [PostgreSQL 时间点恢复演练](acceptance.md#postgresql-时间点恢复演练)。[PostgreSQL 连接属性](https://www.postgresql.org/docs/current/libpq-connect.html)
 
 发布候选 API 时，可用独立构建的基线与候选二进制在同一临时 PostgreSQL 上验证迁移、共存和应用回退。Linux 演练可启动两个版本各自的 Worker，覆盖三家优先云协议夹具中的只读冻结及任务接续。[API 滚动升级与回退演练](acceptance.md#api-滚动升级与回退演练)
@@ -516,6 +518,18 @@ cloud-manager assets database-restore-windows TENANT PROJECT ASSET_ID --account 
 
 项目成员可点击「查看可恢复时间」，或调用 `GET /v1/tenants/{tenant}/projects/{project}/assets/databases/{asset}/restore-windows?account=ACCOUNT&region=REGION`。返回快照时间、厂商报告范围和按起始时间排序的 UTC 时间窗，最多 512 段。厂商报告的间隔原样保留。无有效快照或不可见返回 404，明确报告无可恢复时间时返回 200 和空数组。该入口用于恢复规划，实际恢复需在目标云环境核验产品、目标与授权。
 
+#### 项目数据库恢复保障报表
+
+应用 `0171_database_protection` 后，项目成员可从「治理 → 数据库恢复保障」查看三家优先云的数据库备份与恢复窗口。API 路径为 `GET /v1/tenants/{tenant}/projects/{project}/governance/database-protection`。报表分别判断观测是否超过 `window_seconds`，以及最近可用备份的起始时间、最近可恢复时间是否超过 `max_age_seconds`，两项默认均为 86400 秒。缺失、过期、证据过旧和厂商产品不支持分别统计。恢复窗口可能标记为仅能回档到源实例。
+
+汇总和明细使用同一 PostgreSQL 快照。厂商、账号和地域影响汇总与明细，关注项和游标只影响明细。项目可查看有权读取的数据库，计划运行状态只向账号归属项目展示。凭据轮换后旧观测退出报表。迁移回填最近备份与窗口时间，旧版采集器写入时也会同步更新时间。
+
+```sh
+cloud-manager governance database-protection TENANT PROJECT \
+  --provider tencent-cvm --region ap-guangzhou --finding recovery_attention \
+  --window-seconds 86400 --max-age-seconds 86400
+```
+
 #### 华为云 RDS MySQL 时间点恢复到新实例
 
 应用迁移 `0169_database_recovery`。项目操作员从可恢复时间详情发起申请，或调用 `POST /v1/tenants/{tenant}/projects/{project}/databases/recover`。申请固定源实例归属版本、观测快照、UTC 恢复点、目标名称和放置参数。恢复点必须落在一个连续时间段内。独立审批和适用的变更工单通过后，Worker 重新向厂商核对恢复点和可用区中的单机规格。
@@ -554,6 +568,14 @@ cloud-manager operations recover-database-instance TENANT PROJECT \
 阿里云会继承源实例的白名单。派发前核对源连接地址均为私网、无附加 ECS 安全组、白名单仅含私网或回环地址，并核对 TDE 关闭及云盘加密状态明确。启用 RDS 服务密钥加密的 ESSD 克隆会校验目标使用同一服务密钥。当前受理范围不含客户密钥和 TDE。 [MySQL 整实例恢复](https://help.aliyun.com/en/rds/apsaradb-rds-for-mysql/restore-full-data-of-an-apsaradb-rds-for-mysql-instance) · [云盘加密](https://help.aliyun.com/zh/rds/apsaradb-rds-for-mysql/configure-the-disk-encryption-feature-for-an-apsaradb-rds-for-mysql-instance/)
 
 派发使用持久操作 ID 作为 `ClientToken`。对账按厂商返回的新实例 ID 精确查询，核对地域、实例状态、计费、放置、规格、容量、释放保护、私网端点、白名单和磁盘加密。回执不完整时进入待复核，完整回执可由独立审批人只读续查。启用前须在实际地域核验 IAM 权限、VPC 隔离、计费及恢复的数据。 [实例详情](https://help.aliyun.com/en/rds/developer-reference/api-rds-2014-08-15-describedbinstanceattribute) · [连接地址](https://help.aliyun.com/zh/rds/developer-reference/api-rds-2014-08-15-describedbinstancenetinfo)
+
+#### 腾讯云 MySQL 时间点恢复到新实例
+
+腾讯云 MySQL 使用相同的项目 API、CLI 和独立审批。当前覆盖同地域的本地 SSD 通用型或独享型主实例，目标为单可用区的按量计费双节点实例。源实例须关闭公网和实例加密。Worker 按地域配置 `tencent_database_recovery_placements`，每项固定 `vpc_id`、`subnet_id`、`security_group_id`、`zone`、`flavor`、`storage_type`、`storage_gib`、`cpu` 和 `memory_mib`。申请使用相同字段，`flavor` 为 `UNIVERSAL` 或 `EXCLUSIVE`，`storage_type` 为 `local_ssd`。目标 CPU、内存和容量须分别达到源实例配置，目标 VPC 与源实例不同，子网须属于目标 VPC 和可用区。 [CreateCloneInstance](https://cloud.tencent.com/document/api/236/50424)
+
+提交使用精确到秒的 UTC 恢复点。Worker 以源实例配置的 `database_backup_time_zones` 将时间转换为厂商格式，默认北京时间。时钟回拨产生歧义时拒绝申请。实际派发前复核最新恢复窗口、源状态、加密和目标子网，并调用 `CreateCloneInstance` 的 `DryRun`。预检通过后，携带操作专用标签派发一次。 [恢复时间窗口](https://cloud.tencent.com/document/product/236/18726) · [实例加密信息](https://intl.cloud.tencent.com/zh/document/product/236/36100)
+
+对账在已有任务回执时检查异步结果，并要求操作标签唯一对应的新实例出现在源实例的成功克隆记录中，恢复点完全一致。还要核对无公网、未开启加密、目标计费、规格、可用区、网络和安全组。回执丢失后按同一标签和源实例克隆记录只读核验。缺失或矛盾证据可由独立审批人续查，续查过程中云端写入次数保持不变。验证通过后，事务登记新资产归属和终态事件。启用前在目标地域实测 IAM、VPC 隔离、计费及恢复数据。 [异步任务结果](https://cloud.tencent.com/document/api/236/20410) · [实例列表](https://cloud.tencent.com/document/product/236/15872) · [克隆历史](https://cloud.tencent.com/document/api/236/50423) · [实例安全组](https://cloud.tencent.com/document/api/236/15854)
 
 #### 托管数据库实例改名
 
@@ -1386,6 +1408,8 @@ cloud-manager assets export TENANT PROJECT --kind instance --account ACCOUNT > a
 应用 `0136_inventory_schedule_config` 并更新 API 与盘点控制器。腾讯云、阿里云和华为云的项目管理员可在「云账号管理 → 盘点计划」按账号、地域和资源类型登记、调整间隔、停用、恢复或立即排队。启用计划要求账号已完成身份校验。原有计划以版本 1 纳入管理。运维也可通过 `cmp_inventory_schedules` 管理其他厂商和专项计划。间隔为 60 秒至 7 天。`region` 盘点使用空地域，`dns-zone`、`object-bucket` 和两类对象桶配置计划使用 `global`。普通盘点的 `target_id` 为空，节点池快照计划使用父集群 ID。
 
 账号路径下的 `GET /inventory-schedules` 返回分页计划，使用 `limit` 和 `after`。用 `POST /inventory-schedules` 登记，提交 `region`、`kind`、`interval_seconds`、`enabled`。用 `PATCH /inventory-schedules/{id}` 更新，提交 `interval_seconds`、`enabled` 和可选的 `run_now`，同时使用当前版本的强 `If-Match`。立即排队由已部署的控制器领取。计划变更记录进项目审计。
+
+应用 `0170_database_observation_schedules` 并升级 API 与控制器后，三家优先云的自有账号管理员可登记「数据库备份」和「数据库可恢复时间」。`kind` 分别为 `database-backups` 和 `database-restore-windows`。两者都需指定数据库所在地域和 `target_id`，实例须已盘点、在当前项目可见并支持对应厂商接口。控制器按同一账号的租约及限流预算运行，完整读取后将快照和计划结果一同提交。计划停用、凭据轮换或父实例观测变化会拒绝旧结果，限流和读失败保留上一份有效快照。专项计划不计入全量盘点新鲜度。
 
 ```sh
 cloud-manager cloud-accounts schedules TENANT PROJECT ACCOUNT

@@ -11,7 +11,7 @@ type observationBudget struct {
 	bytes atomic.Int64
 }
 
-var errObservationBudget = errors.New("Kubernetes workload observation byte budget exceeded")
+var errObservationBudget = errors.New("exceeded Kubernetes workload observation byte budget")
 
 func newObservationBudget() *observationBudget {
 	budget := new(observationBudget)

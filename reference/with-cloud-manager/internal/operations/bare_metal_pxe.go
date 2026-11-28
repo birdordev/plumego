@@ -3,7 +3,6 @@ package operations
 import (
 	"context"
 	"database/sql"
-	_ "embed"
 	"errors"
 
 	"github.com/birdordev/plumego/x/messaging/mq"
@@ -15,11 +14,8 @@ import (
 
 const BareMetalPXEMigration = "0119_bare_metal_pxe"
 
-//go:embed 0119_bare_metal_pxe.sql
-var bareMetalPXESchema string
-
 func MigrateBareMetalPXE(ctx context.Context, db *sql.DB) error {
-	return dbschema.Apply(ctx, db, BareMetalPXEMigration, bareMetalPXESchema)
+	return dbschema.Apply(ctx, db, BareMetalPXEMigration)
 }
 
 func bareMetalPXEAction(action string) bool {

@@ -3,7 +3,6 @@ package inventory
 import (
 	"context"
 	"database/sql"
-	_ "embed"
 	"encoding/json"
 	"errors"
 	"time"
@@ -14,16 +13,13 @@ import (
 	"with-cloud-manager/internal/provider"
 )
 
-//go:embed 0167_database_backups.sql
-var databaseBackupsSchema string
-
 const DatabaseBackupsMigration = "0167_database_backups"
 
 var ErrDatabaseBackupsNotFound = errors.New("database backup snapshot unavailable")
 var ErrDatabaseBackupsChanged = errors.New("database backup snapshot changed")
 
 func MigrateDatabaseBackups(ctx context.Context, db *sql.DB) error {
-	return dbschema.Apply(ctx, db, DatabaseBackupsMigration, databaseBackupsSchema)
+	return dbschema.Apply(ctx, db, DatabaseBackupsMigration)
 }
 
 type DatabaseBackupQuery struct {
@@ -42,27 +38,35 @@ type DatabaseBackupPage struct {
 }
 
 func (s Store) RefreshDatabaseBackups(ctx context.Context, key Key, id string, revision int64, reader provider.DatabaseBackupReader) error {
-	target, err := s.databaseObservation(ctx, key, id, revision)
+	publish, err := s.PrepareDatabaseBackups(ctx, key, id, revision, reader)
 	if err != nil {
 		return err
 	}
+	return dbutil.WithTransaction(ctx, s.db, nil, func(tx *sql.Tx) error { return publish(ctx, tx) })
+}
+
+func (s Store) PrepareDatabaseBackups(ctx context.Context, key Key, id string, revision int64, reader provider.DatabaseBackupReader) (func(context.Context, *sql.Tx) error, error) {
+	target, err := s.databaseObservation(ctx, key, id, revision)
+	if err != nil {
+		return nil, err
+	}
 	if !provider.ValidDatabaseBackupTarget(target.scope.Provider, id, target.details) {
-		return &provider.Failure{Kind: provider.Unsupported}
+		return nil, &provider.Failure{Kind: provider.Unsupported}
 	}
 	end := target.started.UTC().Truncate(time.Minute)
 	start := end.Add(-provider.DatabaseBackupWindow)
 	backups, err := reader.ReadDatabaseBackups(ctx, target.scope, id, target.details, end)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if err := provider.NormalizeDatabaseBackups(backups); err != nil {
-		return err
+		return nil, err
 	}
 	data, err := json.Marshal(backups)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	return dbutil.WithTransaction(ctx, s.db, nil, func(tx *sql.Tx) error {
+	return func(ctx context.Context, tx *sql.Tx) error {
 		if err := target.lock(ctx, tx); err != nil {
 			return err
 		}
@@ -75,7 +79,7 @@ func (s Store) RefreshDatabaseBackups(ctx context.Context, key Key, id string, r
 			WHERE (saved.credential_revision,saved.refresh_started_at) < (EXCLUDED.credential_revision,EXCLUDED.refresh_started_at)`,
 			target.scopeID, id, target.details.Product, target.details.Engine, revision, target.started, start, end, string(data))
 		return checkDatabaseObservationWrite(result, err)
-	})
+	}, nil
 }
 
 func (s Store) ReadDatabaseBackups(ctx context.Context, token string, q DatabaseBackupQuery) (DatabaseBackupPage, error) {

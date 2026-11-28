@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"database/sql"
-	_ "embed"
 	"encoding/json"
 	"errors"
 	"time"
@@ -17,14 +16,11 @@ import (
 	"with-cloud-manager/internal/provider"
 )
 
-//go:embed 0163_bucket_versioning_change.sql
-var bucketVersioningSchema string
-
 const BucketVersioningMigration = "0163_bucket_versioning_change"
 const setBucketVersioning = "set-bucket-versioning"
 
 func MigrateBucketVersioning(ctx context.Context, db *sql.DB) error {
-	return dbschema.Apply(ctx, db, BucketVersioningMigration, bucketVersioningSchema)
+	return dbschema.Apply(ctx, db, BucketVersioningMigration)
 }
 
 type BucketVersioningInput struct {

@@ -1,33 +1,38 @@
 import { useState } from 'react'
 import { useDetailAction } from '../../../shared/detail/useDetailAction'
 import { addSchedule, changeSchedule, type Schedule } from './api'
-import { hasGlobalScheduleScope, scheduleKindLabel, scheduleKinds, scheduleRegionLabel } from './kinds'
+import { hasGlobalScheduleScope, needsDatabaseTarget, scheduleKindLabel, scheduleKinds, scheduleRegionLabel } from './kinds'
 
 export function ScheduleForm({ target, current, readable, stamp, signal, saved, cancel }: {
   target: string; current?: Schedule; readable: boolean; stamp: number; signal: AbortSignal; saved: () => void; cancel: () => void
 }) {
   const [kind, setKind] = useState(current?.kind ?? 'instance')
   const [region, setRegion] = useState(current?.region ?? '')
+  const [databaseID, setDatabaseID] = useState('')
   const [interval, setInterval] = useState(String(current?.interval_seconds ?? 600))
   const [enabled, setEnabled] = useState(current?.enabled ?? readable)
   const { busy, run } = useDetailAction(stamp)
   const global = hasGlobalScheduleScope(kind)
   const regional = !global && kind !== 'region'
+  const database = needsDatabaseTarget(kind)
   const valid = Number.isSafeInteger(Number(interval)) && Number(interval) >= 60 && Number(interval) <= 604800 &&
-    (!enabled || readable) && (current || !regional || (/^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/.test(region) && region !== 'global'))
+    (!enabled || readable) && (current || !regional || (/^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/.test(region) && region !== 'global')) &&
+    (current || !database || /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/.test(databaseID))
 
   return <form className="catalog-form" onSubmit={(event) => {
     event.preventDefault()
     if (!valid) return
     const settings = { interval_seconds: Number(interval), enabled }
     void run(() => current ? changeSchedule(target, current, settings, signal)
-      : addSchedule(target, { ...settings, kind, region: regional ? region : global ? 'global' : '' }, signal), saved)
+      : addSchedule(target, { ...settings, kind, region: regional ? region : global ? 'global' : '',
+        target_id: database ? databaseID : undefined }, signal), saved)
   }}>
-    {current ? <p>{scheduleKindLabel(current.kind)} · {scheduleRegionLabel(current.region)} · 版本 {current.revision}</p> : <>
+    {current ? <p>{scheduleKindLabel(current.kind)} · {scheduleRegionLabel(current.region)}{current.target_id && ' · ' + current.target_id} · 版本 {current.revision}</p> : <>
       <label>资源类型<select value={kind} onChange={(event) => setKind(event.target.value)}>
         {scheduleKinds.map((value) => <option value={value} key={value}>{scheduleKindLabel(value)}</option>)}
       </select></label>
       {regional && <label>地域<input maxLength={64} required value={region} onChange={(event) => setRegion(event.target.value)} /></label>}
+      {database && <label>数据库实例 ID<input maxLength={128} required value={databaseID} onChange={(event) => setDatabaseID(event.target.value)} /></label>}
     </>}
     <label>盘点间隔（秒）<input type="number" min={60} max={604800} required value={interval} onChange={(event) => setInterval(event.target.value)} /></label>
     <label><input type="checkbox" checked={enabled} onChange={(event) => setEnabled(event.target.checked)} /> 启用计划</label>

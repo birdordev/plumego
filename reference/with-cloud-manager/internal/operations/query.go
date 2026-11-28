@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"database/sql"
-	_ "embed"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -17,9 +16,6 @@ import (
 	"with-cloud-manager/internal/identity"
 	"with-cloud-manager/internal/provider"
 )
-
-//go:embed 0022_operation_queries.sql
-var operationQuerySchema string
 
 var ErrInvalidQuery = errors.New("invalid operation query")
 

@@ -3,16 +3,12 @@ package inventory
 import (
 	"context"
 	"database/sql"
-	_ "embed"
 	"encoding/json"
 	"errors"
 
 	"with-cloud-manager/internal/identity"
 	"with-cloud-manager/internal/provider"
 )
-
-//go:embed 0090_workload_change_reservations.sql
-var workloadChangeReservationsSchema string
 
 func WorkloadScaleTarget(ctx context.Context, tx *sql.Tx, scope MutationTarget, id, snapshot string, target provider.WorkloadScaleTarget) (provider.ClusterWorkload, error) {
 	if snapshot != "" && !clusterSnapshotID.MatchString(snapshot) {

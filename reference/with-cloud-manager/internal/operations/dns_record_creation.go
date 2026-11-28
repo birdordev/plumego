@@ -5,7 +5,6 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"database/sql"
-	_ "embed"
 	"encoding/json"
 	"errors"
 	"time"
@@ -16,9 +15,6 @@ import (
 	"with-cloud-manager/internal/inventory"
 	"with-cloud-manager/internal/provider"
 )
-
-//go:embed 0074_dns_record_creation.sql
-var dnsRecordCreationSchema string
 
 const createDNSRecord = "create-dns-record"
 
@@ -44,7 +40,7 @@ type dnsRecordCreation struct {
 }
 
 func (s Store) SubmitDNSRecordCreation(ctx context.Context, token string, scope identity.Scope, key string, revision int64, input DNSRecordCreationInput) (Operation, error) {
-	spec, ok := input.DNSRecordSpec.Normalize()
+	spec, ok := input.Normalize()
 	if !ok || input.ObservedAt.IsZero() || !provider.ValidDNSRecordID(input.AssetID) {
 		return Operation{}, ErrInvalid
 	}

@@ -16,7 +16,7 @@ func TestAcceptanceWorkerTenantIndexesResumeAndRejectConflict(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	exec(queueSchema)
+	exec(readOperationQueueSchema(t))
 	exec(`CREATE INDEX cmp_operation_tasks_tenant_ready ON cmp_operation_tasks (tenant_id,topic,available_at) WHERE status='queued';
 		CREATE INDEX cmp_operation_tasks_tenant_lease ON cmp_operation_tasks (tenant_id text_pattern_ops,topic,lease_until) WHERE status='leased'`)
 	readOIDs := func() (int64, int64) {

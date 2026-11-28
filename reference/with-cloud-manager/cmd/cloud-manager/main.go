@@ -314,6 +314,9 @@ func migrateCloudManagerSchema(ctx context.Context, db *sql.DB) error {
 	if err := inventory.MigrateDatabaseRestoreWindows(ctx, db); err != nil {
 		return errors.New("database restore window migration failed")
 	}
+	if err := inventory.MigrateDatabaseProtection(ctx, db); err != nil {
+		return errors.New("database protection migration failed")
+	}
 	if err := operations.MigrateDatabaseRecovery(ctx, db); err != nil {
 		return errors.New("database recovery migration failed")
 	}

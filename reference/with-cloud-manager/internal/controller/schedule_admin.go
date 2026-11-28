@@ -14,14 +14,17 @@ import (
 	"with-cloud-manager/internal/provider"
 )
 
-const scheduleFields = "schedule_id::text,region,kind,interval_seconds,enabled,config_revision,next_at,failures,COALESCE(last_outcome,''),last_finished_at,bucket_batch_rejected"
+const scheduleFields = "schedule_id::text,region,kind,target_id,interval_seconds,enabled,config_revision,next_at,failures,COALESCE(last_outcome,''),last_finished_at,bucket_batch_rejected"
+const manageableSchedule = "(target_id='' OR kind IN ('database-backups','database-restore-windows'))"
 
 var regionIdentifier = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$`)
+var scheduleTargetID = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$`)
 
 type Schedule struct {
 	ID                  string        `json:"id"`
 	Region              string        `json:"region"`
 	Kind                provider.Kind `json:"kind"`
+	TargetID            string        `json:"target_id,omitempty"`
 	Interval            int           `json:"interval_seconds"`
 	Enabled             bool          `json:"enabled"`
 	Revision            int64         `json:"revision"`
@@ -38,8 +41,9 @@ type ScheduleSettings struct {
 }
 
 type RegisterSchedule struct {
-	Region string        `json:"region"`
-	Kind   provider.Kind `json:"kind"`
+	Region   string        `json:"region"`
+	Kind     provider.Kind `json:"kind"`
+	TargetID string        `json:"target_id,omitempty"`
 	ScheduleSettings
 }
 
@@ -54,6 +58,12 @@ func (s ScheduleSettings) valid() bool {
 
 func (s RegisterSchedule) valid() bool {
 	if !s.ScheduleSettings.valid() {
+		return false
+	}
+	if isDatabaseObservationSchedule(s.Kind) {
+		return regionIdentifier.MatchString(s.Region) && s.Region != "global" && scheduleTargetID.MatchString(s.TargetID)
+	}
+	if s.TargetID != "" {
 		return false
 	}
 	if isBucketSettingSchedule(string(s.Kind)) {
@@ -120,7 +130,7 @@ func (s Store) scheduleAccount(ctx context.Context, token string, scope identity
 
 func scanSchedule(row interface{ Scan(...any) error }) (Schedule, error) {
 	var item Schedule
-	err := row.Scan(&item.ID, &item.Region, &item.Kind, &item.Interval, &item.Enabled, &item.Revision,
+	err := row.Scan(&item.ID, &item.Region, &item.Kind, &item.TargetID, &item.Interval, &item.Enabled, &item.Revision,
 		&item.NextAt, &item.Failures, &item.LastOutcome, &item.LastFinished, &item.BucketBatchRejected)
 	return item, err
 }
@@ -134,7 +144,7 @@ func (s Store) ListSchedules(ctx context.Context, token string, scope identity.S
 	err := s.scheduleAccount(ctx, token, scope, account, false, func(tx *sql.Tx, actor identity.Scope, _ bool) error {
 		rows, err := tx.QueryContext(ctx, "SELECT "+scheduleFields+`
 			FROM cmp_inventory_schedules AS s JOIN cmp_cloud_accounts AS a USING (tenant_id,account_id)
-			WHERE (s.tenant_id,a.project_id,s.account_id)=($1,$2,$3) AND s.target_id='' AND s.schedule_id>$4
+			WHERE (s.tenant_id,a.project_id,s.account_id)=($1,$2,$3) AND `+manageableSchedule+` AND s.schedule_id>$4
 			ORDER BY s.schedule_id LIMIT $5`, actor.Tenant, actor.Project, account, after, limit+1)
 		if err != nil {
 			return err

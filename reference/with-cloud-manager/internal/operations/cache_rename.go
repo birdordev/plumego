@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"database/sql"
-	_ "embed"
 	"encoding/json"
 	"errors"
 	"strings"
@@ -16,12 +15,6 @@ import (
 	"with-cloud-manager/internal/inventory"
 	"with-cloud-manager/internal/provider"
 )
-
-//go:embed 0109_cache_rename.sql
-var cacheRenameSchema string
-
-//go:embed 0110_cache_rename_events.sql
-var cacheRenameEventsSchema string
 
 const renameCacheInstance = "rename-cache-instance"
 
@@ -41,7 +34,7 @@ type CacheRenameView struct {
 }
 
 func MigrateCacheRenameEvents(ctx context.Context, db *sql.DB) error {
-	return dbschema.Apply(ctx, db, "0110_cache_rename_events", cacheRenameEventsSchema)
+	return dbschema.Apply(ctx, db, "0110_cache_rename_events")
 }
 
 func (s Store) SubmitCacheRename(ctx context.Context, token string, scope identity.Scope, key string, revision int64, input CacheRenameInput) (Operation, error) {

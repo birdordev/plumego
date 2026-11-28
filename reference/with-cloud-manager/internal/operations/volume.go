@@ -3,7 +3,6 @@ package operations
 import (
 	"context"
 	"database/sql"
-	_ "embed"
 	"errors"
 	"fmt"
 	"regexp"
@@ -16,14 +15,11 @@ import (
 	"with-cloud-manager/internal/provider"
 )
 
-//go:embed 0018_volume_operations.sql
-var volumeSchema string
-
 var attachDevice = regexp.MustCompile(`^/dev/sd[f-p]$`)
 var ErrVolumeStale = fmt.Errorf("volume ownership revision changed: %w", identity.ErrAccountStale)
 
 func migrateVolume(ctx context.Context, db *sql.DB) error {
-	return dbschema.Apply(ctx, db, "0018_volume_operations", volumeSchema)
+	return dbschema.Apply(ctx, db, "0018_volume_operations")
 }
 
 func volumeAction(action string) bool {

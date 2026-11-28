@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/json"
+	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"strings"
@@ -185,7 +186,8 @@ func TestAcceptanceTagPolicyAndCompliance(t *testing.T) {
 		go func() { versions <- request("PUT", policy, "admin", `"1"`, second).Code }()
 	}
 	a, b := <-versions, <-versions
-	if !((a == 200 && b == 412) || (a == 412 && b == 200)) {
+	oneUpdateWon := a == http.StatusOK && b == http.StatusPreconditionFailed || a == http.StatusPreconditionFailed && b == http.StatusOK
+	if !oneUpdateWon {
 		t.Fatalf("parallel rule publication returned %d and %d", a, b)
 	}
 	check("GET", report+"&state=noncompliant&cursor="+url.QueryEscape(paged.Next), "viewer", "", "", 400)

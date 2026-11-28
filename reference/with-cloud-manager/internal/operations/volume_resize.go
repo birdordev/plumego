@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"database/sql"
-	_ "embed"
 	"encoding/json"
 	"errors"
 
@@ -16,13 +15,10 @@ import (
 	"with-cloud-manager/internal/provider"
 )
 
-//go:embed 0157_volume_resize.sql
-var volumeResizeSchema string
-
 const VolumeResizeMigration = "0157_volume_resize"
 
 func MigrateVolumeResize(ctx context.Context, db *sql.DB) error {
-	return dbschema.Apply(ctx, db, VolumeResizeMigration, volumeResizeSchema)
+	return dbschema.Apply(ctx, db, VolumeResizeMigration)
 }
 
 const resizeVolume = "resize-volume"

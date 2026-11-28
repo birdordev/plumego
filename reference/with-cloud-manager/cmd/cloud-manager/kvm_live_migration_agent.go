@@ -71,7 +71,7 @@ func parseKVMLiveDestination(raw string) (*url.URL, error) {
 	target, err := url.Parse(raw)
 	if err != nil || target.Scheme != "qemu+tls" || target.Hostname() == "" || target.User != nil ||
 		target.EscapedPath() != "/system" || target.RawQuery != "" || target.ForceQuery || strings.Contains(raw, "#") ||
-		len(target.Hostname()) > 253 || !(target.Host == target.Hostname() || target.Port() != "") {
+		len(target.Hostname()) > 253 || (target.Host != target.Hostname() && target.Port() == "") {
 		return nil, errKVMUnsafeTarget
 	}
 	for _, label := range strings.Split(target.Hostname(), ".") {

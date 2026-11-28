@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/rand"
 	"database/sql"
-	_ "embed"
 	"errors"
 	"time"
 
@@ -17,11 +16,8 @@ import (
 
 const BareMetalReclaimsMigration = "0121_bare_metal_reclaims"
 
-//go:embed 0121_bare_metal_reclaims.sql
-var bareMetalReclaimsSchema string
-
 func MigrateBareMetalReclaims(ctx context.Context, db *sql.DB) error {
-	return dbschema.Apply(ctx, db, BareMetalReclaimsMigration, bareMetalReclaimsSchema)
+	return dbschema.Apply(ctx, db, BareMetalReclaimsMigration)
 }
 
 type BareMetalReclaimInput struct {

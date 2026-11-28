@@ -5,7 +5,6 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"database/sql"
-	_ "embed"
 	"encoding/json"
 	"slices"
 
@@ -18,14 +17,11 @@ import (
 	"with-cloud-manager/internal/provider"
 )
 
-//go:embed 0158_volume_creation.sql
-var volumeCreationSchema string
-
 const VolumeCreationMigration = "0158_volume_creation"
 const createVolume = "create-volume"
 
 func MigrateVolumeCreation(ctx context.Context, db *sql.DB) error {
-	return dbschema.Apply(ctx, db, VolumeCreationMigration, volumeCreationSchema)
+	return dbschema.Apply(ctx, db, VolumeCreationMigration)
 }
 
 type VolumeCreationInput struct {

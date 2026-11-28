@@ -6,6 +6,7 @@ import (
 	"errors"
 	"time"
 
+	"with-cloud-manager/internal/identity"
 	"with-cloud-manager/internal/provider"
 )
 
@@ -30,6 +31,22 @@ const selectObservedDatabase = ` FROM cmp_inventory_objects AS o
 
 const ownedObservedDatabase = inventoryOwnershipJoins +
 	" WHERE " + assetVisibility + " AND " + currentObservedDatabase + " AND (s.account_id,s.region,o.external_id)=($3,$4,$5)"
+
+func ResolveDatabaseObservationTarget(ctx context.Context, tx *sql.Tx, q DatabaseAssetQuery) (string, provider.DatabaseDetails, error) {
+	if !q.valid() {
+		return "", provider.DatabaseDetails{}, identity.ErrAccountInvalid
+	}
+	var vendor string
+	var details provider.DatabaseDetails
+	err := tx.QueryRowContext(ctx, `SELECT a.provider,o.database_instance->>'product',o.database_instance->>'engine'
+		FROM cmp_inventory_scopes AS s JOIN cmp_cloud_accounts AS a USING (tenant_id,account_id)
+		JOIN cmp_inventory_objects AS o USING (scope_id)`+ownedObservedDatabase,
+		q.Tenant, q.Project, q.Account, q.Region, q.ID).Scan(&vendor, &details.Product, &details.Engine)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", provider.DatabaseDetails{}, identity.ErrForbidden
+	}
+	return vendor, details, err
+}
 
 type databaseObservation struct {
 	key                     Key

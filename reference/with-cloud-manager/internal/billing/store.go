@@ -3,7 +3,6 @@ package billing
 import (
 	"context"
 	"database/sql"
-	_ "embed"
 	"errors"
 
 	dbutil "github.com/birdordev/plumego/store/db"
@@ -12,15 +11,12 @@ import (
 	"with-cloud-manager/internal/identity"
 )
 
-//go:embed 0093_billing_ledger.sql
-var schema string
-
 type Store struct{ db *sql.DB }
 
 func NewStore(db *sql.DB) Store { return Store{db: db} }
 
 func Migrate(ctx context.Context, db *sql.DB) error {
-	return dbschema.Apply(ctx, db, "0093_billing_ledger", schema)
+	return dbschema.Apply(ctx, db, "0093_billing_ledger")
 }
 
 type binding struct {

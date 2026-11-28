@@ -3,14 +3,10 @@ package inventory
 import (
 	"context"
 	"database/sql"
-	_ "embed"
 	"errors"
 
 	"with-cloud-manager/internal/provider"
 )
-
-//go:embed 0086_cluster_workloads.sql
-var clusterWorkloadsSchema string
 
 var (
 	ErrClusterWorkloadsNotFound = errors.New("cluster workloads unavailable")

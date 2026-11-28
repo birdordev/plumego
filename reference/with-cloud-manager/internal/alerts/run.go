@@ -3,53 +3,32 @@ package alerts
 import (
 	"context"
 	"database/sql"
-	_ "embed"
 	"errors"
 	"time"
 
 	dbutil "github.com/birdordev/plumego/store/db"
 
 	"with-cloud-manager/internal/dbschema"
+	"with-cloud-manager/migrations"
 )
 
-//go:embed 0028_project_alerts.sql
-var schema string
-
-//go:embed 0034_security_rule_outbox.sql
-var securityRuleOutboxSchema string
-
-//go:embed 0047_image_deletion_outbox.sql
-var imageDeletionOutboxSchema string
-
-//go:embed 0060_load_balancer_rename_outbox.sql
-var loadBalancerRenameOutboxSchema string
-
-//go:embed 0073_dns_zone_outbox.sql
-var dnsZoneOutboxSchema string
-
-//go:embed 0092_workload_scale_outbox.sql
-var workloadScaleOutboxSchema string
-
-//go:embed evaluate.sql
-var evaluate string
-
 func Migrate(ctx context.Context, db *sql.DB) error {
-	if err := dbschema.Apply(ctx, db, "0028_project_alerts", schema); err != nil {
+	if err := dbschema.Apply(ctx, db, "0028_project_alerts"); err != nil {
 		return err
 	}
-	if err := dbschema.Apply(ctx, db, "0034_security_rule_outbox", securityRuleOutboxSchema); err != nil {
+	if err := dbschema.Apply(ctx, db, "0034_security_rule_outbox"); err != nil {
 		return err
 	}
-	if err := dbschema.Apply(ctx, db, "0047_image_deletion_outbox", imageDeletionOutboxSchema); err != nil {
+	if err := dbschema.Apply(ctx, db, "0047_image_deletion_outbox"); err != nil {
 		return err
 	}
-	if err := dbschema.Apply(ctx, db, "0060_load_balancer_rename_outbox", loadBalancerRenameOutboxSchema); err != nil {
+	if err := dbschema.Apply(ctx, db, "0060_load_balancer_rename_outbox"); err != nil {
 		return err
 	}
-	if err := dbschema.Apply(ctx, db, "0073_dns_zone_outbox", dnsZoneOutboxSchema); err != nil {
+	if err := dbschema.Apply(ctx, db, "0073_dns_zone_outbox"); err != nil {
 		return err
 	}
-	return dbschema.Apply(ctx, db, "0092_workload_scale_outbox", workloadScaleOutboxSchema)
+	return dbschema.Apply(ctx, db, "0092_workload_scale_outbox")
 }
 
 type ProjectEvaluation func(context.Context, *sql.Tx, string, string) error
@@ -64,7 +43,7 @@ func (s Store) EvaluateNext(ctx context.Context) (bool, error) {
 	defer cancel()
 	var tenant, project string
 	err := dbutil.WithTransaction(ctx, s.db, nil, func(tx *sql.Tx) error {
-		err := tx.QueryRowContext(ctx, evaluate).Scan(&tenant, &project)
+		err := tx.QueryRowContext(ctx, migrations.Evaluate()).Scan(&tenant, &project)
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil
 		}

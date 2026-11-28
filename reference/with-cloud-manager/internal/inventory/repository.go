@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"database/sql"
-	_ "embed"
 	"encoding/json"
 	"errors"
 	"slices"
@@ -15,36 +14,6 @@ import (
 	"with-cloud-manager/internal/dbschema"
 	"with-cloud-manager/internal/provider"
 )
-
-//go:embed 0002_inventory.sql
-var schema string
-
-//go:embed 0005_inventory_history.sql
-var historySchema string
-
-//go:embed 0006_inventory_topology.sql
-var topologySchema string
-
-//go:embed 0015_confirmed_instance_deletions.sql
-var confirmedDeletionsSchema string
-
-//go:embed 0035_inventory_public_addresses.sql
-var publicAddressesSchema string
-
-//go:embed 0040_snapshot_inventory.sql
-var snapshotInventorySchema string
-
-//go:embed 0048_instance_image_reservations.sql
-var instanceImageReservationsSchema string
-
-//go:embed 0050_image_copy_reservations.sql
-var imageCopyReservationsSchema string
-
-//go:embed 0054_network_deletion_reservations.sql
-var networkDeletionReservationsSchema string
-
-//go:embed 0056_load_balancer_inventory.sql
-var loadBalancerInventorySchema string
 
 var ErrUnavailable = errors.New("inventory scope unavailable")
 var ErrStale = errors.New("inventory observation is no longer current")
@@ -73,41 +42,20 @@ func NewStore(db *sql.DB) Store {
 	return Store{db: db}
 }
 
-//go:embed 0076_database_inventory.sql
-var databaseInventorySchema string
-
-//go:embed 0078_object_bucket_inventory.sql
-var objectBucketInventorySchema string
-
-//go:embed 0080_cache_inventory.sql
-var cacheInventorySchema string
-
-//go:embed 0082_kubernetes_inventory.sql
-var kubernetesInventorySchema string
-
-//go:embed 0134_inventory_completion.sql
-var inventoryCompletionSchema string
-
 const InventoryCompletionMigration = "0134_inventory_completion"
 
-//go:embed 0156_volume_inventory_details.sql
-var volumeInventorySchema string
-
 const VolumeInventoryMigration = "0156_volume_inventory_details"
-
-//go:embed 0160_instance_type_inventory.sql
-var instanceTypeInventorySchema string
 
 const InstanceTypeInventoryMigration = "0160_instance_type_inventory"
 
 func Migrate(ctx context.Context, db *sql.DB) error {
-	if err := dbschema.Apply(ctx, db, "0002_inventory", schema); err != nil {
+	if err := dbschema.Apply(ctx, db, "0002_inventory"); err != nil {
 		return err
 	}
-	if err := dbschema.Apply(ctx, db, "0005_inventory_history", historySchema); err != nil {
+	if err := dbschema.Apply(ctx, db, "0005_inventory_history"); err != nil {
 		return err
 	}
-	if err := dbschema.Apply(ctx, db, "0006_inventory_topology", topologySchema); err != nil {
+	if err := dbschema.Apply(ctx, db, "0006_inventory_topology"); err != nil {
 		return err
 	}
 	if err := MigrateOwnership(ctx, db); err != nil {
@@ -116,88 +64,88 @@ func Migrate(ctx context.Context, db *sql.DB) error {
 	if err := migrateTagAssignment(ctx, db); err != nil {
 		return err
 	}
-	if err := dbschema.Apply(ctx, db, "0015_confirmed_instance_deletions", confirmedDeletionsSchema); err != nil {
+	if err := dbschema.Apply(ctx, db, "0015_confirmed_instance_deletions"); err != nil {
 		return err
 	}
-	if err := dbschema.Apply(ctx, db, "0035_inventory_public_addresses", publicAddressesSchema); err != nil {
+	if err := dbschema.Apply(ctx, db, "0035_inventory_public_addresses"); err != nil {
 		return err
 	}
-	if err := dbschema.Apply(ctx, db, "0040_snapshot_inventory", snapshotInventorySchema); err != nil {
+	if err := dbschema.Apply(ctx, db, "0040_snapshot_inventory"); err != nil {
 		return err
 	}
-	if err := dbschema.Apply(ctx, db, "0048_instance_image_reservations", instanceImageReservationsSchema); err != nil {
+	if err := dbschema.Apply(ctx, db, "0048_instance_image_reservations"); err != nil {
 		return err
 	}
-	if err := dbschema.Apply(ctx, db, "0050_image_copy_reservations", imageCopyReservationsSchema); err != nil {
+	if err := dbschema.Apply(ctx, db, "0050_image_copy_reservations"); err != nil {
 		return err
 	}
-	if err := dbschema.Apply(ctx, db, "0054_network_deletion_reservations", networkDeletionReservationsSchema); err != nil {
+	if err := dbschema.Apply(ctx, db, "0054_network_deletion_reservations"); err != nil {
 		return err
 	}
-	if err := dbschema.Apply(ctx, db, "0056_load_balancer_inventory", loadBalancerInventorySchema); err != nil {
+	if err := dbschema.Apply(ctx, db, "0056_load_balancer_inventory"); err != nil {
 		return err
 	}
 	if err := migrateLoadBalancerConfiguration(ctx, db); err != nil {
 		return err
 	}
-	if err := dbschema.Apply(ctx, db, "0067_dns_zone_records", dnsZoneRecordsSchema); err != nil {
+	if err := dbschema.Apply(ctx, db, "0067_dns_zone_records"); err != nil {
 		return err
 	}
-	if err := dbschema.Apply(ctx, db, "0069_load_balancer_change_reservations", loadBalancerChangeReservationsSchema); err != nil {
+	if err := dbschema.Apply(ctx, db, "0069_load_balancer_change_reservations"); err != nil {
 		return err
 	}
-	if err := dbschema.Apply(ctx, db, "0071_dns_zone_mutation", dnsZoneMutationSchema); err != nil {
+	if err := dbschema.Apply(ctx, db, "0071_dns_zone_mutation"); err != nil {
 		return err
 	}
-	if err := dbschema.Apply(ctx, db, "0076_database_inventory", databaseInventorySchema); err != nil {
+	if err := dbschema.Apply(ctx, db, "0076_database_inventory"); err != nil {
 		return err
 	}
-	if err := dbschema.Apply(ctx, db, "0078_object_bucket_inventory", objectBucketInventorySchema); err != nil {
+	if err := dbschema.Apply(ctx, db, "0078_object_bucket_inventory"); err != nil {
 		return err
 	}
-	if err := dbschema.Apply(ctx, db, "0080_cache_inventory", cacheInventorySchema); err != nil {
+	if err := dbschema.Apply(ctx, db, "0080_cache_inventory"); err != nil {
 		return err
 	}
-	if err := dbschema.Apply(ctx, db, "0082_kubernetes_inventory", kubernetesInventorySchema); err != nil {
+	if err := dbschema.Apply(ctx, db, "0082_kubernetes_inventory"); err != nil {
 		return err
 	}
-	if err := dbschema.Apply(ctx, db, "0084_cluster_node_pools", clusterNodePoolsSchema); err != nil {
+	if err := dbschema.Apply(ctx, db, "0084_cluster_node_pools"); err != nil {
 		return err
 	}
-	if err := dbschema.Apply(ctx, db, "0086_cluster_workloads", clusterWorkloadsSchema); err != nil {
+	if err := dbschema.Apply(ctx, db, "0086_cluster_workloads"); err != nil {
 		return err
 	}
-	if err := dbschema.Apply(ctx, db, "0088_cluster_workload_checkpoints", workloadCheckpointSchema); err != nil {
+	if err := dbschema.Apply(ctx, db, "0088_cluster_workload_checkpoints"); err != nil {
 		return err
 	}
-	if err := dbschema.Apply(ctx, db, "0090_workload_change_reservations", workloadChangeReservationsSchema); err != nil {
+	if err := dbschema.Apply(ctx, db, "0090_workload_change_reservations"); err != nil {
 		return err
 	}
-	if err := dbschema.Apply(ctx, db, "0097_tag_observations", tagObservationsSchema); err != nil {
+	if err := dbschema.Apply(ctx, db, "0097_tag_observations"); err != nil {
 		return err
 	}
-	if err := dbschema.Apply(ctx, db, "0103_database_rename_reservations", databaseRenameReservationsSchema); err != nil {
+	if err := dbschema.Apply(ctx, db, "0103_database_rename_reservations"); err != nil {
 		return err
 	}
-	if err := dbschema.Apply(ctx, db, "0106_instance_retirement_reservations", instanceRetirementReservationsSchema); err != nil {
+	if err := dbschema.Apply(ctx, db, "0106_instance_retirement_reservations"); err != nil {
 		return err
 	}
-	if err := dbschema.Apply(ctx, db, "0108_cache_rename_reservations", cacheRenameReservationsSchema); err != nil {
+	if err := dbschema.Apply(ctx, db, "0108_cache_rename_reservations"); err != nil {
 		return err
 	}
-	if err := dbschema.Apply(ctx, db, InventoryCompletionMigration, inventoryCompletionSchema); err != nil {
+	if err := dbschema.Apply(ctx, db, InventoryCompletionMigration); err != nil {
 		return err
 	}
-	if err := dbschema.Apply(ctx, db, BucketVersioningMigration, bucketVersioningSchema); err != nil {
+	if err := dbschema.Apply(ctx, db, BucketVersioningMigration); err != nil {
 		return err
 	}
-	if err := dbschema.Apply(ctx, db, BucketEncryptionMigration, bucketEncryptionSchema); err != nil {
+	if err := dbschema.Apply(ctx, db, BucketEncryptionMigration); err != nil {
 		return err
 	}
-	if err := dbschema.Apply(ctx, db, VolumeInventoryMigration, volumeInventorySchema); err != nil {
+	if err := dbschema.Apply(ctx, db, VolumeInventoryMigration); err != nil {
 		return err
 	}
-	return dbschema.Apply(ctx, db, InstanceTypeInventoryMigration, instanceTypeInventorySchema)
+	return dbschema.Apply(ctx, db, InstanceTypeInventoryMigration)
 }
 
 func (s Store) Claim(ctx context.Context, key Key, lease time.Duration) (Claim, error) {

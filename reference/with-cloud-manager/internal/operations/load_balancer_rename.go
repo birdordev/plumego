@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"database/sql"
-	_ "embed"
 	"encoding/json"
 	"errors"
 
@@ -14,15 +13,6 @@ import (
 	"with-cloud-manager/internal/inventory"
 	"with-cloud-manager/internal/provider"
 )
-
-//go:embed 0059_load_balancer_rename.sql
-var loadBalancerRenameSchema string
-
-//go:embed 0061_load_balancer_listener_rename.sql
-var loadBalancerListenerRenameSchema string
-
-//go:embed 0062_load_balancer_target_group_rename.sql
-var loadBalancerTargetGroupRenameSchema string
 
 const (
 	renameLoadBalancer            = "rename-load-balancer"

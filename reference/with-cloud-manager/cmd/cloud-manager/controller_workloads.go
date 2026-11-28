@@ -61,7 +61,7 @@ func prepareWorkloadRefresh(ctx context.Context, db *sql.DB, task controller.Tas
 	}
 	path := profile.KubernetesWorkloads[key.Region+"/"+task.TargetID]
 	if !filepath.IsAbs(path) {
-		return nil, errors.New("Kubernetes workload profile unavailable")
+		return nil, errors.New("missing Kubernetes workload profile")
 	}
 	var workload clusterWorkloadProfile
 	if err := loadPrivateProfile(path, &workload); err != nil {

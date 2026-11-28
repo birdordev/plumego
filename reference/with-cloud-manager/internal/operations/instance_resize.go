@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"database/sql"
-	_ "embed"
 	"encoding/json"
 	"errors"
 
@@ -16,13 +15,10 @@ import (
 	"with-cloud-manager/internal/provider"
 )
 
-//go:embed 0161_instance_resize.sql
-var instanceResizeSchema string
-
 const InstanceResizeMigration = "0161_instance_resize"
 
 func MigrateInstanceResize(ctx context.Context, db *sql.DB) error {
-	return dbschema.Apply(ctx, db, InstanceResizeMigration, instanceResizeSchema)
+	return dbschema.Apply(ctx, db, InstanceResizeMigration)
 }
 
 const resizeInstance = "resize-instance"

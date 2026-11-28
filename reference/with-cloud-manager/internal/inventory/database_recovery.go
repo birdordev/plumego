@@ -63,7 +63,7 @@ func CheckDatabaseRecoveryPlacement(ctx context.Context, tx *sql.Tx, actor ident
 				WHERE (link->>'kind',link->>'relation',link->>'id')=('zone','in_zone',$7)))
 			FROM cmp_inventory_objects AS o JOIN cmp_inventory_scopes AS s USING (scope_id)
 			WHERE (o.scope_id,o.external_id)=($1,$2)`, target.ScopeID, dep.id, source.CredentialRevision,
-			dep.kind, spec.VPC, source.Provider == provider.AlibabaECS, spec.Zone).Scan(&valid)
+			dep.kind, spec.VPC, source.Provider != provider.HuaweiECS, spec.Zone).Scan(&valid)
 		if err != nil {
 			return revisions, err
 		}

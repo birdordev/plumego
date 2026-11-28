@@ -172,7 +172,8 @@ func TestAllocationConcurrentPublish(t *testing.T) {
 	}
 	close(start)
 	a, b := <-results, <-results
-	if !(a == nil && errors.Is(b, ErrAllocationConflict) || b == nil && errors.Is(a, ErrAllocationConflict)) {
+	onePublishWon := a == nil && errors.Is(b, ErrAllocationConflict) || b == nil && errors.Is(a, ErrAllocationConflict)
+	if !onePublishWon {
 		t.Fatalf("one writer must win: %v %v", a, b)
 	}
 }

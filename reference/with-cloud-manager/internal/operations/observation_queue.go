@@ -3,15 +3,11 @@ package operations
 import (
 	"context"
 	"database/sql"
-	_ "embed"
 	"errors"
 
 	"github.com/birdordev/plumego/x/messaging/mq"
 	"with-cloud-manager/internal/identity"
 )
-
-//go:embed 0154_operation_observation_queue_repair.sql
-var observationQueueRepairSchema string
 
 const ObservationQueueRepairMigration = "0154_operation_observation_queue_repair"
 

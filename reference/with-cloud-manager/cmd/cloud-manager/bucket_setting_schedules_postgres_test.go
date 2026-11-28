@@ -240,7 +240,7 @@ func checkBucketSweepFences(t *testing.T, db *sql.DB, app http.Handler, execute 
 	}
 	before, _ := readVersioning()
 	dueBucketSweep(t, db, id)
-	changePreparedBucketBatch(t, db, execute, func() {
+	changePreparedSchedule(t, db, execute, func() {
 		scheduleResponse(t, app, "PATCH", path, bucketScheduleToken, `"1"`, `{"enabled":false,"interval_seconds":600}`, 200)
 	})
 	if after, _ := readVersioning(); !after.Equal(before) {
@@ -253,7 +253,7 @@ func checkBucketSweepFences(t *testing.T, db *sql.DB, app http.Handler, execute 
 	}
 	before, _ = readVersioning()
 	dueBucketSweep(t, db, id)
-	changePreparedBucketBatch(t, db, execute, func() {
+	changePreparedSchedule(t, db, execute, func() {
 		bucketSweepSQL(t, db, `UPDATE cmp_cloud_accounts SET credential_revision=2;
 			UPDATE cmp_inventory_scopes SET credential_revision=2 WHERE kind='object-bucket'`)
 	})
@@ -273,7 +273,7 @@ func checkBucketSweepFences(t *testing.T, db *sql.DB, app http.Handler, execute 
 	}
 }
 
-func changePreparedBucketBatch(t *testing.T, db *sql.DB, execute controller.Execute, change func()) {
+func changePreparedSchedule(t *testing.T, db *sql.DB, execute controller.Execute, change func()) {
 	t.Helper()
 	ready := make(chan error, 1)
 	release := make(chan struct{})

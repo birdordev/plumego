@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"database/sql"
-	_ "embed"
 	"encoding/binary"
 	"errors"
 	"math"
@@ -16,9 +15,6 @@ import (
 	"with-cloud-manager/internal/provider"
 )
 
-//go:embed 0100_instance_idle.sql
-var idleInstanceSchema string
-
 const idleCPUThreshold = 5
 const idleNetworkThreshold = 64 << 10
 
@@ -28,7 +24,7 @@ type idleTarget struct {
 }
 
 func MigrateIdleAnalysis(ctx context.Context, db *sql.DB) error {
-	return dbschema.Apply(ctx, db, "0100_instance_idle", idleInstanceSchema)
+	return dbschema.Apply(ctx, db, "0100_instance_idle")
 }
 
 func (s Store) PrepareIdleAnalysis(ctx context.Context, key Key, id, reference string, revision int64,

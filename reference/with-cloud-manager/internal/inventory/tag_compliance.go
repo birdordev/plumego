@@ -3,7 +3,6 @@ package inventory
 import (
 	"context"
 	"database/sql"
-	_ "embed"
 	"encoding/base64"
 	"encoding/json"
 	"slices"
@@ -11,6 +10,7 @@ import (
 	"time"
 
 	"with-cloud-manager/internal/provider"
+	"with-cloud-manager/migrations"
 )
 
 type TagComplianceQuery struct {
@@ -75,9 +75,6 @@ func (s Store) TagCompliance(ctx context.Context, token string, q TagComplianceQ
 	return result, nil
 }
 
-//go:embed tag_compliance.sql
-var tagComplianceSelect string
-
 func tagObservationReason(maxAge string) string {
 	return `CASE
 		WHEN o.missing_generation IS NOT NULL THEN 'missing_candidate'
@@ -96,7 +93,7 @@ func listTagCompliance(ctx context.Context, tx *sql.Tx, q TagComplianceQuery, p 
 		return err
 	}
 	// 每个盘点范围最多贡献一页候选。缺失键只在全局排序并截取分页后展开。
-	rows, err := tx.QueryContext(ctx, tagComplianceSelect+tagObservationReason("$9")+` AS reason
+	rows, err := tx.QueryContext(ctx, migrations.TagCompliance()+tagObservationReason("$9")+` AS reason
 				FROM cmp_inventory_objects AS o`+inventoryOwnershipJoins+`
 				WHERE o.scope_id=s.scope_id AND o.removed_at IS NULL
 				  AND `+assetVisibility+`

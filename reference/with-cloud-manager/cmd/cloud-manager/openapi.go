@@ -747,6 +747,7 @@ func registerOpenAPI(app *core.App, console *consoleConfig) error {
 	hints["GET "+operationBacklogRoute] = operationBacklogOpenAPI(readAuth)
 	hints["GET "+operationLatencyRoute] = operationLatencyOpenAPI(readAuth)
 	hints["GET "+bucketProtectionRoute] = bucketProtectionOpenAPI(readAuth)
+	hints["GET "+databaseProtectionRoute] = databaseProtectionOpenAPI(readAuth)
 	catalogOpenAPI(hints, accountOp)
 	alertOpenAPI(hints, accountOp)
 	accountInventoryOpenAPI(hints, accountOp)

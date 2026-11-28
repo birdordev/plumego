@@ -3,7 +3,6 @@ package inventory
 import (
 	"context"
 	"database/sql"
-	_ "embed"
 	"encoding/json"
 	"errors"
 	"time"
@@ -11,9 +10,6 @@ import (
 	"with-cloud-manager/internal/identity"
 	"with-cloud-manager/internal/provider"
 )
-
-//go:embed 0071_dns_zone_mutation.sql
-var dnsZoneMutationSchema string
 
 func DNSRecordTarget(ctx context.Context, tx *sql.Tx, target MutationTarget, zoneID, recordID string, observed time.Time) (provider.DNSZoneRef, provider.DNSRecord, error) {
 	zone := provider.DNSZoneRef{ID: zoneID}

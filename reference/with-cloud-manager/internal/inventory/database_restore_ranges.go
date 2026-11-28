@@ -3,7 +3,6 @@ package inventory
 import (
 	"context"
 	"database/sql"
-	_ "embed"
 	"encoding/json"
 	"errors"
 	"time"
@@ -14,15 +13,12 @@ import (
 	"with-cloud-manager/internal/provider"
 )
 
-//go:embed 0168_database_restore_windows.sql
-var databaseRestoreWindowsSchema string
-
 const DatabaseRestoreWindowsMigration = "0168_database_restore_windows"
 
 var ErrDatabaseRestoreWindowsNotFound = errors.New("database restore window snapshot unavailable")
 
 func MigrateDatabaseRestoreWindows(ctx context.Context, db *sql.DB) error {
-	return dbschema.Apply(ctx, db, DatabaseRestoreWindowsMigration, databaseRestoreWindowsSchema)
+	return dbschema.Apply(ctx, db, DatabaseRestoreWindowsMigration)
 }
 
 type DatabaseRestoreWindows struct {
@@ -32,26 +28,34 @@ type DatabaseRestoreWindows struct {
 }
 
 func (s Store) RefreshDatabaseRestoreWindows(ctx context.Context, key Key, id string, revision int64, reader provider.DatabaseRestoreWindowReader) error {
-	target, err := s.databaseObservation(ctx, key, id, revision)
+	publish, err := s.PrepareDatabaseRestoreWindows(ctx, key, id, revision, reader)
 	if err != nil {
 		return err
+	}
+	return dbutil.WithTransaction(ctx, s.db, nil, func(tx *sql.Tx) error { return publish(ctx, tx) })
+}
+
+func (s Store) PrepareDatabaseRestoreWindows(ctx context.Context, key Key, id string, revision int64, reader provider.DatabaseRestoreWindowReader) (func(context.Context, *sql.Tx) error, error) {
+	target, err := s.databaseObservation(ctx, key, id, revision)
+	if err != nil {
+		return nil, err
 	}
 	recoveryScope := provider.DatabaseRestoreWindowScope(target.scope.Provider, id, target.details)
 	if recoveryScope == "" {
-		return &provider.Failure{Kind: provider.Unsupported}
+		return nil, &provider.Failure{Kind: provider.Unsupported}
 	}
 	windows, err := reader.ReadDatabaseRestoreWindows(ctx, target.scope, id, target.details)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if err := provider.NormalizeDatabaseRestoreWindows(windows); err != nil {
-		return err
+		return nil, err
 	}
 	data, err := json.Marshal(windows)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	return dbutil.WithTransaction(ctx, s.db, nil, func(tx *sql.Tx) error {
+	return func(ctx context.Context, tx *sql.Tx) error {
 		if err := target.lock(ctx, tx); err != nil {
 			return err
 		}
@@ -64,7 +68,7 @@ func (s Store) RefreshDatabaseRestoreWindows(ctx context.Context, key Key, id st
 			WHERE (saved.credential_revision,saved.refresh_started_at) < (EXCLUDED.credential_revision,EXCLUDED.refresh_started_at)`,
 			target.scopeID, id, target.details.Product, target.details.Engine, revision, target.started, recoveryScope, string(data))
 		return checkDatabaseObservationWrite(result, err)
-	})
+	}, nil
 }
 
 func (s Store) ReadDatabaseRestoreWindows(ctx context.Context, token string, q DatabaseAssetQuery) (DatabaseRestoreWindows, error) {

@@ -3,11 +3,9 @@ package inventory
 import (
 	"context"
 	"database/sql"
-	_ "embed"
-)
 
-//go:embed tag_policy_alerts.sql
-var tagPolicyAlertChanges string
+	"with-cloud-manager/migrations"
+)
 
 var tagPolicyAlertAssessment = `WITH policy AS MATERIALIZED (
 	SELECT revision,max_age_seconds,rules,alert_on_noncompliance FROM cmp_tag_policies
@@ -27,6 +25,6 @@ var tagPolicyAlertAssessment = `WITH policy AS MATERIALIZED (
 )`
 
 func EvaluateTagPolicyAlerts(ctx context.Context, tx *sql.Tx, tenant, project string) error {
-	_, err := tx.ExecContext(ctx, tagPolicyAlertAssessment+tagPolicyAlertChanges, tenant, project)
+	_, err := tx.ExecContext(ctx, tagPolicyAlertAssessment+migrations.TagPolicyAlerts(), tenant, project)
 	return err
 }

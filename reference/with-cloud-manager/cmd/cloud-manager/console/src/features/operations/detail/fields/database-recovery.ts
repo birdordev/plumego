@@ -10,6 +10,7 @@ export function databaseRecoveryFields(operation: OperationDetail): DetailField[
     ['目标 VPC', intent.vpc_id], ['目标子网', intent.subnet_id],
     ...(intent.security_group_id ? [['目标安全组', intent.security_group_id] as DetailField] : []),
     ['目标可用区及规格', intent.zone + ' / ' + intent.flavor],
+    ...(intent.cpu && intent.memory_mib ? [['目标 CPU 与内存', intent.cpu + ' 核 / ' + intent.memory_mib + ' MiB'] as DetailField] : []),
     ['目标存储', intent.storage_type + ' / ' + intent.storage_gib + ' GiB'],
   ]
 }

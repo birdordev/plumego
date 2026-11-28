@@ -3,7 +3,6 @@ package inventory
 import (
 	"context"
 	"database/sql"
-	_ "embed"
 	"encoding/json"
 	"errors"
 	"math"
@@ -19,16 +18,7 @@ import (
 	"with-cloud-manager/internal/provider"
 )
 
-//go:embed 0097_tag_observations.sql
-var tagObservationsSchema string
-
-//go:embed 0098_tag_policies.sql
-var tagPoliciesSchema string
-
 const TagPolicyAlertsMigration = "0148_tag_policy_alerts"
-
-//go:embed 0148_tag_policy_alerts.sql
-var tagPolicyAlertsSchema string
 
 var (
 	ErrTagPolicyNotFound = errors.New("tag policy is unavailable")
@@ -59,11 +49,11 @@ type TagPolicy struct {
 }
 
 func MigrateTagPolicies(ctx context.Context, db *sql.DB) error {
-	return dbschema.Apply(ctx, db, "0098_tag_policies", tagPoliciesSchema)
+	return dbschema.Apply(ctx, db, "0098_tag_policies")
 }
 
 func MigrateTagPolicyAlerts(ctx context.Context, db *sql.DB) error {
-	return dbschema.Apply(ctx, db, TagPolicyAlertsMigration, tagPolicyAlertsSchema)
+	return dbschema.Apply(ctx, db, TagPolicyAlertsMigration)
 }
 
 func (key TagPolicyScope) valid() bool {
@@ -121,7 +111,7 @@ func readTagPolicy(ctx context.Context, tx *sql.Tx, scope TagPolicyScope, revisi
 		return TagPolicy{}, err
 	}
 	policy.AlertOnNoncompliance = &notify
-	if err := json.Unmarshal(rules, &policy.Rules); err != nil || !policy.TagPolicyInput.valid() {
+	if err := json.Unmarshal(rules, &policy.Rules); err != nil || !policy.valid() {
 		return TagPolicy{}, errors.New("stored tag policy violated its contract")
 	}
 	return policy, nil

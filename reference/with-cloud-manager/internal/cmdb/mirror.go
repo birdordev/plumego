@@ -3,7 +3,6 @@ package cmdb
 import (
 	"context"
 	"database/sql"
-	_ "embed"
 	"errors"
 	"io"
 	"time"
@@ -12,9 +11,6 @@ import (
 
 	"with-cloud-manager/internal/dbschema"
 )
-
-//go:embed 0001_mirror.sql
-var mirrorSchema string
 
 var (
 	ErrStaleSnapshot = errors.New("CMDB snapshot was superseded")
@@ -41,7 +37,7 @@ type Store struct{ db *sql.DB }
 func NewStore(db *sql.DB) Store { return Store{db: db} }
 
 func Migrate(ctx context.Context, db *sql.DB) error {
-	return dbschema.Apply(ctx, db, "cmdb_0001_mirror", mirrorSchema)
+	return dbschema.Apply(ctx, db, "cmdb_0001_mirror", "0001_mirror.sql")
 }
 
 func (s Store) reserve(ctx context.Context, key MirrorKey) (int64, error) {

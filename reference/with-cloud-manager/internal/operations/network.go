@@ -5,7 +5,6 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"database/sql"
-	_ "embed"
 	"encoding/json"
 	"errors"
 	"net/netip"
@@ -20,21 +19,6 @@ import (
 	"with-cloud-manager/internal/inventory"
 	"with-cloud-manager/internal/provider"
 )
-
-//go:embed 0020_network_operations.sql
-var networkSchema string
-
-//go:embed 0021_security_group_creation.sql
-var securityGroupSchema string
-
-//go:embed 0031_security_group_rules.sql
-var securityRuleSchema string
-
-//go:embed 0033_subnet_zone.sql
-var subnetZoneSchema string
-
-//go:embed 0037_elastic_ip_creation.sql
-var elasticIPCreationSchema string
 
 const createElasticIP = "create-elastic-ip"
 
@@ -54,7 +38,7 @@ type networkIntent struct {
 }
 
 func migrateNetwork(ctx context.Context, db *sql.DB) error {
-	return dbschema.Apply(ctx, db, "0020_network_operations", networkSchema)
+	return dbschema.Apply(ctx, db, "0020_network_operations")
 }
 
 func isNetworkCreation(action string) bool {

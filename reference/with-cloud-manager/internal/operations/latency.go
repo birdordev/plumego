@@ -3,7 +3,6 @@ package operations
 import (
 	"context"
 	"database/sql"
-	_ "embed"
 	"errors"
 	"time"
 
@@ -11,9 +10,6 @@ import (
 
 	"with-cloud-manager/internal/identity"
 )
-
-//go:embed 0150_operation_first_lease.sql
-var firstLeaseSchema string
 
 const FirstLeaseMigration = "0150_operation_first_lease"
 const LatencyLimit = 10_000

@@ -3,7 +3,6 @@ package inventory
 import (
 	"context"
 	"database/sql"
-	_ "embed"
 	"errors"
 	"time"
 
@@ -11,12 +10,6 @@ import (
 
 	"with-cloud-manager/internal/provider"
 )
-
-//go:embed 0143_bucket_versioning.sql
-var bucketVersioningSchema string
-
-//go:embed 0144_bucket_encryption.sql
-var bucketEncryptionSchema string
 
 const BucketVersioningMigration = "0143_bucket_versioning"
 const BucketEncryptionMigration = "0144_bucket_encryption"

@@ -3,7 +3,7 @@ package main
 import "github.com/birdordev/plumego/x/openapi"
 
 func inventoryScheduleOpenAPI(hints map[string]openapi.Op, operation func(string, string, string, bool) openapi.Op) {
-	list := operation("listInventorySchedules", "200", "当前云账号的盘点和对象桶配置采集计划。对象桶计划的 bucket_batch_rejected 表示最近提交批次中未能更新观测的桶数。", false)
+	list := operation("listInventorySchedules", "200", "当前云账号的盘点、对象桶配置及数据库采集计划。数据库计划的 target_id 为实例 ID。对象桶计划的 bucket_batch_rejected 表示最近提交批次中未能更新观测的桶数。", false)
 	list.Params = []openapi.Param{
 		{Name: "after", In: "query", Schema: openapi.String, Description: "上一页返回的 next"},
 		{Name: "limit", In: "query", Schema: openapi.Integer, Description: "默认 50，最大 100"},
@@ -14,8 +14,9 @@ func inventoryScheduleOpenAPI(hints map[string]openapi.Op, operation func(string
 	for _, op := range []*openapi.Op{&create, &update} {
 		op.Responses["409"] = openapi.Response{Description: "计划已存在，或账号尚不可读"}
 	}
-	create.Body = scheduleBody("region 和 kind 指定作用域。三家优先云的对象桶配置可选择 object-bucket-encryption 或 object-bucket-versioning，region 使用 global。", map[string]openapi.Schema{
-		"region": openapi.String, "kind": openapi.String, "interval_seconds": openapi.Integer, "enabled": {Type: "boolean"},
+	create.Body = scheduleBody("region 和 kind 指定作用域。对象桶配置须使用 global。database-backups 和 database-restore-windows 须提供实例地域和 target_id，目标必须已盘点、当前项目可见且支持对应采集能力。", map[string]openapi.Schema{
+		"region": openapi.String, "kind": openapi.String, "target_id": openapi.String,
+		"interval_seconds": openapi.Integer, "enabled": {Type: "boolean"},
 	})
 	update.Body = scheduleBody("启用的计划可用 run_now 重新排队。", map[string]openapi.Schema{
 		"interval_seconds": openapi.Integer, "enabled": {Type: "boolean"}, "run_now": {Type: "boolean"},

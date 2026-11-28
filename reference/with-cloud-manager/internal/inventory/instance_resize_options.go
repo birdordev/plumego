@@ -3,7 +3,6 @@ package inventory
 import (
 	"context"
 	"database/sql"
-	_ "embed"
 	"encoding/json"
 	"errors"
 	"regexp"
@@ -16,13 +15,10 @@ import (
 	"with-cloud-manager/internal/provider"
 )
 
-//go:embed 0162_instance_resize_options.sql
-var instanceResizeOptionsSchema string
-
 const InstanceResizeOptionsMigration = "0162_instance_resize_options"
 
 func MigrateInstanceResizeOptions(ctx context.Context, db *sql.DB) error {
-	return dbschema.Apply(ctx, db, InstanceResizeOptionsMigration, instanceResizeOptionsSchema)
+	return dbschema.Apply(ctx, db, InstanceResizeOptionsMigration)
 }
 
 var resizeOptionKey = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_.:-]{0,127}$`)

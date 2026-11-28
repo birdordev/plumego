@@ -132,7 +132,7 @@ func connectRedfishPower(ctx context.Context, binding identity.CloudAccountBindi
 	if err := loadPrivateProfile(path, &profile); err != nil {
 		return nil, err
 	}
-	if profile.Ref != binding.CredentialRef || binding.RemoteIdentity != profile.Config.Identity() {
+	if profile.Ref != binding.CredentialRef || binding.RemoteIdentity != profile.Identity() {
 		return nil, identity.ErrForbidden
 	}
 	client, err := redfish.Connect(ctx, profile.Config, nil)

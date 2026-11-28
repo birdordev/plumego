@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"database/sql"
-	_ "embed"
 	"encoding/json"
 	"errors"
 
@@ -14,12 +13,6 @@ import (
 	"with-cloud-manager/internal/inventory"
 	"with-cloud-manager/internal/provider"
 )
-
-//go:embed 0066_load_balancer_backend_attach.sql
-var loadBalancerBackendAttachSchema string
-
-//go:embed 0070_load_balancer_change_backfill.sql
-var loadBalancerChangeBackfillSchema string
 
 const attachLoadBalancerBackend = "attach-load-balancer-backend"
 

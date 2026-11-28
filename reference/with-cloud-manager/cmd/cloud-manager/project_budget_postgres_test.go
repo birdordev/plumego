@@ -224,7 +224,8 @@ func checkProjectBudgetConcurrentUpdate(t *testing.T, db *sql.DB) {
 		}()
 	}
 	first, second := <-errs, <-errs
-	if !(first == nil && errors.Is(second, billing.ErrBudgetStale) || second == nil && errors.Is(first, billing.ErrBudgetStale)) {
+	oneUpdateWon := first == nil && errors.Is(second, billing.ErrBudgetStale) || second == nil && errors.Is(first, billing.ErrBudgetStale)
+	if !oneUpdateWon {
 		t.Fatalf("competing budget updates did not observe one version: %v %v", first, second)
 	}
 }

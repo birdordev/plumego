@@ -3,7 +3,6 @@ package operations
 import (
 	"context"
 	"database/sql"
-	_ "embed"
 	"errors"
 	"time"
 
@@ -13,21 +12,12 @@ import (
 	"with-cloud-manager/internal/identity"
 )
 
-//go:embed 0019_operation_outbox.sql
-var outboxSchema string
-
-//go:embed 0140_operation_effect_id.sql
-var effectIDSchema string
-
 const EffectIDMigration = "0140_operation_effect_id"
-
-//go:embed 0141_operation_terminal_event_time.sql
-var terminalEventTimeSchema string
 
 const TerminalEventTimeMigration = "0141_operation_terminal_event_time"
 
 func migrateOutbox(ctx context.Context, db *sql.DB) error {
-	return dbschema.Apply(ctx, db, "0019_operation_outbox", outboxSchema)
+	return dbschema.Apply(ctx, db, "0019_operation_outbox")
 }
 
 type OperationEvent struct {

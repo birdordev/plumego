@@ -3,18 +3,14 @@ package identity
 import (
 	"context"
 	"database/sql"
-	_ "embed"
 	"errors"
 
 	"with-cloud-manager/internal/dbschema"
 	"with-cloud-manager/internal/provider"
 )
 
-//go:embed 0001_identity.sql
-var schema string
-
 func Migrate(ctx context.Context, db *sql.DB) error {
-	return dbschema.Apply(ctx, db, "0001_identity", schema)
+	return dbschema.Apply(ctx, db, "0001_identity")
 }
 
 type Querier interface {

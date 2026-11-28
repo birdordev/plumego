@@ -3,16 +3,12 @@ package inventory
 import (
 	"context"
 	"database/sql"
-	_ "embed"
 	"errors"
 
 	dbutil "github.com/birdordev/plumego/store/db"
 
 	"with-cloud-manager/internal/provider"
 )
-
-//go:embed 0084_cluster_node_pools.sql
-var clusterNodePoolsSchema string
 
 var (
 	ErrClusterNodePoolsNotFound = errors.New("cluster node pools unavailable")

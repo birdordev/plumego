@@ -3,7 +3,6 @@ package billing
 import (
 	"context"
 	"database/sql"
-	_ "embed"
 	"errors"
 	"strings"
 	"time"
@@ -12,9 +11,6 @@ import (
 
 	"with-cloud-manager/internal/dbschema"
 )
-
-//go:embed 0094_billing_budgets.sql
-var budgetSchema string
 
 var ErrBudgetExists = errors.New("billing budget already exists")
 var ErrBudgetStale = errors.New("billing budget requires the current revision")
@@ -62,7 +58,7 @@ type Budget struct {
 }
 
 func MigrateBudgets(ctx context.Context, db *sql.DB) error {
-	return dbschema.Apply(ctx, db, "0094_billing_budgets", budgetSchema)
+	return dbschema.Apply(ctx, db, "0094_billing_budgets")
 }
 
 const budgetKeyCondition = `(tenant_id,project_id,account_id,source,period,currency,basis)=($1,$2,$3,$4,$5::date,$6,$7)`

@@ -3,20 +3,23 @@ package delivery
 import (
 	"context"
 	"database/sql"
-	_ "embed"
+	"errors"
 	"time"
+
+	"with-cloud-manager/migrations"
 )
 
-//go:embed reconcile_coverage.sql
-var reconcileCoverageSQL string
-
-func (r *Reconciliation) reconcileMissing(ctx context.Context, tx *sql.Tx, dest Destination, input []byte) error {
-	rows, err := tx.QueryContext(ctx, reconcileCoverageSQL, dest.tenant, dest.project, dest.id,
+func (r *Reconciliation) reconcileMissing(ctx context.Context, tx *sql.Tx, dest Destination, input []byte) (err error) {
+	rows, err := tx.QueryContext(ctx, migrations.ReconcileCoverage(), dest.tenant, dest.project, dest.id,
 		r.Coverage.From, r.Coverage.Until, input, MaxReconcileReceipts+1)
 	if err != nil {
 		return err
 	}
-	defer rows.Close()
+	defer func() {
+		if closeErr := rows.Close(); closeErr != nil {
+			err = errors.Join(err, closeErr)
+		}
+	}()
 	const state = "receiver_missing"
 	for rows.Next() {
 		if r.Counts[state] == MaxReconcileReceipts {

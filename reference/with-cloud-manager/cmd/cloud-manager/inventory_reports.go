@@ -16,6 +16,13 @@ import (
 const inventoryFreshnessRoute = governanceRoute + "/inventory-freshness"
 const bucketProtectionRoute = governanceRoute + "/bucket-protection"
 
+func databaseProtectionHandler(store inventory.Store, logger plumelog.StructuredLogger) http.Handler {
+	return serveInventory(databaseProtectionQuery, store.DatabaseProtection,
+		func(w http.ResponseWriter, r *http.Request, result inventory.DatabaseProtectionReport) error {
+			return contract.WriteResponse(w, r, http.StatusOK, result, nil)
+		}, logger)
+}
+
 func bucketProtectionHandler(store inventory.Store, logger plumelog.StructuredLogger) http.Handler {
 	return serveInventory(bucketProtectionQuery, store.BucketProtection,
 		func(w http.ResponseWriter, r *http.Request, result inventory.BucketProtectionReport) error {

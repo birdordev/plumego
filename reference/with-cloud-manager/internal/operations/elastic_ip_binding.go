@@ -3,7 +3,6 @@ package operations
 import (
 	"context"
 	"database/sql"
-	_ "embed"
 	"errors"
 	"regexp"
 
@@ -13,9 +12,6 @@ import (
 	"with-cloud-manager/internal/inventory"
 	"with-cloud-manager/internal/provider"
 )
-
-//go:embed 0039_elastic_ip_binding.sql
-var elasticIPBindingSchema string
 
 const bindElasticIP = "bind-elastic-ip"
 const unbindElasticIP = "unbind-elastic-ip"

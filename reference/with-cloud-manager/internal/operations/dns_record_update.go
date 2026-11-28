@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"database/sql"
-	_ "embed"
 	"encoding/json"
 	"errors"
 	"time"
@@ -17,14 +16,11 @@ import (
 	"with-cloud-manager/internal/provider"
 )
 
-//go:embed 0165_dns_record_update.sql
-var dnsRecordUpdateSchema string
-
 const DNSRecordUpdateMigration = "0165_dns_record_update"
 const updateDNSRecord = "update-dns-record"
 
 func MigrateDNSRecordUpdate(ctx context.Context, db *sql.DB) error {
-	return dbschema.Apply(ctx, db, DNSRecordUpdateMigration, dnsRecordUpdateSchema)
+	return dbschema.Apply(ctx, db, DNSRecordUpdateMigration)
 }
 
 type DNSRecordUpdateInput struct {

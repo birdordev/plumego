@@ -18,6 +18,9 @@ func (c *Client) tencent(ctx context.Context, service, region, action, version s
 	if err != nil {
 		return &provider.Failure{Kind: provider.InvalidResponse}
 	}
+	if service == "cdb" && action == "CreateCloneInstance" {
+		req.GetBody = nil
+	}
 	now := time.Now().UTC()
 	date, timestamp := now.Format("2006-01-02"), strconv.FormatInt(now.Unix(), 10)
 	const contentType = "application/json; charset=utf-8"

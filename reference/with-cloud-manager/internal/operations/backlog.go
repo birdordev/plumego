@@ -3,7 +3,6 @@ package operations
 import (
 	"context"
 	"database/sql"
-	_ "embed"
 	"errors"
 	"time"
 
@@ -12,13 +11,7 @@ import (
 	"with-cloud-manager/internal/identity"
 )
 
-//go:embed 0151_operation_queue_snapshot.sql
-var queueSnapshotSchema string
-
 const QueueSnapshotMigration = "0151_operation_queue_snapshot"
-
-//go:embed 0153_operation_queue_findings.sql
-var queueFindingsSchema string
 
 const QueueFindingsMigration = "0153_operation_queue_findings"
 

@@ -2,16 +2,12 @@ package operations
 
 import (
 	"context"
-	_ "embed"
 
 	"github.com/birdordev/plumego/x/messaging/mq"
 
 	"with-cloud-manager/internal/identity"
 	"with-cloud-manager/internal/provider"
 )
-
-//go:embed 0042_snapshot_creation.sql
-var snapshotCreationSchema string
 
 const createSnapshot = "create-snapshot"
 

@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"database/sql"
-	_ "embed"
 	"encoding/json"
 	"errors"
 
@@ -14,9 +13,6 @@ import (
 	"with-cloud-manager/internal/inventory"
 	"with-cloud-manager/internal/provider"
 )
-
-//go:embed 0091_workload_scale.sql
-var workloadScaleSchema string
 
 const scaleWorkload = "scale-workload"
 
@@ -30,7 +26,7 @@ type WorkloadScaleInput struct {
 }
 
 func (s Store) SubmitWorkloadScale(ctx context.Context, token string, scope identity.Scope, key string, revision int64, input WorkloadScaleInput) (Operation, error) {
-	if !input.WorkloadScaleTarget.Valid() || input.Snapshot == "" || input.Replicas < 1 || input.Replicas > provider.MaxWorkloadScaleReplicas {
+	if !input.Valid() || input.Snapshot == "" || input.Replicas < 1 || input.Replicas > provider.MaxWorkloadScaleReplicas {
 		return Operation{}, ErrInvalid
 	}
 	body, err := json.Marshal(struct {

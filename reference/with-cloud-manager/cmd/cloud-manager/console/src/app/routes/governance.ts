@@ -8,6 +8,12 @@ export const governanceRoutes = {
       assetLink: ({ id, account }: { id: string; account: string }) =>
         context.link('assets', new URLSearchParams({ q: id, account, kind: 'object-bucket' }).toString()),
     })),
+  'database-protection': projectPage('数据库恢复保障', () => import('../../features/governance/databases/DatabaseProtectionPage'),
+    (context) => ({
+      ...projectProps(context), filters: context.filters, commitFilters: context.commitFilters,
+      assetLink: ({ id, account, region }: { id: string; account: string; region: string }) =>
+        context.link('assets', new URLSearchParams({ q: id, account, region, kind: 'database-instance' }).toString()),
+    })),
   'inventory-freshness': projectPage('盘点新鲜度', () => import('../../features/governance/freshness/InventoryFreshnessPage'),
     (context) => ({ ...projectProps(context), filters: context.filters, commitFilters: context.commitFilters })),
   alerts: projectPage('项目告警', () => import('../../features/alerts/AlertsPage'), adminProps, {

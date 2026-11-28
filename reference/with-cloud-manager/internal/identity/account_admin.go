@@ -3,7 +3,6 @@ package identity
 import (
 	"context"
 	"database/sql"
-	_ "embed"
 	"errors"
 	"regexp"
 
@@ -12,12 +11,6 @@ import (
 	"with-cloud-manager/internal/dbschema"
 	"with-cloud-manager/internal/provider"
 )
-
-//go:embed 0007_account_events.sql
-var accountEventSchema string
-
-//go:embed 0135_account_write_mode.sql
-var accountWriteModeSchema string
 
 const AccountWriteModeMigration = "0135_account_write_mode"
 
@@ -55,11 +48,11 @@ type AccountAdmin struct{ db *sql.DB }
 func NewAccountAdmin(db *sql.DB) AccountAdmin { return AccountAdmin{db: db} }
 
 func MigrateAccounts(ctx context.Context, db *sql.DB) error {
-	return dbschema.Apply(ctx, db, "0007_account_events", accountEventSchema)
+	return dbschema.Apply(ctx, db, "0007_account_events")
 }
 
 func MigrateAccountWriteMode(ctx context.Context, db *sql.DB) error {
-	return dbschema.Apply(ctx, db, AccountWriteModeMigration, accountWriteModeSchema)
+	return dbschema.Apply(ctx, db, AccountWriteModeMigration)
 }
 
 func (a AccountAdmin) project(ctx context.Context, token string, scope Scope, write bool, fn func(*sql.Tx, Scope) error) error {

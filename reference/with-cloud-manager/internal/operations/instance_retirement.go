@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"database/sql"
-	_ "embed"
 	"encoding/json"
 	"errors"
 	"strings"
@@ -15,9 +14,6 @@ import (
 	"with-cloud-manager/internal/inventory"
 	"with-cloud-manager/internal/provider"
 )
-
-//go:embed 0107_instance_retirement.sql
-var instanceRetirementSchema string
 
 const retireInstance = "retire-instance"
 

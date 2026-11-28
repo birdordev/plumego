@@ -178,6 +178,12 @@ func testPublicCloudDatabaseBackups(t *testing.T, f *databaseBackupsFixture) {
 	}
 	t.Run("restore-windows", func(t *testing.T) {
 		restorePath := testPublicCloudDatabaseRestoreWindows(t, db, f, run, app, local.URL, actor)
+		if f.product == provider.TencentCDB || f.product == provider.AlibabaRDS || f.product == provider.HuaweiRDS {
+			t.Run("scheduled-observation", func(t *testing.T) {
+				execute := inventoryScheduleExecutor(db, map[string]string{cfg.Ref: profile}, transport)
+				testDatabaseObservationSchedules(t, db, app, local.URL, actor, f, execute, path, restorePath)
+			})
+		}
 		if _, err := db.ExecContext(t.Context(), `UPDATE cmp_cloud_accounts SET credential_revision=2 WHERE account_id=$1`, f.vendor); err != nil {
 			t.Fatal(err)
 		}

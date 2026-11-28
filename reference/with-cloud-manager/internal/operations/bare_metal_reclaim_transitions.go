@@ -43,7 +43,8 @@ func (s Store) ReviewBareMetalReclaim(ctx context.Context, token string, scope i
 		if r.State == next && r.Reviewer == actor.Principal {
 			return r, nil
 		}
-		if r.State != "requested" && !(r.State == "approved" && next == "rejected") {
+		canRejectApproved := r.State == "approved" && next == "rejected"
+		if r.State != "requested" && !canRejectApproved {
 			return r, ErrConflict
 		}
 		if next == "approved" {

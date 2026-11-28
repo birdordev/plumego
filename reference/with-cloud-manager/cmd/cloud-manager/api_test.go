@@ -188,6 +188,9 @@ func TestAcceptancePostgresReadiness(t *testing.T) {
 	if err := inventory.MigrateDatabaseRestoreWindows(t.Context(), db); err != nil {
 		t.Fatal(err)
 	}
+	if err := inventory.MigrateDatabaseProtection(t.Context(), db); err != nil {
+		t.Fatal(err)
+	}
 	if err := operations.MigrateDatabaseRecovery(t.Context(), db); err != nil {
 		t.Fatal(err)
 	}
@@ -219,10 +222,10 @@ func TestAcceptancePostgresReadiness(t *testing.T) {
 		kvm.EvacuationMigration, kvm.AutomaticEvacuationMigration, kvm.EvacuationBatchMigration, kvm.EvacuationPlanMigration,
 		kvm.HostImageMigration, kvm.SharedStorageMigration, kvm.LiveMigrationVersion, kvm.VolumeCleanupMigration,
 		inventory.InventoryCompletionMigration, identity.AccountWriteModeMigration, controller.ScheduleConfigMigration,
-		controller.AccountDispatchMigration, controller.TenantDispatchMigration, operations.ObservationWorkerMigration,
+		controller.AccountDispatchMigration, controller.TenantDispatchMigration, controller.DatabaseObservationScheduleMigration, operations.ObservationWorkerMigration,
 		operations.EffectIDMigration, operations.TerminalEventTimeMigration, alerts.BucketProtectionMigration, inventory.TagPolicyAlertsMigration,
 		operations.FirstLeaseMigration, operations.QueueSnapshotMigration, alerts.OperationQueueMigration, operations.QueueFindingsMigration,
-		operations.ObservationQueueRepairMigration, operations.PowerObservationMigration, inventory.VolumeInventoryMigration, operations.VolumeResizeMigration, operations.VolumeCreationMigration, operations.VolumeReleaseMigration, inventory.InstanceTypeInventoryMigration, operations.InstanceResizeMigration, inventory.InstanceResizeOptionsMigration, operations.BucketVersioningMigration, operations.BucketEncryptionEnableMigration, operations.DNSRecordUpdateMigration, billing.AllocationPublishMigration, inventory.DatabaseBackupsMigration, inventory.DatabaseRestoreWindowsMigration, operations.DatabaseRecoveryMigration} {
+		operations.ObservationQueueRepairMigration, operations.PowerObservationMigration, inventory.VolumeInventoryMigration, operations.VolumeResizeMigration, operations.VolumeCreationMigration, operations.VolumeReleaseMigration, inventory.InstanceTypeInventoryMigration, operations.InstanceResizeMigration, inventory.InstanceResizeOptionsMigration, operations.BucketVersioningMigration, operations.BucketEncryptionEnableMigration, operations.DNSRecordUpdateMigration, billing.AllocationPublishMigration, inventory.DatabaseBackupsMigration, inventory.DatabaseRestoreWindowsMigration, operations.DatabaseRecoveryMigration, inventory.DatabaseProtectionMigration} {
 		if _, err := db.ExecContext(t.Context(), "DELETE FROM cmp_migrations WHERE version=$1", version); err != nil {
 			t.Fatal(err)
 		}

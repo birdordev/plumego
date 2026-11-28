@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/subtle"
 	"database/sql"
-	_ "embed"
 	"encoding/base64"
 	"errors"
 	"regexp"
@@ -17,12 +16,6 @@ import (
 	"with-cloud-manager/internal/inventory"
 	"with-cloud-manager/internal/provider"
 )
-
-//go:embed 0029_native_console.sql
-var schema string
-
-//go:embed 0030_aws_serial_console.sql
-var serialSchema string
 
 const SessionLimit = 5 * time.Minute
 
@@ -77,10 +70,10 @@ type Store struct{ db *sql.DB }
 func NewStore(db *sql.DB) Store { return Store{db: db} }
 
 func Migrate(ctx context.Context, db *sql.DB) error {
-	if err := dbschema.Apply(ctx, db, "0029_native_console", schema); err != nil {
+	if err := dbschema.Apply(ctx, db, "0029_native_console"); err != nil {
 		return err
 	}
-	return dbschema.Apply(ctx, db, "0030_aws_serial_console", serialSchema)
+	return dbschema.Apply(ctx, db, "0030_aws_serial_console")
 }
 
 func authorize(ctx context.Context, tx *sql.Tx, token string, scope identity.Scope, permission identity.Permission) (identity.Scope, error) {

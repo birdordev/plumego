@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"database/sql"
-	_ "embed"
 	"encoding/json"
 	"errors"
 	"regexp"
@@ -18,9 +17,6 @@ import (
 	"with-cloud-manager/internal/identity"
 	"with-cloud-manager/internal/provider"
 )
-
-//go:embed 0026_instance_catalog.sql
-var catalogSchema string
 
 var ErrCatalogStale = errors.New("catalog revision or version is no longer current")
 var catalogID = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,63}$`)

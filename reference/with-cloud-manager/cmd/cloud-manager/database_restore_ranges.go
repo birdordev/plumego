@@ -14,7 +14,7 @@ import (
 func databaseRecoveryOpenAPI(submit openapi.Op) openapi.Op {
 	op := submit
 	op.OperationID = "recoverDatabaseInstance"
-	op.Summary = "申请从阿里云或华为云 MySQL 的指定时间点恢复到新实例"
+	op.Summary = "申请从腾讯云、阿里云或华为云 MySQL 的指定时间点恢复到新实例"
 	op.Responses = maps.Clone(submit.Responses)
 	op.Responses["202"] = openapi.Response{Description: "恢复到新实例的申请，需独立审批"}
 	op.Responses["412"] = openapi.Response{Description: "源资产归属、指定快照或隔离目标拓扑失效"}
@@ -24,9 +24,11 @@ func databaseRecoveryOpenAPI(submit openapi.Op) openapi.Op {
 	}
 	properties["observed_at"] = openapi.Schema{Type: "string", Format: "date-time"}
 	properties["restore_time"] = properties["observed_at"]
-	properties["storage_gib"] = openapi.Integer
+	for _, key := range []string{"storage_gib", "cpu", "memory_mib"} {
+		properties[key] = openapi.Integer
+	}
 	op.Body = &openapi.RequestBody{Required: true,
-		Description: "If-Match 使用源实例归属版本。恢复时间使用带时区的 RFC 3339 时间，华为云最多毫秒精度，阿里云精确到秒。security_group_id 仅华为云必填。其余字段均必填。目标必须为同项目的独立 VPC，符合 Worker 配置。",
+		Description: "If-Match 使用源实例归属版本。恢复时间使用带时区的 RFC 3339 时间。华为云最多毫秒精度，腾讯云和阿里云精确到秒。security_group_id 在腾讯云和华为云必填，cpu 和 memory_mib 在腾讯云必填。目标必须为同项目的独立 VPC，符合 Worker 配置。",
 		Content:     map[string]openapi.MediaType{"application/json": {Schema: openapi.Schema{Type: "object", Properties: properties}}}}
 	return op
 }

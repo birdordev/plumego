@@ -17,11 +17,14 @@ func (s Store) RegisterSchedule(ctx context.Context, token string, scope identit
 		if *input.Enabled && !readable {
 			return identity.ErrAccountConflict
 		}
+		if err := checkDatabaseScheduleTarget(ctx, tx, actor, account, input.Region, input.TargetID, input.Kind); err != nil {
+			return err
+		}
 		var err error
 		item, err = scanSchedule(tx.QueryRowContext(ctx, `INSERT INTO cmp_inventory_schedules
-			(tenant_id,account_id,region,kind,interval_seconds,enabled) VALUES ($1,$2,$3,$4,$5,$6)
+			(tenant_id,account_id,region,kind,interval_seconds,enabled,target_id) VALUES ($1,$2,$3,$4,$5,$6,$7)
 			ON CONFLICT (tenant_id,account_id,region,kind,target_id) DO NOTHING RETURNING `+scheduleFields,
-			actor.Tenant, account, input.Region, input.Kind, input.Interval, *input.Enabled))
+			actor.Tenant, account, input.Region, input.Kind, input.Interval, *input.Enabled, input.TargetID))
 		if errors.Is(err, sql.ErrNoRows) {
 			return identity.ErrAccountConflict
 		}
@@ -35,14 +38,14 @@ func (s Store) RegisterSchedule(ctx context.Context, token string, scope identit
 
 func (s Store) ChangeSchedule(ctx context.Context, token string, scope identity.Scope, account string, id, revision int64,
 	input ChangeSchedule) (Schedule, error) {
-	if !input.ScheduleSettings.valid() || (input.RunNow && !*input.Enabled) {
+	if !input.valid() || (input.RunNow && !*input.Enabled) {
 		return Schedule{}, identity.ErrAccountInvalid
 	}
 	var item Schedule
 	err := s.scheduleAccount(ctx, token, scope, account, true, func(tx *sql.Tx, actor identity.Scope, readable bool) error {
 		var err error
 		item, err = scanSchedule(tx.QueryRowContext(ctx, "SELECT "+scheduleFields+`
-			FROM cmp_inventory_schedules WHERE (tenant_id,account_id,schedule_id)=($1,$2,$3) AND target_id=''
+			FROM cmp_inventory_schedules WHERE (tenant_id,account_id,schedule_id)=($1,$2,$3) AND `+manageableSchedule+`
 			FOR UPDATE`, actor.Tenant, account, id))
 		if errors.Is(err, sql.ErrNoRows) {
 			return identity.ErrForbidden
@@ -55,6 +58,11 @@ func (s Store) ChangeSchedule(ctx context.Context, token string, scope identity.
 		}
 		if *input.Enabled && !readable {
 			return identity.ErrAccountConflict
+		}
+		if *input.Enabled {
+			if err := checkDatabaseScheduleTarget(ctx, tx, actor, account, item.Region, item.TargetID, item.Kind); err != nil {
+				return err
+			}
 		}
 		if input.Interval == item.Interval && *input.Enabled == item.Enabled && !input.RunNow {
 			return nil

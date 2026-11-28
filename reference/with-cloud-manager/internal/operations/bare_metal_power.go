@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"database/sql"
-	_ "embed"
 	"encoding/json"
 	"errors"
 	"regexp"
@@ -26,11 +25,8 @@ const (
 	shutdownBareMetal = "shutdown-bare-metal"
 )
 
-//go:embed 0118_bare_metal_power.sql
-var bareMetalPowerSchema string
-
 func MigrateBareMetalPower(ctx context.Context, db *sql.DB) error {
-	return dbschema.Apply(ctx, db, BareMetalPowerMigration, bareMetalPowerSchema)
+	return dbschema.Apply(ctx, db, BareMetalPowerMigration)
 }
 
 type BareMetalChangeInput struct {

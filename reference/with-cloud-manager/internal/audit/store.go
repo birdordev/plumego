@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"database/sql"
-	_ "embed"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -19,12 +18,6 @@ import (
 	"with-cloud-manager/internal/dbschema"
 	"with-cloud-manager/internal/identity"
 )
-
-//go:embed 0025_project_audit.sql
-var schema string
-
-//go:embed 0027_catalog_audit.sql
-var catalogSchema string
 
 const DefaultLimit = 50
 const ExportLimit = 2000
@@ -65,10 +58,10 @@ type Store struct{ db *sql.DB }
 func NewStore(db *sql.DB) Store { return Store{db: db} }
 
 func Migrate(ctx context.Context, db *sql.DB) error {
-	if err := dbschema.Apply(ctx, db, "0025_project_audit", schema); err != nil {
+	if err := dbschema.Apply(ctx, db, "0025_project_audit"); err != nil {
 		return err
 	}
-	return dbschema.Apply(ctx, db, "0027_catalog_audit", catalogSchema)
+	return dbschema.Apply(ctx, db, "0027_catalog_audit")
 }
 
 type position struct {

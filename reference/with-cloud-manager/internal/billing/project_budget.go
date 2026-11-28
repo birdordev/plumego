@@ -3,7 +3,6 @@ package billing
 import (
 	"context"
 	"database/sql"
-	_ "embed"
 	"encoding/json"
 	"errors"
 	"slices"
@@ -15,14 +14,11 @@ import (
 	"with-cloud-manager/internal/identity"
 )
 
-//go:embed 0146_project_billing_budgets.sql
-var projectBudgetSchema string
-
 const ProjectBudgetMigration = "0146_project_billing_budgets"
 const MaxProjectBudgetAccounts = 100
 
 func MigrateProjectBudgets(ctx context.Context, db *sql.DB) error {
-	return dbschema.Apply(ctx, db, ProjectBudgetMigration, projectBudgetSchema)
+	return dbschema.Apply(ctx, db, ProjectBudgetMigration)
 }
 
 type ProjectBudgetKey struct {
@@ -49,7 +45,7 @@ type ProjectBudgetInput struct {
 }
 
 func (input ProjectBudgetInput) normalizedAccounts() ([]string, bool) {
-	if !input.BudgetInput.valid() || len(input.Accounts) == 0 || len(input.Accounts) > MaxProjectBudgetAccounts {
+	if !input.valid() || len(input.Accounts) == 0 || len(input.Accounts) > MaxProjectBudgetAccounts {
 		return nil, false
 	}
 	accounts := slices.Clone(input.Accounts)

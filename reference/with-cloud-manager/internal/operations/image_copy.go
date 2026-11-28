@@ -5,7 +5,6 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"database/sql"
-	_ "embed"
 	"encoding/json"
 	"errors"
 	"strings"
@@ -17,9 +16,6 @@ import (
 	"with-cloud-manager/internal/inventory"
 	"with-cloud-manager/internal/provider"
 )
-
-//go:embed 0051_image_copy.sql
-var imageCopySchema string
 
 const copyImage = "copy-image"
 
@@ -75,7 +71,7 @@ func (s Store) SubmitImageCopy(ctx context.Context, token string, scope identity
 		if err != nil {
 			return err
 		}
-		if !input.ImageCopySpec.ValidFor(source.Provider) || !copyAccountsMatch(source, target, input.Account == input.DestinationAccount) {
+		if !input.ValidFor(source.Provider) || !copyAccountsMatch(source, target, input.Account == input.DestinationAccount) {
 			return ErrInvalid
 		}
 		if err := lockBudget(ctx, tx, actor); err != nil {

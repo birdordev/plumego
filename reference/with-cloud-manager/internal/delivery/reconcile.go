@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"database/sql"
-	_ "embed"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -14,15 +13,14 @@ import (
 	"unicode/utf8"
 
 	dbutil "github.com/birdordev/plumego/store/db"
+
+	"with-cloud-manager/migrations"
 )
 
 var ErrReceiptManifest = errors.New("invalid terminal receipt manifest")
 var ErrReconcileWindowTooLarge = errors.New("terminal receipt reconciliation window has more than 1000 missing effects")
 
 const MaxReconcileReceipts = 1000
-
-//go:embed reconcile.sql
-var reconciliationSQL string
 
 type ReceiptManifest struct {
 	Sink     string            `json:"sink"`
@@ -154,15 +152,19 @@ func (s Store) ReconcileTerminalReceipts(ctx context.Context, dest Destination, 
 	return result, nil
 }
 
-func (r *Reconciliation) reconcileProvided(ctx context.Context, tx *sql.Tx, dest Destination, receipts []TerminalReceipt, input []byte) error {
+func (r *Reconciliation) reconcileProvided(ctx context.Context, tx *sql.Tx, dest Destination, receipts []TerminalReceipt, input []byte) (err error) {
 	if len(receipts) == 0 {
 		return nil
 	}
-	rows, err := tx.QueryContext(ctx, reconciliationSQL, dest.tenant, dest.project, dest.id, input)
+	rows, err := tx.QueryContext(ctx, migrations.Reconcile(), dest.tenant, dest.project, dest.id, input)
 	if err != nil {
 		return err
 	}
-	defer rows.Close()
+	defer func() {
+		if closeErr := rows.Close(); closeErr != nil {
+			err = errors.Join(err, closeErr)
+		}
+	}()
 	for rows.Next() {
 		var local receiptSource
 		if err := rows.Scan(&local.status, &local.kind, &local.action, &local.account,

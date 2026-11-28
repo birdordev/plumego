@@ -3,7 +3,6 @@ package operations
 import (
 	"context"
 	"database/sql"
-	_ "embed"
 	"errors"
 
 	dbutil "github.com/birdordev/plumego/store/db"
@@ -12,16 +11,13 @@ import (
 	"with-cloud-manager/internal/identity"
 )
 
-//go:embed 0013_operation_approval.sql
-var approvalSchema string
-
 type Approval struct {
 	Decision     string `json:"decision"`
 	DeploymentID string `json:"deployment_id,omitempty"`
 }
 
 func migrateApproval(ctx context.Context, db *sql.DB) error {
-	return dbschema.Apply(ctx, db, "0013_operation_approval", approvalSchema)
+	return dbschema.Apply(ctx, db, "0013_operation_approval")
 }
 
 func (s Store) Approve(ctx context.Context, token string, scope identity.Scope, id string, input Approval) (Operation, error) {

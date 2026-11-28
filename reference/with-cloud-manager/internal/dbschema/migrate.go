@@ -4,8 +4,11 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strings"
 
 	dbutil "github.com/birdordev/plumego/store/db"
+
+	"with-cloud-manager/migrations"
 )
 
 const migrationLockID int64 = 5900782301741251
@@ -17,7 +20,10 @@ const migrationLedger = `CREATE TABLE IF NOT EXISTS cmp_migrations (
 const migrationExists = "SELECT EXISTS (SELECT 1 FROM cmp_migrations WHERE version=$1)"
 const recordMigration = "INSERT INTO cmp_migrations(version) VALUES ($1)"
 
-func Apply(ctx context.Context, db *sql.DB, version, script string) error {
+func Apply(ctx context.Context, db *sql.DB, version string, filenames ...string) error {
+	if len(filenames) == 0 {
+		filenames = []string{version + ".sql"}
+	}
 	return dbutil.WithTransaction(ctx, db, nil, func(tx *sql.Tx) error {
 		if _, err := tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock($1)", migrationLockID); err != nil {
 			return err
@@ -30,7 +36,15 @@ func Apply(ctx context.Context, db *sql.DB, version, script string) error {
 			return err
 		}
 		if !applied {
-			if _, err := tx.ExecContext(ctx, script); err != nil {
+			var script strings.Builder
+			for _, filename := range filenames {
+				data, err := migrations.ReadFile(filename)
+				if err != nil {
+					return err
+				}
+				script.WriteString(data)
+			}
+			if _, err := tx.ExecContext(ctx, script.String()); err != nil {
 				return fmt.Errorf("apply migration %s: %w", version, err)
 			}
 			if _, err := tx.ExecContext(ctx, recordMigration, version); err != nil {

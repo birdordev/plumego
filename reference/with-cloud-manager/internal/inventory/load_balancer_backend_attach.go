@@ -3,14 +3,10 @@ package inventory
 import (
 	"context"
 	"database/sql"
-	_ "embed"
 
 	"with-cloud-manager/internal/identity"
 	"with-cloud-manager/internal/provider"
 )
-
-//go:embed 0069_load_balancer_change_reservations.sql
-var loadBalancerChangeReservationsSchema string
 
 func LoadBalancerBackendAttachTarget(ctx context.Context, tx *sql.Tx, target MutationTarget, change *provider.LoadBalancerBackendAttach, beforeWrite bool) error {
 	var err error

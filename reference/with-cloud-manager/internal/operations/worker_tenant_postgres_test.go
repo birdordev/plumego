@@ -9,12 +9,22 @@ import (
 	"github.com/birdordev/plumego/x/messaging/mq"
 
 	"with-cloud-manager/internal/dbtest"
+	"with-cloud-manager/migrations"
 )
+
+func readOperationQueueSchema(t *testing.T) string {
+	t.Helper()
+	script, err := migrations.ReadFile("queue.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return script
+}
 
 func TestAcceptanceOperationWorkerTenantClaims(t *testing.T) {
 	db := dbtest.Open(t)
 	ctx := t.Context()
-	if _, err := db.ExecContext(ctx, queueSchema); err != nil {
+	if _, err := db.ExecContext(ctx, readOperationQueueSchema(t)); err != nil {
 		t.Fatal(err)
 	}
 	if err := MigrateWorkerTenantIndexes(ctx, db); err != nil {

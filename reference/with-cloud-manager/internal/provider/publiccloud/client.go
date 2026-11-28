@@ -81,6 +81,7 @@ type Config struct {
 	AllowDatabaseRename                bool                                          `json:"allow_database_rename,omitempty"`
 	HuaweiDatabaseRecoveryPlacements   map[string]provider.DatabaseRecoveryPlacement `json:"huawei_database_recovery_placements,omitempty"`
 	AlibabaDatabaseRecoveryPlacements  map[string]provider.DatabaseRecoveryPlacement `json:"alibaba_database_recovery_placements,omitempty"`
+	TencentDatabaseRecoveryPlacements  map[string]provider.DatabaseRecoveryPlacement `json:"tencent_database_recovery_placements,omitempty"`
 	DatabaseBackupTimeZones            map[string]string                             `json:"database_backup_time_zones,omitempty"`
 	AllowVolumeResize                  bool                                          `json:"allow_volume_resize,omitempty"`
 	AllowVolumeRelease                 bool                                          `json:"allow_volume_release,omitempty"`
@@ -113,6 +114,7 @@ func Connect(ctx context.Context, name string, profile Config, transport http.Ro
 	profile.DatabaseBackupTimeZones = maps.Clone(profile.DatabaseBackupTimeZones)
 	for vendor, placements := range map[string]map[string]provider.DatabaseRecoveryPlacement{
 		provider.HuaweiECS: profile.HuaweiDatabaseRecoveryPlacements, provider.AlibabaECS: profile.AlibabaDatabaseRecoveryPlacements,
+		provider.TencentCVM: profile.TencentDatabaseRecoveryPlacements,
 	} {
 		if len(placements) > len(profile.Regions) {
 			return nil, errors.New("invalid database recovery placements")
@@ -125,6 +127,7 @@ func Connect(ctx context.Context, name string, profile Config, transport http.Ro
 	}
 	profile.HuaweiDatabaseRecoveryPlacements = maps.Clone(profile.HuaweiDatabaseRecoveryPlacements)
 	profile.AlibabaDatabaseRecoveryPlacements = maps.Clone(profile.AlibabaDatabaseRecoveryPlacements)
+	profile.TencentDatabaseRecoveryPlacements = maps.Clone(profile.TencentDatabaseRecoveryPlacements)
 	profile.InstanceCreateSizes = slices.Clone(profile.InstanceCreateSizes)
 	profile.InstanceResizeSizes = slices.Clone(profile.InstanceResizeSizes)
 	if len(profile.InstanceResizeSizes) > 128 {

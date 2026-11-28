@@ -3,7 +3,6 @@ package kvm
 import (
 	"context"
 	"database/sql"
-	_ "embed"
 	"errors"
 
 	dbutil "github.com/birdordev/plumego/store/db"
@@ -30,87 +29,31 @@ const SharedStorageMigration = "0131_kvm_shared_storage"
 const LiveMigrationVersion = "0132_kvm_live_migrations"
 const VolumeCleanupMigration = "0133_kvm_volume_cleanups"
 
-//go:embed 0111_kvm_placement.sql
-var schema string
-
-//go:embed 0112_kvm_vms.sql
-var vmSchema string
-
-//go:embed 0113_kvm_vm_shutdown.sql
-var shutdownSchema string
-
-//go:embed 0114_kvm_vm_retirement.sql
-var retirementSchema string
-
-//go:embed 0115_kvm_ipam.sql
-var ipamSchema string
-
-//go:embed 0116_kvm_boot_images.sql
-var bootImageSchema string
-
-//go:embed 0123_kvm_host_fence.sql
-var hostFenceSchema string
-
-//go:embed 0124_kvm_fenced_vm_recovery.sql
-var fencedVMRecoverySchema string
-
-//go:embed 0125_kvm_cold_migrations.sql
-var coldMigrationSchema string
-
-//go:embed 0126_kvm_evacuation.sql
-var evacuationSchema string
-
-//go:embed 0127_kvm_evacuation_placement.sql
-var automaticEvacuationSchema string
-
-//go:embed 0128_kvm_evacuation_batches.sql
-var evacuationBatchSchema string
-
-//go:embed 0129_kvm_evacuation_plans.sql
-var evacuationPlanSchema string
-
-//go:embed 0130_kvm_host_images.sql
-var hostImageSchema string
-
-//go:embed 0131_kvm_shared_storage.sql
-var sharedStorageSchema string
-
-//go:embed 0132_kvm_live_migrations.sql
-var liveMigrationSchema string
-
-//go:embed 0133_kvm_volume_cleanups.sql
-var volumeCleanupSchema string
-
-func kvmMigrations() []struct{ version, schema string } {
-	return []struct{ version, schema string }{
-		{Migration, schema}, {VMMigration, vmSchema}, {ShutdownMigration, shutdownSchema},
-		{RetirementMigration, retirementSchema}, {IPAMMigration, ipamSchema}, {BootImageMigration, bootImageSchema},
-		{HostFenceMigration, hostFenceSchema},
-		{FencedVMRecoveryMigration, fencedVMRecoverySchema},
-		{ColdMigrationVersion, coldMigrationSchema},
-		{EvacuationMigration, evacuationSchema},
-		{AutomaticEvacuationMigration, automaticEvacuationSchema},
-		{EvacuationBatchMigration, evacuationBatchSchema},
-		{EvacuationPlanMigration, evacuationPlanSchema},
-		{HostImageMigration, hostImageSchema},
-		{SharedStorageMigration, sharedStorageSchema},
-		{LiveMigrationVersion, liveMigrationSchema},
-		{VolumeCleanupMigration, volumeCleanupSchema},
-	}
-}
-
 func RequiredMigrations() []string {
-	migrations := kvmMigrations()
-	versions := make([]string, 0, len(migrations))
-	for _, migration := range migrations {
-		versions = append(versions, migration.version)
+	return []string{
+		Migration,
+		VMMigration,
+		ShutdownMigration,
+		RetirementMigration,
+		IPAMMigration,
+		BootImageMigration,
+		HostFenceMigration,
+		FencedVMRecoveryMigration,
+		ColdMigrationVersion,
+		EvacuationMigration,
+		AutomaticEvacuationMigration,
+		EvacuationBatchMigration,
+		EvacuationPlanMigration,
+		HostImageMigration,
+		SharedStorageMigration,
+		LiveMigrationVersion,
+		VolumeCleanupMigration,
 	}
-	return versions
 }
 
 func Migrate(ctx context.Context, db *sql.DB) error {
-	for _, migration := range kvmMigrations() {
-		if err := dbschema.Apply(ctx, db, migration.version, migration.schema); err != nil {
+	for _, version := range RequiredMigrations() {
+		if err := dbschema.Apply(ctx, db, version); err != nil {
 			return err
 		}
 	}

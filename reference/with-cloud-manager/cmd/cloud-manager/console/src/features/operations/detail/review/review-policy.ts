@@ -12,7 +12,8 @@ const observationActions = new Set([
 export function reviewChoices(op: OperationDetail) {
   const observationOnly = op.action.startsWith('create') || observationActions.has(op.action)
   const recovery = op.action === 'recover-database-instance'
-  const observe = observationOnly || (recovery && Boolean(op.provider_request_id && op.database_recovery_intent?.target_id)) ||
+  const observe = observationOnly || (recovery && Boolean(op.database_recovery_intent?.can_retry_observation ||
+    (op.provider_request_id && op.database_recovery_intent?.target_id))) ||
     Boolean(op.can_retry_power_observation) ||
     (op.action === 'copy-image' && op.image_copy_intent?.can_retry_observation) ||
     (op.action === 'rollback-snapshot' && op.snapshot_intent?.can_retry_observation) ||

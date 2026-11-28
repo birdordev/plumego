@@ -5,7 +5,6 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"database/sql"
-	_ "embed"
 	"encoding/json"
 	"errors"
 	"regexp"
@@ -19,12 +18,6 @@ import (
 	"with-cloud-manager/internal/inventory"
 	"with-cloud-manager/internal/provider"
 )
-
-//go:embed 0016_instance_creation.sql
-var creationSchema string
-
-//go:embed 0017_creation_receipt.sql
-var creationReceiptSchema string
 
 var instanceName = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9 _.:-]{0,79}$`)
 
@@ -49,10 +42,10 @@ type creationObserver struct {
 }
 
 func migrateCreation(ctx context.Context, db *sql.DB) error {
-	if err := dbschema.Apply(ctx, db, "0016_instance_creation", creationSchema); err != nil {
+	if err := dbschema.Apply(ctx, db, "0016_instance_creation"); err != nil {
 		return err
 	}
-	return dbschema.Apply(ctx, db, "0017_creation_receipt", creationReceiptSchema)
+	return dbschema.Apply(ctx, db, "0017_creation_receipt")
 }
 
 func validLaunchInput(input CreateInput) bool {

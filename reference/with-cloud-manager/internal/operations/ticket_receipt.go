@@ -47,8 +47,8 @@ func (s Store) GetChangeTicket(ctx context.Context, token string, scope identity
 }
 
 func (s Store) RecordChangeTicket(ctx context.Context, token string, scope identity.Scope, id string, input TicketEvidenceInput) (ticket ChangeTicket, err error) {
-	if !operationKey.MatchString(id) || !opaqueTicketID.MatchString(input.TicketID) || input.SourceRevision < 1 ||
-		!((input.Decision == "approved" && input.ValidUntil != nil) || (input.Decision == "revoked" && input.ValidUntil == nil)) {
+	validDecision := input.Decision == "approved" && input.ValidUntil != nil || input.Decision == "revoked" && input.ValidUntil == nil
+	if !operationKey.MatchString(id) || !opaqueTicketID.MatchString(input.TicketID) || input.SourceRevision < 1 || !validDecision {
 		return ticket, ErrInvalid
 	}
 	if input.ValidUntil != nil {

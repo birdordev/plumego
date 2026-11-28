@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/rand"
 	"database/sql"
-	_ "embed"
 	"encoding/json"
 	"errors"
 	"strings"
@@ -17,12 +16,6 @@ import (
 	"with-cloud-manager/internal/identity"
 	"with-cloud-manager/internal/provider"
 )
-
-//go:embed 0058_load_balancer_configuration.sql
-var loadBalancerConfigurationSchema string
-
-//go:embed 0063_load_balancer_backend_keys.sql
-var loadBalancerBackendKeysSchema string
 
 var ErrLoadBalancerConfigurationNotFound = errors.New("load balancer configuration unavailable")
 
@@ -47,10 +40,10 @@ const selectLoadBalancer = ` FROM cmp_inventory_objects AS o
 	AND a.credential_revision=$5 AND ` + currentLoadBalancer
 
 func migrateLoadBalancerConfiguration(ctx context.Context, db *sql.DB) error {
-	if err := dbschema.Apply(ctx, db, "0058_load_balancer_configuration", loadBalancerConfigurationSchema); err != nil {
+	if err := dbschema.Apply(ctx, db, "0058_load_balancer_configuration"); err != nil {
 		return err
 	}
-	return dbschema.Apply(ctx, db, "0063_load_balancer_backend_keys", loadBalancerBackendKeysSchema)
+	return dbschema.Apply(ctx, db, "0063_load_balancer_backend_keys")
 }
 
 func (s Store) RefreshLoadBalancerConfiguration(ctx context.Context, key Key, request provider.LoadBalancerConfigurationRequest, revision int64, adapter provider.LoadBalancerConfigurationReader) error {
