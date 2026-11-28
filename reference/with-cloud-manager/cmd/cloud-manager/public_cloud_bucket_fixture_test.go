@@ -41,6 +41,7 @@ type bucketFixture struct {
 	names                            []string
 	settingFault                     func(http.ResponseWriter, *http.Request, string) bool
 	putVersioning                    func(http.ResponseWriter, *http.Request)
+	putEncryption                    func(http.ResponseWriter, *http.Request)
 }
 
 func (f *bucketFixture) serveBuckets(t *testing.T, w http.ResponseWriter, r *http.Request) {
@@ -57,6 +58,7 @@ func (f *bucketFixture) serveBuckets(t *testing.T, w http.ResponseWriter, r *htt
 		setting := slices.ContainsFunc(f.settingNames(), func(name string) bool {
 			return strings.Contains(string(body), `"Action":["obs:bucket:GetBucketVersioning"],"Resource":["OBS:*:*:bucket:`+name+`"]`) ||
 				strings.Contains(string(body), `"Action":["obs:bucket:GetEncryptionConfiguration"],"Resource":["OBS:*:*:bucket:`+name+`"]`) ||
+				(f.putEncryption != nil && strings.Contains(string(body), `"Action":["obs:bucket:PutEncryptionConfiguration"],"Resource":["OBS:*:*:bucket:`+name+`"]`)) ||
 				(f.putVersioning != nil && strings.Contains(string(body), `"Action":["obs:bucket:PutBucketVersioning"],"Resource":["OBS:*:*:bucket:`+name+`"]`))
 		})
 		if err != nil || r.Method != http.MethodPost || r.Header.Get("X-Auth-Token") != fixtureHuaweiIAM ||
@@ -264,8 +266,16 @@ func (f *bucketFixture) serveBucketSetting(t *testing.T, w http.ResponseWriter, 
 	t.Helper()
 	query := r.URL.RawQuery
 	name, _, _ := strings.Cut(r.Host, ".")
-	write := r.Method == http.MethodPut && query == "versioning" && f.putVersioning != nil
-	valid := slices.Contains(f.settingNames(), name) && (r.Method == http.MethodGet || write) && r.URL.Path == "/" && (query == "versioning" || query == "encryption")
+	var write func(http.ResponseWriter, *http.Request)
+	if r.Method == http.MethodPut {
+		switch query {
+		case "versioning":
+			write = f.putVersioning
+		case "encryption":
+			write = f.putEncryption
+		}
+	}
+	valid := slices.Contains(f.settingNames(), name) && (r.Method == http.MethodGet || write != nil) && r.URL.Path == "/" && (query == "versioning" || query == "encryption")
 	switch f.vendor {
 	case provider.TencentCVM:
 		valid = valid && r.Host == name+".cos."+f.location+".myqcloud.com" && validFixtureCOSSignature(r, query)
@@ -280,8 +290,8 @@ func (f *bucketFixture) serveBucketSetting(t *testing.T, w http.ResponseWriter, 
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
-	if write {
-		f.putVersioning(w, r)
+	if write != nil {
+		write(w, r)
 		return
 	}
 	if f.settingFault != nil && f.settingFault(w, r, name) {
@@ -358,8 +368,11 @@ func (f *bucketFixture) serveBucketEncryption(t *testing.T, w http.ResponseWrite
 	if mode == 8 {
 		encryption += encryption
 	}
-	rule := "<ApplyServerSideEncryptionByDefault>" + encryption + "<KMSMasterKeyID>" + fixtureBucketKeyID +
-		"</KMSMasterKeyID><ProjectID>discarded-project</ProjectID></ApplyServerSideEncryptionByDefault>"
+	details := "<KMSMasterKeyID>" + fixtureBucketKeyID + "</KMSMasterKeyID><ProjectID>discarded-project</ProjectID>"
+	if f.putEncryption != nil && mode == 6 {
+		details = ""
+	}
+	rule := "<ApplyServerSideEncryptionByDefault>" + encryption + details + "</ApplyServerSideEncryptionByDefault>"
 	body := "<ServerSideEncryptionRule>" + rule + "</ServerSideEncryptionRule>"
 	if f.vendor != provider.AlibabaECS {
 		body = "<ServerSideEncryptionConfiguration><Rule>" + rule + "<BucketKeyEnabled>true</BucketKeyEnabled></Rule></ServerSideEncryptionConfiguration>"

@@ -66,6 +66,7 @@ type Operation struct {
 	CacheRenameIntent               *CacheRenameView               `json:"cache_rename_intent,omitempty"`
 	VolumeReleaseIntent             *VolumeReleaseView             `json:"volume_release_intent,omitempty"`
 	VolumeCreationIntent            *provider.VolumeSpec           `json:"volume_creation_intent,omitempty"`
+	BucketEncryptionIntent          *BucketEncryptionView          `json:"bucket_encryption_intent,omitempty"`
 	BucketVersioningIntent          *BucketVersioningView          `json:"bucket_versioning_intent,omitempty"`
 	InstanceResizeIntent            *InstanceResizeView            `json:"instance_resize_intent,omitempty"`
 	VolumeResizeIntent              *VolumeResizeView              `json:"volume_resize_intent,omitempty"`
@@ -96,6 +97,7 @@ type Operation struct {
 	NetworkDeletionIntent           *NetworkDeletionView           `json:"network_deletion_intent,omitempty"`
 	DNSRecordCreationIntent         *DNSRecordCreationView         `json:"dns_record_creation_intent,omitempty"`
 	DNSRecordDeletionIntent         *DNSRecordDeletionView         `json:"dns_record_deletion_intent,omitempty"`
+	DNSRecordUpdateIntent           *DNSRecordUpdateView           `json:"dns_record_update_intent,omitempty"`
 	DNSRecordStatusIntent           *DNSRecordStatusView           `json:"dns_record_status_intent,omitempty"`
 	LoadBalancerBackendAttachIntent *LoadBalancerBackendAttachView `json:"load_balancer_backend_attach_intent,omitempty"`
 	LoadBalancerBackendDetachIntent *LoadBalancerBackendDetachView `json:"load_balancer_backend_detach_intent,omitempty"`
@@ -454,6 +456,13 @@ func (s Store) Get(ctx context.Context, token string, scope identity.Scope, id s
 			}
 			op.VolumeReleaseIntent = &intent
 		}
+		if err == nil && op.Action == enableBucketEncryption {
+			intent := BucketEncryptionView{Current: provider.BucketEncryptionUnconfigured, Target: provider.BucketEncryptionAES256}
+			if err := tx.QueryRowContext(ctx, `SELECT location FROM cmp_bucket_encryption_intents WHERE operation_id=$1`, op.ID).Scan(&intent.Location); err != nil {
+				return err
+			}
+			op.BucketEncryptionIntent = &intent
+		}
 		if err == nil && op.Action == setBucketVersioning {
 			var intent BucketVersioningView
 			if err := tx.QueryRowContext(ctx, `SELECT location,current_state,target_state FROM cmp_bucket_versioning_intents
@@ -547,6 +556,21 @@ func (s Store) Get(ctx context.Context, token string, scope identity.Scope, id s
 			if err == nil {
 				op.DNSRecordDeletionIntent = &intent
 			}
+		}
+		if err == nil && op.Action == updateDNSRecord {
+			var intent DNSRecordUpdateView
+			var original, desired []byte
+			if err := tx.QueryRowContext(ctx, `SELECT zone_name,record,target_values,target_ttl FROM cmp_dns_record_update_intents
+				WHERE operation_id=$1`, op.ID).Scan(&intent.ZoneName, &original, &desired, &intent.TTL); err != nil {
+				return err
+			}
+			if err := json.Unmarshal(original, &intent.Record); err != nil {
+				return err
+			}
+			if err := json.Unmarshal(desired, &intent.Values); err != nil {
+				return err
+			}
+			op.DNSRecordUpdateIntent = &intent
 		}
 		if err == nil && op.Action == setDNSRecordStatus {
 			var intent DNSRecordStatusView

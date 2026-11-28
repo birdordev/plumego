@@ -27,18 +27,22 @@ const bucketVersionActor = "fixture-bucket-versioning-operator"
 const bucketVersionApprover = "fixture-bucket-versioning-approver"
 
 func TestAcceptancePublicCloudBucketVersioningChange(t *testing.T) {
-	for _, f := range []*bucketFixture{
+	for _, f := range bucketMutationFixtures() {
+		t.Run(f.command, func(t *testing.T) {
+			t.Parallel()
+			testBucketVersioningChange(t, f)
+		})
+	}
+}
+
+func bucketMutationFixtures() []*bucketFixture {
+	return []*bucketFixture{
 		{vpcCreationFixture: vpcCreationFixture{vendor: provider.TencentCVM, account: "100000000001", region: "ap-guangzhou"},
 			command: "tencent", product: provider.TencentCOS, name: "fixture-first-1250000000", location: "ap-beijing"},
 		{vpcCreationFixture: vpcCreationFixture{vendor: provider.AlibabaECS, account: "1000000000000002", region: "cn-hangzhou"},
 			command: "alibaba", product: provider.AlibabaOSS, name: "fixture-first-oss", location: "cn-shanghai"},
 		{vpcCreationFixture: vpcCreationFixture{vendor: provider.HuaweiECS, account: "1234567890abcdef1234567890abcdef", region: "cn-north-4"},
 			command: "huawei", product: provider.HuaweiOBS, name: "fixture-first-obs", location: "cn-north-4"},
-	} {
-		t.Run(f.command, func(t *testing.T) {
-			t.Parallel()
-			testBucketVersioningChange(t, f)
-		})
 	}
 }
 
@@ -96,7 +100,7 @@ func testBucketVersioningChange(t *testing.T, f *bucketFixture) {
 	}
 	transport := cloudFixtureTransport{endpoint, remote.Client().Transport}
 	const ref = "fixture/snapshot-delete"
-	profile := writeBucketVersioningFixtureProfile(t, f, ref)
+	profile := writeBucketMutationFixtureProfile(t, f, ref, true, false)
 	id := f.name + "@" + fixtureBucketOld
 	for _, args := range [][]string{
 		{"scan-" + f.command, "tenant", f.vendor, "global", "object-bucket"},
@@ -108,7 +112,7 @@ func testBucketVersioningChange(t *testing.T, f *bucketFixture) {
 	}
 
 	ops := operations.NewStore(db)
-	startVersioningFixtureWorker(t, ops, profile, transport)
+	startBucketMutationFixtureWorker(t, ops, profile, transport)
 	app, err := newAPI(db, "", nil)
 	if err != nil {
 		t.Fatal(err)
@@ -194,10 +198,10 @@ func testBucketVersioningChange(t *testing.T, f *bucketFixture) {
 	}
 }
 
-func writeBucketVersioningFixtureProfile(t *testing.T, f *bucketFixture, ref string) string {
+func writeBucketMutationFixtureProfile(t *testing.T, f *bucketFixture, ref string, allowVersioning, allowEncryption bool) string {
 	t.Helper()
 	config := publiccloud.Config{AccountID: f.account, Regions: []string{f.region}, BucketListAccountWide: true,
-		AllowBucketVersioningChanges: true}
+		AllowBucketVersioningChanges: allowVersioning, AllowBucketEncryptionEnable: allowEncryption}
 	if f.vendor == provider.HuaweiECS {
 		config.ProjectID, config.IAMToken = fixtureHuaweiProject, fixtureHuaweiIAM
 	} else {
@@ -215,7 +219,7 @@ func writeBucketVersioningFixtureProfile(t *testing.T, f *bucketFixture, ref str
 	return path
 }
 
-func startVersioningFixtureWorker(t *testing.T, store operations.Store, profile string, transport http.RoundTripper) {
+func startBucketMutationFixtureWorker(t *testing.T, store operations.Store, profile string, transport http.RoundTripper) {
 	t.Helper()
 	ctx, cancel := context.WithCancel(t.Context())
 	stopped := make(chan error, 1)
@@ -232,7 +236,7 @@ func startVersioningFixtureWorker(t *testing.T, store operations.Store, profile 
 				t.Error(err)
 			}
 		case <-time.After(5 * time.Second):
-			t.Error("versioning worker did not stop")
+			t.Error("bucket mutation worker did not stop")
 		}
 	})
 }
@@ -243,7 +247,12 @@ func submitFixtureBucketVersioning(t *testing.T, app http.Handler, project, key,
 	if err != nil {
 		t.Fatal(err)
 	}
-	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/v1/tenants/tenant/projects/"+project+"/object-buckets/versioning", bytes.NewReader(body))
+	return submitFixtureBucketSetting(t, app, project, "versioning", key, revision, body, expected)
+}
+
+func submitFixtureBucketSetting(t *testing.T, app http.Handler, project, setting, key, revision string, body []byte, expected int) operations.Operation {
+	t.Helper()
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/v1/tenants/tenant/projects/"+project+"/object-buckets/"+setting, bytes.NewReader(body))
 	req.Header.Set("Authorization", "Bearer "+bucketVersionActor)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Idempotency-Key", key)

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"reflect"
+	"strconv"
 	"time"
 
 	dbutil "github.com/birdordev/plumego/store/db"
@@ -36,9 +37,11 @@ type Allocation struct {
 	Period         string            `json:"period"`
 	Source         string            `json:"source"`
 	ReportRevision int64             `json:"report_revision"`
+	ReportVersion  string            `json:"report_revision_text"`
 	ReportDigest   string            `json:"report_sha256"`
 	ReportCurrent  bool              `json:"report_current"`
 	Revision       int64             `json:"revision"`
+	Version        string            `json:"revision_text"`
 	Algorithm      string            `json:"algorithm"`
 	PolicyDigest   string            `json:"policy_sha256"`
 	CreatedAt      time.Time         `json:"created_at"`
@@ -77,6 +80,10 @@ func selectAllocation(ctx context.Context, tx *sql.Tx, report reportEntry, revis
 			&output.InvalidTagRows, &output.CreatedAt, &output.Current)
 	if errors.Is(err, sql.ErrNoRows) {
 		return allocationEntry{}, ErrNotFound
+	}
+	if err == nil {
+		output.Version = strconv.FormatInt(output.Revision, 10)
+		output.ReportVersion = strconv.FormatInt(output.ReportRevision, 10)
 	}
 	return entry, err
 }

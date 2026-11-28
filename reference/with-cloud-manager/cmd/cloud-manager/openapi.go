@@ -337,6 +337,20 @@ func registerOpenAPI(app *core.App, console *consoleConfig) error {
 			"uid": openapi.String, "namespace": openapi.String, "kind": openapi.String, "name": openapi.String, "replicas": openapi.Integer,
 		}}}}}
 
+	dnsRecordUpdate := accountOp("updateDNSRecord", "202", "已受理公网 DNS 地址与 TTL 修改，需独立审批", true)
+	dnsRecordUpdate.Params = submit.Params
+	dnsRecordUpdate.Responses["412"] = openapi.Response{Description: "需要当前托管区归属版本和记录快照"}
+	dnsRecordUpdate.Responses["429"] = submit.Responses["429"]
+	dnsRecordUpdate.Body = &openapi.RequestBody{Required: true,
+		Description: "必填 account、asset_id、record_id、observed_at、values 和 ttl。只修改已启用的公网 A/AAAA 记录。",
+		Content: map[string]openapi.MediaType{"application/json": {Schema: openapi.Schema{
+			Type: "object", Properties: map[string]openapi.Schema{
+				"account": openapi.String, "asset_id": openapi.String, "record_id": openapi.String,
+				"observed_at": {Type: "string", Format: "date-time"},
+				"values":      {Type: "array", Items: &openapi.Schema{Type: "string"}}, "ttl": openapi.Integer,
+			},
+		}}},
+	}
 	dnsRecordStatus := accountOp("setDNSRecordStatus", "202", "已持久受理的公网 DNS 启停解析申请，需独立审批", true)
 	dnsRecordStatus.Params = submit.Params
 	dnsRecordStatus.Responses["412"] = openapi.Response{Description: "需要当前托管区归属版本和记录快照"}
@@ -403,6 +417,18 @@ func registerOpenAPI(app *core.App, console *consoleConfig) error {
 		for _, name := range []string{"account", "region", "asset_id"} {
 			op.Params = append(op.Params, openapi.Param{Name: name, In: "query", Required: true, Schema: openapi.String})
 		}
+	}
+	bucketEncryptionEnable := accountOp("enableBucketEncryption", "202", "对象桶默认 AES256 加密申请已受理并等待独立审批", true)
+	bucketEncryptionEnable.Params = submit.Params
+	bucketEncryptionEnable.Responses["412"] = openapi.Response{Description: "需要当前桶归属版本和默认加密未配置的观测"}
+	bucketEncryptionEnable.Responses["429"] = submit.Responses["429"]
+	bucketEncryptionEnable.Body = &openapi.RequestBody{
+		Required: true, Description: "account 和 asset_id。asset_id 包含桶名和创建时间，目标固定为厂商托管 AES256。",
+		Content: map[string]openapi.MediaType{"application/json": {Schema: openapi.Schema{
+			Type: "object", Properties: map[string]openapi.Schema{
+				"account": openapi.String, "asset_id": openapi.String,
+			},
+		}}},
 	}
 	bucketVersioningChange := accountOp("setBucketVersioning", "202", "对象桶版本控制变更已受理并等待独立审批", true)
 	bucketVersioningChange.Params = submit.Params
@@ -620,7 +646,9 @@ func registerOpenAPI(app *core.App, console *consoleConfig) error {
 		"GET " + assetsRoute + "/export":                                   export,
 		"PATCH " + assetsRoute + "/ownership":                              ownership,
 		"GET " + assetsRoute + "/topology":                                 topology,
+		"GET " + databaseBackupsRoute:                                      databaseBackupsOpenAPI(readAuth),
 		"GET " + dnsRecordsRoute:                                           dnsRecords,
+		"POST " + bucketEncryptionEnableRoute:                              bucketEncryptionEnable,
 		"POST " + bucketVersioningChangeRoute:                              bucketVersioningChange,
 		"GET " + bucketVersioningRoute:                                     bucketSetting("readProjectBucketVersioning", "版本控制状态为 disabled、enabled 或 suspended。"),
 		"GET " + bucketEncryptionRoute:                                     bucketSetting("readProjectBucketEncryption", "默认服务端加密方式为 unconfigured、aes256、sm4 或 kms。"),
@@ -635,6 +663,7 @@ func registerOpenAPI(app *core.App, console *consoleConfig) error {
 		"POST " + dnsRecordCreationRoute:                                   dnsRecordCreation,
 		"POST " + dnsRecordDeletionRoute:                                   dnsRecordDeletion,
 		"POST " + workloadScaleRoute:                                       workloadScale,
+		"POST " + dnsRecordUpdateRoute:                                     dnsRecordUpdate,
 		"POST " + dnsRecordStatusRoute:                                     dnsRecordStatus,
 		"POST " + bareMetalPXERoute:                                        bareMetalPXE,
 		"POST " + bareMetalPowerRoute:                                      bareMetalPower,
@@ -688,6 +717,8 @@ func registerOpenAPI(app *core.App, console *consoleConfig) error {
 		"POST " + operationBatchesRoute + "/preview":                       batchPreview,
 		"POST " + operationBatchesRoute:                                    batchSubmit,
 		"GET " + operationBatchesRoute + "/:batch":                         accountOp("getOperationBatch", "200", "项目批次及当前子操作状态", false),
+		"POST " + allocationRoute:                                          allocationWriteOpenAPI(writeAuth, false),
+		"POST " + allocationPreviewRoute:                                   allocationWriteOpenAPI(writeAuth, true),
 		"GET " + allocationRoute:                                           allocationOpenAPI(readAuth),
 		"GET " + billingRoute:                                              billingOpenAPI(readAuth),
 		"GET " + billingSummaryRoute:                                       billingSummaryOpenAPI(readAuth),

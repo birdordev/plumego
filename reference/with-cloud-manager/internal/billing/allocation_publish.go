@@ -7,9 +7,26 @@ import (
 	"errors"
 
 	dbutil "github.com/birdordev/plumego/store/db"
+
+	"with-cloud-manager/internal/identity"
 )
 
 func (s Store) BuildAllocation(ctx context.Context, key Key, reportRevision, expected int64, input AllocationPolicy) (Allocation, error) {
+	return s.buildAllocation(ctx, key, reportRevision, expected, input, nil, "", "")
+}
+
+func (s Store) PublishAllocation(ctx context.Context, token string, key Key, reportRevision, expected int64, reportDigest, previewDigest string, input AllocationPolicy) (Allocation, error) {
+	if !digestPattern.MatchString(reportDigest) || !digestPattern.MatchString(previewDigest) {
+		return Allocation{}, ErrInvalid
+	}
+	return s.buildAllocation(ctx, key, reportRevision, expected, input, func(ctx context.Context, tx *sql.Tx) (identity.Scope, error) {
+		return authorizeBilling(ctx, tx, token, key)
+	}, reportDigest, previewDigest)
+}
+
+func (s Store) buildAllocation(ctx context.Context, key Key, reportRevision, expected int64, input AllocationPolicy,
+	authorize func(context.Context, *sql.Tx) (identity.Scope, error), reportDigest, previewDigest string,
+) (Allocation, error) {
 	if !key.Valid() || reportRevision < 1 || expected < 0 {
 		return Allocation{}, ErrInvalid
 	}
@@ -18,11 +35,19 @@ func (s Store) BuildAllocation(ctx context.Context, key Key, reportRevision, exp
 		return Allocation{}, err
 	}
 	digest := policyDigest(encoded)
+	if previewDigest != "" && previewDigest != digest {
+		return Allocation{}, ErrAllocationConflict
+	}
 	var original reportEntry
 	var prepared allocationProjection
 	var bound binding
 	var result Allocation
 	err = dbutil.WithTransaction(ctx, s.db, readOnly(), func(tx *sql.Tx) error {
+		if authorize != nil {
+			if _, err := authorize(ctx, tx); err != nil {
+				return err
+			}
+		}
 		var err error
 		bound, err = accountBinding(ctx, tx, key, false)
 		if err != nil {
@@ -32,6 +57,9 @@ func (s Store) BuildAllocation(ctx context.Context, key Key, reportRevision, exp
 		if err != nil {
 			return err
 		}
+		if reportDigest != "" && original.report.Digest != reportDigest {
+			return ErrAllocationConflict
+		}
 		existing, err := allocationByDigest(ctx, tx, original, digest)
 		if err == nil {
 			result, err = loadAllocation(ctx, tx, existing)
@@ -39,6 +67,15 @@ func (s Store) BuildAllocation(ctx context.Context, key Key, reportRevision, exp
 		}
 		if !errors.Is(err, ErrNotFound) {
 			return err
+		}
+		if authorize != nil {
+			current, err := latestAllocationRevision(ctx, tx, original.id)
+			if err != nil {
+				return err
+			}
+			if current != expected {
+				return ErrAllocationConflict
+			}
 		}
 		prepared, err = computeAllocation(ctx, tx, original, policy)
 		return err
@@ -55,6 +92,13 @@ func (s Store) BuildAllocation(ctx context.Context, key Key, reportRevision, exp
 		if locked != bound {
 			return ErrAllocationConflict
 		}
+		var actor identity.Scope
+		if authorize != nil {
+			actor, err = authorize(ctx, tx)
+			if err != nil {
+				return err
+			}
+		}
 		report, err := findReport(ctx, tx, key, reportRevision)
 		if err != nil {
 			return err
@@ -65,6 +109,14 @@ func (s Store) BuildAllocation(ctx context.Context, key Key, reportRevision, exp
 		entry, err := publishAllocation(ctx, tx, report, expected, digest, encoded, prepared)
 		if err != nil {
 			return err
+		}
+		if authorize != nil && !entry.value.Replayed {
+			if _, err := tx.ExecContext(ctx, `INSERT INTO cmp_project_audit
+				(tenant_id,project_id,category,action,subject_id,resource_kind,account_id,actor_id,revision,occurred_at)
+				VALUES ($1,$2,'billing_allocation','published',$3,'billing-allocation',$4,$5,$6,$7)`,
+				actor.Tenant, actor.Project, entry.id, key.Account, actor.Principal, entry.value.Revision, entry.value.CreatedAt); err != nil {
+				return err
+			}
 		}
 		result, err = loadAllocation(ctx, tx, entry)
 		return err
@@ -93,9 +145,8 @@ func publishAllocation(ctx context.Context, tx *sql.Tx, report reportEntry, expe
 	if !errors.Is(err, ErrNotFound) {
 		return entry, err
 	}
-	var revision int64
-	if err := tx.QueryRowContext(ctx, `SELECT COALESCE(max(revision),0) FROM cmp_billing_allocations WHERE report_id=$1`,
-		report.id).Scan(&revision); err != nil {
+	revision, err := latestAllocationRevision(ctx, tx, report.id)
+	if err != nil {
 		return allocationEntry{}, err
 	}
 	if revision != expected || expected == 1<<63-1 {
@@ -121,4 +172,10 @@ func publishAllocation(ctx context.Context, tx *sql.Tx, report reportEntry, expe
 		return allocationEntry{}, err
 	}
 	return selectAllocation(ctx, tx, report, revision+1)
+}
+
+func latestAllocationRevision(ctx context.Context, tx *sql.Tx, reportID string) (int64, error) {
+	var revision int64
+	err := tx.QueryRowContext(ctx, `SELECT COALESCE(max(revision),0) FROM cmp_billing_allocations WHERE report_id=$1`, reportID).Scan(&revision)
+	return revision, err
 }

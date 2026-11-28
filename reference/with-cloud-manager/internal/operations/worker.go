@@ -20,16 +20,17 @@ import (
 type ConnectOperator func(context.Context, identity.CloudAccountBinding) (provider.InstanceOperator, error)
 
 type work struct {
-	bareMetalDeployment bool
-	retirement          provider.InstanceRetirement
-	cacheRename         provider.CacheRename
-	databaseRename      provider.DatabaseRename
-	volumeRelease       provider.VolumeRelease
-	volumeSpec          provider.VolumeSpec
-	bucketVersioning    provider.BucketVersioningChange
-	instanceResize      provider.InstanceResize
-	volumeResize        provider.VolumeResize
-	workloadScale       provider.WorkloadScaleChange
+	bareMetalDeployment      bool
+	retirement               provider.InstanceRetirement
+	cacheRename              provider.CacheRename
+	databaseRename           provider.DatabaseRename
+	volumeRelease            provider.VolumeRelease
+	volumeSpec               provider.VolumeSpec
+	bucketVersioning         provider.BucketVersioningChange
+	bucketEncryptionLocation string
+	instanceResize           provider.InstanceResize
+	volumeResize             provider.VolumeResize
+	workloadScale            provider.WorkloadScaleChange
 	Operation
 	actor                             identity.Scope
 	binding                           identity.CloudAccountBinding
@@ -52,6 +53,7 @@ type work struct {
 	backendDetachBinding              string
 	backendAttach                     provider.LoadBalancerBackendAttach
 	dnsDeletion                       provider.DNSRecordDeletion
+	dnsUpdate                         provider.DNSRecordUpdate
 	dnsStatus                         provider.DNSRecordStatusChange
 	dnsCreation                       dnsRecordCreation
 	backendAttachBinding              string
@@ -221,6 +223,9 @@ func (s Store) process(ctx context.Context, task mq.Task, connect ConnectOperato
 	if w.Action == deleteDNSRecord {
 		return s.processDNSRecordDeletion(ctx, task, w, client, scope)
 	}
+	if w.Action == updateDNSRecord {
+		return s.processDNSRecordUpdate(ctx, task, w, client, scope)
+	}
 	if w.Action == setDNSRecordStatus {
 		return s.processDNSRecordStatus(ctx, task, w, client, scope)
 	}
@@ -232,6 +237,9 @@ func (s Store) process(ctx context.Context, task mq.Task, connect ConnectOperato
 	}
 	if w.Action == releaseVolume {
 		return s.processVolumeRelease(ctx, task, w, client, scope)
+	}
+	if w.Action == enableBucketEncryption {
+		return s.processBucketEncryption(ctx, task, w, client, scope)
 	}
 	if w.Action == setBucketVersioning {
 		return s.processBucketVersioning(ctx, task, w, client, scope)
@@ -543,6 +551,10 @@ func checkOperationTarget(ctx context.Context, tx *sql.Tx, w *work) error {
 		_, err := checkDNSRecordDeletion(ctx, tx, w)
 		return err
 	}
+	if w.Action == updateDNSRecord {
+		_, err := checkDNSRecordUpdate(ctx, tx, w)
+		return err
+	}
 	if w.Action == setDNSRecordStatus {
 		_, err := checkDNSRecordStatus(ctx, tx, w)
 		return err
@@ -555,6 +567,10 @@ func checkOperationTarget(ctx context.Context, tx *sql.Tx, w *work) error {
 	}
 	if w.Action == releaseVolume {
 		return checkVolumeRelease(ctx, tx, w)
+	}
+	if w.Action == enableBucketEncryption {
+		_, err := checkBucketEncryption(ctx, tx, w)
+		return err
 	}
 	if w.Action == setBucketVersioning {
 		_, err := checkBucketVersioning(ctx, tx, w)

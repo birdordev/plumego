@@ -1,0 +1,9 @@
+.allocation-editor {
+  display: grid;
+  gap: .75rem;
+  margin: .6rem 0 .85rem;
+}
+
+.allocation-editor > button {
+  justify-self: start;
+}

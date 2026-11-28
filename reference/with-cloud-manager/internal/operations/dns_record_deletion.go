@@ -22,7 +22,7 @@ var dnsRecordDeletionSchema string
 const deleteDNSRecord = "delete-dns-record"
 
 func isDNSRecordMutation(action string) bool {
-	return action == createDNSRecord || action == setDNSRecordStatus || action == deleteDNSRecord
+	return action == createDNSRecord || action == setDNSRecordStatus || action == deleteDNSRecord || action == updateDNSRecord
 }
 
 type DNSRecordDeletionInput struct {

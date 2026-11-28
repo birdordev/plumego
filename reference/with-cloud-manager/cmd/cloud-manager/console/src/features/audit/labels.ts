@@ -7,6 +7,7 @@ export const auditKinds: Readonly<Partial<Record<string, string>>> = {
   observation: '续查',
   catalog: '服务目录',
   alert: '项目告警',
+  billing_allocation: '费用分摊',
   billing_budget: '云预算',
   tag_policy: '标签规则',
   change_ticket: '变更工单',

@@ -1,5 +1,6 @@
 import type { FormEvent } from 'react'
 import { formText } from '../../../shared/detail/form-values'
+import { AllocationEditor } from './AllocationEditor'
 import { AllocationResult } from './AllocationResult'
 import { allocationQuerySchema } from './schema'
 import { useAllocation } from './useAllocation'
@@ -35,6 +36,10 @@ export default function AllocationPage({ base }: { base: string }) {
       {result.state === 'loading' ? <p role="status">正在读取分摊…</p> : null}
       {result.state === 'error' ? <p role="alert" className="notice" data-error="true">{result.message}</p> : null}
       {result.state === 'ready' ? <AllocationResult value={result.value} /> : null}
+      <details>
+        <summary>预览并发布分摊</summary>
+        <AllocationEditor key={base} base={base} />
+      </details>
     </section>
   )
 }

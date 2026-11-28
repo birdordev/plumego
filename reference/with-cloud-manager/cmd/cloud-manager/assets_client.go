@@ -15,12 +15,16 @@ import (
 
 const assetsUsage = `usage: cloud-manager assets {list,changes,topology,export} TENANT PROJECT
   [--account ACCOUNT] [--region REGION] [--kind KIND] [--q TEXT]
-  list, changes and topology also accept --limit COUNT and --cursor CURSOR`
+  list, changes and topology also accept --limit COUNT and --cursor CURSOR
+  cloud-manager assets database-backups TENANT PROJECT ASSET --account ACCOUNT --region REGION [--limit COUNT] [--offset OFFSET --observed-at TIME]`
 
 func runAssetsClient(ctx context.Context, args []string, address, token string, output io.Writer, transport http.RoundTripper) error {
 	usage := errors.New(assetsUsage)
 	if len(args) < 3 || !operationClientSegment(args[1]) || !operationClientSegment(args[2]) {
 		return usage
+	}
+	if args[0] == "database-backups" {
+		return runDatabaseBackupsClient(ctx, args, address, token, output, transport)
 	}
 	command := args[0]
 	maximum, cursorLimit := 200, 4096

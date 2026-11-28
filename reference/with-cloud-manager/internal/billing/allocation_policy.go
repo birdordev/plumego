@@ -21,6 +21,7 @@ const (
 )
 
 var centerID = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,63}$`)
+var digestPattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
 type AllocationPolicy struct {
 	Rules   []AllocationRule  `json:"rules,omitempty"`

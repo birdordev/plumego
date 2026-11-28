@@ -85,6 +85,8 @@ func planOperationRequest(base *url.URL, args []string) (operationRequestPlan, e
 		return planOperationSubmission(project.JoinPath("dns-zones", "record-deletion"), args[0], args[3:])
 	case "scale-workload":
 		return planOperationSubmission(project.JoinPath("kubernetes-workloads", "scale"), args[0], args[3:])
+	case "update-dns-record":
+		return planOperationSubmission(project.JoinPath("dns-zones", "record-update"), args[0], args[3:])
 	case "set-dns-record-status":
 		return planOperationSubmission(project.JoinPath("dns-zones", "record-status"), args[0], args[3:])
 	case "attach-load-balancer-backend":
@@ -135,6 +137,8 @@ func planOperationRequest(base *url.URL, args []string) (operationRequestPlan, e
 			plan.method, plan.status = http.MethodPost, http.StatusAccepted
 		}
 		return plan, err
+	case "enable-bucket-encryption":
+		return planOperationSubmission(project.JoinPath("object-buckets", "encryption"), args[0], args[3:])
 	case "set-bucket-versioning":
 		return planOperationSubmission(project.JoinPath("object-buckets", "versioning"), args[0], args[3:])
 	case "resize-instance":
@@ -214,7 +218,7 @@ func planOperationSubmission(target *url.URL, command string, args []string) (op
 	flags.SetOutput(io.Discard)
 	key := flags.String("idempotency-key", "", "")
 	var match string
-	requireMatch := command == "request-reclaim" || command == "bare-metal-pxe" || command == "bare-metal-power" || command == "retire-instance" || command == "release-volume" || command == "resize-volume" || command == "resize-instance" || command == "set-bucket-versioning" || command == "rename-database-instance" || command == "rename-cache-instance" || command == "scale-workload" || command == "create-dns-record" || command == "delete-dns-record" || command == "set-dns-record-status" || command == "submit" || command == "delete-network" || command == "rename-load-balancer" || command == "rename-load-balancer-listener" || command == "rename-load-balancer-target-group" || command == "set-load-balancer-backend-weight" || command == "detach-load-balancer-backend" || command == "attach-load-balancer-backend" || command == "revoke-security-rule" || command == "release-elastic-ip" ||
+	requireMatch := command == "request-reclaim" || command == "bare-metal-pxe" || command == "bare-metal-power" || command == "retire-instance" || command == "release-volume" || command == "resize-volume" || command == "resize-instance" || command == "set-bucket-versioning" || command == "enable-bucket-encryption" || command == "rename-database-instance" || command == "rename-cache-instance" || command == "scale-workload" || command == "create-dns-record" || command == "delete-dns-record" || command == "set-dns-record-status" || command == "update-dns-record" || command == "submit" || command == "delete-network" || command == "rename-load-balancer" || command == "rename-load-balancer-listener" || command == "rename-load-balancer-target-group" || command == "set-load-balancer-backend-weight" || command == "detach-load-balancer-backend" || command == "attach-load-balancer-backend" || command == "revoke-security-rule" || command == "release-elastic-ip" ||
 		command == "bind-elastic-ip" || command == "unbind-elastic-ip" || command == "create-snapshot" || command == "delete-snapshot" || command == "delete-image" || command == "create-image" || command == "copy-image" || command == "restore-snapshot" || command == "rollback-snapshot"
 	if requireMatch || command == "create-network" {
 		flags.Func("if-match", "", func(value string) error {

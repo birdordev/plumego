@@ -19,6 +19,7 @@ import (
 const operationsRoute = "/v1/tenants/:tenant/projects/:project/instance-operations"
 const instancesRoute = "/v1/tenants/:tenant/projects/:project/instances"
 const instanceResizeRoute = instancesRoute + "/resize"
+const bucketEncryptionEnableRoute = "/v1/tenants/:tenant/projects/:project/object-buckets/encryption"
 const bucketVersioningChangeRoute = "/v1/tenants/:tenant/projects/:project/object-buckets/versioning"
 const imagesRoute = "/v1/tenants/:tenant/projects/:project/images"
 
@@ -27,6 +28,7 @@ const networkOperationsRoute = "/v1/tenants/:tenant/projects/:project/network-op
 const dnsRecordCreationRoute = "/v1/tenants/:tenant/projects/:project/dns-zones/records"
 const dnsRecordDeletionRoute = "/v1/tenants/:tenant/projects/:project/dns-zones/record-deletion"
 const workloadScaleRoute = "/v1/tenants/:tenant/projects/:project/kubernetes-workloads/scale"
+const dnsRecordUpdateRoute = "/v1/tenants/:tenant/projects/:project/dns-zones/record-update"
 const dnsRecordStatusRoute = "/v1/tenants/:tenant/projects/:project/dns-zones/record-status"
 const volumesRoute = "/v1/tenants/:tenant/projects/:project/volumes"
 const volumeResizeRoute = volumesRoute + "/resize"
@@ -451,6 +453,11 @@ func bareMetalPowerRevisionError() error {
 func cacheRenameRevisionError() error {
 	return contract.NewErrorBuilder().Type(contract.TypePreconditionFailed).
 		Message("current cache name, ownership revision and inventory required").Build()
+}
+
+func bucketEncryptionRevisionError() error {
+	return contract.NewErrorBuilder().Type(contract.TypePreconditionFailed).
+		Message("current bucket revision and unconfigured encryption observation required").Build()
 }
 
 func bucketVersioningRevisionError() error {

@@ -9,11 +9,15 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+
+	"with-cloud-manager/internal/billing"
 )
 
 const billingClientUsage = `usage: cloud-manager billing COMMAND TENANT PROJECT ACCOUNT PERIOD SOURCE
   get [REVISION]
   allocation-get [REPORT_REVISION [ALLOCATION_REVISION]]
+  allocation-preview REPORT_REVISION < policy.json
+  allocation-publish REPORT_REVISION EXPECTED_ALLOCATION_REVISION REPORT_SHA256 POLICY_SHA256 < policy.json
   budget-get CURRENCY BASIS
   budget-create CURRENCY BASIS < budget.json
   budget-update CURRENCY BASIS REVISION < budget.json
@@ -146,6 +150,27 @@ func planBillingRequest(target *url.URL, query url.Values, args []string) (opera
 			return operationRequestPlan{}, usage
 		}
 		plan.target = target.JoinPath("allocations")
+	case "allocation-preview", "allocation-publish":
+		preview := args[0] == "allocation-preview"
+		if (preview && len(args) != 7) || (!preview && len(args) != 10) {
+			return operationRequestPlan{}, usage
+		}
+		query.Set("revision", args[6])
+		plan.target = target.JoinPath("allocations")
+		if preview {
+			plan.target = plan.target.JoinPath("preview")
+		} else {
+			if _, valid := billingRevision(args[7], true); !valid {
+				return operationRequestPlan{}, usage
+			}
+			plan.match = strconv.Quote(args[7])
+			query.Set("report_sha256", args[8])
+			query.Set("policy_sha256", args[9])
+		}
+		if _, err := allocationWriteQuery(args[1], args[2], query.Encode(), preview); err != nil {
+			return operationRequestPlan{}, usage
+		}
+		plan.method, plan.inputLimit = http.MethodPost, billing.MaxAllocationPolicyBytes
 	default:
 		var err error
 		plan, err = planBudgetRequest(target, query, args)

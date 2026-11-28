@@ -51,7 +51,7 @@ func newAPI(db *sql.DB, addr string, console *consoleConfig) (*core.App, error) 
 		inventory.TagPolicyAlertsMigration, operations.FirstLeaseMigration, operations.QueueSnapshotMigration, alerts.OperationQueueMigration,
 		operations.QueueFindingsMigration, operations.ObservationQueueRepairMigration, operations.PowerObservationMigration,
 		inventory.VolumeInventoryMigration, operations.VolumeResizeMigration, operations.VolumeCreationMigration, operations.VolumeReleaseMigration,
-		inventory.InstanceTypeInventoryMigration, operations.InstanceResizeMigration, inventory.InstanceResizeOptionsMigration, operations.BucketVersioningMigration)
+		inventory.InstanceTypeInventoryMigration, operations.InstanceResizeMigration, inventory.InstanceResizeOptionsMigration, operations.BucketVersioningMigration, operations.BucketEncryptionEnableMigration, operations.DNSRecordUpdateMigration, billing.AllocationPublishMigration, inventory.DatabaseBackupsMigration)
 	additionalVersionList := strings.Join(additionalVersions, ",")
 	ready := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx, cancel := context.WithTimeout(r.Context(), time.Second)
@@ -95,8 +95,10 @@ func newAPI(db *sql.DB, addr string, console *consoleConfig) (*core.App, error) 
 		app.Get(assetsRoute+"/export", inventoryHandler(store.Export, writeAssetCSV, true, app.Logger())),
 		app.Get(assetsRoute+"/topology", assetHandler(store.Topology, app.Logger())),
 		app.Get(loadBalancerConfigurationRoute, loadBalancerConfigurationHandler(store, app.Logger())),
+		app.Get(databaseBackupsRoute, databaseBackupsHandler(store, app.Logger())),
 		app.Get(dnsRecordsRoute, dnsRecordsHandler(store, app.Logger())),
 		app.Get(bucketVersioningRoute, bucketSettingHandler(store.ReadBucketVersioning, app.Logger())),
+		app.Post(bucketEncryptionEnableRoute, versionedOperationHandler(operationStore.SubmitBucketEncryption, bucketEncryptionRevisionError, app.Logger())),
 		app.Post(bucketVersioningChangeRoute, versionedOperationHandler(operationStore.SubmitBucketVersioning, bucketVersioningRevisionError, app.Logger())),
 		app.Get(bucketEncryptionRoute, bucketSettingHandler(store.ReadBucketEncryption, app.Logger())),
 		app.Get(clusterNodePoolsRoute, clusterNodePoolsHandler(store, app.Logger())),
@@ -104,6 +106,8 @@ func newAPI(db *sql.DB, addr string, console *consoleConfig) (*core.App, error) 
 		app.Get(billingRoute, billingHandler(billingStore, app.Logger())),
 		app.Get(billingSummaryRoute, billingSummaryHandler(billingStore, app.Logger())),
 		app.Get(allocationRoute, allocationHandler(billingStore, app.Logger())),
+		app.Post(allocationRoute, allocationWriteHandler(billingStore, app.Logger(), false)),
+		app.Post(allocationPreviewRoute, allocationWriteHandler(billingStore, app.Logger(), true)),
 		app.Get(budgetRoute, budgets), app.Post(budgetRoute, budgets), app.Put(budgetRoute, budgets),
 		app.Get(projectBudgetRoute, projectBudgets), app.Post(projectBudgetRoute, projectBudgets), app.Put(projectBudgetRoute, projectBudgets),
 		app.Get(tagPolicyRoute, tagPolicy), app.Post(tagPolicyRoute, tagPolicy), app.Put(tagPolicyRoute, tagPolicy),
@@ -136,6 +140,7 @@ func newAPI(db *sql.DB, addr string, console *consoleConfig) (*core.App, error) 
 		app.Post(dnsRecordCreationRoute, versionedOperationHandler(operationStore.SubmitDNSRecordCreation, dnsRecordRevisionError, app.Logger())),
 		app.Post(dnsRecordDeletionRoute, versionedOperationHandler(operationStore.SubmitDNSRecordDeletion, dnsRecordRevisionError, app.Logger())),
 		app.Post(workloadScaleRoute, versionedOperationHandler(operationStore.SubmitWorkloadScale, workloadScaleRevisionError, app.Logger())),
+		app.Post(dnsRecordUpdateRoute, versionedOperationHandler(operationStore.SubmitDNSRecordUpdate, dnsRecordRevisionError, app.Logger())),
 		app.Post(dnsRecordStatusRoute, versionedOperationHandler(operationStore.SubmitDNSRecordStatus, dnsRecordRevisionError, app.Logger())),
 		app.Post(volumesRoute, creationHandler(operationStore.SubmitVolumeCreation, app.Logger())),
 		app.Get(volumeReleasePreviewRoute, assetOperationPreviewHandler(operationStore.PreviewVolumeRelease, app.Logger())),

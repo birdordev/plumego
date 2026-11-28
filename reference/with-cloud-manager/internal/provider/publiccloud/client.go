@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"maps"
 	"net/http"
 	"regexp"
 	"slices"
@@ -28,60 +29,63 @@ var (
 )
 
 type Config struct {
-	Regions                            []string `json:"regions"`
-	AccountID                          string   `json:"account_id"`
-	ProjectID                          string   `json:"project_id,omitempty"`
-	AccessKeyID                        string   `json:"access_key_id,omitempty"`
-	AccessKeySecret                    string   `json:"access_key_secret,omitempty"`
-	SecurityToken                      string   `json:"security_token,omitempty"`
-	IAMToken                           string   `json:"iam_token,omitempty"`
-	BucketListAccountWide              bool     `json:"bucket_list_account_wide,omitempty"`
-	CacheListScopeWide                 bool     `json:"cache_list_scope_wide,omitempty"`
-	KubernetesListScopeWide            bool     `json:"kubernetes_list_scope_wide,omitempty"`
-	AllowInstancePower                 bool     `json:"allow_instance_power,omitempty"`
-	AllowInstanceReboot                bool     `json:"allow_instance_reboot,omitempty"`
-	AllowInstanceDelete                bool     `json:"allow_instance_delete,omitempty"`
-	AllowBucketVersioningChanges       bool     `json:"allow_bucket_versioning_changes,omitempty"`
-	AllowInstanceRetirement            bool     `json:"allow_instance_retirement,omitempty"`
-	VolumeCreateMaxGiB                 int      `json:"volume_create_max_gib,omitempty"`
-	HuaweiVolumeKMSKeyID               string   `json:"huawei_volume_kms_key_id,omitempty"`
-	AllowVolumeChanges                 bool     `json:"allow_volume_changes,omitempty"`
-	InstanceResizeSizes                []string `json:"instance_resize_sizes,omitempty"`
-	InstanceCreateSizes                []string `json:"instance_create_sizes,omitempty"`
-	HuaweiRootVolumeType               string   `json:"huawei_root_volume_type,omitempty"`
-	HuaweiSnapshotAPI                  string   `json:"huawei_snapshot_api,omitempty"`
-	AllowSnapshotCreation              bool     `json:"allow_snapshot_creation,omitempty"`
-	AllowImageCopy                     bool     `json:"allow_image_copy,omitempty"`
-	HuaweiImageCopyAgency              string   `json:"huawei_image_copy_agency,omitempty"`
-	AllowImageCreation                 bool     `json:"allow_image_creation,omitempty"`
-	AllowSecurityGroupDeletion         bool     `json:"allow_security_group_deletion,omitempty"`
-	AllowVPCDeletion                   bool     `json:"allow_vpc_deletion,omitempty"`
-	AllowSubnetDeletion                bool     `json:"allow_subnet_deletion,omitempty"`
-	AllowImageDeletion                 bool     `json:"allow_image_deletion,omitempty"`
-	AllowSnapshotDeletion              bool     `json:"allow_snapshot_deletion,omitempty"`
-	AllowSnapshotRollback              bool     `json:"allow_snapshot_rollback,omitempty"`
-	SnapshotRestoreMaxGiB              int      `json:"snapshot_restore_max_gib,omitempty"`
-	AllowNetworkCreation               bool     `json:"allow_network_creation,omitempty"`
-	AllowSecurityGroupCreation         bool     `json:"allow_security_group_creation,omitempty"`
-	ElasticIPBandwidthLimit            int      `json:"elastic_ip_bandwidth_limit,omitempty"`
-	AllowElasticIPRelease              bool     `json:"allow_elastic_ip_release,omitempty"`
-	AllowElasticIPBinding              bool     `json:"allow_elastic_ip_binding,omitempty"`
-	AllowDNSRecordCreation             bool     `json:"allow_dns_record_creation,omitempty"`
-	AllowDNSRecordDeletion             bool     `json:"allow_dns_record_deletion,omitempty"`
-	AllowDNSRecordStatus               bool     `json:"allow_dns_record_status,omitempty"`
-	AllowLoadBalancerBackendAttach     bool     `json:"allow_load_balancer_backend_attach,omitempty"`
-	AllowLoadBalancerBackendDetach     bool     `json:"allow_load_balancer_backend_detach,omitempty"`
-	AllowLoadBalancerBackendWeight     bool     `json:"allow_load_balancer_backend_weight,omitempty"`
-	AllowLoadBalancerTargetGroupRename bool     `json:"allow_load_balancer_target_group_rename,omitempty"`
-	AllowLoadBalancerListenerRename    bool     `json:"allow_load_balancer_listener_rename,omitempty"`
-	AllowLoadBalancerRename            bool     `json:"allow_load_balancer_rename,omitempty"`
-	AllowDatabaseRename                bool     `json:"allow_database_rename,omitempty"`
-	AllowVolumeResize                  bool     `json:"allow_volume_resize,omitempty"`
-	AllowVolumeRelease                 bool     `json:"allow_volume_release,omitempty"`
-	AllowCacheRename                   bool     `json:"allow_cache_rename,omitempty"`
-	HuaweiElasticIPPool                string   `json:"huawei_elastic_ip_pool,omitempty"`
-	AllowSecurityGroupRules            bool     `json:"allow_security_group_rules,omitempty"`
-	AllowSecurityRuleRevocation        bool     `json:"allow_security_rule_revocation,omitempty"`
+	Regions                            []string          `json:"regions"`
+	AccountID                          string            `json:"account_id"`
+	ProjectID                          string            `json:"project_id,omitempty"`
+	AccessKeyID                        string            `json:"access_key_id,omitempty"`
+	AccessKeySecret                    string            `json:"access_key_secret,omitempty"`
+	SecurityToken                      string            `json:"security_token,omitempty"`
+	IAMToken                           string            `json:"iam_token,omitempty"`
+	BucketListAccountWide              bool              `json:"bucket_list_account_wide,omitempty"`
+	CacheListScopeWide                 bool              `json:"cache_list_scope_wide,omitempty"`
+	KubernetesListScopeWide            bool              `json:"kubernetes_list_scope_wide,omitempty"`
+	AllowInstancePower                 bool              `json:"allow_instance_power,omitempty"`
+	AllowInstanceReboot                bool              `json:"allow_instance_reboot,omitempty"`
+	AllowInstanceDelete                bool              `json:"allow_instance_delete,omitempty"`
+	AllowBucketVersioningChanges       bool              `json:"allow_bucket_versioning_changes,omitempty"`
+	AllowBucketEncryptionEnable        bool              `json:"allow_bucket_encryption_enable,omitempty"`
+	AllowInstanceRetirement            bool              `json:"allow_instance_retirement,omitempty"`
+	VolumeCreateMaxGiB                 int               `json:"volume_create_max_gib,omitempty"`
+	HuaweiVolumeKMSKeyID               string            `json:"huawei_volume_kms_key_id,omitempty"`
+	AllowVolumeChanges                 bool              `json:"allow_volume_changes,omitempty"`
+	InstanceResizeSizes                []string          `json:"instance_resize_sizes,omitempty"`
+	InstanceCreateSizes                []string          `json:"instance_create_sizes,omitempty"`
+	HuaweiRootVolumeType               string            `json:"huawei_root_volume_type,omitempty"`
+	HuaweiSnapshotAPI                  string            `json:"huawei_snapshot_api,omitempty"`
+	AllowSnapshotCreation              bool              `json:"allow_snapshot_creation,omitempty"`
+	AllowImageCopy                     bool              `json:"allow_image_copy,omitempty"`
+	HuaweiImageCopyAgency              string            `json:"huawei_image_copy_agency,omitempty"`
+	AllowImageCreation                 bool              `json:"allow_image_creation,omitempty"`
+	AllowSecurityGroupDeletion         bool              `json:"allow_security_group_deletion,omitempty"`
+	AllowVPCDeletion                   bool              `json:"allow_vpc_deletion,omitempty"`
+	AllowSubnetDeletion                bool              `json:"allow_subnet_deletion,omitempty"`
+	AllowImageDeletion                 bool              `json:"allow_image_deletion,omitempty"`
+	AllowSnapshotDeletion              bool              `json:"allow_snapshot_deletion,omitempty"`
+	AllowSnapshotRollback              bool              `json:"allow_snapshot_rollback,omitempty"`
+	SnapshotRestoreMaxGiB              int               `json:"snapshot_restore_max_gib,omitempty"`
+	AllowNetworkCreation               bool              `json:"allow_network_creation,omitempty"`
+	AllowSecurityGroupCreation         bool              `json:"allow_security_group_creation,omitempty"`
+	ElasticIPBandwidthLimit            int               `json:"elastic_ip_bandwidth_limit,omitempty"`
+	AllowElasticIPRelease              bool              `json:"allow_elastic_ip_release,omitempty"`
+	AllowElasticIPBinding              bool              `json:"allow_elastic_ip_binding,omitempty"`
+	AllowDNSRecordCreation             bool              `json:"allow_dns_record_creation,omitempty"`
+	AllowDNSRecordDeletion             bool              `json:"allow_dns_record_deletion,omitempty"`
+	AllowDNSRecordStatus               bool              `json:"allow_dns_record_status,omitempty"`
+	AllowDNSRecordUpdate               bool              `json:"allow_dns_record_update,omitempty"`
+	AllowLoadBalancerBackendAttach     bool              `json:"allow_load_balancer_backend_attach,omitempty"`
+	AllowLoadBalancerBackendDetach     bool              `json:"allow_load_balancer_backend_detach,omitempty"`
+	AllowLoadBalancerBackendWeight     bool              `json:"allow_load_balancer_backend_weight,omitempty"`
+	AllowLoadBalancerTargetGroupRename bool              `json:"allow_load_balancer_target_group_rename,omitempty"`
+	AllowLoadBalancerListenerRename    bool              `json:"allow_load_balancer_listener_rename,omitempty"`
+	AllowLoadBalancerRename            bool              `json:"allow_load_balancer_rename,omitempty"`
+	AllowDatabaseRename                bool              `json:"allow_database_rename,omitempty"`
+	DatabaseBackupTimeZones            map[string]string `json:"database_backup_time_zones,omitempty"`
+	AllowVolumeResize                  bool              `json:"allow_volume_resize,omitempty"`
+	AllowVolumeRelease                 bool              `json:"allow_volume_release,omitempty"`
+	AllowCacheRename                   bool              `json:"allow_cache_rename,omitempty"`
+	HuaweiElasticIPPool                string            `json:"huawei_elastic_ip_pool,omitempty"`
+	AllowSecurityGroupRules            bool              `json:"allow_security_group_rules,omitempty"`
+	AllowSecurityRuleRevocation        bool              `json:"allow_security_rule_revocation,omitempty"`
 }
 
 type Client struct {
@@ -104,6 +108,7 @@ func Connect(ctx context.Context, name string, profile Config, transport http.Ro
 		return nil, errors.New("invalid Huawei IMS agency")
 	}
 	profile.Regions = slices.Clone(profile.Regions)
+	profile.DatabaseBackupTimeZones = maps.Clone(profile.DatabaseBackupTimeZones)
 	profile.InstanceCreateSizes = slices.Clone(profile.InstanceCreateSizes)
 	profile.InstanceResizeSizes = slices.Clone(profile.InstanceResizeSizes)
 	if len(profile.InstanceResizeSizes) > 128 {

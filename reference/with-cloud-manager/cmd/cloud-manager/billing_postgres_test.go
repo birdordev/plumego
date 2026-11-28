@@ -170,6 +170,7 @@ func TestBillingAPIAndStorageCommands(t *testing.T) {
 	}
 	get(allocations+query, token, http.StatusNotFound)
 	get(allocations+query+"&revision=1", token, http.StatusOK)
+	exerciseBillingAllocationPublication(t, db, server, common, tokens)
 	if _, err := db.ExecContext(ctx, "UPDATE cmp_cloud_accounts SET project_id='shared' WHERE account_id='cloud'"); err != nil {
 		t.Fatal(err)
 	}

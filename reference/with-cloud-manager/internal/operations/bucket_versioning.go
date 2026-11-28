@@ -107,26 +107,12 @@ func (s Store) processBucketVersioning(ctx context.Context, task mq.Task, w work
 		apply, err := operator.PrepareBucketVersioningChange(ctx, scope, w.bucketVersioning)
 		return s.dispatchSingleMutation(ctx, task, w, apply, err, "bucket_versioning")
 	}
-	if w.Status == "applying" {
-		if err := s.transition(ctx, task, "applying", "observing", "submission_outcome_unknown", ""); err != nil {
-			return false, err
-		}
-		w.Status = "observing"
-	}
-	started, err := s.dbTime(ctx)
-	if err != nil {
-		return false, err
-	}
-	state, err := operator.ReadBucketVersioning(ctx, scope, w.AssetID, w.bucketVersioning.Location)
-	if err == nil && state == w.bucketVersioning.Target {
-		return false, s.confirmBucketVersioning(ctx, task, w, started)
-	}
-	if task.Attempts >= task.MaxAttempts || provider.IsFailure(err, provider.InvalidResponse) ||
-		provider.IsFailure(err, provider.Unauthorized) || provider.IsFailure(err, provider.Unsupported) ||
-		provider.IsFailure(err, provider.Absent) {
-		return false, s.transition(ctx, task, w.Status, "needs_review", "bucket_versioning_requires_evidence", "")
-	}
-	return true, nil
+	return s.observeBucketSetting(ctx, task, w, "bucket_versioning", func() (bool, error) {
+		state, err := operator.ReadBucketVersioning(ctx, scope, w.AssetID, w.bucketVersioning.Location)
+		return state == w.bucketVersioning.Target, err
+	}, func(observedWork work, started time.Time) error {
+		return s.confirmBucketVersioning(ctx, task, observedWork, started)
+	})
 }
 
 func (s Store) confirmBucketVersioning(ctx context.Context, task mq.Task, w work, started time.Time) error {

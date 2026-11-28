@@ -16,6 +16,16 @@ export function dnsOperationFields(operation: OperationDetail): DetailField[] {
     if (record.line) fields.push(["线路", record.line]);
     return fields;
   }
+  if (operation.dns_record_update_intent) {
+    const { zone_name, record, target_values, target_ttl } = operation.dns_record_update_intent
+    const fields: DetailField[] = [
+      ['托管区', zone_name], ['解析记录 / ID', record.name + ' / ' + record.id], ['记录类型', record.type],
+      ['当前地址', record.values?.join('、') ?? '—'], ['目标地址', target_values.join('、')],
+      ['当前 TTL', record.ttl + ' 秒'], ['目标 TTL', target_ttl + ' 秒'],
+    ]
+    if (record.line) fields.push(['线路', record.line])
+    return fields
+  }
   if (operation.dns_record_status_intent) {
     const { zone_name, name, record_id, current_status, enabled } = operation.dns_record_status_intent;
     return [["托管区", zone_name], ["解析记录 / ID", name + " / " + record_id],

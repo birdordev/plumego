@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -38,10 +39,64 @@ func allocationHandler(store billing.Store, logger plumelog.StructuredLogger) ht
 			writeBillingError(w, r, err, logger)
 			return
 		}
-		if err := contract.WriteResponse(w, r, http.StatusOK, value, nil); err != nil {
-			logger.Warn("billing allocation response write failed", plumelog.Fields{})
-		}
+		w.Header().Set("ETag", strconv.Quote(value.Version))
+		writeAllocationResponse(w, r, value, logger)
 	})
+}
+
+func allocationWriteHandler(store billing.Store, logger plumelog.StructuredLogger, preview bool) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-store")
+		token, ok := requestCredential(r)
+		if !ok {
+			writeBillingError(w, r, identity.ErrUnauthenticated, logger)
+			return
+		}
+		target, err := allocationWriteQuery(router.Param(r, "tenant"), router.Param(r, "project"), r.URL.RawQuery, preview)
+		if err != nil {
+			writeBillingError(w, r, err, logger)
+			return
+		}
+		expect, err := allocationMatch(r, preview)
+		if err != nil {
+			writeBillingError(w, r, err, logger)
+			return
+		}
+		var raw json.RawMessage
+		if err := contract.DecodeJSONRequest(r, &raw, contract.JSONRequestOptions{MaxBytes: billing.MaxAllocationPolicyBytes}); err != nil {
+			writeBillingError(w, r, err, logger)
+			return
+		}
+		policy, err := decodeAllocationPolicy(raw)
+		if err != nil {
+			writeBillingError(w, r, err, logger)
+			return
+		}
+		ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+		defer cancel()
+		var result any
+		if preview {
+			result, err = store.PreviewAllocation(ctx, token, target.key, target.revision, policy)
+		} else {
+			var published billing.Allocation
+			published, err = store.PublishAllocation(ctx, token, target.key, target.revision, expect, target.reportDigest, target.policyDigest, policy)
+			if err == nil {
+				w.Header().Set("ETag", strconv.Quote(published.Version))
+			}
+			result = published
+		}
+		if err != nil {
+			writeBillingError(w, r, err, logger)
+			return
+		}
+		writeAllocationResponse(w, r, result, logger)
+	})
+}
+
+func writeAllocationResponse(w http.ResponseWriter, r *http.Request, value any, logger plumelog.StructuredLogger) {
+	if err := contract.WriteResponse(w, r, http.StatusOK, value, nil); err != nil {
+		logger.Warn("billing allocation response write failed", plumelog.Fields{})
+	}
 }
 
 func allocationQuery(tenant, project, raw string) (billing.Key, int64, int64, error) {

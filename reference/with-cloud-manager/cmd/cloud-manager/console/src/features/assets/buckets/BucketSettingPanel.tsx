@@ -5,23 +5,26 @@ import { DetailFields } from '../../../shared/components/DetailFields'
 import { bucketEncryptionLabels, bucketVersioningLabels } from '../../../shared/display/bucket-settings'
 import { timestamp } from '../../../shared/display/time'
 import { request } from '../../session/client'
-import { VersioningChangeForm, type VersioningWriteTarget } from './VersioningChangeForm'
+import { EncryptionEnableForm, VersioningChangeForm, type BucketWriteTarget } from './BucketSettingForm'
 import { bucketEncryptionSchema, bucketVersioningSchema } from './schema'
 
-type Snapshot = { state: string; observedAt: string; versioning?: keyof typeof bucketVersioningLabels }
+type Snapshot = { state: string; observedAt: string } & (
+  | { setting: 'versioning'; value: keyof typeof bucketVersioningLabels }
+  | { setting: 'encryption'; value: keyof typeof bucketEncryptionLabels }
+)
 
 const readers = {
-  versioning: async (target: string, signal: AbortSignal) => {
+  versioning: async (target: string, signal: AbortSignal): Promise<Snapshot> => {
     const snapshot = await request(target, { signal }, bucketVersioningSchema)
-    return { state: bucketVersioningLabels[snapshot.state], observedAt: snapshot.observed_at, versioning: snapshot.state }
+    return { state: bucketVersioningLabels[snapshot.state], observedAt: snapshot.observed_at, setting: 'versioning', value: snapshot.state }
   },
-  encryption: async (target: string, signal: AbortSignal) => {
+  encryption: async (target: string, signal: AbortSignal): Promise<Snapshot> => {
     const snapshot = await request(target, { signal }, bucketEncryptionSchema)
-    return { state: bucketEncryptionLabels[snapshot.state], observedAt: snapshot.observed_at }
+    return { state: bucketEncryptionLabels[snapshot.state], observedAt: snapshot.observed_at, setting: 'encryption', value: snapshot.state }
   },
 }
 
-type Props = { target: string; name: string; signal: AbortSignal; setting: keyof typeof readers; mutation?: VersioningWriteTarget; stamp: number }
+type Props = { target: string; name: string; signal: AbortSignal; setting: keyof typeof readers; mutation?: BucketWriteTarget; stamp: number }
 const headings = { versioning: '版本控制', encryption: '默认加密' }
 
 export default function BucketSettingPanel(props: Props) {
@@ -46,8 +49,9 @@ function BucketSettingSnapshot({ target, name, setting, signal, mutation, stamp 
     <DetailFields fields={[
       ['对象桶', name], [heading, result.data.state], ['观测时间', timestamp(result.data.observedAt)],
     ]} />
-    {mutation && result.data.versioning
-      ? <VersioningChangeForm mutation={mutation} current={result.data.versioning} stamp={stamp} />
-      : null}
+    {mutation && result.data.setting === 'versioning' &&
+      <VersioningChangeForm mutation={mutation} current={result.data.value} stamp={stamp} />}
+    {mutation && result.data.setting === 'encryption' && result.data.value === 'unconfigured' &&
+      <EncryptionEnableForm mutation={mutation} stamp={stamp} />}
   </>
 }

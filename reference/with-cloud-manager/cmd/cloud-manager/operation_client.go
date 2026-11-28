@@ -41,6 +41,7 @@ const operationsUsage = `usage: cloud-manager operations COMMAND TENANT PROJECT 
   release-volume --idempotency-key KEY --if-match REVISION < request.json
   resize-instance-options --account ACCOUNT --region REGION --asset-id ID
   refresh-instance-resize-options --account ACCOUNT --region REGION --asset-id ID
+  enable-bucket-encryption --idempotency-key KEY --if-match REVISION < request.json
   set-bucket-versioning --idempotency-key KEY --if-match REVISION < request.json
   resize-instance --idempotency-key KEY --if-match REVISION < request.json
   resize-volume --idempotency-key KEY --if-match REVISION < request.json
@@ -67,6 +68,7 @@ const operationsUsage = `usage: cloud-manager operations COMMAND TENANT PROJECT 
   create-dns-record --idempotency-key KEY --if-match REVISION < request.json
   delete-dns-record --idempotency-key KEY --if-match REVISION < request.json
   scale-workload --idempotency-key KEY --if-match REVISION < request.json
+  update-dns-record --idempotency-key KEY --if-match REVISION < request.json
   set-dns-record-status --idempotency-key KEY --if-match REVISION < request.json
   attach-load-balancer-backend --idempotency-key KEY --if-match REVISION < request.json
   delete-image --idempotency-key KEY --if-match REVISION < request.json

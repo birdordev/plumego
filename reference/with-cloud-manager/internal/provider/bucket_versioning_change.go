@@ -12,12 +12,21 @@ type BucketVersioningChange struct {
 }
 
 func (c BucketVersioningChange) Valid() bool {
-	name, _, _ := strings.Cut(c.ID, "@")
-	return !strings.Contains(name, ".") && ValidBucketAssetID(c.ID) && c.Current.Valid() && c.Current != c.Target &&
+	return ValidBucketSettingAssetID(c.ID) && c.Current.Valid() && c.Current != c.Target &&
 		(c.Target == BucketVersioningEnabled || (c.Current == BucketVersioningEnabled && c.Target == BucketVersioningSuspended))
+}
+
+func ValidBucketSettingAssetID(id string) bool {
+	name, _, _ := strings.Cut(id, "@")
+	return ValidBucketAssetID(id) && !strings.Contains(name, ".")
 }
 
 type BucketVersioningOperator interface {
 	BucketVersioningReader
 	PrepareBucketVersioningChange(context.Context, Scope, BucketVersioningChange) (func(context.Context) (string, error), error)
+}
+
+type BucketEncryptionOperator interface {
+	BucketEncryptionReader
+	PrepareBucketEncryptionEnable(context.Context, Scope, string, string) (func(context.Context) (string, error), error)
 }

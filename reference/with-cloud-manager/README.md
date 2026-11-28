@@ -394,6 +394,20 @@ cloud-manager refresh-huawei-bucket-encryption TENANT ACCOUNT 'BUCKET@UTC_CREATI
 
 腾讯云需要 `cos:GetBucketEncryption`，阿里云需要 `oss:GetBucketEncryption`，华为云需要 `obs:bucket:GetEncryptionConfiguration`。华为云为读取配置申请仅限目标桶的临时凭据。目标沙箱需验证阿里云配置响应的实际状态码和正文，读取算法需要完整 XML。 [腾讯云 COS](https://cloud.tencent.com/document/product/436/40137) · [阿里云 OSS](https://help.aliyun.com/zh/oss/developer-reference/getbucketencryption) · [华为云 OBS](https://support.huaweicloud.com/api-obs/obs_04_0063.html)
 
+#### 启用对象桶默认加密
+
+资源清单的「查看默认加密」为有执行权限的成员显示「申请启用默认加密」。申请只接受已盘点、已归属且观测为 `unconfigured` 的桶。目标固定为厂商托管的 AES256，仅作用于后续上传。已有对象及 KMS、SM4 等既有配置保持原样。
+
+`POST /v1/tenants/{tenant}/projects/{project}/object-buckets/encryption` 接收 `account` 和含创建时间的 `asset_id`。请求携带 `Idempotency-Key` 和桶归属版本的 `If-Match`。受理即返回待独立审批的操作。
+
+```sh
+cloud-manager operations enable-bucket-encryption TENANT PROJECT --idempotency-key REQUEST_KEY --if-match REVISION < request.json
+```
+
+应用迁移 `0164_bucket_encryption_enable` 并升级 API 和 Worker。派发需要账号启用写入，并开启 Worker 私有配置 `allow_bucket_encryption_enable`。此开关默认为关闭。已设置发布规则的账号须允许 `global` 范围的 `enable-bucket-encryption` 动作。厂商授权包括列举自有桶、读取默认加密，以及目标桶的 `cos:PutBucketEncryption`、`oss:PutBucketEncryption` 或 `obs:bucket:PutEncryptionConfiguration`。华为云从 IAM 申请限制到目标桶和单一动作的临时凭据。 [腾讯云 COS](https://cloud.tencent.com/document/product/436/40136) · [阿里云 OSS](https://help.aliyun.com/en/oss/developer-reference/putbucketencryption) · [华为云 OBS](https://support.huaweicloud.com/api-obs/obs_04_0062.html)
+
+Worker 在审批后重读远端状态和创建时间，最多发送一次配置写入。厂商接口按桶名寻址，使用平台整改期间需协调外部写入和同名重建。回执丢失后继续只读对账。证据不足时保留待复核和同桶互斥。确认远端为 AES256 后，在同一事务中更新防护报告使用的观测、操作终态和发件箱。较晚开始的定时观测优先保留。
+
 #### 定时采集对象桶配置
 
 执行 `cloud-manager migrate` 应用 `0145_bucket_setting_schedules`。升级所有普通盘点控制器后，项目管理员可为腾讯云、阿里云和华为云账号分别登记「对象桶默认加密」与「对象桶版本控制」。计划使用 `global` 范围，并从 `object-bucket` 盘点已发现且当前有效的资产中选择桶。账号仍需具有对应配置的只读权限。
@@ -457,6 +471,29 @@ cloud-manager scan-alibaba tenant-id account-id cn-hangzhou database-instance rm
 ```
 
 使用签名 TLS 夹具及 PostgreSQL 验证了三家盘点链路。真实厂商地域支持、IAM 和限流仍需沙箱验证。
+
+#### 托管数据库备份盘点
+
+应用迁移 `0167_database_backups`。先盘点数据库实例，再由运维使用对应厂商的私有凭据刷新该实例。备份采集使用最近 30 天的固定查询窗口，逐页确认返回数量与作用域。单次最多 5,000 条，限流、重复页和响应不完整时保留上一次完整快照。
+
+```sh
+cloud-manager refresh-tencent-database-backups TENANT ACCOUNT REGION ASSET_ID
+cloud-manager refresh-alibaba-database-backups TENANT ACCOUNT REGION ASSET_ID
+cloud-manager refresh-huawei-database-backups TENANT ACCOUNT REGION ASSET_ID
+cloud-manager assets database-backups TENANT PROJECT ASSET_ID --account ACCOUNT --region REGION
+```
+
+| 厂商 | 采集产品与权限 |
+|---|---|
+| 腾讯云 | MySQL 和 SQL Server 使用各自的 `DescribeBackups`。PostgreSQL 使用 `DescribeBaseBackups`。凭据还需可精确查询同一实例。 [MySQL](https://cloud.tencent.com/document/api/236/15842) · [PostgreSQL](https://intl.cloud.tencent.com/document/product/409/54343) · [SQL Server](https://cloud.tencent.com/document/product/238/19943) |
+| 阿里云 | RDS MySQL、PostgreSQL、SQL Server 和 MariaDB 支持 `rds:DescribeBackups`，还需实例查询权限。 [DescribeBackups](https://help.aliyun.com/zh/rds/developer-reference/api-rds-2014-08-15-describebackups) |
+| 华为云 | RDS MySQL、PostgreSQL 和 SQL Server 支持 `rds:backup:list`，还需实例查询权限。 [ListBackups](https://support.huaweicloud.com/api-rds/rds_09_0005.html) |
+
+腾讯云无偏移的时间默认按北京时间解释。实例使用其他时区时，在腾讯云私有配置的 `database_backup_time_zones` 对象里以实例 ID 指定 IANA 时区，例如 `{"mssql-example":"UTC"}`。显式带偏移的时间按厂商响应转换为 UTC。大小按厂商单位归一为字节，并以十进制字符串返回。
+
+有权查看该资产的项目成员可在资源清单点击「查看备份」，也可调用 `GET /v1/tenants/{tenant}/projects/{project}/assets/databases/{asset}/backups`。查询使用 `account`、`region` 和可选的 `limit`。续页携带上一页的 `next_offset` 和 `observed_at`，以 `offset`、`observed_at` 传入。CLI 对应 `--offset` 和 `--observed-at`。观测被更新时返回 409，重新读取首页。没有有效快照返回 404，完整采集结果为空时返回空列表。
+
+仅存储备份 ID、状态、类型、方式、时间和厂商提供的大小。签名下载链接、备份名和库名均在采集时丢弃。快照显示的是查询时可见的备份元数据，恢复前仍需核对厂商的有效备份和实际可恢复范围。
 
 #### 托管数据库实例改名
 
@@ -771,9 +808,24 @@ API 为 `POST /v1/tenants/{tenant}/projects/{project}/dns-zones/record-status`�
 
 Worker 在发送前核对厂商记录 ID、托管区归属、名称、类型、已投影线路、TTL、记录值和原状态。三家均使用专用状态接口。发送后仅用精确读取确认目标状态和其余字段。审批人可为待复核操作提交证据引用并恢复只读观测。确认成功会使写入前的快照失效，刷新后才能据新快照继续申请。DNS 客户端的缓存按各自 TTL 到期。
 
+#### 修改公网 DNS 地址和 TTL
+
+应用迁移 `0165_dns_record_update` 并升级 API 和 Worker。控制台从「查看解析记录」进入「申请修改地址或 TTL」。可以修改已启用 A 或 AAAA 记录的地址、TTL 或两者。腾讯云和阿里云每条记录接受一个地址，保留记录原有线路。华为云支持默认线路中没有健康检查或别名关联的普通记录集，可提交多个地址。TTL 使用秒，申请范围为 1 到 604800，并受各厂商及套餐限制。
+
+`POST /v1/tenants/{tenant}/projects/{project}/dns-zones/record-update` 接收 `account`、托管区 `asset_id`、`record_id`、`observed_at`、`values` 和 `ttl`。请求携带 `Idempotency-Key` 和托管区归属版本的 `If-Match`。修改其中一项时，另一项填写当前值。目标地址须匹配记录类型，地址规范化排序并拒绝重复值。提交的原记录与目标值均可在审批详情中核对。
+
+```sh
+cloud-manager operations update-dns-record TENANT PROJECT \
+  --idempotency-key dns-update-example --if-match REVISION < request.json
+```
+
+派发要求云账号启用写入、Worker 私有配置启用 `allow_dns_record_update`，并完成独立审批。已配置动作发布规则的账号须允许 `global` 范围的 `update-dns-record`。厂商凭据还需能够精确读取托管区及记录，并分别拥有 `dnspod:ModifyRecordFields`、`alidns:UpdateDomainRecord` 或 `dns:recordset:update`。 [腾讯云 DNSPod](https://cloud.tencent.com/document/api/1427/83364) · [阿里云 DNS](https://help.aliyun.com/en/dns/api-alidns-2015-01-09-updatedomainrecord) · [华为云 DNS](https://support.huaweicloud.com/api-dns/UpdateRecordSets.html)
+
+同一托管区的创建、启停、修改和删除共享操作互斥。Worker 先核对快照中固定的记录属性，再读取远端记录及托管区，最多派发一次。厂商接口未提供原记录内容的条件更新，实施时须协调其他写入者。回执缺失时只读续查，确认记录 ID、名称、类型、线路、地址、TTL 和稳定状态后，同事务废弃原快照、关闭操作并登记事件。重新刷新后可从资产查看新值。成功表示厂商控制面已收敛，递归解析器的缓存仍按原 TTL 到期。
+
 #### 删除停用的公网 DNS 记录
 
-执行 `cloud-manager migrate` 应用 `0075_dns_record_deletion`。项目操作者可从托管区快照中为一条已停用的 A 或 AAAA 记录申请删除，审批人可查看该记录的厂商 ID、类型、地址、TTL 和已归档线路。必须经独立审批，同区创建、启停及删除共用一份活动操作预约。执行要求云账号已启用写入，且 Worker 私有凭据配置显式设置 `"allow_dns_record_deletion": true`。
+执行 `cloud-manager migrate` 应用 `0075_dns_record_deletion`。项目操作者可从托管区快照中为一条已停用的 A 或 AAAA 记录申请删除，审批人可查看该记录的厂商 ID、类型、地址、TTL 和已归档线路。必须经独立审批，同区创建、启停、修改及删除共用一份活动操作预约。执行要求云账号已启用写入，且 Worker 私有凭据配置显式设置 `"allow_dns_record_deletion": true`。
 
 ```bash
 cloud-manager operations delete-dns-record tenant-id project-id \
@@ -1533,7 +1585,7 @@ go run ./cmd/cloud-manager operations get-batch tenant-id project-id batch-id
 | `features/batches/` | 页面和编辑流程装配。 `request/` 管理草稿表单、实例选择转换和输入契约，`preview/` 管理预览请求、结果契约和视图，`receipt/` 管理幂等提交、收据查询和结果视图 |
 | `features/billing/reports/` | 账期与版本筛选、原币种费用、对账差额和归档摘要。账单、预算与分摊共用的查询字段在 `billing/schema.ts` |
 | `features/billing/budgets/` | 月度预算查询、配置、版本校验和费用口径状态 |
-| `features/billing/allocation/` | 历史分摊查询、按币种查看成本中心及版本追溯 |
+| `features/billing/allocation/` | 规则预览与发布、历史分摊查询、按币种核对成本中心及版本追溯 |
 | `shared/` | 同源传输、通用 Zod 契约、`collection/` 分页与筛选组件、`feedback/` 状态提示，以及 `detail/` 弹窗和表单生命周期。`display/` 提供日期格式和跨业务状态文案 |
 
 新增列表时，在业务目录用 `schema.ts` 定义响应结构，由 `api.ts` 负责请求和校验，再在 `collection.ts` 用读取器创建类型化列表。页面通过 `useCollection` 订阅。页面、导航权限和列表加载器在 `app/routes/` 对应的业务模块声明，菜单位置在 `app/workspace/navigation.ts` 登记。路由只向页面传递实际所需的属性。会话、批次和详情也在请求边界通过 Zod 校验，组件从对应契约推导类型。
@@ -1672,6 +1724,19 @@ cloud-manager billing-pull-replay tenant finance cloud-account 2026-11 native OB
 独立控制器逐个领取到期任务，租约、失败状态和下次执行时间保存在 PostgreSQL。一次拉取先读对象元数据，下载使用对应 ETag 条件，发布前复核所有对象。重复观察到同一批次时只读元数据。获取失败、对象改版或分卷不完整会留下失败状态，已发布账本保持原版本。新账单、原件及拉取状态在同一事务发布。状态命令返回观察摘要及关联账单版本，原件按对象键排序编号。重放重新解压归档原件、校验摘要，并检查选中分卷生成的账本明细与汇总。
 
 ### 账单费用分摊
+
+项目管理员可在控制台「费用分摊」打开「预览并发布分摊」，填写归属账号、账期、来源、精确账单版本和规则 JSON。预览使用原币种展示账单金额、摊销、目录价和价格差。编辑规则或筛选条件会清除预览，重新预览后才可发布。
+
+先执行 `cloud-manager migrate` 应用 `0166_billing_allocation_publish`，然后更新 API 和控制台。API 接收相同的分摊规则 JSON。
+
+- `POST /v1/tenants/{tenant}/projects/{project}/billing/allocations/preview` 使用查询参数 `account`、`period`、`source`、`revision`。返回不可变账单版本、账单 SHA-256、规则 SHA-256、当前分摊版本和按原币种汇总的预览结果。
+- `POST /v1/tenants/{tenant}/projects/{project}/billing/allocations` 使用相同查询参数，另传预览的 `report_sha256` 和 `policy_sha256`。发送当前分摊版本的强 `If-Match`，首次发布为 `"0"`。版本或摘要变化返回 412。两个接口仅允许账号归属项目的管理员。
+- 同一账单上已发布过的相同规则返回原收据及 ETag，保留当前版本指向。新版本与 `billing_allocation` 项目审计同事务提交。分摊与账单的版本同时提供十进制字符串，供浏览器传递精确版本。
+
+```sh
+cloud-manager billing allocation-preview TENANT PROJECT ACCOUNT PERIOD SOURCE REPORT_REVISION < policy.json
+cloud-manager billing allocation-publish TENANT PROJECT ACCOUNT PERIOD SOURCE REPORT_REVISION EXPECTED_ALLOCATION_REVISION REPORT_SHA256 POLICY_SHA256 < policy.json
+```
 
 财务运维使用 `billing-allocate` 发布某个账单版本的分摊，首次发布的预期分摊版本为 `0`。后续规则变更使用当前分摊版本提交。相同规则重复发布时返回原收据，历史收据保留原版本。归属项目管理员可通过 `GET /v1/tenants/:tenant/projects/:project/billing/allocations`、`billing allocation-get` 和控制台「费用分摊」读取结果。默认查询当前账单的分摊。若当前账单已有修订，查询历史结果时显式传入对应账单版本。
 
@@ -1828,7 +1893,7 @@ go run ./cmd/cloud-manager cmdb-status TENANT PROJECT
 
 项目管理员可通过浏览器的「项目审计」、CLI 或 `GET /v1/tenants/{tenant}/projects/{project}/audit` 查询审计账本。记录涵盖云账号变更、资产归属、操作状态、审批、人工处置、创建续查和服务目录变更。归属转移或账号共享的双方项目各有一份记录。操作申请记载申请人，审批和处置记载实际审批人，系统状态事件留空主体字段。
 
-可按 `category`、`account`、`subject_id` 和 RFC 3339 时间范围筛选。类别为 `account`、`ownership`、`operation`、`approval`、`resolution`、`observation`、`catalog`、`alert`、`console_access`、`billing_budget`、`tag_policy` 和 `change_ticket`。时间区间含 `from`，截止于 `until` 之前。列表按发生时间和审计 ID 倒序返回，`limit` 默认 50，范围为 1 至 200。续读使用 `next` 及原筛选条件。操作和工单回执记录的 `subject_id` 可直接查询项目操作详情，目录、告警和原生控制台记录分别使用模板 ID、告警 ID 与访问授权 ID。标签规则和工单策略发布记录使用项目 ID 作为对象，并包含发布版本。
+可按 `category`、`account`、`subject_id` 和 RFC 3339 时间范围筛选。类别为 `account`、`ownership`、`operation`、`approval`、`resolution`、`observation`、`catalog`、`alert`、`console_access`、`billing_budget`、`billing_allocation`、`tag_policy` 和 `change_ticket`。时间区间含 `from`，截止于 `until` 之前。列表按发生时间和审计 ID 倒序返回，`limit` 默认 50，范围为 1 至 200。续读使用 `next` 及原筛选条件。操作和工单回执记录的 `subject_id` 可直接查询项目操作详情，目录、告警和原生控制台记录分别使用模板 ID、告警 ID 与访问授权 ID。标签规则和工单策略发布记录使用项目 ID 作为对象，并包含发布版本。
 
 `GET /v1/tenants/{tenant}/projects/{project}/audit/export` 使用同样的筛选条件，在一个数据库快照内导出最多 2000 条 CSV。超限返回 422，可用时间或类别缩小范围。输出字段为事件 ID、时间、类别、动作、对象、账号、地域、主体、关联项目、结果及适用的修订号。可能被电子表格识别为公式的文本单元格会转成文本。凭据、请求指纹和原始证据引用保留在各自的存储边界。
 

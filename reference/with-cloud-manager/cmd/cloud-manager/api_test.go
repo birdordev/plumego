@@ -39,6 +39,11 @@ func TestAcceptancePostgresReadiness(t *testing.T) {
 	get("/openapi.json", http.StatusOK, `"renameCacheInstance"`)
 	get("/openapi.json", http.StatusOK, `"resizeVolume"`)
 	get("/openapi.json", http.StatusOK, `"setBucketVersioning"`)
+	get("/openapi.json", http.StatusOK, `"enableBucketEncryption"`)
+	get("/openapi.json", http.StatusOK, `"updateDNSRecord"`)
+	get("/openapi.json", http.StatusOK, `"publishBillingAllocation"`)
+	get("/openapi.json", http.StatusOK, `"previewBillingAllocation"`)
+	get("/openapi.json", http.StatusOK, `"getDatabaseBackups"`)
 	get("/openapi.json", http.StatusOK, `"readInstanceResizeOptions"`)
 	get("/openapi.json", http.StatusOK, `"refreshInstanceResizeOptions"`)
 	get("/openapi.json", http.StatusOK, `"createVolume"`)
@@ -165,6 +170,18 @@ func TestAcceptancePostgresReadiness(t *testing.T) {
 	if err := operations.MigrateBucketVersioning(t.Context(), db); err != nil {
 		t.Fatal(err)
 	}
+	if err := operations.MigrateBucketEncryptionEnable(t.Context(), db); err != nil {
+		t.Fatal(err)
+	}
+	if err := operations.MigrateDNSRecordUpdate(t.Context(), db); err != nil {
+		t.Fatal(err)
+	}
+	if err := billing.MigrateAllocationPublish(t.Context(), db); err != nil {
+		t.Fatal(err)
+	}
+	if err := inventory.MigrateDatabaseBackups(t.Context(), db); err != nil {
+		t.Fatal(err)
+	}
 	get("/readyz", http.StatusServiceUnavailable, "storage is unavailable")
 	if err := operations.MigrateBareMetalDeployments(t.Context(), db); err != nil {
 		t.Fatal(err)
@@ -197,7 +214,7 @@ func TestAcceptancePostgresReadiness(t *testing.T) {
 		controller.AccountDispatchMigration, controller.TenantDispatchMigration, operations.ObservationWorkerMigration,
 		operations.EffectIDMigration, operations.TerminalEventTimeMigration, alerts.BucketProtectionMigration, inventory.TagPolicyAlertsMigration,
 		operations.FirstLeaseMigration, operations.QueueSnapshotMigration, alerts.OperationQueueMigration, operations.QueueFindingsMigration,
-		operations.ObservationQueueRepairMigration, operations.PowerObservationMigration, inventory.VolumeInventoryMigration, operations.VolumeResizeMigration, operations.VolumeCreationMigration, operations.VolumeReleaseMigration, inventory.InstanceTypeInventoryMigration, operations.InstanceResizeMigration, inventory.InstanceResizeOptionsMigration, operations.BucketVersioningMigration} {
+		operations.ObservationQueueRepairMigration, operations.PowerObservationMigration, inventory.VolumeInventoryMigration, operations.VolumeResizeMigration, operations.VolumeCreationMigration, operations.VolumeReleaseMigration, inventory.InstanceTypeInventoryMigration, operations.InstanceResizeMigration, inventory.InstanceResizeOptionsMigration, operations.BucketVersioningMigration, operations.BucketEncryptionEnableMigration, operations.DNSRecordUpdateMigration, billing.AllocationPublishMigration, inventory.DatabaseBackupsMigration} {
 		if _, err := db.ExecContext(t.Context(), "DELETE FROM cmp_migrations WHERE version=$1", version); err != nil {
 			t.Fatal(err)
 		}

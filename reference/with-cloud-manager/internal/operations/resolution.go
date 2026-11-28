@@ -60,7 +60,7 @@ func (s Store) Resolve(ctx context.Context, token string, scope identity.Scope, 
 		if op.ProviderRequestID != "" && input.ProviderRequestID != op.ProviderRequestID {
 			return ErrConflict
 		}
-		if op.ResourceKind == provider.BareMetal || op.Action == retireInstance || op.Action == rollbackSnapshot || op.Action == deleteImage || isNetworkDeletion(op.Action) || isLoadBalancerMutation(op.Action) || isDNSRecordMutation(op.Action) || op.Action == scaleWorkload || op.Action == renameDatabaseInstance || op.Action == renameCacheInstance || op.Action == resizeVolume || op.Action == resizeInstance || op.Action == setBucketVersioning || op.Action == releaseVolume {
+		if op.ResourceKind == provider.BareMetal || op.Action == retireInstance || op.Action == rollbackSnapshot || op.Action == deleteImage || isNetworkDeletion(op.Action) || isLoadBalancerMutation(op.Action) || isDNSRecordMutation(op.Action) || op.Action == scaleWorkload || op.Action == renameDatabaseInstance || op.Action == renameCacheInstance || op.Action == resizeVolume || op.Action == resizeInstance || isBucketSettingMutation(op.Action) || op.Action == releaseVolume {
 			if _, err := identity.NewStore(tx).AuthorizeAccount(ctx, actor, op.Account, identity.View); err != nil {
 				return err
 			}
@@ -73,7 +73,7 @@ func (s Store) Resolve(ctx context.Context, token string, scope identity.Scope, 
 				return err
 			}
 		}
-		if (op.ResourceKind == provider.BareMetal || op.Action == "create" || isResourceCreation(op.Action) || op.Action == revokeSecurityRule || op.Action == deleteImage || isNetworkDeletion(op.Action) || op.Action == deleteSnapshot || op.Action == releaseElasticIP || isElasticIPBinding(op.Action) || isLoadBalancerMutation(op.Action) || isDNSRecordMutation(op.Action) || op.Action == scaleWorkload || op.Action == renameDatabaseInstance || op.Action == renameCacheInstance || op.Action == resizeVolume || op.Action == resizeInstance || op.Action == setBucketVersioning || op.Action == releaseVolume) &&
+		if (op.ResourceKind == provider.BareMetal || op.Action == "create" || isResourceCreation(op.Action) || op.Action == revokeSecurityRule || op.Action == deleteImage || isNetworkDeletion(op.Action) || op.Action == deleteSnapshot || op.Action == releaseElasticIP || isElasticIPBinding(op.Action) || isLoadBalancerMutation(op.Action) || isDNSRecordMutation(op.Action) || op.Action == scaleWorkload || op.Action == renameDatabaseInstance || op.Action == renameCacheInstance || op.Action == resizeVolume || op.Action == resizeInstance || isBucketSettingMutation(op.Action) || op.Action == releaseVolume) &&
 			input.Decision == "succeeded" {
 			return ErrConflict
 		}

@@ -55,6 +55,17 @@ func (c *Client) readDNSStatusTarget(ctx context.Context, scope provider.Scope, 
 }
 
 func (c *Client) readDNSAddressRecord(ctx context.Context, scope provider.Scope, zone provider.DNSZoneRef, expected provider.DNSRecord, deleting bool) (provider.DNSRecord, error) {
+	record, err := c.readDNSRecord(ctx, scope, zone, expected.ID, deleting)
+	if err != nil {
+		return provider.DNSRecord{}, err
+	}
+	if !expected.MatchesAddressRecord(record) {
+		return provider.DNSRecord{}, &provider.Failure{Kind: provider.PreconditionFailed}
+	}
+	return record, nil
+}
+
+func (c *Client) readDNSRecord(ctx context.Context, scope provider.Scope, zone provider.DNSZoneRef, id string, restrictedHuawei bool) (provider.DNSRecord, error) {
 	if err := c.validateDNSRecordScope(scope, zone); err != nil {
 		return provider.DNSRecord{}, err
 	}
@@ -62,11 +73,11 @@ func (c *Client) readDNSAddressRecord(ctx context.Context, scope provider.Scope,
 	var err error
 	switch c.name {
 	case provider.TencentCVM:
-		record, err = c.tencentDNSRecord(ctx, zone, expected.ID)
+		record, err = c.tencentDNSRecord(ctx, zone, id)
 	case provider.AlibabaECS:
-		record, err = c.alibabaDNSRecord(ctx, zone, expected.ID)
+		record, err = c.alibabaDNSRecord(ctx, zone, id)
 	case provider.HuaweiECS:
-		record, err = c.huaweiDNSRecord(ctx, zone, expected.ID, deleting)
+		record, err = c.huaweiDNSRecord(ctx, zone, id, restrictedHuawei)
 	default:
 		return provider.DNSRecord{}, &provider.Failure{Kind: provider.Unsupported}
 	}
@@ -75,9 +86,6 @@ func (c *Client) readDNSAddressRecord(ctx context.Context, scope provider.Scope,
 	}
 	if err := provider.NormalizeDNSRecords(zone, []provider.DNSRecord{record}); err != nil {
 		return provider.DNSRecord{}, err
-	}
-	if !expected.MatchesAddressRecord(record) {
-		return provider.DNSRecord{}, &provider.Failure{Kind: provider.PreconditionFailed}
 	}
 	return record, nil
 }
@@ -182,12 +190,12 @@ func (c *Client) changeAlibabaDNSStatus(ctx context.Context, change provider.DNS
 	return result.RequestId, err
 }
 
-func (c *Client) huaweiDNSRecord(ctx context.Context, zone provider.DNSZoneRef, id string, deleting bool) (provider.DNSRecord, error) {
+func (c *Client) huaweiDNSRecord(ctx context.Context, zone provider.DNSZoneRef, id string, restricted bool) (provider.DNSRecord, error) {
 	if !projectID.MatchString(zone.ID) || !projectID.MatchString(id) {
 		return provider.DNSRecord{}, &provider.Failure{Kind: provider.InvalidResponse}
 	}
 	version := "/v2"
-	if deleting {
+	if restricted {
 		version = "/v2.1"
 	}
 	endpoint := url.URL{Scheme: "https", Host: huaweiDNSHost, Path: version + "/zones/" + zone.ID + "/recordsets/" + id}
@@ -210,8 +218,8 @@ func (c *Client) huaweiDNSRecord(ctx context.Context, zone provider.DNSZoneRef, 
 		provider.DNSName(result.ZoneName, false) != zone.Name {
 		return provider.DNSRecord{}, &provider.Failure{Kind: provider.Unauthorized}
 	}
-	// 删除会解除健康检查关联。v2.1 提供这些关联及 v2 快照未投影的线路。
-	if deleting && (result.Default == nil || *result.Default || result.Line != "default_view" ||
+	// v2.1 返回修改或删除前需要核对的线路和资源关联。
+	if restricted && (result.Default == nil || *result.Default || result.Line != "default_view" ||
 		result.HealthCheckID != "" || result.AliasTarget != nil) {
 		return provider.DNSRecord{}, &provider.Failure{Kind: provider.PreconditionFailed}
 	}

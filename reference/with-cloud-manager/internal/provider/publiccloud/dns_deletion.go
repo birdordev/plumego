@@ -18,7 +18,7 @@ func (c *Client) PrepareDNSRecordDeletion(ctx context.Context, scope provider.Sc
 	if err := c.validateDNSRecordScope(scope, target.Zone); err != nil {
 		return nil, err
 	}
-	if err := c.verifyDNSDeletionZone(ctx, target.Zone); err != nil {
+	if err := c.verifyPublicDNSZone(ctx, target.Zone); err != nil {
 		return nil, err
 	}
 	record, err := c.readDNSAddressRecord(ctx, scope, target.Zone, target.Record, true)
@@ -43,7 +43,7 @@ func (c *Client) ObserveDNSRecordDeletion(ctx context.Context, scope provider.Sc
 
 	// 阿里云的完整读取已在分页前后校验域名和 ID。
 	if c.name != provider.AlibabaECS {
-		if err := c.verifyDNSDeletionZone(ctx, target.Zone); err != nil {
+		if err := c.verifyPublicDNSZone(ctx, target.Zone); err != nil {
 			return "", err
 		}
 	}
@@ -52,7 +52,7 @@ func (c *Client) ObserveDNSRecordDeletion(ctx context.Context, scope provider.Sc
 		return "", err
 	}
 	if c.name != provider.AlibabaECS {
-		if err := c.verifyDNSDeletionZone(ctx, target.Zone); err != nil {
+		if err := c.verifyPublicDNSZone(ctx, target.Zone); err != nil {
 			return "", err
 		}
 	}
@@ -69,7 +69,7 @@ func (c *Client) ObserveDNSRecordDeletion(ctx context.Context, scope provider.Sc
 	return provider.ActionSucceeded, nil
 }
 
-func (c *Client) verifyDNSDeletionZone(ctx context.Context, zone provider.DNSZoneRef) error {
+func (c *Client) verifyPublicDNSZone(ctx context.Context, zone provider.DNSZoneRef) error {
 	switch c.name {
 	case provider.TencentCVM:
 		return c.verifyTencentDNSZone(ctx, zone)

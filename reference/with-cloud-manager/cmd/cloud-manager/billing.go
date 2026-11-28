@@ -120,6 +120,8 @@ func writeBillingError(w http.ResponseWriter, r *http.Request, err error, logger
 		err = contract.NewErrorBuilder().Type(contract.TypeNotFound).Message("billing record not found").Build()
 	case errors.Is(err, billing.ErrBudgetExists):
 		err = contract.NewErrorBuilder().Type(contract.TypeConflict).Message("billing budget already exists").Build()
+	case errors.Is(err, billing.ErrAllocationConflict):
+		err = contract.NewErrorBuilder().Type(contract.TypePreconditionFailed).Message("current allocation revision and matching preview required").Build()
 	case errors.Is(err, billing.ErrBudgetStale):
 		err = contract.NewErrorBuilder().Type(contract.TypePreconditionFailed).Message("current budget ETag required").Build()
 	case errors.Is(err, identity.ErrUnauthenticated), errors.Is(err, identity.ErrForbidden):

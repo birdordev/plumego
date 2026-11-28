@@ -1,5 +1,9 @@
 # 首发采购与验收范围，发布由实际厂商证据授权。
 platform:
+  priority-cloud-database-backups: credential-fenced-instance-snapshot-with-scope-and-pagination-evidence
+  billing-allocation-publication: owner-admin-preview-report-and-policy-digest-revision-fence-and-transactional-audit
+  priority-cloud-dns-record-update: approved-active-address-and-ttl-update-with-exact-readback
+  priority-cloud-bucket-encryption-enable: approved-unconfigured-to-provider-managed-aes256-with-authoritative-observation
   priority-cloud-bucket-versioning-change: approved-incarnation-scoped-single-dispatch-and-authoritative-observation
   priority-cloud-instance-retirement: independently-approved-system-disk-bound-single-dispatch-and-two-evidence-rounds
   project-billing-summary: owner-scoped-original-currency-monthly-coverage-with-exact-source-revisions
@@ -121,10 +125,12 @@ providers:
     cache-rename-config: allow_cache_rename
     cache-rename-local-evidence: tls-protocol-fixture-and-postgresql
     object-bucket-inventory: tencent-cos-owned-paginated
-    object-bucket-default-encryption: read-only-sse-mode-with-incarnation-check
+    object-bucket-default-encryption: sse-mode-snapshot-with-incarnation-check
+    object-bucket-encryption-enable: independently-approved-unconfigured-to-aes256
     object-bucket-versioning: read-only-incarnation-checked-snapshot
     object-bucket-missing-evidence: account-wide-owner-checked-list-and-creation-instant
     database-inventory: [tencent-cdb, tencent-postgresql, tencent-sqlserver]
+    database-backup-inventory: tencent-cdb-postgresql-and-sqlserver
     database-missing-evidence: scoped-exact-id-and-complete-empty-page
     database-rename: independently-approved-single-write-with-scoped-name-observation
     database-rename-config: allow_database_rename
@@ -134,6 +140,7 @@ providers:
     dns-record-creation: independently-approved-default-line-a-and-aaaa
     dns-record-create-recovery: server-generated-marker-and-exact-observation
     dns-record-status: independently-approved-public-a-and-aaaa-with-exact-observation
+    dns-record-update: independently-approved-address-and-ttl-change-with-exact-observation
     dns-record-deletion: independently-approved-disabled-a-and-aaaa-with-two-complete-absence-observations
     load-balancer-inventory: clb
     load-balancer-configuration: [clb-listeners, classic-clb-listeners, attached-target-groups]
@@ -151,7 +158,7 @@ providers:
     instance-retirement-local-evidence: tc3-signed-tls-fixture-and-postgresql
     instance-resize-config: instance_resize_sizes
     instance-resize-observation: latest-operation-and-target-type-with-provider-auto-start-consent
-    actions: [create-instance, resize-instance, start-instance, stop-instance, reboot-instance, retire-instance, attach-volume, detach-volume, create-volume, resize-volume, release-volume, create-network, delete-network, create-subnet, delete-subnet, create-security-group, delete-security-group, create-security-group-rule, revoke-security-group-rule, create-elastic-ip, bind-elastic-ip, unbind-elastic-ip, release-elastic-ip, create-snapshot, delete-snapshot, restore-snapshot, rollback-snapshot, create-image, copy-image, delete-image, rename-load-balancer, rename-load-balancer-listener, rename-load-balancer-target-group, set-load-balancer-backend-weight, detach-load-balancer-backend, attach-load-balancer-backend, set-dns-record-status, create-dns-record, delete-dns-record, scale-workload, rename-database-instance, rename-cache-instance, set-bucket-versioning]
+    actions: [create-instance, resize-instance, start-instance, stop-instance, reboot-instance, retire-instance, attach-volume, detach-volume, create-volume, resize-volume, release-volume, create-network, delete-network, create-subnet, delete-subnet, create-security-group, delete-security-group, create-security-group-rule, revoke-security-group-rule, create-elastic-ip, bind-elastic-ip, unbind-elastic-ip, release-elastic-ip, create-snapshot, delete-snapshot, restore-snapshot, rollback-snapshot, create-image, copy-image, delete-image, rename-load-balancer, rename-load-balancer-listener, rename-load-balancer-target-group, set-load-balancer-backend-weight, detach-load-balancer-backend, attach-load-balancer-backend, set-dns-record-status, update-dns-record, create-dns-record, delete-dns-record, scale-workload, rename-database-instance, rename-cache-instance, set-bucket-versioning, enable-bucket-encryption]
     security-group-local-evidence: tc3-signed-tls-protocol-fixture-and-postgresql
     elastic-ip-create-recovery: observe-scoped-allocation-marker-or-manual-review
     elastic-ip-release-confirmation: two-scoped-absence-observations
@@ -177,7 +184,7 @@ providers:
     snapshot-deletion-confirmation: two-scoped-absence-observations
     snapshot-create-recovery: observe-scoped-source-and-marker-or-manual-review
     snapshot-create-local-evidence: tc3-signed-tls-protocol-fixture-and-postgresql
-    approvals: [resize-instance, detach-volume, create-volume, resize-volume, release-volume, create-security-group-rule, revoke-security-group-rule, delete-network, delete-subnet, delete-security-group, create-elastic-ip, bind-elastic-ip, unbind-elastic-ip, release-elastic-ip, create-snapshot, delete-snapshot, restore-snapshot, rollback-snapshot, create-image, copy-image, delete-image, rename-load-balancer, rename-load-balancer-listener, rename-load-balancer-target-group, set-load-balancer-backend-weight, detach-load-balancer-backend, attach-load-balancer-backend, set-dns-record-status, create-dns-record, delete-dns-record, scale-workload, rename-database-instance, rename-cache-instance, set-bucket-versioning]
+    approvals: [resize-instance, detach-volume, create-volume, resize-volume, release-volume, create-security-group-rule, revoke-security-group-rule, delete-network, delete-subnet, delete-security-group, create-elastic-ip, bind-elastic-ip, unbind-elastic-ip, release-elastic-ip, create-snapshot, delete-snapshot, restore-snapshot, rollback-snapshot, create-image, copy-image, delete-image, rename-load-balancer, rename-load-balancer-listener, rename-load-balancer-target-group, set-load-balancer-backend-weight, detach-load-balancer-backend, attach-load-balancer-backend, set-dns-record-status, update-dns-record, create-dns-record, delete-dns-record, scale-workload, rename-database-instance, rename-cache-instance, set-bucket-versioning, enable-bucket-encryption]
   alibaba-ecs:
     verification: pending-sandbox
     idle-analysis: ecs-native-ten-minute-cpu-and-network
@@ -204,10 +211,12 @@ providers:
     cache-rename-config: allow_cache_rename
     cache-rename-local-evidence: tls-protocol-fixture-and-postgresql
     object-bucket-inventory: alibaba-oss-owned-paginated
-    object-bucket-default-encryption: read-only-sse-mode-with-incarnation-check
+    object-bucket-default-encryption: sse-mode-snapshot-with-incarnation-check
+    object-bucket-encryption-enable: independently-approved-unconfigured-to-aes256
     object-bucket-versioning: read-only-incarnation-checked-snapshot
     object-bucket-missing-evidence: account-wide-owner-checked-list-and-creation-instant
     database-inventory: [alibaba-rds]
+    database-backup-inventory: alibaba-rds-mysql-postgresql-sqlserver-and-mariadb
     database-missing-evidence: scoped-exact-id-and-complete-empty-page
     database-rename: independently-approved-single-write-with-scoped-name-observation
     database-rename-config: allow_database_rename
@@ -217,6 +226,7 @@ providers:
     dns-record-creation: independently-approved-default-line-a-and-aaaa
     dns-record-create-recovery: independent-review-with-provider-record-id
     dns-record-status: independently-approved-public-a-and-aaaa-with-exact-observation
+    dns-record-update: independently-approved-address-and-ttl-change-with-exact-observation
     dns-record-deletion: independently-approved-disabled-a-and-aaaa-with-two-complete-absence-observations
     load-balancer-inventory: alb-nlb-classic-clb
     load-balancer-configuration: [alb-listeners, alb-associated-server-groups, nlb-listeners, nlb-associated-server-groups, clb-listeners, clb-vserver-groups]
@@ -230,7 +240,7 @@ providers:
     load-balancer-backend-attach: approved-owned-instance-in-same-vpc-with-zero-initial-weight
     instance-resize-config: instance_resize_sizes
     instance-resize-observation: same-zone-configured-type-observed-before-separate-start
-    actions: [create-instance, resize-instance, start-instance, stop-instance, reboot-instance, retire-instance, attach-volume, detach-volume, create-volume, resize-volume, release-volume, delete-instance, create-network, delete-network, create-subnet, delete-subnet, create-security-group, delete-security-group, create-security-group-rule, revoke-security-group-rule, create-elastic-ip, bind-elastic-ip, unbind-elastic-ip, release-elastic-ip, create-snapshot, delete-snapshot, restore-snapshot, rollback-snapshot, create-image, copy-image, delete-image, rename-load-balancer, rename-load-balancer-listener, rename-load-balancer-target-group, set-load-balancer-backend-weight, detach-load-balancer-backend, attach-load-balancer-backend, set-dns-record-status, create-dns-record, delete-dns-record, scale-workload, rename-database-instance, rename-cache-instance, set-bucket-versioning]
+    actions: [create-instance, resize-instance, start-instance, stop-instance, reboot-instance, retire-instance, attach-volume, detach-volume, create-volume, resize-volume, release-volume, delete-instance, create-network, delete-network, create-subnet, delete-subnet, create-security-group, delete-security-group, create-security-group-rule, revoke-security-group-rule, create-elastic-ip, bind-elastic-ip, unbind-elastic-ip, release-elastic-ip, create-snapshot, delete-snapshot, restore-snapshot, rollback-snapshot, create-image, copy-image, delete-image, rename-load-balancer, rename-load-balancer-listener, rename-load-balancer-target-group, set-load-balancer-backend-weight, detach-load-balancer-backend, attach-load-balancer-backend, set-dns-record-status, update-dns-record, create-dns-record, delete-dns-record, scale-workload, rename-database-instance, rename-cache-instance, set-bucket-versioning, enable-bucket-encryption]
     instance-retirement-observation: ali-instance-and-system-disk-exact-empty-results
     security-group-local-evidence: acs3-signed-tls-protocol-fixture-and-postgresql
     elastic-ip-create-recovery: observe-scoped-allocation-marker-or-manual-review
@@ -259,7 +269,7 @@ providers:
     snapshot-deletion-confirmation: two-scoped-absence-observations
     snapshot-create-recovery: observe-scoped-source-and-marker-or-manual-review
     snapshot-create-local-evidence: acs3-signed-tls-protocol-fixture-and-postgresql
-    approvals: [resize-instance, detach-volume, create-volume, resize-volume, release-volume, delete-instance, create-security-group-rule, revoke-security-group-rule, delete-network, delete-subnet, delete-security-group, create-elastic-ip, bind-elastic-ip, unbind-elastic-ip, release-elastic-ip, create-snapshot, delete-snapshot, restore-snapshot, rollback-snapshot, create-image, copy-image, delete-image, rename-load-balancer, rename-load-balancer-listener, rename-load-balancer-target-group, set-load-balancer-backend-weight, detach-load-balancer-backend, attach-load-balancer-backend, set-dns-record-status, create-dns-record, delete-dns-record, scale-workload, rename-database-instance, rename-cache-instance, set-bucket-versioning]
+    approvals: [resize-instance, detach-volume, create-volume, resize-volume, release-volume, delete-instance, create-security-group-rule, revoke-security-group-rule, delete-network, delete-subnet, delete-security-group, create-elastic-ip, bind-elastic-ip, unbind-elastic-ip, release-elastic-ip, create-snapshot, delete-snapshot, restore-snapshot, rollback-snapshot, create-image, copy-image, delete-image, rename-load-balancer, rename-load-balancer-listener, rename-load-balancer-target-group, set-load-balancer-backend-weight, detach-load-balancer-backend, attach-load-balancer-backend, set-dns-record-status, update-dns-record, create-dns-record, delete-dns-record, scale-workload, rename-database-instance, rename-cache-instance, set-bucket-versioning, enable-bucket-encryption]
   huawei-ecs:
     verification: pending-sandbox
     idle-analysis: ces-ecs-hourly-cpu-and-network-maxima
@@ -286,10 +296,12 @@ providers:
     cache-rename-config: allow_cache_rename
     cache-rename-local-evidence: tls-protocol-fixture-and-postgresql
     object-bucket-inventory: huawei-obs-owned-object-buckets
-    object-bucket-default-encryption: read-only-sse-mode-with-bucket-scoped-temporary-credentials
+    object-bucket-default-encryption: sse-mode-snapshot-with-bucket-scoped-temporary-credentials
+    object-bucket-encryption-enable: independently-approved-unconfigured-to-aes256
     object-bucket-versioning: read-only-incarnation-checked-snapshot-with-bucket-scoped-temporary-credentials
     object-bucket-missing-evidence: account-wide-owner-checked-list-and-creation-instant
     database-inventory: [huawei-rds]
+    database-backup-inventory: huawei-rds-mysql-postgresql-and-sqlserver
     database-missing-evidence: scoped-exact-id-and-complete-empty-page
     database-rename: independently-approved-single-write-with-scoped-name-observation
     database-rename-config: allow_database_rename
@@ -299,6 +311,7 @@ providers:
     dns-record-creation: independently-approved-default-line-a-and-aaaa
     dns-record-create-recovery: server-generated-marker-and-exact-observation
     dns-record-status: independently-approved-public-a-and-aaaa-with-exact-observation
+    dns-record-update: independently-approved-address-and-ttl-change-with-exact-observation
     dns-record-deletion: independently-approved-disabled-a-and-aaaa-with-two-complete-absence-observations
     load-balancer-inventory: elb-v3
     load-balancer-configuration: [elb-v3-listeners, elb-v3-associated-pools]
@@ -312,7 +325,7 @@ providers:
     load-balancer-backend-attach: approved-owned-instance-in-same-vpc-with-zero-initial-weight
     instance-resize-config: instance_resize_sizes
     instance-resize-observation: scoped-job-and-stopped-target-type
-    actions: [create-instance, resize-instance, start-instance, stop-instance, reboot-instance, retire-instance, attach-volume, detach-volume, create-volume, resize-volume, release-volume, delete-instance, create-network, delete-network, create-subnet, delete-subnet, create-security-group, delete-security-group, create-security-group-rule, revoke-security-group-rule, create-elastic-ip, bind-elastic-ip, unbind-elastic-ip, release-elastic-ip, create-snapshot, delete-snapshot, restore-snapshot, rollback-snapshot, create-image, copy-image, delete-image, rename-load-balancer, rename-load-balancer-listener, rename-load-balancer-target-group, set-load-balancer-backend-weight, detach-load-balancer-backend, attach-load-balancer-backend, set-dns-record-status, create-dns-record, delete-dns-record, scale-workload, rename-database-instance, rename-cache-instance, set-bucket-versioning]
+    actions: [create-instance, resize-instance, start-instance, stop-instance, reboot-instance, retire-instance, attach-volume, detach-volume, create-volume, resize-volume, release-volume, delete-instance, create-network, delete-network, create-subnet, delete-subnet, create-security-group, delete-security-group, create-security-group-rule, revoke-security-group-rule, create-elastic-ip, bind-elastic-ip, unbind-elastic-ip, release-elastic-ip, create-snapshot, delete-snapshot, restore-snapshot, rollback-snapshot, create-image, copy-image, delete-image, rename-load-balancer, rename-load-balancer-listener, rename-load-balancer-target-group, set-load-balancer-backend-weight, detach-load-balancer-backend, attach-load-balancer-backend, set-dns-record-status, update-dns-record, create-dns-record, delete-dns-record, scale-workload, rename-database-instance, rename-cache-instance, set-bucket-versioning, enable-bucket-encryption]
     instance-retirement-observation: target-bound-job-and-exact-ecs-evs-absence
     security-group-local-evidence: scoped-iam-tls-protocol-fixture-and-postgresql
     elastic-ip-create-recovery: observe-scoped-allocation-marker-or-manual-review
@@ -341,7 +354,7 @@ providers:
     snapshot-deletion-confirmation: two-scoped-absence-observations
     snapshot-create-recovery: observe-scoped-source-and-marker-or-manual-review
     snapshot-create-local-evidence: scoped-iam-tls-protocol-fixture-and-postgresql
-    approvals: [resize-instance, detach-volume, create-volume, resize-volume, release-volume, delete-instance, create-security-group-rule, revoke-security-group-rule, delete-network, delete-subnet, delete-security-group, create-elastic-ip, bind-elastic-ip, unbind-elastic-ip, release-elastic-ip, create-snapshot, delete-snapshot, restore-snapshot, rollback-snapshot, create-image, copy-image, delete-image, rename-load-balancer, rename-load-balancer-listener, rename-load-balancer-target-group, set-load-balancer-backend-weight, detach-load-balancer-backend, attach-load-balancer-backend, set-dns-record-status, create-dns-record, delete-dns-record, scale-workload, rename-database-instance, rename-cache-instance, set-bucket-versioning]
+    approvals: [resize-instance, detach-volume, create-volume, resize-volume, release-volume, delete-instance, create-security-group-rule, revoke-security-group-rule, delete-network, delete-subnet, delete-security-group, create-elastic-ip, bind-elastic-ip, unbind-elastic-ip, release-elastic-ip, create-snapshot, delete-snapshot, restore-snapshot, rollback-snapshot, create-image, copy-image, delete-image, rename-load-balancer, rename-load-balancer-listener, rename-load-balancer-target-group, set-load-balancer-backend-weight, detach-load-balancer-backend, attach-load-balancer-backend, set-dns-record-status, update-dns-record, create-dns-record, delete-dns-record, scale-workload, rename-database-instance, rename-cache-instance, set-bucket-versioning, enable-bucket-encryption]
   aws-ec2:
     verification: pending-sandbox
     inventory-local-evidence: signed-sdk-tls-protocol-fixture

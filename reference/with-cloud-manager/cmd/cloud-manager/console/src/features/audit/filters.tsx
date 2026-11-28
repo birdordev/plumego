@@ -4,7 +4,7 @@ import { localDateTime } from '../../shared/display/time'
 const categories = [
   ['', '全部事件'], ['account', '云账号'], ['ownership', '资产归属'], ['operation', '操作状态'],
   ['approval', '审批'], ['resolution', '人工处置'], ['observation', '续查'], ['catalog', '服务目录'],
-  ['alert', '项目告警'], ['billing_budget', '云预算'], ['tag_policy', '标签规则'], ['change_ticket', '变更工单'], ['console_access', '原生控制台'],
+  ['alert', '项目告警'], ['billing_budget', '云预算'], ['billing_allocation', '费用分摊'], ['tag_policy', '标签规则'], ['change_ticket', '变更工单'], ['console_access', '原生控制台'],
 ] as const
 
 export function AuditFilters({ values }: { values: URLSearchParams }) {

@@ -19,6 +19,7 @@ import (
 
 const assetsRoute = "/v1/tenants/:tenant/projects/:project/assets"
 const loadBalancerConfigurationRoute = assetsRoute + "/load-balancers/:asset/configuration"
+const databaseBackupsRoute = assetsRoute + "/databases/:asset/backups"
 const dnsRecordsRoute = assetsRoute + "/dns-zones/:asset/records"
 const bucketVersioningRoute = assetsRoute + "/object-buckets/:asset/versioning"
 const bucketEncryptionRoute = assetsRoute + "/object-buckets/:asset/encryption"
@@ -50,6 +51,13 @@ func assetHandler[T any](queryInventory func(context.Context, string, inventory.
 func inventoryHandler[T any](queryInventory func(context.Context, string, inventory.Query) (T, error),
 	write func(http.ResponseWriter, *http.Request, T) error, export bool, logger plumelog.StructuredLogger) http.Handler {
 	return serveInventory(func(r *http.Request) (inventory.Query, error) { return assetQuery(r, export) }, queryInventory, write, logger)
+}
+
+func databaseBackupsHandler(store inventory.Store, logger plumelog.StructuredLogger) http.Handler {
+	return serveInventory(databaseBackupsQuery, store.ReadDatabaseBackups,
+		func(w http.ResponseWriter, r *http.Request, page inventory.DatabaseBackupPage) error {
+			return contract.WriteResponse(w, r, http.StatusOK, page, nil)
+		}, logger)
 }
 
 func loadBalancerConfigurationHandler(store inventory.Store, logger plumelog.StructuredLogger) http.Handler {
@@ -102,6 +110,10 @@ func serveInventory[Q, T any](parse func(*http.Request) (Q, error), queryInvento
 			reply(contract.TypeConflict, "cluster workload snapshot changed")
 		case errors.Is(err, inventory.ErrClusterWorkloadsNotFound):
 			reply(contract.TypeNotFound, "cluster workloads are unavailable")
+		case errors.Is(err, inventory.ErrDatabaseBackupsChanged):
+			reply(contract.TypeConflict, "database backup snapshot changed")
+		case errors.Is(err, inventory.ErrDatabaseBackupsNotFound):
+			reply(contract.TypeNotFound, "database backup snapshot is unavailable")
 		case errors.Is(err, inventory.ErrDNSRecordsNotFound):
 			reply(contract.TypeNotFound, "DNS zone records are unavailable")
 		case errors.Is(err, inventory.ErrBucketSettingNotFound):

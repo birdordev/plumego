@@ -4,9 +4,9 @@ const observationActions = new Set([
   'power-on-bare-metal', 'shutdown-bare-metal', 'stage-bare-metal-pxe', 'cancel-bare-metal-pxe',
   'revoke-security-group-rule', 'release-elastic-ip', 'bind-elastic-ip', 'unbind-elastic-ip',
   'delete-snapshot', 'delete-image', 'delete-network', 'delete-subnet', 'delete-security-group',
-  'restore-snapshot', 'resize-instance', 'set-bucket-versioning', 'resize-volume', 'release-volume', 'rename-load-balancer', 'rename-load-balancer-listener', 'rename-load-balancer-target-group',
+  'restore-snapshot', 'resize-instance', 'set-bucket-versioning', 'enable-bucket-encryption', 'resize-volume', 'release-volume', 'rename-load-balancer', 'rename-load-balancer-listener', 'rename-load-balancer-target-group',
   'set-load-balancer-backend-weight', 'detach-load-balancer-backend', 'attach-load-balancer-backend',
-  'set-dns-record-status', 'delete-dns-record', 'scale-workload', 'rename-database-instance', 'rename-cache-instance',
+  'set-dns-record-status', 'update-dns-record', 'delete-dns-record', 'scale-workload', 'rename-database-instance', 'rename-cache-instance',
 ])
 
 export function reviewChoices(op: OperationDetail) {

@@ -46,6 +46,10 @@ func readAllocationPolicy(path string) (billing.AllocationPolicy, error) {
 	if err != nil {
 		return billing.AllocationPolicy{}, err
 	}
+	return decodeAllocationPolicy(data)
+}
+
+func decodeAllocationPolicy(data []byte) (billing.AllocationPolicy, error) {
 	if err := checkPolicyJSON(data); err != nil {
 		return billing.AllocationPolicy{}, err
 	}

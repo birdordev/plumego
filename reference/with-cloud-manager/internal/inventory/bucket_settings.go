@@ -118,22 +118,29 @@ func publishBucketSetting[T bucketSettingValue](key Key, revision int64, table s
 		if err != nil {
 			return err
 		}
-		result, err := tx.ExecContext(ctx, `INSERT INTO `+table+` AS previous
-			(scope_id,external_id,credential_revision,location,state,refresh_started_at,observed_at)
-			VALUES ($1,$2,$3,$4,$5,$6,clock_timestamp())
-			ON CONFLICT (scope_id,external_id) DO UPDATE SET credential_revision=EXCLUDED.credential_revision,
-				location=EXCLUDED.location,state=EXCLUDED.state,refresh_started_at=EXCLUDED.refresh_started_at,observed_at=EXCLUDED.observed_at
-			WHERE (previous.credential_revision,previous.refresh_started_at) < (EXCLUDED.credential_revision,EXCLUDED.refresh_started_at)`,
-			target.scopeID, target.id, revision, target.location, state, target.started)
-		if err != nil {
-			return err
-		}
-		updated, err := result.RowsAffected()
-		if err == nil && updated != 1 {
+		updated, err := upsertBucketSetting(ctx, tx, table, target.scopeID, target.id, revision, target.location, state, target.started)
+		if err == nil && !updated {
 			return ErrStale
 		}
 		return err
 	}
+}
+
+func upsertBucketSetting[T bucketSettingValue](ctx context.Context, tx *sql.Tx, table string,
+	scopeID int64, id string, revision int64, location string, state T, started time.Time,
+) (bool, error) {
+	result, err := tx.ExecContext(ctx, `INSERT INTO `+table+` AS previous
+		(scope_id,external_id,credential_revision,location,state,refresh_started_at,observed_at)
+		VALUES ($1,$2,$3,$4,$5,$6,clock_timestamp())
+		ON CONFLICT (scope_id,external_id) DO UPDATE SET credential_revision=EXCLUDED.credential_revision,
+			location=EXCLUDED.location,state=EXCLUDED.state,refresh_started_at=EXCLUDED.refresh_started_at,observed_at=EXCLUDED.observed_at
+		WHERE (previous.credential_revision,previous.refresh_started_at) < (EXCLUDED.credential_revision,EXCLUDED.refresh_started_at)`,
+		scopeID, id, revision, location, state, started)
+	if err != nil {
+		return false, err
+	}
+	updated, err := result.RowsAffected()
+	return updated == 1, err
 }
 
 func (s Store) ReadBucketVersioning(ctx context.Context, token string, query BucketSettingQuery) (BucketVersioningSnapshot, error) {

@@ -4,6 +4,7 @@ import { timestamp } from '../../../shared/display/time'
 import { DNSRecordCreateForm } from './DNSRecordCreateForm'
 import { DNSRecordDeleteForm } from './DNSRecordDeleteForm'
 import { DNSRecordStatusForm } from './DNSRecordStatusForm'
+import { DNSRecordUpdateForm } from './DNSRecordUpdateForm'
 import type { DNSAsset } from './types'
 import { useDNSRecords } from './useDNSRecords'
 
@@ -28,6 +29,10 @@ export default function DNSRecordsPanel({ base, asset, signal }: { base: string;
           const enabled = record.status === 'active' || record.status === 'enable'
           const editable = mayApply && !changed && !error && (enabled || record.status === 'disable') &&
             (record.type === 'A' || record.type === 'AAAA') && Boolean(record.values?.length)
+          const mayUpdate = editable && enabled && (
+            (asset.provider === 'huawei-ecs' && !record.line) ||
+            (['tencent-cvm', 'alibaba-ecs'].includes(asset.provider) && Boolean(record.line) && record.values?.length === 1)
+          )
           return (
             <li key={record.id}>
               {[record.name, record.type, 'TTL ' + record.ttl, record.status, record.line, values].filter(Boolean).join(' · ')}
@@ -37,6 +42,10 @@ export default function DNSRecordsPanel({ base, asset, signal }: { base: string;
                 (stamp) => <DNSRecordStatusForm asset={asset} base={base} record={record} observedAt={snapshot.observedAt}
                   enabled={!enabled} stamp={stamp} />,
               )}>{enabled ? '申请停用解析' : '申请启用解析'}</button> : null}
+              {mayUpdate ? <button type="button" onClick={() => openDetail(
+                '申请修改公网解析记录',
+                (stamp) => <DNSRecordUpdateForm asset={asset} base={base} record={record} observedAt={snapshot.observedAt} stamp={stamp} />,
+              )}>申请修改地址或 TTL</button> : null}
               {editable && record.status === 'disable' ? <button type="button" onClick={() => openDetail(
                 '申请删除公网解析记录',
                 (stamp) => <DNSRecordDeleteForm asset={asset} base={base} record={record} observedAt={snapshot.observedAt}

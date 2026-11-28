@@ -17,6 +17,13 @@ export const dnsPageSchema = z.object({
 const dnsRecordTarget = { account, asset_id: zoneId, record_id: zoneId, observed_at: time }
 
 export const dnsDeletionInputSchema = z.strictObject(dnsRecordTarget)
+export function dnsUpdateInputSchema(type: string, limit: number) {
+  return z.strictObject({
+    ...dnsRecordTarget, values: z.array(type === 'A' ? z.ipv4() : z.ipv6()).min(1).max(limit),
+    ttl: z.number().int().min(1).max(604800),
+  })
+}
+
 export const dnsStatusInputSchema = z.strictObject({ ...dnsRecordTarget, enabled: z.boolean() })
 
 const dnsCreationFields = {

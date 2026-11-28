@@ -15,6 +15,11 @@ export const operationDetailSchema = operationSchema.extend({
   catalog_template: z.string().optional(),
   catalog_version: z.number().int().optional(),
   ticket_policy_revision: z.string().regex(/^[1-9][0-9]*$/).optional(),
+  bucket_encryption_intent: z.object({
+    location: z.string(),
+    current_state: z.literal('unconfigured'),
+    target_state: z.literal('aes256'),
+  }).optional(),
   bucket_versioning_intent: z.object({
     location: z.string(),
     current_state: z.enum(['disabled', 'enabled', 'suspended']),

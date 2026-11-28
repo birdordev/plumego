@@ -32,6 +32,7 @@ type dnsFixture struct {
 	lastDisabled atomic.Bool
 	lastDeleted  atomic.Bool
 	created      atomic.Pointer[dnsFixtureCreatedRecord]
+	lastUpdate   atomic.Pointer[dnsFixtureUpdateRecord]
 }
 
 func TestAcceptancePublicCloudDNS(t *testing.T) {
@@ -341,6 +342,11 @@ type dnsFixtureCreatedRecord struct {
 	marker string
 }
 
+type dnsFixtureUpdateRecord struct {
+	values []string
+	ttl    int
+}
+
 func (f *dnsFixture) recordsPage(offset int) any {
 	total := 101
 	created := f.created.Load()
@@ -377,9 +383,15 @@ func (f *dnsFixture) recordsPage(offset int) any {
 		}
 		var marker string
 		ttl := 60
+		values := []string{value}
+		if update := f.lastUpdate.Load(); i == 100 && update != nil {
+			values, ttl = update.values, update.ttl
+			value = values[0]
+		}
 		if i == 101 {
 			rr, typ, value = strings.TrimSuffix(created.Name, ".example.test"), created.Type, created.Value
 			marker, ttl = created.marker, created.TTL
+			values = []string{value}
 		}
 		switch f.vendor {
 		case provider.TencentCVM:
@@ -387,7 +399,7 @@ func (f *dnsFixture) recordsPage(offset int) any {
 		case provider.AlibabaECS:
 			rows = append(rows, map[string]any{"RecordId": strconv.Itoa(id), "RR": rr, "Type": typ, "Value": value, "Status": status, "TTL": ttl, "Line": "default"})
 		case provider.HuaweiECS:
-			rows = append(rows, map[string]any{"id": fmt.Sprintf("%032x", id), "name": rr + ".example.test.", "type": typ, "records": []string{value},
+			rows = append(rows, map[string]any{"id": fmt.Sprintf("%032x", id), "name": rr + ".example.test.", "type": typ, "records": values,
 				"status": huaweiStatus, "ttl": ttl, "description": marker, "zone_id": f.id, "zone_name": "example.test.", "project_id": fixtureHuaweiProject})
 		}
 	}

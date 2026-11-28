@@ -37,7 +37,7 @@ func main() {
 
 func run(parent context.Context, args []string) (retErr error) {
 	if !validCommand(args) {
-		return errors.New("usage: cloud-manager billing COMMAND TENANT PROJECT ACCOUNT PERIOD SOURCE ...|billing-{import,replay,source,allocate,allocation-replay} TENANT PROJECT ACCOUNT PERIOD SOURCE ...|cmdb-migrate|cmdb-sync TENANT PROJECT|cmdb-status TENANT PROJECT|kvm COMMAND TENANT PROJECT SITE|migrate|api|controller|workload-controller|kvm-evacuation-controller|alert-controller|idle-controller|idle-schedule TENANT ACCOUNT REGION INSTANCE DURATION_OR_OFF|billing-pull-controller|billing-pull[-status|-source|-replay] TENANT PROJECT ACCOUNT PERIOD SOURCE ...|worker|sessions-purge|operations COMMAND TENANT PROJECT|governance COMMAND TENANT PROJECT|cloud-accounts COMMAND TENANT PROJECT|audit {list,export} TENANT PROJECT|assets {list,changes,topology,export} TENANT PROJECT|catalog COMMAND TENANT PROJECT|alerts COMMAND TENANT PROJECT|console-grants COMMAND TENANT PROJECT|event-publisher|event-{register,disable,failures,reconcile} SINK|event-retry SINK EVENT_ID|verify-{openstack,aws,tencent,alibaba,huawei,vsphere,redfish} TENANT ACCOUNT|scan-{openstack,aws,tencent,alibaba,huawei,vsphere,redfish} TENANT ACCOUNT REGION KIND (or append ASSET_ID for a public-cloud load-balancer, database-instance, cache-instance, kubernetes-cluster or object-bucket absence check)|refresh-{tencent,alibaba,huawei}-load-balancer TENANT ACCOUNT REGION ASSET_ID [--include-backends]|refresh-{tencent,alibaba,huawei}-dns-zone TENANT ACCOUNT ZONE_ID|refresh-{tencent,alibaba,huawei}-bucket-{versioning,encryption} TENANT ACCOUNT ASSET_ID|refresh-{tencent,alibaba,huawei}-cluster-{node-pools,workloads} TENANT ACCOUNT REGION CLUSTER_ID")
+		return errors.New("usage: cloud-manager billing COMMAND TENANT PROJECT ACCOUNT PERIOD SOURCE ...|billing-{import,replay,source,allocate,allocation-replay} TENANT PROJECT ACCOUNT PERIOD SOURCE ...|cmdb-migrate|cmdb-sync TENANT PROJECT|cmdb-status TENANT PROJECT|kvm COMMAND TENANT PROJECT SITE|migrate|api|controller|workload-controller|kvm-evacuation-controller|alert-controller|idle-controller|idle-schedule TENANT ACCOUNT REGION INSTANCE DURATION_OR_OFF|billing-pull-controller|billing-pull[-status|-source|-replay] TENANT PROJECT ACCOUNT PERIOD SOURCE ...|worker|sessions-purge|operations COMMAND TENANT PROJECT|governance COMMAND TENANT PROJECT|cloud-accounts COMMAND TENANT PROJECT|audit {list,export} TENANT PROJECT|assets {list,changes,topology,export} TENANT PROJECT|catalog COMMAND TENANT PROJECT|alerts COMMAND TENANT PROJECT|console-grants COMMAND TENANT PROJECT|event-publisher|event-{register,disable,failures,reconcile} SINK|event-retry SINK EVENT_ID|verify-{openstack,aws,tencent,alibaba,huawei,vsphere,redfish} TENANT ACCOUNT|scan-{openstack,aws,tencent,alibaba,huawei,vsphere,redfish} TENANT ACCOUNT REGION KIND (or append ASSET_ID for a public-cloud load-balancer, database-instance, cache-instance, kubernetes-cluster or object-bucket absence check)|refresh-{tencent,alibaba,huawei}-load-balancer TENANT ACCOUNT REGION ASSET_ID [--include-backends]|refresh-{tencent,alibaba,huawei}-database-backups TENANT ACCOUNT REGION ASSET_ID|refresh-{tencent,alibaba,huawei}-dns-zone TENANT ACCOUNT ZONE_ID|refresh-{tencent,alibaba,huawei}-bucket-{versioning,encryption} TENANT ACCOUNT ASSET_ID|refresh-{tencent,alibaba,huawei}-cluster-{node-pools,workloads} TENANT ACCOUNT REGION CLUSTER_ID")
 	}
 	if strings.HasPrefix(args[0], "cmdb-") {
 		return runCMDB(parent, args, os.Getenv, os.Stdout)
@@ -299,6 +299,18 @@ func migrateCloudManagerSchema(ctx context.Context, db *sql.DB) error {
 	if err := operations.MigrateBucketVersioning(ctx, db); err != nil {
 		return errors.New("bucket versioning change migration failed")
 	}
+	if err := operations.MigrateBucketEncryptionEnable(ctx, db); err != nil {
+		return errors.New("bucket encryption enable migration failed")
+	}
+	if err := operations.MigrateDNSRecordUpdate(ctx, db); err != nil {
+		return errors.New("DNS record update migration failed")
+	}
+	if err := billing.MigrateAllocationPublish(ctx, db); err != nil {
+		return errors.New("billing allocation publish migration failed")
+	}
+	if err := inventory.MigrateDatabaseBackups(ctx, db); err != nil {
+		return errors.New("database backup migration failed")
+	}
 	if err := operations.MigrateBareMetalDeployments(ctx, db); err != nil {
 		return errors.New("bare-metal deployment migration failed")
 	}
@@ -333,6 +345,8 @@ func validCommand(args []string) bool {
 		return len(args) == 5
 	case "scan-tencent", "scan-alibaba", "scan-huawei":
 		return len(args) == 5 || (len(args) == 6 && publicCloudMissingKind(provider.Kind(args[4])) && args[5] != "")
+	case "refresh-tencent-database-backups", "refresh-alibaba-database-backups", "refresh-huawei-database-backups":
+		return len(args) == 5
 	case "refresh-tencent-load-balancer", "refresh-alibaba-load-balancer", "refresh-huawei-load-balancer":
 		return (len(args) == 5 || (len(args) == 6 && args[5] == "--include-backends")) && args[4] != ""
 	case "refresh-tencent-cluster-node-pools", "refresh-alibaba-cluster-node-pools", "refresh-huawei-cluster-node-pools",
